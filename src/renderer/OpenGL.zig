@@ -372,7 +372,7 @@ pub fn deinit(self: *OpenGL) void {
 
     {
         var it = self.images.iterator();
-        while (it.next()) |kv| kv.value_ptr.deinit(self.alloc);
+        while (it.next()) |kv| kv.value_ptr.image.deinit(self.alloc);
         self.images.deinit(self.alloc);
     }
     self.image_placements.deinit(self.alloc);
@@ -768,7 +768,7 @@ fn prepKittyGraphics(
         var it = self.images.iterator();
         while (it.next()) |kv| {
             if (storage.imageById(kv.key_ptr.*) == null) {
-                kv.value_ptr.markForUnload();
+                kv.value_ptr.image.markForUnload();
             }
         }
     }
@@ -807,9 +807,13 @@ fn prepKittyGraphics(
             break :offset_y @intCast(offset_pixels);
         } else 0;
 
-        // If we already know about this image then do nothing
+        // We need to prep this image for upload if it isn't in the cache OR
+        // it is in the cache but the transmit time doesn't match meaning this
+        // image is different.
         const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
-        if (!gop.found_existing) {
+        if (!gop.found_existing or
+            gop.value_ptr.transmit_time.order(image.transmit_time) != .eq)
+        {
             // Copy the data into the pending state.
             const data = try self.alloc.dupe(u8, image.data);
             errdefer self.alloc.free(data);
@@ -821,11 +825,25 @@ fn prepKittyGraphics(
                 .data = data.ptr,
             };
 
-            gop.value_ptr.* = switch (image.format) {
+            const new_image: Image = switch (image.format) {
                 .rgb => .{ .pending_rgb = pending },
                 .rgba => .{ .pending_rgba = pending },
                 .png => unreachable, // should be decoded by now
             };
+
+            if (!gop.found_existing) {
+                gop.value_ptr.* = .{
+                    .image = new_image,
+                    .transmit_time = undefined,
+                };
+            } else {
+                try gop.value_ptr.image.markForReplace(
+                    self.alloc,
+                    new_image,
+                );
+            }
+
+            gop.value_ptr.transmit_time = image.transmit_time;
         }
 
         // Convert our screen point to a viewport point
@@ -1732,17 +1750,20 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     {
         var image_it = self.images.iterator();
         while (image_it.next()) |kv| {
-            switch (kv.value_ptr.*) {
+            switch (kv.value_ptr.image) {
                 .ready => {},
 
                 .pending_rgb,
                 .pending_rgba,
-                => try kv.value_ptr.upload(self.alloc),
+                .replace_rgb,
+                .replace_rgba,
+                => try kv.value_ptr.image.upload(self.alloc),
 
                 .unload_pending,
+                .unload_replace,
                 .unload_ready,
                 => {
-                    kv.value_ptr.deinit(self.alloc);
+                    kv.value_ptr.image.deinit(self.alloc);
                     self.images.removeByPtr(kv.key_ptr);
                 },
             }
@@ -1873,7 +1894,7 @@ fn drawImages(
             continue;
         };
 
-        const texture = switch (image) {
+        const texture = switch (image.image) {
             .ready => |t| t,
             else => {
                 log.warn("image not ready for placement image_id={}", .{p.image_id});

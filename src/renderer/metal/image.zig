@@ -33,7 +33,10 @@ pub const Placement = struct {
 };
 
 /// The map used for storing images.
-pub const ImageMap = std.AutoHashMapUnmanaged(u32, Image);
+pub const ImageMap = std.AutoHashMapUnmanaged(u32, struct {
+    image: Image,
+    transmit_time: std.time.Instant,
+});
 
 /// The state for a single image that is to be rendered. The image can be
 /// pending upload or ready to use with a texture.
@@ -47,12 +50,23 @@ pub const Image = union(enum) {
     pending_rgb: Pending,
     pending_rgba: Pending,
 
+    /// This is the same as the pending states but there is a texture
+    /// already allocated that we want to replace.
+    replace_rgb: Replace,
+    replace_rgba: Replace,
+
     /// The image is uploaded and ready to be used.
     ready: objc.Object, // MTLTexture
 
     /// The image is uploaded but is scheduled to be unloaded.
     unload_pending: []u8,
     unload_ready: objc.Object, // MTLTexture
+    unload_replace: struct { []u8, objc.Object },
+
+    pub const Replace = struct {
+        texture: objc.Object,
+        pending: Pending,
+    };
 
     /// Pending image data that needs to be uploaded to the GPU.
     pub const Pending = struct {
@@ -78,6 +92,21 @@ pub const Image = union(enum) {
             .pending_rgba => |p| alloc.free(p.dataSlice(4)),
             .unload_pending => |data| alloc.free(data),
 
+            .replace_rgb => |r| {
+                alloc.free(r.pending.dataSlice(3));
+                r.texture.msgSend(void, objc.sel("release"), .{});
+            },
+
+            .replace_rgba => |r| {
+                alloc.free(r.pending.dataSlice(4));
+                r.texture.msgSend(void, objc.sel("release"), .{});
+            },
+
+            .unload_replace => |r| {
+                alloc.free(r[0]);
+                r[1].msgSend(void, objc.sel("release"), .{});
+            },
+
             .ready,
             .unload_ready,
             => |obj| obj.msgSend(void, objc.sel("release"), .{}),
@@ -88,12 +117,93 @@ pub const Image = union(enum) {
     pub fn markForUnload(self: *Image) void {
         self.* = switch (self.*) {
             .unload_pending,
+            .unload_replace,
             .unload_ready,
             => return,
 
             .ready => |obj| .{ .unload_ready = obj },
             .pending_rgb => |p| .{ .unload_pending = p.dataSlice(3) },
             .pending_rgba => |p| .{ .unload_pending = p.dataSlice(4) },
+            .replace_rgb => |r| .{ .unload_replace = .{
+                r.pending.dataSlice(3), r.texture,
+            } },
+            .replace_rgba => |r| .{ .unload_replace = .{
+                r.pending.dataSlice(4), r.texture,
+            } },
+        };
+    }
+
+    /// Replace the currently pending image with a new one. This will
+    /// attempt to update the existing texture if it is already allocated.
+    /// If the texture is not allocated, this will act like a new upload.
+    ///
+    /// This function only marks the image for replace. The actual logic
+    /// to replace is done later.
+    pub fn markForReplace(self: *Image, alloc: Allocator, img: Image) !void {
+        assert(img.pending() != null);
+
+        // Get our existing texture. This switch statement will also handle
+        // scenarios where there is no existing texture and we can modify
+        // the self pointer directly.
+        const existing: objc.Object = switch (self.*) {
+            // For pending, we can free the old data and become pending ourselves.
+            .pending_rgb => |p| {
+                alloc.free(p.dataSlice(3));
+                self.* = img;
+                return;
+            },
+
+            .pending_rgba => |p| {
+                alloc.free(p.dataSlice(4));
+                self.* = img;
+                return;
+            },
+
+            // If we're marked for unload but we just have pending data,
+            // this behaves the same as a normal "pending": free the data,
+            // become new pending.
+            .unload_pending => |data| {
+                alloc.free(data);
+                self.* = img;
+                return;
+            },
+
+            .unload_replace => |r| existing: {
+                alloc.free(r[0]);
+                break :existing r[1];
+            },
+
+            // If we were already pending a replacement, then we free our
+            // existing pending data and use the same texture.
+            .replace_rgb => |r| existing: {
+                alloc.free(r.pending.dataSlice(3));
+                break :existing r.texture;
+            },
+
+            .replace_rgba => |r| existing: {
+                alloc.free(r.pending.dataSlice(4));
+                break :existing r.texture;
+            },
+
+            // For both ready and unload_ready, we need to replace the
+            // texture. We can't do that here, so we just mark ourselves
+            // for replacement.
+            .ready, .unload_ready => |tex| tex,
+        };
+
+        // We now have an existing texture, so set the proper replace key.
+        self.* = switch (img) {
+            .pending_rgb => |p| .{ .replace_rgb = .{
+                .texture = existing,
+                .pending = p,
+            } },
+
+            .pending_rgba => |p| .{ .replace_rgba = .{
+                .texture = existing,
+                .pending = p,
+            } },
+
+            else => unreachable,
         };
     }
 
@@ -123,34 +233,50 @@ pub const Image = union(enum) {
         switch (self.*) {
             .ready,
             .unload_pending,
+            .unload_replace,
             .unload_ready,
             => unreachable, // invalid
 
-            .pending_rgba => {}, // ready
+            .pending_rgba,
+            .replace_rgba,
+            => {}, // ready
 
             // RGB needs to be converted to RGBA because Metal textures
             // don't support RGB.
             .pending_rgb => |*p| {
                 // Note: this is the slowest possible way to do this...
                 const data = p.dataSlice(3);
-                const pixels = data.len / 3;
-                var rgba = try alloc.alloc(u8, pixels * 4);
-                errdefer alloc.free(rgba);
-                var i: usize = 0;
-                while (i < pixels) : (i += 1) {
-                    const data_i = i * 3;
-                    const rgba_i = i * 4;
-                    rgba[rgba_i] = data[data_i];
-                    rgba[rgba_i + 1] = data[data_i + 1];
-                    rgba[rgba_i + 2] = data[data_i + 2];
-                    rgba[rgba_i + 3] = 255;
-                }
-
+                const rgba = try rgbToRgba(alloc, data);
                 alloc.free(data);
                 p.data = rgba.ptr;
                 self.* = .{ .pending_rgba = p.* };
             },
+
+            .replace_rgb => |*r| {
+                const data = r.pending.dataSlice(3);
+                const rgba = try rgbToRgba(alloc, data);
+                alloc.free(data);
+                r.pending.data = rgba.ptr;
+                self.* = .{ .replace_rgba = r.* };
+            },
         }
+    }
+
+    fn rgbToRgba(alloc: Allocator, data: []const u8) ![]u8 {
+        const pixels = data.len / 3;
+        var rgba = try alloc.alloc(u8, pixels * 4);
+        errdefer alloc.free(rgba);
+        var i: usize = 0;
+        while (i < pixels) : (i += 1) {
+            const data_i = i * 3;
+            const rgba_i = i * 4;
+            rgba[rgba_i] = data[data_i];
+            rgba[rgba_i + 1] = data[data_i + 1];
+            rgba[rgba_i + 2] = data[data_i + 2];
+            rgba[rgba_i + 3] = 255;
+        }
+
+        return rgba;
     }
 
     /// Upload the pending image to the GPU and change the state of this
@@ -191,6 +317,10 @@ pub const Image = union(enum) {
         );
 
         // Uploaded. We can now clear our data and change our state.
+        //
+        // NOTE: For "replace_*" states, this will free the old texture.
+        // We don't currently actually replace the existing texture in-place
+        // but that is an optimization we can do later.
         self.deinit(alloc);
         self.* = .{ .ready = texture };
     }
@@ -200,6 +330,8 @@ pub const Image = union(enum) {
         return switch (self) {
             .pending_rgb => 3,
             .pending_rgba => 4,
+            .replace_rgb => 3,
+            .replace_rgba => 4,
             else => unreachable,
         };
     }
@@ -210,6 +342,10 @@ pub const Image = union(enum) {
             .pending_rgb,
             .pending_rgba,
             => |p| p,
+
+            .replace_rgb,
+            .replace_rgba,
+            => |r| r.pending,
 
             else => null,
         };
