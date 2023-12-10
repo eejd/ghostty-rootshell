@@ -550,6 +550,9 @@ keybind: Keybinds = .{},
 ///
 /// This option does nothing when window-decoration is false or when running
 /// under MacOS.
+///
+/// Changing this value at runtime and reloading the configuration will only
+/// affect new windows.
 @"gtk-titlebar": bool = true,
 
 /// Whether to allow programs running in the terminal to read/write to
