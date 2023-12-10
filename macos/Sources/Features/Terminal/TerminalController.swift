@@ -440,9 +440,17 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
             
             if (tabIndex == GHOSTTY_TAB_PREVIOUS.rawValue) {
-                finalIndex = selectedIndex - 1
+                if (selectedIndex == 0) {
+                    finalIndex = tabbedWindows.count - 1
+                } else {
+                    finalIndex = selectedIndex - 1
+                }
             } else if (tabIndex == GHOSTTY_TAB_NEXT.rawValue) {
-                finalIndex = selectedIndex + 1
+                if (selectedIndex == tabbedWindows.count - 1) {
+                    finalIndex = 0
+                } else {
+                    finalIndex = selectedIndex + 1
+                }
             } else {
                 return
             }
