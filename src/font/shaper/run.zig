@@ -209,7 +209,10 @@ pub const RunIterator = struct {
             }
 
             // Add all the codepoints for our grapheme
-            try self.hooks.addCodepoint(cell.char, @intCast(cluster));
+            try self.hooks.addCodepoint(
+                if (cell.char == 0) ' ' else cell.char,
+                @intCast(cluster),
+            );
             if (cell.attrs.grapheme) {
                 var it = self.row.codepointIterator(j);
                 while (it.next()) |cp| {
