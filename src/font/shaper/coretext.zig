@@ -22,15 +22,17 @@ pub const Shaper = struct {
     alloc: Allocator,
 
     /// The string used for shaping the current run.
-    str: ?*macos.foundation.MutableString = null,
-    codepoints: ClusterBuf = .{},
-    clusters: ClusterBuf = .{},
+    codepoints: CodepointList = .{},
 
     /// The shared memory used for shaping results.
     cell_buf: CellBuf,
 
     const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
-    const ClusterBuf = std.ArrayListUnmanaged(u32);
+    const CodepointList = std.ArrayListUnmanaged(Codepoint);
+    const Codepoint = struct {
+        codepoint: u32,
+        cluster: u32,
+    };
 
     // These features are hardcoded to always be on by default. Users
     // can turn them off by setting the features to "-liga" for example.
@@ -51,8 +53,6 @@ pub const Shaper = struct {
     pub fn deinit(self: *Shaper) void {
         self.cell_buf.deinit(self.alloc);
         self.codepoints.deinit(self.alloc);
-        self.clusters.deinit(self.alloc);
-        if (self.str) |str| str.release();
     }
 
     pub fn runIterator(
@@ -79,10 +79,10 @@ pub const Shaper = struct {
         if (run.font_index.special() != null) {
             self.cell_buf.clearRetainingCapacity();
             try self.cell_buf.ensureTotalCapacity(self.alloc, self.codepoints.items.len);
-            for (self.codepoints.items, self.clusters.items) |cp, x| {
+            for (self.codepoints.items) |entry| {
                 self.cell_buf.appendAssumeCapacity(.{
-                    .x = @intCast(x),
-                    .glyph_index = @intCast(cp),
+                    .x = @intCast(entry.cluster),
+                    .glyph_index = @intCast(entry.codepoint),
                 });
             }
 
@@ -93,6 +93,26 @@ pub const Shaper = struct {
         var arena = std.heap.ArenaAllocator.init(self.alloc);
         defer arena.deinit();
         const alloc = arena.allocator();
+
+        // Build up our string contents
+        const str = str: {
+            const str = try macos.foundation.MutableString.create(0);
+            errdefer str.release();
+
+            for (self.codepoints.items) |entry| {
+                var unichars: [2]u16 = undefined;
+                const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
+                    entry.codepoint,
+                    &unichars,
+                );
+                const len: usize = if (pair) 2 else 1;
+                str.appendCharacters(unichars[0..len]);
+                // log.warn("append codepoint={} unichar_len={}", .{ cp, len });
+            }
+
+            break :str str;
+        };
+        defer str.release();
 
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
@@ -106,7 +126,7 @@ pub const Shaper = struct {
 
         // Create an attributed string from our string
         const attr_str = try macos.foundation.AttributedString.create(
-            self.str.?.string(),
+            str.string(),
             attr_dict,
         );
         defer attr_str.release();
@@ -130,7 +150,7 @@ pub const Shaper = struct {
         self.cell_buf.clearRetainingCapacity();
         try self.cell_buf.ensureTotalCapacity(self.alloc, glyphs.len);
         for (glyphs, positions, advances, indices) |glyph, pos, advance, index| {
-            const cluster = self.clusters.items[index];
+            const cluster = self.codepoints.items[index].cluster;
             self.cell_buf.appendAssumeCapacity(.{
                 .x = @intCast(cluster),
                 .glyph_index = glyph,
@@ -153,20 +173,14 @@ pub const Shaper = struct {
         shaper: *Shaper,
 
         pub fn prepare(self: *RunIteratorHook) !void {
-            if (self.shaper.str) |str| str.release();
-            self.shaper.str = try macos.foundation.MutableString.create(0);
             self.shaper.codepoints.clearRetainingCapacity();
-            self.shaper.clusters.clearRetainingCapacity();
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
-            var unichars: [2]u16 = undefined;
-            const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
-            const len: usize = if (pair) 2 else 1;
-            // log.warn("append codepoint={} unichar_len={}", .{ cp, len });
-            self.shaper.str.?.appendCharacters(unichars[0..len]);
-            try self.shaper.codepoints.append(self.shaper.alloc, cp);
-            try self.shaper.clusters.appendNTimes(self.shaper.alloc, cluster, len);
+            try self.shaper.codepoints.append(self.shaper.alloc, .{
+                .codepoint = cp,
+                .cluster = cluster,
+            });
         }
 
         pub fn finalize(self: RunIteratorHook) !void {
@@ -253,7 +267,7 @@ test "run iterator: empty cells with background set" {
 
             // The run should have length 3 because of the two background
             // cells.
-            try testing.expectEqual(@as(usize, 3), shaper.str.?.string().getLength());
+            try testing.expectEqual(@as(usize, 3), shaper.codepoints.items.len);
             const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 3), cells.len);
         }
