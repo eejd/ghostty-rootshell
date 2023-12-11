@@ -26,7 +26,11 @@ pub const Run = opaque {
         const len = self.getGlyphCount();
         const ptr = try alloc.alloc(graphics.Glyph, len);
         errdefer alloc.free(ptr);
-        c.CTRunGetGlyphs(@ptrCast(self), .{ .location = 0, .len = 0 }, ptr);
+        c.CTRunGetGlyphs(
+            @ptrCast(self),
+            .{ .location = 0, .length = 0 },
+            @ptrCast(ptr.ptr),
+        );
         return ptr;
     }
 
@@ -41,7 +45,11 @@ pub const Run = opaque {
         const len = self.getGlyphCount();
         const ptr = try alloc.alloc(graphics.Point, len);
         errdefer alloc.free(ptr);
-        c.CTRunGetPositions(@ptrCast(self), .{ .location = 0, .len = 0 }, ptr);
+        c.CTRunGetPositions(
+            @ptrCast(self),
+            .{ .location = 0, .length = 0 },
+            @ptrCast(ptr.ptr),
+        );
         return ptr;
     }
 
@@ -56,7 +64,30 @@ pub const Run = opaque {
         const len = self.getGlyphCount();
         const ptr = try alloc.alloc(graphics.Size, len);
         errdefer alloc.free(ptr);
-        c.CTRunGetAdvances(@ptrCast(self), .{ .location = 0, .len = 0 }, ptr);
+        c.CTRunGetAdvances(
+            @ptrCast(self),
+            .{ .location = 0, .length = 0 },
+            @ptrCast(ptr.ptr),
+        );
+        return ptr;
+    }
+
+    pub fn getStringIndicesPtr(self: *Run) []const usize {
+        const len = self.getGlyphCount();
+        if (len == 0) return &.{};
+        const ptr = c.CTRunGetStringIndicesPtr(@ptrCast(self)) orelse &.{};
+        return ptr[0..len];
+    }
+
+    pub fn getStringIndices(self: *Run, alloc: Allocator) ![]const usize {
+        const len = self.getGlyphCount();
+        const ptr = try alloc.alloc(usize, len);
+        errdefer alloc.free(ptr);
+        c.CTRunGetStringIndices(
+            @ptrCast(self),
+            .{ .location = 0, .length = 0 },
+            @ptrCast(ptr.ptr),
+        );
         return ptr;
     }
 };

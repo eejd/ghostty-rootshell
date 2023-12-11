@@ -66,6 +66,31 @@ pub const String = opaque {
     }
 };
 
+pub const MutableString = opaque {
+    pub fn create(cap: usize) !*MutableString {
+        return @ptrCast(c.CFStringCreateMutable(
+            null,
+            @intCast(cap),
+        ) orelse return Allocator.Error.OutOfMemory);
+    }
+
+    pub fn release(self: *MutableString) void {
+        foundation.CFRelease(self);
+    }
+
+    pub fn string(self: *MutableString) *String {
+        return @ptrCast(self);
+    }
+
+    pub fn appendCharacters(self: *MutableString, chars: []const u16) void {
+        c.CFStringAppendCharacters(
+            @ptrCast(self),
+            chars.ptr,
+            @intCast(chars.len),
+        );
+    }
+};
+
 pub const StringComparison = packed struct {
     case_insensitive: bool = false,
     _unused_2: bool = false,
