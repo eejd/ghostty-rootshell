@@ -2701,6 +2701,13 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             try self.io_thread.wakeup.notify();
         },
 
+        .scroll_page_lines => |lines| {
+            _ = self.io_thread.mailbox.push(.{
+                .scroll_viewport = .{ .delta = lines },
+            }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
+
         .jump_to_prompt => |delta| {
             _ = self.io_thread.mailbox.push(.{
                 .jump_to_prompt = @intCast(delta),

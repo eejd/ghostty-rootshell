@@ -167,6 +167,7 @@ pub const Action = union(enum) {
     scroll_page_up: void,
     scroll_page_down: void,
     scroll_page_fractional: f32,
+    scroll_page_lines: i16,
 
     /// Jump the viewport forward or back by prompt. Positive
     /// number is the number of prompts to jump forward, negative
