@@ -397,6 +397,10 @@ pub const Face = struct {
             break :offset_y @intFromFloat(@ceil(baseline_with_offset));
         };
 
+        // Get our advance
+        var advances: [glyphs.len]macos.graphics.Size = undefined;
+        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
+
         // std.log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
         //     rect,
         //     width,
@@ -416,10 +420,7 @@ pub const Face = struct {
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
-
-            // This is not used, so we don't bother calculating it. If we
-            // ever need it, we can calculate it using getAdvancesForGlyph.
-            .advance_x = 0,
+            .advance_x = @floatCast(advances[0].width),
         };
     }
 
