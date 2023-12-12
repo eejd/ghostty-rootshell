@@ -45,6 +45,10 @@ const Thickness = enum {
     }
 };
 
+inline fn sq(x: anytype) @TypeOf(x) {
+    return x * x;
+}
+
 pub fn renderGlyph(
     self: Powerline,
     alloc: Allocator,
@@ -189,72 +193,124 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
     const center_x = width / 2 - 1;
     const center_y = height / 2 - 1;
 
-    // Our radius.
-    const radius = @min(width, height) / 2;
+    // Our radii. We're technically drawing an ellipse here to ensure that this
+    // works for fonts with different aspect ratios than a typical 2:1 H*W, e.g.
+    // Iosevka (which is around 2.6:1).
+    const radius_x = width / 2 - 1; // This gives us a small margin for smoothing
+    const radius_y = height / 2;
 
     // Pre-allocate a matrix to plot the points on.
     const cap = height * width;
     var points = try alloc.alloc(u8, cap);
     defer alloc.free(points);
     @memset(points, 0);
-    {
-        // Using a midpoint algorithm.
-        // As explained on https://yurichev.com/news/20220322_circle/ and
-        // other sites
-        var x: i32 = @intCast(radius);
-        var y: i32 = 0;
-        var radius_err: i32 = 0;
 
+    {
+        // This is a midpoint ellipse algorithm, similar to a midpoint circle
+        // algorithm in that we only draw the octants we need and then reflect
+        // the result across the other axes. Since an ellipse has two radii, we
+        // need to calculate two octants instead of one. There are variations
+        // on the algorithm and you can find many examples online. This one
+        // does use some floating point math in calculating the decision
+        // parameter, but I've found it clear in its implementation and it does
+        // not require adjustment for integer error.
+
+        // Declare some casted constants for use in various calculations below
+        const rx: i32 = @intCast(radius_x);
+        const ry: i32 = @intCast(radius_y);
+        const rxf: f64 = @floatFromInt(radius_x);
+        const ryf: f64 = @floatFromInt(radius_y);
         const cx: i32 = @intCast(center_x);
         const cy: i32 = @intCast(center_y);
 
-        while (x >= y) {
+        // Our plotting x and y
+        var x: i32 = 0;
+        var y: i32 = @intCast(radius_y);
+
+        // Decision parameter, initialized for region 1
+        var dparam: f64 = sq(ryf) - sq(rxf) * ryf + sq(rxf) * 0.25;
+
+        // Region 1
+        while (2 * sq(ry) * x < 2 * sq(rx) * y) {
             // Right side
             const x1 = @max(0, cx + x);
             const y1 = @max(0, cy + y);
             const x2 = @max(0, cx + x);
             const y2 = @max(0, cy - y);
-            const x3 = @max(0, cx + y);
-            const y3 = @max(0, cy + x);
-            const x4 = @max(0, cx + y);
-            const y4 = @max(0, cy - x);
 
             // Left side
-            const x5 = @max(0, cx - x);
-            const y5 = @max(0, cy + y);
-            const x6 = @max(0, cx - x);
-            const y6 = @max(0, cy - y);
-            const x7 = @max(0, cx - y);
-            const y7 = @max(0, cy + x);
-            const x8 = @max(0, cx - y);
-            const y8 = @max(0, cy - x);
+            const x3 = @max(0, cx - x);
+            const y3 = @max(0, cy + y);
+            const x4 = @max(0, cx - x);
+            const y4 = @max(0, cy - y);
 
             // Points
             const p1 = y1 * width + x1;
             const p2 = y2 * width + x2;
             const p3 = y3 * width + x3;
             const p4 = y4 * width + x4;
-            const p5 = y5 * width + x5;
-            const p6 = y6 * width + x6;
-            const p7 = y7 * width + x7;
-            const p8 = y8 * width + x8;
 
             // Set the points in the matrix, ignore any out of bounds
             if (p1 < cap) points[p1] = 0xFF;
             if (p2 < cap) points[p2] = 0xFF;
             if (p3 < cap) points[p3] = 0xFF;
             if (p4 < cap) points[p4] = 0xFF;
-            if (p5 < cap) points[p5] = 0xFF;
-            if (p6 < cap) points[p6] = 0xFF;
-            if (p7 < cap) points[p7] = 0xFF;
-            if (p8 < cap) points[p8] = 0xFF;
 
             // Calculate next pixels based on midpoint bounds
-            y += 1;
-            radius_err += 2 * y + 1;
-            if (radius_err > 0) {
-                x -= 1;
-                radius_err -= 2 * x + 1;
+            x += 1;
+            if (dparam < 0) {
+                const xf: f64 = @floatFromInt(x);
+                dparam += 2 * sq(ryf) * xf + sq(ryf);
+            } else {
+                y -= 1;
+                const xf: f64 = @floatFromInt(x);
+                const yf: f64 = @floatFromInt(y);
+                dparam += 2 * sq(ryf) * xf - 2 * sq(rxf) * yf + sq(ryf);
+            }
+        }
+
+        // Region 2
+        {
+            // Reset our decision parameter for region 2
+            const xf: f64 = @floatFromInt(x);
+            const yf: f64 = @floatFromInt(y);
+            dparam = sq(ryf) * sq(xf + 0.5) + sq(rxf) * sq(yf - 1) - sq(rxf) * sq(ryf);
+        }
+        while (y >= 0) {
+            // Right side
+            const x1 = @max(0, cx + x);
+            const y1 = @max(0, cy + y);
+            const x2 = @max(0, cx + x);
+            const y2 = @max(0, cy - y);
+
+            // Left side
+            const x3 = @max(0, cx - x);
+            const y3 = @max(0, cy + y);
+            const x4 = @max(0, cx - x);
+            const y4 = @max(0, cy - y);
+
+            // Points
+            const p1 = y1 * width + x1;
+            const p2 = y2 * width + x2;
+            const p3 = y3 * width + x3;
+            const p4 = y4 * width + x4;
+
+            // Set the points in the matrix, ignore any out of bounds
+            if (p1 < cap) points[p1] = 0xFF;
+            if (p2 < cap) points[p2] = 0xFF;
+            if (p3 < cap) points[p3] = 0xFF;
+            if (p4 < cap) points[p4] = 0xFF;
+
+            // Calculate next pixels based on midpoint bounds
+            y -= 1;
+            if (dparam > 0) {
+                const yf: f64 = @floatFromInt(y);
+                dparam -= 2 * sq(rxf) * yf + sq(rxf);
+            } else {
+                x += 1;
+                const xf: f64 = @floatFromInt(x);
+                const yf: f64 = @floatFromInt(y);
+                dparam += 2 * sq(ryf) * xf - 2 * sq(rxf) * yf + sq(rxf);
             }
         }
     }
