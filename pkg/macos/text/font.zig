@@ -47,6 +47,10 @@ pub const Font = opaque {
         return @ptrCast(@constCast(c.CTFontCopyFontDescriptor(@ptrCast(self))));
     }
 
+    pub fn copyFeatures(self: *Font) *foundation.Array {
+        return @ptrCast(@constCast(c.CTFontCopyFeatures(@ptrCast(self))));
+    }
+
     pub fn getGlyphCount(self: *Font) usize {
         return @intCast(c.CTFontGetGlyphCount(@ptrCast(self)));
     }

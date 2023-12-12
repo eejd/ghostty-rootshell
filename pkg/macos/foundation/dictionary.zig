@@ -39,6 +39,23 @@ pub const Dictionary = opaque {
             key,
         )));
     }
+
+    pub fn getKeysAndValues(self: *Dictionary, alloc: Allocator) !struct {
+        keys: []?*const anyopaque,
+        values: []?*const anyopaque,
+    } {
+        const count = self.getCount();
+        const keys = try alloc.alloc(?*const anyopaque, count);
+        errdefer alloc.free(keys);
+        const values = try alloc.alloc(?*const anyopaque, count);
+        errdefer alloc.free(values);
+        c.CFDictionaryGetKeysAndValues(
+            @ptrCast(self),
+            @ptrCast(keys.ptr),
+            @ptrCast(values.ptr),
+        );
+        return .{ .keys = keys, .values = values };
+    }
 };
 
 pub const MutableDictionary = opaque {
