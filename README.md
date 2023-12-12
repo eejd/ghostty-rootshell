@@ -523,7 +523,7 @@ Nix users can use the following command to format with Alejanda:
 nix develop -c alejandra .
 ```
 
-Non-Nix users should install Alejandra and use the follwing command to format with Alejanda:
+Non-Nix users should install Alejandra and use the following command to format with Alejanda:
 
 ```
 alejandra .
