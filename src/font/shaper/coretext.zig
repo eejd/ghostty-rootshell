@@ -17,6 +17,14 @@ const terminal = @import("../../terminal/main.zig");
 const log = std.log.scoped(.font_shaper);
 
 /// Shaper that uses CoreText.
+///
+/// WARNING: This is not ready for production usage. This is why this shaper
+/// can't be configured at build-time without modifying the source. There are
+/// a couple major missing features (quirks mode, font features) and I haven't
+/// very carefully audited all my memory management.
+///
+/// The purpose of this shaper is to keep us honest with our other shapers
+/// and to help us find bugs in our other shapers.
 pub const Shaper = struct {
     /// The allocated used for the feature list and cell buf.
     alloc: Allocator,
@@ -118,6 +126,7 @@ pub const Shaper = struct {
 
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
         // TODO: quirks fonts
+        // TODO: font features
 
         // Special fonts aren't shaped and their codepoint == glyph so we
         // can just return the codepoints as-is.
