@@ -58,6 +58,8 @@
         default = ghostty;
       };
 
+      formatter.${system} = pkgs-stable.alejandra;
+
       # Our supported systems are the same supported systems as the Zig binaries.
     }) (builtins.attrNames zig.packages));
 }
