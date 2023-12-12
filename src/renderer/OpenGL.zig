@@ -1490,15 +1490,6 @@ pub fn updateCell(
             .emoji => .fg_color,
         };
 
-        // If this glyph doesn't have an advance, then we assume it is
-        // connected to the previous glyph (perhaps an unsafe assumption...)
-        // and offset by the cell width.
-        // Related: https://github.com/mitchellh/ghostty/issues/1046
-        const extra_offset: i32 = if (glyph.advance_x == 0)
-            @intCast(self.grid_metrics.cell_width)
-        else
-            0;
-
         self.cells.appendAssumeCapacity(.{
             .mode = mode,
             .grid_col = @intCast(x),
@@ -1508,8 +1499,8 @@ pub fn updateCell(
             .glyph_y = glyph.atlas_y,
             .glyph_width = glyph.width,
             .glyph_height = glyph.height,
-            .glyph_offset_x = glyph.offset_x + extra_offset,
-            .glyph_offset_y = glyph.offset_y,
+            .glyph_offset_x = glyph.offset_x + shaper_cell.x_offset,
+            .glyph_offset_y = glyph.offset_y + shaper_cell.y_offset,
             .r = colors.fg.r,
             .g = colors.fg.g,
             .b = colors.fg.b,
