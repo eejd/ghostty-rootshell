@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
 const harfbuzz = @import("shaper/harfbuzz.zig");
+const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
 pub usingnamespace @import("shaper/run.zig");
 
@@ -11,6 +12,8 @@ pub const Shaper = switch (options.backend) {
     .coretext_freetype,
     .coretext,
     => harfbuzz.Shaper,
+
+    //.coretext => coretext.Shaper,
 
     .web_canvas => web_canvas.Shaper,
 };
@@ -23,6 +26,10 @@ pub const Cell = struct {
     /// always on the same line, only the X is stored. It is expected the
     /// caller has access to the original screen cell.
     x: u16,
+
+    /// An additional offset to apply to the rendering.
+    x_offset: i16 = 0,
+    y_offset: i16 = 0,
 
     /// The glyph index for this cell. The font index to use alongside
     /// this cell is available in the text run. This glyph index is only

@@ -24,6 +24,10 @@ pub const Shaper = struct {
     /// The string used for shaping the current run.
     codepoints: CodepointList = .{},
 
+    /// The font features we want to use. The hardcoded features are always
+    /// set first.
+    features: FeatureList = .{},
+
     /// The shared memory used for shaping results.
     cell_buf: CellBuf,
 
@@ -34,6 +38,29 @@ pub const Shaper = struct {
         cluster: u32,
     };
 
+    const FeatureList = std.ArrayListUnmanaged(Feature);
+    const Feature = struct {
+        key: *macos.foundation.String,
+        value: *macos.foundation.Number,
+
+        pub fn init(name_raw: []const u8) !Feature {
+            const name = if (name_raw[0] == '-') name_raw[1..] else name_raw;
+            const value_num: c_int = if (name_raw[0] == '-') 0 else 1;
+
+            var key = try macos.foundation.String.createWithBytes(name, .utf8, false);
+            errdefer key.release();
+            var value = try macos.foundation.Number.create(.int, &value_num);
+            defer value.release();
+
+            return .{ .key = key, .value = value };
+        }
+
+        pub fn deinit(self: Feature) void {
+            self.key.release();
+            self.value.release();
+        }
+    };
+
     // These features are hardcoded to always be on by default. Users
     // can turn them off by setting the features to "-liga" for example.
     const hardcoded_features = [_][]const u8{ "dlig", "liga" };
@@ -41,18 +68,36 @@ pub const Shaper = struct {
     /// The cell_buf argument is the buffer to use for storing shaped results.
     /// This should be at least the number of columns in the terminal.
     pub fn init(alloc: Allocator, opts: font.shape.Options) !Shaper {
-        // TODO: features
-        _ = opts;
+        var feats: FeatureList = .{};
+        errdefer {
+            for (feats.items) |feature| feature.deinit();
+            feats.deinit(alloc);
+        }
+
+        for (hardcoded_features) |name| {
+            const feat = try Feature.init(name);
+            errdefer feat.deinit();
+            try feats.append(alloc, feat);
+        }
+
+        for (opts.features) |name| {
+            const feat = try Feature.init(name);
+            errdefer feat.deinit();
+            try feats.append(alloc, feat);
+        }
 
         return Shaper{
             .alloc = alloc,
             .cell_buf = .{},
+            .features = feats,
         };
     }
 
     pub fn deinit(self: *Shaper) void {
         self.cell_buf.deinit(self.alloc);
         self.codepoints.deinit(self.alloc);
+        for (self.features.items) |feature| feature.deinit();
+        self.features.deinit(self.alloc);
     }
 
     pub fn runIterator(
@@ -147,23 +192,43 @@ pub const Shaper = struct {
         assert(glyphs.len == advances.len);
         assert(glyphs.len == indices.len);
 
+        // This keeps track of the current offsets within a single cell.
+        var cell_offset: struct {
+            cluster: u32 = 0,
+            x: f64 = 0,
+            y: f64 = 0,
+        } = .{};
+
         self.cell_buf.clearRetainingCapacity();
         try self.cell_buf.ensureTotalCapacity(self.alloc, glyphs.len);
         for (glyphs, positions, advances, indices) |glyph, pos, advance, index| {
+            // Our cluster is also our cell X position. If the cluster changes
+            // then we need to reset our current cell offsets.
             const cluster = self.codepoints.items[index].cluster;
+            if (cell_offset.cluster != cluster) cell_offset = .{
+                .cluster = cluster,
+            };
+
             self.cell_buf.appendAssumeCapacity(.{
                 .x = @intCast(cluster),
+                .x_offset = @intFromFloat(@round(cell_offset.x)),
+                .y_offset = @intFromFloat(@round(cell_offset.y)),
                 .glyph_index = glyph,
             });
 
+            // Add our advances to keep track of our current cell offsets.
+            // Advances apply to the NEXT cell.
+            cell_offset.x += advance.width;
+            cell_offset.y += advance.height;
+
             _ = pos;
-            _ = advance;
             // const i = self.cell_buf.items.len - 1;
             // log.warn(
-            //     "i={} glyph={} pos={} advance={} index={} cluster={}",
-            //     .{ i, glyph, pos, advance, index, cluster },
+            //     "i={} codepoint={} glyph={} pos={} advance={} index={} cluster={}",
+            //     .{ i, self.codepoints.items[index].codepoint, glyph, pos, advance, index, cluster },
             // );
         }
+        //log.warn("-------------------------------", .{});
 
         return self.cell_buf.items;
     }
