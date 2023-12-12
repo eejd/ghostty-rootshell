@@ -13,6 +13,8 @@ pub const Shaper = switch (options.backend) {
     .coretext,
     => harfbuzz.Shaper,
 
+    // Has missing features, can't be used yet. See the comments in
+    // the coretext.zig file for more details.
     //.coretext => coretext.Shaper,
 
     .web_canvas => web_canvas.Shaper,
