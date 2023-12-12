@@ -96,6 +96,13 @@ pub const Container = union(enum) {
             }
         }
 
+        pub fn equalize(self: Elem) i16 {
+            return switch (self) {
+                .surface => 1,
+                .split => |s| s.equalize(),
+            };
+        }
+
         /// The last surface in this container in the direction specified.
         /// Direction must be "top_left" or "bottom_right".
         pub fn deepestSurface(self: Elem, side: SplitSide) ?*Surface {
@@ -580,6 +587,15 @@ pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, 
         Split.Orientation.fromResizeDirection(direction),
     ) orelse return;
     s.moveDivider(direction, amount);
+}
+
+pub fn equalizeSplits(self: *const Surface) void {
+    const tab = self.container.tab() orelse return;
+    const top_split = switch (tab.elem) {
+        .split => |s| s,
+        else => return,
+    };
+    _ = top_split.equalize();
 }
 
 pub fn newTab(self: *Surface) !void {
