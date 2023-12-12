@@ -1376,6 +1376,8 @@ fn keyEvent(
 
             else => {},
         }
+        const device = c.gdk_event_get_device(event);
+        mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
         break :mods mods;
     };
 
