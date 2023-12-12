@@ -133,17 +133,43 @@ pub const Shaper = struct {
         // If it isn't true, I'd like to catch it and learn more.
         assert(info.len == pos.len);
 
+        // This keeps track of the current offsets within a single cell.
+        var cell_offset: struct {
+            cluster: u32 = 0,
+            x: i32 = 0,
+            y: i32 = 0,
+        } = .{};
+
         // Convert all our info/pos to cells and set it.
         self.cell_buf.clearRetainingCapacity();
         try self.cell_buf.ensureTotalCapacity(self.alloc, info.len);
-        for (info) |v| {
+        for (info, pos) |info_v, pos_v| {
+            if (info_v.cluster != cell_offset.cluster) cell_offset = .{
+                .cluster = info_v.cluster,
+            };
+
             self.cell_buf.appendAssumeCapacity(.{
-                .x = @intCast(v.cluster),
-                .glyph_index = v.codepoint,
+                .x = @intCast(info_v.cluster),
+                .x_offset = @intCast(cell_offset.x),
+                .y_offset = @intCast(cell_offset.y),
+                .glyph_index = info_v.codepoint,
             });
 
-            // log.warn("i={} info={} pos={} cell={}", .{ i, v, pos[i], self.cell_buf[i] });
+            if (font.options.backend.hasFreetype()) {
+                // Freetype returns 26.6 fixed point values, so we need to
+                // divide by 64 to get the actual value. I can't find any
+                // HB API to stop this.
+                cell_offset.x += pos_v.x_advance >> 6;
+                cell_offset.y += pos_v.y_advance >> 6;
+            } else {
+                cell_offset.x += pos_v.x_advance;
+                cell_offset.y += pos_v.y_advance;
+            }
+
+            // const i = self.cell_buf.items.len - 1;
+            // log.warn("i={} info={} pos={} cell={}", .{ i, info_v, pos_v, self.cell_buf.items[i] });
         }
+        //log.warn("----------------", .{});
 
         return self.cell_buf.items;
     }
