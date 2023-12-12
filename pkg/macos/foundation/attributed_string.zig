@@ -6,6 +6,17 @@ const text = @import("../text.zig");
 const c = @import("c.zig");
 
 pub const AttributedString = opaque {
+    pub fn create(
+        str: *foundation.String,
+        attributes: *foundation.Dictionary,
+    ) Allocator.Error!*AttributedString {
+        return @constCast(@ptrCast(c.CFAttributedStringCreate(
+            null,
+            @ptrCast(str),
+            @ptrCast(attributes),
+        ) orelse return Allocator.Error.OutOfMemory));
+    }
+
     pub fn release(self: *AttributedString) void {
         foundation.CFRelease(self);
     }

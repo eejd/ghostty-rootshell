@@ -49,6 +49,10 @@ pub const Line = opaque {
             leading,
         );
     }
+
+    pub fn getGlyphRuns(self: *Line) *foundation.Array {
+        return @constCast(@ptrCast(c.CTLineGetGlyphRuns(@ptrCast(self))));
+    }
 };
 
 pub const LineBoundsOptions = packed struct {

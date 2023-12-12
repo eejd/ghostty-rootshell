@@ -17,4 +17,12 @@ pub const Font = struct {
     pub fn destroy(self: *Font) void {
         c.hb_font_destroy(self.handle);
     }
+
+    pub fn setScale(self: *Font, x: u32, y: u32) void {
+        c.hb_font_set_scale(
+            self.handle,
+            @intCast(x),
+            @intCast(y),
+        );
+    }
 };

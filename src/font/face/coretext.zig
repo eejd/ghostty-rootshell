@@ -77,6 +77,7 @@ pub const Face = struct {
     pub fn initFont(ct_font: *macos.text.Font, opts: font.face.Options) !Face {
         var hb_font = try harfbuzz.coretext.createFont(ct_font);
         errdefer hb_font.destroy();
+        hb_font.setScale(opts.size.pixels(), opts.size.pixels());
 
         const traits = ct_font.getSymbolicTraits();
         const metrics = metrics: {
