@@ -181,23 +181,42 @@ pub const RGB = struct {
         return @intCast(@as(usize, color) * std.math.maxInt(u8) / divisor);
     }
 
-    /// Parse a color specification of the form
+    /// Parse a color specification.
     ///
-    ///     rgb:<red>/<green>/<blue>
+    /// Any of the following forms are accepted:
     ///
-    ///     <red>, <green>, <blue> := h | hh | hhh | hhhh
+    /// 1. rgb:<red>/<green>/<blue>
     ///
-    /// where `h` is a single hexadecimal digit.
+    ///    <red>, <green>, <blue> := h | hh | hhh | hhhh
     ///
-    /// Alternatively, the form
+    ///    where `h` is a single hexadecimal digit.
     ///
-    ///     rgbi:<red>/<green>/<blue>
+    /// 2. rgbi:<red>/<green>/<blue>
     ///
-    /// where <red>, <green>, and <blue> are floating point values between 0.0
-    /// and 1.0 (inclusive) is also accepted.
+    ///    where <red>, <green>, and <blue> are floating point values between
+    ///    0.0 and 1.0 (inclusive).
+    ///
+    /// 3. #hhhhhh
+    ///
+    ///    where `h` is a single hexadecimal digit.
     pub fn parse(value: []const u8) !RGB {
-        const minimum_length = "rgb:a/a/a".len;
-        if (value.len < minimum_length or !std.mem.eql(u8, value[0..3], "rgb")) {
+        if (value.len == 0) {
+            return error.InvalidFormat;
+        }
+
+        if (value[0] == '#') {
+            if (value.len != 7) {
+                return error.InvalidFormat;
+            }
+
+            return RGB{
+                .r = try RGB.fromHex(value[1..3]),
+                .g = try RGB.fromHex(value[3..5]),
+                .b = try RGB.fromHex(value[5..7]),
+            };
+        }
+
+        if (value.len < "rgb:a/a/a".len or !std.mem.eql(u8, value[0..3], "rgb")) {
             return error.InvalidFormat;
         }
 
@@ -271,6 +290,8 @@ test "RGB.parse" {
     try testing.expectEqual(RGB{ .r = 255, .g = 0, .b = 0 }, try RGB.parse("rgbi:1.0/0/0"));
     try testing.expectEqual(RGB{ .r = 127, .g = 160, .b = 0 }, try RGB.parse("rgb:7f/a0a0/0"));
     try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("rgb:f/ff/fff"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#ffffff"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 0, .b = 16 }, try RGB.parse("#ff0010"));
 
     // Invalid format
     try testing.expectError(error.InvalidFormat, RGB.parse("rgb;"));
@@ -283,4 +304,9 @@ test "RGB.parse" {
     try testing.expectError(error.InvalidFormat, RGB.parse("rgbi:a/a/a"));
     try testing.expectError(error.InvalidFormat, RGB.parse("rgb:0.5/0.0/1.0"));
     try testing.expectError(error.InvalidFormat, RGB.parse("rgb:not/hex/zz"));
+    try testing.expectError(error.InvalidFormat, RGB.parse("#"));
+    try testing.expectError(error.InvalidFormat, RGB.parse("#ff"));
+    try testing.expectError(error.InvalidFormat, RGB.parse("#ffff"));
+    try testing.expectError(error.InvalidFormat, RGB.parse("#fffff"));
+    try testing.expectError(error.InvalidFormat, RGB.parse("#gggggg"));
 }
