@@ -31,32 +31,35 @@
   };
 
   outputs = {
-    nixpkgs-unstable
-  , nixpkgs-stable
-  , nixpkgs-zig-0-12
-  , zig
-  , zls
-  , ...
-  }: builtins.foldl' nixpkgs-stable.lib.recursiveUpdate {} (builtins.map (system: let
-    pkgs-stable = nixpkgs-stable.legacyPackages.${system};
-    pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
-    pkgs-zig-0-12 = nixpkgs-zig-0-12.legacyPackages.${system};
-  in {
-    devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
-      inherit (pkgs-unstable) tracy;
-      inherit (zls.packages.${system}) zls;
+    nixpkgs-unstable,
+    nixpkgs-stable,
+    nixpkgs-zig-0-12,
+    zig,
+    zls,
+    ...
+  }:
+    builtins.foldl' nixpkgs-stable.lib.recursiveUpdate {} (builtins.map (system: let
+      pkgs-stable = nixpkgs-stable.legacyPackages.${system};
+      pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
+      pkgs-zig-0-12 = nixpkgs-zig-0-12.legacyPackages.${system};
+    in {
+      devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
+        inherit (pkgs-unstable) tracy;
+        inherit (zls.packages.${system}) zls;
 
-      zig = zig.packages.${system}.master;
-      wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
-    };
-
-    packages.${system} = rec {
-      ghostty = pkgs-stable.callPackage ./nix/package.nix {
-        inherit (pkgs-zig-0-12) zig_0_12;
+        zig = zig.packages.${system}.master;
+        wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
       };
-      default = ghostty;
-    };
 
-  # Our supported systems are the same supported systems as the Zig binaries.
-  }) (builtins.attrNames zig.packages));
+      packages.${system} = rec {
+        ghostty = pkgs-stable.callPackage ./nix/package.nix {
+          inherit (pkgs-zig-0-12) zig_0_12;
+        };
+        default = ghostty;
+      };
+
+      formatter.${system} = pkgs-stable.alejandra;
+
+      # Our supported systems are the same supported systems as the Zig binaries.
+    }) (builtins.attrNames zig.packages));
 }

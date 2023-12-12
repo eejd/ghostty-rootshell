@@ -492,6 +492,8 @@ on vastly improving this experience over time.
 
 ### Linting
 
+#### Prettier
+
 Ghostty's docs and resources (not including Zig code) are linted using
 [Prettier](https://prettier.io) with out-of-the-box settings. A Prettier CI
 check will fail builds with improper formatting. Therefore, if you are
@@ -502,7 +504,32 @@ run this from the repo root before you commit:
 prettier --write .
 ```
 
-Make sure your Prettier version matches the version of in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
+Make sure your Prettier version matches the version of Prettier in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
+
+Nix users can use the following command to format with Prettier:
+
+```
+nix develop -c prettier --write .
+```
+
+#### Alejandra
+
+Nix modules are formatted with [Alejandra](https://github.com/kamadorueda/alejandra/). An Alejandra CI check
+will fail builds with improper formatting.
+
+Nix users can use the following command to format with Alejanda:
+
+```
+nix develop -c alejandra .
+```
+
+Non-Nix users should install Alejandra and use the following command to format with Alejandra:
+
+```
+alejandra .
+```
+
+Make sure your Alejandra version matches the version of Alejandra in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
 
 ### Nix Package
 
