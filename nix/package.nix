@@ -1,30 +1,26 @@
 {
-  lib
-, stdenv
-
-, bzip2
-, expat
-, fontconfig
-, freetype
-, harfbuzz
-, libpng
-, pixman
-, zlib
-
-, libGL
-, libX11
-, libXcursor
-, libXi
-, libXrandr
-
-, glib
-, gtk4
-, libadwaita
-
-, git
-, ncurses
-, pkg-config
-, zig_0_12
+  lib,
+  stdenv,
+  bzip2,
+  expat,
+  fontconfig,
+  freetype,
+  harfbuzz,
+  libpng,
+  pixman,
+  zlib,
+  libGL,
+  libX11,
+  libXcursor,
+  libXi,
+  libXrandr,
+  glib,
+  gtk4,
+  libadwaita,
+  git,
+  ncurses,
+  pkg-config,
+  zig_0_12,
 }: let
   # The Zig hook has no way to select the release type without actual
   # overriding of the default flags.
@@ -51,99 +47,103 @@
   # derivation in your store already. If so, just update the value as above.)
   zigCacheHash = import ./zigCacheHash.nix;
 
-  zigCache = src: stdenv.mkDerivation {
-    inherit src;
-    name = "ghostty-cache";
-    nativeBuildInputs = [ git zig_0_12.hook ];
+  zigCache = src:
+    stdenv.mkDerivation {
+      inherit src;
+      name = "ghostty-cache";
+      nativeBuildInputs = [git zig_0_12.hook];
+
+      dontConfigure = true;
+      dontUseZigBuild = true;
+      dontUseZigInstall = true;
+      dontFixup = true;
+
+      buildPhase = ''
+        runHook preBuild
+
+        zig build --fetch
+
+        runHook postBuild
+      '';
+
+      installPhase = ''
+        runHook preInstall
+
+        cp -r --reflink=auto $ZIG_GLOBAL_CACHE_DIR $out
+
+        runHook postInstall
+      '';
+
+      outputHashMode = "recursive";
+      outputHash = zigCacheHash;
+    };
+in
+  stdenv.mkDerivation (finalAttrs: {
+    pname = "ghostty";
+    version = "0.1.0";
+
+    src = ./..;
+
+    nativeBuildInputs = [
+      git
+      ncurses
+      pkg-config
+      zig012Hook
+    ];
+
+    buildInputs =
+      [
+        libGL
+      ]
+      ++ lib.optionals stdenv.isLinux [
+        bzip2
+        expat
+        fontconfig
+        freetype
+        harfbuzz
+        libpng
+        pixman
+        zlib
+
+        libX11
+        libXcursor
+        libXi
+        libXrandr
+
+        libadwaita
+        gtk4
+        glib
+      ];
 
     dontConfigure = true;
-    dontUseZigBuild = true;
-    dontUseZigInstall = true;
-    dontFixup = true;
 
-    buildPhase = ''
-      runHook preBuild
+    zigBuildFlags = "-Dversion-string=${finalAttrs.version}";
 
-      zig build --fetch
-
-      runHook postBuild
+    preBuild = ''
+      rm -rf $ZIG_GLOBAL_CACHE_DIR
+      cp -r --reflink=auto ${zigCache finalAttrs.src} $ZIG_GLOBAL_CACHE_DIR
+      chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
     '';
 
-    installPhase = ''
-      runHook preInstall
+    outputs = ["out" "terminfo" "shell_integration"];
 
-      cp -r --reflink=auto $ZIG_GLOBAL_CACHE_DIR $out
+    postInstall = ''
+      terminfo_src=${
+        if stdenv.isDarwin
+        then ''"$out/Applications/Ghostty.app/Contents/Resources/terminfo"''
+        else "$out/share/terminfo"
+      }
 
-      runHook postInstall
+      mkdir -p $terminfo/share
+      cp -r "$terminfo_src" $terminfo/share/terminfo
+
+      mkdir -p $shell_integration
+      cp -r $out/share/shell-integration $shell_integration/shell-integration
     '';
 
-    outputHashMode = "recursive";
-    outputHash = zigCacheHash;
-  };
-in stdenv.mkDerivation (finalAttrs: {
-  pname = "ghostty";
-  version = "0.1.0";
-
-  src = ./..;
-
-  nativeBuildInputs = [
-    git
-    ncurses
-    pkg-config
-    zig012Hook
-  ];
-
-  buildInputs = [
-    libGL
-  ] ++ lib.optionals stdenv.isLinux [
-    bzip2
-    expat
-    fontconfig
-    freetype
-    harfbuzz
-    libpng
-    pixman
-    zlib
-
-    libX11
-    libXcursor
-    libXi
-    libXrandr
-
-    libadwaita
-    gtk4
-    glib
-  ];
-
-  dontConfigure = true;
-
-  zigBuildFlags = "-Dversion-string=${finalAttrs.version}";
-
-  preBuild = ''
-    rm -rf $ZIG_GLOBAL_CACHE_DIR
-    cp -r --reflink=auto ${zigCache finalAttrs.src} $ZIG_GLOBAL_CACHE_DIR
-    chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
-  '';
-
-  outputs = [ "out" "terminfo" "shell_integration" ];
-
-  postInstall = ''
-    terminfo_src=${
-      if stdenv.isDarwin
-      then ''"$out/Applications/Ghostty.app/Contents/Resources/terminfo"''
-      else "$out/share/terminfo"
-    }
-
-    mkdir -p $terminfo/share
-    cp -r "$terminfo_src" $terminfo/share/terminfo
-
-    mkdir -p $shell_integration
-    cp -r $out/share/shell-integration $shell_integration/shell-integration
-  '';
-
-  meta = with lib; {
-    homepage = "https://github.com/mitchellh/ghostty";
-    license = licenses.mit;
-    platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
-  };
-})
+    meta = with lib; {
+      homepage = "https://github.com/mitchellh/ghostty";
+      license = licenses.mit;
+      platforms = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
+    };
+  })
