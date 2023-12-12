@@ -214,6 +214,24 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
         // does use some floating point math in calculating the decision
         // parameter, but I've found it clear in its implementation and it does
         // not require adjustment for integer error.
+        //
+        // This algorithm has undergone some iterations, so the following
+        // references might be helpful for understanding:
+        //
+        //   * "Drawing a circle, point by point, without floating point
+        //   support" (Dennis Yurichev,
+        //   https://yurichev.com/news/20220322_circle/), which describes the
+        //   midpoint circle algorithm and implementation we initially adapted
+        //   here.
+        //
+        //   * "Ellipse-Generating Algorithms" (RTU Latvia,
+        //   https://daugavpils.rtu.lv/wp-content/uploads/sites/34/2020/11/LEC_3.pdf),
+        //   which was used to further adapt the algorithm for ellipses.
+        //
+        //   * "An Effective Approach to Minimize Error in Midpoint Ellipse
+        //   Drawing Algorithm" (Dr. M. Javed Idrisi, Aayesha Ashraf,
+        //   https://arxiv.org/abs/2103.04033), which includes a synopsis of
+        //   the history of ellipse drawing algorithms, and further references.
 
         // Declare some casted constants for use in various calculations below
         const rx: i32 = @intCast(radius_x);
