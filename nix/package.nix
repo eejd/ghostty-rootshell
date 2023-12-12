@@ -125,7 +125,21 @@ in stdenv.mkDerivation (finalAttrs: {
     chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
   '';
 
-  outputs = [ "out" ];
+  outputs = [ "out" "terminfo" "shell_integration" ];
+
+  postInstall = ''
+    terminfo_src=${
+      if stdenv.isDarwin
+      then ''"$out/Applications/Ghostty.app/Contents/Resources/terminfo"''
+      else "$out/share/terminfo"
+    }
+
+    mkdir -p $terminfo/share
+    cp -r "$terminfo_src" $terminfo/share/terminfo
+
+    mkdir -p $shell_integration
+    cp -r $out/share/shell-integration $shell_integration/shell-integration
+  '';
 
   meta = with lib; {
     homepage = "https://github.com/mitchellh/ghostty";
