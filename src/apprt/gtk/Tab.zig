@@ -132,9 +132,15 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
 
+    // Clicks
+    const gesture_tab_click = c.gtk_gesture_click_new();
+    c.gtk_gesture_single_set_button(@ptrCast(gesture_tab_click), 0);
+    c.gtk_widget_add_controller(label_box_widget, @ptrCast(gesture_tab_click));
+
     // Attach all events
     _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&gtkTabClick), self, null, c.G_CONNECT_DEFAULT);
 
     // Switch to the new tab
     c.gtk_notebook_set_current_page(window.notebook, page_idx);
@@ -184,4 +190,18 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     // When our box is destroyed, we want to destroy our tab, too.
     const tab: *Tab = @ptrCast(@alignCast(ud));
     tab.destroy(tab.window.app.core_app.alloc);
+}
+
+fn gtkTabClick(
+    gesture: *c.GtkGestureClick,
+    _: c.gint,
+    _: c.gdouble,
+    _: c.gdouble,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Tab = @ptrCast(@alignCast(ud));
+    const gtk_button = c.gtk_gesture_single_get_current_button(@ptrCast(gesture));
+    if (gtk_button == c.GDK_BUTTON_MIDDLE) {
+        self.remove();
+    }
 }
