@@ -172,6 +172,43 @@ pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: 
     c.gtk_paned_set_position(self.paned, new);
 }
 
+/// Equalize the splits in this split panel. Each split is equalized based on
+/// its weight, i.e. the number of Surfaces it contains.
+///
+/// It works recursively by equalizing the children of each split.
+///
+/// It returns this split's weight.
+pub fn equalize(self: *Split) f64 {
+    // Calculate weights of top_left/bottom_right
+    const top_left_weight = self.top_left.equalize();
+    const bottom_right_weight = self.bottom_right.equalize();
+    const weight = top_left_weight + bottom_right_weight;
+
+    // Ratio of top_left weight to overall weight, which gives the split ratio
+    const ratio = top_left_weight / weight;
+
+    // Convert split ratio into new position for divider
+    c.gtk_paned_set_position(self.paned, @intFromFloat(self.maxPosition() * ratio));
+
+    return weight;
+}
+
+// maxPosition returns the maximum position of the GtkPaned, which is the
+// "max-position" attribute.
+fn maxPosition(self: *Split) f64 {
+    var value: c.GValue = std.mem.zeroes(c.GValue);
+    defer c.g_value_unset(&value);
+
+    _ = c.g_value_init(&value, c.G_TYPE_INT);
+    c.g_object_get_property(
+        @ptrCast(@alignCast(self.paned)),
+        "max-position",
+        &value,
+    );
+
+    return @floatFromInt(c.g_value_get_int(&value));
+}
+
 // This replaces the element at the given pointer with a new element.
 // The ptr must be either top_left or bottom_right (asserted in debug).
 // The memory of the old element must be freed or otherwise handled by

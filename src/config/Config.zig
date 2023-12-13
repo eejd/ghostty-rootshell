@@ -1008,6 +1008,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .right, .mods = .{ .super = true, .ctrl = true, .shift = true } },
             .{ .resize_split = .{ .right, 10 } },
         );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .equal, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .equalize_splits = {} },
+        );
 
         // Viewport scrolling
         try result.keybind.set.put(
