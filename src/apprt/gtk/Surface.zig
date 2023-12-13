@@ -1444,8 +1444,13 @@ fn keyEvent(
     // a text value. We have to do this because GTK will not process
     // "Ctrl+Shift+1" (on US keyboards) as "Ctrl+!" but instead as "".
     // But the keyval is set correctly so we can at least extract that.
-    if (self.im_len == 0 and keyval_unicode > 0) {
+    if (self.im_len == 0 and keyval_unicode > 0) im: {
         if (std.math.cast(u21, keyval_unicode)) |cp| {
+            // We don't want to send control characters as IM
+            // text. Control characters are handled already by
+            // the encoder directly.
+            if (cp < 0x20) break :im;
+
             if (std.unicode.utf8Encode(cp, &self.im_buf)) |len| {
                 self.im_len = len;
             } else |_| {}

@@ -711,8 +711,19 @@ const KittySequence = struct {
         const mods = self.mods.seqInt();
         var emit_prior = false;
         if (self.event != .none) {
-            try writer.print(";{d}:{d}", .{ mods, @intFromEnum(self.event) });
-            emit_prior = true;
+            // Easier to understand if you De Morgan this: we skip
+            // if we have no mods AND its a press event. In that case
+            // both are "1" and empty also means default. In theory
+            // there is no harm being explicit here but Kitty doesn't
+            // output in this case and we want to match here. This is
+            // unit tested.
+            if (self.event != .press or mods > 1) {
+                try writer.print(
+                    ";{d}:{d}",
+                    .{ mods, @intFromEnum(self.event) },
+                );
+                emit_prior = true;
+            }
         } else if (mods > 1) {
             try writer.print(";{d}", .{mods});
             emit_prior = true;
@@ -945,6 +956,22 @@ test "kitty: enter, backspace, tab" {
         const actual = try enc.kitty(&buf);
         try testing.expectEqualStrings("\t", actual);
     }
+}
+
+test "kitty: enter with all flags" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{ .key = .enter, .mods = .{}, .utf8 = "" },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_events = true,
+            .report_alternates = true,
+            .report_all = true,
+            .report_associated = true,
+        },
+    };
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("[13u", actual[1..]);
 }
 
 test "kitty: delete" {
