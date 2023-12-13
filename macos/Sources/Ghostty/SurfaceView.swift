@@ -63,7 +63,7 @@ extension Ghostty {
             return 1 - opacity
         }
 
-        // The color for the rectable overlay when unfocused.
+        // The color for the rectangle overlay when unfocused.
         private var unfocusedFill: Color {
             var rgb: UInt32 = 16777215  // white default
             let key = "unfocused-split-fill"
