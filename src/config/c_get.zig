@@ -2,6 +2,7 @@ const std = @import("std");
 
 const key = @import("key.zig");
 const Config = @import("Config.zig");
+const Color = Config.Color;
 const Key = key.Key;
 const Value = key.Value;
 
@@ -36,6 +37,11 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
                 f32, f64 => {
                     const ptr: *f64 = @ptrCast(@alignCast(ptr_raw));
                     ptr.* = @floatCast(value);
+                },
+
+                ?Color => {
+                    const ptr: *?c_uint = @ptrCast(@alignCast(ptr_raw));
+                    ptr.* = if (value) |c| c.toInt() else null;
                 },
 
                 else => |T| switch (@typeInfo(T)) {

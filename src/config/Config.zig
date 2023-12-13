@@ -314,6 +314,8 @@ palette: Palette = .{},
 /// clamped to the nearest valid value.
 @"unfocused-split-opacity": f64 = 0.85,
 
+@"unfocused-split-fill": ?Color = null,
+
 /// The command to run, usually a shell. If this is not an absolute path,
 /// it'll be looked up in the PATH. If this is not set, a default will
 /// be looked up from your system. The rules for the default lookup are:
@@ -1987,6 +1989,21 @@ pub const Color = struct {
     /// Convert this to the terminal RGB struct
     pub fn toTerminalRGB(self: Color) terminal.color.RGB {
         return .{ .r = self.r, .g = self.g, .b = self.b };
+    }
+
+    // Pack into an integer
+    pub fn toInt(self: Color) u24 {
+        // u24 covers RGB, typically, an alpha would pack to a full u32
+        return (@as(u24, self.r) << 16) + (@as(u24, self.g) << 8) + self.b;
+    }
+
+    test "toInt" {
+        const testing = std.testing;
+
+        try testing.exectEqual((Color{ .r = 0, .g = 0, .b = 0 }).toInt(), 0);
+        try testing.exectEqual((Color{ .r = 255, .g = 255, .b = 255 }).toInt(), 16777215);
+        try testing.exectEqual((Color{ .r = 100, .g = 20, .b = 12 }).toInt(), 6558732);
+        try testing.exectEqual((Color{ .r = 55, .g = 63, .b = 202 }).toInt(), 3620810);
     }
 
     pub fn parseCLI(input: ?[]const u8) !Color {

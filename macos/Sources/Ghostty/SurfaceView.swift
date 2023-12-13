@@ -60,7 +60,30 @@ extension Ghostty {
             var opacity: Double = 0.85
             let key = "unfocused-split-opacity"
             _ = ghostty_config_get(ghostty.config, &opacity, key, UInt(key.count))
+            AppDelegate.logger.warning("ghostty_config_get(\(key))=\(opacity)")
             return 1 - opacity
+        }
+
+        private var unfocusedFill: Color {
+            var rgb: UInt32 = 16777215  // white default
+            let key = "unfocused-split-fill"
+            _ = ghostty_config_get(ghostty.config, &rgb, key, UInt(key.count))
+            AppDelegate.logger.warning("ghostty_config_get(\(key))=\(rgb)")
+            let red = Double((rgb >> 16) & 0xff)
+            let green = Double((rgb >> 8) & 0xff)
+            let blue = Double(rgb & 0xff)
+            AppDelegate.logger.warning("red=\(red) green=\(green) blue=\(blue)")
+            return Color.init(
+                red: 255,
+                green: 0,
+                blue: 0
+            )
+//            return Color.init(
+//                red: red,
+//                green: green,
+//                blue: blue,
+//                opacity: unfocusedOpacity
+//            )
         }
 
         var body: some View {
@@ -155,10 +178,13 @@ extension Ghostty {
                 // because we want to keep our focused surface dark even if we don't have window
                 // focus.
                 if (isSplit && !surfaceFocus) {
-                    Rectangle()
-                        .fill(.white)
-                        .allowsHitTesting(false)
-                        .opacity(unfocusedOpacity)
+                    let overlayOpacity = unfocusedOpacity;
+                    if (overlayOpacity > 0) {
+                        Rectangle()
+                            .fill(unfocusedFill)
+                            .allowsHitTesting(false)
+                            .opacity(overlayOpacity)
+                    }
                 }
             }
         }
