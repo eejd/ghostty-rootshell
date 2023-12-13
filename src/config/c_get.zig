@@ -39,9 +39,9 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
                     ptr.* = @floatCast(value);
                 },
 
-                ?Color => {
-                    const ptr: *?c_uint = @ptrCast(@alignCast(ptr_raw));
-                    ptr.* = if (value) |c| c.toInt() else null;
+                Color => {
+                    const ptr: *c_uint = @ptrCast(@alignCast(ptr_raw));
+                    ptr.* = value.toInt();
                 },
 
                 else => |T| switch (@typeInfo(T)) {

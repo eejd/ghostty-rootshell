@@ -314,7 +314,8 @@ palette: Palette = .{},
 /// clamped to the nearest valid value.
 @"unfocused-split-opacity": f64 = 0.85,
 
-@"unfocused-split-fill": ?Color = null,
+// The color to dim the unfocused split.
+@"unfocused-split-fill": Color = Color{ .r = 255, .g = 255, .b = 255 },
 
 /// The command to run, usually a shell. If this is not an absolute path,
 /// it'll be looked up in the PATH. If this is not set, a default will
