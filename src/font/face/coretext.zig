@@ -468,17 +468,20 @@ pub const Face = struct {
             height: f32,
             ascent: f32,
         } = metrics: {
-            const ascent = @round(ct_font.getAscent());
-            const descent = @round(ct_font.getDescent());
+            const ascent = ct_font.getAscent();
+            const descent = ct_font.getDescent();
 
             // Leading is the value between lines at the TOP of a line.
             // Because we are rendering a fixed size terminal grid, we
             // want the leading to be split equally between the top and bottom.
             const leading = ct_font.getLeading();
 
+            // We ceil the metrics below because we don't want to cut off any
+            // potential used pixels. This tends to only make a one pixel
+            // difference but at small font sizes this can be noticeable.
             break :metrics .{
-                .height = @floatCast(@round(ascent + descent + leading)),
-                .ascent = @floatCast(@round(ascent + (leading / 2))),
+                .height = @floatCast(@ceil(ascent + descent + leading)),
+                .ascent = @floatCast(@ceil(ascent + (leading / 2))),
             };
         };
 

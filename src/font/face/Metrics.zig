@@ -21,6 +21,11 @@ underline_thickness: u32,
 strikethrough_position: u32,
 strikethrough_thickness: u32,
 
+/// Original cell width and height. These are used to render the cursor
+/// in the original cell size after modification.
+original_cell_width: ?u32 = null,
+original_cell_height: ?u32 = null,
+
 /// Apply a set of modifiers.
 pub fn apply(self: *Metrics, mods: ModifierSet) void {
     var it = mods.iterator();
@@ -31,11 +36,39 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
             inline .cell_width,
             .cell_height,
             => |tag| {
+                // Compute the new value. If it is the same avoid the work.
                 const original = @field(self, @tagName(tag));
-                @field(self, @tagName(tag)) = @max(
-                    entry.value_ptr.apply(original),
-                    1,
-                );
+                const new = @max(entry.value_ptr.apply(original), 1);
+                if (new == original) continue;
+
+                // Preserve the original cell width and height if not set.
+                if (self.original_cell_width == null) {
+                    self.original_cell_width = self.cell_width;
+                    self.original_cell_height = self.cell_height;
+                }
+
+                // Set the new value
+                @field(self, @tagName(tag)) = new;
+
+                // For cell height, we have to also modify some positions
+                // that are absolute from the top of the cell. The main goal
+                // here is to center the baseline so that text is vertically
+                // centered in the cell.
+                if (comptime tag == .cell_height) {
+                    // We split the difference in half because we want to
+                    // center the baseline in the cell.
+                    if (new > original) {
+                        const diff = (new - original) / 2;
+                        self.cell_baseline +|= diff;
+                        self.underline_position +|= diff;
+                        self.strikethrough_position +|= diff;
+                    } else {
+                        const diff = (original - new) / 2;
+                        self.cell_baseline -|= diff;
+                        self.underline_position -|= diff;
+                        self.strikethrough_position -|= diff;
+                    }
+                }
             },
 
             inline else => |tag| {
@@ -113,18 +146,18 @@ pub const Modifier = union(enum) {
 pub const Key = key: {
     const field_infos = std.meta.fields(Metrics);
     var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
+    var count: usize = 0;
     for (field_infos, 0..) |field, i| {
-        enumFields[i] = .{
-            .name = field.name,
-            .value = i,
-        };
+        if (field.type != u32) continue;
+        enumFields[i] = .{ .name = field.name, .value = i };
+        count += 1;
     }
 
     var decls = [_]std.builtin.Type.Declaration{};
     break :key @Type(.{
         .Enum = .{
-            .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
-            .fields = &enumFields,
+            .tag_type = std.math.IntFittingRange(0, count - 1),
+            .fields = enumFields[0..count],
             .decls = &decls,
             .is_exhaustive = true,
         },
@@ -157,6 +190,48 @@ test "Metrics: apply modifiers" {
     m.cell_width = 100;
     m.apply(set);
     try testing.expectEqual(@as(u32, 120), m.cell_width);
+}
+
+test "Metrics: adjust cell height smaller" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var set: ModifierSet = .{};
+    defer set.deinit(alloc);
+    try set.put(alloc, .cell_height, .{ .percent = 0.5 });
+
+    var m: Metrics = init();
+    m.cell_baseline = 50;
+    m.underline_position = 55;
+    m.strikethrough_position = 30;
+    m.cell_height = 100;
+    m.apply(set);
+    try testing.expectEqual(@as(u32, 50), m.cell_height);
+    try testing.expectEqual(@as(u32, 25), m.cell_baseline);
+    try testing.expectEqual(@as(u32, 30), m.underline_position);
+    try testing.expectEqual(@as(u32, 5), m.strikethrough_position);
+    try testing.expectEqual(@as(u32, 100), m.original_cell_height.?);
+}
+
+test "Metrics: adjust cell height larger" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var set: ModifierSet = .{};
+    defer set.deinit(alloc);
+    try set.put(alloc, .cell_height, .{ .percent = 2 });
+
+    var m: Metrics = init();
+    m.cell_baseline = 50;
+    m.underline_position = 55;
+    m.strikethrough_position = 30;
+    m.cell_height = 100;
+    m.apply(set);
+    try testing.expectEqual(@as(u32, 200), m.cell_height);
+    try testing.expectEqual(@as(u32, 100), m.cell_baseline);
+    try testing.expectEqual(@as(u32, 105), m.underline_position);
+    try testing.expectEqual(@as(u32, 80), m.strikethrough_position);
+    try testing.expectEqual(@as(u32, 100), m.original_cell_height.?);
 }
 
 test "Modifier: parse absolute" {
