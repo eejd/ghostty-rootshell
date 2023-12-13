@@ -838,16 +838,17 @@ extension Ghostty {
                 return false
             }
 
-            let equivalent: String?
+            let equivalent: String
             switch (event.charactersIgnoringModifiers) {
             case "/":
-                // Treat C-/ as C-_
+                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
+                // sound and we don't like the beep sound.
                 equivalent = "_"
+                
             default:
-                equivalent = nil
+                // Ignore other events
+                return false
             }
-
-            guard let equivalent else { return false }
 
             let newEvent = NSEvent.keyEvent(
                 with: .keyDown,
