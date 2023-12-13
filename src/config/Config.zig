@@ -1982,7 +1982,7 @@ pub const OptionAsAlt = enum {
 };
 
 /// Color represents a color using RGB.
-pub const Color = struct {
+pub const Color = packed struct(u24) {
     r: u8,
     g: u8,
     b: u8,
@@ -1990,21 +1990,6 @@ pub const Color = struct {
     /// Convert this to the terminal RGB struct
     pub fn toTerminalRGB(self: Color) terminal.color.RGB {
         return .{ .r = self.r, .g = self.g, .b = self.b };
-    }
-
-    // Pack into an integer
-    pub fn toInt(self: Color) u24 {
-        // u24 covers RGB, typically, an alpha would pack to a full u32
-        return (@as(u24, self.r) << 16) + (@as(u24, self.g) << 8) + self.b;
-    }
-
-    test "toInt" {
-        const testing = std.testing;
-
-        try testing.exectEqual((Color{ .r = 0, .g = 0, .b = 0 }).toInt(), 0);
-        try testing.exectEqual((Color{ .r = 255, .g = 255, .b = 255 }).toInt(), 16777215);
-        try testing.exectEqual((Color{ .r = 100, .g = 20, .b = 12 }).toInt(), 6558732);
-        try testing.exectEqual((Color{ .r = 55, .g = 63, .b = 202 }).toInt(), 3620810);
     }
 
     pub fn parseCLI(input: ?[]const u8) !Color {

@@ -41,7 +41,7 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
 
                 Color => {
                     const ptr: *c_uint = @ptrCast(@alignCast(ptr_raw));
-                    ptr.* = value.toInt();
+                    ptr.* = @as(c_uint, @as(u24, @bitCast(value)));
                 },
 
                 else => |T| switch (@typeInfo(T)) {
