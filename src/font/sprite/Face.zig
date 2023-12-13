@@ -68,13 +68,31 @@ pub fn renderGlyph(
     // Safe to ".?" because of the above assertion.
     return switch (Kind.init(cp).?) {
         .box => box: {
+            // For box fonts, we want to adjust the height of the box
+            // based on the original cell height, not the adjusted height.
+            // This is because adjusted cell height doesn't change font size.
+            const height, const offset = metrics: {
+                const metrics = opts.grid_metrics orelse break :metrics .{ self.height, 0 };
+                const height = metrics.original_cell_height orelse break :metrics .{ self.height, 0 };
+
+                // If our height shrunk, then we use the original adjusted
+                // height because we don't want to overflow the cell.
+                if (height >= self.height) break :metrics .{ self.height, 0 };
+
+                // The offset is divided by two because it is vertically
+                // centered.
+                break :metrics .{ height, (self.height - height) / 2 };
+            };
+
             const f: Box = .{
                 .width = width,
-                .height = self.height,
+                .height = height,
                 .thickness = self.thickness,
             };
 
-            break :box try f.renderGlyph(alloc, atlas, cp);
+            var g = try f.renderGlyph(alloc, atlas, cp);
+            g.offset_y += @intCast(offset);
+            break :box g;
         },
 
         .underline => try underline.renderGlyph(

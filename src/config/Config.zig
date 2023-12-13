@@ -147,6 +147,13 @@ const c = @cImport({
 /// position is clamped to the height of a cell. If you set the underline
 /// position so high that it extends beyond the bottom of the cell size,
 /// it will be clamped to the bottom of the cell.
+///
+/// "adjust-cell-height" has some additional behaviors to describe:
+/// - The font will be centered vertically in the cell.
+/// - The cursor will remain the same size as the font.
+/// - Powerline glyphs will be adjusted along with the cell height so
+///   that things like status lines continue to look aligned.
+///
 @"adjust-cell-width": ?MetricModifier = null,
 @"adjust-cell-height": ?MetricModifier = null,
 @"adjust-font-baseline": ?MetricModifier = null,
