@@ -2348,14 +2348,7 @@ fn dragLeftClickSingle(
     // If we were selecting, and we switched directions, then we restart
     // calculations because it forces us to reconsider if the first cell is
     // selected.
-    if (self.io.terminal.screen.selection) |sel| {
-        const reset: bool = if (sel.end.before(sel.start))
-            sel.start.before(screen_point)
-        else
-            screen_point.before(sel.start);
-
-        if (reset) self.setSelection(null);
-    }
+    self.checkResetSelSwitch(screen_point);
 
     // Our logic for determining if the starting cell is selected:
     //
@@ -2406,8 +2399,12 @@ fn dragLeftClickSingle(
         //     we start selection of the prior cell.
         //   - Inverse logic for a point after the start.
         const click_point = self.mouse.left_click_point;
-        const start: terminal.point.ScreenPoint = if (screen_point.before(click_point)) start: {
-            if ((ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt) or cell_start_xpos >= cell_xboundary) {
+        const start: terminal.point.ScreenPoint = if (dragLeftClickBefore(
+            screen_point,
+            click_point,
+            self.mouse.mods,
+        )) start: {
+            if (cell_start_xpos >= cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x > 0) terminal.point.ScreenPoint{
@@ -2419,7 +2416,7 @@ fn dragLeftClickSingle(
                 };
             }
         } else start: {
-            if ((ctrlOrSuper(self.mouse.mods) and self.mouse.mods.alt) or cell_start_xpos < cell_xboundary) {
+            if (cell_start_xpos < cell_xboundary) {
                 break :start click_point;
             } else {
                 break :start if (click_point.x < self.io.terminal.screen.cols - 1) terminal.point.ScreenPoint{
@@ -2449,6 +2446,56 @@ fn dragLeftClickSingle(
     var sel = self.io.terminal.screen.selection.?;
     sel.end = screen_point;
     self.setSelection(sel);
+}
+
+// Resets the selection if we switched directions, depending on the select
+// mode. See dragLeftClickSingle for more details.
+fn checkResetSelSwitch(self: *Surface, screen_point: terminal.point.ScreenPoint) void {
+    var reset: bool = undefined;
+    if (self.io.terminal.screen.selection) |sel| {
+        if (sel.rectangle) {
+            // When we're in rectangle mode, we reset the selection relative to
+            // the click point depending on the selection mode we're in, with
+            // the exception of single-column selections, which we always reset
+            // on if we drift.
+            if (sel.start.x == sel.end.x) {
+                reset = screen_point.x != sel.start.x;
+            } else {
+                reset = switch (sel.order()) {
+                    .forward => screen_point.x < sel.start.x or screen_point.y < sel.start.y,
+                    .reverse => screen_point.x > sel.start.x or screen_point.y > sel.start.y,
+                    .mirrored_forward => screen_point.x > sel.start.x or screen_point.y < sel.start.y,
+                    .mirrored_reverse => screen_point.x < sel.start.x or screen_point.y > sel.start.y,
+                };
+            }
+        } else {
+            // Normal select uses simpler logic that is just based on the
+            // selection start/end.
+            reset = if (sel.end.before(sel.start))
+                sel.start.before(screen_point)
+            else
+                screen_point.before(sel.start);
+        }
+    }
+
+    if (reset)
+        self.setSelection(null);
+}
+
+// Handles how whether or not the drag screen point is before the click point.
+// When we are in rectangle select, we only interpret the x axis to determine
+// where to start the selection (before or after the click point). See
+// dragLeftClickSingle for more details.
+fn dragLeftClickBefore(
+    screen_point: terminal.point.ScreenPoint,
+    click_point: terminal.point.ScreenPoint,
+    mods: input.Mods,
+) bool {
+    if (ctrlOrSuper(mods) and mods.alt) {
+        return screen_point.x < click_point.x;
+    }
+
+    return screen_point.before(click_point);
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {

@@ -200,7 +200,7 @@ pub fn ordered(self: Selection, desired: Order) Selection {
 ///
 pub const Order = enum { forward, reverse, mirrored_forward, mirrored_reverse };
 
-fn order(self: Selection) Order {
+pub fn order(self: Selection) Order {
     if (self.rectangle) {
         // Reverse (also handles single-column)
         if (self.start.y > self.end.y and self.start.x >= self.end.x) return .reverse;
