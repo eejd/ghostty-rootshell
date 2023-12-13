@@ -96,7 +96,7 @@ pub const Container = union(enum) {
             }
         }
 
-        pub fn equalize(self: Elem) i16 {
+        pub fn equalize(self: Elem) f64 {
             return switch (self) {
                 .surface => 1,
                 .split => |s| s.equalize(),

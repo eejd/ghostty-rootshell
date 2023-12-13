@@ -178,27 +178,24 @@ pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: 
 /// It works recursively by equalizing the children of each split.
 ///
 /// It returns this split's weight.
-pub fn equalize(self: *Split) i16 {
+pub fn equalize(self: *Split) f64 {
     // Calculate weights of top_left/bottom_right
     const top_left_weight = self.top_left.equalize();
     const bottom_right_weight = self.bottom_right.equalize();
     const weight = top_left_weight + bottom_right_weight;
 
     // Ratio of top_left weight to overall weight, which gives the split ratio
-    const ratio = @as(f16, @floatFromInt(top_left_weight)) / @as(f16, @floatFromInt(weight));
+    const ratio = top_left_weight / weight;
 
     // Convert split ratio into new position for divider
-    const max: f16 = @floatFromInt(self.maxPosition());
-    const new: c_int = @intFromFloat(max * ratio);
-
-    c.gtk_paned_set_position(self.paned, new);
+    c.gtk_paned_set_position(self.paned, @intFromFloat(self.maxPosition() * ratio));
 
     return weight;
 }
 
 // maxPosition returns the maximum position of the GtkPaned, which is the
 // "max-position" attribute.
-fn maxPosition(self: *Split) c_int {
+fn maxPosition(self: *Split) f64 {
     var value: c.GValue = std.mem.zeroes(c.GValue);
     defer c.g_value_unset(&value);
 
@@ -209,7 +206,7 @@ fn maxPosition(self: *Split) c_int {
         &value,
     );
 
-    return c.g_value_get_int(&value);
+    return @floatFromInt(c.g_value_get_int(&value));
 }
 
 // This replaces the element at the given pointer with a new element.
