@@ -117,6 +117,16 @@ pub const keys = keys: {
     result.set(.kp_subtract, kpDefault("m") ++ pcStyle("\x1bO{}m"));
     result.set(.kp_add, kpDefault("k") ++ pcStyle("\x1bO{}k"));
     result.set(.kp_enter, kpDefault("M") ++ pcStyle("\x1bO{}M") ++ .{.{ .sequence = "\r" }});
+    result.set(.kp_up, pcStyle("\x1b[1;{}A") ++ cursorKey("\x1b[A", "\x1bOA"));
+    result.set(.kp_down, pcStyle("\x1b[1;{}B") ++ cursorKey("\x1b[B", "\x1bOB"));
+    result.set(.kp_right, pcStyle("\x1b[1;{}C") ++ cursorKey("\x1b[C", "\x1bOC"));
+    result.set(.kp_left, pcStyle("\x1b[1;{}D") ++ cursorKey("\x1b[D", "\x1bOD"));
+    result.set(.kp_home, pcStyle("\x1b[1;{}H") ++ cursorKey("\x1b[H", "\x1bOH"));
+    result.set(.kp_end, pcStyle("\x1b[1;{}F") ++ cursorKey("\x1b[F", "\x1bOF"));
+    result.set(.kp_insert, pcStyle("\x1b[2;{}~") ++ .{.{ .sequence = "\x1B[2~" }});
+    result.set(.kp_delete, pcStyle("\x1b[3;{}~") ++ .{.{ .sequence = "\x1B[3~" }});
+    result.set(.kp_page_up, pcStyle("\x1b[5;{}~") ++ .{.{ .sequence = "\x1B[5~" }});
+    result.set(.kp_page_down, pcStyle("\x1b[6;{}~") ++ .{.{ .sequence = "\x1B[6~" }});
 
     result.set(.backspace, &.{
         // Modify Keys Normal

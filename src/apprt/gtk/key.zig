@@ -190,16 +190,18 @@ const keymap: []const RawEntry = &.{
     .{ c.GDK_KEY_KP_Enter, .kp_enter },
     .{ c.GDK_KEY_KP_Equal, .kp_equal },
 
-    // These are all just aliases to the non-kp variants because Ghostty
-    // core doesn't distinguish between them currently.
-    .{ c.GDK_KEY_KP_Home, .home },
-    .{ c.GDK_KEY_KP_End, .end },
-    .{ c.GDK_KEY_KP_Page_Up, .page_up },
-    .{ c.GDK_KEY_KP_Page_Down, .page_down },
-    .{ c.GDK_KEY_KP_Up, .up },
-    .{ c.GDK_KEY_KP_Down, .down },
-    .{ c.GDK_KEY_KP_Right, .right },
-    .{ c.GDK_KEY_KP_Left, .left },
+    .{ c.GDK_KEY_KP_Separator, .kp_separator },
+    .{ c.GDK_KEY_KP_Left, .kp_left },
+    .{ c.GDK_KEY_KP_Right, .kp_right },
+    .{ c.GDK_KEY_KP_Up, .kp_up },
+    .{ c.GDK_KEY_KP_Down, .kp_down },
+    .{ c.GDK_KEY_KP_Page_Up, .kp_page_up },
+    .{ c.GDK_KEY_KP_Page_Down, .kp_page_down },
+    .{ c.GDK_KEY_KP_Home, .kp_home },
+    .{ c.GDK_KEY_KP_End, .kp_end },
+    .{ c.GDK_KEY_KP_Insert, .kp_insert },
+    .{ c.GDK_KEY_KP_Delete, .kp_delete },
+    .{ c.GDK_KEY_KP_Begin, .kp_begin },
 
     .{ c.GDK_KEY_Shift_L, .left_shift },
     .{ c.GDK_KEY_Control_L, .left_control },
