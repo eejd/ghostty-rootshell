@@ -117,6 +117,8 @@ const raw_entries: []const RawEntry = &.{
     .{ .kp_delete, 57426, 'u', false },
     .{ .kp_begin, 57427, 'u', false },
 
+    // TODO: media keys
+
     .{ .left_shift, 57441, 'u', true },
     .{ .right_shift, 57447, 'u', true },
     .{ .left_control, 57442, 'u', true },

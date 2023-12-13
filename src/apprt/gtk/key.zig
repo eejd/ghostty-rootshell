@@ -211,4 +211,6 @@ const keymap: []const RawEntry = &.{
     .{ c.GDK_KEY_Control_R, .right_control },
     .{ c.GDK_KEY_Alt_R, .right_alt },
     .{ c.GDK_KEY_Super_R, .right_super },
+
+    // TODO: media keys
 };

@@ -357,6 +357,8 @@ pub const Key = enum(c_int) {
     kp_delete,
     kp_begin,
 
+    // TODO: media keys
+
     // modifiers
     left_shift,
     left_control,
