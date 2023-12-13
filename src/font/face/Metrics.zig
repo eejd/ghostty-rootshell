@@ -32,10 +32,21 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
             .cell_height,
             => |tag| {
                 const original = @field(self, @tagName(tag));
-                @field(self, @tagName(tag)) = @max(
-                    entry.value_ptr.apply(original),
-                    1,
-                );
+                const new = @max(entry.value_ptr.apply(original), 1);
+                @field(self, @tagName(tag)) = new;
+
+                // For cell height, we have to also modify some positions
+                // that are absolute from the top of the cell. The main goal
+                // here is to center the baseline so that text is vertically
+                // centered in the cell.
+                if (comptime tag == .cell_height) {
+                    // We split the difference in half because we want to
+                    // center the baseline in the cell.
+                    const diff = (new - original) / 2;
+                    self.cell_baseline += diff;
+                    self.underline_position += diff;
+                    self.strikethrough_position += diff;
+                }
             },
 
             inline else => |tag| {
