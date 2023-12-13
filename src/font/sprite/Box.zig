@@ -79,6 +79,19 @@ pub fn renderGlyph(
     };
 }
 
+/// Returns true if this codepoint should be rendered with the
+/// width/height set to unadjusted values.
+pub fn unadjustedCodepoint(cp: u32) bool {
+    return switch (cp) {
+        @intFromEnum(Sprite.cursor_rect),
+        @intFromEnum(Sprite.cursor_hollow_rect),
+        @intFromEnum(Sprite.cursor_bar),
+        => true,
+
+        else => false,
+    };
+}
+
 fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void {
     switch (cp) {
         0x2500 => self.draw_light_horizontal(canvas),
