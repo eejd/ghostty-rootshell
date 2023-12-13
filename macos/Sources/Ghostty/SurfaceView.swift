@@ -783,7 +783,7 @@ extension Ghostty {
             
             let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             
-            // By setting this to non-nil, we note that we'rein a keyDown event. From here,
+            // By setting this to non-nil, we note that we're in a keyDown event. From here,
             // we call interpretKeyEvents so that we can handle complex input such as Korean
             // language.
             keyTextAccumulator = []
@@ -823,6 +823,48 @@ extension Ghostty {
 
         override func keyUp(with event: NSEvent) {
             keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+        }
+
+        /// Special case handling for some control keys
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            // Only process keys when Control is the only modifier
+            if (!event.modifierFlags.contains(.control) ||
+                !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
+                return false
+            }
+
+            // Only process key down events
+            if (event.type != .keyDown) {
+                return false
+            }
+
+            let equivalent: String
+            switch (event.charactersIgnoringModifiers) {
+            case "/":
+                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
+                // sound and we don't like the beep sound.
+                equivalent = "_"
+                
+            default:
+                // Ignore other events
+                return false
+            }
+
+            let newEvent = NSEvent.keyEvent(
+                with: .keyDown,
+                location: event.locationInWindow,
+                modifierFlags: .control,
+                timestamp: event.timestamp,
+                windowNumber: event.windowNumber,
+                context: nil,
+                characters: equivalent,
+                charactersIgnoringModifiers: equivalent,
+                isARepeat: event.isARepeat,
+                keyCode: event.keyCode
+            )
+
+            self.keyDown(with: newEvent!)
+            return true
         }
 
         override func flagsChanged(with event: NSEvent) {
