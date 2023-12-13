@@ -68,30 +68,38 @@ pub fn renderGlyph(
     // Safe to ".?" because of the above assertion.
     return switch (Kind.init(cp).?) {
         .box => box: {
-            // For box fonts, we want to adjust the height of the box
-            // based on the original cell height, not the adjusted height.
-            // This is because adjusted cell height doesn't change font size.
-            const height, const offset = metrics: {
-                const metrics = opts.grid_metrics orelse break :metrics .{ self.height, 0 };
-                const height = metrics.original_cell_height orelse break :metrics .{ self.height, 0 };
+            const f: Box, const y_offset: u32 = face: {
+                // Expected, usual values.
+                var f: Box = .{
+                    .width = width,
+                    .height = self.height,
+                    .thickness = self.thickness,
+                };
 
-                // If our height shrunk, then we use the original adjusted
-                // height because we don't want to overflow the cell.
-                if (height >= self.height) break :metrics .{ self.height, 0 };
+                // If the codepoint is unadjusted then we want to adjust
+                // (heh) the width/height to the proper size and also record
+                // an offset to apply to our final glyph so it renders in the
+                // correct place because renderGlyph assumes full size.
+                var y_offset: u32 = 0;
+                if (Box.unadjustedCodepoint(cp)) unadjust: {
+                    const metrics = opts.grid_metrics orelse break :unadjust;
+                    const height = metrics.original_cell_height orelse break :unadjust;
 
-                // The offset is divided by two because it is vertically
-                // centered.
-                break :metrics .{ height, (self.height - height) / 2 };
-            };
+                    // If our height shrunk, then we use the original adjusted
+                    // height because we don't want to overflow the cell.
+                    if (height >= self.height) break :unadjust;
 
-            const f: Box = .{
-                .width = width,
-                .height = height,
-                .thickness = self.thickness,
+                    // The offset is divided by two because it is vertically
+                    // centered.
+                    y_offset = (self.height - height) / 2;
+                    f.height = height;
+                }
+
+                break :face .{ f, y_offset };
             };
 
             var g = try f.renderGlyph(alloc, atlas, cp);
-            g.offset_y += @intCast(offset);
+            g.offset_y += @intCast(y_offset);
             break :box g;
         },
 
