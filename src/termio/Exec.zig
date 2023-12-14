@@ -1485,6 +1485,65 @@ const StreamHandler = struct {
                     self.messageWriter(.{ .write_stable = response });
                 }
             },
+            .decrqss => |decrqss| {
+                var response: [128]u8 = undefined;
+                var stream = std.io.fixedBufferStream(&response);
+                const writer = stream.writer();
+                switch (decrqss) {
+                    // Invalid or unhandled request
+                    .none => try writer.writeAll("\x1bP0$r"),
+
+                    // DECSLRM is special because we send a valid response
+                    // when left and right margin mode (DECLRMM) is enabled.
+                    .decslrm => {
+                        if (self.terminal.modes.get(.enable_left_and_right_margin)) {
+                            try writer.print("\x1bP1$r{d};{d}s", .{
+                                self.terminal.scrolling_region.left + 1,
+                                self.terminal.scrolling_region.right + 1,
+                            });
+                        } else {
+                            try writer.writeAll("\x1bP0$r");
+                        }
+                    },
+
+                    else => {
+                        try writer.writeAll("\x1bP1$r");
+                        switch (decrqss) {
+                            .sgr => {
+                                const buf = try self.terminal.printAttributes(stream.buffer[stream.pos..]);
+
+                                // printAttributes wrote into our buffer, so adjust the stream
+                                // position
+                                stream.pos += buf.len;
+
+                                try writer.writeByte('m');
+                            },
+                            .decscusr => {
+                                const blink = self.terminal.modes.get(.cursor_blinking);
+                                const style: u8 = switch (self.terminal.screen.cursor.style) {
+                                    .block => if (blink) 1 else 2,
+                                    .underline => if (blink) 3 else 4,
+                                    .bar => if (blink) 5 else 6,
+                                };
+                                try writer.print("{d} q", .{style});
+                            },
+                            .decstbm => {
+                                try writer.print("{d};{d}r", .{
+                                    self.terminal.scrolling_region.top + 1,
+                                    self.terminal.scrolling_region.bottom + 1,
+                                });
+                            },
+                            .decslrm,
+                            .none,
+                            => unreachable,
+                        }
+                    },
+                }
+
+                try writer.writeAll("\x1b\\");
+                const msg = try termio.Message.writeReq(self.alloc, response[0..stream.pos]);
+                self.messageWriter(msg);
+            },
         }
     }
 

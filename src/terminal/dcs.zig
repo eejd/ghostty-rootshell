@@ -53,6 +53,15 @@ pub const Handler = struct {
                     else => null,
                 },
 
+                '$' => switch (dcs.final) {
+                    // DECRQSS
+                    'q' => .{
+                        .decrqss = .{},
+                    },
+
+                    else => null,
+                },
+
                 else => null,
             },
 
@@ -82,6 +91,15 @@ pub const Handler = struct {
 
                 try list.append(byte);
             },
+
+            .decrqss => |*buffer| {
+                if (buffer.len >= buffer.data.len) {
+                    return error.OutOfMemory;
+                }
+
+                buffer.data[buffer.len] = byte;
+                buffer.len += 1;
+            },
         }
     }
 
@@ -93,6 +111,24 @@ pub const Handler = struct {
             => null,
 
             .xtgettcap => |list| .{ .xtgettcap = .{ .data = list } },
+
+            .decrqss => |buffer| .{ .decrqss = switch (buffer.len) {
+                0 => .none,
+                1 => switch (buffer.data[0]) {
+                    'm' => .sgr,
+                    'r' => .decstbm,
+                    's' => .decslrm,
+                    else => .none,
+                },
+                2 => switch (buffer.data[0]) {
+                    ' ' => switch (buffer.data[1]) {
+                        'q' => .decscusr,
+                        else => .none,
+                    },
+                    else => .none,
+                },
+                else => unreachable,
+            } },
         };
     }
 
@@ -103,6 +139,8 @@ pub const Handler = struct {
             => {},
 
             .xtgettcap => |*list| list.deinit(),
+
+            .decrqss => {},
         }
 
         self.state = .{ .inactive = {} };
@@ -113,11 +151,15 @@ pub const Command = union(enum) {
     /// XTGETTCAP
     xtgettcap: XTGETTCAP,
 
+    /// DECRQSS
+    decrqss: DECRQSS,
+
     pub fn deinit(self: Command) void {
         switch (self) {
             .xtgettcap => |*v| {
                 v.data.deinit();
             },
+            .decrqss => {},
         }
     }
 
@@ -142,6 +184,15 @@ pub const Command = union(enum) {
             return rem[0..idx];
         }
     };
+
+    /// Supported DECRQSS settings
+    pub const DECRQSS = enum {
+        none,
+        sgr,
+        decscusr,
+        decstbm,
+        decslrm,
+    };
 };
 
 const State = union(enum) {
@@ -152,8 +203,14 @@ const State = union(enum) {
     /// invalid due to some bad input, so we're ignoring the rest.
     ignore: void,
 
-    // XTGETTCAP
+    /// XTGETTCAP
     xtgettcap: std.ArrayList(u8),
+
+    /// DECRQSS
+    decrqss: struct {
+        data: [2]u8 = undefined,
+        len: usize = 0,
+    },
 };
 
 test "unknown DCS command" {
@@ -213,4 +270,40 @@ test "XTGETTCAP command invalid data" {
     try testing.expectEqualStrings("who", cmd.xtgettcap.next().?);
     try testing.expectEqualStrings("536D756C78", cmd.xtgettcap.next().?);
     try testing.expect(cmd.xtgettcap.next() == null);
+}
+
+test "DECRQSS command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    h.put('m');
+    var cmd = h.unhook().?;
+    defer cmd.deinit();
+    try testing.expect(cmd == .decrqss);
+    try testing.expect(cmd.decrqss == .sgr);
+}
+
+test "DECRQSS invalid command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    h.put('z');
+    var cmd = h.unhook().?;
+    defer cmd.deinit();
+    try testing.expect(cmd == .decrqss);
+    try testing.expect(cmd.decrqss == .none);
+
+    h.discard();
+
+    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    h.put('"');
+    h.put(' ');
+    h.put('q');
+    try testing.expect(h.unhook() == null);
 }
