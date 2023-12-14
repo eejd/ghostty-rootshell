@@ -67,7 +67,10 @@ extension Ghostty {
         private var unfocusedFill: Color {
             var rgb: UInt32 = 16777215  // white default
             let key = "unfocused-split-fill"
-            _ = ghostty_config_get(ghostty.config, &rgb, key, UInt(key.count))
+            if (!ghostty_config_get(ghostty.config, &rgb, key, UInt(key.count))) {
+                let bg_key = "background"
+                _ = ghostty_config_get(ghostty.config, &rgb, bg_key, UInt(bg_key.count));
+            }
 
             let red = Double(rgb & 0xff)
             let green = Double((rgb >> 8) & 0xff)
