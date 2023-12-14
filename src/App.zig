@@ -103,8 +103,8 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
     // doesn't want to quit, then we can't force it to.
     defer self.quit = false;
 
-    // We quit if our quit flag is on or if we have closed all surfaces.
-    return self.quit or self.surfaces.items.len == 0;
+    // We quit if our quit flag is on
+    return self.quit;
 }
 
 /// Update the configuration associated with the app. This can only be
