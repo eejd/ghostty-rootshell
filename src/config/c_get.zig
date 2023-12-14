@@ -39,15 +39,22 @@ pub fn get(config: *const Config, k: Key, ptr_raw: *anyopaque) bool {
                     ptr.* = @floatCast(value);
                 },
 
-                Color => {
-                    const ptr: *c_uint = @ptrCast(@alignCast(ptr_raw));
-                    ptr.* = @as(c_uint, @as(u24, @bitCast(value)));
-                },
-
                 else => |T| switch (@typeInfo(T)) {
                     .Enum => {
                         const ptr: *[*:0]const u8 = @ptrCast(@alignCast(ptr_raw));
                         ptr.* = @tagName(value);
+                    },
+
+                    .Struct => |info| {
+                        // Packed structs that are less than or equal to the
+                        // size of a C int can be passed directly as their
+                        // bit representation.
+                        if (info.layout != .Packed) return false;
+                        const Backing = info.backing_integer orelse return false;
+                        if (@bitSizeOf(Backing) > @bitSizeOf(c_uint)) return false;
+
+                        const ptr: *c_uint = @ptrCast(@alignCast(ptr_raw));
+                        ptr.* = @intCast(@as(Backing, @bitCast(value)));
                     },
 
                     else => return false,
