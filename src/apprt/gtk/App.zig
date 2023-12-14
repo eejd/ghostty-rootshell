@@ -316,7 +316,7 @@ pub fn run(self: *App) !void {
 
         // Tick the terminal app
         const should_quit = try self.core_app.tick(self);
-        if (should_quit) self.quit();
+        if (should_quit or self.core_app.surfaces.items.len == 0) self.quit();
     }
 }
 
