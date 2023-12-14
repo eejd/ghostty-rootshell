@@ -929,7 +929,7 @@ fn conformanceSteps(
         if (index == 0) continue;
 
         // Name of the conformance app and full path to the entrypoint.
-        const name = entry.name[0..index];
+        const name = try b.allocator.dupe(u8, entry.name[0..index]);
         const path = try fs.path.join(b.allocator, &[_][]const u8{
             c_dir_path,
             entry.name,
