@@ -319,7 +319,15 @@ palette: Palette = .{},
 /// minimum value is 0.15. This value still looks weird but you can at least
 /// see what's going on. A value outside of the range 0.15 to 1 will be
 /// clamped to the nearest valid value.
-@"unfocused-split-opacity": f64 = 0.85,
+@"unfocused-split-opacity": f64 = 0.7,
+
+// The color to dim the unfocused split. Unfocused splits are dimmed by
+// rendering a semi-transparent rectangle over the split. This sets
+// the color of that rectangle and can be used to carefully control
+// the dimming effect.
+//
+// This will default to the background color.
+@"unfocused-split-fill": ?Color = null,
 
 /// The command to run, usually a shell. If this is not an absolute path,
 /// it'll be looked up in the PATH. If this is not set, a default will
@@ -1991,7 +1999,10 @@ pub const OptionAsAlt = enum {
 };
 
 /// Color represents a color using RGB.
-pub const Color = struct {
+///
+/// This is a packed struct so that the C API to read color values just
+/// works by setting it to a C integer.
+pub const Color = packed struct(u24) {
     r: u8,
     g: u8,
     b: u8,

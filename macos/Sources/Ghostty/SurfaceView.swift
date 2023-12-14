@@ -63,6 +63,26 @@ extension Ghostty {
             return 1 - opacity
         }
 
+        // The color for the rectangle overlay when unfocused.
+        private var unfocusedFill: Color {
+            var rgb: UInt32 = 16777215  // white default
+            let key = "unfocused-split-fill"
+            if (!ghostty_config_get(ghostty.config, &rgb, key, UInt(key.count))) {
+                let bg_key = "background"
+                _ = ghostty_config_get(ghostty.config, &rgb, bg_key, UInt(bg_key.count));
+            }
+
+            let red = Double(rgb & 0xff)
+            let green = Double((rgb >> 8) & 0xff)
+            let blue = Double((rgb >> 16) & 0xff)
+
+            return Color(
+                red: red / 255,
+                green: green / 255,
+                blue: blue / 255
+            )
+        }
+
         var body: some View {
             ZStack {
                 // We use a GeometryReader to get the frame bounds so that our metal surface
@@ -155,10 +175,13 @@ extension Ghostty {
                 // because we want to keep our focused surface dark even if we don't have window
                 // focus.
                 if (isSplit && !surfaceFocus) {
-                    Rectangle()
-                        .fill(.white)
-                        .allowsHitTesting(false)
-                        .opacity(unfocusedOpacity)
+                    let overlayOpacity = unfocusedOpacity;
+                    if (overlayOpacity > 0) {
+                        Rectangle()
+                            .fill(unfocusedFill)
+                            .allowsHitTesting(false)
+                            .opacity(overlayOpacity)
+                    }
                 }
             }
         }
