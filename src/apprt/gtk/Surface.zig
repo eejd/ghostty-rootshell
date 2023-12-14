@@ -1333,6 +1333,10 @@ fn keyEvent(
     // event.
     const mods = mods: {
         var mods = translateMods(gtk_mods);
+
+        const device = c.gdk_event_get_device(event);
+        mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
+
         switch (physical_key) {
             .left_shift => {
                 mods.shift = action == .press;
@@ -1376,8 +1380,7 @@ fn keyEvent(
 
             else => {},
         }
-        const device = c.gdk_event_get_device(event);
-        mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
+
         break :mods mods;
     };
 
