@@ -905,10 +905,32 @@ extension Ghostty {
             // but this is super cheap and flagsChanged isn't that common.
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
 
-            // If the key that pressed this is active, its a press, else release
+            // If the key that pressed this is active, its a press, else release.
             var action = GHOSTTY_ACTION_RELEASE
-            if (mods.rawValue & mod != 0) { action = GHOSTTY_ACTION_PRESS }
-
+            if (mods.rawValue & mod != 0) {
+                // If the key is pressed, its slightly more complicated, because we
+                // want to check if the pressed modifier is the correct side. If the
+                // correct side is pressed then its a press event otherwise its a release
+                // event with the opposite modifier still held.
+                let sidePressed: Bool
+                switch (event.keyCode) {
+                case 0x3C:
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0;
+                case 0x3E:
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCTLKEYMASK) != 0;
+                case 0x3D:
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERALTKEYMASK) != 0;
+                case 0x36:
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK) != 0;
+                default:
+                    sidePressed = true
+                }
+                
+                if (sidePressed) {
+                    action = GHOSTTY_ACTION_PRESS
+                }
+            }
+            
             keyAction(action, event: event)
         }
 
