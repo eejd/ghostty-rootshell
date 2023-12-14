@@ -344,6 +344,20 @@ pub const Key = enum(c_int) {
     kp_add,
     kp_enter,
     kp_equal,
+    kp_separator,
+    kp_left,
+    kp_right,
+    kp_up,
+    kp_down,
+    kp_page_up,
+    kp_page_down,
+    kp_home,
+    kp_end,
+    kp_insert,
+    kp_delete,
+    kp_begin,
+
+    // TODO: media keys
 
     // modifiers
     left_shift,
@@ -552,6 +566,20 @@ pub const Key = enum(c_int) {
             .kp_add => cimgui.c.ImGuiKey_KeypadAdd,
             .kp_enter => cimgui.c.ImGuiKey_KeypadEnter,
             .kp_equal => cimgui.c.ImGuiKey_KeypadEqual,
+            // We map KP_SEPARATOR to Comma because traditionally a numpad would
+            // have a numeric separator key. Most modern numpads do not
+            .kp_separator => cimgui.c.ImGuiKey_Comma,
+            .kp_left => cimgui.c.ImGuiKey_LeftArrow,
+            .kp_right => cimgui.c.ImGuiKey_RightArrow,
+            .kp_up => cimgui.c.ImGuiKey_UpArrow,
+            .kp_down => cimgui.c.ImGuiKey_DownArrow,
+            .kp_page_up => cimgui.c.ImGuiKey_PageUp,
+            .kp_page_down => cimgui.c.ImGuiKey_PageUp,
+            .kp_home => cimgui.c.ImGuiKey_Home,
+            .kp_end => cimgui.c.ImGuiKey_End,
+            .kp_insert => cimgui.c.ImGuiKey_Insert,
+            .kp_delete => cimgui.c.ImGuiKey_Delete,
+            .kp_begin => cimgui.c.ImGuiKey_NamedKey_BEGIN,
 
             .left_shift => cimgui.c.ImGuiKey_LeftShift,
             .left_control => cimgui.c.ImGuiKey_LeftCtrl,

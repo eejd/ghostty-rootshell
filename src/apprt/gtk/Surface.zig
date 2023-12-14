@@ -1333,6 +1333,10 @@ fn keyEvent(
     // event.
     const mods = mods: {
         var mods = translateMods(gtk_mods);
+
+        const device = c.gdk_event_get_device(event);
+        mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
+
         switch (physical_key) {
             .left_shift => {
                 mods.shift = action == .press;
@@ -1376,6 +1380,7 @@ fn keyEvent(
 
             else => {},
         }
+
         break :mods mods;
     };
 
@@ -1389,6 +1394,13 @@ fn keyEvent(
     // If we're not in a dead key state, we want to translate our text
     // to some input.Key.
     const key = if (!self.im_composing) key: {
+        // First, try to convert the keyval directly to a key. This allows the
+        // use of key remapping and identification of keypad numerics (as
+        // opposed to their ASCII counterparts)
+        if (gtk_key.keyFromKeyval(keyval)) |key| {
+            break :key key;
+        }
+
         // A completed key. If the length of the key is one then we can
         // attempt to translate it to a key enum and call the key
         // callback. First try plain ASCII.
@@ -1412,12 +1424,6 @@ fn keyEvent(
             if (input.Key.fromASCII(ascii)) |key| {
                 break :key key;
             }
-        }
-
-        // Before using the physical key, try to convert the keyval
-        // directly to a key. This allows the use of key remapping.
-        if (gtk_key.keyFromKeyval(keyval)) |key| {
-            break :key key;
         }
 
         // If we have im text then this is invalid. This means that

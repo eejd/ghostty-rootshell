@@ -104,6 +104,20 @@ const raw_entries: []const RawEntry = &.{
     .{ .kp_add, 57413, 'u', false },
     .{ .kp_enter, 57414, 'u', false },
     .{ .kp_equal, 57415, 'u', false },
+    .{ .kp_separator, 57416, 'u', false },
+    .{ .kp_left, 57417, 'u', false },
+    .{ .kp_right, 57418, 'u', false },
+    .{ .kp_up, 57419, 'u', false },
+    .{ .kp_down, 57420, 'u', false },
+    .{ .kp_page_up, 57421, 'u', false },
+    .{ .kp_page_down, 57422, 'u', false },
+    .{ .kp_home, 57423, 'u', false },
+    .{ .kp_end, 57424, 'u', false },
+    .{ .kp_insert, 57425, 'u', false },
+    .{ .kp_delete, 57426, 'u', false },
+    .{ .kp_begin, 57427, 'u', false },
+
+    // TODO: media keys
 
     .{ .left_shift, 57441, 'u', true },
     .{ .right_shift, 57447, 'u', true },
