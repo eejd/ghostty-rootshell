@@ -143,7 +143,11 @@ fn kitty(
         var seq: KittySequence = .{
             .key = entry.code,
             .final = entry.final,
-            .mods = KittyMods.fromInput(all_mods),
+            .mods = KittyMods.fromInput(
+                self.event.action,
+                self.event.key,
+                all_mods,
+            ),
         };
 
         if (self.kitty_flags.report_events) {
@@ -596,12 +600,27 @@ const KittyMods = packed struct(u8) {
     num_lock: bool = false,
 
     /// Convert an input mods value into the CSI u mods value.
-    pub fn fromInput(mods: key.Mods) KittyMods {
+    pub fn fromInput(
+        action: key.Action,
+        k: key.Key,
+        mods: key.Mods,
+    ) KittyMods {
+        // Annoying boolean logic, but according to the Kitty spec:
+        // "When both left and right control keys are pressed and one is
+        // released, the release event must again have the modifier bit reset"
+        // In other words, we allow a modifier if it is set AND the action
+        // is NOT a release. Or if the action is a release, then the key being
+        // released must not be the associated modifier key.
+        const shift = mods.shift and (action != .release or (k != .left_shift and k != .right_shift));
+        const alt = mods.alt and (action != .release or (k != .left_alt and k != .right_alt));
+        const ctrl = mods.ctrl and (action != .release or (k != .left_control and k != .right_control));
+        const super = mods.super and (action != .release or (k != .left_super and k != .right_super));
+
         return .{
-            .shift = mods.shift,
-            .alt = mods.alt,
-            .ctrl = mods.ctrl,
-            .super = mods.super,
+            .shift = shift,
+            .alt = alt,
+            .ctrl = ctrl,
+            .super = super,
             .caps_lock = mods.caps_lock,
             .num_lock = mods.num_lock,
         };
@@ -980,6 +999,27 @@ test "kitty: ctrl with all flags" {
     };
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("[57442;5u", actual[1..]);
+}
+
+test "kitty: ctrl release with ctrl mod set" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .action = .release,
+            .key = .left_control,
+            .mods = .{ .ctrl = true },
+            .utf8 = "",
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_events = true,
+            .report_alternates = true,
+            .report_all = true,
+            .report_associated = true,
+        },
+    };
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("[57442;1:3u", actual[1..]);
 }
 
 test "kitty: delete" {
