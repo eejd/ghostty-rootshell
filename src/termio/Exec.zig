@@ -1489,58 +1489,65 @@ const StreamHandler = struct {
                 var response: [128]u8 = undefined;
                 var stream = std.io.fixedBufferStream(&response);
                 const writer = stream.writer();
+
+                // Offset the stream position to just past the response prefix.
+                // We will write the "payload" (if any) below. If no payload is
+                // written then we send an invalid DECRPSS response.
+                const prefix_fmt = "\x1bP{d}$r";
+                const prefix_len = std.fmt.comptimePrint(prefix_fmt, .{0}).len;
+                stream.pos = prefix_len;
+
                 switch (decrqss) {
                     // Invalid or unhandled request
-                    .none => try writer.writeAll("\x1bP0$r"),
+                    .none => {},
 
-                    // DECSLRM is special because we send a valid response
-                    // when left and right margin mode (DECLRMM) is enabled.
+                    .sgr => {
+                        const buf = try self.terminal.printAttributes(stream.buffer[stream.pos..]);
+
+                        // printAttributes wrote into our buffer, so adjust the stream
+                        // position
+                        stream.pos += buf.len;
+
+                        try writer.writeByte('m');
+                    },
+
+                    .decscusr => {
+                        const blink = self.terminal.modes.get(.cursor_blinking);
+                        const style: u8 = switch (self.terminal.screen.cursor.style) {
+                            .block => if (blink) 1 else 2,
+                            .underline => if (blink) 3 else 4,
+                            .bar => if (blink) 5 else 6,
+                        };
+                        try writer.print("{d} q", .{style});
+                    },
+
+                    .decstbm => {
+                        try writer.print("{d};{d}r", .{
+                            self.terminal.scrolling_region.top + 1,
+                            self.terminal.scrolling_region.bottom + 1,
+                        });
+                    },
+
                     .decslrm => {
+                        // We only send a valid response when left and right
+                        // margin mode (DECLRMM) is enabled.
                         if (self.terminal.modes.get(.enable_left_and_right_margin)) {
-                            try writer.print("\x1bP1$r{d};{d}s", .{
+                            try writer.print("{d};{d}s", .{
                                 self.terminal.scrolling_region.left + 1,
                                 self.terminal.scrolling_region.right + 1,
                             });
-                        } else {
-                            try writer.writeAll("\x1bP0$r");
-                        }
-                    },
-
-                    else => {
-                        try writer.writeAll("\x1bP1$r");
-                        switch (decrqss) {
-                            .sgr => {
-                                const buf = try self.terminal.printAttributes(stream.buffer[stream.pos..]);
-
-                                // printAttributes wrote into our buffer, so adjust the stream
-                                // position
-                                stream.pos += buf.len;
-
-                                try writer.writeByte('m');
-                            },
-                            .decscusr => {
-                                const blink = self.terminal.modes.get(.cursor_blinking);
-                                const style: u8 = switch (self.terminal.screen.cursor.style) {
-                                    .block => if (blink) 1 else 2,
-                                    .underline => if (blink) 3 else 4,
-                                    .bar => if (blink) 5 else 6,
-                                };
-                                try writer.print("{d} q", .{style});
-                            },
-                            .decstbm => {
-                                try writer.print("{d};{d}r", .{
-                                    self.terminal.scrolling_region.top + 1,
-                                    self.terminal.scrolling_region.bottom + 1,
-                                });
-                            },
-                            .decslrm,
-                            .none,
-                            => unreachable,
                         }
                     },
                 }
 
+                // Our response is valid if we have a response payload
+                const valid = stream.pos > prefix_len;
+
+                // Write the terminator
                 try writer.writeAll("\x1b\\");
+
+                // Write the response prefix into the buffer
+                _ = try std.fmt.bufPrint(response[0..prefix_len], prefix_fmt, .{@intFromBool(valid)});
                 const msg = try termio.Message.writeReq(self.alloc, response[0..stream.pos]);
                 self.messageWriter(msg);
             },
