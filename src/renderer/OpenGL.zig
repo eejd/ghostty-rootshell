@@ -709,6 +709,11 @@ pub fn updateFrame(
         // We only do this if the Kitty image state is dirty meaning only if
         // it changes.
         if (state.terminal.screen.kitty_images.dirty) {
+            // prepKittyGraphics touches self.images which is also used
+            // in drawFrame so if we're drawing on a separate thread we need
+            // to lock this.
+            if (single_threaded_draw) self.draw_mutex.lock();
+            defer if (single_threaded_draw) self.draw_mutex.unlock();
             try self.prepKittyGraphics(state.terminal);
         }
 
