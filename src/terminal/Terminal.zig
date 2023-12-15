@@ -148,7 +148,7 @@ pub const MouseFormat = enum(u3) {
 };
 
 /// Scrolling region is the area of the screen designated where scrolling
-/// occurs. Wen scrolling the screen, only this viewport is scrolled.
+/// occurs. When scrolling the screen, only this viewport is scrolled.
 pub const ScrollingRegion = struct {
     // Top and bottom of the scroll region (0-indexed)
     // Precondition: top < bottom
@@ -611,6 +611,77 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
         .unknown => return error.InvalidAttribute,
     }
+}
+
+/// Print the active attributes as a string. This is used to respond to DECRQSS
+/// requests.
+///
+/// Boolean attributes are printed first, followed by foreground color, then
+/// background color. Each attribute is separated by a semicolon.
+pub fn printAttributes(self: *Terminal, buf: []u8) ![]const u8 {
+    var stream = std.io.fixedBufferStream(buf);
+    const writer = stream.writer();
+
+    // The SGR response always starts with a 0. See https://vt100.net/docs/vt510-rm/DECRPSS
+    try writer.writeByte('0');
+
+    const pen = self.screen.cursor.pen;
+    var attrs = [_]u8{0} ** 8;
+    var i: usize = 0;
+
+    if (pen.attrs.bold) {
+        attrs[i] = '1';
+        i += 1;
+    }
+
+    if (pen.attrs.faint) {
+        attrs[i] = '2';
+        i += 1;
+    }
+
+    if (pen.attrs.italic) {
+        attrs[i] = '3';
+        i += 1;
+    }
+
+    if (pen.attrs.underline != .none) {
+        attrs[i] = '4';
+        i += 1;
+    }
+
+    if (pen.attrs.blink) {
+        attrs[i] = '5';
+        i += 1;
+    }
+
+    if (pen.attrs.inverse) {
+        attrs[i] = '7';
+        i += 1;
+    }
+
+    if (pen.attrs.invisible) {
+        attrs[i] = '8';
+        i += 1;
+    }
+
+    if (pen.attrs.strikethrough) {
+        attrs[i] = '9';
+        i += 1;
+    }
+
+    for (attrs[0..i]) |c| {
+        try writer.print(";{c}", .{c});
+    }
+
+    if (pen.attrs.has_fg) {
+        try writer.print(";38:2::{[r]}:{[g]}:{[b]}", pen.fg);
+    }
+
+    if (pen.attrs.has_bg) {
+        try writer.print(";48:2::{[r]}:{[g]}:{[b]}", pen.bg);
+    }
+
+    return stream.getWritten();
 }
 
 /// Set the charset into the given slot.
@@ -6949,4 +7020,55 @@ test "Terminal: DECCOLM resets scroll region" {
     try testing.expectEqual(@as(usize, 4), t.scrolling_region.bottom);
     try testing.expectEqual(@as(usize, 0), t.scrolling_region.left);
     try testing.expectEqual(@as(usize, 79), t.scrolling_region.right);
+}
+
+test "Terminal: printAttributes" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    var storage: [64]u8 = undefined;
+
+    {
+        try t.setAttribute(.{ .direct_color_fg = .{ .r = 1, .g = 2, .b = 3 } });
+        defer t.setAttribute(.unset) catch unreachable;
+        const buf = try t.printAttributes(&storage);
+        try testing.expectEqualStrings("0;38:2::1:2:3", buf);
+    }
+
+    {
+        try t.setAttribute(.bold);
+        try t.setAttribute(.{ .direct_color_bg = .{ .r = 1, .g = 2, .b = 3 } });
+        defer t.setAttribute(.unset) catch unreachable;
+        const buf = try t.printAttributes(&storage);
+        try testing.expectEqualStrings("0;1;48:2::1:2:3", buf);
+    }
+
+    {
+        try t.setAttribute(.bold);
+        try t.setAttribute(.faint);
+        try t.setAttribute(.italic);
+        try t.setAttribute(.{ .underline = .single });
+        try t.setAttribute(.blink);
+        try t.setAttribute(.inverse);
+        try t.setAttribute(.invisible);
+        try t.setAttribute(.strikethrough);
+        try t.setAttribute(.{ .direct_color_fg = .{ .r = 100, .g = 200, .b = 255 } });
+        try t.setAttribute(.{ .direct_color_bg = .{ .r = 101, .g = 102, .b = 103 } });
+        defer t.setAttribute(.unset) catch unreachable;
+        const buf = try t.printAttributes(&storage);
+        try testing.expectEqualStrings("0;1;2;3;4;5;7;8;9;38:2::100:200:255;48:2::101:102:103", buf);
+    }
+
+    {
+        try t.setAttribute(.{ .underline = .single });
+        defer t.setAttribute(.unset) catch unreachable;
+        const buf = try t.printAttributes(&storage);
+        try testing.expectEqualStrings("0;4", buf);
+    }
+
+    {
+        const buf = try t.printAttributes(&storage);
+        try testing.expectEqualStrings("0", buf);
+    }
 }
