@@ -209,7 +209,7 @@ const State = union(enum) {
     /// DECRQSS
     decrqss: struct {
         data: [2]u8 = undefined,
-        len: usize = 0,
+        len: u2 = 0,
     },
 };
 
