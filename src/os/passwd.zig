@@ -26,6 +26,7 @@ const c = if (builtin.os.tag != .windows) @cImport({
 pub const Entry = struct {
     shell: ?[]const u8 = null,
     home: ?[]const u8 = null,
+    name: ?[]const u8 = null,
 };
 
 /// Get the passwd entry for the currently executing user.
@@ -132,6 +133,13 @@ pub fn get(alloc: Allocator) !Entry {
         const dir = try alloc.alloc(u8, source.len);
         @memcpy(dir, source);
         result.home = dir;
+    }
+
+    if (pw.pw_name) |ptr| {
+        const source = std.mem.sliceTo(ptr, 0);
+        const name = try alloc.alloc(u8, source.len);
+        @memcpy(name, source);
+        result.name = name;
     }
 
     return result;

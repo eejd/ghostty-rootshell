@@ -336,27 +336,14 @@ palette: Palette = .{},
 ///   - SHELL environment variable
 ///   - passwd entry (user information)
 ///
-/// The command is the path to only the binary to run. This cannot
-/// also contain arguments, because Ghostty does not perform any
-/// shell string parsing. To provide additional arguments, use the
-/// "command-arg" configuration (repeated for multiple arguments).
+/// This can contain additional arguments to run the command with.
+/// If additional arguments are provided, the command will be executed
+/// using "/bin/sh -c". Ghostty does not do any shell command parsing.
 ///
 /// If you're using the `ghostty` CLI there is also a shortcut
 /// to run a command with argumens directly: you can use the `-e`
 /// flag. For example: `ghostty -e fish --with --custom --args`.
-/// This is just shorthand for specifying "command" and
-/// "command-arg" in the configuration.
 command: ?[]const u8 = null,
-
-/// A single argument to pass to the command. This can be repeated to
-/// pass multiple arguments. This slightly clunky configuration style is
-/// so that Ghostty doesn't have to perform any sort of shell parsing
-/// to find argument boundaries.
-///
-/// This cannot be used to override argv[0]. argv[0] will always be
-/// set by Ghostty to be the command (possibly with a hyphen-prefix to
-/// indicate that it is a login shell, depending on the OS).
-@"command-arg": RepeatableString = .{},
 
 /// Match a regular expression against the terminal text and associate
 /// clicking it with an action. This can be used to match URLs, file paths,
@@ -1652,10 +1639,17 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
     // If it isn't "-e" then we just continue parsing normally.
     if (!std.mem.eql(u8, arg, "-e")) return true;
 
-    // The first value is the command to run.
-    if (iter.next()) |command| {
-        self.command = try alloc.dupe(u8, command);
-    } else {
+    // Build up the command. We don't clean this up because we take
+    // ownership in our allocator.
+    var command = std.ArrayList(u8).init(alloc);
+    errdefer command.deinit();
+
+    while (iter.next()) |param| {
+        try command.appendSlice(param);
+        try command.append(' ');
+    }
+
+    if (command.items.len == 0) {
         try self._errors.add(alloc, .{
             .message = try std.fmt.allocPrintZ(
                 alloc,
@@ -1667,11 +1661,7 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         return false;
     }
 
-    // All further arguments are parameters
-    self.@"command-arg".list.clearRetainingCapacity();
-    while (iter.next()) |param| {
-        try self.@"command-arg".parseCLI(alloc, param);
-    }
+    self.command = command.items[0 .. command.items.len - 1];
 
     // Do not continue, we consumed everything.
     return false;
@@ -1856,25 +1846,7 @@ test "parse e: command and args" {
 
     var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
     try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
-    try testing.expectEqualStrings("echo", cfg.command.?);
-    try testing.expectEqual(@as(usize, 2), cfg.@"command-arg".list.items.len);
-    try testing.expectEqualStrings("foo", cfg.@"command-arg".list.items[0]);
-    try testing.expectEqualStrings("bar baz", cfg.@"command-arg".list.items[1]);
-}
-
-test "parse e: command replaces args" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    try cfg.@"command-arg".parseCLI(alloc, "foo");
-    try testing.expectEqual(@as(usize, 1), cfg.@"command-arg".list.items.len);
-
-    var it: TestIterator = .{ .data = &.{"echo"} };
-    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
-    try testing.expectEqualStrings("echo", cfg.command.?);
-    try testing.expectEqual(@as(usize, 0), cfg.@"command-arg".list.items.len);
+    try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
 }
 
 test "clone default" {

@@ -709,7 +709,6 @@ const Subprocess = struct {
     arena: std.heap.ArenaAllocator,
     cwd: ?[]const u8,
     env: EnvMap,
-    path: []const u8,
     args: [][]const u8,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
@@ -731,43 +730,6 @@ const Subprocess = struct {
             .windows => "cmd.exe",
             else => "sh",
         };
-        const path = try Command.expandPath(
-            alloc,
-            opts.full_config.command orelse default_path,
-        ) orelse path: {
-            // If we had a command specified, try to at least fall
-            // back to a default value like "sh" so that Ghostty
-            // launches.
-            if (opts.full_config.command) |command| {
-                log.warn("unable to find command, fallbacking back to default command={s}", .{command});
-                if (try Command.expandPath(
-                    alloc,
-                    default_path,
-                )) |path| break :path path;
-            }
-
-            log.warn("unable to find default command to launch, exiting", .{});
-            return error.CommandNotFound;
-        };
-
-        // On macOS, we launch the program as a login shell. This is a Mac-specific
-        // behavior (see other terminals). Terminals in general should NOT be
-        // spawning login shells because well... we're not "logging in." The solution
-        // is to put dotfiles in "rc" variants rather than "_login" variants. But,
-        // history!
-        const argv0_override: ?[]const u8 = if (comptime builtin.target.isDarwin()) argv0: {
-            // Get rid of the path
-            const argv0 = if (std.mem.lastIndexOf(u8, path, "/")) |idx|
-                path[idx + 1 ..]
-            else
-                path;
-
-            // Copy it with a hyphen so its a login shell
-            const argv0_buf = try alloc.alloc(u8, argv0.len + 1);
-            argv0_buf[0] = '-';
-            @memcpy(argv0_buf[1..], argv0);
-            break :argv0 argv0_buf;
-        } else null;
 
         // Set our env vars. For Flatpak builds running in Flatpak we don't
         // inherit our environment because the login shell on the host side
@@ -838,23 +800,102 @@ const Subprocess = struct {
 
         // Build our args list
         const args = args: {
-            const cap = 1 + opts.full_config.@"command-arg".list.items.len;
+            const cap = 6; // the most we'll use on macOS
             var args = try std.ArrayList([]const u8).initCapacity(alloc, cap);
             defer args.deinit();
 
-            if (!internal_os.isFlatpak()) {
-                try args.append(argv0_override orelse path);
-            } else {
-                // We run our shell wrapped in a /bin/sh login shell because
-                // some systems do not properly initialize the env vars unless
-                // we start this way (NixOS!)
-                try args.append("/bin/sh");
-                try args.append("-l");
+            // If we're on macOS, we have to use `login(1)` to get all of
+            // the proper environment variables set, a login shell, and proper
+            // hushlogin behavior.
+            if (comptime builtin.target.isDarwin()) darwin: {
+                const passwd = internal_os.passwd.get(alloc) catch |err| {
+                    log.warn("failed to read passwd, not using a login shell err={}", .{err});
+                    break :darwin;
+                };
+
+                const username = passwd.name orelse {
+                    log.warn("failed to get username, not using a login shell", .{});
+                    break :darwin;
+                };
+
+                const hush = if (passwd.home) |home| hush: {
+                    var dir = std.fs.openDirAbsolute(home, .{}) catch |err| {
+                        log.warn(
+                            "failed to open home dir, not checking for hushlogin err={}",
+                            .{err},
+                        );
+                        break :hush false;
+                    };
+                    defer dir.close();
+
+                    break :hush if (dir.access(".hushlogin", .{})) true else |_| false;
+                } else false;
+
+                const cmd = try std.fmt.allocPrint(
+                    alloc,
+                    "exec -l {s}",
+                    .{opts.full_config.command orelse default_path},
+                );
+
+                // The reason for executing login this way is unclear. This
+                // comment will attempt to explain but prepare for a truly
+                // unhinged reality.
+                //
+                // The first major issue is that on macOS, a lot of users
+                // put shell configurations in ~/.bash_profile instead of
+                // ~/.bashrc (or equivalent for another shell). This file is only
+                // loaded for a login shell so macOS users expect all their terminals
+                // to be login shells. No other platform behaves this way and its
+                // totally braindead but somehow the entire dev community on
+                // macOS has cargo culted their way to this reality so we have to
+                // do it...
+                //
+                // To get a login shell, you COULD just prepend argv0 with a `-`
+                // but that doesn't fully work because `getlogin()` C API will
+                // return the wrong value, SHELL won't be set, and various
+                // other login behaviors that macOS users expect.
+                //
+                // The proper way is to use `login(1)`. But login(1) forces
+                // the working directory to change to the home directory,
+                // which we may not want. If we specify "-l" then we can avoid
+                // this behavior but now the shell isn't a login shell.
+                //
+                // There is another issue: `login(1)` only checks for ".hushlogin"
+                // in the working directory. This means that if we specify "-l"
+                // then we won't get hushlogin honored if its in the home
+                // directory (which is standard). To get around this, we
+                // check for hushlogin ourselves and if present specify the
+                // "-q" flag to login(1).
+                //
+                // So to get all the behaviors we want, we specify "-l" but
+                // execute "zsh" (which is built-in to macOS). We then use
+                // the zsh builtin "exec" to replace the process with a login
+                // shell ("-l" on exec) with the command we really want.
+                //
+                // To figure out a lot of this logic I read the login.c
+                // source code in the OSS distribution Apple provides for
+                // macOS.
+                //
+                // Awesome.
+                try args.append("/usr/bin/login");
+                if (hush) try args.append("-q");
+                try args.append("-flp");
+                try args.append(username);
+                try args.append("/bin/zsh");
                 try args.append("-c");
-                try args.append(path);
+                try args.append(cmd);
+                break :args try args.toOwnedSlice();
             }
 
-            try args.appendSlice(opts.full_config.@"command-arg".list.items);
+            // We run our shell wrapped in `/bin/sh` so that we don't have
+            // to parse the commadnd line ourselves if it has arguments.
+            // Additionally, some environments (NixOS, I found) use /bin/sh
+            // to setup some environment variables that are important to
+            // have set.
+            try args.append("/bin/sh");
+            if (internal_os.isFlatpak()) try args.append("-l");
+            try args.append("-c");
+            try args.append(opts.full_config.command orelse default_path);
             break :args try args.toOwnedSlice();
         };
 
@@ -865,9 +906,6 @@ const Subprocess = struct {
         else
             null;
 
-        // The execution path
-        const final_path = if (internal_os.isFlatpak()) args[0] else path;
-
         // Setup our shell integration, if we can.
         const shell_integrated: ?shell_integration.Shell = shell: {
             const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
@@ -877,10 +915,19 @@ const Subprocess = struct {
                 .zsh => .zsh,
             };
 
+            // We have to get the path to the executing shell. The command
+            // can be a full shell string with arguments so we look for a space
+            // and take the first part.
+            const path = if (opts.full_config.command) |cmd| path: {
+                const idx = std.mem.indexOfScalar(u8, cmd, ' ') orelse cmd.len;
+                break :path cmd[0..idx];
+            } else default_path;
+
             const dir = opts.resources_dir orelse break :shell null;
+
             break :shell try shell_integration.setup(
                 dir,
-                final_path,
+                path,
                 &env,
                 force,
                 opts.full_config.@"shell-integration-features",
@@ -902,7 +949,6 @@ const Subprocess = struct {
             .arena = arena,
             .env = env,
             .cwd = cwd,
-            .path = final_path,
             .args = args,
             .grid_size = opts.grid_size,
             .screen_size = padded_size,
@@ -938,10 +984,7 @@ const Subprocess = struct {
             self.pty = null;
         }
 
-        log.debug("starting command path={s} args={s}", .{
-            self.path,
-            self.args,
-        });
+        log.debug("starting command command={s}", .{self.args});
 
         // In flatpak, we use the HostCommand to execute our shell.
         if (internal_os.isFlatpak()) flatpak: {
@@ -949,10 +992,6 @@ const Subprocess = struct {
                 log.warn("flatpak detected, but flatpak support not built-in", .{});
                 break :flatpak;
             }
-
-            // For flatpak our path and argv[0] must match because that is
-            // used for execution by the dbus API.
-            assert(std.mem.eql(u8, self.path, self.args[0]));
 
             // Flatpak command must have a stable pointer.
             self.flatpak_command = .{
@@ -967,7 +1006,7 @@ const Subprocess = struct {
             errdefer killCommandFlatpak(cmd);
 
             log.info("started subcommand on host via flatpak API path={s} pid={?}", .{
-                self.path,
+                self.args[0],
                 pid,
             });
 
@@ -996,7 +1035,7 @@ const Subprocess = struct {
 
         // Build our subcommand
         var cmd: Command = .{
-            .path = self.path,
+            .path = self.args[0],
             .args = self.args,
             .env = &self.env,
             .cwd = cwd,
@@ -1017,7 +1056,7 @@ const Subprocess = struct {
         errdefer killCommand(&cmd) catch |err| {
             log.warn("error killing command during cleanup err={}", .{err});
         };
-        log.info("started subcommand path={s} pid={?}", .{ self.path, cmd.pid });
+        log.info("started subcommand path={s} pid={?}", .{ self.args[0], cmd.pid });
 
         self.command = cmd;
         return switch (builtin.os.tag) {
