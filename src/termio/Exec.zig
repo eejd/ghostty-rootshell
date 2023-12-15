@@ -893,7 +893,7 @@ const Subprocess = struct {
             // to setup some environment variables that are important to
             // have set.
             try args.append("/bin/sh");
-            try args.append("-l");
+            if (internal_os.isFlatpak()) try args.append("-l");
             try args.append("-c");
             try args.append(opts.full_config.command orelse default_path);
             break :args try args.toOwnedSlice();
