@@ -881,7 +881,14 @@ const Subprocess = struct {
                 if (hush) try args.append("-q");
                 try args.append("-flp");
                 try args.append(username);
+
+                // We execute zsh with "-d -f" so that it doesn't load any
+                // local zshrc files so that (1) our shell integration doesn't
+                // break and (2) user configuration doesn't mess this process
+                // up.
                 try args.append("/bin/zsh");
+                try args.append("-d");
+                try args.append("-f");
                 try args.append("-c");
                 try args.append(cmd);
                 break :args try args.toOwnedSlice();
