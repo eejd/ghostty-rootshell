@@ -800,7 +800,7 @@ const Subprocess = struct {
 
         // Build our args list
         const args = args: {
-            const cap = 6; // the most we'll use on macOS
+            const cap = 9; // the most we'll ever use
             var args = try std.ArrayList([]const u8).initCapacity(alloc, cap);
             defer args.deinit();
 
