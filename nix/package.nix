@@ -17,6 +17,8 @@
   glib,
   gtk4,
   libadwaita,
+  wrapGAppsHook4,
+  gsettings-desktop-schemas,
   git,
   ncurses,
   pkg-config,
@@ -89,6 +91,7 @@ in
       ncurses
       pkg-config
       zig012Hook
+      wrapGAppsHook4
     ];
 
     buildInputs =
@@ -113,6 +116,7 @@ in
         libadwaita
         gtk4
         glib
+        gsettings-desktop-schemas
       ];
 
     dontConfigure = true;
