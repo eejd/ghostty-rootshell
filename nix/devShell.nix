@@ -31,6 +31,8 @@
   glib,
   gtk4,
   libadwaita,
+  gnome,
+  hicolor-icon-theme,
   harfbuzz,
   libpng,
   libGL,
@@ -142,4 +144,10 @@ in
     # This should be set onto the rpath of the ghostty binary if you want
     # it to be "portable" across the system.
     LD_LIBRARY_PATH = lib.makeLibraryPath rpathLibs;
+
+    shellHook = ''
+      # Minimal subset of env set by wrapGAppsHook4 for icons and global settings
+      export XDG_DATA_DIRS=$XDG_DATA_DIRS:${hicolor-icon-theme}/share:${gnome.adwaita-icon-theme}/share
+      export XDG_DATA_DIRS=$XDG_DATA_DIRS:$GSETTINGS_SCHEMAS_PATH # from glib setup hook
+    '';
   }
