@@ -45,6 +45,12 @@ pub fn fgMode(
                 break :text .normal;
             }
 
+            // We exempt the Powerline range from this since they exhibit
+            // box-drawing behavior and should not be constrained.
+            if (isPowerline(cell.char)) {
+                break :text .normal;
+            }
+
             // If we are at the end of the screen its definitely constrained
             if (x == screen.cols - 1) break :text .constrained;
 
@@ -67,5 +73,13 @@ pub fn fgMode(
             // Must be constrained
             break :text .constrained;
         },
+    };
+}
+
+// Returns true if the codepoint is a part of the Powerline range.
+fn isPowerline(char: u32) bool {
+    return switch (char) {
+        0xE0B0...0xE0C8, 0xE0CA, 0xE0CC...0xE0D2, 0xE0D4 => true,
+        else => false,
     };
 }
