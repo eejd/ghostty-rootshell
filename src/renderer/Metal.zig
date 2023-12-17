@@ -11,7 +11,6 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
-const ziglyph = @import("ziglyph");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");

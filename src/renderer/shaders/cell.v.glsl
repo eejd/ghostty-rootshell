@@ -6,6 +6,7 @@
 // NOTE: this must be kept in sync with the fragment shader
 const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
+const uint MODE_FG_CONSTRAINED = 3u;
 const uint MODE_FG_COLOR = 7u;
 const uint MODE_STRIKETHROUGH = 8u;
 
@@ -179,6 +180,7 @@ void main() {
         break;
 
     case MODE_FG:
+    case MODE_FG_CONSTRAINED:
     case MODE_FG_COLOR:
         vec2 glyph_offset_calc = glyph_offset;
 
@@ -187,8 +189,19 @@ void main() {
         // So we flip it with `cell_size.y - glyph_offset.y`.
         glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y;
 
+        // If this is a constrained mode, we need to constrain it!
+        vec2 glyph_size_calc = glyph_size;
+        if (mode == MODE_FG_CONSTRAINED) {
+            if (glyph_size.x > cell_size_scaled.x) {
+                float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
+                glyph_offset_calc.y = glyph_offset_calc.y + (glyph_size.y - new_y);
+                glyph_size_calc.y = new_y;
+                glyph_size_calc.x = cell_size_scaled.x;
+            }
+        }
+
         // Calculate the final position of the cell.
-        cell_pos = cell_pos + (glyph_size * position) + glyph_offset_calc;
+        cell_pos = cell_pos + (glyph_size_calc * position) + glyph_offset_calc;
         gl_Position = projection * vec4(cell_pos, cell_z, 1.0);
 
         // We need to convert our texture position and size to normalized
