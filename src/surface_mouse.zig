@@ -29,6 +29,9 @@ mods: input.Mods,
 /// True if the mouse position is currently over a link.
 over_link: bool,
 
+/// True if the mouse pointer is currently hidden.
+hidden: bool,
+
 /// Translates key state to mouse shape (cursor) state, based on a state
 /// machine.
 ///
@@ -52,11 +55,11 @@ pub fn keyToMouseShape(self: SurfaceMouse) ?MouseShape {
     // Filter for appropriate key events
     if (!eligibleMouseShapeKeyEvent(self.physical_key)) return null;
 
-    // Exception: link hover overrides any other shape processing currently and
-    // does not change state.
+    // Exceptions: link hover or hidden state overrides any other shape
+    // processing and does not change state.
     //
     // TODO: As we unravel mouse state, we can fix this to be more explicit.
-    if (self.over_link) {
+    if (self.over_link or self.hidden) {
         return null;
     }
 
@@ -129,6 +132,7 @@ test "keyToMouseShape" {
             .mouse_shape = .progress,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const got = m.keyToMouseShape();
@@ -144,6 +148,22 @@ test "keyToMouseShape" {
             .mouse_shape = .progress,
             .mods = .{},
             .over_link = true,
+            .hidden = false,
+        };
+
+        const got = m.keyToMouseShape();
+        try testing.expect(got == null);
+    }
+
+    {
+        // Mouse is currently hidden
+        const m: SurfaceMouse = .{
+            .physical_key = .left_shift,
+            .mouse_event = .none,
+            .mouse_shape = .progress,
+            .mods = .{},
+            .over_link = true,
+            .hidden = true,
         };
 
         const got = m.keyToMouseShape();
@@ -158,6 +178,7 @@ test "keyToMouseShape" {
             .mouse_shape = .default,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .default;
@@ -173,6 +194,7 @@ test "keyToMouseShape" {
             .mouse_shape = .default,
             .mods = .{ .ctrl = true, .super = true, .alt = true, .shift = true },
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .crosshair;
@@ -188,6 +210,7 @@ test "keyToMouseShape" {
             .mouse_shape = .default,
             .mods = .{ .shift = true },
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .text;
@@ -203,6 +226,7 @@ test "keyToMouseShape" {
             .mouse_shape = .crosshair,
             .mods = .{ .shift = true },
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .text;
@@ -218,6 +242,7 @@ test "keyToMouseShape" {
             .mouse_shape = .crosshair,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .default;
@@ -233,6 +258,7 @@ test "keyToMouseShape" {
             .mouse_shape = .text,
             .mods = .{ .ctrl = true, .super = true, .alt = true, .shift = true },
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .crosshair;
@@ -248,6 +274,7 @@ test "keyToMouseShape" {
             .mouse_shape = .text,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .default;
@@ -263,6 +290,7 @@ test "keyToMouseShape" {
             .mouse_shape = .text,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .text;
@@ -278,6 +306,7 @@ test "keyToMouseShape" {
             .mouse_shape = .text,
             .mods = .{ .ctrl = true, .super = true, .alt = true },
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .crosshair;
@@ -293,6 +322,7 @@ test "keyToMouseShape" {
             .mouse_shape = .crosshair,
             .mods = .{},
             .over_link = false,
+            .hidden = false,
         };
 
         const want: MouseShape = .text;

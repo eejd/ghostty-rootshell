@@ -1294,6 +1294,7 @@ pub fn keyCallback(
         .mouse_shape = self.io.terminal.mouse_shape,
         .mods = self.mouse.mods,
         .over_link = self.mouse.over_link,
+        .hidden = self.mouse.hidden,
     }).keyToMouseShape()) |shape|
         try self.rt_surface.setMouseShape(shape);
 
