@@ -101,6 +101,7 @@ pub const Cell = extern struct {
     pub const Mode = enum(u8) {
         bg = 1,
         fg = 2,
+        fg_constrained = 3,
         fg_color = 7,
         strikethrough = 8,
     };

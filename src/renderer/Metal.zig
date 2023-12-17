@@ -11,6 +11,7 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
+const ziglyph = @import("ziglyph");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -19,6 +20,7 @@ const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
+const fgMode = @import("cell.zig").fgMode;
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -1780,11 +1782,17 @@ pub fn updateCell(
             },
         );
 
-        // If we're rendering a color font, we use the color atlas
-        const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
-        const mode: mtl_shaders.Cell.Mode = switch (presentation) {
-            .text => .fg,
-            .emoji => .fg_color,
+        const mode: mtl_shaders.Cell.Mode = switch (try fgMode(
+            &self.font_group.group,
+            screen,
+            cell,
+            shaper_run,
+            x,
+            y,
+        )) {
+            .normal => .fg,
+            .color => .fg_color,
+            .constrained => .fg_constrained,
         };
 
         self.cells.appendAssumeCapacity(.{

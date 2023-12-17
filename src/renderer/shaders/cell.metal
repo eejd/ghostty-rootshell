@@ -4,6 +4,7 @@ using namespace metal;
 enum Mode : uint8_t {
     MODE_BG = 1u,
     MODE_FG = 2u,
+    MODE_FG_CONSTRAINED = 3u,
     MODE_FG_COLOR = 7u,
     MODE_STRIKETHROUGH = 8u,
 };
@@ -150,6 +151,7 @@ vertex VertexOut uber_vertex(
     break;
 
   case MODE_FG:
+  case MODE_FG_CONSTRAINED:
   case MODE_FG_COLOR: {
     float2 glyph_size = float2(input.glyph_size);
     float2 glyph_offset = float2(input.glyph_offset);
@@ -158,6 +160,16 @@ vertex VertexOut uber_vertex(
     // to the baseline is the offset (+y is up). Our grid goes down.
     // So we flip it with `cell_size.y - glyph_offset.y`.
     glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
+
+    // If we're constrained then we need to scale the glyph.
+    if (input.mode == MODE_FG_CONSTRAINED) {
+      if (glyph_size.x > cell_size_scaled.x) {
+        float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
+        glyph_offset.y += glyph_size.y - new_y;
+        glyph_size.y = new_y;
+        glyph_size.x = cell_size_scaled.x;
+      }
+    }
 
     // Calculate the final position of the cell which uses our glyph size
     // and glyph offset to create the correct bounding box for the glyph.
@@ -211,6 +223,7 @@ fragment float4 uber_fragment(
   case MODE_BG:
     return in.color;
 
+  case MODE_FG_CONSTRAINED:
   case MODE_FG: {
     // Normalize the texture coordinates to [0,1]
     float2 size = float2(textureGreyscale.get_width(), textureGreyscale.get_height());
