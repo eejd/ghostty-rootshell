@@ -36,7 +36,7 @@ pub const Highlight = union(enum) {
 pub fn oniRegex(self: *const Link) !oni.Regex {
     return try oni.Regex.init(
         self.regex,
-        .{},
+        .{ .find_longest = true },
         oni.Encoding.utf8,
         oni.Syntax.default,
         null,
