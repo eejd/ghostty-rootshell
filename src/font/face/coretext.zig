@@ -384,11 +384,11 @@ pub const Face = struct {
         };
         atlas.set(region, buf);
 
+        const metrics = opts.grid_metrics orelse self.metrics;
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
             //const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
-            const metrics = opts.grid_metrics orelse self.metrics;
             const baseline_from_bottom: f64 = @floatFromInt(metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We
@@ -396,6 +396,21 @@ pub const Face = struct {
             const baseline_with_offset = baseline_from_bottom + glyph_ascent;
 
             break :offset_y @intFromFloat(@ceil(baseline_with_offset));
+        };
+
+        const offset_x: i32 = offset_x: {
+            var result: i32 = @intFromFloat(render_x);
+
+            // If our cell was resized to be wider then we center our
+            // glyph in the cell.
+            if (metrics.original_cell_width) |original_width| {
+                if (original_width < metrics.cell_width) {
+                    const diff = (metrics.cell_width - original_width) / 2;
+                    result += @intCast(diff);
+                }
+            }
+
+            break :offset_x result;
         };
 
         // Get our advance
@@ -417,7 +432,7 @@ pub const Face = struct {
         return .{
             .width = width,
             .height = height,
-            .offset_x = @intFromFloat(render_x),
+            .offset_x = offset_x,
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,

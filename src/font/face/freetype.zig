@@ -430,6 +430,21 @@ pub const Face = struct {
             break :offset_y glyph_metrics.bitmap_top + @as(c_int, @intCast(metrics.cell_baseline));
         };
 
+        const offset_x: i32 = offset_x: {
+            var result: i32 = glyph_metrics.bitmap_left;
+
+            // If our cell was resized to be wider then we center our
+            // glyph in the cell.
+            if (metrics.original_cell_width) |original_width| {
+                if (original_width < metrics.cell_width) {
+                    const diff = (metrics.cell_width - original_width) / 2;
+                    result += @intCast(diff);
+                }
+            }
+
+            break :offset_x result;
+        };
+
         // log.warn("renderGlyph width={} height={} offset_x={} offset_y={} glyph_metrics={}", .{
         //     tgt_w,
         //     tgt_h,
@@ -442,7 +457,7 @@ pub const Face = struct {
         return Glyph{
             .width = tgt_w,
             .height = tgt_h,
-            .offset_x = glyph_metrics.bitmap_left,
+            .offset_x = offset_x,
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
