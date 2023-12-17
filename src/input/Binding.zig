@@ -214,6 +214,9 @@ pub const Action = union(enum) {
     /// focused terminal.
     inspector: InspectorMode,
 
+    /// Open the configuration file in the default OS editor.
+    open_config: void,
+
     /// Reload the configuration. The exact meaning depends on the app runtime
     /// in use but this usually involves re-reading the configuration file
     /// and applying any changes. Note that not all changes can be applied at

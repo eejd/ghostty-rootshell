@@ -120,6 +120,12 @@ export fn ghostty_config_get_error(self: *Config, idx: u32) Error {
     return .{ .message = err.message.ptr };
 }
 
+export fn ghostty_config_open() void {
+    Config.edit(global.alloc) catch |err| {
+        log.err("error opening config in editor err={}", .{err});
+    };
+}
+
 /// Sync with ghostty_error_s
 const Error = extern struct {
     message: [*:0]const u8 = "",

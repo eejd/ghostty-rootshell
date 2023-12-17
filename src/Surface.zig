@@ -2550,6 +2550,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         .unbind => unreachable,
         .ignore => {},
 
+        .open_config => try self.app.openConfig(self.rt_app),
+
         .reload_config => try self.app.reloadConfig(self.rt_app),
 
         .csi, .esc => |data| {

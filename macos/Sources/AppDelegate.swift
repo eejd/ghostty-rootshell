@@ -12,6 +12,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     )
     
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuOpenConfig: NSMenuItem?
     @IBOutlet private var menuReloadConfig: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
     
@@ -211,6 +212,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     private func syncMenuShortcuts() {
         guard ghostty.config != nil else { return }
         
+        syncMenuShortcut(action: "open_config", menuItem: self.menuOpenConfig)
         syncMenuShortcut(action: "reload_config", menuItem: self.menuReloadConfig)
         syncMenuShortcut(action: "quit", menuItem: self.menuQuit)
         
@@ -339,6 +341,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     }
     
     //MARK: - IB Actions
+    
+    @IBAction func openConfig(_ sender: Any?) {
+        ghostty.openConfig()
+    }
     
     @IBAction func reloadConfig(_ sender: Any?) {
         ghostty.reloadConfig()

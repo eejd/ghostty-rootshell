@@ -19,6 +19,7 @@ const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.face.Metrics.Modifier;
+const Command = @import("../Command.zig");
 
 const log = std.log.scoped(.config);
 
@@ -819,6 +820,42 @@ pub fn deinit(self: *Config) void {
     self.* = undefined;
 }
 
+/// Open the configuration in the OS default editor according to the default paths the main config file could be in:
+///
+///   1. XDG Config File
+///
+pub fn edit(alloc_gpa: Allocator) !void {
+    // default location
+    const config_path = try internal_os.xdg.config(alloc_gpa, .{ .subdir = "ghostty/config" });
+    defer alloc_gpa.free(config_path);
+
+    // Try to create file and go on if it already exists
+    _ = std.fs.createFileAbsolute(config_path, .{ .exclusive = true }) catch |err| {
+        switch (err) {
+            error.PathAlreadyExists => log.info("config file found at {s}", .{config_path}),
+            else => return err,
+        }
+    };
+
+    // TODO: maybe add editor config property to allow users to set the editor they want to use when opening a file.
+    const editor = try Command.expandPath(alloc_gpa, "open") orelse "/usr/bin/open"; // should always be found, but worse case we use a hardcoded absolute path.
+    defer alloc_gpa.free(editor);
+
+    // the command to run
+    const argv = [_][]const u8{ editor, config_path };
+
+    var proc = std.ChildProcess.init(&argv, alloc_gpa);
+    proc.stdin_behavior = .Ignore;
+    proc.stdout_behavior = .Ignore;
+    proc.stderr_behavior = .Ignore;
+
+    try proc.spawn();
+    log.info("started subcommand path={s} pid={?}", .{ editor, proc.id });
+
+    // the process only ends after this call returns.
+    if (try proc.wait() != std.ChildProcess.Term.Exited) return error.ExitError;
+}
+
 /// Load the configuration according to the default rules:
 ///
 ///   1. Defaults
@@ -1121,7 +1158,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .comma, .mods = .{ .super = true, .shift = true } },
             .{ .reload_config = {} },
         );
-
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .comma, .mods = .{ .super = true } },
+            .{ .open_config = {} },
+        );
         try result.keybind.set.put(
             alloc,
             .{ .key = .k, .mods = .{ .super = true } },
