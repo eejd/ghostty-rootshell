@@ -9,6 +9,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const link = @import("link.zig");
+const fgMode = @import("cell.zig").fgMode;
 const shadertoy = @import("shadertoy.zig");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
@@ -1489,10 +1490,17 @@ pub fn updateCell(
         );
 
         // If we're rendering a color font, we use the color atlas
-        const presentation = try self.font_group.group.presentationFromIndex(shaper_run.font_index);
-        const mode: CellProgram.CellMode = switch (presentation) {
-            .text => .fg,
-            .emoji => .fg_color,
+        const mode: CellProgram.CellMode = switch (try fgMode(
+            &self.font_group.group,
+            screen,
+            cell,
+            shaper_run,
+            x,
+            y,
+        )) {
+            .normal => .fg,
+            .color => .fg_color,
+            .constrained => .fg_constrained,
         };
 
         self.cells.appendAssumeCapacity(.{
