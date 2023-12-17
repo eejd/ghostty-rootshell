@@ -360,7 +360,10 @@ a work-in-progress. Similar improvements will follow with Linux.
 
 ## Developing Ghostty
 
-To build Ghostty, you only need [Zig](https://ziglang.org/) installed.
+To build Ghostty, you need [Zig](https://ziglang.org/) installed.
+
+On Linux, you may need to install additional dependencies. See
+[Linux Installation Tips](#linux-installation-tips).
 
 The official development environment is defined by Nix. You do not need
 to use Nix to develop Ghostty, but the Nix environment is the environment
@@ -373,7 +376,8 @@ version when I get closer to generally releasing this to ease downstream
 packagers. You can find binary releases of nightly builds on the
 [Zig downloads page](https://ziglang.org/download/).
 
-With Zig installed, a binary can be built using `zig build`:
+With Zig and necessary dependencies installed, a binary can be built using
+`zig build`:
 
 ```shell-session
 $ zig build
@@ -426,6 +430,20 @@ window for the existing instance. You can disable this behaviour with the
 the configuration file.**
 
 ### Linux Installation Tips
+
+On Linux, you'll need to install header packages for Ghostty's dependencies
+before building it. Typically, these are only gtk4 and libadwaita (unless
+building with `--static=false`). On Ubuntu, use
+
+```
+$ sudo apt install libgtk-4-dev libadwaita-1-dev
+```
+
+On Arch Linux, use
+
+```
+$ sudo pacman -S gtk4 libadwaita
+```
 
 If you're planning to use a build from source as your daily driver,
 I recommend using the `-p` (prefix) flag for `zig build` to install
