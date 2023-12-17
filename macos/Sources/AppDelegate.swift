@@ -360,6 +360,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
         NSApp.activate(ignoringOtherApps: true)
     }
     
+    @IBAction func showAbout(_ sender: Any?) {
+        AboutController.shared.show()
+    }
+    
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
         NSWorkspace.shared.open(url)
