@@ -45,13 +45,23 @@ pub fn fgMode(
                 break :text .normal;
             }
 
+            // If we are at the end of the screen its definitely constrained
+            if (x == screen.cols - 1) break :text .constrained;
+
+            // If we have a previous cell and it was PUA then we need to
+            // also constrain. This is so that multiple PUA glyphs align.
+            if (x > 0) {
+                const prev_cell = screen.getCell(.active, y, x - 1);
+                if (ziglyph.general_category.isPrivateUse(@intCast(prev_cell.char))) {
+                    break :text .constrained;
+                }
+            }
+
             // If the next cell is empty, then we allow it to use the
             // full glyph size.
-            if (x < screen.cols - 1) {
-                const next_cell = screen.getCell(.active, y, x + 1);
-                if (next_cell.char == 0 or next_cell.char == ' ') {
-                    break :text .normal;
-                }
+            const next_cell = screen.getCell(.active, y, x + 1);
+            if (next_cell.char == 0 or next_cell.char == ' ') {
+                break :text .normal;
             }
 
             // Must be constrained
