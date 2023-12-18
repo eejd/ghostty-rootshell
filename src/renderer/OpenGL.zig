@@ -412,11 +412,16 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
         apprt.gtk => {
             // GTK uses global OpenGL context so we load from null.
             const version = try gl.glad.load(null);
+            const major = gl.glad.versionMajor(@intCast(version));
+            const minor = gl.glad.versionMinor(@intCast(version));
             errdefer gl.glad.unload();
-            log.info("loaded OpenGL {}.{}", .{
-                gl.glad.versionMajor(@intCast(version)),
-                gl.glad.versionMinor(@intCast(version)),
-            });
+            log.info("loaded OpenGL {}.{}", .{ major, minor });
+
+            // We require at least OpenGL 3.3
+            if (major < 3 or minor < 3) {
+                log.warn("OpenGL version is too old. Ghostty requires OpenGL 3.3", .{});
+                return error.OpenGLOutdated;
+            }
         },
 
         apprt.glfw => try self.threadEnter(surface),
