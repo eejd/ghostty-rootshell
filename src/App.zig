@@ -186,6 +186,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .reload_config => try self.reloadConfig(rt_app),
+            .open_config => try self.openConfig(rt_app),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| try self.closeSurface(surface),
             .quit => try self.setQuit(),
@@ -194,6 +195,12 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .redraw_inspector => |surface| try self.redrawInspector(rt_app, surface),
         }
     }
+}
+
+pub fn openConfig(self: *App, rt_app: *apprt.App) !void {
+    _ = self;
+    log.debug("opening configuration", .{});
+    try rt_app.openConfig();
 }
 
 pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
@@ -273,6 +280,9 @@ pub const Message = union(enum) {
     /// Reload the configuration for the entire app and propagate it to
     /// all the active surfaces.
     reload_config: void,
+
+    // Open the configuration file
+    open_config: void,
 
     /// Create a new terminal window.
     new_window: NewWindow,

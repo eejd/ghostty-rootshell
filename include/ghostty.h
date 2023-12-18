@@ -354,6 +354,7 @@ typedef struct {
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void *);
+typedef void (*ghostty_runtime_open_config_cb)(void *);
 typedef void (*ghostty_runtime_set_title_cb)(void *, const char *);
 typedef void (*ghostty_runtime_set_mouse_shape_cb)(void *, ghostty_mouse_shape_e);
 typedef void (*ghostty_runtime_set_mouse_visibility_cb)(void *, bool);
@@ -381,6 +382,7 @@ typedef struct {
     bool supports_selection_clipboard;
     ghostty_runtime_wakeup_cb wakeup_cb;
     ghostty_runtime_reload_config_cb reload_config_cb;
+    ghostty_runtime_open_config_cb open_config_cb;
     ghostty_runtime_set_title_cb set_title_cb;
     ghostty_runtime_set_mouse_shape_cb set_mouse_shape_cb;
     ghostty_runtime_set_mouse_visibility_cb set_mouse_visibility_cb;
@@ -422,12 +424,14 @@ bool ghostty_config_get(ghostty_config_t, void *, const char *, uintptr_t);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t, const char *, uintptr_t);
 uint32_t ghostty_config_errors_count(ghostty_config_t);
 ghostty_error_s ghostty_config_get_error(ghostty_config_t, uint32_t);
+void ghostty_config_open();
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s *, ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
 bool ghostty_app_tick(ghostty_app_t);
 void *ghostty_app_userdata(ghostty_app_t);
 void ghostty_app_keyboard_changed(ghostty_app_t);
+void ghostty_app_open_config(ghostty_app_t);
 void ghostty_app_reload_config(ghostty_app_t);
 bool ghostty_app_needs_confirm_quit(ghostty_app_t);
 

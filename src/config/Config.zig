@@ -1121,7 +1121,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .comma, .mods = .{ .super = true, .shift = true } },
             .{ .reload_config = {} },
         );
-
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .comma, .mods = .{ .super = true } },
+            .{ .open_config = {} },
+        );
         try result.keybind.set.put(
             alloc,
             .{ .key = .k, .mods = .{ .super = true } },

@@ -47,6 +47,9 @@ pub const App = struct {
         /// called.
         reload_config: *const fn (AppUD) callconv(.C) ?*const Config,
 
+        /// Open the configuration file.
+        open_config: *const fn (AppUD) callconv(.C) void,
+
         /// Called to set the title of the window.
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
 
@@ -158,6 +161,10 @@ pub const App = struct {
         for (self.core_app.surfaces.items) |surface| {
             surface.keymap_state = .{};
         }
+    }
+
+    pub fn openConfig(self: *App) !void {
+        try configpkg.edit.open(self.core_app.alloc);
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
@@ -1281,6 +1288,14 @@ pub const CAPI = struct {
     export fn ghostty_app_keyboard_changed(v: *App) void {
         v.reloadKeymap() catch |err| {
             log.err("error reloading keyboard map err={}", .{err});
+            return;
+        };
+    }
+
+    /// Open the configuration.
+    export fn ghostty_app_open_config(v: *App) void {
+        _ = v.core_app.openConfig(v) catch |err| {
+            log.err("error reloading config err={}", .{err});
             return;
         };
     }

@@ -147,6 +147,7 @@ extension Ghostty {
                 supports_selection_clipboard: false,
                 wakeup_cb: { userdata in AppState.wakeup(userdata) },
                 reload_config_cb: { userdata in AppState.reloadConfig(userdata) },
+                open_config_cb: { userdata in AppState.openConfig(userdata) },
                 set_title_cb: { userdata, title in AppState.setTitle(userdata, title: title) },
                 set_mouse_shape_cb: { userdata, shape in AppState.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in AppState.setMouseVisibility(userdata, visible: visible) },
@@ -265,6 +266,11 @@ extension Ghostty {
 
             // We want to quit, start that process
             NSApplication.shared.terminate(nil)
+        }
+
+        func openConfig() {
+            guard let app = self.app else { return }
+            ghostty_app_open_config(app)
         }
 
         func reloadConfig() {
@@ -487,6 +493,10 @@ extension Ghostty {
                     Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
                 ]
             )
+        }
+
+        static func openConfig(_ userdata: UnsafeMutableRawPointer?) {
+            ghostty_config_open();
         }
 
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {

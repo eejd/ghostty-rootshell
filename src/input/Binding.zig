@@ -214,6 +214,11 @@ pub const Action = union(enum) {
     /// focused terminal.
     inspector: InspectorMode,
 
+    /// Open the configuration file in the default OS editor. If your default
+    /// OS editor isn't configured then this will fail. Currently, any failures
+    /// to open the configuration will show up only in the logs.
+    open_config: void,
+
     /// Reload the configuration. The exact meaning depends on the app runtime
     /// in use but this usually involves re-reading the configuration file
     /// and applying any changes. Note that not all changes can be applied at
