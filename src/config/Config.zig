@@ -1630,35 +1630,37 @@ pub fn finalize(self: *Config) !void {
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
-    // If it isn't "-e" then we just continue parsing normally.
-    if (!std.mem.eql(u8, arg, "-e")) return true;
+    if (std.mem.eql(u8, arg, "-e")) {
+        // Build up the command. We don't clean this up because we take
+        // ownership in our allocator.
+        var command = std.ArrayList(u8).init(alloc);
+        errdefer command.deinit();
 
-    // Build up the command. We don't clean this up because we take
-    // ownership in our allocator.
-    var command = std.ArrayList(u8).init(alloc);
-    errdefer command.deinit();
+        while (iter.next()) |param| {
+            try command.appendSlice(param);
+            try command.append(' ');
+        }
 
-    while (iter.next()) |param| {
-        try command.appendSlice(param);
-        try command.append(' ');
-    }
+        if (command.items.len == 0) {
+            try self._errors.add(alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    alloc,
+                    "missing command after -e",
+                    .{},
+                ),
+            });
 
-    if (command.items.len == 0) {
-        try self._errors.add(alloc, .{
-            .message = try std.fmt.allocPrintZ(
-                alloc,
-                "missing command after -e",
-                .{},
-            ),
-        });
+            return false;
+        }
 
+        self.command = command.items[0 .. command.items.len - 1];
+
+        // Do not continue, we consumed everything.
         return false;
     }
 
-    self.command = command.items[0 .. command.items.len - 1];
-
-    // Do not continue, we consumed everything.
-    return false;
+    // If we didn't find a special case, continue parsing normally
+    return true;
 }
 
 /// Create a shallow copy of this config. This will share all the memory
