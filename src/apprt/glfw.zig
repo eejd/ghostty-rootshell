@@ -20,6 +20,7 @@ const Renderer = renderer.Renderer;
 const apprt = @import("../apprt.zig");
 const CoreApp = @import("../App.zig");
 const CoreSurface = @import("../Surface.zig");
+const configpkg = @import("../config.zig");
 const Config = @import("../config.zig").Config;
 
 // Get native API access on certain platforms so we can do more customization.
@@ -125,6 +126,11 @@ pub const App = struct {
     pub fn wakeup(self: *const App) void {
         _ = self;
         glfw.postEmptyEvent();
+    }
+
+    /// Open the configuration in the system editor.
+    pub fn openConfig(self: *App) !void {
+        try configpkg.edit.open(self.app.alloc);
     }
 
     /// Reload the configuration. This should return the new configuration.
