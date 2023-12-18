@@ -16,8 +16,11 @@ class AboutController: NSWindowController, NSWindowDelegate {
     // MARK: - Functions
     
     func show() {
-        guard let window = window else { return }
-        window.makeKeyAndOrderFront(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+    
+    func hide() {
+        window?.close()
     }
     
     //MARK: - First Responder

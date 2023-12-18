@@ -21,6 +21,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     @IBOutlet private var menuSplitVertical: NSMenuItem?
     @IBOutlet private var menuClose: NSMenuItem?
     @IBOutlet private var menuCloseWindow: NSMenuItem?
+    @IBOutlet private var menuCloseAllWindows: NSMenuItem?
     
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
@@ -218,6 +219,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
         syncMenuShortcut(action: "new_tab", menuItem: self.menuNewTab)
         syncMenuShortcut(action: "close_surface", menuItem: self.menuClose)
         syncMenuShortcut(action: "close_window", menuItem: self.menuCloseWindow)
+        syncMenuShortcut(action: "close_all_windows", menuItem: self.menuCloseAllWindows)
         syncMenuShortcut(action: "new_split:right", menuItem: self.menuSplitHorizontal)
         syncMenuShortcut(action: "new_split:down", menuItem: self.menuSplitVertical)
         
@@ -358,6 +360,11 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
         // We also activate our app so that it becomes front. This may be
         // necessary for the dock menu.
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @IBAction func closeAllWindows(_ sender: Any?) {
+        terminalManager.closeAllWindows()
+        AboutController.shared.hide()
     }
     
     @IBAction func showAbout(_ sender: Any?) {

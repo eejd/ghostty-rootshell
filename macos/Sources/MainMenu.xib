@@ -15,6 +15,7 @@
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
                 <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
+                <outlet property="menuCloseAllWindows" destination="yKr-Vi-Yqw" id="Zet-Ir-zbm"/>
                 <outlet property="menuCloseWindow" destination="W5w-UZ-crk" id="6ff-BT-ENV"/>
                 <outlet property="menuCopy" destination="Jqf-pv-Zcu" id="bKd-1C-oy9"/>
                 <outlet property="menuDecreaseFontSize" destination="kzb-SZ-dOA" id="Y1B-Vh-6Z2"/>
@@ -132,6 +133,12 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="closeWindow:" target="-1" id="ovs-xn-3ju"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Close All Windows" id="yKr-Vi-Yqw">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="closeAllWindows:" target="-1" id="hrz-eb-l5t"/>
                                 </connections>
                             </menuItem>
                         </items>

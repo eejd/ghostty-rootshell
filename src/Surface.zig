@@ -2885,6 +2885,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .close_window => try self.app.closeSurface(self),
 
+        .close_all_windows => {
+            if (@hasDecl(apprt.Surface, "closeAllWindows")) {
+                self.rt_surface.closeAllWindows();
+            } else log.warn("runtime doesn't implement closeAllWindows", .{});
+        },
+
         .quit => try self.app.setQuit(),
     }
 
