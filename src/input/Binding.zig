@@ -221,11 +221,17 @@ pub const Action = union(enum) {
     reload_config: void,
 
     /// Close the current "surface", whether that is a window, tab, split,
-    /// etc. This only closes ONE surface.
+    /// etc. This only closes ONE surface. This will trigger close confirmation
+    /// as configured.
     close_surface: void,
 
     /// Close the window, regardless of how many tabs or splits there may be.
+    /// This will trigger close confirmation as configured.
     close_window: void,
+
+    /// Close all windows. This will trigger close confirmation as configured.
+    /// This only works for macOS currently.
+    close_all_windows: void,
 
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,

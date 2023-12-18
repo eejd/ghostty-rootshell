@@ -189,6 +189,52 @@ class TerminalManager {
         }
     }
     
+    /// Close all windows, asking for confirmation if necessary.
+    func closeAllWindows() {
+        var needsConfirm: Bool = false
+        for w in self.windows {
+            if (w.controller.surfaceTree?.needsConfirmQuit() ?? false) {
+                needsConfirm = true
+                break
+            }
+        }
+    
+        if (!needsConfirm) {
+            for w in self.windows {
+                w.controller.close()
+            }
+            
+            return
+        }
+        
+        // If we don't have a main window, we just close all windows because
+        // we have no window to show the modal on top of. I'm sure there's a way
+        // to do an app-level alert but I don't know how and this case should never
+        // really happen.
+        guard let alertWindow = mainWindow?.controller.window else {
+            for w in self.windows {
+                w.controller.close()
+            }
+            
+            return
+        }
+        
+        // If we need confirmation by any, show one confirmation for all windows
+        let alert = NSAlert()
+        alert.messageText = "Close All Windows?"
+        alert.informativeText = "All terminal sessions will be terminated."
+        alert.addButton(withTitle: "Close All Windows")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: alertWindow, completionHandler: { response in
+            if (response == .alertFirstButtonReturn) {
+                for w in self.windows {
+                    w.controller.close()
+                }
+            }
+        })
+    }
+    
     /// Relabels all the tabs with the proper keyboard shortcut.
     func relabelAllTabs() {
         for w in windows {
