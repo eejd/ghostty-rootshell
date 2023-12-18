@@ -217,6 +217,11 @@ pub fn terminate(self: *App) void {
     self.config.deinit();
 }
 
+/// Open the configuration in the system editor.
+pub fn openConfig(self: *App) !void {
+    try configpkg.edit.open(self.core_app.alloc);
+}
+
 /// Reload the configuration. This should return the new configuration.
 /// The old value can be freed immediately at this point assuming a
 /// successful return.
