@@ -1630,7 +1630,9 @@ pub fn finalize(self: *Config) !void {
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
-    if (std.mem.eql(u8, arg, "-e")) {
+    if (std.mem.eql(u8, arg, "-e") or
+        std.mem.eql(u8, std.fs.path.basename(arg), "xdg-terminal-exec"))
+    {
         // Build up the command. We don't clean this up because we take
         // ownership in our allocator.
         var command = std.ArrayList(u8).init(alloc);
@@ -1645,8 +1647,8 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
             try self._errors.add(alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     alloc,
-                    "missing command after -e",
-                    .{},
+                    "missing command after {s}",
+                    .{arg},
                 ),
             });
 
