@@ -14,6 +14,7 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
+                <outlet property="menuCheckForUpdates" destination="GEA-5y-yzH" id="0nV-Tf-nJQ"/>
                 <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
                 <outlet property="menuCloseAllWindows" destination="yKr-Vi-Yqw" id="Zet-Ir-zbm"/>
                 <outlet property="menuCloseWindow" destination="W5w-UZ-crk" id="6ff-BT-ENV"/>
@@ -57,6 +58,9 @@
                                 <connections>
                                     <action selector="showAbout:" target="-1" id="tGt-68-tLn"/>
                                 </connections>
+                            </menuItem>
+                            <menuItem title="Check for Updates..." id="GEA-5y-yzH">
+                                <modifierMask key="keyEquivalentModifierMask"/>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
                             <menuItem title="Preferences…" keyEquivalent="," id="BOF-NM-1cW">

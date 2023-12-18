@@ -1,6 +1,7 @@
 import AppKit
 import UserNotifications
 import OSLog
+import Sparkle
 import GhosttyKit
 
 class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, GhosttyAppStateDelegate {
@@ -12,6 +13,7 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     )
     
     /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    @IBOutlet private var menuCheckForUpdates: NSMenuItem?
     @IBOutlet private var menuOpenConfig: NSMenuItem?
     @IBOutlet private var menuReloadConfig: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
@@ -56,8 +58,17 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
     
+    /// Manages updates
+    let updaterController: SPUStandardUpdaterController
+    
     override init() {
-        self.terminalManager = TerminalManager(ghostty)
+        terminalManager = TerminalManager(ghostty)
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+        
         super.init()
         
         ghostty.delegate = self
@@ -79,6 +90,10 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
+        
+        // Hook up updater menu
+        menuCheckForUpdates?.target = updaterController
+        menuCheckForUpdates?.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
         
         // Let's launch our first window. We only do this if we have no other windows. It
         // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
