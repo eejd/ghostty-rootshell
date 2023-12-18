@@ -15,7 +15,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
-
+    
     /// The surface tree for this window.
     @Published var surfaceTree: Ghostty.SplitNode? = nil {
         didSet {
@@ -36,7 +36,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     /// The clipboard confirmation window, if shown.
     private var clipboardConfirmation: ClipboardConfirmationController? = nil
-
+    
     /// This is set to true when we care about frame changes. This is a small optimization since
     /// this controller registers a listener for ALL frame change notifications and this lets us bail
     /// early if we don't care.
@@ -89,7 +89,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     //MARK: - Methods
-
+    
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
     /// changes and when a window is closed.
@@ -110,7 +110,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             guard let equiv = Ghostty.keyEquivalentLabel(key: trigger.key, mods: trigger.mods) else {
                 continue
             }
-
+            
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.labelFont(ofSize: 0),
                 .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
@@ -137,7 +137,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         tabWindowsHash = v
         self.relabelTabs()
     }
-
+    
     //MARK: - NSWindowController
     
     override func windowWillLoad() {
@@ -147,7 +147,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     override func windowDidLoad() {
         guard let window = window else { return }
-
+        
         // If window decorations are disabled, remove our title
         if (!ghostty.windowDecorations) { window.styleMask.remove(.titled) }
         
@@ -231,7 +231,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 break
             }
         })
-            
+        
         self.alert = alert
         
         return false
@@ -242,14 +242,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
         self.window?.contentView = nil
-
+        
         self.relabelTabs()
     }
-
+    
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
     }
-
+    
     //MARK: - First Responder
     
     @IBAction func newWindow(_ sender: Any?) {
@@ -268,7 +268,53 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     @IBAction func closeWindow(_ sender: Any) {
-        self.window?.performClose(sender)
+        guard let window = window else { return }
+        guard let tabGroup = window.tabGroup else {
+            // No tabs, no tab group, just perform a normal close.
+            window.performClose(sender)
+            return
+        }
+        
+        // If have one window then we just do a normal close
+        if tabGroup.windows.count == 1 {
+            window.performClose(sender)
+            return
+        }
+        
+        // Check if any windows require close confirmation.
+        var needsConfirm: Bool = false
+        for tabWindow in tabGroup.windows {
+            guard let c = tabWindow.windowController as? TerminalController else { continue }
+            if (c.surfaceTree?.needsConfirmQuit() ?? false) {
+                needsConfirm = true
+                break
+            }
+        }
+        
+        // If none need confirmation then we can just close all the windows.
+        if (!needsConfirm) {
+            for tabWindow in tabGroup.windows {
+                tabWindow.close()
+            }
+            
+            return
+        }
+        
+        // If we need confirmation by any, show one confirmation for all windows
+        // in the tab group.
+        let alert = NSAlert()
+        alert.messageText = "Close Window?"
+        alert.informativeText = "All terminal sessions in this window will be terminated."
+        alert.addButton(withTitle: "Close Window")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window, completionHandler: { response in
+            if (response == .alertFirstButtonReturn) {
+                for tabWindow in tabGroup.windows {
+                    tabWindow.close()
+                }
+            }
+        })
     }
     
     @IBAction func splitHorizontally(_ sender: Any) {
