@@ -697,6 +697,9 @@ pub const Key = enum(c_int) {
         .{ ']', .right_bracket },
         .{ '\\', .backslash },
 
+        // Control characters
+        .{ '\t', .tab },
+
         // Keypad entries. We just assume keypad with the kp_ prefix
         // so that has some special meaning. These must also always be last.
         .{ '0', .kp_0 },
