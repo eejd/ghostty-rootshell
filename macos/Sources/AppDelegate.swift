@@ -4,7 +4,12 @@ import OSLog
 import Sparkle
 import GhosttyKit
 
-class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, GhosttyAppStateDelegate {
+class AppDelegate: NSObject, 
+                    ObservableObject,
+                    NSApplicationDelegate,
+                    UNUserNotificationCenterDelegate, 
+                    GhosttyAppStateDelegate
+{
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
     static let logger = Logger(
@@ -60,15 +65,16 @@ class AppDelegate: NSObject, ObservableObject, NSApplicationDelegate, UNUserNoti
     
     /// Manages updates
     let updaterController: SPUStandardUpdaterController
+    let updaterDelegate: UpdaterDelegate = UpdaterDelegate()
     
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
-        
+
         super.init()
         
         ghostty.delegate = self

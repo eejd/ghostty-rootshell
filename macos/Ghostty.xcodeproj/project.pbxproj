@@ -14,6 +14,7 @@
 		A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */; };
 		A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC212B2FB6B400E92F16 /* AboutView.swift */; };
 		A51BFC272B30F1B800E92F16 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A51BFC262B30F1B800E92F16 /* Sparkle */; };
+		A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */; };
 		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
 		A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
@@ -59,6 +60,7 @@
 		A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutController.swift; sourceTree = "<group>"; };
 		A51BFC212B2FB6B400E92F16 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyDebug.entitlements; sourceTree = "<group>"; };
+		A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateDelegate.swift; sourceTree = "<group>"; };
 		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
 		A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
@@ -123,6 +125,14 @@
 			path = About;
 			sourceTree = "<group>";
 		};
+		A51BFC292B30F69F00E92F16 /* Update */ = {
+			isa = PBXGroup;
+			children = (
+				A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */,
+			);
+			path = Update;
+			sourceTree = "<group>";
+		};
 		A53426362A7DC53000EBB7A2 /* Features */ = {
 			isa = PBXGroup;
 			children = (
@@ -131,6 +141,7 @@
 				A5E112912AF73E4D00C6E0C2 /* ClipboardConfirmation */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 				A51BFC1C2B2FB5AB00E92F16 /* About */,
+				A51BFC292B30F69F00E92F16 /* Update */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -359,6 +370,7 @@
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
 				A59630972AEE163600D64628 /* HostingWindow.swift in Sources */,
 				A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */,
+				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
