@@ -418,7 +418,7 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
             log.info("loaded OpenGL {}.{}", .{ major, minor });
 
             // We require at least OpenGL 3.3
-            if (major < 3 or minor < 3) {
+            if (major < 3 or (major == 3 and minor < 3)) {
                 log.warn("OpenGL version is too old. Ghostty requires OpenGL 3.3", .{});
                 return error.OpenGLOutdated;
             }
