@@ -5,6 +5,7 @@ const global = &@import("../main.zig").state;
 
 const Config = @import("Config.zig");
 const c_get = @import("c_get.zig");
+const edit = @import("edit.zig");
 const Key = @import("key.zig").Key;
 
 const log = std.log.scoped(.config);
@@ -121,7 +122,7 @@ export fn ghostty_config_get_error(self: *Config, idx: u32) Error {
 }
 
 export fn ghostty_config_open() void {
-    Config.edit(global.alloc) catch |err| {
+    edit.open(global.alloc) catch |err| {
         log.err("error opening config in editor err={}", .{err});
     };
 }

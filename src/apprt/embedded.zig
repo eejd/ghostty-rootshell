@@ -164,7 +164,7 @@ pub const App = struct {
     }
 
     pub fn openConfig(self: *App) !void {
-        try Config.edit(self.core_app.alloc);
+        try configpkg.edit.open(self.core_app.alloc);
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
