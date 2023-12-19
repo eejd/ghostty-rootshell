@@ -1345,6 +1345,38 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         else => if (std.os.argv.len <= 1) return,
     }
 
+    // On Linux, we have a special case where if the executing
+    // program is "xdg-terminal-exec" then we treat all CLI
+    // args as if they are a command to execute.
+    if (comptime builtin.os.tag == .linux) xdg: {
+        if (!std.mem.eql(
+            u8,
+            std.fs.path.basename(std.mem.sliceTo(std.os.argv[0], 0)),
+            "xdg-terminal-exec",
+        )) break :xdg;
+
+        const arena_alloc = self._arena.?.allocator();
+
+        // First, we add an artificial "-e" so that if we
+        // replay the inputs to rebuild the config (i.e. if
+        // a theme is set) then we will get the same behavior.
+        try self._inputs.append(arena_alloc, "-e");
+
+        // Next, take all remaining args and use that to build up
+        // a command to execute.
+        var command = std.ArrayList(u8).init(arena_alloc);
+        errdefer command.deinit();
+        for (std.os.argv[1..]) |arg_raw| {
+            const arg = std.mem.sliceTo(arg_raw, 0);
+            try self._inputs.append(arena_alloc, try arena_alloc.dupe(u8, arg));
+            try command.appendSlice(arg);
+            try command.append(' ');
+        }
+
+        self.command = command.items[0 .. command.items.len - 1];
+        return;
+    }
+
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
@@ -1630,35 +1662,38 @@ pub fn finalize(self: *Config) !void {
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
-    // If it isn't "-e" then we just continue parsing normally.
-    if (!std.mem.eql(u8, arg, "-e")) return true;
+    if (std.mem.eql(u8, arg, "-e")) {
+        // Build up the command. We don't clean this up because we take
+        // ownership in our allocator.
+        var command = std.ArrayList(u8).init(alloc);
+        errdefer command.deinit();
 
-    // Build up the command. We don't clean this up because we take
-    // ownership in our allocator.
-    var command = std.ArrayList(u8).init(alloc);
-    errdefer command.deinit();
+        while (iter.next()) |param| {
+            try self._inputs.append(alloc, try alloc.dupe(u8, param));
+            try command.appendSlice(param);
+            try command.append(' ');
+        }
 
-    while (iter.next()) |param| {
-        try command.appendSlice(param);
-        try command.append(' ');
-    }
+        if (command.items.len == 0) {
+            try self._errors.add(alloc, .{
+                .message = try std.fmt.allocPrintZ(
+                    alloc,
+                    "missing command after {s}",
+                    .{arg},
+                ),
+            });
 
-    if (command.items.len == 0) {
-        try self._errors.add(alloc, .{
-            .message = try std.fmt.allocPrintZ(
-                alloc,
-                "missing command after -e",
-                .{},
-            ),
-        });
+            return false;
+        }
 
+        self.command = command.items[0 .. command.items.len - 1];
+
+        // Do not continue, we consumed everything.
         return false;
     }
 
-    self.command = command.items[0 .. command.items.len - 1];
-
-    // Do not continue, we consumed everything.
-    return false;
+    // If we didn't find a special case, continue parsing normally
+    return true;
 }
 
 /// Create a shallow copy of this config. This will share all the memory
