@@ -35,6 +35,9 @@ with open("sign_update.txt", "r") as f:
             value = value[1:-1]
         attrs[key] = value
 
+# We need to register our namespaces before reading or writing any files.
+ET.register_namespace("sparkle", "http://www.andymatuschak.org/xml-namespaces/sparkle")
+
 # Open our existing appcast and find the channel element. This is where
 # we'll add our new item.
 et = ET.parse('appcast.xml')
@@ -54,7 +57,7 @@ elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "12.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<p>Automated build from commit <pre>{commit}</pre>.</p>
+<p>Automated build from commit <code>{commit}</code>.</p>
 """
 elem = ET.SubElement(item, "enclosure")
 elem.set("url", f"https://tip.files.ghostty.dev/{build}/ghostty-macos-universal.zip")
@@ -63,4 +66,4 @@ for key, value in attrs.items():
     elem.set(key, value)
 
 # Output the new appcast.
-et.write("appcast_new.xml")
+et.write("appcast_new.xml", xml_declaration=True, encoding="utf-8")
