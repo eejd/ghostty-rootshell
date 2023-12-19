@@ -91,5 +91,11 @@
 	<string>A program in Ghostty wants to use speech recognition.</string>
 	<key>NSSystemAdministrationUsageDescription</key>
 	<string>A program in Ghostty requires elevated privileges.</string>
+	<key>CFBundleVersion</key>
+	<string></string>
+	<key>CFBundleShortVersionString</key>
+	<string></string>
+	<key>GhosttyCommit</key>
+	<string></string>
 </dict>
 </plist>
