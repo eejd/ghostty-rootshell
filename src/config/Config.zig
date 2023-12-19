@@ -1847,6 +1847,28 @@ test "parse e: command and args" {
     try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
 }
 
+test "parse xdg-terminal-exec: command and args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "xdg-terminal-exec", &it));
+    try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
+}
+
+test "parse xdg-terminal-exec: command and args with abs path" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "/home/ghostty/.local/bin/xdg-terminal-exec", &it));
+    try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
+}
+
 test "clone default" {
     const testing = std.testing;
     const alloc = testing.allocator;
