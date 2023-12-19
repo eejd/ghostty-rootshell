@@ -1639,6 +1639,7 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         errdefer command.deinit();
 
         while (iter.next()) |param| {
+            try self._inputs.append(alloc, try alloc.dupe(u8, param));
             try command.appendSlice(param);
             try command.append(' ');
         }
