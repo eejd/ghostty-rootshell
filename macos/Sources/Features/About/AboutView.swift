@@ -2,14 +2,9 @@ import SwiftUI
 
 struct AboutView: View {
     /// Read the commit from the bundle.
-    var commit: String {
-        guard let valueAny = Bundle.main.infoDictionary?["CFBundleVersion"],
-              let version = valueAny as? String else {
-            return "unknown"
-        }
-        
-        return version
-    }
+    var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
+    var commit: String? { Bundle.main.infoDictionary?["GhosttyCommit"] as? String }
+    var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
     
     var body: some View {
         VStack(alignment: .center) {
@@ -21,8 +16,10 @@ struct AboutView: View {
             Text("Ghostty")
                 .font(.title3)
             
-            Text("Commit: \(commit)")
-                .font(.body)
+            if let version = self.version {
+                Text("Version: \(version)")
+                    .font(.body)
+            }
         }
         .frame(minWidth: 300)
         .padding()
