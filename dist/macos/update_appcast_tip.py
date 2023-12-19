@@ -58,6 +58,12 @@ elem.text = "12.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
 <p>Automated build from commit <code>{commit}</code>.</p>
+<p>
+These are automatic per-commit builds generated from the main Git branch.
+We do not generate any release notes for these builds. You can view the full
+commit history
+<a href="https://github.com/mitchellh/ghostty">on GitHub</a> for all changes.
+</p>
 """
 elem = ET.SubElement(item, "enclosure")
 elem.set("url", f"https://tip.files.ghostty.dev/{build}/ghostty-macos-universal.zip")
