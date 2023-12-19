@@ -1,9 +1,6 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const internal_os = @import("../os/main.zig");
-const Command = @import("../Command.zig");
 
 const log = std.log.scoped(.config);
 
