@@ -2,8 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const internal_os = @import("../os/main.zig");
 
-const log = std.log.scoped(.config);
-
 /// Open the configuration in the OS default editor according to the default
 /// paths the main config file could be in.
 pub fn open(alloc_gpa: Allocator) !void {
