@@ -11,6 +11,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const font = @import("../main.zig");
+const Trapezoid = @import("canvas.zig").Trapezoid;
 
 const log = std.log.scoped(.powerline_font);
 
@@ -96,6 +97,11 @@ fn draw(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32)
         0xE0B4,
         0xE0B6,
         => try self.draw_half_circle(alloc, canvas, cp),
+
+        // Mirrored top-down trapezoids
+        0xE0D2,
+        0xE0D4,
+        => try self.draw_trapezoid_top_bottom(canvas, cp),
 
         else => return error.InvalidCodepoint,
     }
@@ -397,6 +403,113 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
     }
 }
 
+fn draw_trapezoid_top_bottom(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
+    const t_top: Trapezoid = if (cp == 0xE0D4)
+        .{
+            .top = 0,
+            .bottom = @intCast(self.height / 2 - self.height / 20),
+            .left = .{
+                .p1 = .{
+                    .x = 0,
+                    .y = 0,
+                },
+                .p2 = .{
+                    .x = @intCast(self.width - self.width / 3),
+                    .y = @intCast(self.height / 2 - self.height / 20),
+                },
+            },
+            .right = .{
+                .p1 = .{
+                    .x = @intCast(self.width),
+                    .y = 0,
+                },
+                .p2 = .{
+                    .x = @intCast(self.width),
+                    .y = @intCast(self.height / 2 - self.height / 20),
+                },
+            },
+        }
+    else
+        .{
+            .top = 0,
+            .bottom = @intCast(self.height / 2 - self.height / 20),
+            .left = .{
+                .p1 = .{
+                    .x = 0,
+                    .y = 0,
+                },
+                .p2 = .{
+                    .x = 0,
+                    .y = @intCast(self.height / 2 - self.height / 20),
+                },
+            },
+            .right = .{
+                .p1 = .{
+                    .x = @intCast(self.width),
+                    .y = 0,
+                },
+                .p2 = .{
+                    .x = @intCast(self.width / 3),
+                    .y = @intCast(self.height / 2 - self.height / 20),
+                },
+            },
+        };
+
+    const t_bottom: Trapezoid = if (cp == 0xE0D4)
+        .{
+            .top = @intCast(self.height / 2 + self.height / 20),
+            .bottom = @intCast(self.height),
+            .left = .{
+                .p1 = .{
+                    .x = @intCast(self.width - self.width / 3),
+                    .y = @intCast(self.height / 2 + self.height / 20),
+                },
+                .p2 = .{
+                    .x = 0,
+                    .y = @intCast(self.height),
+                },
+            },
+            .right = .{
+                .p1 = .{
+                    .x = @intCast(self.width),
+                    .y = @intCast(self.height / 2 + self.height / 20),
+                },
+                .p2 = .{
+                    .x = @intCast(self.width),
+                    .y = @intCast(self.height),
+                },
+            },
+        }
+    else
+        .{
+            .top = @intCast(self.height / 2 + self.height / 20),
+            .bottom = @intCast(self.height),
+            .left = .{
+                .p1 = .{
+                    .x = 0,
+                    .y = @intCast(self.height / 2 + self.height / 20),
+                },
+                .p2 = .{
+                    .x = 0,
+                    .y = @intCast(self.height),
+                },
+            },
+            .right = .{
+                .p1 = .{
+                    .x = @intCast(self.width / 3),
+                    .y = @intCast(self.height / 2 + self.height / 20),
+                },
+                .p2 = .{
+                    .x = @intCast(self.width),
+                    .y = @intCast(self.height),
+                },
+            },
+        };
+
+    canvas.trapezoid(t_top);
+    canvas.trapezoid(t_bottom);
+}
+
 test "all" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -410,6 +523,8 @@ test "all" {
         0xE0BE,
         0xE0B4,
         0xE0B6,
+        0xE0D2,
+        0xE0D4,
     };
     for (cps) |cp| {
         var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);

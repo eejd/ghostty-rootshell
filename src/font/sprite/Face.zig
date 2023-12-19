@@ -181,6 +181,8 @@ const Kind = enum {
             0xE0BA,
             0xE0BC,
             0xE0BE,
+            0xE0D2,
+            0xE0D4,
             => .powerline,
 
             else => null,
