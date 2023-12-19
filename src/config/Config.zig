@@ -1345,6 +1345,38 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         else => if (std.os.argv.len <= 1) return,
     }
 
+    // On Linux, we have a special case where if the executing
+    // program is "xdg-terminal-exec" then we treat all CLI
+    // args as if they are a command to execute.
+    if (comptime builtin.os.tag == .linux) xdg: {
+        if (!std.mem.eql(
+            u8,
+            std.fs.path.basename(std.mem.sliceTo(std.os.argv[0], 0)),
+            "xdg-terminal-exec",
+        )) break :xdg;
+
+        const arena_alloc = self._arena.?.allocator();
+
+        // First, we add an artificial "-e" so that if we
+        // replay the inputs to rebuild the config (i.e. if
+        // a theme is set) then we will get the same behavior.
+        try self._inputs.append(arena_alloc, "-e");
+
+        // Next, take all remaining args and use that to build up
+        // a command to execute.
+        var command = std.ArrayList(u8).init(arena_alloc);
+        errdefer command.deinit();
+        for (std.os.argv[1..]) |arg_raw| {
+            const arg = std.mem.sliceTo(arg_raw, 0);
+            try self._inputs.append(arena_alloc, try arena_alloc.dupe(u8, arg));
+            try command.appendSlice(arg);
+            try command.append(' ');
+        }
+
+        self.command = command.items[0 .. command.items.len - 1];
+        return;
+    }
+
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
@@ -1630,9 +1662,7 @@ pub fn finalize(self: *Config) !void {
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
-    if (std.mem.eql(u8, arg, "-e") or
-        std.mem.eql(u8, std.fs.path.basename(arg), "xdg-terminal-exec"))
-    {
+    if (std.mem.eql(u8, arg, "-e")) {
         // Build up the command. We don't clean this up because we take
         // ownership in our allocator.
         var command = std.ArrayList(u8).init(alloc);
@@ -1845,28 +1875,6 @@ test "parse e: command and args" {
 
     var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
     try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
-    try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
-}
-
-test "parse xdg-terminal-exec: command and args" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
-    try testing.expect(!try cfg.parseManuallyHook(alloc, "xdg-terminal-exec", &it));
-    try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
-}
-
-test "parse xdg-terminal-exec: command and args with abs path" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
-    try testing.expect(!try cfg.parseManuallyHook(alloc, "/home/ghostty/.local/bin/xdg-terminal-exec", &it));
     try testing.expectEqualStrings("echo foo bar baz", cfg.command.?);
 }
 
