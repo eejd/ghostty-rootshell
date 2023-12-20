@@ -762,25 +762,13 @@ const Subprocess = struct {
             try env.put("TERM", opts.config.term);
             try env.put("COLORTERM", "truecolor");
 
+            // Assume that the resources directory is adjacent to the terminfo
+            // database
             var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const terminfo_dir = terminfo_dir: {
-                // On macOS the terminfo directory can be inside the resources
-                // directory, so check if that is the case
-                if (comptime builtin.target.isDarwin()) {
-                    if (try internal_os.maybeDir(&buf, base, "terminfo", "ghostty.termcap")) |v| {
-                        break :terminfo_dir v;
-                    }
-                }
-
-                // Otherwise we assume the terminfo directory is adjacent to the
-                // resources directory
-                const parent = std.fs.path.basename(base);
-                break :terminfo_dir try internal_os.maybeDir(&buf, parent, "terminfo", "ghostty.termcap");
-            };
-
-            if (terminfo_dir) |dir| {
-                try env.put("TERMINFO", dir);
-            }
+            const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{
+                std.fs.path.dirname(base) orelse unreachable,
+            });
+            try env.put("TERMINFO", dir);
         } else {
             if (comptime builtin.target.isDarwin()) {
                 log.warn("ghostty terminfo not found, using xterm-256color", .{});
