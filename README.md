@@ -485,31 +485,20 @@ build on a macOS machine with XCode installed:
 
 ```shell-session
 $ zig build -Doptimize=ReleaseFast
-$ cd macos && xcodebuild -configuration Debug
+$ cd macos && xcodebuild -configuration ReleaseLocal
 ```
 
-This will output the app to `macos/build/Debug/Ghostty.app`.
+This will output the app to `macos/build/ReleaseLocal/Ghostty.app`.
 This app will be not be signed or notarized.
 [Official continuous builds are available](https://github.com/mitchellh/ghostty/releases/tag/tip)
 that are both signed and notarized.
 
-Note that this is a debug build. If you build a release build, you'll have
-to either manually disable "Library Validation" for the release target or
-you'll have to manually configure the Xcode project to use a valid macOS
-developer signing key. `ReleaseLocal` build configuration provides Release
-build settings with "Library Validation" disabled.
-
-```shell-session
-$ zig build -Doptimize=ReleaseFast
-$ cd macos && xcodebuild -configuration ReleaseLocal
-```
-
-If you want a release build, I highly recommend you use
+The "ReleaseLocal" build configuration is specifically for local release
+builds and disables some security features (such as "Library Validation")
+to make it easier to run without having to have a code signing identity
+and so on. These builds aren't meant for distribution. If you want a release
+build with all security features, I highly recommend you use
 [the official continuous builds](https://github.com/mitchellh/ghostty/releases/tag/tip).
-
-If Ghostty is crashing on launch with an error about codesigning, you've
-probably built a release build without applying the requirements in the previous
-paragraph.
 
 When running the app, logs are available via macOS unified logging such
 as `Console.app`. The easiest way I've found to view these is to just use the CLI:
