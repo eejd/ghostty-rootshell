@@ -288,7 +288,7 @@ pub fn build(b: *std.Build) !void {
         const install = b.addInstallDirectory(.{
             .source_dir = .{ .path = "src/shell-integration" },
             .install_dir = .{ .custom = "share" },
-            .install_subdir = "shell-integration",
+            .install_subdir = b.pathJoin(&.{ "ghostty", "shell-integration" }),
             .exclude_extensions = &.{".md"},
         });
         b.getInstallStep().dependOn(&install.step);
@@ -311,7 +311,7 @@ pub fn build(b: *std.Build) !void {
         const install = b.addInstallDirectory(.{
             .source_dir = upstream.path("ghostty"),
             .install_dir = .{ .custom = "share" },
-            .install_subdir = "themes",
+            .install_subdir = b.pathJoin(&.{ "ghostty", "themes" }),
             .exclude_extensions = &.{".md"},
         });
         b.getInstallStep().dependOn(&install.step);

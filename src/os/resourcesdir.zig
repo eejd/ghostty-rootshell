@@ -44,7 +44,9 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
         // is valid even on Mac since there is nothing that requires
         // Ghostty to be in an app bundle.
         if (try maybeDir(&dir_buf, dir, "share", sentinel)) |v| {
-            return try alloc.dupe(u8, v);
+            // When found under a "share" prefix, the resources directory is the
+            // "ghostty" subdirectory.
+            return try std.fs.path.join(alloc, &.{ v, "ghostty" });
         }
     }
 
