@@ -232,12 +232,12 @@
 		A5B30528299BEAAA0047F10C = {
 			isa = PBXGroup;
 			children = (
-				3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */,
 				A5CB04372B0F1C1C009ED217 /* themes */,
 				A571AB1C2A206FC600248498 /* Ghostty-Info.plist */,
 				A5B30538299BEAAB0047F10C /* Assets.xcassets */,
 				A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */,
 				A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */,
+				3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */,
 				A54CD6ED299BEB14008C95BB /* Sources */,
 				A5D495A3299BECBA00DD1313 /* Frameworks */,
 				A5A1F8862A489D7400D1E8BC /* Resources */,
@@ -685,7 +685,7 @@
 				3B39CAA22B33946300DABEB8 /* ReleaseLocal */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = ReleaseLocal;
 		};
 		A5B30540299BEAAB0047F10C /* Build configuration list for PBXNativeTarget "Ghostty" */ = {
 			isa = XCConfigurationList;
@@ -695,7 +695,7 @@
 				3B39CAA32B33946300DABEB8 /* ReleaseLocal */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = ReleaseLocal;
 		};
 /* End XCConfigurationList section */
 

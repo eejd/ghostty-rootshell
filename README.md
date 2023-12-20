@@ -485,7 +485,7 @@ build on a macOS machine with XCode installed:
 
 ```shell-session
 $ zig build -Doptimize=ReleaseFast
-$ cd macos && xcodebuild -configuration ReleaseLocal
+$ cd macos && xcodebuild
 ```
 
 This will output the app to `macos/build/ReleaseLocal/Ghostty.app`.
