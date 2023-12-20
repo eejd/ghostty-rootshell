@@ -504,9 +504,7 @@ $ zig build -Doptimize=ReleaseFast
 $ cd macos && xcodebuild -configuration ReleaseLocal
 ```
 
-We currently don't support any way to do this from
-the command line so you'll have to open Xcode graphically. If you want a release
-build, I highly recommend you use
+If you want a release build, I highly recommend you use
 [the official continuous builds](https://github.com/mitchellh/ghostty/releases/tag/tip).
 
 If Ghostty is crashing on launch with an error about codesigning, you've
