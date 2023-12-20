@@ -1482,10 +1482,15 @@ fn keyEvent(
         .closed => return true,
         .ignored => {},
         .consumed => if (action == .press or action == .repeat) {
-            // If we consume the key then we want to reset the dead key
-            // state.
-            c.gtk_im_context_reset(self.im_context);
-            self.core_surface.preeditCallback(null) catch {};
+            // If we were in the composing state then we reset our context.
+            // We do NOT want to reset if we're not in the composing state
+            // because there is other IME state that we want to preserve,
+            // such as quotation mark ordering for Chinese input.
+            if (self.im_composing) {
+                c.gtk_im_context_reset(self.im_context);
+                self.core_surface.preeditCallback(null) catch {};
+            }
+
             return true;
         },
     }
