@@ -496,7 +496,15 @@ that are both signed and notarized.
 Note that this is a debug build. If you build a release build, you'll have
 to either manually disable "Library Validation" for the release target or
 you'll have to manually configure the Xcode project to use a valid macOS
-developer signing key. We currently don't support any way to do this from
+developer signing key. `ReleaseLocal` build configuration provides Release
+build settings with "Library Validation" disabled.
+
+```shell-session
+$ zig build -Doptimize=ReleaseFast
+$ cd macos && xcodebuild -configuration ReleaseLocal
+```
+
+We currently don't support any way to do this from
 the command line so you'll have to open Xcode graphically. If you want a release
 build, I highly recommend you use
 [the official continuous builds](https://github.com/mitchellh/ghostty/releases/tag/tip).
