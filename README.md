@@ -439,9 +439,10 @@ building with `--static=false`). On Ubuntu, use
 $ sudo apt install libgtk-4-dev libadwaita-1-dev git
 ```
 
-**Note: a recent GTK is required for ghostty to work with Nvidia (GL) drivers under x11.**
-Ubuntu 22.04 LTS (gtk 4.6) is not new enough.  Ubuntu 23.10 (gtk 4.12) works.
-From [this discussion](https://discourse.gnome.org/t/opengl-context-version-not-respected-on-gtk4-rs/12162?u=cdehais) the problem was fixed in GTK by Dec 2022.
+**Note: a recent GTK is required for Ghostty to work with Nvidia (GL) drivers
+under x11.** Ubuntu 22.04 LTS has GTK 4.6 which is not new enough. Ubuntu 23.10
+has GTK 4.12 and works. From [this discussion](https://discourse.gnome.org/t/opengl-context-version-not-respected-on-gtk4-rs/12162?u=cdehais)
+the problem was fixed in GTK by Dec 2022.
 
 On Arch Linux, use
 
