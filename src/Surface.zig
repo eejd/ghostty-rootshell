@@ -2090,12 +2090,19 @@ pub fn mouseButtonCallback(
 }
 
 fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
+    const t = &self.io.terminal;
+
+    // Click to move cursor only works on the primary screen where prompts
+    // exist. This means that alt screen multiplexers like tmux will not
+    // support this feature. It is just too messy.
+    if (t.active_screen != .primary) return;
+
     // Get our path
     const from = (terminal.point.Viewport{
-        .x = self.io.terminal.screen.cursor.x,
-        .y = self.io.terminal.screen.cursor.y,
-    }).toScreen(&self.io.terminal.screen);
-    const path = self.io.terminal.screen.promptPath(from, to);
+        .x = t.screen.cursor.x,
+        .y = t.screen.cursor.y,
+    }).toScreen(&t.screen);
+    const path = t.screen.promptPath(from, to);
     log.debug("click-to-move-cursor from={} to={} path={}", .{ from, to, path });
 
     // If we aren't moving at all, fast path out of here.
@@ -2108,9 +2115,9 @@ fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
     // We do Y first because it prevents any weird wrap behavior.
     if (path.y != 0) {
         const arrow = if (path.y < 0) arrow: {
-            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOA" else "\x1b[A";
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOA" else "\x1b[A";
         } else arrow: {
-            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOB" else "\x1b[B";
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOB" else "\x1b[B";
         };
         for (0..@abs(path.y)) |_| {
             _ = self.io_thread.mailbox.push(.{
@@ -2120,9 +2127,9 @@ fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
     }
     if (path.x != 0) {
         const arrow = if (path.x < 0) arrow: {
-            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOD" else "\x1b[D";
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOD" else "\x1b[D";
         } else arrow: {
-            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOC" else "\x1b[C";
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOC" else "\x1b[C";
         };
         for (0..@abs(path.x)) |_| {
             _ = self.io_thread.mailbox.push(.{
