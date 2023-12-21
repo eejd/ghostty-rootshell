@@ -182,6 +182,7 @@ const DerivedConfig = struct {
     clipboard_paste_bracketed_safe: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
+    cursor_click_to_move: bool,
     desktop_notifications: bool,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
@@ -235,6 +236,7 @@ const DerivedConfig = struct {
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
+            .cursor_click_to_move = config.@"cursor-click-to-move",
             .desktop_notifications = config.@"desktop-notifications",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
@@ -2094,6 +2096,9 @@ pub fn mouseButtonCallback(
 /// screen point if possible. This works by converting the path to the
 /// given point into a series of arrow key inputs.
 fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
+    // If click-to-move is disabled then we're done.
+    if (!self.config.cursor_click_to_move) return;
+
     const t = &self.io.terminal;
 
     // Click to move cursor only works on the primary screen where prompts
