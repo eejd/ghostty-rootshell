@@ -1875,6 +1875,53 @@ pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
     };
 }
 
+/// Returns the selection bounds for the prompt at the given point. If the
+/// point is not on a prompt line, this returns null. Note that due to
+/// the underlying protocol, this will only return the y-coordinates of
+/// the prompt. The x-coordinates of the start will always be zero and
+/// the x-coordinates of the end will always be the last column.
+///
+/// Note that this feature requires shell integration. If shell integration
+/// is not enabled, this will always return null.
+pub fn selectPrompt(self: *Screen, pt: point.ScreenPoint) ?Selection {
+    // Ensure that the line the point is on is a prompt.
+    const pt_row = self.getRow(.{ .screen = pt.y });
+    switch (pt_row.getSemanticPrompt()) {
+        .prompt, .prompt_continuation, .input => {},
+        .command, .unknown => return null,
+    }
+
+    // Find the start of the prompt.
+    const start: usize = start: for (0..pt.y) |offset| {
+        const y = pt.y - offset;
+        const row = self.getRow(.{ .screen = y - 1 });
+        switch (row.getSemanticPrompt()) {
+            // A prompt, we continue searching.
+            .prompt, .prompt_continuation, .input => {},
+
+            // Command output or unknown, definitely not a prompt.
+            .command, .unknown => break :start y,
+        }
+    } else 0;
+
+    // Find the end of the prompt.
+    const end: usize = end: for (pt.y..self.rowsWritten()) |y| {
+        const row = self.getRow(.{ .screen = y });
+        switch (row.getSemanticPrompt()) {
+            // A prompt, we continue searching.
+            .prompt, .prompt_continuation, .input => {},
+
+            // Command output or unknown, definitely not a prompt.
+            .command, .unknown => break :end y - 1,
+        }
+    } else self.rowsWritten() - 1;
+
+    return .{
+        .start = .{ .x = 0, .y = start },
+        .end = .{ .x = self.cols - 1, .y = end },
+    };
+}
+
 /// Scroll behaviors for the scroll function.
 pub const Scroll = union(enum) {
     /// Scroll to the top of the scroll buffer. The first line of the
@@ -4723,6 +4770,142 @@ test "Screen: selectOutput" {
         row = s.getRow(.{ .screen = 1 });
         row.setSemanticPrompt(.command);
         try testing.expect(s.selectOutput(.{ .x = 2, .y = 0 }) == null);
+    }
+}
+
+test "Screen: selectPrompt basics" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 15, 10, 0);
+    defer s.deinit();
+
+    // zig fmt: off
+    {
+                                                    // line number:
+        try s.testWriteString("output1\n");         // 0
+        try s.testWriteString("output1\n");         // 1
+        try s.testWriteString("prompt2\n");         // 2
+        try s.testWriteString("input2\n");          // 3
+        try s.testWriteString("output2\n");         // 4
+        try s.testWriteString("output2\n");         // 5
+        try s.testWriteString("prompt3$ input3\n"); // 6
+        try s.testWriteString("output3\n");         // 7
+        try s.testWriteString("output3\n");         // 8
+        try s.testWriteString("output3");           // 9
+    }
+
+    var row = s.getRow(.{ .screen = 2 });
+    row.setSemanticPrompt(.prompt);
+    row = s.getRow(.{ .screen = 3 });
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{ .screen = 4 });
+    row.setSemanticPrompt(.command);
+    row = s.getRow(.{ .screen = 6 });
+    row.setSemanticPrompt(.input);
+    row = s.getRow(.{ .screen = 7 });
+    row.setSemanticPrompt(.command);
+
+    // Not at a prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 0, .y = 1 });
+        try testing.expect(sel == null);
+    }
+    {
+        const sel = s.selectPrompt(.{ .x = 0, .y = 8 });
+        try testing.expect(sel == null);
+    }
+
+    // Single line prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 1, .y = 6 }).?;
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 0, .y = 6 },
+            .end = .{ .x = 9, .y = 6 },
+        }, sel);
+    }
+
+    // Multi line prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 1, .y = 3 }).?;
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 0, .y = 2 },
+            .end = .{ .x = 9, .y = 3 },
+        }, sel);
+    }
+}
+
+test "Screen: selectPrompt prompt at start" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 15, 10, 0);
+    defer s.deinit();
+
+    // zig fmt: off
+    {
+                                                    // line number:
+        try s.testWriteString("prompt1\n");         // 0
+        try s.testWriteString("input1\n");          // 1
+        try s.testWriteString("output2\n");         // 2
+        try s.testWriteString("output2\n");         // 3
+    }
+
+    var row = s.getRow(.{ .screen = 0 });
+    row.setSemanticPrompt(.prompt);
+    row = s.getRow(.{ .screen = 1 });
+    row.setSemanticPrompt(.input);
+
+    // Not at a prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 0, .y = 2 });
+        try testing.expect(sel == null);
+    }
+
+    // Multi line prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 9, .y = 1 },
+        }, sel);
+    }
+}
+
+test "Screen: selectPrompt prompt at end" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 15, 10, 0);
+    defer s.deinit();
+
+    // zig fmt: off
+    {
+                                                    // line number:
+        try s.testWriteString("output2\n");         // 0
+        try s.testWriteString("output2\n");         // 1
+        try s.testWriteString("prompt1\n");         // 2
+        try s.testWriteString("input1\n");          // 3
+    }
+
+    var row = s.getRow(.{ .screen = 2 });
+    row.setSemanticPrompt(.prompt);
+    row = s.getRow(.{ .screen = 3 });
+    row.setSemanticPrompt(.input);
+
+    // Not at a prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 0, .y = 1 });
+        try testing.expect(sel == null);
+    }
+
+    // Multi line prompt
+    {
+        const sel = s.selectPrompt(.{ .x = 1, .y = 2 }).?;
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 0, .y = 2 },
+            .end = .{ .x = 9, .y = 3 },
+        }, sel);
     }
 }
 
