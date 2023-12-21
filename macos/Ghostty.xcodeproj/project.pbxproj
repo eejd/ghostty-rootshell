@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		55154BE02B33911F001622DC /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = 55154BDF2B33911F001622DC /* ghostty */; };
+		552964E62B34A9B400030505 /* vim in Resources */ = {isa = PBXBuildFile; fileRef = 552964E52B34A9B400030505 /* vim */; };
 		8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */; };
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
 		A51B78472AF4B58B00F3EDB9 /* TerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */; };
@@ -54,6 +55,7 @@
 /* Begin PBXFileReference section */
 		3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyReleaseLocal.entitlements; sourceTree = "<group>"; };
 		55154BDF2B33911F001622DC /* ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ghostty; path = "../zig-out/share/ghostty"; sourceTree = "<group>"; };
+		552964E52B34A9B400030505 /* vim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vim; path = "../zig-out/share/vim"; sourceTree = "<group>"; };
 		8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenHandler.swift; sourceTree = "<group>"; };
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
 		A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWindow.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 			isa = PBXGroup;
 			children = (
 				55154BDF2B33911F001622DC /* ghostty */,
+				552964E52B34A9B400030505 /* vim */,
 				A5A1F8842A489D6800D1E8BC /* terminfo */,
 			);
 			name = Resources;
@@ -350,6 +353,7 @@
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
+				552964E62B34A9B400030505 /* vim in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
