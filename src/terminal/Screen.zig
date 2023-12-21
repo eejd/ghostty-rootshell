@@ -1886,23 +1886,42 @@ pub fn selectOutput(self: *Screen, pt: point.ScreenPoint) ?Selection {
 pub fn selectPrompt(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Ensure that the line the point is on is a prompt.
     const pt_row = self.getRow(.{ .screen = pt.y });
-    switch (pt_row.getSemanticPrompt()) {
-        .prompt, .prompt_continuation, .input => {},
-        .command, .unknown => return null,
-    }
+    const is_known = switch (pt_row.getSemanticPrompt()) {
+        .prompt, .prompt_continuation, .input => true,
+        .command => return null,
+
+        // We allow unknown to continue because not all shells output any
+        // semantic prompt information for continuation lines. This has the
+        // possibility of making this function VERY slow (we look at all
+        // scrollback) so we should try to avoid this in the future by
+        // setting a flag or something if we have EVER seen a semantic
+        // prompt sequence.
+        .unknown => false,
+    };
 
     // Find the start of the prompt.
+    var saw_semantic_prompt = is_known;
     const start: usize = start: for (0..pt.y) |offset| {
         const y = pt.y - offset;
         const row = self.getRow(.{ .screen = y - 1 });
         switch (row.getSemanticPrompt()) {
             // A prompt, we continue searching.
-            .prompt, .prompt_continuation, .input => {},
+            .prompt, .prompt_continuation, .input => saw_semantic_prompt = true,
+
+            // See comment about "unknown" a few lines above. If we have
+            // previously seen a semantic prompt then if we see an unknown
+            // we treat it as a boundary.
+            .unknown => if (saw_semantic_prompt) break :start y,
 
             // Command output or unknown, definitely not a prompt.
-            .command, .unknown => break :start y,
+            .command => break :start y,
         }
     } else 0;
+
+    // If we never saw a semantic prompt flag, then we can't trust our
+    // start value and we return null. This scenario usually means that
+    // semantic prompts aren't enabled via the shell.
+    if (!saw_semantic_prompt) return null;
 
     // Find the end of the prompt.
     const end: usize = end: for (pt.y..self.rowsWritten()) |y| {
@@ -4891,10 +4910,12 @@ test "Screen: selectPrompt prompt at start" {
     row.setSemanticPrompt(.prompt);
     row = s.getRow(.{ .screen = 1 });
     row.setSemanticPrompt(.input);
+    row = s.getRow(.{ .screen = 2 });
+    row.setSemanticPrompt(.command);
 
     // Not at a prompt
     {
-        const sel = s.selectPrompt(.{ .x = 0, .y = 2 });
+        const sel = s.selectPrompt(.{ .x = 0, .y = 3 });
         try testing.expect(sel == null);
     }
 

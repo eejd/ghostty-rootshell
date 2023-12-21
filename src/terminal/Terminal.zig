@@ -2115,7 +2115,7 @@ pub fn setLeftAndRightMargin(self: *Terminal, left_req: usize, right_req: usize)
 /// (OSC 133) only allow setting this for wherever the current active cursor
 /// is located.
 pub fn markSemanticPrompt(self: *Terminal, p: SemanticPrompt) void {
-    //log.warn("semantic_prompt y={} p={}", .{ self.screen.cursor.y, p });
+    //log.debug("semantic_prompt y={} p={}", .{ self.screen.cursor.y, p });
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setSemanticPrompt(switch (p) {
         .prompt => .prompt,

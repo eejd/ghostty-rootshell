@@ -1981,6 +1981,16 @@ pub fn mouseButtonCallback(
         }
     }
 
+    // For left button click release we check if we are moving our cursor.
+    if (button == .left and action == .release and mods.alt) {
+        // Moving always resets the click count so that we don't highlight.
+        self.mouse.left_click_count = 0;
+
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        try self.clickMoveCursor(self.mouse.left_click_point);
+    }
+
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
@@ -1988,6 +1998,8 @@ pub fn mouseButtonCallback(
         defer self.renderer_state.mutex.unlock();
 
         const pos = try self.rt_surface.getCursorPos();
+        const pt_viewport = self.posToViewport(pos.x, pos.y);
+        const pt_screen = pt_viewport.toScreen(&self.io.terminal.screen);
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
@@ -2002,8 +2014,7 @@ pub fn mouseButtonCallback(
         }
 
         // Store it
-        const point = self.posToViewport(pos.x, pos.y);
-        self.mouse.left_click_point = point.toScreen(&self.io.terminal.screen);
+        self.mouse.left_click_point = pt_screen;
         self.mouse.left_click_xpos = pos.x;
         self.mouse.left_click_ypos = pos.y;
 
@@ -2029,10 +2040,13 @@ pub fn mouseButtonCallback(
         }
 
         switch (self.mouse.left_click_count) {
-            // First mouse click, clear selection
-            1 => if (self.io.terminal.screen.selection != null) {
-                self.setSelection(null);
-                try self.queueRender();
+            // Single click
+            1 => {
+                // If we have a selection, clear it. This always happens.
+                if (self.io.terminal.screen.selection != null) {
+                    self.setSelection(null);
+                    try self.queueRender();
+                }
             },
 
             // Double click, select the word under our mouse
@@ -2073,6 +2087,51 @@ pub fn mouseButtonCallback(
             try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
+}
+
+fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
+    // Get our path
+    const from = (terminal.point.Viewport{
+        .x = self.io.terminal.screen.cursor.x,
+        .y = self.io.terminal.screen.cursor.y,
+    }).toScreen(&self.io.terminal.screen);
+    const path = self.io.terminal.screen.promptPath(from, to);
+    log.debug("click-to-move-cursor from={} to={} path={}", .{ from, to, path });
+
+    // If we aren't moving at all, fast path out of here.
+    if (path.x == 0 and path.y == 0) return;
+
+    // Convert our path to arrow key inputs. Yes, that is how this works.
+    // Yes, that is pretty sad. Yes, this could backfire in various ways.
+    // But its the best we can do.
+
+    // We do Y first because it prevents any weird wrap behavior.
+    if (path.y != 0) {
+        const arrow = if (path.y < 0) arrow: {
+            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOA" else "\x1b[A";
+        } else arrow: {
+            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOB" else "\x1b[B";
+        };
+        for (0..@abs(path.y)) |_| {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = arrow,
+            }, .{ .instant = {} });
+        }
+    }
+    if (path.x != 0) {
+        const arrow = if (path.x < 0) arrow: {
+            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOD" else "\x1b[D";
+        } else arrow: {
+            break :arrow if (self.io.terminal.modes.get(.cursor_keys)) "\x1bOC" else "\x1b[C";
+        };
+        for (0..@abs(path.x)) |_| {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = arrow,
+            }, .{ .instant = {} });
+        }
+    }
+
+    try self.io_thread.wakeup.notify();
 }
 
 /// Returns the link at the given cursor position, if any.
