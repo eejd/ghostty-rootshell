@@ -1989,6 +1989,7 @@ pub fn mouseButtonCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         try self.clickMoveCursor(self.mouse.left_click_point);
+        return;
     }
 
     // For left button clicks we always record some information for
@@ -2089,6 +2090,9 @@ pub fn mouseButtonCallback(
     }
 }
 
+/// Performs the "click-to-move" logic to move the cursor to the given
+/// screen point if possible. This works by converting the path to the
+/// given point into a series of arrow key inputs.
 fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
     const t = &self.io.terminal;
 
