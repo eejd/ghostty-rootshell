@@ -443,7 +443,10 @@ $ sudo apt install libgtk-4-dev libadwaita-1-dev git
 **Note: a recent GTK is required for Ghostty to work with Nvidia (GL) drivers
 under x11.** Ubuntu 22.04 LTS has GTK 4.6 which is not new enough. Ubuntu 23.10
 has GTK 4.12 and works. From [this discussion](https://discourse.gnome.org/t/opengl-context-version-not-respected-on-gtk4-rs/12162?u=cdehais)
-the problem was fixed in GTK by Dec 2022.
+the problem was fixed in GTK by Dec 2022. Also, if you are a BTRFS user, make
+sure to manually upgrade your Kernel (6.6.6 will work). The stock kernel in
+Ubuntu 23.10 is 6.5.0 which has a bug which
+[causes zig to fail its hash check for packages](https://github.com/ziglang/zig/issues/17282).
 
 On Arch Linux, use
 
