@@ -135,11 +135,11 @@ pub const ghostty: Source = .{
 
         // Secondary device attributes request / response
         .{ .name = "RV", .value = .{ .string = "\\E[>c" } },
-        .{ .name = "rv", .value = .{ .string = "\\E\\[[0-9]+;[0-9]+;[0-9]+c" } },
+        .{ .name = "rv", .value = .{ .string = "\\E\\\\[[0-9]+;[0-9]+;[0-9]+c" } },
 
         // XTVERSION
         .{ .name = "XR", .value = .{ .string = "\\E[>0q" } },
-        .{ .name = "xr", .value = .{ .string = "\\EP>\\|[ -~]+a\\E\\\\" } },
+        .{ .name = "xr", .value = .{ .string = "\\EP>\\\\|[ -~]+a\\E\\\\" } },
 
         // DECSLRM (Left/Right Margins)
         .{ .name = "Enmg", .value = .{ .string = "\\E[?69h" } },
