@@ -62,12 +62,12 @@ elem.text = now.strftime("%a, %d %b %Y %H:%M:%S %z")
 elem = ET.SubElement(item, "sparkle:version")
 elem.text = build
 elem = ET.SubElement(item, "sparkle:shortVersionString")
-elem.text = commit
+elem.text = f"{commit} ({now.strftime('%Y-%m-%d')})"
 elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "12.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<p>Automated build from commit <code>{commit}</code>.</p>
+<p>Automated build from commit <code>{commit}</code> on {now.strftime('%Y-%m-%d')}.</p>
 <p>
 These are automatic per-commit builds generated from the main Git branch.
 We do not generate any release notes for these builds. You can view the full
