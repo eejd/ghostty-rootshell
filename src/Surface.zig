@@ -2097,6 +2097,11 @@ fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
     // support this feature. It is just too messy.
     if (t.active_screen != .primary) return;
 
+    // This flag is only set if we've seen at least one semantic prompt
+    // OSC sequence. If we've never seen that sequence, we can't possibly
+    // move the cursor so we can fast path out of here.
+    if (!t.flags.shell_redraws_prompt) return;
+
     // Get our path
     const from = (terminal.point.Viewport{
         .x = t.screen.cursor.x,
