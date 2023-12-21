@@ -182,6 +182,7 @@ const DerivedConfig = struct {
     clipboard_paste_bracketed_safe: bool,
     copy_on_select: configpkg.CopyOnSelect,
     confirm_close_surface: bool,
+    cursor_click_to_move: bool,
     desktop_notifications: bool,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
@@ -235,6 +236,7 @@ const DerivedConfig = struct {
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
             .copy_on_select = config.@"copy-on-select",
             .confirm_close_surface = config.@"confirm-close-surface",
+            .cursor_click_to_move = config.@"cursor-click-to-move",
             .desktop_notifications = config.@"desktop-notifications",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
@@ -1981,6 +1983,17 @@ pub fn mouseButtonCallback(
         }
     }
 
+    // For left button click release we check if we are moving our cursor.
+    if (button == .left and action == .release and mods.alt) {
+        // Moving always resets the click count so that we don't highlight.
+        self.mouse.left_click_count = 0;
+
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        try self.clickMoveCursor(self.mouse.left_click_point);
+        return;
+    }
+
     // For left button clicks we always record some information for
     // selection/highlighting purposes.
     if (button == .left and action == .press) {
@@ -1988,6 +2001,8 @@ pub fn mouseButtonCallback(
         defer self.renderer_state.mutex.unlock();
 
         const pos = try self.rt_surface.getCursorPos();
+        const pt_viewport = self.posToViewport(pos.x, pos.y);
+        const pt_screen = pt_viewport.toScreen(&self.io.terminal.screen);
 
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
@@ -2002,8 +2017,7 @@ pub fn mouseButtonCallback(
         }
 
         // Store it
-        const point = self.posToViewport(pos.x, pos.y);
-        self.mouse.left_click_point = point.toScreen(&self.io.terminal.screen);
+        self.mouse.left_click_point = pt_screen;
         self.mouse.left_click_xpos = pos.x;
         self.mouse.left_click_ypos = pos.y;
 
@@ -2029,10 +2043,13 @@ pub fn mouseButtonCallback(
         }
 
         switch (self.mouse.left_click_count) {
-            // First mouse click, clear selection
-            1 => if (self.io.terminal.screen.selection != null) {
-                self.setSelection(null);
-                try self.queueRender();
+            // Single click
+            1 => {
+                // If we have a selection, clear it. This always happens.
+                if (self.io.terminal.screen.selection != null) {
+                    self.setSelection(null);
+                    try self.queueRender();
+                }
             },
 
             // Double click, select the word under our mouse
@@ -2073,6 +2090,69 @@ pub fn mouseButtonCallback(
             try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
+}
+
+/// Performs the "click-to-move" logic to move the cursor to the given
+/// screen point if possible. This works by converting the path to the
+/// given point into a series of arrow key inputs.
+fn clickMoveCursor(self: *Surface, to: terminal.point.ScreenPoint) !void {
+    // If click-to-move is disabled then we're done.
+    if (!self.config.cursor_click_to_move) return;
+
+    const t = &self.io.terminal;
+
+    // Click to move cursor only works on the primary screen where prompts
+    // exist. This means that alt screen multiplexers like tmux will not
+    // support this feature. It is just too messy.
+    if (t.active_screen != .primary) return;
+
+    // This flag is only set if we've seen at least one semantic prompt
+    // OSC sequence. If we've never seen that sequence, we can't possibly
+    // move the cursor so we can fast path out of here.
+    if (!t.flags.shell_redraws_prompt) return;
+
+    // Get our path
+    const from = (terminal.point.Viewport{
+        .x = t.screen.cursor.x,
+        .y = t.screen.cursor.y,
+    }).toScreen(&t.screen);
+    const path = t.screen.promptPath(from, to);
+    log.debug("click-to-move-cursor from={} to={} path={}", .{ from, to, path });
+
+    // If we aren't moving at all, fast path out of here.
+    if (path.x == 0 and path.y == 0) return;
+
+    // Convert our path to arrow key inputs. Yes, that is how this works.
+    // Yes, that is pretty sad. Yes, this could backfire in various ways.
+    // But its the best we can do.
+
+    // We do Y first because it prevents any weird wrap behavior.
+    if (path.y != 0) {
+        const arrow = if (path.y < 0) arrow: {
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOA" else "\x1b[A";
+        } else arrow: {
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOB" else "\x1b[B";
+        };
+        for (0..@abs(path.y)) |_| {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = arrow,
+            }, .{ .instant = {} });
+        }
+    }
+    if (path.x != 0) {
+        const arrow = if (path.x < 0) arrow: {
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOD" else "\x1b[D";
+        } else arrow: {
+            break :arrow if (t.modes.get(.cursor_keys)) "\x1bOC" else "\x1b[C";
+        };
+        for (0..@abs(path.x)) |_| {
+            _ = self.io_thread.mailbox.push(.{
+                .write_stable = arrow,
+            }, .{ .instant = {} });
+        }
+    }
+
+    try self.io_thread.wakeup.notify();
 }
 
 /// Returns the link at the given cursor position, if any.

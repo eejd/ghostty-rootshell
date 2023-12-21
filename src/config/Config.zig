@@ -264,6 +264,21 @@ palette: Palette = .{},
 /// will be chosen.
 @"cursor-text": ?Color = null,
 
+/// Enables the ability to move the cursor at prompts by using alt+click
+/// on Linux and option+click on macOS.
+///
+/// This feature requires shell integration (specifically prompt marking
+/// via OSC 133) and only works in primary screen mode. Alternate screen
+/// applications like vim usually have their own version of this feature
+/// but this configuration doesn't control that.
+///
+/// It should be noted that this feature works by translating your desired
+/// position into a series of synthetic arrow key movements, so some weird
+/// behavior around edge cases are to be expected. This is unfortunately
+/// how this feature is implemented across terminals because there isn't
+/// any other way to implement it.
+@"cursor-click-to-move": bool = true,
+
 /// Hide the mouse immediately when typing. The mouse becomes visible
 /// again when the mouse is used. The mouse is only hidden if the mouse
 /// cursor is over the active terminal surface.
