@@ -36,12 +36,22 @@ with open("sign_update.txt", "r") as f:
         attrs[key] = value
 
 # We need to register our namespaces before reading or writing any files.
-ET.register_namespace("sparkle", "http://www.andymatuschak.org/xml-namespaces/sparkle")
+namespaces = { "sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle" }
+for prefix, uri in namespaces.items():
+    ET.register_namespace(prefix, uri)
 
 # Open our existing appcast and find the channel element. This is where
 # we'll add our new item.
 et = ET.parse('appcast.xml')
 channel = et.find("channel")
+
+# Remove any items with the same version. If we have multiple items with
+# the same version, Sparkle will report invalid signatures if it picks
+# the wrong one when updating.
+for item in channel.findall("item"):
+    version = item.find("sparkle:version", namespaces)
+    if version is not None and version.text == build:
+        channel.remove(item)
 
 # Create the item using some absoultely terrible XML manipulation.
 item = ET.SubElement(channel, "item")
