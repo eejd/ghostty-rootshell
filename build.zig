@@ -8,12 +8,12 @@ const apprt = @import("src/apprt.zig");
 const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
+const config_vim = @import("src/config/vim.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
-const VimStep = @import("src/build/VimStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -404,12 +404,17 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Vim plugin
-    const vim_step = VimStep.create(b);
-    b.installDirectory(.{
-        .source_dir = vim_step.getDirectory(),
-        .install_dir = .prefix,
-        .install_subdir = "share/vim/vimfiles",
-    });
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("syntax/ghostty.vim", config_vim.syntax);
+        _ = wf.add("ftdetect/ghostty.vim", config_vim.ftdetect);
+        _ = wf.add("ftplugin/ghostty.vim", config_vim.ftplugin);
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/vim/vimfiles",
+        });
+    }
 
     // App (Linux)
     if (target.isLinux()) {
