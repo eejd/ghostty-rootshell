@@ -13,7 +13,7 @@ const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
-const Config = @import("src/config/Config.zig");
+const VimStep = @import("src/build/VimStep.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -404,111 +404,12 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Vim plugin
-    {
-        const wf = b.addWriteFiles();
-
-        // syntax/ghostty.vim
-        {
-            var buf = std.ArrayList(u8).init(b.allocator);
-            defer buf.deinit();
-
-            const writer = buf.writer();
-            try writer.print(
-                \\" Vim syntax file
-                \\" Language: Ghostty config file
-                \\" Maintainer: Ghostty <https://github.com/mitchellh/ghostty>
-                \\"
-                \\" THIS FILE IS AUTO-GENERATED
-                \\
-                \\if exists('b:current_syntax')
-                \\  finish
-                \\endif
-                \\
-                \\let b:current_syntax = 'ghostty'
-                \\
-                \\let s:cpo_save = &cpo
-                \\set cpo&vim
-                \\
-                \\
-            , .{});
-
-            const config_fields = @typeInfo(Config).Struct.fields;
-            var keywords = try std.ArrayList([]const u8).initCapacity(b.allocator, config_fields.len);
-            defer keywords.deinit();
-
-            inline for (config_fields) |field| {
-                // Ignore fields which begin with _
-                if (field.name[0] != '_') {
-                    keywords.appendAssumeCapacity(field.name);
-                }
-            }
-
-            try writer.print(
-                \\syn keyword ghosttyConfigKeyword
-                \\	\ {s}
-                \\
-                \\syn match ghosttyConfigComment /#.*/ contains=@Spell
-                \\
-                \\hi def link ghosttyConfigComment Comment
-                \\hi def link ghosttyConfigKeyword Keyword
-                \\
-                \\let &cpo = s:cpo_save
-                \\unlet s:cpo_save
-                \\
-            , .{
-                try std.mem.join(b.allocator, "\n\t\\ ", keywords.items),
-            });
-
-            _ = wf.add("syntax/ghostty.vim", buf.items);
-        }
-
-        // ftdetect/ghostty.vim
-        {
-            _ = wf.add(
-                "ftdetect/ghostty.vim",
-                "au BufRead,BufNewFile */.config/ghostty/config set ft=ghostty\n",
-            );
-        }
-
-        // ftplugin/ghostty.vim
-        {
-            var buf = std.ArrayList(u8).init(b.allocator);
-            defer buf.deinit();
-
-            const writer = buf.writer();
-            try writer.writeAll(
-                \\" Vim filetype plugin file
-                \\" Language: Ghostty config file
-                \\" Maintainer: Ghostty <https://github.com/mitchellh/ghostty>
-                \\"
-                \\" THIS FILE IS AUTO-GENERATED
-                \\
-                \\if exists('b:did_ftplugin')
-                \\  finish
-                \\endif
-                \\let b:did_ftplugin = 1
-                \\
-                \\setlocal commentstring=#%s
-                \\setlocal iskeyword+=-
-                \\
-                \\" Use syntax keywords for completion
-                \\setlocal omnifunc=syntaxcomplete#Complete
-                \\
-                \\let b:undo_ftplugin = 'setl cms< isk< ofu<'
-                \\
-            );
-
-            _ = wf.add("ftplugin/ghostty.vim", buf.items);
-        }
-
-        const install_vim_plugin = b.addInstallDirectory(.{
-            .source_dir = wf.getDirectory(),
-            .install_dir = .prefix,
-            .install_subdir = "share/vim/vimfiles",
-        });
-        install_vim_plugin.step.dependOn(&wf.step);
-        b.getInstallStep().dependOn(&install_vim_plugin.step);
-    }
+    const vim_step = VimStep.create(b);
+    b.installDirectory(.{
+        .source_dir = vim_step.getDirectory(),
+        .install_dir = .prefix,
+        .install_subdir = "share/vim/vimfiles",
+    });
 
     // App (Linux)
     if (target.isLinux()) {
