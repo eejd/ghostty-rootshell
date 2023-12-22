@@ -162,20 +162,27 @@ fn kitty(
             // Break early if this is a control key
             if (isControl(seq.key)) break :alternates;
 
-            // Set the first alternate (shifted version)
-            {
-                const view = try std.unicode.Utf8View.init(self.event.utf8);
-                var it = view.iterator();
-                // We break early if there are codepoints...there are no
-                // alternate key(s) to report
-                const shifted = it.nextCodepoint() orelse break :alternates;
-                // Only report the shifted key if we have a shift modifier
-                if (shifted != seq.key and seq.mods.shift) seq.alternates[0] = shifted;
-            }
+            const view = try std.unicode.Utf8View.init(self.event.utf8);
+            var it = view.iterator();
 
-            // Set the base layout key
+            // We break early if there are codepoints...there are no alt keys.
+            const cp1 = it.nextCodepoint() orelse break :alternates;
+
+            // We want to know if there are additional codepoints because
+            // our logic below depends on the utf8 being a single codepoint.
+            const has_cp2 = it.nextCodepoint() != null;
+
+            // Set the first alternate (shifted version)
+            if (cp1 != seq.key and seq.mods.shift) seq.alternates[0] = cp1;
+
+            // Set the base layout key. We only report this if this codepoint
+            // differs from our pressed key.
             if (self.event.key.codepoint()) |base| {
-                if (base != seq.key) seq.alternates[1] = base;
+                if (base != seq.key and
+                    (cp1 != base and !has_cp2))
+                {
+                    seq.alternates[1] = base;
+                }
             }
         }
 
@@ -1402,6 +1409,22 @@ test "kitty: enter with utf8 (dead key state)" {
 
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("A", actual);
+}
+
+test "kitty: keypad number" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{ .key = .kp_1, .mods = .{}, .utf8 = "1" },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_events = true,
+            .report_alternates = true,
+            .report_all = true,
+            .report_associated = true,
+        },
+    };
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("[57400;;49u", actual[1..]);
 }
 
 test "legacy: enter with utf8 (dead key state)" {
