@@ -342,14 +342,14 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
 				A51BFC1E2B2FB5CE00E92F16 /* About.xib in Resources */,
+				A5E112932AF73E6E00C6E0C2 /* ClipboardConfirmation.xib in Resources */,
+				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
+				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
-				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
-				A5E112932AF73E6E00C6E0C2 /* ClipboardConfirmation.xib in Resources */,
-				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
-				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
