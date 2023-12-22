@@ -15,12 +15,7 @@ class ServiceProvider: NSObject {
         userData: String?,
         error: AutoreleasingUnsafeMutablePointer<NSString>
     ) {
-        guard let str = pasteboard.string(forType: .string) else {
-            error.pointee = Self.errorNoString
-            return
-        }
-        
-        openTerminal(str, target: .tab)
+        openTerminalFromPasteboard(pasteboard: pasteboard, target: .tab, error: error)
     }
     
     @objc func openWindow(
@@ -28,34 +23,47 @@ class ServiceProvider: NSObject {
         userData: String?,
         error: AutoreleasingUnsafeMutablePointer<NSString>
     ) {
-        guard let str = pasteboard.string(forType: .string) else {
+        openTerminalFromPasteboard(pasteboard: pasteboard, target: .window, error: error)
+    }
+
+    @inline(__always)
+    private func openTerminalFromPasteboard(
+        pasteboard: NSPasteboard,
+        target: OpenTarget,
+        error: AutoreleasingUnsafeMutablePointer<NSString>
+    ) {
+        guard let objs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [NSURL] else {
             error.pointee = Self.errorNoString
             return
         }
+        let filePaths = objs.map { $0.path }.compactMap { $0 }
         
-        openTerminal(str, target: .window)
+        openTerminal(filePaths, target: target)
     }
     
-    private func openTerminal(_ path: String, target: OpenTarget) {
+    private func openTerminal(_ paths: [String], target: OpenTarget) {
         guard let delegateRaw = NSApp.delegate else { return }
         guard let delegate = delegateRaw as? AppDelegate else { return }
         let terminalManager = delegate.terminalManager
-        
-        // We only open in directories.
-        var isDirectory = ObjCBool(true)
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return }
-        guard isDirectory.boolValue else { return }
-        
-        // Build our config
-        var config = Ghostty.SurfaceConfiguration()
-        config.workingDirectory = path
-        
-        switch (target) {
-        case .window:
-            terminalManager.newWindow(withBaseConfig: config)
+
+        for path in paths {
+            // We only open in directories.
+            var isDirectory = ObjCBool(true)
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { continue }
+            guard isDirectory.boolValue else { continue }
             
-        case .tab:
-            terminalManager.newTab(withBaseConfig: config)
+            // Build our config
+            var config = Ghostty.SurfaceConfiguration()
+            config.workingDirectory = path
+
+            switch (target) {
+            case .window:
+                terminalManager.newWindow(withBaseConfig: config)
+
+            case .tab:
+                terminalManager.newTab(withBaseConfig: config)
+            }
         }
+
     }
 }
