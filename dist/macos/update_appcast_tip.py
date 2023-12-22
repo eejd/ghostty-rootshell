@@ -53,12 +53,26 @@ for item in channel.findall("item"):
     if version is not None and version.text == build:
         channel.remove(item)
 
+    # We also remove any item that doesn't have a pubDate. This should
+    # never happen but it prevents us from having to deal with it later.
+    if item.find("pubDate") is None:
+        channel.remove(item)
+
+# Prune the oldest items if we have more than a limit.
+prune_amount = 15
+pubdate_format = "%a, %d %b %Y %H:%M:%S %z"
+items = channel.findall("item")
+items.sort(key=lambda item: datetime.strptime(item.find("pubDate").text, pubdate_format))
+if len(items) > prune_amount:
+    for item in items[:-prune_amount]:
+        channel.remove(item)
+
 # Create the item using some absoultely terrible XML manipulation.
 item = ET.SubElement(channel, "item")
 elem = ET.SubElement(item, "title")
 elem.text = f"Build {build}"
 elem = ET.SubElement(item, "pubDate")
-elem.text = now.strftime("%a, %d %b %Y %H:%M:%S %z")
+elem.text = now.strftime(pubdate_format)
 elem = ET.SubElement(item, "sparkle:version")
 elem.text = build
 elem = ET.SubElement(item, "sparkle:shortVersionString")
