@@ -635,6 +635,21 @@ extension Ghostty {
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         }
 
+        override func otherMouseDown(with event: NSEvent) {
+            guard let surface = self.surface else { return }
+            guard event.buttonNumber == 2 else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE, mods)
+        }
+
+        override func otherMouseUp(with event: NSEvent) {
+            guard let surface = self.surface else { return }
+            guard event.buttonNumber == 2 else { return }
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_MIDDLE, mods)
+        }
+
+
         override func rightMouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
