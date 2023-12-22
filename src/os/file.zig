@@ -14,14 +14,6 @@ pub fn fixMaxFiles() void {
         log.warn("failed to query file handle limit, may limit max windows", .{});
         return; // Oh well; we tried.
     };
-    if (comptime builtin.target.isDarwin()) {
-        // On Darwin, `NOFILE` is bounded by a hardcoded value `OPEN_MAX`.
-        // According to the man pages for setrlimit():
-        //   setrlimit() now returns with errno set to EINVAL in places that historically succeeded.
-        //   It no longer accepts "rlim_cur = RLIM.INFINITY" for RLIM.NOFILE.
-        //   Use "rlim_cur = min(OPEN_MAX, rlim_max)".
-        lim.max = @min(std.os.darwin.OPEN_MAX, lim.max);
-    }
 
     // If we're already at the max, we're done.
     if (lim.cur >= lim.max) {
