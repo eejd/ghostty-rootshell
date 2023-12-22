@@ -8,6 +8,7 @@ const apprt = @import("src/apprt.zig");
 const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
+const config_vim = @import("src/config/vim.zig");
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -400,6 +401,19 @@ pub fn build(b: *std.Build) !void {
                 b.getInstallStep().dependOn(&copy_step.step);
             }
         }
+    }
+
+    // Vim plugin
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("syntax/ghostty.vim", config_vim.syntax);
+        _ = wf.add("ftdetect/ghostty.vim", config_vim.ftdetect);
+        _ = wf.add("ftplugin/ghostty.vim", config_vim.ftplugin);
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/vim/vimfiles",
+        });
     }
 
     // App (Linux)

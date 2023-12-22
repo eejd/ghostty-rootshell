@@ -21,4 +21,7 @@ pub const Wasm = if (!builtin.target.isWasm()) struct {} else @import("config/Wa
 
 test {
     @import("std").testing.refAllDecls(@This());
+
+    // Vim syntax file, not used at runtime but we want to keep it tested.
+    _ = @import("config/vim.zig");
 }
