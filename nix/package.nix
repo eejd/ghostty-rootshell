@@ -138,11 +138,17 @@ in
         else "$out/share/terminfo"
       }
 
-      mkdir -p $terminfo/share
-      cp -r "$terminfo_src" $terminfo/share/terminfo
+      mkdir -p "$out/nix-support"
 
-      mkdir -p $shell_integration
-      cp -r $out/share/shell-integration $shell_integration/shell-integration
+      mkdir -p "$terminfo/share"
+      mv "$terminfo_src" "$terminfo/share/terminfo"
+      ln -sf "$terminfo/share/terminfo" "$terminfo_src"
+      echo "$terminfo" >> "$out/nix-support/propagated-user-env-packages"
+
+      mkdir -p "$shell_integration"
+      mv "$out/share/ghostty/shell-integration" "$shell_integration/shell-integration"
+      ln -sf "$shell_integration/shell-integration" "$out/share/ghostty/shell-integration"
+      echo "$shell_integration" >> "$out/nix-support/propagated-user-env-packages"
     '';
 
     meta = with lib; {
