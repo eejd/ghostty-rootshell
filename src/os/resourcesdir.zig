@@ -36,7 +36,7 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
         // On MacOS, we look for the app bundle path.
         if (comptime builtin.target.isDarwin()) {
             if (try maybeDir(&dir_buf, dir, "Contents/Resources", sentinel)) |v| {
-                return try alloc.dupe(u8, v);
+                return try std.fs.path.join(alloc, &.{ v, "ghostty" });
             }
         }
 
@@ -44,7 +44,7 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
         // is valid even on Mac since there is nothing that requires
         // Ghostty to be in an app bundle.
         if (try maybeDir(&dir_buf, dir, "share", sentinel)) |v| {
-            return try alloc.dupe(u8, v);
+            return try std.fs.path.join(alloc, &.{ v, "ghostty" });
         }
     }
 

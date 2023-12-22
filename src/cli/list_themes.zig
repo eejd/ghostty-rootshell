@@ -17,8 +17,8 @@ pub const Options = struct {
 ///
 /// Themes require that Ghostty have access to the resources directory.
 /// On macOS this is embedded in the app bundle. On Linux, this is usually
-/// in `/usr/share`. If you're compiling from source, this is the
-/// `zig-out/share` directory. You can also set the `GHOSTTY_RESOURCES_DIR`
+/// in `/usr/share/ghostty`. If you're compiling from source, this is the
+/// `zig-out/share/ghostty` directory. You can also set the `GHOSTTY_RESOURCES_DIR`
 /// environment variable to point to the resources directory. Themes
 /// live in the `themes` subdirectory of the resources directory.
 pub fn run(alloc: Allocator) !u8 {

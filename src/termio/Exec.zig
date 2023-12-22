@@ -759,10 +759,15 @@ const Subprocess = struct {
         // For now, we just look up a bundled dir but in the future we should
         // also load the terminfo database and look for it.
         if (opts.resources_dir) |base| {
-            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{base});
             try env.put("TERM", opts.config.term);
             try env.put("COLORTERM", "truecolor");
+
+            // Assume that the resources directory is adjacent to the terminfo
+            // database
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{
+                std.fs.path.dirname(base) orelse unreachable,
+            });
             try env.put("TERMINFO", dir);
         } else {
             if (comptime builtin.target.isDarwin()) {
