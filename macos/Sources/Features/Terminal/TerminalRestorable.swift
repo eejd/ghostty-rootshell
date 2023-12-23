@@ -48,16 +48,23 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             return
         }
         
-        // Decode the state. If we can't decode the state, then we can't restore.
-        guard let state = TerminalRestorableState(coder: state) else {
-            completionHandler(nil, RestoreError.stateDecodeFailed)
-            return
-        }
-        
         // The app delegate is definitely setup by now. If it isn't our AppDelegate
         // then something is royally fucked up but protect against it anyhow.
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else {
             completionHandler(nil, RestoreError.delegateInvalid)
+            return
+        }
+        
+        // If our configuration is "never" then we never restore the state
+        // no matter what.
+        if (appDelegate.terminalManager.ghostty.windowSaveState == "never") {
+            completionHandler(nil, nil)
+            return
+        }
+        
+        // Decode the state. If we can't decode the state, then we can't restore.
+        guard let state = TerminalRestorableState(coder: state) else {
+            completionHandler(nil, RestoreError.stateDecodeFailed)
             return
         }
         
