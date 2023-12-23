@@ -58,7 +58,7 @@ class AppDelegate: NSObject,
     private var dockMenu: NSMenu = NSMenu()
     
     /// The ghostty global state. Only one per process.
-    private let ghostty: Ghostty.AppState = Ghostty.AppState()
+    let ghostty: Ghostty.AppState = Ghostty.AppState()
     
     /// Manages our terminal windows.
     let terminalManager: TerminalManager

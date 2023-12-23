@@ -1,42 +1,48 @@
 import Cocoa
 
 /// The state stored for terminal window restoration.
-class TerminalRestorableState: NSObject, NSSecureCoding {
-    public static var supportsSecureCoding = true
-    
-    static let coderKey = "state"
+class TerminalRestorableState: Codable {
+    static let selfKey = "state"
     static let versionKey = "version"
-    static let version: Int = 1
+    static let version: Int = 3
     
-    override init() {
-        super.init()
+    let surfaceTree: Ghostty.SplitNode?
+    
+    init(from controller: TerminalController) {
+        self.surfaceTree = controller.surfaceTree
     }
     
-    required init?(coder aDecoder: NSCoder) {
+    init?(coder aDecoder: NSCoder) {
         // If the version doesn't match then we can't decode. In the future we can perform
         // version upgrading or something but for now we only have one version so we
         // don't bother.
         guard aDecoder.decodeInteger(forKey: Self.versionKey) == Self.version else {
             return nil
         }
+        
+        guard let v = aDecoder.decodeObject(of: CodableBridge<Self>.self, forKey: Self.selfKey) else {
+            return nil
+        }
+        
+        self.surfaceTree = v.value.surfaceTree
     }
     
     func encode(with coder: NSCoder) {
         coder.encode(Self.version, forKey: Self.versionKey)
-        coder.encode(self, forKey: Self.coderKey)
+        coder.encode(CodableBridge(self), forKey: Self.selfKey)
     }
+}
+
+enum TerminalRestoreError: Error {
+    case delegateInvalid
+    case identifierUnknown
+    case stateDecodeFailed
+    case windowDidNotLoad
 }
 
 /// The NSWindowRestoration implementation that is called when a terminal window needs to be restored.
 /// The encoding of a terminal window is handled elsewhere (usually NSWindowDelegate).
 class TerminalWindowRestoration: NSObject, NSWindowRestoration {
-    enum RestoreError: Error {
-        case delegateInvalid
-        case identifierUnknown
-        case stateDecodeFailed
-        case windowDidNotLoad
-    }
-    
     static func restoreWindow(
         withIdentifier identifier: NSUserInterfaceItemIdentifier,
         state: NSCoder,
@@ -44,14 +50,14 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
     ) {
         // Verify the identifier is what we expect
         guard identifier == .init(String(describing: Self.self)) else {
-            completionHandler(nil, RestoreError.identifierUnknown)
+            completionHandler(nil, TerminalRestoreError.identifierUnknown)
             return
         }
         
         // The app delegate is definitely setup by now. If it isn't our AppDelegate
         // then something is royally fucked up but protect against it anyhow.
         guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else {
-            completionHandler(nil, RestoreError.delegateInvalid)
+            completionHandler(nil, TerminalRestoreError.delegateInvalid)
             return
         }
         
@@ -64,7 +70,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         
         // Decode the state. If we can't decode the state, then we can't restore.
         guard let state = TerminalRestorableState(coder: state) else {
-            completionHandler(nil, RestoreError.stateDecodeFailed)
+            completionHandler(nil, TerminalRestoreError.stateDecodeFailed)
             return
         }
         
@@ -74,11 +80,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // be.
         let c = appDelegate.terminalManager.createWindow(withBaseConfig: nil)
         guard let window = c.window else {
-            completionHandler(nil, RestoreError.windowDidNotLoad)
+            completionHandler(nil, TerminalRestoreError.windowDidNotLoad)
             return
         }
         
+        // Setup our restored state on the controller
+        c.surfaceTree = state.surfaceTree
+        
         completionHandler(window, nil)
-        AppDelegate.logger.warning("state RESTORE")
     }
 }

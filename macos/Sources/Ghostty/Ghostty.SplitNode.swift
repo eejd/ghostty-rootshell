@@ -11,9 +11,32 @@ extension Ghostty {
     ///   "container" which has a recursive top/left SplitNode and bottom/right SplitNode. These
     ///   values can further be split infinitely.
     ///
-    enum SplitNode: Equatable, Hashable {
+    enum SplitNode: Equatable, Hashable, Codable {
         case leaf(Leaf)
         case split(Container)
+        
+        /// The parent of this node.
+        var parent: Container? {
+            get {
+                switch (self) {
+                case .leaf(let leaf):
+                    return leaf.parent
+
+                case .split(let container):
+                    return container.parent
+                }
+            }
+            
+            set {
+                switch (self) {
+                case .leaf(let leaf):
+                    leaf.parent = newValue
+
+                case .split(let container):
+                    container.parent = newValue
+                }
+            }
+        }
         
         /// Returns the view that would prefer receiving focus in this tree. This is always the
         /// top-left-most view. This is used when creating a split or closing a split to find the
@@ -91,7 +114,7 @@ extension Ghostty {
             }
         }
 
-        class Leaf: ObservableObject, Equatable, Hashable {
+        class Leaf: ObservableObject, Equatable, Hashable, Codable {
             let app: ghostty_app_t
             @Published var surface: SurfaceView
 
@@ -115,9 +138,27 @@ extension Ghostty {
             static func == (lhs: Leaf, rhs: Leaf) -> Bool {
                 return lhs.app == rhs.app && lhs.surface === rhs.surface
             }
+            
+            // MARK: - Codable
+            
+            required convenience init(from decoder: Decoder) throws {
+                // Decoding uses the global Ghostty app
+                guard let del = NSApplication.shared.delegate,
+                      let appDel = del as? AppDelegate,
+                      let app = appDel.ghostty.app else {
+                    throw TerminalRestoreError.delegateInvalid
+                }
+                
+                self.init(app, nil)
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                // We don't currently encode anything, but in the future we will
+                // want to encode pwd, etc...
+            }
         }
 
-        class Container: ObservableObject, Equatable, Hashable {
+        class Container: ObservableObject, Equatable, Hashable, Codable {
             let app: ghostty_app_t
             let direction: SplitViewDirection
 
@@ -212,6 +253,43 @@ extension Ghostty {
                     lhs.direction == rhs.direction &&
                     lhs.topLeft == rhs.topLeft &&
                     lhs.bottomRight == rhs.bottomRight
+            }
+            
+            // MARK: - Codable
+            
+            enum CodingKeys: String, CodingKey {
+                case direction
+                case split
+                case topLeft
+                case bottomRight
+            }
+            
+            required init(from decoder: Decoder) throws {
+                // Decoding uses the global Ghostty app
+                guard let del = NSApplication.shared.delegate,
+                      let appDel = del as? AppDelegate,
+                      let app = appDel.ghostty.app else {
+                    throw TerminalRestoreError.delegateInvalid
+                }
+                
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                self.app = app
+                self.direction = try container.decode(SplitViewDirection.self, forKey: .direction)
+                self.split = try container.decode(CGFloat.self, forKey: .split)
+                self.topLeft = try container.decode(SplitNode.self, forKey: .topLeft)
+                self.bottomRight = try container.decode(SplitNode.self, forKey: .bottomRight)
+                
+                // Fix up the parent references
+                self.topLeft.parent = self
+                self.bottomRight.parent = self
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(direction, forKey: .direction)
+                try container.encode(split, forKey: .split)
+                try container.encode(topLeft, forKey: .topLeft)
+                try container.encode(bottomRight, forKey: .bottomRight)
             }
         }
 

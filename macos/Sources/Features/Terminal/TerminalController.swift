@@ -255,14 +255,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         self.relabelTabs()
     }
     
+    // Called when the window will be encoded. We handle the data encoding here in the
+    // window controller.
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
-        let data = TerminalRestorableState()
+        let data = TerminalRestorableState(from: self)
         data.encode(with: state)
-        AppDelegate.logger.warning("state window del encode")
-    }
-    
-    func window(_ window: NSWindow, didDecodeRestorableState state: NSCoder) {
-        AppDelegate.logger.warning("state window del restore")
     }
     
     //MARK: - First Responder
