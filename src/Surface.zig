@@ -2080,7 +2080,11 @@ pub fn mouseButtonCallback(
 
     // Middle-click pastes from our selection clipboard
     if (button == .middle and action == .press) {
-        if (self.config.copy_on_select != .false) {
+        if (comptime builtin.target.isDarwin()) {
+            // Fast-path for MacOS - always paste from clipboard on
+            // middle-click.
+            try self.startClipboardRequest(.standard, .{ .paste = {} });
+        } else if (self.config.copy_on_select != .false) {
             const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
                 .true => .selection,
                 .clipboard => .standard,
