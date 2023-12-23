@@ -96,16 +96,13 @@ class AppDelegate: NSObject,
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
-
-        // TODO: make this configurable via ghostty
-        // reset to system defaults
-        //UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
-        // force state save
-        UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
         
         // Hook up updater menu
         menuCheckForUpdates?.target = updaterController
         menuCheckForUpdates?.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
+        
+        // Initial config loading
+        configDidReload(ghostty)
         
         // Let's launch our first window. We only do this if we have no other windows. It
         // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
@@ -113,9 +110,6 @@ class AppDelegate: NSObject,
         if (terminalManager.windows.count == 0) {
             terminalManager.newWindow()
         }
-        
-        // Initial config loading
-        configDidReload(ghostty)
         
         // Register our service provider. This must happen after everything
         // else is initialized.
@@ -339,6 +333,16 @@ class AppDelegate: NSObject,
     //MARK: - GhosttyAppStateDelegate
     
     func configDidReload(_ state: Ghostty.AppState) {
+        // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
+        // configuration. This is the only way to carefully control whether macOS invokes the
+        // state restoration system.
+        switch (ghostty.windowSaveState) {
+        case "never": UserDefaults.standard.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
+        case "always": UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
+        case "default": fallthrough
+        default: UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
+        }
+        
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
         terminalManager.relabelAllTabs()

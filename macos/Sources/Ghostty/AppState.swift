@@ -58,9 +58,19 @@ extension Ghostty {
             var v = false;
             let key = "quit-after-last-window-closed"
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v;
+            return v
         }
-
+        
+        /// window-save-state
+        var windowSaveState: String {
+            guard let config = self.config else { return "" }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "window-save-state"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
+            guard let ptr = v else { return "" }
+            return String(cString: ptr)
+        }
+        
         /// True if we need to confirm before quitting.
         var needsConfirmQuit: Bool {
             guard let app = app else { return false }
