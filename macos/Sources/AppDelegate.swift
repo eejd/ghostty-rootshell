@@ -96,6 +96,12 @@ class AppDelegate: NSObject,
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
+
+        // TODO: make this configurable via ghostty
+        // reset to system defaults
+        //UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
+        // force state save
+        UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
         
         // Hook up updater menu
         menuCheckForUpdates?.target = updaterController
@@ -292,6 +298,21 @@ class AppDelegate: NSObject,
     
     private func focusedSurface() -> ghostty_surface_t? {
         return terminalManager.focusedSurface?.surface
+    }
+    
+    //MARK: - Restorable State
+    
+    /// We support NSSecureCoding for restorable state. Required as of macOS Sonoma (14) but a good idea anyways.
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        return true
+    }
+
+    func application(_ app: NSApplication, willEncodeRestorableState coder: NSCoder) {
+        Self.logger.debug("application will save window state")
+    }
+    
+    func application(_ app: NSApplication, didDecodeRestorableState coder: NSCoder) {
+        Self.logger.debug("application will restore window state")
     }
 
     //MARK: - UNUserNotificationCenterDelegate

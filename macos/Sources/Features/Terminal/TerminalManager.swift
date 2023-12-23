@@ -139,7 +139,7 @@ class TerminalManager {
     }
     
     /// Creates a window controller, adds it to our managed list, and returns it.
-    private func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration?) -> TerminalController {
+    func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration?) -> TerminalController {
         // Initialize our controller to load the window
         let c = TerminalController(ghostty, withBaseConfig: base)
 
@@ -162,7 +162,7 @@ class TerminalManager {
         return c
     }
     
-    private func removeWindow(_ controller: TerminalController) {
+    func removeWindow(_ controller: TerminalController) {
         // Remove it from our managed set
         guard let idx = self.windows.firstIndex(where: { $0.controller == controller }) else { return }
         let w = self.windows[idx]

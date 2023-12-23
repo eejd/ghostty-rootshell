@@ -46,6 +46,7 @@
 		A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDB29B8009000646FDA /* SplitView.swift */; };
 		A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */; };
 		A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
+		A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D0AF3A2B36A1DE00D21823 /* TerminalRestorable.swift */; };
 		A5E112932AF73E6E00C6E0C2 /* ClipboardConfirmation.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5E112922AF73E6E00C6E0C2 /* ClipboardConfirmation.xib */; };
 		A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */; };
 		A5E112972AF7401B00C6E0C2 /* ClipboardConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */; };
@@ -95,6 +96,7 @@
 		A5CEAFDB29B8009000646FDA /* SplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.swift; sourceTree = "<group>"; };
 		A5CEAFDD29B8058B00646FDA /* SplitView.Divider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitView.Divider.swift; sourceTree = "<group>"; };
 		A5CEAFFE29C2410700646FDA /* Backport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backport.swift; sourceTree = "<group>"; };
+		A5D0AF3A2B36A1DE00D21823 /* TerminalRestorable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRestorable.swift; sourceTree = "<group>"; };
 		A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A5E112922AF73E6E00C6E0C2 /* ClipboardConfirmation.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ClipboardConfirmation.xib; sourceTree = "<group>"; };
 		A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationController.swift; sourceTree = "<group>"; };
@@ -213,6 +215,7 @@
 				A59630992AEE1C6400D64628 /* Terminal.xib */,
 				A596309F2AEF6AEB00D64628 /* TerminalManager.swift */,
 				A596309B2AEE1C9E00D64628 /* TerminalController.swift */,
+				A5D0AF3A2B36A1DE00D21823 /* TerminalRestorable.swift */,
 				A596309D2AEE1D6C00D64628 /* TerminalView.swift */,
 				A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */,
 				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
@@ -366,6 +369,7 @@
 			files = (
 				A59630A42AF059BB00D64628 /* Ghostty.SplitNode.swift in Sources */,
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
+				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,
 				A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */,
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
 				A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */,
