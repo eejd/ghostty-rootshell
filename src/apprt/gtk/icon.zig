@@ -29,9 +29,19 @@ pub fn appIcon(app: *App, widget: *c.GtkWidget) !Icon {
     // to the search path and see if we can find it there.
     const icon_theme = c.gtk_icon_theme_get_for_display(c.gtk_widget_get_display(widget));
     if (c.gtk_icon_theme_has_icon(icon_theme, icon_name) == 0) icon: {
-        const base = global_state.resources_dir orelse {
+        const resources_dir = global_state.resources_dir orelse {
             log.info("gtk app missing Ghostty icon and no resources dir detected", .{});
             log.info("gtk app will not have Ghostty icon", .{});
+            break :icon;
+        };
+
+        // The resources dir usually is `/usr/share/ghostty` but GTK icons
+        // go into `/usr/share/icons`.
+        const base = std.fs.path.dirname(resources_dir) orelse {
+            log.warn(
+                "unexpected error getting dirname of resources dir dir={s}",
+                .{resources_dir},
+            );
             break :icon;
         };
 
