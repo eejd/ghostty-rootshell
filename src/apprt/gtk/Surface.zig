@@ -1328,56 +1328,25 @@ fn keyEvent(
         if (entry.native == keycode) break :keycode entry.key;
     } else .invalid;
 
-    // Get our modifiers. We have to translate modifier-only presses here
-    // to state in the mods manually because GTK only does it AFTER the press
-    // event.
+    // Get our modifiers. We have to use the GDK device because the mods
+    // sent to this event do not have the modifier key applied it if it
+    // was presssed (i.e. left control)
     const mods = mods: {
-        var mods = translateMods(gtk_mods);
+        _ = gtk_mods;
 
         const device = c.gdk_event_get_device(event);
+        var mods = translateMods(c.gdk_device_get_modifier_state(device));
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
         switch (physical_key) {
-            .left_shift => {
-                mods.shift = action == .press;
-                if (mods.shift) mods.sides.shift = .left;
-            },
-
-            .right_shift => {
-                mods.shift = action == .press;
-                if (mods.shift) mods.sides.shift = .right;
-            },
-
-            .left_control => {
-                mods.ctrl = action == .press;
-                if (mods.ctrl) mods.sides.ctrl = .left;
-            },
-
-            .right_control => {
-                mods.ctrl = action == .press;
-                if (mods.ctrl) mods.sides.ctrl = .right;
-            },
-
-            .left_alt => {
-                mods.alt = action == .press;
-                if (mods.alt) mods.sides.alt = .left;
-            },
-
-            .right_alt => {
-                mods.alt = action == .press;
-                if (mods.alt) mods.sides.alt = .right;
-            },
-
-            .left_super => {
-                mods.super = action == .press;
-                if (mods.super) mods.sides.super = .left;
-            },
-
-            .right_super => {
-                mods.super = action == .press;
-                if (mods.super) mods.sides.super = .right;
-            },
-
+            .left_shift => mods.sides.shift = .left,
+            .right_shift => mods.sides.shift = .right,
+            .left_control => mods.sides.ctrl = .left,
+            .right_control => mods.sides.ctrl = .right,
+            .left_alt => mods.sides.alt = .left,
+            .right_alt => mods.sides.alt = .right,
+            .left_super => mods.sides.super = .left,
+            .right_super => mods.sides.super = .right,
             else => {},
         }
 
