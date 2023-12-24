@@ -591,7 +591,7 @@ keybind: Keybinds = .{},
 /// The default value is "default".
 ///
 /// This is currently only supported on macOS. This has no effect on Linux.
-@"window-save-state": WindowSaveState = .always, // TODO: change before PR
+@"window-save-state": WindowSaveState = .default,
 
 /// Resize the window in discrete increments of the focused surface's
 /// cell size. If this is disabled, surfaces are resized in pixel increments.
