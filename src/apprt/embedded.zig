@@ -1355,6 +1355,25 @@ pub const CAPI = struct {
         return surface.core_surface.needsConfirmQuit();
     }
 
+    /// Copies the surface working directory into the provided buffer and
+    /// returns the copied size. If the buffer is too small, there is no pwd,
+    /// or there is an error, then 0 is returned.
+    export fn ghostty_surface_pwd(surface: *Surface, buf: [*]u8, cap: usize) usize {
+        const pwd_ = surface.core_surface.pwd(global.alloc) catch |err| {
+            log.warn("error getting pwd err={}", .{err});
+            return 0;
+        };
+        const pwd = pwd_ orelse return 0;
+        defer global.alloc.free(pwd);
+
+        // If the buffer is too small, return no pwd.
+        if (pwd.len > cap) return 0;
+
+        // Copy into the buffer and return the length
+        @memcpy(buf[0..pwd.len], pwd);
+        return pwd.len;
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();
