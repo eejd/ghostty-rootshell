@@ -148,6 +148,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     override func windowDidLoad() {
         guard let window = window else { return }
         
+        // Setting all three of these is required for restoration to work.
+        window.isRestorable = true
+        window.restorationClass = TerminalWindowRestoration.self
+        window.identifier = .init(String(describing: TerminalWindowRestoration.self))
+        
         // If window decorations are disabled, remove our title
         if (!ghostty.windowDecorations) { window.styleMask.remove(.titled) }
         
@@ -248,6 +253,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
+    }
+    
+    // Called when the window will be encoded. We handle the data encoding here in the
+    // window controller.
+    func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
+        let data = TerminalRestorableState(from: self)
+        data.encode(with: state)
     }
     
     //MARK: - First Responder

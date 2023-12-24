@@ -163,6 +163,6 @@ struct SplitView<L: View, R: View>: View {
     }
 }
 
-enum SplitViewDirection {
+enum SplitViewDirection: Codable {
     case horizontal, vertical
 }

@@ -58,7 +58,7 @@ class AppDelegate: NSObject,
     private var dockMenu: NSMenu = NSMenu()
     
     /// The ghostty global state. Only one per process.
-    private let ghostty: Ghostty.AppState = Ghostty.AppState()
+    let ghostty: Ghostty.AppState = Ghostty.AppState()
     
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
@@ -101,15 +101,15 @@ class AppDelegate: NSObject,
         menuCheckForUpdates?.target = updaterController
         menuCheckForUpdates?.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
         
+        // Initial config loading
+        configDidReload(ghostty)
+        
         // Let's launch our first window. We only do this if we have no other windows. It
         // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
         // is called before this.
         if (terminalManager.windows.count == 0) {
             terminalManager.newWindow()
         }
-        
-        // Initial config loading
-        configDidReload(ghostty)
         
         // Register our service provider. This must happen after everything
         // else is initialized.
@@ -293,6 +293,21 @@ class AppDelegate: NSObject,
     private func focusedSurface() -> ghostty_surface_t? {
         return terminalManager.focusedSurface?.surface
     }
+    
+    //MARK: - Restorable State
+    
+    /// We support NSSecureCoding for restorable state. Required as of macOS Sonoma (14) but a good idea anyways.
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        return true
+    }
+
+    func application(_ app: NSApplication, willEncodeRestorableState coder: NSCoder) {
+        Self.logger.debug("application will save window state")
+    }
+    
+    func application(_ app: NSApplication, didDecodeRestorableState coder: NSCoder) {
+        Self.logger.debug("application will restore window state")
+    }
 
     //MARK: - UNUserNotificationCenterDelegate
 
@@ -318,6 +333,16 @@ class AppDelegate: NSObject,
     //MARK: - GhosttyAppStateDelegate
     
     func configDidReload(_ state: Ghostty.AppState) {
+        // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
+        // configuration. This is the only way to carefully control whether macOS invokes the
+        // state restoration system.
+        switch (ghostty.windowSaveState) {
+        case "never": UserDefaults.standard.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
+        case "always": UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
+        case "default": fallthrough
+        default: UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
+        }
+        
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
         terminalManager.relabelAllTabs()

@@ -563,6 +563,36 @@ keybind: Keybinds = .{},
 @"window-height": u32 = 0,
 @"window-width": u32 = 0,
 
+/// Whether to enable saving and restoring window state. Window state
+/// includes their position, size, tabs, splits, etc. Some window state
+/// requires shell integration, such as preserving working directories.
+/// See shell-integration for more information.
+///
+/// There are three valid values for this configuration:
+///   - "default" will use the default system behavior. On macOS, this
+///     will only save state if the application is forcibly terminated
+///     or if it is configured systemwide via Settings.app.
+///   - "never" will never save window state.
+///   - "always" will always save window state whenever Ghostty is exited.
+///
+/// If you change this value to "never" while Ghostty is not running,
+/// the next Ghostty launch will NOT restore the window state.
+///
+/// If you change this value to "default" while Ghostty is not running
+/// and the previous exit saved state, the next Ghostty launch will
+/// still restore the window state. This is because Ghostty cannot know
+/// if the previous exit was due to a forced save or not (macOS doesn't
+/// provide this information).
+///
+/// If you change this value so that window state is saved while Ghostty
+/// is not running, the previous window state will not be restored because
+/// Ghostty only saves state on exit if this is enabled.
+///
+/// The default value is "default".
+///
+/// This is currently only supported on macOS. This has no effect on Linux.
+@"window-save-state": WindowSaveState = .default,
+
 /// Resize the window in discrete increments of the focused surface's
 /// cell size. If this is disabled, surfaces are resized in pixel increments.
 /// Currently only supported on macOS.
@@ -2743,4 +2773,11 @@ pub const ClipboardAccess = enum {
     allow,
     deny,
     ask,
+};
+
+/// See window-save-state
+pub const WindowSaveState = enum {
+    default,
+    never,
+    always,
 };
