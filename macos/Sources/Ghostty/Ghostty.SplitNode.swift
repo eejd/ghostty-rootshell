@@ -141,6 +141,10 @@ extension Ghostty {
             
             // MARK: - Codable
             
+            enum CodingKeys: String, CodingKey {
+                case pwd
+            }
+            
             required convenience init(from decoder: Decoder) throws {
                 // Decoding uses the global Ghostty app
                 guard let del = NSApplication.shared.delegate,
@@ -149,12 +153,16 @@ extension Ghostty {
                     throw TerminalRestoreError.delegateInvalid
                 }
                 
-                self.init(app, nil)
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                var config = SurfaceConfiguration()
+                config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
+                
+                self.init(app, config)
             }
             
             func encode(to encoder: Encoder) throws {
-                // We don't currently encode anything, but in the future we will
-                // want to encode pwd, etc...
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(surface.pwd, forKey: .pwd)
             }
         }
 

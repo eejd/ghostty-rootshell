@@ -283,6 +283,17 @@ extension Ghostty {
             return ghostty_surface_needs_confirm_quit(surface)
         }
         
+        /// Returns the pwd of the surface if it has one.
+        var pwd: String? {
+            guard let surface = self.surface else { return nil }
+            let v = String(unsafeUninitializedCapacity: 1024) {
+                Int(ghostty_surface_pwd(surface, $0.baseAddress, UInt($0.count)))
+            }
+            
+            if (v.count == 0) { return nil }
+            return v
+        }
+        
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {
