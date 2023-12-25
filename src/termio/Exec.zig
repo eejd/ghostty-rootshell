@@ -105,6 +105,7 @@ pub const DerivedConfig = struct {
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
     term: []const u8,
+    grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -122,6 +123,7 @@ pub const DerivedConfig = struct {
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
             .term = config.term,
+            .grapheme_width_method = config.@"grapheme-width-method",
         };
     }
 
@@ -146,6 +148,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     errdefer term.deinit(alloc);
     term.default_palette = opts.config.palette;
     term.color_palette.colors = opts.config.palette;
+    term.flags.default_grapheme_cluster = opts.config.grapheme_width_method == .unicode;
 
     // Set the image size limits
     try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
@@ -349,6 +352,8 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Specific things we don't update:
     //   - command, working-directory: we never restart the underlying
     //   process so we don't care or need to know about these.
+
+    self.terminal.flags.default_grapheme_cluster = config.grapheme_width_method == .unicode;
 
     // Update the default palette. Note this will only apply to new colors drawn
     // since we decode all palette colors to RGB on usage.
