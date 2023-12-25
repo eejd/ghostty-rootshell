@@ -162,6 +162,32 @@ const c = @cImport({
 @"adjust-strikethrough-position": ?MetricModifier = null,
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
 
+/// The method to use for calculating the cell width of a grapheme cluster.
+/// The default value is "unicode" which uses the Unicode standard to
+/// determine grapheme width. This results in correct grapheme width but
+/// may result in cursor-desync issues with some programs (such as shells)
+/// that may use a legacy method such as "wcswidth".
+///
+/// Valid values are:
+///
+///   - "wcswidth" - Use the wcswidth function to determine grapheme width.
+///     This maximizes compatibility with legacy programs but may result
+///     in incorrect grapheme width for certain graphemes such as skin-tone
+///     emoji, non-English characters, etc.
+///
+///     Note that this "wcswidth" functionality is based on the libc wcswidth,
+///     not any other libraries with that name.
+///
+///   - "unicode" - Use the Unicode standard to determine grapheme width.
+///
+/// If a running program explicitly enables terminal mode 2027, then
+/// "unicode" width will be forced regardless of this configuration. When
+/// mode 2027 is reset, this configuration will be used again.
+///
+/// This configuration can be changed at runtime but will not affect existing
+/// printed cells. Only new cells will use the new configuration.
+@"grapheme-width-method": GraphemeWidthMethod = .unicode,
+
 /// A named theme to use. The available themes are currently hardcoded to
 /// the themes that ship with Ghostty. On macOS, this list is in the
 /// `Ghostty.app/Contents/Resources/themes` directory. On Linux, this
@@ -2780,4 +2806,10 @@ pub const WindowSaveState = enum {
     default,
     never,
     always,
+};
+
+/// See grapheme-width-method
+pub const GraphemeWidthMethod = enum {
+    wcswidth,
+    unicode,
 };
