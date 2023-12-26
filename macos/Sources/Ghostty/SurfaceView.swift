@@ -264,7 +264,7 @@ extension Ghostty {
     /// The NSView implementation for a terminal surface.
     class SurfaceView: NSView, NSTextInputClient, ObservableObject {
         /// Unique ID per surface
-        let uuid: NSUUID
+        let uuid: UUID
         
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
@@ -347,7 +347,7 @@ extension Ghostty {
             case pendingHidden
         }
 
-        init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: NSUUID? = nil) {
+        init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
             self.uuid = uuid ?? .init()
 

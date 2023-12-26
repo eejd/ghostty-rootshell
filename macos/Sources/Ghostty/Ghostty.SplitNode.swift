@@ -101,6 +101,22 @@ extension Ghostty {
             }
         }
         
+        /// Find a surface view by UUID.
+        func findUUID(uuid: UUID) -> SurfaceView? {
+            switch (self) {
+            case .leaf(let leaf):
+                if (leaf.surface.uuid == uuid) {
+                    return leaf.surface
+                }
+                
+                return nil
+
+            case .split(let container):
+                return container.topLeft.findUUID(uuid: uuid) ??
+                    container.bottomRight.findUUID(uuid: uuid)
+            }
+        }
+        
         // MARK: - Equatable
         
         static func == (lhs: SplitNode, rhs: SplitNode) -> Bool {
@@ -121,7 +137,7 @@ extension Ghostty {
             weak var parent: SplitNode.Container?
 
             /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: NSUUID? = nil) {
+            init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
                 self.app = app
                 self.surface = SurfaceView(app, baseConfig: baseConfig, uuid: uuid)
             }
@@ -155,7 +171,7 @@ extension Ghostty {
                 }
                 
                 let container = try decoder.container(keyedBy: CodingKeys.self)
-                let uuid = NSUUID(uuidString: try container.decode(String.self, forKey: .uuid))
+                let uuid = UUID(uuidString: try container.decode(String.self, forKey: .uuid))
                 var config = SurfaceConfiguration()
                 config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
                 
