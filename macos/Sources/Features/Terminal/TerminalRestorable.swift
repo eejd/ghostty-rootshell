@@ -4,11 +4,13 @@ import Cocoa
 class TerminalRestorableState: Codable {
     static let selfKey = "state"
     static let versionKey = "version"
-    static let version: Int = 1
+    static let version: Int = 2
     
+    let focusedSurface: String?
     let surfaceTree: Ghostty.SplitNode?
     
     init(from controller: TerminalController) {
+        self.focusedSurface = controller.focusedSurface?.uuid.uuidString
         self.surfaceTree = controller.surfaceTree
     }
     
@@ -25,6 +27,7 @@ class TerminalRestorableState: Codable {
         }
         
         self.surfaceTree = v.value.surfaceTree
+        self.focusedSurface = v.value.focusedSurface
     }
     
     func encode(with coder: NSCoder) {
@@ -86,7 +89,31 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         
         // Setup our restored state on the controller
         c.surfaceTree = state.surfaceTree
+        if let focusedStr = state.focusedSurface,
+           let focusedUUID = UUID(uuidString: focusedStr),
+           let view = c.surfaceTree?.findUUID(uuid: focusedUUID) {
+            c.focusedSurface = view
+            restoreFocus(to: view, inWindow: window)
+        }
         
         completionHandler(window, nil)
+    }
+    
+    /// This restores the focus state of the surfaceview within the given window. When restoring,
+    /// the view isn't immediately attached to the window since we have to wait for SwiftUI to
+    /// catch up. Therefore, we sit in an async loop waiting for the attachment to happen.
+    private static func restoreFocus(to: Ghostty.SurfaceView, inWindow: NSWindow) {
+        DispatchQueue.main.async {
+            // If the view is not attached to a window yet then we repeat.
+            guard let viewWindow = to.window else {
+                restoreFocus(to: to, inWindow: inWindow)
+                return
+            }
+            
+            // If the view is attached to some other window, we give up
+            guard viewWindow == inWindow else { return }
+            
+            inWindow.makeFirstResponder(to)
+        }
     }
 }

@@ -25,7 +25,7 @@ extension Ghostty {
         @StateObject private var surfaceView: SurfaceView
 
         init(_ app: ghostty_app_t, @ViewBuilder content: @escaping ((SurfaceView) -> Content)) {
-            _surfaceView = StateObject(wrappedValue: SurfaceView(app, nil))
+            _surfaceView = StateObject(wrappedValue: SurfaceView(app))
             self.content = content
         }
 
@@ -259,8 +259,13 @@ extension Ghostty {
         }
     }
     
+    // MARK: - Surface View
+    
     /// The NSView implementation for a terminal surface.
     class SurfaceView: NSView, NSTextInputClient, ObservableObject {
+        /// Unique ID per surface
+        let uuid: UUID
+        
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
@@ -342,8 +347,9 @@ extension Ghostty {
             case pendingHidden
         }
 
-        init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
+        init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
+            self.uuid = uuid ?? .init()
 
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
