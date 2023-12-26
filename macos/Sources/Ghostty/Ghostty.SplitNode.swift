@@ -121,9 +121,9 @@ extension Ghostty {
             weak var parent: SplitNode.Container?
 
             /// Initialize a new leaf which creates a new terminal surface.
-            init(_ app: ghostty_app_t, _ baseConfig: SurfaceConfiguration?) {
+            init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: NSUUID? = nil) {
                 self.app = app
-                self.surface = SurfaceView(app, baseConfig)
+                self.surface = SurfaceView(app, baseConfig: baseConfig, uuid: uuid)
             }
             
             // MARK: - Hashable
@@ -143,6 +143,7 @@ extension Ghostty {
             
             enum CodingKeys: String, CodingKey {
                 case pwd
+                case uuid
             }
             
             required convenience init(from decoder: Decoder) throws {
@@ -154,15 +155,17 @@ extension Ghostty {
                 }
                 
                 let container = try decoder.container(keyedBy: CodingKeys.self)
+                let uuid = NSUUID(uuidString: try container.decode(String.self, forKey: .uuid))
                 var config = SurfaceConfiguration()
                 config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
                 
-                self.init(app, config)
+                self.init(app, baseConfig: config, uuid: uuid)
             }
             
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
                 try container.encode(surface.pwd, forKey: .pwd)
+                try container.encode(surface.uuid.uuidString, forKey: .uuid)
             }
         }
 
@@ -190,7 +193,7 @@ extension Ghostty {
                 // state since this is a new split.
                 self.topLeft = .leaf(from)
 
-                let bottomRight: Leaf = .init(app, baseConfig)
+                let bottomRight: Leaf = .init(app, baseConfig: baseConfig)
                 self.bottomRight = .leaf(bottomRight)
 
                 from.parent = self
