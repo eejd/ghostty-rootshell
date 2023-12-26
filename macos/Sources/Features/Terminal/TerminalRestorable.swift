@@ -4,7 +4,7 @@ import Cocoa
 class TerminalRestorableState: Codable {
     static let selfKey = "state"
     static let versionKey = "version"
-    static let version: Int = 1
+    static let version: Int = 2
     
     let focusedSurface: String?
     let surfaceTree: Ghostty.SplitNode?
