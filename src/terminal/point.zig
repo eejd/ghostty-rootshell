@@ -6,6 +6,34 @@ const Screen = terminal.Screen;
 // use different types so that we can lean on type-safety to get the
 // exact expected type of point.
 
+/// Active is a point within the active part of the screen.
+pub const Active = struct {
+    x: usize = 0,
+    y: usize = 0,
+
+    pub fn toScreen(self: Active, screen: *const Screen) ScreenPoint {
+        return .{
+            .x = self.x,
+            .y = screen.history + self.y,
+        };
+    }
+
+    test "toScreen with scrollback" {
+        const testing = std.testing;
+        const alloc = testing.allocator;
+
+        var s = try Screen.init(alloc, 3, 5, 3);
+        defer s.deinit();
+        const str = "1\n2\n3\n4\n5\n6\n7\n8";
+        try s.testWriteString(str);
+
+        try testing.expectEqual(ScreenPoint{
+            .x = 1,
+            .y = 5,
+        }, (Active{ .x = 1, .y = 2 }).toScreen(&s));
+    }
+};
+
 /// Viewport is a point within the viewport of the screen.
 pub const Viewport = struct {
     x: usize = 0,

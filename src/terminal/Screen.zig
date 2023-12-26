@@ -2734,7 +2734,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is unwrapped.
-        const cursor_pos = (point.Viewport{
+        const cursor_pos = (point.Active{
             .x = old.cursor.x,
             .y = old.cursor.y,
         }).toScreen(&old);
@@ -2948,7 +2948,7 @@ pub fn resize(self: *Screen, rows: usize, cols: usize) !void {
 
         // Convert our cursor coordinates to screen coordinates because
         // we may have to reflow the cursor if the line it is on is moved.
-        const cursor_pos = (point.Viewport{
+        const cursor_pos = (point.Active{
             .x = old.cursor.x,
             .y = old.cursor.y,
         }).toScreen(&old);
@@ -6370,6 +6370,72 @@ test "Screen: resize more cols perfect split" {
     const str = "1ABCD2EFGH3IJKL";
     try s.testWriteString(str);
     try s.resize(3, 10);
+}
+
+// https://github.com/mitchellh/ghostty/issues/1159
+test "Screen: resize (no reflow) more cols with scrollback scrolled up" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1\n2\n3\n4\n5\n6\n7\n8";
+    try s.testWriteString(str);
+
+    // Cursor at bottom
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
+
+    try s.scroll(.{ .viewport = -4 });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2\n3\n4", contents);
+    }
+
+    try s.resize(3, 8);
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Cursor remains at bottom
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
+}
+
+// https://github.com/mitchellh/ghostty/issues/1159
+test "Screen: resize (no reflow) less cols with scrollback scrolled up" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 3, 5, 5);
+    defer s.deinit();
+    const str = "1\n2\n3\n4\n5\n6\n7\n8";
+    try s.testWriteString(str);
+
+    // Cursor at bottom
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
+
+    try s.scroll(.{ .viewport = -4 });
+    {
+        const contents = try s.testString(alloc, .viewport);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2\n3\n4", contents);
+    }
+
+    try s.resize(3, 4);
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings(str, contents);
+    }
+
+    // Cursor remains at bottom
+    try testing.expectEqual(@as(usize, 1), s.cursor.x);
+    try testing.expectEqual(@as(usize, 2), s.cursor.y);
 }
 
 test "Screen: resize more cols no reflow preserves semantic prompt" {
