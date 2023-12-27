@@ -5,6 +5,10 @@ import GhosttyKit
 protocol GhosttyAppStateDelegate: AnyObject {
     /// Called when the configuration did finish reloading.
     func configDidReload(_ state: Ghostty.AppState)
+    
+    /// Called when a callback needs access to a specific surface. This should return nil
+    /// when the surface is no longer valid.
+    func findSurface(forUUID uuid: UUID) -> Ghostty.SurfaceView?
 }
 
 extension Ghostty {
@@ -608,9 +612,9 @@ extension Ghostty {
         /// Handle a received user notification. This is called when a user notification is clicked or dismissed by the user
         func handleUserNotification(response: UNNotificationResponse) {
             let userInfo = response.notification.request.content.userInfo
-            guard let address = userInfo["address"] as? Int else { return }
-            guard let userdata = UnsafeMutableRawPointer(bitPattern: address) else { return }
-            let surface = Ghostty.AppState.surfaceUserdata(from: userdata)
+            guard let uuidString = userInfo["surface"] as? String,
+                  let uuid = UUID(uuidString: uuidString),
+                  let surface = delegate?.findSurface(forUUID: uuid) else { return }
 
             switch (response.actionIdentifier) {
             case UNNotificationDefaultActionIdentifier, Ghostty.userNotificationActionShow:
@@ -627,11 +631,10 @@ extension Ghostty {
         /// Determine if a given notification should be presented to the user when Ghostty is running in the foreground.
         func shouldPresentNotification(notification: UNNotification) -> Bool {
             let userInfo = notification.request.content.userInfo
-            guard let address = userInfo["address"] as? Int else { return false }
-            guard let userdata = UnsafeMutableRawPointer(bitPattern: address) else { return false }
-            let surface = Ghostty.AppState.surfaceUserdata(from: userdata)
-
-            guard let window = surface.window else { return false }
+            guard let uuidString = userInfo["surface"] as? String,
+                  let uuid = UUID(uuidString: uuidString),
+                  let surface = delegate?.findSurface(forUUID: uuid),
+                  let window = surface.window else { return false }
             return !window.isKeyWindow || !surface.focused
         }
 

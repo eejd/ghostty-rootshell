@@ -1145,16 +1145,7 @@ extension Ghostty {
             content.body = body
             content.sound = UNNotificationSound.default
             content.categoryIdentifier = Ghostty.userNotificationCategory
-
-            // The userInfo must conform to NSSecureCoding, which SurfaceView
-            // does not. So instead we pass an integer representation of the
-            // SurfaceView's address, which is reconstructed back into a
-            // SurfaceView if the notification is clicked. This is safe to do
-            // so long as the SurfaceView removes all of its notifications when
-            // it closes so that there are no dangling pointers.
-            content.userInfo = [
-                "address": Int(bitPattern: Unmanaged.passUnretained(self).toOpaque()),
-            ]
+            content.userInfo = ["surface": self.uuid.uuidString]
 
             let uuid = UUID().uuidString
             let request = UNNotificationRequest(
