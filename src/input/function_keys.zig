@@ -101,22 +101,22 @@ pub const keys = keys: {
     result.set(.f12, pcStyle("\x1b[24;{}~") ++ .{.{ .sequence = "\x1B[24~" }});
 
     // Keypad keys
-    result.set(.kp_0, kpDefault("p") ++ pcStyle("\x1bO{}p"));
-    result.set(.kp_1, kpDefault("q") ++ pcStyle("\x1bO{}q"));
-    result.set(.kp_2, kpDefault("r") ++ pcStyle("\x1bO{}r"));
-    result.set(.kp_3, kpDefault("s") ++ pcStyle("\x1bO{}s"));
-    result.set(.kp_4, kpDefault("t") ++ pcStyle("\x1bO{}t"));
-    result.set(.kp_5, kpDefault("u") ++ pcStyle("\x1bO{}u"));
-    result.set(.kp_6, kpDefault("v") ++ pcStyle("\x1bO{}v"));
-    result.set(.kp_7, kpDefault("w") ++ pcStyle("\x1bO{}w"));
-    result.set(.kp_8, kpDefault("x") ++ pcStyle("\x1bO{}x"));
-    result.set(.kp_9, kpDefault("y") ++ pcStyle("\x1bO{}y"));
-    result.set(.kp_decimal, kpDefault("n") ++ pcStyle("\x1bO{}n"));
-    result.set(.kp_divide, kpDefault("o") ++ pcStyle("\x1bO{}o"));
-    result.set(.kp_multiply, kpDefault("j") ++ pcStyle("\x1bO{}j"));
-    result.set(.kp_subtract, kpDefault("m") ++ pcStyle("\x1bO{}m"));
-    result.set(.kp_add, kpDefault("k") ++ pcStyle("\x1bO{}k"));
-    result.set(.kp_enter, kpDefault("M") ++ pcStyle("\x1bO{}M") ++ .{.{ .sequence = "\r" }});
+    result.set(.kp_0, kpKeys("p"));
+    result.set(.kp_1, kpKeys("q"));
+    result.set(.kp_2, kpKeys("r"));
+    result.set(.kp_3, kpKeys("s"));
+    result.set(.kp_4, kpKeys("t"));
+    result.set(.kp_5, kpKeys("u"));
+    result.set(.kp_6, kpKeys("v"));
+    result.set(.kp_7, kpKeys("w"));
+    result.set(.kp_8, kpKeys("x"));
+    result.set(.kp_9, kpKeys("y"));
+    result.set(.kp_decimal, kpKeys("n"));
+    result.set(.kp_divide, kpKeys("o"));
+    result.set(.kp_multiply, kpKeys("j"));
+    result.set(.kp_subtract, kpKeys("m"));
+    result.set(.kp_add, kpKeys("k"));
+    result.set(.kp_enter, kpKeys("M") ++ .{.{ .sequence = "\r" }});
     result.set(.kp_up, pcStyle("\x1b[1;{}A") ++ cursorKey("\x1b[A", "\x1bOA"));
     result.set(.kp_down, pcStyle("\x1b[1;{}B") ++ cursorKey("\x1b[B", "\x1bOB"));
     result.set(.kp_right, pcStyle("\x1b[1;{}C") ++ cursorKey("\x1b[C", "\x1bOC"));
@@ -251,6 +251,14 @@ fn kpDefault(comptime suffix: []const u8) []const Entry {
     };
 }
 
+/// Returns the entries for a keypad key. The suffix is the final character
+/// of the sent sequence, such as "r" for kp_2.
+fn kpKeys(comptime suffix: []const u8) []const Entry {
+    const pc = pcStyle("\x1bO{}" ++ suffix);
+    for (pc) |*entry| entry.keypad = .application;
+    return kpDefault(suffix) ++ pc;
+}
+
 /// Returns entries that are dependent on cursor key settings.
 fn cursorKey(
     comptime normal: []const u8,
@@ -265,7 +273,7 @@ fn cursorKey(
 /// Constructs a set of pcStyle function keys using the given format. The
 /// format should have exactly one "hole" for the mods code.
 /// Example: "\x1b[11;{}~" for F1.
-fn pcStyle(comptime fmt: []const u8) []const Entry {
+fn pcStyle(comptime fmt: []const u8) []Entry {
     // The comptime {} wrapper is superflous but it prevents us from
     // accidentally running this function at runtime.
     comptime {
