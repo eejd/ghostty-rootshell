@@ -15,10 +15,12 @@ struct AboutView: View {
             
             Text("Ghostty")
                 .font(.title3)
+                .textSelection(.enabled)
             
             if let version = self.version {
                 Text("Version: \(version)")
                     .font(.body)
+                    .textSelection(.enabled)
             }
         }
         .frame(minWidth: 300)
