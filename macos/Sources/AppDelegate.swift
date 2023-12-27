@@ -332,6 +332,16 @@ class AppDelegate: NSObject,
 
     //MARK: - GhosttyAppStateDelegate
     
+    func findSurface(forUUID uuid: UUID) -> Ghostty.SurfaceView? {
+        for c in terminalManager.windows {
+            if let v = c.controller.surfaceTree?.findUUID(uuid: uuid) {
+                return v
+            }
+        }
+        
+        return nil
+    }
+    
     func configDidReload(_ state: Ghostty.AppState) {
         // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
         // configuration. This is the only way to carefully control whether macOS invokes the
