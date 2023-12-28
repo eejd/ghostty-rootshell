@@ -153,6 +153,26 @@
                         </items>
                     </menu>
                 </menuItem>
+                <menuItem title="Edit" id="ZUG-Nx-Wkj">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <menu key="submenu" title="Edit" id="iU4-OB-ccf">
+                        <items>
+                            <menuItem title="Copy" id="Jqf-pv-Zcu">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="copy:" target="-1" id="B4F-hg-R4T"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Paste" id="i27-pK-umN">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="paste:" target="-1" id="ZKe-2B-mel"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="VYS-RG-uZD"/>
+                        </items>
+                    </menu>
+                </menuItem>
                 <menuItem title="View" id="3L3-2p-Joi" userLabel="View">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="View" id="m6z-2H-VW7">
@@ -182,26 +202,6 @@
                                     <action selector="toggleTerminalInspector:" target="-1" id="87m-3R-fQl"/>
                                 </connections>
                             </menuItem>
-                        </items>
-                    </menu>
-                </menuItem>
-                <menuItem title="Edit" id="ZUG-Nx-Wkj">
-                    <modifierMask key="keyEquivalentModifierMask"/>
-                    <menu key="submenu" title="Edit" id="iU4-OB-ccf">
-                        <items>
-                            <menuItem title="Copy" id="Jqf-pv-Zcu">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="copy:" target="-1" id="B4F-hg-R4T"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Paste" id="i27-pK-umN">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="paste:" target="-1" id="ZKe-2B-mel"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="VYS-RG-uZD"/>
                         </items>
                     </menu>
                 </menuItem>
