@@ -1102,10 +1102,10 @@ const Subprocess = struct {
     pub fn stop(self: *Subprocess) void {
         // Kill our command
         if (self.command) |*cmd| {
+            // Note: this will also wait for the command to exit, so
+            // DO NOT call cmd.wait
             killCommand(cmd) catch |err|
                 log.err("error sending SIGHUP to command, may hang: {}", .{err});
-            _ = cmd.wait(false) catch |err|
-                log.err("error waiting for command to exit: {}", .{err});
             self.command = null;
         }
 
@@ -1141,7 +1141,8 @@ const Subprocess = struct {
     }
 
     /// Kill the underlying subprocess. This sends a SIGHUP to the child
-    /// process. This doesn't wait for the child process to be exited.
+    /// process. This also waits for the command to exit and will return the
+    /// exit code.
     fn killCommand(command: *Command) !void {
         if (command.pid) |pid| {
             switch (builtin.os.tag) {
@@ -1149,35 +1150,74 @@ const Subprocess = struct {
                     if (windows.kernel32.TerminateProcess(pid, 0) == 0) {
                         return windows.unexpectedError(windows.kernel32.GetLastError());
                     }
+
+                    _ = try command.wait(false);
                 },
 
-                else => {
-                    const pgid_: ?c.pid_t = pgid: {
-                        const pgid = c.getpgid(pid);
+                else => if (getpgid(pid)) |pgid| {
+                    log.warn(
+                        "state killpg pid={} pgid={} mypid={} mypgid={}",
+                        .{ pid, pgid, c.getpid(), c.getpgid(0) },
+                    );
 
-                        // Don't know why it would be zero but its not a valid pid
-                        if (pgid == 0) break :pgid null;
-
-                        // If the pid doesn't exist then... okay.
-                        if (pgid == c.ESRCH) break :pgid null;
-
-                        // If we have an error...
-                        if (pgid < 0) {
-                            log.warn("error getting pgid for kill", .{});
-                            break :pgid null;
-                        }
-
-                        break :pgid pgid;
-                    };
-
-                    if (pgid_) |pgid| {
+                    // It is possible to send a killpg between the time that
+                    // our child process calls setsid but before or simultaneous
+                    // to calling execve. In this case, the direct child dies
+                    // but grandchildren survive. To work around this, we loop
+                    // and repeatedly kill the process group until all
+                    // descendents are well and truly dead. We will not rest
+                    // until the entire family tree is obliterated.
+                    while (true) {
                         if (c.killpg(pgid, c.SIGHUP) < 0) {
                             log.warn("error killing process group pgid={}", .{pgid});
                             return error.KillFailed;
                         }
+
+                        // See Command.zig wait for why we specify WNOHANG.
+                        // The gist is that it lets us detect when children
+                        // are still alive without blocking so that we can
+                        // kill them again.
+                        const res = std.os.waitpid(pid, std.c.W.NOHANG);
+                        if (res.pid != 0) break;
                     }
                 },
             }
+        }
+    }
+
+    fn getpgid(pid: c.pid_t) ?c.pid_t {
+        // Get our process group ID. Before the child pid calls setsid
+        // the pgid will be ours because we forked it. Its possible that
+        // we may be calling this before setsid if we are killing a surface
+        // VERY quickly after starting it.
+        const my_pgid = c.getpgid(0);
+
+        // We loop while pgid == my_pgid. The expectation if we have a valid
+        // pid is that setsid will eventually be called because it is the
+        // FIRST thing the child process does and as far as I can tell,
+        // setsid cannot fail. I'm sure that's not true, but I'd rather
+        // have a bug reported than defensively program against it now.
+        while (true) {
+            const pgid = c.getpgid(pid);
+            if (pgid == my_pgid) {
+                log.warn("pgid is our own, retrying", .{});
+                std.time.sleep(10 * std.time.ns_per_ms);
+                continue;
+            }
+
+            // Don't know why it would be zero but its not a valid pid
+            if (pgid == 0) return null;
+
+            // If the pid doesn't exist then... we're done!
+            if (pgid == c.ESRCH) return null;
+
+            // If we have an error we're done.
+            if (pgid < 0) {
+                log.warn("error getting pgid for kill", .{});
+                return null;
+            }
+
+            return pgid;
         }
     }
 
