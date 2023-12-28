@@ -1179,6 +1179,7 @@ const Subprocess = struct {
                         // kill them again.
                         const res = std.os.waitpid(pid, std.c.W.NOHANG);
                         if (res.pid != 0) break;
+                        std.time.sleep(10 * std.time.ns_per_ms);
                     }
                 },
             }
