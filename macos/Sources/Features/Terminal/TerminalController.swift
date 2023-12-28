@@ -46,13 +46,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// changes in the list.
     private var tabWindowsHash: Int = 0
     
-    init(_ ghostty: Ghostty.AppState, withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
+    init(_ ghostty: Ghostty.AppState, 
+         withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
+         withSurfaceTree tree: Ghostty.SplitNode? = nil
+    ) {
         self.ghostty = ghostty
         super.init(window: nil)
         
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
-        self.surfaceTree = .leaf(.init(ghostty_app, baseConfig: base))
+        self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
         
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
