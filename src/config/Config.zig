@@ -266,10 +266,10 @@ palette: Palette = .{},
 /// sequences (such as CSI q). Shell configurations will often request
 /// specific cursor styles.
 ///
-/// Caveat: Shell integration currently defaults to always be a bar
-/// In order to fix it, we probably would want to add something similar to Kitty's
-/// shell integration options (no-cursor). For more information see:
-/// https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.shell_integration
+/// Note that shell integration will automatically set the cursor to a bar
+/// at a prompt, regardless of this configuration. You can disable that
+/// behavior by specifying `shell-integration-features = no-cursor`
+/// or disabling shell integration entirely.
 @"cursor-style": terminal.Cursor.Style = .block,
 
 /// Sets the default blinking state of the cursor. This is just the
