@@ -841,6 +841,12 @@ const Subprocess = struct {
                     break :hush if (dir.access(".hushlogin", .{})) true else |_| false;
                 } else false;
 
+                const cmd = try std.fmt.allocPrint(
+                    alloc,
+                    "exec -l {s}",
+                    .{opts.full_config.command orelse default_path},
+                );
+
                 // The reason for executing login this way is unclear. This
                 // comment will attempt to explain but prepare for a truly
                 // unhinged reality.
@@ -883,9 +889,11 @@ const Subprocess = struct {
                 // Awesome.
                 try args.append("/usr/bin/login");
                 if (hush) try args.append("-q");
-                try args.append("-fp");
+                try args.append("-flp");
                 try args.append(username);
-                try args.append(opts.full_config.command orelse default_path);
+                try args.append("/bin/sh");
+                try args.append("-c");
+                try args.append(cmd);
                 break :args try args.toOwnedSlice();
             }
 
