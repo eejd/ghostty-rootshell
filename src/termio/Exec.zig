@@ -878,9 +878,14 @@ const Subprocess = struct {
                 // "-q" flag to login(1).
                 //
                 // So to get all the behaviors we want, we specify "-l" but
-                // execute "zsh" (which is built-in to macOS). We then use
-                // the zsh builtin "exec" to replace the process with a login
+                // execute "bash" (which is built-in to macOS). We then use
+                // the bash builtin "exec" to replace the process with a login
                 // shell ("-l" on exec) with the command we really want.
+                //
+                // We use "bash" instead of other shells that ship with macOS
+                // because as of macOS Sonoma, we found with a microbenchmark
+                // that bash can `exec` into the desired command ~2x faster
+                // than zsh.
                 //
                 // To figure out a lot of this logic I read the login.c
                 // source code in the OSS distribution Apple provides for
@@ -890,15 +895,15 @@ const Subprocess = struct {
                 try args.append("/usr/bin/login");
                 if (hush) try args.append("-q");
                 try args.append("-flp");
-                try args.append(username);
 
-                // We execute zsh with "-d -f" so that it doesn't load any
-                // local zshrc files so that (1) our shell integration doesn't
+                // We execute bash with "--noprofile --norc" so that it doesn't
+                // load startup files so that (1) our shell integration doesn't
                 // break and (2) user configuration doesn't mess this process
                 // up.
-                try args.append("/bin/zsh");
-                try args.append("-d");
-                try args.append("-f");
+                try args.append(username);
+                try args.append("/bin/bash");
+                try args.append("--noprofile");
+                try args.append("--norc");
                 try args.append("-c");
                 try args.append(cmd);
                 break :args try args.toOwnedSlice();
