@@ -841,12 +841,6 @@ const Subprocess = struct {
                     break :hush if (dir.access(".hushlogin", .{})) true else |_| false;
                 } else false;
 
-                const cmd = try std.fmt.allocPrint(
-                    alloc,
-                    "exec -l {s}",
-                    .{opts.full_config.command orelse default_path},
-                );
-
                 // The reason for executing login this way is unclear. This
                 // comment will attempt to explain but prepare for a truly
                 // unhinged reality.
@@ -892,15 +886,11 @@ const Subprocess = struct {
                 try args.append("-flp");
                 try args.append(username);
 
-                // We execute zsh with "-d -f" so that it doesn't load any
-                // local zshrc files so that (1) our shell integration doesn't
-                // break and (2) user configuration doesn't mess this process
-                // up.
-                try args.append("/bin/zsh");
-                try args.append("-d");
-                try args.append("-f");
-                try args.append("-c");
-                try args.append(cmd);
+                // We execute `env` to run the command (aka shell) in a
+                // modified environment and not use another shell interpreter
+                // to launch the shell environment.
+                try args.append("/usr/bin/env");
+                try args.append(opts.full_config.command orelse default_path);
                 break :args try args.toOwnedSlice();
             }
 
