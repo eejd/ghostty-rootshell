@@ -38,18 +38,6 @@ That said, **feel free to contribute!** I would _love_ that. If you want
 any help, ask in Discord and I'll do my best to point you in the right direction
 or even pair (time permitting) if you're interested.
 
-## Commit Access
-
-**Warning:** All Ghostty beta testers also have full push access to the
-repository. GitHub doesn't allow personal private repositories to have
-fine-grained permissions so its all-or-nothing. However, after hundreds
-of testers we've never had an issue.
-
-For this to work, our community has to work on trust. We expect everyone
-to respect each others work and to point out if you see any bad actors.
-For contributions, please open PRs as previously mentioned, and only
-`@mitchellh` should merge to main. Thank you!
-
 ### Bug Priority
 
 This is the priority of bugs:
@@ -62,6 +50,18 @@ This is the priority of bugs:
    unsupported escape sequences that impact your workflow.
 
 3. Anything else...
+
+### Commit Access
+
+**Warning:** All Ghostty beta testers also have full push access to the
+repository. GitHub doesn't allow personal private repositories to have
+fine-grained permissions so its all-or-nothing. However, after hundreds
+of testers we've never had an issue.
+
+For this to work, our community has to work on trust. We expect everyone
+to respect each others work and to point out if you see any bad actors.
+For contributions, please open PRs as previously mentioned, and only
+`@mitchellh` should merge to main. Thank you!
 
 ## Let's Talk!
 
