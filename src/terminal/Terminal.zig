@@ -1564,12 +1564,10 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         break :wrap_mode .none;
     };
 
-    // If we have a pending wrap state on, we reset it and reduce our count.
+    // Unset the pending wrap state no matter what
+    self.screen.cursor.pending_wrap = false;
+
     var count: usize = @max(count_req, 1);
-    if (self.screen.cursor.pending_wrap) {
-        self.screen.cursor.pending_wrap = false;
-        count -= 1;
-    }
 
     // If we are in no wrap mode, then we move the cursor left and exit
     // since this is the fastest and most typical path.
@@ -6245,7 +6243,7 @@ test "Terminal: cursorLeft unsets pending wrap state" {
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("ABCDX", str);
+        try testing.expectEqualStrings("ABCXE", str);
     }
 }
 
@@ -6263,7 +6261,7 @@ test "Terminal: cursorLeft unsets pending wrap state with longer jump" {
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("ABXDE", str);
+        try testing.expectEqualStrings("AXCDE", str);
     }
 }
 
