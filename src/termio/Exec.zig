@@ -883,13 +883,8 @@ const Subprocess = struct {
                 // Awesome.
                 try args.append("/usr/bin/login");
                 if (hush) try args.append("-q");
-                try args.append("-flp");
+                try args.append("-fp");
                 try args.append(username);
-
-                // We execute `env` to run the command (aka shell) in a
-                // modified environment and not use another shell interpreter
-                // to launch the shell environment.
-                try args.append("/usr/bin/env");
                 try args.append(opts.full_config.command orelse default_path);
                 break :args try args.toOwnedSlice();
             }
