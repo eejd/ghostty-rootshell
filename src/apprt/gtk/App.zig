@@ -103,37 +103,39 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // Create our GTK Application which encapsulates our process.
-    log.debug("creating GTK application id={s} single-instance={}", .{
-        app_id,
-        single_instance,
-    });
-
     const app: *c.GtkApplication = app: {
-        if (build_options.libadwaita and config.@"gtk-adwaita") {
-            const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
-                app_id.ptr,
-                app_flags,
-            ))) orelse return error.GtkInitFailed;
+        const adwaita = build_options.libadwaita and config.@"gtk-adwaita";
 
-            const style_manager = c.adw_application_get_style_manager(adw_app);
-            c.adw_style_manager_set_color_scheme(
-                style_manager,
-                switch (config.@"window-theme") {
-                    .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
-                    .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
-                    .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
-                },
-            );
+        log.debug("creating GTK application id={s} single-instance={} adwaita={}", .{
+            app_id,
+            single_instance,
+            adwaita,
+        });
 
-            break :app @ptrCast(adw_app);
-        } else {
-            const app = @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-                app_id.ptr,
-                app_flags,
-            ))) orelse return error.GtkInitFailed;
+        // If not libadwaita, create a standard GTK application.
+        if (!adwaita) break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
+            app_id.ptr,
+            app_flags,
+        ))) orelse return error.GtkInitFailed;
 
-            break :app app;
-        }
+        // Use libadwaita if requested. Using an AdwApplication lets us use
+        // Adwaita widgets and access things such as the color scheme.
+        const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
+            app_id.ptr,
+            app_flags,
+        ))) orelse return error.GtkInitFailed;
+
+        const style_manager = c.adw_application_get_style_manager(adw_app);
+        c.adw_style_manager_set_color_scheme(
+            style_manager,
+            switch (config.@"window-theme") {
+                .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
+                .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
+                .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+            },
+        );
+
+        break :app @ptrCast(adw_app);
     };
 
     errdefer c.g_object_unref(app);
