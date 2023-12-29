@@ -426,6 +426,10 @@ extension Ghostty {
                 return
             }
             
+            // If the inspector is nil, then our surface is freed and it is unsafe
+            // to use.
+            guard let inspector = self.inspector else { return }
+            
             // We always update our size because sometimes draw is called
             // between resize events and if our size is wrong with the underlying
             // drawable we will crash.
