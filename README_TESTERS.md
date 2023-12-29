@@ -38,6 +38,18 @@ That said, **feel free to contribute!** I would _love_ that. If you want
 any help, ask in Discord and I'll do my best to point you in the right direction
 or even pair (time permitting) if you're interested.
 
+## Commit Access
+
+**Warning:** All Ghostty beta testers also have full push access to the
+repository. GitHub doesn't allow personal private repositories to have
+fine-grained permissions so its all-or-nothing. However, after hundreds
+of testers we've never had an issue.
+
+For this to work, our community has to work on trust. We expect everyone
+to respect each others work and to point out if you see any bad actors.
+For contributions, please open PRs as previously mentioned, and only
+`@mitchellh` should merge to main. Thank you!
+
 ### Bug Priority
 
 This is the priority of bugs:
@@ -61,11 +73,10 @@ share feedback, discuss issues, ask questions and talk to other testers.
 
 ### Can I Invite a Friend?
 
-To the Discord, go for it! [discord.gg/ghostty](https://discord.gg/ghostty).
-Initially, they'll land in a public Discord channel. As mentioned, testers
-are being added slowly as bugs are fixed. Discord is being used as a sort-of
-waitlist, and people are added to the project as testers from there,
-so just send them the link and they will be added at some point.
+Yes, if you have any friends you'd like to add to the beta, please ask
+them to join the Discord server: [discord.gg/ghostty](https://discord.gg/ghostty).
+After that, DM me with your friend's username and I'll add them to the beta
+immediately. Friends of beta testers do not have to wait in the queue.
 
 ### I want to help, what can I work on?
 
@@ -85,7 +96,7 @@ cool. Or a web UI to preview your color settings.
 
 Right now technically not (no license file). But yes, it will be full
 open source (by the OSI definition). I'm not sure what license to choose
-yet, leaning towards going with GPL for this project but open to ideas.
+yet, leaning towards going with MIT for this project but open to ideas.
 
 We will add a license prior to opening up the repository. During the private
 beta period, I'll continue with a no license project.
