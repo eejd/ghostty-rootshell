@@ -51,6 +51,11 @@ is a remaining value of `n`. If the cursor
 is already on the [top margin](#TODO), do not move the cursor up.
 This wrapping mode does not wrap the cursor row back to the bottom margin.
 
+For **extended reverse wrap** or **reverse wrap** modes, if the pending
+wrap state is set, decrease `n` by 1. In these modes, the initial cursor
+backward count is consumed by the pending wrap state, as if you pressed
+"backspace" on an empty newline and the cursor moved back to the previous line.
+
 ## Validation
 
 ### CUB V-1: Pending Wrap is Unset
@@ -158,4 +163,21 @@ printf "X"
 |__________|
 |__________|
 |Xc________|
+```
+
+### CUB V-7: Reverse Wrap with Pending Wrap State
+
+```bash
+
+cols=$(tput cols)
+printf "\033[?45h"
+printf "\033[${cols}G"
+printf "\033[4D"
+printf "ABCDE"
+printf "\033[D"
+printf "X"
+```
+
+```
+|_____ABCDX|
 ```
