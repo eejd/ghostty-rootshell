@@ -374,6 +374,10 @@ extension Ghostty {
         }
 
         deinit {
+            // Whenever the surface is removed, we need to note that our restorable
+            // state is invalid to prevent the surface from being restored.
+            invalidateRestorableState()
+            
             trackingAreas.forEach { removeTrackingArea($0) }
             
             // mouseExited is not called by AppKit one last time when the view
