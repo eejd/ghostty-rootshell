@@ -13,6 +13,7 @@ const inputpkg = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const internal_os = @import("../os/main.zig");
 const cli = @import("../cli.zig");
+const Command = @import("../Command.zig");
 
 const url = @import("url.zig");
 const Key = @import("key.zig").Key;
@@ -1603,6 +1604,8 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
 }
 
 pub fn finalize(self: *Config) !void {
+    const alloc = self._arena.?.allocator();
+
     // We always load the theme first because it may set other fields
     // in our config.
     if (self.theme) |theme| try self.loadTheme(theme);
@@ -1647,8 +1650,6 @@ pub fn finalize(self: *Config) !void {
     const wd_home = std.mem.eql(u8, "home", wd);
     if (comptime !builtin.target.isWasm()) {
         if (self.command == null or wd_home) command: {
-            const alloc = self._arena.?.allocator();
-
             // First look up the command using the SHELL env var if needed.
             // We don't do this in flatpak because SHELL in Flatpak is always
             // set to /bin/sh.
@@ -1703,6 +1704,43 @@ pub fn finalize(self: *Config) !void {
                     }
                 },
             }
+        }
+    }
+
+    if (self.command) |command| {
+        // If the path is not absolute then we want to expand it. We use our
+        // current path because our current path is what will be available
+        // to our termio launcher.
+        if (!std.fs.path.isAbsolute(command)) {
+            const expanded = Command.expandPath(alloc, command) catch |err| expanded: {
+                log.warn("failed to expand command path={s} err={}", .{ command, err });
+                break :expanded null;
+            };
+
+            if (expanded) |v| {
+                self.command = v;
+            } else {
+                // If the command is not found on the path, we put an error
+                // but we still allow the command to remain unchanged and try
+                // to launch it later.
+                try self._errors.add(alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        alloc,
+                        "command {s}: not found on PATH, use an absolute path",
+                        .{command},
+                    ),
+                });
+            }
+        } else {
+            std.fs.accessAbsolute(command, .{}) catch {
+                try self._errors.add(alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        alloc,
+                        "command {s}: file not found",
+                        .{command},
+                    ),
+                });
+            };
         }
     }
 
