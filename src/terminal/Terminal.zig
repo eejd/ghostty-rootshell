@@ -1564,16 +1564,21 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
         break :wrap_mode .none;
     };
 
-    // Unset the pending wrap state no matter what
-    self.screen.cursor.pending_wrap = false;
-
     var count: usize = @max(count_req, 1);
 
     // If we are in no wrap mode, then we move the cursor left and exit
     // since this is the fastest and most typical path.
     if (wrap_mode == .none) {
         self.screen.cursor.x -|= count;
+        self.screen.cursor.pending_wrap = false;
         return;
+    }
+
+    // If we have a pending wrap state and we are in either reverse wrap
+    // modes then we decrement the amount we move by one to match xterm.
+    if (self.screen.cursor.pending_wrap) {
+        count -= 1;
+        self.screen.cursor.pending_wrap = false;
     }
 
     // The margins we can move to.
@@ -6262,6 +6267,48 @@ test "Terminal: cursorLeft unsets pending wrap state with longer jump" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("AXCDE", str);
+    }
+}
+
+test "Terminal: cursorLeft reverse wrap with pending wrap state" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap, true);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorLeft(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: cursorLeft reverse wrap extended with pending wrap state" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    t.modes.set(.reverse_wrap_extended, true);
+
+    for ("ABCDE") |c| try t.print(c);
+    try testing.expect(t.screen.cursor.pending_wrap);
+    t.cursorLeft(1);
+    try testing.expect(!t.screen.cursor.pending_wrap);
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("ABCDX", str);
     }
 }
 
