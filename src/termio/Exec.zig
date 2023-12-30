@@ -217,7 +217,20 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     const alloc = self.alloc;
 
     // Start our subprocess
-    const pty_fds = try self.subprocess.start(alloc);
+    const pty_fds = self.subprocess.start(alloc) catch |err| {
+        // If we specifically got this error then we are in the forked
+        // process and our child failed to execute. In that case
+        if (err != error.ExecFailedInChild) return err;
+
+        // Output an error message about the exec faililng and exit.
+        // This generally should NOT happen because we always wrap
+        // our command execution either in login (macOS) or /bin/sh
+        // (Linux) which are usually guaranteed to exist. Still, we
+        // want to handle this scenario.
+        self.execFailedInChild() catch {};
+        std.os.exit(1);
+    };
+
     errdefer self.subprocess.stop();
     const pid = pid: {
         const command = self.subprocess.command orelse return error.ProcessNotStarted;
@@ -314,6 +327,26 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .read_thread_pipe = pipe[1],
         .read_thread_fd = if (builtin.os.tag == .windows) pty_fds.read else {},
     };
+}
+
+/// This outputs an error message when exec failed and we are the
+/// child process. This returns so the caller should probably exit
+/// after calling this.
+///
+/// Note that this usually is only called under very very rare
+/// circumstances because we wrap our command execution in login
+/// (macOS) or /bin/sh (Linux). So this output can be pretty crude
+/// because it should never happen. Notably, this is not the error
+/// users see when `command` is invalid.
+fn execFailedInChild(self: *Exec) !void {
+    _ = self;
+    const stderr = std.io.getStdErr().writer();
+    try stderr.writeAll("exec failed\n");
+    try stderr.writeAll("press any key to exit\n");
+
+    var buf: [1]u8 = undefined;
+    var reader = std.io.getStdIn().reader();
+    _ = try reader.read(&buf);
 }
 
 pub fn threadExit(self: *Exec, data: ThreadData) void {
