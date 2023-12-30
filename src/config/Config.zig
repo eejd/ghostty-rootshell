@@ -1707,7 +1707,17 @@ pub fn finalize(self: *Config) !void {
         }
     }
 
-    if (self.command) |command| {
+    if (self.command) |command| command: {
+        // If the command has a space in it, we skip the check below because
+        // its probably a multi-argument command. These types of commands
+        // can contain full shell escapes and other characters and we don't
+        // want to reimplement that all here. The point of the check below
+        // is MOSTLY to find people who do `command = myshell` where "myshell"
+        // is installed by something like Homebrew and therefore isn't available
+        // to a login shell. We will do more robust checks in the future by
+        // simply checking if the command exited with an error.
+        if (std.mem.indexOf(u8, command, " ") != null) break :command;
+
         // If the path is not absolute then we want to expand it. We use our
         // current path because our current path is what will be available
         // to our termio launcher.
