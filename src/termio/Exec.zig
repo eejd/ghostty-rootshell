@@ -749,26 +749,38 @@ fn processExit(
             if (code == 0) break :runtime;
         }
 
+        // Our runtime always has to be under the threshold to be
+        // considered abnormal. This is because a user can always
+        // manually do something like `exit 1` in their shell to
+        // force the exit code to be non-zero. We only want to detect
+        // abnormal exits that happen so quickly the user can't react.
         if (runtime > abnormal_runtime_threshold_ms) break :runtime;
         log.warn("abnormal process exit detected, showing error message", .{});
+
+        // Build our error message. Do this outside of the renderer lock.
+        const alloc = ev.terminal_stream.handler.alloc;
+        var msg = std.ArrayList(u8).init(alloc);
+        defer msg.deinit();
+        var writer = msg.writer();
+        writer.writeAll(
+            \\ Ghostty failed to launch the requested command.
+            \\ Please check your "command" configuration.
+            \\
+            \\ Press any key to close this window.
+        ) catch break :runtime;
 
         // Modify the terminal to show our error message. This
         // requires grabbing the renderer state lock.
         ev.renderer_state.mutex.lock();
         defer ev.renderer_state.mutex.unlock();
-        const alloc = ev.terminal_stream.handler.alloc;
         const t = ev.renderer_state.terminal;
 
         // Reset the terminal completely.
         t.fullReset(alloc);
 
         // Write our message out.
-        const view = std.unicode.Utf8View.init(
-            \\ Ghostty failed to launch the requested command.
-            \\ Please check your "command" configuration.
-            \\
-            \\ Press any key to exit.
-        ) catch break :runtime;
+        const view = std.unicode.Utf8View.init(msg.items) catch
+            break :runtime;
         var it = view.iterator();
         while (it.nextCodepoint()) |cp| {
             if (cp == '\n') {
