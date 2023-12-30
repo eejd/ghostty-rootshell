@@ -38,6 +38,11 @@ const c = @cImport({
 /// correct granularity of events.
 const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 
+/// The number of milliseconds below which we consider a process
+/// exit to be abnormal. This is used to show an error message
+/// when the process exits too quickly.
+const abnormal_runtime_threshold_ms = 250;
+
 /// Allocator
 alloc: Allocator,
 
@@ -230,12 +235,15 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         self.execFailedInChild() catch {};
         std.os.exit(1);
     };
-
     errdefer self.subprocess.stop();
     const pid = pid: {
         const command = self.subprocess.command orelse return error.ProcessNotStarted;
         break :pid command.pid orelse return error.ProcessNoPid;
     };
+
+    // Track our process start time so we know how long it was
+    // running for.
+    const process_start = try std.time.Instant.now();
 
     // Create our pipe that we'll use to kill our read thread.
     // pipe[0] is the read end, pipe[1] is the write end.
@@ -268,6 +276,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
         .process = process,
+        .process_start = process_start,
         .data_stream = stream,
         .loop = &thread.loop,
         .terminal_stream = .{
@@ -538,6 +547,15 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
 pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
     const ev = self.data.?;
 
+    // If our process is exited then we send our surface a message
+    // about it but we don't queue any more writes.
+    if (ev.process_exited) {
+        _ = ev.surface_mailbox.push(.{
+            .child_exited = {},
+        }, .{ .forever = {} });
+        return;
+    }
+
     // We go through and chunk the data if necessary to fit into
     // our cached buffers that we can queue to the stream.
     var i: usize = 0;
@@ -640,6 +658,7 @@ const EventData = struct {
 
     /// The process watcher
     process: xev.Process,
+    process_start: std.time.Instant,
     process_exited: bool = false,
 
     /// This is used for both waiting for the process to exit and then
@@ -703,10 +722,58 @@ fn processExit(
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
     const code = r catch unreachable;
-    log.debug("child process exited status={}", .{code});
 
     const ev = ev_.?;
     ev.process_exited = true;
+
+    // Determine how long the process was running for.
+    const runtime_ms: ?u64 = runtime: {
+        const process_end = std.time.Instant.now() catch break :runtime null;
+        const runtime_ns = process_end.since(ev.process_start);
+        const runtime_ms = runtime_ns / std.time.ns_per_ms;
+        break :runtime runtime_ms;
+    };
+    log.debug(
+        "child process exited status={} runtime={}ms",
+        .{ code, runtime_ms orelse 0 },
+    );
+
+    // If our runtime was below some threshold then we assume that this
+    // was an abnormal exit and we show an error message.
+    if (runtime_ms) |runtime| runtime: {
+        if (runtime > abnormal_runtime_threshold_ms) break :runtime;
+        log.warn("abnormal process exit detected, showing error message", .{});
+
+        // Modify the terminal to show our error message. This
+        // requires grabbing the renderer state lock.
+        ev.renderer_state.mutex.lock();
+        defer ev.renderer_state.mutex.unlock();
+        const alloc = ev.terminal_stream.handler.alloc;
+        const t = ev.renderer_state.terminal;
+
+        // Reset the terminal completely.
+        t.fullReset(alloc);
+
+        // Write our message out.
+        const view = std.unicode.Utf8View.init(
+            \\ Ghostty failed to launch the requested command.
+            \\ Please check your "command" configuration.
+            \\
+            \\ Press any key to exit.
+        ) catch break :runtime;
+        var it = view.iterator();
+        while (it.nextCodepoint()) |cp| {
+            if (cp == '\n') {
+                t.carriageReturn();
+                t.linefeed() catch break :runtime;
+                continue;
+            }
+
+            t.print(cp) catch break :runtime;
+        }
+
+        return .disarm;
+    }
 
     // Notify our surface we want to close
     _ = ev.surface_mailbox.push(.{
