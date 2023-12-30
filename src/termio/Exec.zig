@@ -1160,11 +1160,6 @@ const Subprocess = struct {
                 },
 
                 else => if (getpgid(pid)) |pgid| {
-                    log.warn(
-                        "state killpg pid={} pgid={} mypid={} mypgid={}",
-                        .{ pid, pgid, c.getpid(), c.getpgid(0) },
-                    );
-
                     // It is possible to send a killpg between the time that
                     // our child process calls setsid but before or simultaneous
                     // to calling execve. In this case, the direct child dies
