@@ -741,6 +741,14 @@ fn processExit(
     // If our runtime was below some threshold then we assume that this
     // was an abnormal exit and we show an error message.
     if (runtime_ms) |runtime| runtime: {
+        // On macOS, our exit code detection doesn't work, possibly
+        // because of our `login` wrapper. More investigation required.
+        if (comptime !builtin.target.isDarwin()) {
+            // If our exit code is zero, then the command was successful
+            // and we don't ever consider it abnormal.
+            if (code == 0) break :runtime;
+        }
+
         if (runtime > abnormal_runtime_threshold_ms) break :runtime;
         log.warn("abnormal process exit detected, showing error message", .{});
 
