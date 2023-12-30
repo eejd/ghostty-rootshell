@@ -155,6 +155,11 @@ fn startPosix(self: *Command, arena: Allocator) !void {
 
     // Finally, replace our process.
     _ = std.os.execveZ(pathZ, argsZ, envp) catch null;
+
+    // If we are executing this code, the exec failed. In that scenario,
+    // we return a very specific error that can be detected to determine
+    // we're in the child.
+    return error.ExecFailedInChild;
 }
 
 fn startWindows(self: *Command, arena: Allocator) !void {
