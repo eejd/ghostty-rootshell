@@ -330,7 +330,7 @@ extension Ghostty {
         
         // This is set to non-null during keyDown to accumulate insertText contents
         private var keyTextAccumulator: [String]? = nil
-
+        
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
 
@@ -532,21 +532,40 @@ extension Ghostty {
         }
         
         override func viewDidMoveToWindow() {
-            guard let window = self.window else { return }
-            guard let surface = self.surface else { return }
-
-            if ghostty_surface_transparent(surface) {
-                // Set the window transparency settings
-                window.isOpaque = false
-                window.hasShadow = false
-                window.backgroundColor = .clear
-
-                // If we have a blur, set the blur
-                ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
-            }
-
+            // Set our background blur if requested
+            setWindowBackgroundBlur(window)
+            
             // Try to set the initial window size if we have one
             setInitialWindowSize()
+        }
+        
+        /// This function sets the window background to blur if it is configured on the surface.
+        private func setWindowBackgroundBlur(_ targetWindow: NSWindow?) {
+            // Surface must desire transparency
+            guard let surface = self.surface,
+                  ghostty_surface_transparent(surface) else { return }
+            
+            // Our target should always be our own view window
+            guard let target = targetWindow,
+                  let window = self.window,
+                  target == window else { return }
+            
+            // If our window is not visible, then delay this. This is possible specifically
+            // during state restoration but probably in other scenarios as well. To delay,
+            // we just loop directly on the dispatch queue.
+            guard window.isVisible else {
+                // Weak window so that if the window changes or is destroyed we aren't holding a ref
+                DispatchQueue.main.async { [weak self, weak window] in self?.setWindowBackgroundBlur(window) }
+                return
+            }
+            
+            // Set the window transparency settings
+            window.isOpaque = false
+            window.hasShadow = false
+            window.backgroundColor = .clear
+
+            // If we have a blur, set the blur
+            ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
         }
        
         /// Sets the initial window size requested by the Ghostty config.
