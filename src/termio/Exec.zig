@@ -38,16 +38,16 @@ const c = @cImport({
 /// correct granularity of events.
 const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 
-/// The number of milliseconds below which we consider a process
-/// exit to be abnormal. This is used to show an error message
-/// when the process exits too quickly.
-abnormal_runtime_threshold_ms: u32,
-
 /// Allocator
 alloc: Allocator,
 
 /// This is the pty fd created for the subcommand.
 subprocess: Subprocess,
+
+/// The number of milliseconds below which we consider a process
+/// exit to be abnormal. This is used to show an error message
+/// when the process exits too quickly.
+abnormal_runtime_threshold_ms: u32,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
