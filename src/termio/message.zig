@@ -62,6 +62,12 @@ pub const Message = union(enum) {
     /// Enable or disable linefeed mode (mode 20).
     linefeed_mode: bool,
 
+    /// The child exited abnormally. The termio state is marked
+    /// as process exited but the surface hasn't been notified to
+    /// close because termio can use this to update the terminal
+    /// with an error message.
+    child_exited_abnormally: void,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 

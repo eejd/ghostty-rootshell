@@ -544,6 +544,56 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
     }
 }
 
+/// Called when the child process exited abnormally but before
+/// the surface is notified.
+pub fn childExitedAbnormally(self: *Exec) !void {
+    // Build up our command for the error message
+    const command = try std.mem.join(
+        self.alloc,
+        " ",
+        self.subprocess.args,
+    );
+    defer self.alloc.free(command);
+
+    // Build our error message. Do this outside of the renderer lock.
+    var msg = std.ArrayList(u8).init(self.alloc);
+    defer msg.deinit();
+    var writer = msg.writer();
+    try writer.print(
+        \\Ghostty failed to launch the requested command.
+        \\Please check your "command" configuration.
+        \\
+        \\Command: {s}
+        \\
+        \\Press any key to close this window.
+    , .{command});
+
+    // Modify the terminal to show our error message. This
+    // requires grabbing the renderer state lock.
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const t = self.renderer_state.terminal;
+
+    // Reset the terminal completely.
+    // NOTE: The error output is in the terminal at this point. In the
+    // future, we can make an even better error message by scrolling,
+    // writing at the bottom, etc.
+    t.fullReset(self.alloc);
+
+    // Write our message out.
+    const view = try std.unicode.Utf8View.init(msg.items);
+    var it = view.iterator();
+    while (it.nextCodepoint()) |cp| {
+        if (cp == '\n') {
+            t.carriageReturn();
+            try t.linefeed();
+            continue;
+        }
+
+        try t.print(cp);
+    }
+}
+
 pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
     const ev = self.data.?;
 
@@ -757,40 +807,12 @@ fn processExit(
         if (runtime > abnormal_runtime_threshold_ms) break :runtime;
         log.warn("abnormal process exit detected, showing error message", .{});
 
-        // Build our error message. Do this outside of the renderer lock.
-        const alloc = ev.terminal_stream.handler.alloc;
-        var msg = std.ArrayList(u8).init(alloc);
-        defer msg.deinit();
-        var writer = msg.writer();
-        writer.writeAll(
-            \\ Ghostty failed to launch the requested command.
-            \\ Please check your "command" configuration.
-            \\
-            \\ Press any key to close this window.
-        ) catch break :runtime;
-
-        // Modify the terminal to show our error message. This
-        // requires grabbing the renderer state lock.
-        ev.renderer_state.mutex.lock();
-        defer ev.renderer_state.mutex.unlock();
-        const t = ev.renderer_state.terminal;
-
-        // Reset the terminal completely.
-        t.fullReset(alloc);
-
-        // Write our message out.
-        const view = std.unicode.Utf8View.init(msg.items) catch
-            break :runtime;
-        var it = view.iterator();
-        while (it.nextCodepoint()) |cp| {
-            if (cp == '\n') {
-                t.carriageReturn();
-                t.linefeed() catch break :runtime;
-                continue;
-            }
-
-            t.print(cp) catch break :runtime;
-        }
+        // Notify our main writer thread which has access to more
+        // information so it can show a better error message.
+        _ = ev.writer_mailbox.push(.{
+            .child_exited_abnormally = {},
+        }, .{ .forever = {} });
+        ev.writer_wakeup.notify() catch break :runtime;
 
         return .disarm;
     }
