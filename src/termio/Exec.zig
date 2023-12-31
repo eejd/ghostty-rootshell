@@ -546,7 +546,7 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
 
 /// Called when the child process exited abnormally but before
 /// the surface is notified.
-pub fn childExitedAbnormally(self: *Exec) !void {
+pub fn childExitedAbnormally(self: *Exec, exit_code: u32, runtime_ms: u64) !void {
     // Build up our command for the error message
     const command = try std.mem.join(
         self.alloc,
@@ -554,6 +554,11 @@ pub fn childExitedAbnormally(self: *Exec) !void {
         self.subprocess.args,
     );
     defer self.alloc.free(command);
+
+    const runtime_str = try std.fmt.allocPrint(self.alloc, "{d} ms", .{runtime_ms});
+    defer self.alloc.free(runtime_str);
+    const exit_code_str = try std.fmt.allocPrint(self.alloc, "{d}", .{exit_code});
+    defer self.alloc.free(exit_code_str);
 
     // Modify the terminal to show our error message. This
     // requires grabbing the renderer state lock.
@@ -586,10 +591,24 @@ pub fn childExitedAbnormally(self: *Exec) !void {
     try t.setAttribute(.{ .bold = {} });
     try t.printString("Ghostty failed to launch the requested command:");
     try t.setAttribute(.{ .unset = {} });
-    try t.setAttribute(.{ .faint = {} });
     t.carriageReturn();
     try t.linefeed();
+    try t.linefeed();
+    try t.setAttribute(.{ .bold = {} });
     try t.printString(command);
+    try t.setAttribute(.{ .unset = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.linefeed();
+    try t.printString("Runtime:   ");
+    try t.setAttribute(.{ .@"8_fg" = .bright_red });
+    try t.printString(runtime_str);
+    try t.setAttribute(.{ .unset = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("Exit code: ");
+    try t.setAttribute(.{ .@"8_fg" = .bright_red });
+    try t.printString(exit_code_str);
     try t.setAttribute(.{ .unset = {} });
     t.carriageReturn();
     try t.linefeed();
@@ -777,7 +796,7 @@ fn processExit(
     _: *xev.Completion,
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
-    const code = r catch unreachable;
+    const exit_code = r catch unreachable;
 
     const ev = ev_.?;
     ev.process_exited = true;
@@ -791,7 +810,7 @@ fn processExit(
     };
     log.debug(
         "child process exited status={} runtime={}ms",
-        .{ code, runtime_ms orelse 0 },
+        .{ exit_code, runtime_ms orelse 0 },
     );
 
     // If our runtime was below some threshold then we assume that this
@@ -802,7 +821,7 @@ fn processExit(
         if (comptime !builtin.target.isDarwin()) {
             // If our exit code is zero, then the command was successful
             // and we don't ever consider it abnormal.
-            if (code == 0) break :runtime;
+            if (exit_code == 0) break :runtime;
         }
 
         // Our runtime always has to be under the threshold to be
@@ -817,7 +836,7 @@ fn processExit(
         // information so it can show a better error message.
         _ = ev.writer_mailbox.push(.{
             .child_exited_abnormally = .{
-                .code = code,
+                .exit_code = exit_code,
                 .runtime_ms = runtime,
             },
         }, .{ .forever = {} });
