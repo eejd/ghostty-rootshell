@@ -41,7 +41,7 @@ const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 /// The number of milliseconds below which we consider a process
 /// exit to be abnormal. This is used to show an error message
 /// when the process exits too quickly.
-const abnormal_runtime_threshold_ms = 250;
+abnormal_runtime_threshold_ms: u64,
 
 /// Allocator
 alloc: Allocator,
@@ -111,6 +111,7 @@ pub const DerivedConfig = struct {
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
+    abnormal_runtime_threshold_ms: u64,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -129,6 +130,7 @@ pub const DerivedConfig = struct {
             .osc_color_report_format = config.@"osc-color-report-format",
             .term = config.term,
             .grapheme_width_method = config.@"grapheme-width-method",
+            .abnormal_runtime_threshold_ms = config.@"abnormal-runtime-threshold-ms",
         };
     }
 
@@ -207,6 +209,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .background_color = config.background.toTerminalRGB(),
         .osc_color_report_format = config.osc_color_report_format,
         .data = null,
+        .abnormal_runtime_threshold_ms = opts.config.abnormal_runtime_threshold_ms,
     };
 }
 
@@ -304,6 +307,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 },
             },
         },
+        .abnormal_runtime_threshold_ms = self.abnormal_runtime_threshold_ms,
     };
     errdefer ev_data_ptr.deinit(self.alloc);
 
@@ -764,6 +768,11 @@ const EventData = struct {
     /// this to determine if we need to default the window title.
     seen_title: bool = false,
 
+    /// The number of milliseconds below which we consider a process
+    /// exit to be abnormal. This is used to show an error message
+    /// when the process exits too quickly.
+    abnormal_runtime_threshold_ms: u64,
+
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
@@ -829,7 +838,7 @@ fn processExit(
         // manually do something like `exit 1` in their shell to
         // force the exit code to be non-zero. We only want to detect
         // abnormal exits that happen so quickly the user can't react.
-        if (runtime > abnormal_runtime_threshold_ms) break :runtime;
+        if (runtime > ev.abnormal_runtime_threshold_ms) break :runtime;
         log.warn("abnormal process exit detected, showing error message", .{});
 
         // Notify our main writer thread which has access to more
