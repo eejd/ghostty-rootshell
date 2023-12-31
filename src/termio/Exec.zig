@@ -587,13 +587,12 @@ pub fn childExitedAbnormally(self: *Exec, exit_code: u32, runtime_ms: u64) !void
     // Output our error message
     try t.setAttribute(.{ .@"8_fg" = .bright_red });
     try t.setAttribute(.{ .bold = {} });
-    try t.printString("Ghostty failed to launch the requested command.");
+    try t.printString("Ghostty failed to launch the requested command:");
     try t.setAttribute(.{ .unset = {} });
 
     t.carriageReturn();
     try t.linefeed();
     try t.linefeed();
-    try t.printString("Command: ");
     try t.printString(command);
     try t.setAttribute(.{ .unset = {} });
 
@@ -601,7 +600,7 @@ pub fn childExitedAbnormally(self: *Exec, exit_code: u32, runtime_ms: u64) !void
     try t.linefeed();
     try t.linefeed();
     try t.printString("Runtime: ");
-    try t.setAttribute(.{ .@"8_fg" = .bright_red });
+    try t.setAttribute(.{ .@"8_fg" = .red });
     try t.printString(runtime_str);
     try t.setAttribute(.{ .unset = {} });
 
@@ -612,7 +611,7 @@ pub fn childExitedAbnormally(self: *Exec, exit_code: u32, runtime_ms: u64) !void
         t.carriageReturn();
         try t.linefeed();
         try t.printString("Exit Code: ");
-        try t.setAttribute(.{ .@"8_fg" = .bright_red });
+        try t.setAttribute(.{ .@"8_fg" = .red });
         try t.printString(exit_code_str);
         try t.setAttribute(.{ .unset = {} });
     }
