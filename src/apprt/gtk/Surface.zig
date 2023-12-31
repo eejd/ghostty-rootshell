@@ -19,7 +19,6 @@ const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
-const x11 = @import("x11.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk_surface);
@@ -254,9 +253,6 @@ im_composing: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
-/// Xkb state (X11 only). Will be null on Wayland.
-x11_xkb: ?x11.X11Xkb = null,
-
 pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
     var surface = try alloc.create(Surface);
     errdefer alloc.destroy(surface);
@@ -358,9 +354,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .im_context = im_context,
     };
     errdefer self.* = undefined;
-
-    // Set up Xkb if we are running under X11.
-    self.x11_xkb = try x11.X11Xkb.init(c.gdk_display_get_default());
 
     // Set our default mouse shape
     try self.setMouseShape(.text);
@@ -1343,17 +1336,15 @@ fn keyEvent(
 
         const device = c.gdk_event_get_device(event);
         var mods = init_mods: {
-            if (self.x11_xkb) |x11_xkb| {
-                // Add any modifier state events from Xkb if we have them (X11 only).
-                if (x11_xkb.modifier_state_from_notify(display)) |xkb_mods| {
-                    break :init_mods xkb_mods;
-                }
-
-                // Null back from the Xkb call means there was no modifier
-                // event to read. This likely means that the key event did not
-                // result in a modifier change and we can safely rely on the
-                // GDK state.
+            // Add any modifier state events from Xkb if we have them (X11 only).
+            if (self.app.modifier_state_from_xkb(display)) |xkb_mods| {
+                break :init_mods xkb_mods;
             }
+
+            // Null back from the Xkb call means there was no modifier
+            // event to read. This likely means that the key event did not
+            // result in a modifier change and we can safely rely on the
+            // GDK state.
 
             break :init_mods translateMods(c.gdk_device_get_modifier_state(device));
         };

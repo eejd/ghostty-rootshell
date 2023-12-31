@@ -56,6 +56,9 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 /// This is set to false when the main loop should exit.
 running: bool = true,
 
+/// Xkb state (X11 only). Will be null on Wayland.
+x11_xkb: ?x11.X11Xkb = null,
+
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
@@ -170,8 +173,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
+    var x11_xkb: ?x11.X11Xkb = null;
     const display = c.gdk_display_get_default();
-    if (x11.x11_is_display(display)) {
+    if (x11.is_display(display)) {
         // Set the X11 window class property (WM_CLASS) if are are on an X11
         // display.
         //
@@ -197,6 +201,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             "ghostty";
         c.g_set_prgname(prgname);
         c.gdk_x11_display_set_program_class(display, app_id);
+
+        // Set up Xkb
+        x11_xkb = try x11.X11Xkb.init(c.gdk_display_get_default());
     }
 
     // This just calls the "activate" signal but its part of the normal
@@ -210,6 +217,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
+        .x11_xkb = x11_xkb,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
@@ -573,4 +581,10 @@ test "isValidAppId" {
     try testing.expect(!isValidAppId(".foo"));
     try testing.expect(!isValidAppId(""));
     try testing.expect(!isValidAppId("foo" ** 86));
+}
+
+/// Loads keyboard state from Xkb if there is an event pending and Xkb is
+/// loaded (X11 only). Returns null otherwise.
+pub fn modifier_state_from_xkb(self: *App, display_: ?*c.GdkDisplay) ?input.Mods {
+    return (self.x11_xkb orelse return null).modifier_state_from_notify(display_);
 }

@@ -6,7 +6,7 @@ const input = @import("../../input.zig");
 const log = std.log.scoped(.gtk_x11);
 
 /// Returns true if the passed in display is an X11 display.
-pub fn x11_is_display(display: ?*c.GdkDisplay) bool {
+pub fn is_display(display: ?*c.GdkDisplay) bool {
     return c.g_type_check_instance_is_a(
         @ptrCast(@alignCast(display orelse return false)),
         c.gdk_x11_display_get_type(),
@@ -14,9 +14,7 @@ pub fn x11_is_display(display: ?*c.GdkDisplay) bool {
 }
 
 pub const X11Xkb = struct {
-    opcode: c_int,
     base_event_code: c_int,
-    base_error_code: c_int,
     funcs: Funcs,
 
     /// Initialize an X11Xkb struct, for the given GDK display. If the display
@@ -27,25 +25,25 @@ pub const X11Xkb = struct {
         const display = display_ orelse return null;
 
         // If the display isn't X11, then we don't need to do anything.
-        if (!x11_is_display(display)) return null;
+        if (!is_display(display)) return null;
 
         log.debug("X11Xkb.init: initializing Xkb", .{});
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
         var result: X11Xkb = .{
-            .opcode = 0,
             .base_event_code = 0,
-            .base_error_code = 0,
             .funcs = try Funcs.init(),
         };
 
         log.debug("X11Xkb.init: running XkbQueryExtension", .{});
+        var opcode: c_int = 0;
+        var base_error_code: c_int = 0;
         var major = c.XkbMajorVersion;
         var minor = c.XkbMinorVersion;
         if (result.funcs.XkbQueryExtension(
             xdisplay,
-            &result.opcode,
+            &opcode,
             &result.base_event_code,
-            &result.base_error_code,
+            &base_error_code,
             &major,
             &minor,
         ) == 0) {
