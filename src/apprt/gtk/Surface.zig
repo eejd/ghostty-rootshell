@@ -19,6 +19,7 @@ const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
+const x11 = @import("x11.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk_surface);
@@ -253,6 +254,9 @@ im_composing: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
+/// Xkb state (X11 only). Will be null on Wayland.
+x11_xkb: ?x11.X11Xkb = null,
+
 pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
     var surface = try alloc.create(Surface);
     errdefer alloc.destroy(surface);
@@ -354,6 +358,12 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .im_context = im_context,
     };
     errdefer self.* = undefined;
+
+    // Set up Xkb if we are running under X11.
+    const display = c.gdk_display_get_default();
+    if (x11.x11_is_display(display)) {
+        self.x11_xkb = try x11.X11Xkb.init(display);
+    }
 
     // Set our default mouse shape
     try self.setMouseShape(.text);
@@ -1222,6 +1232,7 @@ fn keyEvent(
     const self = userdataSelf(ud.?);
     const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
+    const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
 
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
@@ -1232,7 +1243,6 @@ fn keyEvent(
 
         // Get all the possible keyboard mappings for this keycode. A keycode
         // is the physical key pressed.
-        const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
         var keys: [*]c.GdkKeymapKey = undefined;
         var keyvals: [*]c.guint = undefined;
         var n_keys: c_int = 0;
@@ -1335,7 +1345,19 @@ fn keyEvent(
         _ = gtk_mods;
 
         const device = c.gdk_event_get_device(event);
-        var mods = translateMods(c.gdk_device_get_modifier_state(device));
+        var mods = if (self.x11_xkb) |x11_xkb| init_mods: {
+            // Add any modifier state events from Xkb if we have them (X11 only).
+            if (x11_xkb.modifier_state_from_notify(display)) |xkb_mods| {
+                break :init_mods xkb_mods;
+            } else {
+                // Null back from the Xkb call means there was no modifier
+                // event to read. This likely means that the key event did not
+                // result in a modifier change and we can safely rely on the
+                // GDK state.
+                break :init_mods translateMods(c.gdk_device_get_modifier_state(device));
+            }
+        } else translateMods(c.gdk_device_get_modifier_state(device));
+
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
         switch (physical_key) {

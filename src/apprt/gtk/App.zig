@@ -28,6 +28,7 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const c = @import("c.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
+const x11 = @import("x11.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -170,7 +171,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     const display = c.gdk_display_get_default();
-    if (c.g_type_check_instance_is_a(@ptrCast(@alignCast(display)), c.gdk_x11_display_get_type()) != 0) {
+    if (x11.x11_is_display(display)) {
         // Set the X11 window class property (WM_CLASS) if are are on an X11
         // display.
         //
