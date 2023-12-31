@@ -387,10 +387,14 @@ palette: Palette = .{},
 /// flag. For example: `ghostty -e fish --with --custom --args`.
 command: ?[]const u8 = null,
 
-/// The number of milliseconds below which we consider a process
-/// exit to be abnormal. This is used to show an error message
-/// when the process exits too quickly.
-@"abnormal-runtime-threshold-ms": u64 = 250,
+/// The number of milliseconds of runtime below which we consider a process
+/// exit to be abnormal. This is used to show an error message when the
+/// process exits too quickly.
+///
+/// On Linux, this must be paired with a non-zero exit code. On macOS,
+/// we allow any exit code because of the way shell processes are launched
+/// via the login command.
+@"abnormal-command-exit-runtime": u32 = 250,
 
 /// Match a regular expression against the terminal text and associate
 /// clicking it with an action. This can be used to match URLs, file paths,
