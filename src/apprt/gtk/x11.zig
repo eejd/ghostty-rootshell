@@ -3,7 +3,7 @@ const std = @import("std");
 const c = @import("c.zig");
 const input = @import("../../input.zig");
 
-const log = std.log.scoped(.gtk);
+const log = std.log.scoped(.gtk_x11);
 
 // X11 Function types. We load these dynamically at runtime to avoid having to
 // link against X11.
@@ -13,9 +13,11 @@ const XEventsQueuedType = *const fn (?*c.struct__XDisplay, c_int) callconv(.C) c
 const XPeekEventType = *const fn (?*c.struct__XDisplay, [*c]c.union__XEvent) callconv(.C) c_int;
 
 /// Returns true if the passed in display is an X11 display.
-pub fn x11_is_display(display_: ?*c.GdkDisplay) bool {
-    const display = display_ orelse return false;
-    return (c.g_type_check_instance_is_a(@ptrCast(@alignCast(display)), c.gdk_x11_display_get_type()) != 0);
+pub fn x11_is_display(display: ?*c.GdkDisplay) bool {
+    return c.g_type_check_instance_is_a(
+        @ptrCast(@alignCast(display orelse return false)),
+        c.gdk_x11_display_get_type(),
+    ) != 0;
 }
 
 pub const X11Xkb = struct {
@@ -29,47 +31,79 @@ pub const X11Xkb = struct {
     XEventsQueued: XEventsQueuedType = undefined,
     XPeekEvent: XPeekEventType = undefined,
 
-    pub fn init(display_: ?*c.GdkDisplay) !X11Xkb {
-        log.debug("X11: X11Xkb.init: initializing Xkb", .{});
-        const display = display_ orelse {
-            log.err("Fatal: error initializing Xkb extension: display is null", .{});
-            return error.XkbInitializationError;
-        };
+    /// Initialize an X11Xkb struct, for the given GDK display. If the display
+    /// isn't backed by X then this will return null.
+    pub fn init(display_: ?*c.GdkDisplay) !?X11Xkb {
+        // Display should never be null but we just treat that as a non-X11
+        // display so that the caller can just ignore it and not unwrap it.
+        const display = display_ orelse return null;
 
+        // If the display isn't X11, then we don't need to do anything.
+        if (!x11_is_display(display)) return null;
+
+        log.debug("X11Xkb.init: initializing Xkb", .{});
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
         var result: X11Xkb = .{ .opcode = 0, .base_event_code = 0, .base_error_code = 0 };
 
         // Load in the X11 calls we need.
-        log.debug("X11: X11Xkb.init: loading libX11.so dynamically", .{});
+        log.debug(" X11Xkb.init: loading libX11.so dynamically", .{});
         var libX11 = try std.DynLib.open("libX11.so");
         defer libX11.close();
-        result.XkbQueryExtension = libX11.lookup(XkbQueryExtensionType, "XkbQueryExtension") orelse {
+        result.XkbQueryExtension = libX11.lookup(
+            XkbQueryExtensionType,
+            "XkbQueryExtension",
+        ) orelse {
             log.err("Fatal: error dynamic loading libX11: missing symbol XkbQueryExtension", .{});
             return error.XkbInitializationError;
         };
-        result.XkbSelectEventDetails = libX11.lookup(XkbSelectEventDetailsType, "XkbSelectEventDetails") orelse {
+
+        result.XkbSelectEventDetails = libX11.lookup(
+            XkbSelectEventDetailsType,
+            "XkbSelectEventDetails",
+        ) orelse {
             log.err("Fatal: error dynamic loading libX11: missing symbol XkbSelectEventDetails", .{});
             return error.XkbInitializationError;
         };
-        result.XEventsQueued = libX11.lookup(XEventsQueuedType, "XEventsQueued") orelse {
+
+        result.XEventsQueued = libX11.lookup(
+            XEventsQueuedType,
+            "XEventsQueued",
+        ) orelse {
             log.err("Fatal: error dynamic loading libX11: missing symbol XEventsQueued", .{});
             return error.XkbInitializationError;
         };
-        result.XPeekEvent = libX11.lookup(XPeekEventType, "XPeekEvent") orelse {
+
+        result.XPeekEvent = libX11.lookup(
+            XPeekEventType,
+            "XPeekEvent",
+        ) orelse {
             log.err("Fatal: error dynamic loading libX11: missing symbol XPeekEvent", .{});
             return error.XkbInitializationError;
         };
 
-        log.debug("X11: X11Xkb.init: running XkbQueryExtension", .{});
+        log.debug("X11Xkb.init: running XkbQueryExtension", .{});
         var major = c.XkbMajorVersion;
         var minor = c.XkbMinorVersion;
-        if (result.XkbQueryExtension(xdisplay, &result.opcode, &result.base_event_code, &result.base_error_code, &major, &minor) == 0) {
+        if (result.XkbQueryExtension(
+            xdisplay,
+            &result.opcode,
+            &result.base_event_code,
+            &result.base_error_code,
+            &major,
+            &minor,
+        ) == 0) {
             log.err("Fatal: error initializing Xkb extension: error executing XkbQueryExtension", .{});
             return error.XkbInitializationError;
         }
 
-        log.debug("X11: X11Xkb.init: running XkbSelectEventDetails", .{});
-        if (result.XkbSelectEventDetails(xdisplay, c.XkbUseCoreKbd, c.XkbStateNotify, c.XkbModifierStateMask, c.XkbModifierStateMask) == 0) {
+        log.debug("X11Xkb.init: running XkbSelectEventDetails", .{});
+        if (result.XkbSelectEventDetails(
+            xdisplay,
+            c.XkbUseCoreKbd,
+            c.XkbStateNotify,
+            c.XkbModifierStateMask,
+            c.XkbModifierStateMask,
+        ) == 0) {
             log.err("Fatal: error initializing Xkb extension: error executing XkbSelectEventDetails", .{});
             return error.XkbInitializationError;
         }
@@ -89,32 +123,31 @@ pub const X11Xkb = struct {
     /// event did not result in a modifier change).
     pub fn modifier_state_from_notify(self: X11Xkb, display_: ?*c.GdkDisplay) ?input.Mods {
         const display = display_ orelse return null;
+
         // Shoutout to Mozilla for figuring out a clean way to do this, this is
         // paraphrased from Firefox/Gecko in widget/gtk/nsGtkKeyUtils.cpp.
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
-        if (self.XEventsQueued(xdisplay, c.QueuedAfterReading) != 0) {
-            var nextEvent: c.XEvent = undefined;
-            _ = self.XPeekEvent(xdisplay, &nextEvent);
-            if (nextEvent.type == self.base_event_code) {
-                const xkb_event: *c.XkbEvent = @ptrCast(&nextEvent);
-                if (xkb_event.any.xkb_type == c.XkbStateNotify) {
-                    const xkb_state_notify_event: *c.XkbStateNotifyEvent = @ptrCast(xkb_event);
-                    // Check the state according to XKB masks.
-                    const lookup_mods = xkb_state_notify_event.lookup_mods;
-                    var mods: input.Mods = .{};
+        if (self.XEventsQueued(xdisplay, c.QueuedAfterReading) == 0) return null;
 
-                    log.debug("X11: found extra XkbStateNotify event w/lookup_mods: {b}", .{lookup_mods});
-                    if (lookup_mods & c.ShiftMask != 0) mods.shift = true;
-                    if (lookup_mods & c.ControlMask != 0) mods.ctrl = true;
-                    if (lookup_mods & c.Mod1Mask != 0) mods.alt = true;
-                    if (lookup_mods & c.Mod2Mask != 0) mods.super = true;
-                    if (lookup_mods & c.LockMask != 0) mods.caps_lock = true;
+        var nextEvent: c.XEvent = undefined;
+        _ = self.XPeekEvent(xdisplay, &nextEvent);
+        if (nextEvent.type != self.base_event_code) return null;
 
-                    return mods;
-                }
-            }
-        }
+        const xkb_event: *c.XkbEvent = @ptrCast(&nextEvent);
+        if (xkb_event.any.xkb_type != c.XkbStateNotify) return null;
 
-        return null;
+        const xkb_state_notify_event: *c.XkbStateNotifyEvent = @ptrCast(xkb_event);
+        // Check the state according to XKB masks.
+        const lookup_mods = xkb_state_notify_event.lookup_mods;
+        var mods: input.Mods = .{};
+
+        log.debug("X11: found extra XkbStateNotify event w/lookup_mods: {b}", .{lookup_mods});
+        if (lookup_mods & c.ShiftMask != 0) mods.shift = true;
+        if (lookup_mods & c.ControlMask != 0) mods.ctrl = true;
+        if (lookup_mods & c.Mod1Mask != 0) mods.alt = true;
+        if (lookup_mods & c.Mod2Mask != 0) mods.super = true;
+        if (lookup_mods & c.LockMask != 0) mods.caps_lock = true;
+
+        return mods;
     }
 };

@@ -360,10 +360,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     errdefer self.* = undefined;
 
     // Set up Xkb if we are running under X11.
-    const display = c.gdk_display_get_default();
-    if (x11.x11_is_display(display)) {
-        self.x11_xkb = try x11.X11Xkb.init(display);
-    }
+    self.x11_xkb = try x11.X11Xkb.init(c.gdk_display_get_default());
 
     // Set our default mouse shape
     try self.setMouseShape(.text);
@@ -1345,18 +1342,21 @@ fn keyEvent(
         _ = gtk_mods;
 
         const device = c.gdk_event_get_device(event);
-        var mods = if (self.x11_xkb) |x11_xkb| init_mods: {
-            // Add any modifier state events from Xkb if we have them (X11 only).
-            if (x11_xkb.modifier_state_from_notify(display)) |xkb_mods| {
-                break :init_mods xkb_mods;
-            } else {
+        var mods = init_mods: {
+            if (self.x11_xkb) |x11_xkb| {
+                // Add any modifier state events from Xkb if we have them (X11 only).
+                if (x11_xkb.modifier_state_from_notify(display)) |xkb_mods| {
+                    break :init_mods xkb_mods;
+                }
+
                 // Null back from the Xkb call means there was no modifier
                 // event to read. This likely means that the key event did not
                 // result in a modifier change and we can safely rely on the
                 // GDK state.
-                break :init_mods translateMods(c.gdk_device_get_modifier_state(device));
             }
-        } else translateMods(c.gdk_device_get_modifier_state(device));
+
+            break :init_mods translateMods(c.gdk_device_get_modifier_state(device));
+        };
 
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
