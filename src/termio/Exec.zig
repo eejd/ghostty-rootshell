@@ -38,6 +38,11 @@ const c = @cImport({
 /// correct granularity of events.
 const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 
+/// The number of milliseconds below which we consider a process
+/// exit to be abnormal. This is used to show an error message
+/// when the process exits too quickly.
+const abnormal_runtime_threshold_ms = 250;
+
 /// Allocator
 alloc: Allocator,
 
@@ -230,12 +235,15 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         self.execFailedInChild() catch {};
         std.os.exit(1);
     };
-
     errdefer self.subprocess.stop();
     const pid = pid: {
         const command = self.subprocess.command orelse return error.ProcessNotStarted;
         break :pid command.pid orelse return error.ProcessNoPid;
     };
+
+    // Track our process start time so we know how long it was
+    // running for.
+    const process_start = try std.time.Instant.now();
 
     // Create our pipe that we'll use to kill our read thread.
     // pipe[0] is the read end, pipe[1] is the write end.
@@ -268,6 +276,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
         .process = process,
+        .process_start = process_start,
         .data_stream = stream,
         .loop = &thread.loop,
         .terminal_stream = .{
@@ -535,8 +544,73 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
     }
 }
 
+/// Called when the child process exited abnormally but before
+/// the surface is notified.
+pub fn childExitedAbnormally(self: *Exec) !void {
+    // Build up our command for the error message
+    const command = try std.mem.join(
+        self.alloc,
+        " ",
+        self.subprocess.args,
+    );
+    defer self.alloc.free(command);
+
+    // Modify the terminal to show our error message. This
+    // requires grabbing the renderer state lock.
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const t = self.renderer_state.terminal;
+
+    // No matter what move the cursor back to the column 0.
+    t.carriageReturn();
+
+    // Reset styles
+    try t.setAttribute(.{ .unset = {} });
+
+    // If there is data in the viewport, we want to scroll down
+    // a little bit and write a horizontal rule before writing
+    // our message. This lets the use see the error message the
+    // command may have output.
+    const viewport_str = try t.plainString(self.alloc);
+    defer self.alloc.free(viewport_str);
+    if (viewport_str.len > 0) {
+        try t.linefeed();
+        for (0..t.cols) |_| try t.print(0x2501);
+        t.carriageReturn();
+        try t.linefeed();
+        try t.linefeed();
+    }
+
+    // Output our error message
+    try t.setAttribute(.{ .@"8_fg" = .bright_red });
+    try t.setAttribute(.{ .bold = {} });
+    try t.printString("Ghostty failed to launch the requested command:");
+    try t.setAttribute(.{ .unset = {} });
+    try t.setAttribute(.{ .faint = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString(command);
+    try t.setAttribute(.{ .unset = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.linefeed();
+    try t.printString("Press any key to close the window.");
+
+    // Hide the cursor
+    t.modes.set(.cursor_visible, false);
+}
+
 pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
     const ev = self.data.?;
+
+    // If our process is exited then we send our surface a message
+    // about it but we don't queue any more writes.
+    if (ev.process_exited) {
+        _ = ev.surface_mailbox.push(.{
+            .child_exited = {},
+        }, .{ .forever = {} });
+        return;
+    }
 
     // We go through and chunk the data if necessary to fit into
     // our cached buffers that we can queue to the stream.
@@ -640,6 +714,7 @@ const EventData = struct {
 
     /// The process watcher
     process: xev.Process,
+    process_start: std.time.Instant,
     process_exited: bool = false,
 
     /// This is used for both waiting for the process to exit and then
@@ -703,10 +778,53 @@ fn processExit(
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
     const code = r catch unreachable;
-    log.debug("child process exited status={}", .{code});
 
     const ev = ev_.?;
     ev.process_exited = true;
+
+    // Determine how long the process was running for.
+    const runtime_ms: ?u64 = runtime: {
+        const process_end = std.time.Instant.now() catch break :runtime null;
+        const runtime_ns = process_end.since(ev.process_start);
+        const runtime_ms = runtime_ns / std.time.ns_per_ms;
+        break :runtime runtime_ms;
+    };
+    log.debug(
+        "child process exited status={} runtime={}ms",
+        .{ code, runtime_ms orelse 0 },
+    );
+
+    // If our runtime was below some threshold then we assume that this
+    // was an abnormal exit and we show an error message.
+    if (runtime_ms) |runtime| runtime: {
+        // On macOS, our exit code detection doesn't work, possibly
+        // because of our `login` wrapper. More investigation required.
+        if (comptime !builtin.target.isDarwin()) {
+            // If our exit code is zero, then the command was successful
+            // and we don't ever consider it abnormal.
+            if (code == 0) break :runtime;
+        }
+
+        // Our runtime always has to be under the threshold to be
+        // considered abnormal. This is because a user can always
+        // manually do something like `exit 1` in their shell to
+        // force the exit code to be non-zero. We only want to detect
+        // abnormal exits that happen so quickly the user can't react.
+        if (runtime > abnormal_runtime_threshold_ms) break :runtime;
+        log.warn("abnormal process exit detected, showing error message", .{});
+
+        // Notify our main writer thread which has access to more
+        // information so it can show a better error message.
+        _ = ev.writer_mailbox.push(.{
+            .child_exited_abnormally = .{
+                .code = code,
+                .runtime_ms = runtime,
+            },
+        }, .{ .forever = {} });
+        ev.writer_wakeup.notify() catch break :runtime;
+
+        return .disarm;
+    }
 
     // Notify our surface we want to close
     _ = ev.surface_mailbox.push(.{

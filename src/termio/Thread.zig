@@ -186,6 +186,7 @@ fn drainMailbox(self: *Thread) !void {
             .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
             .start_synchronized_output => self.startSynchronizedOutput(),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
+            .child_exited_abnormally => try self.impl.childExitedAbnormally(),
             .write_small => |v| try self.impl.queueWrite(v.data[0..v.len], self.flags.linefeed_mode),
             .write_stable => |v| try self.impl.queueWrite(v, self.flags.linefeed_mode),
             .write_alloc => |v| {

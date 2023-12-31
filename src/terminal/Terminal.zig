@@ -425,7 +425,7 @@ fn clearPromptForResize(self: *Terminal) void {
 /// encoded as "\n". This omits any formatting such as fg/bg.
 ///
 /// The caller must free the string.
-fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
+pub fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
     return try self.screen.testString(alloc, .viewport);
 }
 
@@ -715,9 +715,7 @@ pub fn invokeCharset(
 /// Print UTF-8 encoded string to the terminal. This string must be
 /// a single line, newlines and carriage returns and other control
 /// characters are not processed.
-///
-/// This is not public because it is only used for tests rigt now.
-fn printString(self: *Terminal, str: []const u8) !void {
+pub fn printString(self: *Terminal, str: []const u8) !void {
     const view = try std.unicode.Utf8View.init(str);
     var it = view.iterator();
     while (it.nextCodepoint()) |cp| try self.print(cp);
