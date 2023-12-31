@@ -816,7 +816,10 @@ fn processExit(
         // Notify our main writer thread which has access to more
         // information so it can show a better error message.
         _ = ev.writer_mailbox.push(.{
-            .child_exited_abnormally = {},
+            .child_exited_abnormally = .{
+                .code = code,
+                .runtime_ms = runtime,
+            },
         }, .{ .forever = {} });
         ev.writer_wakeup.notify() catch break :runtime;
 

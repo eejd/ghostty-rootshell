@@ -66,7 +66,10 @@ pub const Message = union(enum) {
     /// as process exited but the surface hasn't been notified to
     /// close because termio can use this to update the terminal
     /// with an error message.
-    child_exited_abnormally: void,
+    child_exited_abnormally: struct {
+        code: u32,
+        runtime_ms: u64,
+    },
 
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
