@@ -555,43 +555,49 @@ pub fn childExitedAbnormally(self: *Exec) !void {
     );
     defer self.alloc.free(command);
 
-    // Build our error message. Do this outside of the renderer lock.
-    var msg = std.ArrayList(u8).init(self.alloc);
-    defer msg.deinit();
-    var writer = msg.writer();
-    try writer.print(
-        \\Ghostty failed to launch the requested command.
-        \\Please check your "command" configuration.
-        \\
-        \\Command: {s}
-        \\
-        \\Press any key to close this window.
-    , .{command});
-
     // Modify the terminal to show our error message. This
     // requires grabbing the renderer state lock.
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const t = self.renderer_state.terminal;
 
-    // Reset the terminal completely.
-    // NOTE: The error output is in the terminal at this point. In the
-    // future, we can make an even better error message by scrolling,
-    // writing at the bottom, etc.
-    t.fullReset(self.alloc);
+    // No matter what move the cursor back to the column 0.
+    t.carriageReturn();
 
-    // Write our message out.
-    const view = try std.unicode.Utf8View.init(msg.items);
-    var it = view.iterator();
-    while (it.nextCodepoint()) |cp| {
-        if (cp == '\n') {
-            t.carriageReturn();
-            try t.linefeed();
-            continue;
-        }
+    // Reset styles
+    try t.setAttribute(.{ .unset = {} });
 
-        try t.print(cp);
+    // If there is data in the viewport, we want to scroll down
+    // a little bit and write a horizontal rule before writing
+    // our message. This lets the use see the error message the
+    // command may have output.
+    const viewport_str = try t.plainString(self.alloc);
+    defer self.alloc.free(viewport_str);
+    if (viewport_str.len > 0) {
+        try t.linefeed();
+        for (0..t.cols) |_| try t.print(0x2501);
+        t.carriageReturn();
+        try t.linefeed();
+        try t.linefeed();
     }
+
+    // Output our error message
+    try t.setAttribute(.{ .@"8_fg" = .bright_red });
+    try t.setAttribute(.{ .bold = {} });
+    try t.printString("Ghostty failed to launch the requested command:");
+    try t.setAttribute(.{ .unset = {} });
+    try t.setAttribute(.{ .faint = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString(command);
+    try t.setAttribute(.{ .unset = {} });
+    t.carriageReturn();
+    try t.linefeed();
+    try t.linefeed();
+    try t.printString("Press any key to close the window.");
+
+    // Hide the cursor
+    t.modes.set(.cursor_visible, false);
 }
 
 pub inline fn queueWrite(self: *Exec, data: []const u8, linefeed: bool) !void {
