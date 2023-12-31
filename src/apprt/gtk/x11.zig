@@ -5,13 +5,6 @@ const input = @import("../../input.zig");
 
 const log = std.log.scoped(.gtk_x11);
 
-// X11 Function types. We load these dynamically at runtime to avoid having to
-// link against X11.
-const XkbQueryExtensionType = *const fn (?*c.struct__XDisplay, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int) callconv(.C) c_int;
-const XkbSelectEventDetailsType = *const fn (?*c.struct__XDisplay, c_uint, c_uint, c_ulong, c_ulong) callconv(.C) c_int;
-const XEventsQueuedType = *const fn (?*c.struct__XDisplay, c_int) callconv(.C) c_int;
-const XPeekEventType = *const fn (?*c.struct__XDisplay, [*c]c.union__XEvent) callconv(.C) c_int;
-
 /// Returns true if the passed in display is an X11 display.
 pub fn x11_is_display(display: ?*c.GdkDisplay) bool {
     return c.g_type_check_instance_is_a(
@@ -24,12 +17,7 @@ pub const X11Xkb = struct {
     opcode: c_int,
     base_event_code: c_int,
     base_error_code: c_int,
-
-    // Dynamic functions
-    XkbQueryExtension: XkbQueryExtensionType = undefined,
-    XkbSelectEventDetails: XkbSelectEventDetailsType = undefined,
-    XEventsQueued: XEventsQueuedType = undefined,
-    XPeekEvent: XPeekEventType = undefined,
+    funcs: Funcs,
 
     /// Initialize an X11Xkb struct, for the given GDK display. If the display
     /// isn't backed by X then this will return null.
@@ -43,48 +31,17 @@ pub const X11Xkb = struct {
 
         log.debug("X11Xkb.init: initializing Xkb", .{});
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
-        var result: X11Xkb = .{ .opcode = 0, .base_event_code = 0, .base_error_code = 0 };
-
-        // Load in the X11 calls we need.
-        log.debug(" X11Xkb.init: loading libX11.so dynamically", .{});
-        var libX11 = try std.DynLib.open("libX11.so");
-        defer libX11.close();
-        result.XkbQueryExtension = libX11.lookup(
-            XkbQueryExtensionType,
-            "XkbQueryExtension",
-        ) orelse {
-            log.err("Fatal: error dynamic loading libX11: missing symbol XkbQueryExtension", .{});
-            return error.XkbInitializationError;
-        };
-
-        result.XkbSelectEventDetails = libX11.lookup(
-            XkbSelectEventDetailsType,
-            "XkbSelectEventDetails",
-        ) orelse {
-            log.err("Fatal: error dynamic loading libX11: missing symbol XkbSelectEventDetails", .{});
-            return error.XkbInitializationError;
-        };
-
-        result.XEventsQueued = libX11.lookup(
-            XEventsQueuedType,
-            "XEventsQueued",
-        ) orelse {
-            log.err("Fatal: error dynamic loading libX11: missing symbol XEventsQueued", .{});
-            return error.XkbInitializationError;
-        };
-
-        result.XPeekEvent = libX11.lookup(
-            XPeekEventType,
-            "XPeekEvent",
-        ) orelse {
-            log.err("Fatal: error dynamic loading libX11: missing symbol XPeekEvent", .{});
-            return error.XkbInitializationError;
+        var result: X11Xkb = .{
+            .opcode = 0,
+            .base_event_code = 0,
+            .base_error_code = 0,
+            .funcs = try Funcs.init(),
         };
 
         log.debug("X11Xkb.init: running XkbQueryExtension", .{});
         var major = c.XkbMajorVersion;
         var minor = c.XkbMinorVersion;
-        if (result.XkbQueryExtension(
+        if (result.funcs.XkbQueryExtension(
             xdisplay,
             &result.opcode,
             &result.base_event_code,
@@ -97,7 +54,7 @@ pub const X11Xkb = struct {
         }
 
         log.debug("X11Xkb.init: running XkbSelectEventDetails", .{});
-        if (result.XkbSelectEventDetails(
+        if (result.funcs.XkbSelectEventDetails(
             xdisplay,
             c.XkbUseCoreKbd,
             c.XkbStateNotify,
@@ -127,10 +84,10 @@ pub const X11Xkb = struct {
         // Shoutout to Mozilla for figuring out a clean way to do this, this is
         // paraphrased from Firefox/Gecko in widget/gtk/nsGtkKeyUtils.cpp.
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
-        if (self.XEventsQueued(xdisplay, c.QueuedAfterReading) == 0) return null;
+        if (self.funcs.XEventsQueued(xdisplay, c.QueuedAfterReading) == 0) return null;
 
         var nextEvent: c.XEvent = undefined;
-        _ = self.XPeekEvent(xdisplay, &nextEvent);
+        _ = self.funcs.XPeekEvent(xdisplay, &nextEvent);
         if (nextEvent.type != self.base_event_code) return null;
 
         const xkb_event: *c.XkbEvent = @ptrCast(&nextEvent);
@@ -149,5 +106,43 @@ pub const X11Xkb = struct {
         if (lookup_mods & c.LockMask != 0) mods.caps_lock = true;
 
         return mods;
+    }
+};
+
+/// The functions that we load dynamically from libX11.so.
+const Funcs = struct {
+    XkbQueryExtension: XkbQueryExtensionType,
+    XkbSelectEventDetails: XkbSelectEventDetailsType,
+    XEventsQueued: XEventsQueuedType,
+    XPeekEvent: XPeekEventType,
+
+    // X11 Function types. We load these dynamically at runtime to avoid having to
+    // link against X11.
+    const XkbQueryExtensionType = *const fn (?*c.struct__XDisplay, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int) callconv(.C) c_int;
+    const XkbSelectEventDetailsType = *const fn (?*c.struct__XDisplay, c_uint, c_uint, c_ulong, c_ulong) callconv(.C) c_int;
+    const XEventsQueuedType = *const fn (?*c.struct__XDisplay, c_int) callconv(.C) c_int;
+    const XPeekEventType = *const fn (?*c.struct__XDisplay, [*c]c.union__XEvent) callconv(.C) c_int;
+
+    pub fn init() !Funcs {
+        var libX11 = try std.DynLib.open("libX11.so");
+        defer libX11.close();
+
+        var result: Funcs = undefined;
+        inline for (@typeInfo(Funcs).Struct.fields) |field| {
+            const name = comptime name: {
+                const null_term = field.name ++ .{0};
+                break :name null_term[0..field.name.len :0];
+            };
+
+            @field(result, field.name) = libX11.lookup(
+                field.type,
+                name,
+            ) orelse {
+                log.err(" error dynamic loading libX11: missing symbol {s}", .{field.name});
+                return error.XkbInitializationError;
+            };
+        }
+
+        return result;
     }
 };
