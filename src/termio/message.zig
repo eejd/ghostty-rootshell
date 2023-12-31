@@ -67,7 +67,7 @@ pub const Message = union(enum) {
     /// close because termio can use this to update the terminal
     /// with an error message.
     child_exited_abnormally: struct {
-        code: u32,
+        exit_code: u32,
         runtime_ms: u64,
     },
 

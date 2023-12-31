@@ -38,16 +38,16 @@ const c = @cImport({
 /// correct granularity of events.
 const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 
-/// The number of milliseconds below which we consider a process
-/// exit to be abnormal. This is used to show an error message
-/// when the process exits too quickly.
-const abnormal_runtime_threshold_ms = 250;
-
 /// Allocator
 alloc: Allocator,
 
 /// This is the pty fd created for the subcommand.
 subprocess: Subprocess,
+
+/// The number of milliseconds below which we consider a process
+/// exit to be abnormal. This is used to show an error message
+/// when the process exits too quickly.
+abnormal_runtime_threshold_ms: u32,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
@@ -111,6 +111,7 @@ pub const DerivedConfig = struct {
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
+    abnormal_runtime_threshold_ms: u32,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -129,6 +130,7 @@ pub const DerivedConfig = struct {
             .osc_color_report_format = config.@"osc-color-report-format",
             .term = config.term,
             .grapheme_width_method = config.@"grapheme-width-method",
+            .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
         };
     }
 
@@ -207,6 +209,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .background_color = config.background.toTerminalRGB(),
         .osc_color_report_format = config.osc_color_report_format,
         .data = null,
+        .abnormal_runtime_threshold_ms = opts.config.abnormal_runtime_threshold_ms,
     };
 }
 
@@ -304,6 +307,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 },
             },
         },
+        .abnormal_runtime_threshold_ms = self.abnormal_runtime_threshold_ms,
     };
     errdefer ev_data_ptr.deinit(self.alloc);
 
@@ -546,14 +550,14 @@ pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
 
 /// Called when the child process exited abnormally but before
 /// the surface is notified.
-pub fn childExitedAbnormally(self: *Exec) !void {
+pub fn childExitedAbnormally(self: *Exec, exit_code: u32, runtime_ms: u64) !void {
+    var arena = ArenaAllocator.init(self.alloc);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
     // Build up our command for the error message
-    const command = try std.mem.join(
-        self.alloc,
-        " ",
-        self.subprocess.args,
-    );
-    defer self.alloc.free(command);
+    const command = try std.mem.join(alloc, " ", self.subprocess.args);
+    const runtime_str = try std.fmt.allocPrint(alloc, "{d} ms", .{runtime_ms});
 
     // Modify the terminal to show our error message. This
     // requires grabbing the renderer state lock.
@@ -571,8 +575,7 @@ pub fn childExitedAbnormally(self: *Exec) !void {
     // a little bit and write a horizontal rule before writing
     // our message. This lets the use see the error message the
     // command may have output.
-    const viewport_str = try t.plainString(self.alloc);
-    defer self.alloc.free(viewport_str);
+    const viewport_str = try t.plainString(alloc);
     if (viewport_str.len > 0) {
         try t.linefeed();
         for (0..t.cols) |_| try t.print(0x2501);
@@ -586,11 +589,33 @@ pub fn childExitedAbnormally(self: *Exec) !void {
     try t.setAttribute(.{ .bold = {} });
     try t.printString("Ghostty failed to launch the requested command:");
     try t.setAttribute(.{ .unset = {} });
-    try t.setAttribute(.{ .faint = {} });
+
     t.carriageReturn();
+    try t.linefeed();
     try t.linefeed();
     try t.printString(command);
     try t.setAttribute(.{ .unset = {} });
+
+    t.carriageReturn();
+    try t.linefeed();
+    try t.linefeed();
+    try t.printString("Runtime: ");
+    try t.setAttribute(.{ .@"8_fg" = .red });
+    try t.printString(runtime_str);
+    try t.setAttribute(.{ .unset = {} });
+
+    // We don't print this on macOS because the exit code is always 0
+    // due to the way we launch the process.
+    if (comptime !builtin.target.isDarwin()) {
+        const exit_code_str = try std.fmt.allocPrint(alloc, "{d}", .{exit_code});
+        t.carriageReturn();
+        try t.linefeed();
+        try t.printString("Exit Code: ");
+        try t.setAttribute(.{ .@"8_fg" = .red });
+        try t.printString(exit_code_str);
+        try t.setAttribute(.{ .unset = {} });
+    }
+
     t.carriageReturn();
     try t.linefeed();
     try t.linefeed();
@@ -745,6 +770,11 @@ const EventData = struct {
     /// this to determine if we need to default the window title.
     seen_title: bool = false,
 
+    /// The number of milliseconds below which we consider a process
+    /// exit to be abnormal. This is used to show an error message
+    /// when the process exits too quickly.
+    abnormal_runtime_threshold_ms: u32,
+
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
@@ -777,7 +807,7 @@ fn processExit(
     _: *xev.Completion,
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
-    const code = r catch unreachable;
+    const exit_code = r catch unreachable;
 
     const ev = ev_.?;
     ev.process_exited = true;
@@ -791,7 +821,7 @@ fn processExit(
     };
     log.debug(
         "child process exited status={} runtime={}ms",
-        .{ code, runtime_ms orelse 0 },
+        .{ exit_code, runtime_ms orelse 0 },
     );
 
     // If our runtime was below some threshold then we assume that this
@@ -802,7 +832,7 @@ fn processExit(
         if (comptime !builtin.target.isDarwin()) {
             // If our exit code is zero, then the command was successful
             // and we don't ever consider it abnormal.
-            if (code == 0) break :runtime;
+            if (exit_code == 0) break :runtime;
         }
 
         // Our runtime always has to be under the threshold to be
@@ -810,14 +840,14 @@ fn processExit(
         // manually do something like `exit 1` in their shell to
         // force the exit code to be non-zero. We only want to detect
         // abnormal exits that happen so quickly the user can't react.
-        if (runtime > abnormal_runtime_threshold_ms) break :runtime;
+        if (runtime > ev.abnormal_runtime_threshold_ms) break :runtime;
         log.warn("abnormal process exit detected, showing error message", .{});
 
         // Notify our main writer thread which has access to more
         // information so it can show a better error message.
         _ = ev.writer_mailbox.push(.{
             .child_exited_abnormally = .{
-                .code = code,
+                .exit_code = exit_code,
                 .runtime_ms = runtime,
             },
         }, .{ .forever = {} });
