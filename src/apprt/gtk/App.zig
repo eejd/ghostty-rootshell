@@ -28,6 +28,7 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const c = @import("c.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
+const x11 = @import("x11.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -54,6 +55,9 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,
+
+/// Xkb state (X11 only). Will be null on Wayland.
+x11_xkb: ?x11.Xkb = null,
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
@@ -169,8 +173,13 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
-    const display = c.gdk_display_get_default();
-    if (c.g_type_check_instance_is_a(@ptrCast(@alignCast(display)), c.gdk_x11_display_get_type()) != 0) {
+    // Perform all X11 initialization. This ultimately returns the X11
+    // keyboard state but the block does more than that (i.e. setting up
+    // WM_CLASS).
+    const x11_xkb: ?x11.Xkb = x11_xkb: {
+        const display = c.gdk_display_get_default();
+        if (!x11.is_display(display)) break :x11_xkb null;
+
         // Set the X11 window class property (WM_CLASS) if are are on an X11
         // display.
         //
@@ -196,7 +205,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             "ghostty";
         c.g_set_prgname(prgname);
         c.gdk_x11_display_set_program_class(display, app_id);
-    }
+
+        // Set up Xkb
+        break :x11_xkb try x11.Xkb.init(display);
+    };
 
     // This just calls the "activate" signal but its part of the normal
     // startup routine so we just call it:
@@ -209,6 +221,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
+        .x11_xkb = x11_xkb,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
@@ -572,4 +585,11 @@ test "isValidAppId" {
     try testing.expect(!isValidAppId(".foo"));
     try testing.expect(!isValidAppId(""));
     try testing.expect(!isValidAppId("foo" ** 86));
+}
+
+/// Loads keyboard state from Xkb if there is an event pending and Xkb is
+/// loaded (X11 only). Returns null otherwise.
+pub fn modifier_state_from_xkb(self: *App, display_: ?*c.GdkDisplay) ?input.Mods {
+    const x11_xkb = self.x11_xkb orelse return null;
+    return x11_xkb.modifier_state_from_notify(display_);
 }

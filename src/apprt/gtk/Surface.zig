@@ -1222,6 +1222,7 @@ fn keyEvent(
     const self = userdataSelf(ud.?);
     const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
+    const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
 
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
@@ -1232,7 +1233,6 @@ fn keyEvent(
 
         // Get all the possible keyboard mappings for this keycode. A keycode
         // is the physical key pressed.
-        const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
         var keys: [*]c.GdkKeymapKey = undefined;
         var keyvals: [*]c.guint = undefined;
         var n_keys: c_int = 0;
@@ -1333,9 +1333,15 @@ fn keyEvent(
     // was presssed (i.e. left control)
     const mods = mods: {
         _ = gtk_mods;
-
         const device = c.gdk_event_get_device(event);
-        var mods = translateMods(c.gdk_device_get_modifier_state(device));
+
+        // Add any modifier state events from Xkb if we have them (X11 only).
+        // Null back from the Xkb call means there was no modifier
+        // event to read. This likely means that the key event did not
+        // result in a modifier change and we can safely rely on the
+        // GDK state.
+        var mods = self.app.modifier_state_from_xkb(display) orelse
+            translateMods(c.gdk_device_get_modifier_state(device));
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
         switch (physical_key) {
