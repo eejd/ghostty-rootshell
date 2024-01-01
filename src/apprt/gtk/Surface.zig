@@ -1333,22 +1333,15 @@ fn keyEvent(
     // was presssed (i.e. left control)
     const mods = mods: {
         _ = gtk_mods;
-
         const device = c.gdk_event_get_device(event);
-        var mods = init_mods: {
-            // Add any modifier state events from Xkb if we have them (X11 only).
-            if (self.app.modifier_state_from_xkb(display)) |xkb_mods| {
-                break :init_mods xkb_mods;
-            }
 
-            // Null back from the Xkb call means there was no modifier
-            // event to read. This likely means that the key event did not
-            // result in a modifier change and we can safely rely on the
-            // GDK state.
-
-            break :init_mods translateMods(c.gdk_device_get_modifier_state(device));
-        };
-
+        // Add any modifier state events from Xkb if we have them (X11 only).
+        // Null back from the Xkb call means there was no modifier
+        // event to read. This likely means that the key event did not
+        // result in a modifier change and we can safely rely on the
+        // GDK state.
+        var mods = self.app.modifier_state_from_xkb(display) orelse
+            translateMods(c.gdk_device_get_modifier_state(device));
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
         switch (physical_key) {

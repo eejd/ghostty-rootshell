@@ -13,13 +13,13 @@ pub fn is_display(display: ?*c.GdkDisplay) bool {
     ) != 0;
 }
 
-pub const X11Xkb = struct {
+pub const Xkb = struct {
     base_event_code: c_int,
     funcs: Funcs,
 
-    /// Initialize an X11Xkb struct, for the given GDK display. If the display
+    /// Initialize an Xkb struct, for the given GDK display. If the display
     /// isn't backed by X then this will return null.
-    pub fn init(display_: ?*c.GdkDisplay) !?X11Xkb {
+    pub fn init(display_: ?*c.GdkDisplay) !?Xkb {
         // Display should never be null but we just treat that as a non-X11
         // display so that the caller can just ignore it and not unwrap it.
         const display = display_ orelse return null;
@@ -27,14 +27,14 @@ pub const X11Xkb = struct {
         // If the display isn't X11, then we don't need to do anything.
         if (!is_display(display)) return null;
 
-        log.debug("X11Xkb.init: initializing Xkb", .{});
+        log.debug("Xkb.init: initializing Xkb", .{});
         const xdisplay = c.gdk_x11_display_get_xdisplay(display);
-        var result: X11Xkb = .{
+        var result: Xkb = .{
             .base_event_code = 0,
             .funcs = try Funcs.init(),
         };
 
-        log.debug("X11Xkb.init: running XkbQueryExtension", .{});
+        log.debug("Xkb.init: running XkbQueryExtension", .{});
         var opcode: c_int = 0;
         var base_error_code: c_int = 0;
         var major = c.XkbMajorVersion;
@@ -51,7 +51,7 @@ pub const X11Xkb = struct {
             return error.XkbInitializationError;
         }
 
-        log.debug("X11Xkb.init: running XkbSelectEventDetails", .{});
+        log.debug("Xkb.init: running XkbSelectEventDetails", .{});
         if (result.funcs.XkbSelectEventDetails(
             xdisplay,
             c.XkbUseCoreKbd,
@@ -76,7 +76,7 @@ pub const X11Xkb = struct {
     /// Returns null if there is no event. In this case, the caller should fall
     /// back to the standard GDK modifier state (this likely means the key
     /// event did not result in a modifier change).
-    pub fn modifier_state_from_notify(self: X11Xkb, display_: ?*c.GdkDisplay) ?input.Mods {
+    pub fn modifier_state_from_notify(self: Xkb, display_: ?*c.GdkDisplay) ?input.Mods {
         const display = display_ orelse return null;
 
         // Shoutout to Mozilla for figuring out a clean way to do this, this is
@@ -114,8 +114,6 @@ const Funcs = struct {
     XEventsQueued: XEventsQueuedType,
     XPeekEvent: XPeekEventType,
 
-    // X11 Function types. We load these dynamically at runtime to avoid having to
-    // link against X11.
     const XkbQueryExtensionType = *const fn (?*c.struct__XDisplay, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int, [*c]c_int) callconv(.C) c_int;
     const XkbSelectEventDetailsType = *const fn (?*c.struct__XDisplay, c_uint, c_uint, c_ulong, c_ulong) callconv(.C) c_int;
     const XEventsQueuedType = *const fn (?*c.struct__XDisplay, c_int) callconv(.C) c_int;

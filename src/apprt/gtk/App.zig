@@ -57,7 +57,7 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 running: bool = true,
 
 /// Xkb state (X11 only). Will be null on Wayland.
-x11_xkb: ?x11.X11Xkb = null,
+x11_xkb: ?x11.Xkb = null,
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
@@ -173,9 +173,13 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
-    var x11_xkb: ?x11.X11Xkb = null;
-    const display = c.gdk_display_get_default();
-    if (x11.is_display(display)) {
+    // Perform all X11 initialization. This ultimately returns the X11
+    // keyboard state but the block does more than that (i.e. setting up
+    // WM_CLASS).
+    const x11_xkb: ?x11.Xkb = x11_xkb: {
+        const display = c.gdk_display_get_default();
+        if (!x11.is_display(display)) break :x11_xkb null;
+
         // Set the X11 window class property (WM_CLASS) if are are on an X11
         // display.
         //
@@ -203,8 +207,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gdk_x11_display_set_program_class(display, app_id);
 
         // Set up Xkb
-        x11_xkb = try x11.X11Xkb.init(c.gdk_display_get_default());
-    }
+        break :x11_xkb try x11.Xkb.init(display);
+    };
 
     // This just calls the "activate" signal but its part of the normal
     // startup routine so we just call it:
@@ -586,5 +590,6 @@ test "isValidAppId" {
 /// Loads keyboard state from Xkb if there is an event pending and Xkb is
 /// loaded (X11 only). Returns null otherwise.
 pub fn modifier_state_from_xkb(self: *App, display_: ?*c.GdkDisplay) ?input.Mods {
-    return (self.x11_xkb orelse return null).modifier_state_from_notify(display_);
+    const x11_xkb = self.x11_xkb orelse return null;
+    return x11_xkb.modifier_state_from_notify(display_);
 }
