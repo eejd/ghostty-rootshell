@@ -1695,6 +1695,19 @@ const StreamHandler = struct {
         try self.ev.queueRender();
     }
 
+    inline fn surfaceMessageWriter(
+        self: *StreamHandler,
+        msg: apprt.surface.Message,
+    ) void {
+        // See messageWriter which has similar logic and explains why
+        // we may have to do this.
+        if (self.ev.surface_mailbox.push(msg, .{ .instant = {} }) == 0) {
+            self.ev.renderer_state.mutex.unlock();
+            defer self.ev.renderer_state.mutex.lock();
+            _ = self.ev.surface_mailbox.push(msg, .{ .forever = {} });
+        }
+    }
+
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         // Try to write to the mailbox with an instant timeout. This is the
         // fast path because we can queue without a lock.
@@ -2487,10 +2500,7 @@ const StreamHandler = struct {
 
         // Mark that we've seen a title
         self.ev.seen_title = true;
-
-        _ = self.ev.surface_mailbox.push(.{
-            .set_title = buf,
-        }, .{ .forever = {} });
+        self.surfaceMessageWriter(.{ .set_title = buf });
     }
 
     pub fn setMouseShape(
@@ -2502,9 +2512,7 @@ const StreamHandler = struct {
         if (self.terminal.mouse_shape == shape) return;
 
         self.terminal.mouse_shape = shape;
-        _ = self.ev.surface_mailbox.push(.{
-            .set_mouse_shape = shape,
-        }, .{ .forever = {} });
+        self.surfaceMessageWriter(.{ .set_mouse_shape = shape });
     }
 
     pub fn clipboardContents(self: *StreamHandler, kind: u8, data: []const u8) !void {
@@ -2521,14 +2529,12 @@ const StreamHandler = struct {
 
         // Get clipboard contents
         if (data.len == 1 and data[0] == '?') {
-            _ = self.ev.surface_mailbox.push(.{
-                .clipboard_read = clipboard_type,
-            }, .{ .forever = {} });
+            self.surfaceMessageWriter(.{ .clipboard_read = clipboard_type });
             return;
         }
 
         // Write clipboard contents
-        _ = self.ev.surface_mailbox.push(.{
+        self.surfaceMessageWriter(.{
             .clipboard_write = .{
                 .req = try apprt.surface.Message.WriteReq.init(
                     self.alloc,
@@ -2536,7 +2542,7 @@ const StreamHandler = struct {
                 ),
                 .clipboard_type = clipboard_type,
             },
-        }, .{ .forever = {} });
+        });
     }
 
     pub fn promptStart(self: *StreamHandler, aid: ?[]const u8, redraw: bool) !void {
@@ -2808,6 +2814,6 @@ const StreamHandler = struct {
         @memcpy(message.desktop_notification.body[0..body_len], body[0..body_len]);
         message.desktop_notification.body[body_len] = 0;
 
-        _ = self.ev.surface_mailbox.push(message, .{ .forever = {} });
+        self.surfaceMessageWriter(message);
     }
 };
