@@ -151,6 +151,10 @@ in
       echo "$shell_integration" >> "$out/nix-support/propagated-user-env-packages"
     '';
 
+    postFixup = ''
+      patchelf --add-rpath "${lib.makeLibraryPath [libX11]}" "$out/bin/.ghostty-wrapped"
+    '';
+
     meta = with lib; {
       homepage = "https://github.com/mitchellh/ghostty";
       license = licenses.mit;
