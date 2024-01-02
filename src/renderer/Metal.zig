@@ -579,6 +579,7 @@ pub fn updateFrame(
         mouse: renderer.State.Mouse,
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
+        color_palette: terminal.color.Palette,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -655,6 +656,7 @@ pub fn updateFrame(
             .mouse = state.mouse,
             .preedit = preedit,
             .cursor_style = cursor_style,
+            .color_palette = state.terminal.color_palette.colors,
         };
     };
     defer {
@@ -669,6 +671,7 @@ pub fn updateFrame(
         critical.mouse,
         critical.preedit,
         critical.cursor_style,
+        &critical.color_palette,
     );
 
     // Update our background color
@@ -1424,6 +1427,7 @@ fn rebuildCells(
     mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
+    color_palette: *const terminal.color.Palette,
 ) !void {
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
@@ -1579,6 +1583,7 @@ fn rebuildCells(
                     term_selection,
                     screen,
                     cell,
+                    color_palette,
                     shaper_cell,
                     run,
                     shaper_cell.x,
@@ -1644,11 +1649,12 @@ fn rebuildCells(
     }
 }
 
-pub fn updateCell(
+fn updateCell(
     self: *Metal,
     selection: ?terminal.Selection,
     screen: *terminal.Screen,
     cell: terminal.Screen.Cell,
+    palette: *const terminal.color.Palette,
     shaper_cell: font.shape.Cell,
     shaper_run: font.shape.TextRun,
     x: usize,
@@ -1684,14 +1690,30 @@ pub fn updateCell(
         const cell_res: BgFg = if (!cell.attrs.inverse) .{
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
-            .bg = if (cell.attrs.has_bg) cell.bg else null,
-            .fg = if (cell.attrs.has_fg) cell.fg else self.foreground_color,
+            .bg = switch (cell.bg) {
+                .none => null,
+                .indexed => |i| palette[i],
+                .rgb => |rgb| rgb,
+            },
+            .fg = switch (cell.fg) {
+                .none => self.foreground_color,
+                .indexed => |i| palette[i],
+                .rgb => |rgb| rgb,
+            },
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = if (cell.attrs.has_fg) cell.fg else self.foreground_color,
-            .fg = if (cell.attrs.has_bg) cell.bg else self.background_color,
+            .bg = switch (cell.fg) {
+                .none => self.foreground_color,
+                .indexed => |i| palette[i],
+                .rgb => |rgb| rgb,
+            },
+            .fg = switch (cell.bg) {
+                .none => self.background_color,
+                .indexed => |i| palette[i],
+                .rgb => |rgb| rgb,
+            },
         };
 
         // If we are selected, we our colors are just inverted fg/bg
@@ -1741,7 +1763,7 @@ pub fn updateCell(
 
             // If we have a background and its not the default background
             // then we apply background opacity
-            if (cell.attrs.has_bg and !std.meta.eql(rgb, self.background_color)) {
+            if (cell.bg != .none and !rgb.eql(self.background_color)) {
                 break :bg_alpha default;
             }
 

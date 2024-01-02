@@ -299,7 +299,8 @@ fn renderScreenWindow(self: *Inspector) void {
             );
             defer cimgui.c.igEndTable();
 
-            inspector.cursor.renderInTable(&screen.cursor);
+            const palette = self.surface.io.terminal.color_palette.colors;
+            inspector.cursor.renderInTable(&screen.cursor, &palette);
         } // table
 
         cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
@@ -871,49 +872,66 @@ fn renderCellWindow(self: *Inspector) void {
         }
 
         // If we have a color then we show the color
-        color: {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            _ = cimgui.c.igTableSetColumnIndex(0);
-            cimgui.c.igText("Foreground Color");
-            _ = cimgui.c.igTableSetColumnIndex(1);
-            if (!selected.cell.attrs.has_fg) {
-                cimgui.c.igText("default");
-                break :color;
-            }
+        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+        _ = cimgui.c.igTableSetColumnIndex(0);
+        cimgui.c.igText("Foreground Color");
+        _ = cimgui.c.igTableSetColumnIndex(1);
+        switch (selected.cell.fg) {
+            .none => cimgui.c.igText("default"),
+            else => {
+                const rgb = switch (selected.cell.fg) {
+                    .none => unreachable,
+                    .indexed => |idx| self.surface.io.terminal.color_palette.colors[idx],
+                    .rgb => |rgb| rgb,
+                };
 
-            var color: [3]f32 = .{
-                @as(f32, @floatFromInt(selected.cell.fg.r)) / 255,
-                @as(f32, @floatFromInt(selected.cell.fg.g)) / 255,
-                @as(f32, @floatFromInt(selected.cell.fg.b)) / 255,
-            };
-            _ = cimgui.c.igColorEdit3(
-                "color_fg",
-                &color,
-                cimgui.c.ImGuiColorEditFlags_NoPicker |
-                    cimgui.c.ImGuiColorEditFlags_NoLabel,
-            );
+                if (selected.cell.fg == .indexed) {
+                    cimgui.c.igValue_Int("Palette", selected.cell.fg.indexed);
+                }
+
+                var color: [3]f32 = .{
+                    @as(f32, @floatFromInt(rgb.r)) / 255,
+                    @as(f32, @floatFromInt(rgb.g)) / 255,
+                    @as(f32, @floatFromInt(rgb.b)) / 255,
+                };
+                _ = cimgui.c.igColorEdit3(
+                    "color_fg",
+                    &color,
+                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                        cimgui.c.ImGuiColorEditFlags_NoLabel,
+                );
+            },
         }
-        color: {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            _ = cimgui.c.igTableSetColumnIndex(0);
-            cimgui.c.igText("Background Color");
-            _ = cimgui.c.igTableSetColumnIndex(1);
-            if (!selected.cell.attrs.has_bg) {
-                cimgui.c.igText("default");
-                break :color;
-            }
 
-            var color: [3]f32 = .{
-                @as(f32, @floatFromInt(selected.cell.bg.r)) / 255,
-                @as(f32, @floatFromInt(selected.cell.bg.g)) / 255,
-                @as(f32, @floatFromInt(selected.cell.bg.b)) / 255,
-            };
-            _ = cimgui.c.igColorEdit3(
-                "color_bg",
-                &color,
-                cimgui.c.ImGuiColorEditFlags_NoPicker |
-                    cimgui.c.ImGuiColorEditFlags_NoLabel,
-            );
+        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+        _ = cimgui.c.igTableSetColumnIndex(0);
+        cimgui.c.igText("Background Color");
+        _ = cimgui.c.igTableSetColumnIndex(1);
+        switch (selected.cell.bg) {
+            .none => cimgui.c.igText("default"),
+            else => {
+                const rgb = switch (selected.cell.bg) {
+                    .none => unreachable,
+                    .indexed => |idx| self.surface.io.terminal.color_palette.colors[idx],
+                    .rgb => |rgb| rgb,
+                };
+
+                if (selected.cell.bg == .indexed) {
+                    cimgui.c.igValue_Int("Palette", selected.cell.bg.indexed);
+                }
+
+                var color: [3]f32 = .{
+                    @as(f32, @floatFromInt(rgb.r)) / 255,
+                    @as(f32, @floatFromInt(rgb.g)) / 255,
+                    @as(f32, @floatFromInt(rgb.b)) / 255,
+                };
+                _ = cimgui.c.igColorEdit3(
+                    "color_bg",
+                    &color,
+                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                        cimgui.c.ImGuiColorEditFlags_NoLabel,
+                );
+            },
         }
 
         // Boolean styles
@@ -1109,7 +1127,8 @@ fn renderTermioWindow(self: *Inspector) void {
                         0,
                     );
                     defer cimgui.c.igEndTable();
-                    inspector.cursor.renderInTable(&ev.cursor);
+                    const palette = self.surface.io.terminal.color_palette.colors;
+                    inspector.cursor.renderInTable(&ev.cursor, &palette);
 
                     {
                         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);

@@ -260,8 +260,7 @@ test "run iterator: empty cells with background set" {
         // Make a screen with some data
         var screen = try terminal.Screen.init(alloc, 3, 5, 0);
         defer screen.deinit();
-        screen.cursor.pen.bg = try terminal.color.Name.cyan.default();
-        screen.cursor.pen.attrs.has_bg = true;
+        screen.cursor.pen.bg = .{ .rgb = try terminal.color.Name.cyan.default() };
         try screen.testWriteString("A");
 
         // Get our first row
@@ -836,10 +835,9 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.attrs.has_fg = true;
-        screen.cursor.pen.fg = .{ .r = 1, .g = 2, .b = 3 };
+        screen.cursor.pen.fg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
         try screen.testWriteString(">");
-        screen.cursor.pen.fg = .{ .r = 3, .g = 2, .b = 1 };
+        screen.cursor.pen.fg = .{ .rgb = .{ .r = 3, .g = 2, .b = 1 } };
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
@@ -856,10 +854,9 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.attrs.has_bg = true;
-        screen.cursor.pen.bg = .{ .r = 1, .g = 2, .b = 3 };
+        screen.cursor.pen.bg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
         try screen.testWriteString(">");
-        screen.cursor.pen.bg = .{ .r = 3, .g = 2, .b = 1 };
+        screen.cursor.pen.bg = .{ .rgb = .{ .r = 3, .g = 2, .b = 1 } };
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
@@ -876,8 +873,7 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.attrs.has_bg = true;
-        screen.cursor.pen.bg = .{ .r = 1, .g = 2, .b = 3 };
+        screen.cursor.pen.bg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
         try screen.testWriteString(">");
         try screen.testWriteString("=");
 

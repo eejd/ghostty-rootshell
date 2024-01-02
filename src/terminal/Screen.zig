@@ -211,6 +211,27 @@ pub const RowHeader = struct {
     };
 };
 
+/// The color associated with a single cell's foreground or background.
+const CellColor = union(enum) {
+    none,
+    indexed: u8,
+    rgb: color.RGB,
+
+    pub fn eql(self: CellColor, other: CellColor) bool {
+        return switch (self) {
+            .none => other == .none,
+            .indexed => |i| switch (other) {
+                .indexed => other.indexed == i,
+                else => false,
+            },
+            .rgb => |rgb| switch (other) {
+                .rgb => other.rgb.eql(rgb),
+                else => false,
+            },
+        };
+    }
+};
+
 /// Cell is a single cell within the screen.
 pub const Cell = struct {
     /// The primary unicode codepoint for this cell. Most cells (almost all)
@@ -224,10 +245,9 @@ pub const Cell = struct {
     /// waste memory for every cell, so we use a side lookup for it.
     char: u32 = 0,
 
-    /// Foreground and background color. attrs.has_{bg/fg} must be checked
-    /// to see if these are useful values.
-    fg: color.RGB = .{},
-    bg: color.RGB = .{},
+    /// Foreground and background color.
+    fg: CellColor = .none,
+    bg: CellColor = .none,
 
     /// Underline color.
     /// NOTE(mitchellh): This is very rarely set so ideally we wouldn't waste
@@ -237,9 +257,6 @@ pub const Cell = struct {
 
     /// On/off attributes that can be set
     attrs: packed struct {
-        has_bg: bool = false,
-        has_fg: bool = false,
-
         bold: bool = false,
         italic: bool = false,
         faint: bool = false,
@@ -286,7 +303,10 @@ pub const Cell = struct {
         } });
 
         // We're empty if we have no char AND we have no styling
-        return self.char == 0 and @as(AttrInt, @bitCast(self.attrs)) == 0;
+        return self.char == 0 and
+            self.fg == .none and
+            self.bg == .none and
+            @as(AttrInt, @bitCast(self.attrs)) == 0;
     }
 
     /// The width of the cell.
@@ -1297,9 +1317,9 @@ pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req:
 
     // The pen we'll use for new cells (only the BG attribute is applied to new
     // cells)
-    const pen: Cell = if (!self.cursor.pen.attrs.has_bg) .{} else .{
-        .bg = self.cursor.pen.bg,
-        .attrs = .{ .has_bg = true },
+    const pen: Cell = switch (self.cursor.pen.bg) {
+        .none => .{},
+        else => |bg| .{ .bg = bg },
     };
 
     // Fast-path is that we have a contiguous buffer in our circular buffer.
@@ -2190,9 +2210,9 @@ fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) Allocator.Error
     const dst = slices[0];
     // The pen we'll use for new cells (only the BG attribute is applied to new
     // cells)
-    const pen: Cell = if (!self.cursor.pen.attrs.has_bg) .{} else .{
-        .bg = self.cursor.pen.bg,
-        .attrs = .{ .has_bg = true },
+    const pen: Cell = switch (self.cursor.pen.bg) {
+        .none => .{},
+        else => |bg| .{ .bg = bg },
     };
     @memset(dst, .{ .cell = pen });
 
@@ -3488,8 +3508,7 @@ test "Row: isEmpty with only styled cells" {
     const row = s.getRow(.{ .active = 0 });
     for (0..s.cols) |x| {
         const cell = row.getCellPtr(x);
-        cell.*.bg = .{ .r = 0xAA, .g = 0xBB, .b = 0xCC };
-        cell.*.attrs.has_bg = true;
+        cell.*.bg = .{ .rgb = .{ .r = 0xAA, .g = 0xBB, .b = 0xCC } };
     }
     try testing.expect(row.isEmpty());
 }
@@ -3763,8 +3782,7 @@ test "Screen: scrolling" {
 
     var s = try init(alloc, 3, 5, 0);
     defer s.deinit();
-    s.cursor.pen.bg = .{ .r = 155 };
-    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.bg = .{ .rgb = .{ .r = 155 } };
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     try testing.expect(s.viewportIsBottom());
 
@@ -3781,7 +3799,7 @@ test "Screen: scrolling" {
     {
         // Test that our new row has the correct background
         const cell = s.getCell(.active, 2, 0);
-        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expectEqual(@as(u8, 155), cell.bg.rgb.r);
     }
 
     // Scrolling to the bottom does nothing
@@ -5095,8 +5113,7 @@ test "Screen: scrollRegionUp single with pen" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
 
     s.cursor.pen = .{ .char = 'X' };
-    s.cursor.pen.bg = .{ .r = 155 };
-    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.bg = .{ .rgb = .{ .r = 155 } };
     s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .active = 1 }, .{ .active = 2 }, 1);
     {
@@ -5105,7 +5122,7 @@ test "Screen: scrollRegionUp single with pen" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("1ABCD\n3IJKL\n\n4ABCD", contents);
         const cell = s.getCell(.active, 2, 0);
-        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expectEqual(@as(u8, 155), cell.bg.rgb.r);
         try testing.expect(!cell.attrs.bold);
         try testing.expect(s.cursor.pen.attrs.bold);
     }
@@ -5170,8 +5187,7 @@ test "Screen: scrollRegionUp fills with pen" {
     try s.testWriteString("A\nB\nC\nD");
 
     s.cursor.pen = .{ .char = 'X' };
-    s.cursor.pen.bg = .{ .r = 155 };
-    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.bg = .{ .rgb = .{ .r = 155 } };
     s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .active = 0 }, .{ .active = 2 }, 1);
     {
@@ -5180,7 +5196,7 @@ test "Screen: scrollRegionUp fills with pen" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("B\nC\n\nD", contents);
         const cell = s.getCell(.active, 2, 0);
-        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expectEqual(@as(u8, 155), cell.bg.rgb.r);
         try testing.expect(!cell.attrs.bold);
         try testing.expect(s.cursor.pen.attrs.bold);
     }
@@ -5202,8 +5218,7 @@ test "Screen: scrollRegionUp buffer wrap" {
 
     // Scroll
     s.cursor.pen = .{ .char = 'X' };
-    s.cursor.pen.bg = .{ .r = 155 };
-    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.bg = .{ .rgb = .{ .r = 155 } };
     s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 1);
 
@@ -5213,7 +5228,7 @@ test "Screen: scrollRegionUp buffer wrap" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("3IJKL\n4ABCD", contents);
         const cell = s.getCell(.active, 2, 0);
-        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expectEqual(@as(u8, 155), cell.bg.rgb.r);
         try testing.expect(!cell.attrs.bold);
         try testing.expect(s.cursor.pen.attrs.bold);
     }
@@ -5235,8 +5250,7 @@ test "Screen: scrollRegionUp buffer wrap alternate" {
 
     // Scroll
     s.cursor.pen = .{ .char = 'X' };
-    s.cursor.pen.bg = .{ .r = 155 };
-    s.cursor.pen.attrs.has_bg = true;
+    s.cursor.pen.bg = .{ .rgb = .{ .r = 155 } };
     s.cursor.pen.attrs.bold = true;
     s.scrollRegionUp(.{ .screen = 0 }, .{ .screen = 2 }, 2);
 
@@ -5246,7 +5260,7 @@ test "Screen: scrollRegionUp buffer wrap alternate" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("4ABCD", contents);
         const cell = s.getCell(.active, 2, 0);
-        try testing.expectEqual(@as(u8, 155), cell.bg.r);
+        try testing.expectEqual(@as(u8, 155), cell.bg.rgb.r);
         try testing.expect(!cell.attrs.bold);
         try testing.expect(s.cursor.pen.attrs.bold);
     }
@@ -5964,8 +5978,7 @@ test "Screen: resize (no reflow) less rows trims blank lines" {
         const row = s.getRow(.{ .active = y });
         for (0..s.cols) |x| {
             const cell = row.getCellPtr(x);
-            cell.*.bg = .{ .r = 0xFF, .g = 0, .b = 0 };
-            cell.*.attrs.has_bg = true;
+            cell.*.bg = .{ .rgb = .{ .r = 0xFF, .g = 0, .b = 0 } };
         }
     }
 
@@ -6000,8 +6013,7 @@ test "Screen: resize (no reflow) more rows trims blank lines" {
         const row = s.getRow(.{ .active = y });
         for (0..s.cols) |x| {
             const cell = row.getCellPtr(x);
-            cell.*.bg = .{ .r = 0xFF, .g = 0, .b = 0 };
-            cell.*.attrs.has_bg = true;
+            cell.*.bg = .{ .rgb = .{ .r = 0xFF, .g = 0, .b = 0 } };
         }
     }
 
@@ -6934,7 +6946,7 @@ test "Screen: resize less cols trailing background colors" {
     const cursor = s.cursor;
 
     // Color our cells red
-    const pen: Cell = .{ .bg = .{ .r = 0xFF }, .attrs = .{ .has_bg = true } };
+    const pen: Cell = .{ .bg = .{ .rgb = .{ .r = 0xFF } } };
     for (s.cursor.x..s.cols) |x| {
         const row = s.getRow(.{ .active = s.cursor.y });
         const cell = row.getCellPtr(x);

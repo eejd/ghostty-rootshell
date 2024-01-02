@@ -87,8 +87,8 @@ pub const RunIterator = struct {
                 const prev_attrs: Int = @bitCast(prev_cell.attrs.styleAttrs());
                 const attrs: Int = @bitCast(cell.attrs.styleAttrs());
                 if (prev_attrs != attrs) break;
-                if (cell.attrs.has_bg and !cell.bg.eql(prev_cell.bg)) break;
-                if (cell.attrs.has_fg and !cell.fg.eql(prev_cell.fg)) break;
+                if (!cell.bg.eql(prev_cell.bg)) break;
+                if (!cell.fg.eql(prev_cell.fg)) break;
             }
 
             // Text runs break when font styles change so we need to get
