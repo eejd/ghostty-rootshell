@@ -63,10 +63,10 @@ pub const Backend = enum {
     /// meant to be called at comptime by the build.zig script. To get the
     /// backend look at build_options.
     pub fn default(
-        target: std.zig.CrossTarget,
+        target: std.Target,
         wasm_target: WasmTarget,
     ) Backend {
-        if (target.getCpuArch() == .wasm32) {
+        if (target.cpu.arch == .wasm32) {
             return switch (wasm_target) {
                 .browser => .web_canvas,
             };

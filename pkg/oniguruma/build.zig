@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("oniguruma", .{ .source_file = .{ .path = "main.zig" } });
+    _ = b.addModule("oniguruma", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("oniguruma", .{});
     const lib = try buildOniguruma(b, upstream, target, optimize);
@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
 fn buildOniguruma(
     b: *std.Build,
     upstream: *std.Build.Dependency,
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const lib = b.addStaticLibrary(.{
@@ -39,7 +39,7 @@ fn buildOniguruma(
         .target = target,
         .optimize = optimize,
     });
-    const t = lib.target_info.target;
+    const t = target.result;
     lib.linkLibC();
     lib.addIncludePath(upstream.path("src"));
 

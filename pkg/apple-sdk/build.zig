@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) !void {
     _ = optimize;
 }
 
-pub fn addPaths(b: *std.Build, step: *std.build.CompileStep) !void {
+pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
     _ = b;
     @import("macos_sdk").addPaths(step);
 }

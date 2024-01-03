@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const libpng_enabled = b.option(bool, "enable-libpng", "Build libpng") orelse false;
 
-    _ = b.addModule("freetype", .{ .source_file = .{ .path = "main.zig" } });
+    _ = b.addModule("freetype", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("freetype", .{});
     const lib = b.addStaticLibrary(.{
@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    switch (target.getOsTag()) {
+    switch (target.result.os.tag) {
         .linux => lib.addCSourceFile(.{
             .file = upstream.path("builds/unix/ftsystem.c"),
             .flags = flags.items,
@@ -59,7 +59,7 @@ pub fn build(b: *std.Build) !void {
             .flags = flags.items,
         }),
     }
-    switch (target.getOsTag()) {
+    switch (target.result.os.tag) {
         .windows => {
             lib.addCSourceFile(.{
                 .file = upstream.path("builds/windows/ftdebug.c"),

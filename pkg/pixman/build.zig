@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("pixman", .{ .source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("pixman", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("pixman", .{});
     const lib = b.addStaticLibrary(.{
@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    if (!target.isWindows()) {
+    if (!(target.result.os.tag == .windows)) {
         lib.linkSystemLibrary("pthread");
     }
 
@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) !void {
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
     });
-    if (!target.isWindows()) {
+    if (!(target.result.os.tag == .windows)) {
         try flags.appendSlice(&.{
             "-DHAVE_PTHREADS=1",
 
@@ -75,8 +75,8 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
         test_exe.linkLibrary(lib);
-        var it = module.dependencies.iterator();
-        while (it.next()) |entry| test_exe.addModule(entry.key_ptr.*, entry.value_ptr.*);
+        var it = module.import_table.iterator();
+        while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
 
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");

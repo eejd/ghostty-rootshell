@@ -30,10 +30,10 @@ pub const Impl = enum {
     webgl,
 
     pub fn default(
-        target: std.zig.CrossTarget,
+        target: std.Target,
         wasm_target: WasmTarget,
     ) Impl {
-        if (target.getCpuArch() == .wasm32) {
+        if (target.cpu.arch == .wasm32) {
             return switch (wasm_target) {
                 .browser => .webgl,
             };
