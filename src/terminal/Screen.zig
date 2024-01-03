@@ -2322,7 +2322,7 @@ pub fn selectionString(
     // doing this in the loop above but this isn't very hot path code and
     // this is simple.
     if (trim) {
-        var it = std.mem.tokenize(u8, strbuilder.items, "\n");
+        var it = std.mem.tokenizeScalar(u8, strbuilder.items, '\n');
 
         // Reset our items. We retain our capacity. Because we're only
         // removing bytes, we know that the trimmed string must be no longer
