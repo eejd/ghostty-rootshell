@@ -2213,6 +2213,13 @@ pub const RepeatableString = struct {
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
+
+        // Empty value resets the list
+        if (value.len == 0) {
+            self.list.clearRetainingCapacity();
+            return;
+        }
+
         const copy = try alloc.dupeZ(u8, value);
         try self.list.append(alloc, copy);
     }
@@ -2248,8 +2255,10 @@ pub const RepeatableString = struct {
         var list: Self = .{};
         try list.parseCLI(alloc, "A");
         try list.parseCLI(alloc, "B");
-
         try testing.expectEqual(@as(usize, 2), list.list.items.len);
+
+        try list.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), list.list.items.len);
     }
 };
 
