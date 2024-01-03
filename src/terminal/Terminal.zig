@@ -474,8 +474,8 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
 
     switch (attr) {
         .unset => {
-            self.screen.cursor.pen.attrs.has_fg = false;
-            self.screen.cursor.pen.attrs.has_bg = false;
+            self.screen.cursor.pen.fg = .none;
+            self.screen.cursor.pen.bg = .none;
             self.screen.cursor.pen.attrs = .{};
         },
 
@@ -561,55 +561,51 @@ pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
         },
 
         .direct_color_fg => |rgb| {
-            self.screen.cursor.pen.attrs.has_fg = true;
             self.screen.cursor.pen.fg = .{
-                .r = rgb.r,
-                .g = rgb.g,
-                .b = rgb.b,
+                .rgb = .{
+                    .r = rgb.r,
+                    .g = rgb.g,
+                    .b = rgb.b,
+                },
             };
         },
 
         .direct_color_bg => |rgb| {
-            self.screen.cursor.pen.attrs.has_bg = true;
             self.screen.cursor.pen.bg = .{
-                .r = rgb.r,
-                .g = rgb.g,
-                .b = rgb.b,
+                .rgb = .{
+                    .r = rgb.r,
+                    .g = rgb.g,
+                    .b = rgb.b,
+                },
             };
         },
 
         .@"8_fg" => |n| {
-            self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette.colors[@intFromEnum(n)];
+            self.screen.cursor.pen.fg = .{ .indexed = @intFromEnum(n) };
         },
 
         .@"8_bg" => |n| {
-            self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette.colors[@intFromEnum(n)];
+            self.screen.cursor.pen.bg = .{ .indexed = @intFromEnum(n) };
         },
 
-        .reset_fg => self.screen.cursor.pen.attrs.has_fg = false,
+        .reset_fg => self.screen.cursor.pen.fg = .none,
 
-        .reset_bg => self.screen.cursor.pen.attrs.has_bg = false,
+        .reset_bg => self.screen.cursor.pen.bg = .none,
 
         .@"8_bright_fg" => |n| {
-            self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette.colors[@intFromEnum(n)];
+            self.screen.cursor.pen.fg = .{ .indexed = @intFromEnum(n) };
         },
 
         .@"8_bright_bg" => |n| {
-            self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette.colors[@intFromEnum(n)];
+            self.screen.cursor.pen.bg = .{ .indexed = @intFromEnum(n) };
         },
 
         .@"256_fg" => |idx| {
-            self.screen.cursor.pen.attrs.has_fg = true;
-            self.screen.cursor.pen.fg = self.color_palette.colors[idx];
+            self.screen.cursor.pen.fg = .{ .indexed = idx };
         },
 
         .@"256_bg" => |idx| {
-            self.screen.cursor.pen.attrs.has_bg = true;
-            self.screen.cursor.pen.bg = self.color_palette.colors[idx];
+            self.screen.cursor.pen.bg = .{ .indexed = idx };
         },
 
         .unknown => return error.InvalidAttribute,
@@ -676,12 +672,26 @@ pub fn printAttributes(self: *Terminal, buf: []u8) ![]const u8 {
         try writer.print(";{c}", .{c});
     }
 
-    if (pen.attrs.has_fg) {
-        try writer.print(";38:2::{[r]}:{[g]}:{[b]}", pen.fg);
+    switch (pen.fg) {
+        .none => {},
+        .indexed => |idx| if (idx >= 16)
+            try writer.print(";38:5:{}", .{idx})
+        else if (idx >= 8)
+            try writer.print(";9{}", .{idx - 8})
+        else
+            try writer.print(";3{}", .{idx}),
+        .rgb => |rgb| try writer.print(";38:2::{[r]}:{[g]}:{[b]}", rgb),
     }
 
-    if (pen.attrs.has_bg) {
-        try writer.print(";48:2::{[r]}:{[g]}:{[b]}", pen.bg);
+    switch (pen.bg) {
+        .none => {},
+        .indexed => |idx| if (idx >= 16)
+            try writer.print(";48:5:{}", .{idx})
+        else if (idx >= 8)
+            try writer.print(";10{}", .{idx - 8})
+        else
+            try writer.print(";4{}", .{idx}),
+        .rgb => |rgb| try writer.print(";48:2::{[r]}:{[g]}:{[b]}", rgb),
     }
 
     return stream.getWritten();
@@ -1080,8 +1090,6 @@ pub fn decaln(self: *Terminal) !void {
         .bg = self.screen.cursor.pen.bg,
         .fg = self.screen.cursor.pen.fg,
         .attrs = .{
-            .has_bg = self.screen.cursor.pen.attrs.has_bg,
-            .has_fg = self.screen.cursor.pen.attrs.has_fg,
             .protected = self.screen.cursor.pen.attrs.protected,
         },
     };
@@ -1229,9 +1237,9 @@ pub fn eraseDisplay(
     defer tracy.end();
 
     // Erasing clears all attributes / colors _except_ the background
-    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
-        .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = true },
+    const pen: Screen.Cell = switch (self.screen.cursor.pen.bg) {
+        .none => .{},
+        else => |bg| .{ .bg = bg },
     };
 
     // We respect protected attributes if explicitly requested (probably
@@ -1380,9 +1388,9 @@ pub fn eraseLine(
     defer tracy.end();
 
     // We always fill with the background
-    const pen: Screen.Cell = if (!self.screen.cursor.pen.attrs.has_bg) .{} else .{
-        .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = true },
+    const pen: Screen.Cell = switch (self.screen.cursor.pen.bg) {
+        .none => .{},
+        else => |bg| .{ .bg = bg },
     };
 
     // Get our start/end positions depending on mode.
@@ -1470,7 +1478,6 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 
     const pen: Screen.Cell = .{
         .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
     };
 
     // If our X is a wide spacer tail then we need to erase the
@@ -1529,7 +1536,6 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
 
     const pen: Screen.Cell = .{
         .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
     };
 
     // If we never had a protection mode, then we can assume no cells
@@ -1873,7 +1879,6 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // Insert blanks. The blanks preserve the background color.
     row.fillSlice(.{
         .bg = self.screen.cursor.pen.bg,
-        .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
     }, start, pivot);
 }
 
@@ -1939,7 +1944,6 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
         const row = self.screen.getRow(.{ .active = y });
         row.fillSlice(.{
             .bg = self.screen.cursor.pen.bg,
-            .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
         }, self.scrolling_region.left, self.scrolling_region.right + 1);
     }
 }
@@ -2014,7 +2018,6 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
         row.setWrapped(false);
         row.fillSlice(.{
             .bg = self.screen.cursor.pen.bg,
-            .attrs = .{ .has_bg = self.screen.cursor.pen.attrs.has_bg },
         }, self.scrolling_region.left, self.scrolling_region.right + 1);
     }
 }
@@ -2247,13 +2250,13 @@ test "Terminal: fullReset with a non-empty pen" {
     var t = try init(testing.allocator, 80, 80);
     defer t.deinit(testing.allocator);
 
-    t.screen.cursor.pen.bg = .{ .r = 0xFF, .g = 0x00, .b = 0x7F };
-    t.screen.cursor.pen.fg = .{ .r = 0xFF, .g = 0x00, .b = 0x7F };
+    t.screen.cursor.pen.bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x7F } };
+    t.screen.cursor.pen.fg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x7F } };
     t.fullReset(testing.allocator);
 
     const cell = t.screen.getCell(.active, t.screen.cursor.y, t.screen.cursor.x);
-    try testing.expect(cell.bg.eql(.{}));
-    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.bg == .none);
+    try testing.expect(cell.fg == .none);
 }
 
 test "Terminal: fullReset origin mode" {
@@ -4165,8 +4168,7 @@ test "Terminal: index bottom of primary screen background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     t.setCursorPos(5, 1);
@@ -4338,8 +4340,7 @@ test "Terminal: decaln preserves color" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     // Initial value
@@ -4443,8 +4444,7 @@ test "Terminal: insertBlanks preserves background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     for ("ABC") |c| try t.print(c);
@@ -4836,8 +4836,7 @@ test "Terminal: deleteChars background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     try t.printString("ABC123");
@@ -5001,8 +5000,7 @@ test "Terminal: eraseChars preserves background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     for ("ABC") |c| try t.print(c);
@@ -5312,8 +5310,7 @@ test "Terminal: eraseLine right preserves background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     for ("ABCDE") |c| try t.print(c);
@@ -5462,8 +5459,7 @@ test "Terminal: eraseLine left preserves background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     for ("ABCDE") |c| try t.print(c);
@@ -5578,8 +5574,7 @@ test "Terminal: eraseLine complete preserves background sgr" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     for ("ABCDE") |c| try t.print(c);
@@ -5707,8 +5702,7 @@ test "Terminal: eraseDisplay erase below preserves SGR bg" {
     t.setCursorPos(2, 2);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     t.screen.cursor.pen = pen;
@@ -5878,8 +5872,7 @@ test "Terminal: eraseDisplay erase above preserves SGR bg" {
     t.setCursorPos(2, 2);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     t.screen.cursor.pen = pen;
@@ -6018,16 +6011,16 @@ test "Terminal: eraseDisplay above" {
     const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
     t.screen.cursor.pen = Screen.Cell{
         .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
+        .bg = .{ .rgb = pink },
+        .fg = .{ .rgb = pink },
+        .attrs = .{ .bold = true },
     };
     const cell_ptr = t.screen.getCellPtr(.active, 0, 0);
     cell_ptr.* = t.screen.cursor.pen;
     // verify the cell was set
     var cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg.rgb.eql(pink));
     try testing.expect(cell.char == 'a');
     try testing.expect(cell.attrs.bold);
     // move the cursor below it
@@ -6037,18 +6030,17 @@ test "Terminal: eraseDisplay above" {
     t.eraseDisplay(testing.allocator, .above, false);
     // check it was erased
     cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg == .none);
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
 
     // Check that our pen hasn't changed
     try testing.expect(t.screen.cursor.pen.attrs.bold);
 
     // check that another cell got the correct bg
     cell = t.screen.getCell(.active, 0, 1);
-    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
 }
 
 test "Terminal: eraseDisplay below" {
@@ -6058,31 +6050,30 @@ test "Terminal: eraseDisplay below" {
     const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
     t.screen.cursor.pen = Screen.Cell{
         .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
+        .bg = .{ .rgb = pink },
+        .fg = .{ .rgb = pink },
+        .attrs = .{ .bold = true },
     };
     const cell_ptr = t.screen.getCellPtr(.active, 60, 60);
     cell_ptr.* = t.screen.cursor.pen;
     // verify the cell was set
     var cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg.rgb.eql(pink));
     try testing.expect(cell.char == 'a');
     try testing.expect(cell.attrs.bold);
     // erase below the cursor
     t.eraseDisplay(testing.allocator, .below, false);
     // check it was erased
     cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg == .none);
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
 
     // check that another cell got the correct bg
     cell = t.screen.getCell(.active, 0, 1);
-    try testing.expect(cell.bg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
 }
 
 test "Terminal: eraseDisplay complete" {
@@ -6092,9 +6083,9 @@ test "Terminal: eraseDisplay complete" {
     const pink = color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x7F };
     t.screen.cursor.pen = Screen.Cell{
         .char = 'a',
-        .bg = pink,
-        .fg = pink,
-        .attrs = .{ .bold = true, .has_bg = true },
+        .bg = .{ .rgb = pink },
+        .fg = .{ .rgb = pink },
+        .attrs = .{ .bold = true },
     };
     var cell_ptr = t.screen.getCellPtr(.active, 60, 60);
     cell_ptr.* = t.screen.cursor.pen;
@@ -6102,14 +6093,14 @@ test "Terminal: eraseDisplay complete" {
     cell_ptr.* = t.screen.cursor.pen;
     // verify the cell was set
     var cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg.rgb.eql(pink));
     try testing.expect(cell.char == 'a');
     try testing.expect(cell.attrs.bold);
     // verify the cell was set
     cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(pink));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg.rgb.eql(pink));
     try testing.expect(cell.char == 'a');
     try testing.expect(cell.attrs.bold);
     // position our cursor between the cells
@@ -6118,17 +6109,15 @@ test "Terminal: eraseDisplay complete" {
     t.eraseDisplay(testing.allocator, .complete, false);
     // check they were erased
     cell = t.screen.getCell(.active, 60, 60);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg == .none);
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
     cell = t.screen.getCell(.active, 0, 0);
-    try testing.expect(cell.bg.eql(pink));
-    try testing.expect(cell.fg.eql(.{}));
+    try testing.expect(cell.bg.rgb.eql(pink));
+    try testing.expect(cell.fg == .none);
     try testing.expect(cell.char == 0);
     try testing.expect(!cell.attrs.bold);
-    try testing.expect(cell.attrs.has_bg);
 }
 
 test "Terminal: eraseDisplay protected complete" {
@@ -7041,8 +7030,7 @@ test "Terminal: DECCOLM preserves SGR bg" {
     defer t.deinit(alloc);
 
     const pen: Screen.Cell = .{
-        .bg = .{ .r = 0xFF, .g = 0x00, .b = 0x00 },
-        .attrs = .{ .has_bg = true },
+        .bg = .{ .rgb = .{ .r = 0xFF, .g = 0x00, .b = 0x00 } },
     };
 
     t.screen.cursor.pen = pen;
