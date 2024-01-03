@@ -29,15 +29,21 @@ const c = @cImport({
 });
 
 /// The font families to use.
+///
 /// You can generate the list of valid values using the CLI:
 ///   path/to/ghostty/cli +list-fonts
 ///
+/// This configuration can be repeated multiple times to specify
+/// preferred fallback fonts when the requested codepoint is not
+/// available in the primary font. This is particularly useful for
+/// multiple languages, symbolic fonts, etc.
+///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
-@"font-family": ?[:0]const u8 = null,
-@"font-family-bold": ?[:0]const u8 = null,
-@"font-family-italic": ?[:0]const u8 = null,
-@"font-family-bold-italic": ?[:0]const u8 = null,
+@"font-family": RepeatableString = .{},
+@"font-family-bold": RepeatableString = .{},
+@"font-family-italic": RepeatableString = .{},
+@"font-family-bold-italic": RepeatableString = .{},
 
 /// The named font style to use for each of the requested terminal font
 /// styles. This looks up the style based on the font style string advertised
@@ -1623,15 +1629,15 @@ pub fn finalize(self: *Config) !void {
     // the others to the font family. This way, if someone does
     // --font-family=foo, then we try to get the stylized versions of
     // "foo" as well.
-    if (self.@"font-family") |family| {
+    if (self.@"font-family".count() > 0) {
         const fields = &[_][]const u8{
             "font-family-bold",
             "font-family-italic",
             "font-family-bold-italic",
         };
         inline for (fields) |field| {
-            if (@field(self, field) == null) {
-                @field(self, field) = family;
+            if (@field(self, field).count() == 0) {
+                @field(self, field) = try self.@"font-family".clone(alloc);
             }
         }
     }
@@ -1984,9 +1990,9 @@ test "changed" {
     defer source.deinit();
     var dest = try source.clone(alloc);
     defer dest.deinit();
-    dest.@"font-family" = "something else";
+    dest.@"font-thicken" = true;
 
-    try testing.expect(source.changed(&dest, .@"font-family"));
+    try testing.expect(source.changed(&dest, .@"font-thicken"));
     try testing.expect(!source.changed(&dest, .@"font-size"));
 }
 
@@ -2203,11 +2209,18 @@ pub const RepeatableString = struct {
     const Self = @This();
 
     // Allocator for the list is the arena for the parent config.
-    list: std.ArrayListUnmanaged([]const u8) = .{},
+    list: std.ArrayListUnmanaged([:0]const u8) = .{},
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
-        const copy = try alloc.dupe(u8, value);
+
+        // Empty value resets the list
+        if (value.len == 0) {
+            self.list.clearRetainingCapacity();
+            return;
+        }
+
+        const copy = try alloc.dupeZ(u8, value);
         try self.list.append(alloc, copy);
     }
 
@@ -2216,6 +2229,11 @@ pub const RepeatableString = struct {
         return .{
             .list = try self.list.clone(alloc),
         };
+    }
+
+    /// The number of itemsin the list
+    pub fn count(self: Self) usize {
+        return self.list.items.len;
     }
 
     /// Compare if two of our value are requal. Required by Config.
@@ -2237,8 +2255,10 @@ pub const RepeatableString = struct {
         var list: Self = .{};
         try list.parseCLI(alloc, "A");
         try list.parseCLI(alloc, "B");
-
         try testing.expectEqual(@as(usize, 2), list.list.items.len);
+
+        try list.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), list.list.items.len);
     }
 };
 
@@ -2284,7 +2304,8 @@ pub const RepeatablePath = struct {
 
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
-            const abs = dir.realpathAlloc(alloc, path) catch |err| {
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const abs = std.os.realpath(path, &buf) catch |err| {
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
@@ -2300,7 +2321,7 @@ pub const RepeatablePath = struct {
                 "expanding config-file path relative={s} abs={s}",
                 .{ path, abs },
             );
-            self.value.list.items[i] = abs;
+            self.value.list.items[i] = try alloc.dupeZ(u8, abs);
         }
     }
 };

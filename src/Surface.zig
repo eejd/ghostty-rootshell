@@ -342,7 +342,7 @@ pub fn init(
             // A buffer we use to store the font names for logging.
             var name_buf: [256]u8 = undefined;
 
-            if (config.@"font-family") |family| {
+            for (config.@"font-family".list.items) |family| {
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
                     .style = config.@"font-style".nameValue(),
@@ -364,7 +364,7 @@ pub fn init(
             // a user says `font-style = italic` for the bold face for example,
             // no results would be found if we restrict to ALSO searching for
             // italic.
-            if (config.@"font-family-bold") |family| {
+            for (config.@"font-family-bold".list.items) |family| {
                 const style = config.@"font-style-bold".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
@@ -379,7 +379,7 @@ pub fn init(
                     _ = try group.addFace(.bold, .{ .deferred = face });
                 } else log.warn("font-family-bold not found: {s}", .{family});
             }
-            if (config.@"font-family-italic") |family| {
+            for (config.@"font-family-italic".list.items) |family| {
                 const style = config.@"font-style-italic".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,
@@ -394,7 +394,7 @@ pub fn init(
                     _ = try group.addFace(.italic, .{ .deferred = face });
                 } else log.warn("font-family-italic not found: {s}", .{family});
             }
-            if (config.@"font-family-bold-italic") |family| {
+            for (config.@"font-family-bold-italic".list.items) |family| {
                 const style = config.@"font-style-bold-italic".nameValue();
                 var disco_it = try disco.discover(alloc, .{
                     .family = family,

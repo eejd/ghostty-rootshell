@@ -50,6 +50,6 @@ pub fn Value(comptime key: Key) type {
 test "Value" {
     const testing = std.testing;
 
-    try testing.expectEqual(?[:0]const u8, Value(.@"font-family"));
+    try testing.expectEqual(Config.RepeatableString, Value(.@"font-family"));
     try testing.expectEqual(?bool, Value(.@"cursor-style-blink"));
 }
