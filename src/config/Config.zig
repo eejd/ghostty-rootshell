@@ -38,6 +38,13 @@ const c = @cImport({
 /// available in the primary font. This is particularly useful for
 /// multiple languages, symbolic fonts, etc.
 ///
+/// If you want to overwrite a previous set value rather than append
+/// a fallback, specify the value as "" (empty string) to reset the list
+/// and then set the new values. For example:
+///
+///     font-family = ""
+///     font-family = "My Favorite Font"
+///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
 @"font-family": RepeatableString = .{},
