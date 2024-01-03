@@ -2312,7 +2312,7 @@ pub const RepeatablePath = struct {
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
             var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const abs = std.os.realpath(path, &buf) catch |err| {
+            const abs = dir.realpath(path, &buf) catch |err| {
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
