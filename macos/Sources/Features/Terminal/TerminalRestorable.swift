@@ -125,6 +125,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             guard viewWindow == inWindow else { return }
             
             inWindow.makeFirstResponder(to)
+            
+            // If the window is main, then we also make sure it comes forward. This
+            // prevents a bug found in #1177 where sometimes on restore the windows
+            // would be behind other applications.
+            if (viewWindow.isMainWindow) {
+                viewWindow.orderFront(nil)
+            }
         }
     }
 }
