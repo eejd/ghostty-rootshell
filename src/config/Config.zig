@@ -29,15 +29,21 @@ const c = @cImport({
 });
 
 /// The font families to use.
+///
 /// You can generate the list of valid values using the CLI:
 ///   path/to/ghostty/cli +list-fonts
 ///
+/// This configuration can be repeated multiple times to specify
+/// preferred fallback fonts when the requested codepoint is not
+/// available in the primary font. This is particularly useful for
+/// multiple languages, symbolic fonts, etc.
+///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
-@"font-family": ?[:0]const u8 = null,
-@"font-family-bold": ?[:0]const u8 = null,
-@"font-family-italic": ?[:0]const u8 = null,
-@"font-family-bold-italic": ?[:0]const u8 = null,
+@"font-family": RepeatableString = .{},
+@"font-family-bold": RepeatableString = .{},
+@"font-family-italic": RepeatableString = .{},
+@"font-family-bold-italic": RepeatableString = .{},
 
 /// The named font style to use for each of the requested terminal font
 /// styles. This looks up the style based on the font style string advertised
@@ -1623,15 +1629,15 @@ pub fn finalize(self: *Config) !void {
     // the others to the font family. This way, if someone does
     // --font-family=foo, then we try to get the stylized versions of
     // "foo" as well.
-    if (self.@"font-family") |family| {
+    if (self.@"font-family".count() > 0) {
         const fields = &[_][]const u8{
             "font-family-bold",
             "font-family-italic",
             "font-family-bold-italic",
         };
         inline for (fields) |field| {
-            if (@field(self, field) == null) {
-                @field(self, field) = family;
+            if (@field(self, field).count() == 0) {
+                @field(self, field) = try self.@"font-family".clone(alloc);
             }
         }
     }
@@ -1984,9 +1990,9 @@ test "changed" {
     defer source.deinit();
     var dest = try source.clone(alloc);
     defer dest.deinit();
-    dest.@"font-family" = "something else";
+    dest.@"font-thicken" = true;
 
-    try testing.expect(source.changed(&dest, .@"font-family"));
+    try testing.expect(source.changed(&dest, .@"font-thicken"));
     try testing.expect(!source.changed(&dest, .@"font-size"));
 }
 
@@ -2216,6 +2222,11 @@ pub const RepeatableString = struct {
         return .{
             .list = try self.list.clone(alloc),
         };
+    }
+
+    /// The number of itemsin the list
+    pub fn count(self: Self) usize {
+        return self.list.items.len;
     }
 
     /// Compare if two of our value are requal. Required by Config.
