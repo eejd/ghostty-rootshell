@@ -45,7 +45,7 @@ pub fn parse(raw_input: []const u8) !Binding {
     // the "=", i.e. "ctrl+shift+a" or "a"
     const trigger = trigger: {
         var result: Trigger = .{};
-        var iter = std.mem.tokenize(u8, input[0..eqlIdx], "+");
+        var iter = std.mem.tokenizeScalar(u8, input[0..eqlIdx], '+');
         loop: while (iter.next()) |part| {
             // All parts must be non-empty
             if (part.len == 0) return Error.InvalidFormat;
