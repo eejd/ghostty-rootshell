@@ -239,7 +239,7 @@ pub const DerivedConfig = struct {
     arena: ArenaAllocator,
 
     font_thicken: bool,
-    font_features: std.ArrayListUnmanaged([]const u8),
+    font_features: std.ArrayListUnmanaged([:0]const u8),
     font_styles: font.Group.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_text: ?terminal.color.RGB,
@@ -251,7 +251,7 @@ pub const DerivedConfig = struct {
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
     min_contrast: f32,
-    custom_shaders: std.ArrayListUnmanaged([]const u8),
+    custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     custom_shader_animation: bool,
     links: link.Set,
 

@@ -2203,11 +2203,11 @@ pub const RepeatableString = struct {
     const Self = @This();
 
     // Allocator for the list is the arena for the parent config.
-    list: std.ArrayListUnmanaged([]const u8) = .{},
+    list: std.ArrayListUnmanaged([:0]const u8) = .{},
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
-        const copy = try alloc.dupe(u8, value);
+        const copy = try alloc.dupeZ(u8, value);
         try self.list.append(alloc, copy);
     }
 
@@ -2284,7 +2284,8 @@ pub const RepeatablePath = struct {
 
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
-            const abs = dir.realpathAlloc(alloc, path) catch |err| {
+            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const abs = std.os.realpath(path, &buf) catch |err| {
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
@@ -2300,7 +2301,7 @@ pub const RepeatablePath = struct {
                 "expanding config-file path relative={s} abs={s}",
                 .{ path, abs },
             );
-            self.value.list.items[i] = abs;
+            self.value.list.items[i] = try alloc.dupeZ(u8, abs);
         }
     }
 };
