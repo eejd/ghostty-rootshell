@@ -538,23 +538,19 @@ pub fn build(b: *std.Build) !void {
     // wasm
     {
         // Build our Wasm target.
-        const wasm_crosstarget: std.Target = .{
-            .os = .{ .tag = .freestanding, .version_range = .{ .none = {} } },
-            .cpu = .{
-                .arch = .wasm32,
-                .model = &std.Target.wasm.cpu.mvp,
-                .features = std.Target.wasm.featureSet(&.{
-                    // We use this to explicitly request shared memory.
-                    .atomics,
+        const wasm_crosstarget: std.Target.Query = .{
+            .cpu_arch = .wasm32,
+            .os_tag = .freestanding,
+            .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
+            .cpu_features_add = std.Target.wasm.featureSet(&.{
+                // We use this to explicitly request shared memory.
+                .atomics,
 
-                    // Not explicitly used but compiler could use them if they want.
-                    .bulk_memory,
-                    .reference_types,
-                    .sign_ext,
-                }),
-            },
-            .abi = std.Target.Abi.default(.wasm32, .{ .tag = .freestanding, .version_range = .{ .none = {} } }),
-            .ofmt = std.Target.ObjectFormat.default(.freestanding, .wasm32),
+                // Not explicitly used but compiler could use them if they want.
+                .bulk_memory,
+                .reference_types,
+                .sign_ext,
+            }),
         };
 
         // Whether we're using wasm shared memory. Some behaviors change.
@@ -570,10 +566,7 @@ pub fn build(b: *std.Build) !void {
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = .{
-                .result = wasm_crosstarget,
-                .query = std.Target.Query.fromTarget(wasm_crosstarget),
-            },
+            .target = b.resolveTargetQuery(wasm_crosstarget),
             .optimize = optimize,
         });
         wasm.root_module.addOptions("build_options", exe_options);
@@ -604,10 +597,7 @@ pub fn build(b: *std.Build) !void {
         const main_test = b.addTest(.{
             .name = "wasm-test",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = .{
-                .result = wasm_crosstarget,
-                .query = std.Target.Query.fromTarget(wasm_crosstarget),
-            },
+            .target = b.resolveTargetQuery(wasm_crosstarget),
         });
         main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, true);
