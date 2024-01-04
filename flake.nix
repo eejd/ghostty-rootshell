@@ -62,4 +62,9 @@
 
       # Our supported systems are the same supported systems as the Zig binaries.
     }) (builtins.attrNames zig.packages));
+
+  nixConfig = {
+    extra-substituters = ["https://ghostty.cachix.org"];
+    extra-trusted-public-keys = ["ghostty.cachix.org-1:QB389yTa6gTyneehvqG58y0WnHjQOqgnA+wBnpWWxns="];
+  };
 }
