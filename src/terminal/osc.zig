@@ -1209,7 +1209,7 @@ test "OSC: get palette color" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .report_color);
-    try testing.expectEqual(cmd.report_color.kind, .{ .palette = 1 });
+    try testing.expectEqual(Command.ColorKind{ .palette = 1 }, cmd.report_color.kind);
     try testing.expectEqual(cmd.report_color.terminator, .st);
 }
 
@@ -1223,7 +1223,7 @@ test "OSC: set palette color" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .set_color);
-    try testing.expectEqual(cmd.set_color.kind, .{ .palette = 17 });
+    try testing.expectEqual(Command.ColorKind{ .palette = 17 }, cmd.set_color.kind);
     try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
 }
 
