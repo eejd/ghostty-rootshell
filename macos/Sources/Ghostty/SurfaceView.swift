@@ -534,9 +534,6 @@ extension Ghostty {
         override func viewDidMoveToWindow() {
             // Set our background blur if requested
             setWindowBackgroundBlur(window)
-            
-            // Try to set the initial window size if we have one
-            setInitialWindowSize()
         }
         
         /// This function sets the window background to blur if it is configured on the surface.
@@ -566,37 +563,6 @@ extension Ghostty {
 
             // If we have a blur, set the blur
             ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
-        }
-       
-        /// Sets the initial window size requested by the Ghostty config.
-        ///
-        /// This only works under certain conditions:
-        ///   - The window must be "uninitialized"
-        ///   - The window must have no tabs
-        ///   - Ghostty must have requested an initial size
-        ///   
-        private func setInitialWindowSize() {
-            guard let initialSize = initialSize else { return }
-            
-            // If we have tabs, then do not change the window size
-            guard let window = self.window else { return }
-            guard let windowControllerRaw = window.windowController else { return }
-            guard let windowController = windowControllerRaw as? TerminalController else { return }
-            guard case .leaf = windowController.surfaceTree else { return }
-            
-            // If our window is full screen, we do not set the frame
-            guard !window.styleMask.contains(.fullScreen) else { return }
-            
-            // Setup our frame. We need to first subtract the views frame so that we can
-            // just get the chrome frame so that we only affect the surface view size.
-            var frame = window.frame
-            frame.size.width -= self.frame.size.width
-            frame.size.height -= self.frame.size.height
-            frame.size.width += initialSize.width
-            frame.size.height += initialSize.height
-            
-            // We have no tabs and we are not a split, so set the initial size of the window.
-            window.setFrame(frame, display: true)
         }
         
         override func becomeFirstResponder() -> Bool {
