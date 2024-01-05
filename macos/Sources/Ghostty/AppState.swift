@@ -36,6 +36,9 @@ extension Ghostty {
         /// Optional delegate
         weak var delegate: GhosttyAppStateDelegate?
 
+        /// True when application is first launched. Immidiately set to false after first window is shown.
+        var firstLaunch: Bool = true
+
         /// The ghostty global configuration. This should only be changed when it is definitely
         /// safe to change. It is definite safe to change only when the embedded app runtime
         /// in Ghostty says so (usually, only in a reload configuration callback).

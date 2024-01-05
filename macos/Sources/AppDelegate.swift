@@ -104,12 +104,6 @@ class AppDelegate: NSObject,
         // Initial config loading
         configDidReload(ghostty)
         
-        // Let's launch our first window. We only do this if we have no other windows. It
-        // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
-        // is called before this.
-        if (terminalManager.windows.count == 0) {
-            terminalManager.newWindow()
-        }
         
         // Register our service provider. This must happen after everything
         // else is initialized.
@@ -130,6 +124,18 @@ class AppDelegate: NSObject,
             )
         ])
         center.delegate = self
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Let's launch our first window. We only do this if we have no other windows. It
+        // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
+        // is called before this.
+        if (ghostty.firstLaunch) {
+            if terminalManager.windows.count == 0 {
+                terminalManager.newWindow()
+            }
+            ghostty.firstLaunch = false
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

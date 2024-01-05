@@ -33,8 +33,8 @@ class TerminalManager {
             }
         }
         
-        // If we have no main window, just use the first window.
-        return windows.first
+        // If we have no main window, just use the last window.
+        return windows.last
     }
     
     init(_ ghostty: Ghostty.AppState) {
