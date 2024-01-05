@@ -293,6 +293,7 @@ fn updateConfigErrors(self: *App) !void {
 
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
+    try self.syncActionAccelerator("app.open_config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
     try self.syncActionAccelerator("app.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
@@ -479,6 +480,17 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     }, .{ .forever = {} });
 }
 
+fn gtkActionOpenConfig(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _ = self.core_app.mailbox.push(.{
+        .open_config = {},
+    }, .{ .forever = {} });
+}
+
 fn gtkActionReloadConfig(
     _: *c.GSimpleAction,
     _: *c.GVariant,
@@ -507,6 +519,7 @@ fn gtkActionQuit(
 fn initActions(self: *App) void {
     const actions = .{
         .{ "quit", &gtkActionQuit },
+        .{ "open_config", &gtkActionOpenConfig },
         .{ "reload_config", &gtkActionReloadConfig },
     };
 
@@ -545,6 +558,7 @@ fn initMenu(self: *App) void {
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+        c.g_menu_append(section, "Open Configuration", "app.open_config");
         c.g_menu_append(section, "Reload Configuration", "app.reload_config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
