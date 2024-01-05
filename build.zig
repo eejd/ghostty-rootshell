@@ -251,6 +251,10 @@ pub fn build(b: *std.Build) !void {
             );
         }
 
+        // Building with LTO on Windows is broken.
+        // https://github.com/ziglang/zig/issues/15958
+        if (target.isWindows()) exe.want_lto = false;
+
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
         const install_step = if (app_runtime != .none) step: {
