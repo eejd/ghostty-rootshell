@@ -1090,7 +1090,7 @@ const Subprocess = struct {
                 break :args try args.toOwnedSlice();
             }
 
-            if (builtin.os.tag == .windows) {
+            if (comptime builtin.os.tag == .windows) {
                 // We run our shell wrapped in `cmd.exe` so that we don't have
                 // to parse the command line ourselves if it has arguments.
                 try args.append("C:\\Windows\\System32\\cmd.exe");
@@ -1105,6 +1105,7 @@ const Subprocess = struct {
                 if (internal_os.isFlatpak()) try args.append("-l");
                 try args.append("-c");
             }
+
             try args.append(opts.full_config.command orelse default_path);
             break :args try args.toOwnedSlice();
         };
