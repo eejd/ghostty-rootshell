@@ -377,6 +377,12 @@ version when I get closer to generally releasing this to ease downstream
 packagers. You can find binary releases of nightly builds on the
 [Zig downloads page](https://ziglang.org/download/).
 
+Under some conditions, the very latest Zig nightly may not work (for example,
+when Zig introduces breaking changes that Ghostty or our dependencies haven't
+been upated for). To be sure what Zig version will work, see the `build.zig`
+file which has a constant `required_zig`. Ghostty plans to pin to Zig 0.12
+once it is released, which will make all of this much easier.
+
 With Zig and necessary dependencies installed, a binary can be built using
 `zig build`:
 
