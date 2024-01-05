@@ -57,6 +57,9 @@ class AppDelegate: NSObject,
     /// The dock menu
     private var dockMenu: NSMenu = NSMenu()
     
+    /// This is only true before application has become active.
+    private var applicationHasBecomeActive: Bool = false
+    
     /// The ghostty global state. Only one per process.
     let ghostty: Ghostty.AppState = Ghostty.AppState()
     
@@ -104,7 +107,6 @@ class AppDelegate: NSObject,
         // Initial config loading
         configDidReload(ghostty)
         
-        
         // Register our service provider. This must happen after everything
         // else is initialized.
         NSApp.servicesProvider = ServiceProvider()
@@ -127,14 +129,15 @@ class AppDelegate: NSObject,
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard !applicationHasBecomeActive else { return }
+        applicationHasBecomeActive = true
+        
         // Let's launch our first window. We only do this if we have no other windows. It
-        // is possible to have other windows if we're opening a URL since `application(_:openFile:)`
-        // is called before this.
-        if (ghostty.firstLaunch) {
-            if terminalManager.windows.count == 0 {
-                terminalManager.newWindow()
-            }
-            ghostty.firstLaunch = false
+        // is possible to have other windows in a few scenarios:
+        //   - if we're opening a URL since `application(_:openFile:)` is called before this.
+        //   - if we're restoring from persisted state
+        if terminalManager.windows.count == 0 {
+            terminalManager.newWindow()
         }
     }
 
