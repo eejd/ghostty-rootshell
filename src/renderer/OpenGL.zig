@@ -1658,6 +1658,11 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
         self.font_shaper = font_shaper;
     }
 
+    // Set our new colors
+    self.background_color = config.background;
+    self.foreground_color = config.foreground;
+    self.cursor_color = config.cursor_color;
+
     // Update our uniforms
     self.deferred_config = .{};
 

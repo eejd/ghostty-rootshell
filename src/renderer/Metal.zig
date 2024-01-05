@@ -1305,6 +1305,11 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
     // Set our new minimum contrast
     self.uniforms.min_contrast = config.min_contrast;
 
+    // Set our new colors
+    self.background_color = config.background;
+    self.foreground_color = config.foreground;
+    self.cursor_color = config.cursor_color;
+
     self.config.deinit();
     self.config = config.*;
 }
