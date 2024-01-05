@@ -712,8 +712,8 @@ pub fn LineIterator(comptime ReaderType: type) type {
                         unreachable;
                     } orelse return null;
 
-                    // Trim any whitespace around it
-                    const trim = std.mem.trim(u8, entry, whitespace);
+                    // Trim any whitespace (including CR) around it
+                    const trim = std.mem.trim(u8, entry, whitespace ++ "\r");
                     if (trim.len != entry.len) {
                         std.mem.copyForwards(u8, entry, trim);
                         entry = entry[0..trim.len];
@@ -830,6 +830,17 @@ test "LineIterator spaces around '='" {
 
     var iter = lineIterator(fbs.reader());
     try testing.expectEqualStrings("--A=B", iter.next().?);
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+}
+
+test "LineIterator with CRLF line endings" {
+    const testing = std.testing;
+    var fbs = std.io.fixedBufferStream("A\r\nB = C\r\n");
+
+    var iter = lineIterator(fbs.reader());
+    try testing.expectEqualStrings("--A", iter.next().?);
+    try testing.expectEqualStrings("--B=C", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
