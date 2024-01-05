@@ -946,10 +946,17 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     const alloc = result._arena.?.allocator();
 
     // Add our default keybindings
+
+    // keybinds for opening and reloading config
     try result.keybind.set.put(
         alloc,
-        .{ .key = .space, .mods = .{ .super = true, .alt = true, .ctrl = true } },
+        .{ .key = .comma, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
         .{ .reload_config = {} },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .comma, .mods = inputpkg.ctrlOrSuper(.{}) },
+        .{ .open_config = {} },
     );
 
     {
@@ -1209,16 +1216,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .q, .mods = .{ .super = true } },
             .{ .quit = {} },
-        );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .comma, .mods = .{ .super = true, .shift = true } },
-            .{ .reload_config = {} },
-        );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .comma, .mods = .{ .super = true } },
-            .{ .open_config = {} },
         );
         try result.keybind.set.put(
             alloc,
