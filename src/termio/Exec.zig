@@ -1090,14 +1090,21 @@ const Subprocess = struct {
                 break :args try args.toOwnedSlice();
             }
 
-            // We run our shell wrapped in `/bin/sh` so that we don't have
-            // to parse the commadnd line ourselves if it has arguments.
-            // Additionally, some environments (NixOS, I found) use /bin/sh
-            // to setup some environment variables that are important to
-            // have set.
-            try args.append("/bin/sh");
-            if (internal_os.isFlatpak()) try args.append("-l");
-            try args.append("-c");
+            if (builtin.os.tag == .windows) {
+                // We run our shell wrapped in `cmd.exe` so that we don't have
+                // to parse the command line ourselves if it has arguments.
+                try args.append("C:\\Windows\\System32\\cmd.exe");
+                try args.append("/C");
+            } else {
+                // We run our shell wrapped in `/bin/sh` so that we don't have
+                // to parse the command line ourselves if it has arguments.
+                // Additionally, some environments (NixOS, I found) use /bin/sh
+                // to setup some environment variables that are important to
+                // have set.
+                try args.append("/bin/sh");
+                if (internal_os.isFlatpak()) try args.append("-l");
+                try args.append("-c");
+            }
             try args.append(opts.full_config.command orelse default_path);
             break :args try args.toOwnedSlice();
         };
