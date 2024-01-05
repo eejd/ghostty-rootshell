@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const EnvMap = std.process.EnvMap;
 const config = @import("../config.zig");
 
@@ -14,7 +15,13 @@ pub const Shell = enum {
 /// integrated shell integration. This returns true if shell
 /// integration was successful. False could mean many things:
 /// the shell type wasn't detected, etc.
+///
+/// The allocator is only used for temporary values, so it should
+/// be given a general purpose allocator. No allocated memory remains
+/// after this function returns except anything allocated by the
+/// EnvMap.
 pub fn setup(
+    alloc: Allocator,
     resource_dir: []const u8,
     command_path: []const u8,
     env: *EnvMap,
@@ -28,7 +35,7 @@ pub fn setup(
 
     const shell: Shell = shell: {
         if (std.mem.eql(u8, "fish", exe)) {
-            try setupFish(resource_dir, env);
+            try setupFish(alloc, resource_dir, env);
             break :shell .fish;
         }
 
@@ -51,6 +58,7 @@ pub fn setup(
 /// Fish will automatically load configuration in XDG_DATA_DIRS
 /// "fish/vendor_conf.d/*.fish".
 fn setupFish(
+    alloc_gpa: Allocator,
     resource_dir: []const u8,
     env: *EnvMap,
 ) !void {
@@ -71,17 +79,19 @@ fn setupFish(
     if (env.get("XDG_DATA_DIRS")) |old| {
         // We have an old value, We need to prepend our value to it.
 
-        // We use a 4K buffer to hold our XDG_DATA_DIR value. The stack
-        // on macOS is at least 512K and Linux is 8MB or more. So this
-        // should fit. If the user has a XDG_DATA_DIR value that is longer
-        // than this then it will fail... and we will cross that bridge
-        // when we actually get there. This avoids us needing an allocator.
-        var buf: [4096]u8 = undefined;
-        const prepended = try std.fmt.bufPrint(
-            &buf,
+        // We attempt to avoid allocating by using the stack up to 4K.
+        // Max stack size is considerably larger on macOS and Linux but
+        // 4K is a reasonable size for this for most cases. However, env
+        // vars can be significantly larger so if we have to we fall
+        // back to a heap allocated value.
+        var stack_alloc = std.heap.stackFallback(4096, alloc_gpa);
+        const alloc = stack_alloc.get();
+        const prepended = try std.fmt.allocPrint(
+            alloc,
             "{s}{c}{s}",
             .{ integ_dir, std.fs.path.delimiter, old },
         );
+        defer alloc.free(prepended);
 
         try env.put("XDG_DATA_DIRS", prepended);
     } else {

@@ -1137,6 +1137,7 @@ const Subprocess = struct {
             const dir = opts.resources_dir orelse break :shell null;
 
             break :shell try shell_integration.setup(
+                gpa,
                 dir,
                 path,
                 &env,
