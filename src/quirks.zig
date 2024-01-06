@@ -23,6 +23,7 @@ pub fn disableDefaultFontFeatures(face: *const font.Face) bool {
     // looks really bad in terminal grids, so we want to disable ligatures
     // by default for these faces.
     return std.mem.eql(u8, name, "CodeNewRoman") or
+        std.mem.eql(u8, name, "CodeNewRoman Nerd Font") or
         std.mem.eql(u8, name, "Menlo") or
         std.mem.eql(u8, name, "Monaco");
 }
