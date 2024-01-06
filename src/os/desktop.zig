@@ -19,7 +19,15 @@ pub fn launchedFromDesktop() bool {
     return switch (builtin.os.tag) {
         // macOS apps launched from finder or `open` always have the init
         // process as their parent.
-        .macos => c.getppid() == 1,
+        .macos => macos: {
+            // This special case is so that if we launch the app via the
+            // app bundle (i.e. via open) then we still treat it as if it
+            // was launched from the desktop.
+            if (build_config.artifact == .lib and
+                std.os.getenv("GHOSTTY_MAC_APP") != null) break :macos true;
+
+            break :macos c.getppid() == 1;
+        },
 
         // On Linux, GTK sets GIO_LAUNCHED_DESKTOP_FILE and
         // GIO_LAUNCHED_DESKTOP_FILE_PID. We only check the latter to see if
