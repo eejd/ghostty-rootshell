@@ -123,7 +123,7 @@ in
 
     dontConfigure = true;
 
-    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}";
+    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}-nix";
 
     preBuild = ''
       rm -rf $ZIG_GLOBAL_CACHE_DIR
