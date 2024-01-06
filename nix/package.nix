@@ -1,4 +1,5 @@
 {
+  self,
   lib,
   stdenv,
   bzip2,
@@ -23,6 +24,7 @@
   ncurses,
   pkg-config,
   zig_0_12,
+  revision ? "dirty",
 }: let
   # The Zig hook has no way to select the release type without actual
   # overriding of the default flags.
@@ -121,7 +123,7 @@ in
 
     dontConfigure = true;
 
-    zigBuildFlags = "-Dversion-string=${finalAttrs.version}";
+    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}";
 
     preBuild = ''
       rm -rf $ZIG_GLOBAL_CACHE_DIR
