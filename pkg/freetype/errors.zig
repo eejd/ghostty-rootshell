@@ -94,6 +94,7 @@ pub const Error = error{
     BbxTooBig,
     CorruptedFontHeader,
     CorruptedFontGlyphs,
+    UnknownFreetypeError,
 };
 
 pub fn intToError(err: c_int) Error!void {
@@ -188,7 +189,7 @@ pub fn intToError(err: c_int) Error!void {
         c.FT_Err_Bbx_Too_Big => Error.BbxTooBig,
         c.FT_Err_Corrupted_Font_Header => Error.CorruptedFontHeader,
         c.FT_Err_Corrupted_Font_Glyphs => Error.CorruptedFontGlyphs,
-        else => unreachable,
+        else => Error.UnknownFreetypeError,
     };
 }
 
