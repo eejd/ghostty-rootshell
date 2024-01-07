@@ -10,10 +10,10 @@ pub fn build(b: *std.Build) !void {
         bool,
         "enable-libxml2-iconv",
         "Build libxml2 with iconv",
-    ) orelse (target.getOsTag() != .windows);
+    ) orelse (target.result.os.tag != .windows);
     const freetype_enabled = b.option(bool, "enable-freetype", "Build freetype") orelse true;
 
-    _ = b.addModule("fontconfig", .{ .source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("fontconfig", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("fontconfig", .{});
     const lib = b.addStaticLibrary(.{
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    if (!target.isWindows()) {
+    if (target.result.os.tag != .windows) {
         lib.linkSystemLibrary("pthread");
     }
     if (freetype_enabled) {
@@ -40,6 +40,8 @@ pub fn build(b: *std.Build) !void {
 
     lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(.{ .path = "override/include" });
+    module.addIncludePath(upstream.path(""));
+    module.addIncludePath(.{ .path = "override/include" });
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
@@ -86,8 +88,8 @@ pub fn build(b: *std.Build) !void {
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
     });
-    const target_info = try NativeTargetInfo.detect(target);
-    switch (target_info.target.ptrBitWidth()) {
+
+    switch (target.result.ptrBitWidth()) {
         32 => try flags.appendSlice(&.{
             "-DSIZEOF_VOID_P=4",
             "-DALIGNOF_VOID_P=4",
@@ -100,7 +102,7 @@ pub fn build(b: *std.Build) !void {
 
         else => @panic("unsupported arch"),
     }
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         try flags.appendSlice(&.{
             "-DFC_CACHEDIR=\"LOCAL_APPDATA_FONTCONFIG_CACHE\"",
             "-DFC_TEMPLATEDIR=\"c:/share/fontconfig/conf.avail\"",
@@ -133,7 +135,7 @@ pub fn build(b: *std.Build) !void {
             "-DCONFIGDIR=\"/usr/local/fontconfig/conf.d\"",
             "-DFC_DEFAULT_FONTS=\"<dir>/usr/share/fonts</dir><dir>/usr/local/share/fonts</dir>\"",
         });
-        if (target.isLinux()) {
+        if (target.result.os.tag == .linux) {
             try flags.appendSlice(&.{
                 "-DHAVE_SYS_STATFS_H",
                 "-DHAVE_SYS_VFS_H",
@@ -146,7 +148,7 @@ pub fn build(b: *std.Build) !void {
             "-DLIBXML_STATIC",
             "-DLIBXML_PUSH_ENABLED",
         });
-        if (target.isWindows()) {
+        if (target.result.os.tag == .windows) {
             // NOTE: this should be defined on all targets
             try flags.appendSlice(&.{
                 "-Werror=implicit-function-declaration",

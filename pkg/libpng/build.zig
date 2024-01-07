@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    if (target.isLinux()) {
+    if (target.result.os.tag == .linux) {
         lib.linkSystemLibrary("m");
     }
 

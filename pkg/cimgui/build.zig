@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("cimgui", .{ .source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("cimgui", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const imgui = b.dependency("imgui", .{});
     const freetype = b.dependency("freetype", .{
@@ -21,11 +21,12 @@ pub fn build(b: *std.Build) !void {
     lib.linkLibC();
     lib.linkLibCpp();
     lib.linkLibrary(freetype.artifact("freetype"));
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         lib.linkSystemLibrary("imm32");
     }
 
     lib.addIncludePath(imgui.path(""));
+    module.addIncludePath(.{ .path = "vendor" });
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
@@ -34,7 +35,7 @@ pub fn build(b: *std.Build) !void {
         "-DIMGUI_USE_WCHAR32=1",
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
     });
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         try flags.appendSlice(&.{
             "-DIMGUI_IMPL_API=extern\t\"C\"\t__declspec(dllexport)",
         });
@@ -57,8 +58,11 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    if (target.isDarwin()) {
-        if (!target.isNative()) try @import("apple_sdk").addPaths(b, lib);
+    if (target.result.isDarwin()) {
+        if (!target.query.isNative()) {
+            try @import("apple_sdk").addPaths(b, lib);
+            try @import("apple_sdk").addPathsModule(b, module);
+        }
         lib.addCSourceFile(.{
             .file = imgui.path("backends/imgui_impl_metal.mm"),
             .flags = flags.items,

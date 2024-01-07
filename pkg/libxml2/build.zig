@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
 
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(.{ .path = "override/include" });
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         lib.addIncludePath(.{ .path = "override/config/win32" });
         lib.linkSystemLibrary("ws2_32");
     } else {
@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) !void {
         "-DLIBXML_AUTOMATA_ENABLED=1",
         "-DWITHOUT_TRIO=1",
     });
-    if (!target.isWindows()) {
+    if (target.result.os.tag != .windows) {
         try flags.appendSlice(&.{
             "-DHAVE_ARPA_INET_H=1",
             "-DHAVE_ARPA_NAMESER_H=1",

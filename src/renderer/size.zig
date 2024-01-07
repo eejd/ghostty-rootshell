@@ -161,7 +161,7 @@ test "Padding balanced on zero" {
     const cell: CellSize = .{ .width = 10, .height = 20 };
     const screen: ScreenSize = .{ .width = 0, .height = 0 };
     const padding = Padding.balanced(screen, grid, cell);
-    try testing.expectEqual(padding, .{});
+    try testing.expectEqual(Padding{}, padding);
 }
 
 test "GridSize update exact" {

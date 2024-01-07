@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("tracy", .{ .source_file = .{ .path = "tracy.zig" } });
+    _ = b.addModule("tracy", .{ .root_source_file = .{ .path = "tracy.zig" } });
 
     const upstream = b.dependency("tracy", .{});
     const lib = b.addStaticLibrary(.{
@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         lib.linkSystemLibrary("Advapi32");
         lib.linkSystemLibrary("User32");
         lib.linkSystemLibrary("Ws2_32");
@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
         "-DTRACY_ENABLE",
         "-fno-sanitize=undefined",
     });
-    if (target.isWindows()) {
+    if (target.result.os.tag == .windows) {
         try flags.appendSlice(&.{
             "-D_WIN32_WINNT=0x601",
         });

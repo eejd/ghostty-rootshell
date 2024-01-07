@@ -17,8 +17,8 @@ pub fn build(b: *std.Build) !void {
     const upstream = b.dependency("harfbuzz", .{});
 
     const module = b.addModule("harfbuzz", .{
-        .source_file = .{ .path = "main.zig" },
-        .dependencies = &.{
+        .root_source_file = .{ .path = "main.zig" },
+        .imports = &.{
             .{ .name = "freetype", .module = freetype.module("freetype") },
             .{ .name = "macos", .module = macos.module("macos") },
         },
@@ -32,16 +32,18 @@ pub fn build(b: *std.Build) !void {
     lib.linkLibC();
     lib.linkLibCpp();
     lib.addIncludePath(upstream.path("src"));
+    module.addIncludePath(upstream.path("src"));
 
     const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(freetype_dep.artifact("freetype"));
+    module.addIncludePath(freetype_dep.builder.dependency("freetype", .{}).path("include"));
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{
         "-DHAVE_STDBOOL_H",
     });
-    if (!target.isWindows()) {
+    if (target.result.os.tag != .windows) {
         try flags.appendSlice(&.{
             "-DHAVE_UNISTD_H",
             "-DHAVE_SYS_MMAN_H",
@@ -60,7 +62,9 @@ pub fn build(b: *std.Build) !void {
     if (coretext_enabled) {
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
         try apple_sdk.addPaths(b, lib);
+        try apple_sdk.addPathsModule(b, module);
         lib.linkFramework("ApplicationServices");
+        module.linkFramework("ApplicationServices", .{});
     }
 
     lib.addCSourceFile(.{
@@ -85,8 +89,8 @@ pub fn build(b: *std.Build) !void {
         });
         test_exe.linkLibrary(lib);
 
-        var it = module.dependencies.iterator();
-        while (it.next()) |entry| test_exe.addModule(entry.key_ptr.*, entry.value_ptr.*);
+        var it = module.import_table.iterator();
+        while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
         test_exe.linkLibrary(freetype_dep.artifact("freetype"));
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");

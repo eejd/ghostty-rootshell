@@ -53,12 +53,12 @@ pub const Runtime = enum {
     /// GTK-backed. Rich windowed application. GTK is dynamically linked.
     gtk,
 
-    pub fn default(target: std.zig.CrossTarget) Runtime {
+    pub fn default(target: std.Target) Runtime {
         // The Linux default is GTK because it is full featured.
-        if (target.isLinux()) return .gtk;
+        if (target.os.tag == .linux) return .gtk;
 
         // Windows we currently only support glfw
-        if (target.isWindows()) return .glfw;
+        if (target.os.tag == .windows) return .glfw;
 
         // Otherwise, we do NONE so we don't create an exe. The GLFW
         // build is opt-in because it is missing so many features compared

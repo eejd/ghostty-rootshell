@@ -5,24 +5,24 @@
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/7eada4333c36b3e16f4dc2abad707149ef7b6de5.tar.gz",
-            .hash = "1220be2c7b3f3a07b9150720140c7038f454a9ce0cbc5d303767c1e4a50856ec1b01",
+            .url = "https://github.com/mitchellh/libxev/archive/74bc7aea4a8f88210f0ad4215108613ab7e7af1a.tar.gz",
+            .hash = "122029743e5d96aa1b57a1b99ff58bf13ff9ed6d8f624ac3ae8074062feb91c5bd8d",
         },
         .mach_glfw = .{
-            .url = "https://github.com/hexops/mach-glfw/archive/577220552e1b31c4496d2e0df2fb5fbc9287b966.tar.gz",
-            .hash = "12204779ba2f14b46f569110f774d5c3f48b7a105b6717e668bc410710bceae62072",
+            .url = "https://github.com/der-teufel-programming/mach-glfw/archive/fe077f52e51c4eb7e4ff6bbe8d3ee3ecd9cc743d.tar.gz",
+            .hash = "1220838cb1781e328a0218facaa7e92ae97fd5bbcd81dd0429ac43c5b36fe70c1990",
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/10e552bd37c2f61b9f570d5ceb145165c6f1854b.tar.gz",
-            .hash = "122045926c2a90c61ca2ce907cc83a91ede0d49c989209fff2e2db421a88caf88e91",
+            .url = "https://github.com/mitchellh/zig-objc/archive/294e0f3765a96613b45ff7dd594bf99e22409e96.tar.gz",
+            .hash = "1220ae28cc6af7600c6f23db1573b33ca3b8accd15e60a1fe1a2c979c20868f151fa",
         },
         .zig_js = .{
-            .url = "https://github.com/mitchellh/zig-js/archive/60ac42ab137461cdba2b38cc6c5e16376470aae6.tar.gz",
-            .hash = "1220319b42fbc0116f3f198343256018e9f1da9483cef259201afe4ebab0ce0d8f6a",
+            .url = "https://github.com/mitchellh/zig-js/archive/d4edb682733aef8dc3933683272bdf7c8b9fe658.tar.gz",
+            .hash = "1220df81f0e65cc9ccd3628572c611e6f267a71f1bff1be19d50f4ac49ee2a83c324",
         },
         .ziglyph = .{
-            .url = "https://codeberg.org/dude_the_builder/ziglyph/archive/ef6a97e3e6d31786e4c5152abb8393f32ce52279.tar.gz",
-            .hash = "1220847f934ea57e90ffb4d447a43e37ff4dce2aab23c84513dfff591376350ffd31",
+            .url = "https://codeberg.org/dude_the_builder/ziglyph/archive/0e17bd36a4e882b194a87c283bd78562ea215116.tar.gz",
+            .hash = "12208553f3f47e51494e187f4c0e6f6b3844e3993436cad4a0e8c4db4e99645967b5",
         },
 
         // C libs

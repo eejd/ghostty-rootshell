@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const fs = std.fs;
-const LibExeObjStep = std.build.LibExeObjStep;
-const RunStep = std.build.RunStep;
+const CompileStep = std.Build.Step.Compile;
+const RunStep = std.Build.Step.Run;
 
 const apprt = @import("src/apprt.zig");
 const font = @import("src/font/main.zig");
@@ -20,7 +20,7 @@ const Version = @import("src/build/Version.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.1754+2a3226453";
+    const required_zig = "0.12.0-dev.2059+42389cb9c";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -47,9 +47,9 @@ pub fn build(b: *std.Build) !void {
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
-        if (result.isDarwin()) {
-            if (result.os_version_min == null) {
-                result.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
+        if (result.result.isDarwin()) {
+            if (result.query.os_version_min == null) {
+                result.query.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
             }
         }
 
@@ -81,13 +81,13 @@ pub fn build(b: *std.Build) !void {
         font.Backend,
         "font-backend",
         "The font backend to use for discovery and rasterization.",
-    ) orelse font.Backend.default(target, wasm_target);
+    ) orelse font.Backend.default(target.result, wasm_target);
 
     app_runtime = b.option(
         apprt.Runtime,
         "app-runtime",
         "The app runtime to use. Not all values supported on all platforms.",
-    ) orelse apprt.Runtime.default(target);
+    ) orelse apprt.Runtime.default(target.result);
 
     libadwaita = b.option(
         bool,
@@ -99,7 +99,7 @@ pub fn build(b: *std.Build) !void {
         renderer.Impl,
         "renderer",
         "The app runtime to use. Not all values supported on all platforms.",
-    ) orelse renderer.Impl.default(target, wasm_target);
+    ) orelse renderer.Impl.default(target.result, wasm_target);
 
     const static = b.option(
         bool,
@@ -136,7 +136,7 @@ pub fn build(b: *std.Build) !void {
             "This defaults to LD_LIBRARY_PATH if we're in a Nix shell environment on NixOS.",
     ) orelse patch_rpath: {
         // We only do the patching if we're targeting our own CPU and its Linux.
-        if (!target.isLinux() or !target.isNativeCpu()) break :patch_rpath null;
+        if (!(target.result.os.tag == .linux) or !target.query.isNativeCpu()) break :patch_rpath null;
 
         // If we're in a nix shell we default to doing this.
         // Note: we purposely never deinit envmap because we leak the strings
@@ -215,7 +215,7 @@ pub fn build(b: *std.Build) !void {
 
     // Exe
     if (exe_) |exe| {
-        exe.addOptions("build_options", exe_options);
+        exe.root_module.addOptions("build_options", exe_options);
 
         // Add the shared dependencies
         _ = try addDeps(b, exe, static);
@@ -223,9 +223,9 @@ pub fn build(b: *std.Build) !void {
         // If we're in NixOS but not in the shell environment then we issue
         // a warning because the rpath may not be setup properly.
         const is_nixos = is_nixos: {
-            if (!target.isLinux()) break :is_nixos false;
-            if (!target.isNativeCpu()) break :is_nixos false;
-            if (target.getOsTag() != builtin.os.tag) break :is_nixos false;
+            if (target.result.os.tag != .linux) break :is_nixos false;
+            if (!target.query.isNativeCpu()) break :is_nixos false;
+            if (!target.query.isNativeOs()) break :is_nixos false;
             break :is_nixos if (std.fs.accessAbsolute("/etc/NIXOS", .{})) true else |_| false;
         };
         if (is_nixos and env.get("IN_NIX_SHELL") == null) {
@@ -253,7 +253,7 @@ pub fn build(b: *std.Build) !void {
 
         // Building with LTO on Windows is broken.
         // https://github.com/ziglang/zig/issues/15958
-        if (target.isWindows()) exe.want_lto = false;
+        if (target.result.os.tag == .windows) exe.want_lto = false;
 
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
@@ -277,7 +277,7 @@ pub fn build(b: *std.Build) !void {
         }
 
         // App (Mac)
-        if (target.isDarwin()) {
+        if (target.result.isDarwin()) {
             const bin_install = b.addInstallFile(
                 exe.getEmittedBin(),
                 "Ghostty.app/Contents/MacOS/ghostty",
@@ -298,7 +298,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.isDarwin() and exe_ != null) {
+        if (target.result.isDarwin() and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -321,7 +321,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.isDarwin() and exe_ != null) {
+        if (target.result.isDarwin() and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -345,7 +345,7 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
-        if (target.isDarwin() and exe_ != null) {
+        if (target.result.isDarwin() and exe_ != null) {
             const mac_src_install = b.addInstallFile(
                 src_source,
                 "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
@@ -356,17 +356,17 @@ pub fn build(b: *std.Build) !void {
         // Convert to termcap source format if thats helpful to people and
         // install it. The resulting value here is the termcap source in case
         // that is used for other commands.
-        if (!target.isWindows()) {
+        if (target.result.os.tag != .windows) {
             const run_step = RunStep.create(b, "infotocap");
             run_step.addArg("infotocap");
-            run_step.addFileSourceArg(src_source);
+            run_step.addFileArg(src_source);
             const out_source = run_step.captureStdOut();
             _ = run_step.captureStdErr(); // so we don't see stderr
 
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
             b.getInstallStep().dependOn(&cap_install.step);
 
-            if (target.isDarwin() and exe_ != null) {
+            if (target.result.isDarwin() and exe_ != null) {
                 const mac_cap_install = b.addInstallFile(
                     out_source,
                     "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
@@ -376,11 +376,11 @@ pub fn build(b: *std.Build) !void {
         }
 
         // Compile the terminfo source into a terminfo database
-        if (!target.isWindows()) {
+        if (target.result.os.tag != .windows) {
             const run_step = RunStep.create(b, "tic");
             run_step.addArgs(&.{ "tic", "-x", "-o" });
             const path = run_step.addOutputFileArg("terminfo");
-            run_step.addFileSourceArg(src_source);
+            run_step.addFileArg(src_source);
             _ = run_step.captureStdErr(); // so we don't see stderr
 
             // Depend on the terminfo source install step so that Zig build
@@ -390,15 +390,15 @@ pub fn build(b: *std.Build) !void {
             {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
-                copy_step.addFileSourceArg(path);
+                copy_step.addFileArg(path);
                 copy_step.addArg(b.fmt("{s}/share", .{b.install_prefix}));
                 b.getInstallStep().dependOn(&copy_step.step);
             }
 
-            if (target.isDarwin() and exe_ != null) {
+            if (target.result.isDarwin() and exe_ != null) {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
-                copy_step.addFileSourceArg(path);
+                copy_step.addFileArg(path);
                 copy_step.addArg(
                     b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_prefix}),
                 );
@@ -421,7 +421,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // App (Linux)
-    if (target.isLinux()) {
+    if (target.result.os.tag == .linux) {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
@@ -445,21 +445,21 @@ pub fn build(b: *std.Build) !void {
     }
 
     // On Mac we can build the embedding library.
-    if (builtin.target.isDarwin() and target.isDarwin()) {
+    if (builtin.target.isDarwin() and target.result.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = .{
+                .target = b.resolveTargetQuery(.{
                     .cpu_arch = .aarch64,
                     .os_tag = .macos,
-                    .os_version_min = target.os_version_min,
-                },
+                    .os_version_min = target.query.os_version_min,
+                }),
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
-            lib.addOptions("build_options", exe_options);
+            lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -479,16 +479,16 @@ pub fn build(b: *std.Build) !void {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = .{
+                .target = b.resolveTargetQuery(.{
                     .cpu_arch = .x86_64,
                     .os_tag = .macos,
-                    .os_version_min = target.os_version_min,
-                },
+                    .os_version_min = target.query.os_version_min,
+                }),
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
-            lib.addOptions("build_options", exe_options);
+            lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -542,7 +542,7 @@ pub fn build(b: *std.Build) !void {
     // wasm
     {
         // Build our Wasm target.
-        const wasm_crosstarget: std.zig.CrossTarget = .{
+        const wasm_crosstarget: std.Target.Query = .{
             .cpu_arch = .wasm32,
             .os_tag = .freestanding,
             .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
@@ -570,10 +570,10 @@ pub fn build(b: *std.Build) !void {
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = wasm_crosstarget,
+            .target = b.resolveTargetQuery(wasm_crosstarget),
             .optimize = optimize,
         });
-        wasm.addOptions("build_options", exe_options);
+        wasm.root_module.addOptions("build_options", exe_options);
 
         // So that we can use web workers with our wasm binary
         wasm.import_memory = true;
@@ -582,7 +582,7 @@ pub fn build(b: *std.Build) !void {
         wasm.shared_memory = wasm_shared;
 
         // Stack protector adds extern requirements that we don't satisfy.
-        wasm.stack_protector = false;
+        wasm.root_module.stack_protector = false;
 
         // Wasm-specific deps
         _ = try addDeps(b, wasm, true);
@@ -601,9 +601,9 @@ pub fn build(b: *std.Build) !void {
         const main_test = b.addTest(.{
             .name = "wasm-test",
             .root_source_file = .{ .path = "src/main_wasm.zig" },
-            .target = wasm_crosstarget,
+            .target = b.resolveTargetQuery(wasm_crosstarget),
         });
-        main_test.addOptions("build_options", exe_options);
+        main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
     }
@@ -641,7 +641,7 @@ pub fn build(b: *std.Build) !void {
         {
             if (emit_test_exe) b.installArtifact(main_test);
             _ = try addDeps(b, main_test, true);
-            main_test.addOptions("build_options", exe_options);
+            main_test.root_module.addOptions("build_options", exe_options);
 
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
@@ -650,94 +650,125 @@ pub fn build(b: *std.Build) !void {
 }
 
 /// Used to keep track of a list of file sources.
-const FileSourceList = std.ArrayList(std.build.FileSource);
+const LazyPathList = std.ArrayList(std.Build.LazyPath);
 
 /// Adds and links all of the primary dependencies for the exe.
 fn addDeps(
     b: *std.Build,
-    step: *std.build.LibExeObjStep,
+    step: *std.Build.Step.Compile,
     static: bool,
-) !FileSourceList {
-    var static_libs = FileSourceList.init(b.allocator);
+) !LazyPathList {
+    var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
 
     // For dynamic linking, we prefer dynamic linking and to search by
     // mode first. Mode first will search all paths for a dynamic library
     // before falling back to static.
-    const dynamic_link_opts: std.build.Step.Compile.LinkSystemLibraryOptions = .{
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
         .preferred_link_mode = .Dynamic,
         .search_strategy = .mode_first,
     };
 
+    const target_triple: []const u8 = try step.rootModuleTarget().zigTriple(b.allocator);
+    const cpu_opts: []const u8 = try step.root_module.resolved_target.?.query.serializeCpuAlloc(b.allocator);
+
     // Dependencies
-    const cimgui_dep = b.dependency("cimgui", .{ .target = step.target, .optimize = step.optimize });
-    const js_dep = b.dependency("zig_js", .{ .target = step.target, .optimize = step.optimize });
-    const libxev_dep = b.dependency("libxev", .{ .target = step.target, .optimize = step.optimize });
-    const objc_dep = b.dependency("zig_objc", .{ .target = step.target, .optimize = step.optimize });
+    const cimgui_dep = b.dependency("cimgui", .{
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
+    });
+    const js_dep = b.dependency("zig_js", .{
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
+    });
+    const libxev_dep = b.dependency("libxev", .{
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
+    });
+    const objc_dep = b.dependency("zig_objc", .{
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
+    });
 
     const fontconfig_dep = b.dependency("fontconfig", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const freetype_dep = b.dependency("freetype", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
         .@"enable-libpng" = true,
     });
     const glslang_dep = b.dependency("glslang", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const spirv_cross_dep = b.dependency("spirv_cross", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const libpng_dep = b.dependency("libpng", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const macos_dep = b.dependency("macos", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const oniguruma_dep = b.dependency("oniguruma", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const opengl_dep = b.dependency("opengl", .{});
     const pixman_dep = b.dependency("pixman", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const tracy_dep = b.dependency("tracy", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .optimize = step.root_module.optimize.?,
     });
     const zlib_dep = b.dependency("zlib", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
     const harfbuzz_dep = b.dependency("harfbuzz", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
         .@"enable-freetype" = true,
         .@"enable-coretext" = font_backend.hasCoretext(),
     });
     const ziglyph_dep = b.dependency("ziglyph", .{
-        .target = step.target,
-        .optimize = step.optimize,
+        .target = target_triple,
+        .cpu = cpu_opts,
+        .optimize = step.root_module.optimize.?,
     });
 
     // Wasm we do manually since it is such a different build.
-    if (step.target.getCpuArch() == .wasm32) {
+    if (step.rootModuleTarget().cpu.arch == .wasm32) {
         // We link this package but its a no-op since Tracy
         // never actually WORKS with wasm.
-        step.addModule("tracy", tracy_dep.module("tracy"));
-        step.addModule("zig-js", js_dep.module("zig-js"));
+        step.root_module.addImport("tracy", tracy_dep.module("tracy"));
+        step.root_module.addImport("zig-js", js_dep.module("zig-js"));
 
         return static_libs;
     }
@@ -745,8 +776,8 @@ fn addDeps(
     // On Linux, we need to add a couple common library paths that aren't
     // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
     // on x86_64.
-    if (step.target.isLinux()) {
-        const triple = try step.target.linuxTriple(b.allocator);
+    if (step.rootModuleTarget().os.tag == .linux) {
+        const triple = try step.rootModuleTarget().linuxTriple(b.allocator);
         step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
     }
 
@@ -760,42 +791,42 @@ fn addDeps(
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
-    if (step.target.isDarwin()) {
+    if (step.rootModuleTarget().isDarwin()) {
         try @import("apple_sdk").addPaths(b, step);
     }
 
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (font_backend.hasFontconfig()) step.addModule(
+    if (font_backend.hasFontconfig()) step.root_module.addImport(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
-    step.addModule("oniguruma", oniguruma_dep.module("oniguruma"));
-    step.addModule("freetype", freetype_dep.module("freetype"));
-    step.addModule("glslang", glslang_dep.module("glslang"));
-    step.addModule("spirv_cross", spirv_cross_dep.module("spirv_cross"));
-    step.addModule("harfbuzz", harfbuzz_dep.module("harfbuzz"));
-    step.addModule("xev", libxev_dep.module("xev"));
-    step.addModule("opengl", opengl_dep.module("opengl"));
-    step.addModule("pixman", pixman_dep.module("pixman"));
-    step.addModule("ziglyph", ziglyph_dep.module("ziglyph"));
+    step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
+    step.root_module.addImport("freetype", freetype_dep.module("freetype"));
+    step.root_module.addImport("glslang", glslang_dep.module("glslang"));
+    step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
+    step.root_module.addImport("harfbuzz", harfbuzz_dep.module("harfbuzz"));
+    step.root_module.addImport("xev", libxev_dep.module("xev"));
+    step.root_module.addImport("opengl", opengl_dep.module("opengl"));
+    step.root_module.addImport("pixman", pixman_dep.module("pixman"));
+    step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
 
     // Mac Stuff
-    if (step.target.isDarwin()) {
-        step.addModule("objc", objc_dep.module("objc"));
-        step.addModule("macos", macos_dep.module("macos"));
+    if (step.rootModuleTarget().isDarwin()) {
+        step.root_module.addImport("objc", objc_dep.module("objc"));
+        step.root_module.addImport("macos", macos_dep.module("macos"));
         step.linkLibrary(macos_dep.artifact("macos"));
         try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
     }
 
     // cimgui
-    step.addModule("cimgui", cimgui_dep.module("cimgui"));
+    step.root_module.addImport("cimgui", cimgui_dep.module("cimgui"));
     step.linkLibrary(cimgui_dep.artifact("cimgui"));
     try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
 
     // Tracy
-    step.addModule("tracy", tracy_dep.module("tracy"));
+    step.root_module.addImport("tracy", tracy_dep.module("tracy"));
     if (tracy) {
         step.linkLibrary(tracy_dep.artifact("tracy"));
         try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
@@ -871,7 +902,7 @@ fn addDeps(
             .none => {},
 
             .glfw => {
-                step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+                step.root_module.addImport("glfw", mach_glfw_dep.module("mach-glfw"));
                 @import("mach_glfw").link(mach_glfw_dep.builder, step);
             },
 
@@ -887,8 +918,8 @@ fn addDeps(
 
 fn benchSteps(
     b: *std.Build,
-    target: std.zig.CrossTarget,
-    optimize: std.builtin.Mode,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
     install: bool,
 ) !void {
     // Open the directory ./src/bench
@@ -920,7 +951,7 @@ fn benchSteps(
             .root_source_file = .{ .path = path },
             .target = target,
             .optimize = optimize,
-            .main_pkg_path = .{ .path = "./src" },
+            // .main_pkg_path = .{ .path = "./src" },
         });
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, true);
@@ -929,10 +960,10 @@ fn benchSteps(
 
 fn conformanceSteps(
     b: *std.Build,
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.Mode,
-) !std.StringHashMap(*LibExeObjStep) {
-    var map = std.StringHashMap(*LibExeObjStep).init(b.allocator);
+) !std.StringHashMap(*CompileStep) {
+    var map = std.StringHashMap(*CompileStep).init(b.allocator);
 
     // Open the directory ./conformance
     const c_dir_path = (comptime root()) ++ "/conformance";

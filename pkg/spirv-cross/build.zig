@@ -4,9 +4,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("spirv_cross", .{ .source_file = .{ .path = "main.zig" } });
-
     const upstream = b.dependency("spirv_cross", .{});
+
+    const module = b.addModule("spirv_cross", .{ .root_source_file = .{ .path = "main.zig" } });
+    module.addIncludePath(upstream.path(""));
+
     const lib = try buildSpirvCross(b, upstream, target, optimize);
     b.installArtifact(lib);
 
@@ -30,7 +32,7 @@ pub fn build(b: *std.Build) !void {
 fn buildSpirvCross(
     b: *std.Build,
     upstream: *std.Build.Dependency,
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !*std.Build.Step.Compile {
     const lib = b.addStaticLibrary(.{
