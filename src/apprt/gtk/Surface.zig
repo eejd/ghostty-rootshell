@@ -20,6 +20,7 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
+const x11 = @import("x11.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -660,8 +661,33 @@ pub fn shouldClose(self: *const Surface) bool {
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
     // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
     // can support fractional scaling.
-    const scale = c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area));
-    return .{ .x = @floatFromInt(scale), .y = @floatFromInt(scale) };
+    const gtk_scale: f32 = @floatFromInt(c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area)));
+
+    // If we are on X11, we also have to scale using Xft.dpi
+    const xft_dpi_scale = if (x11.is_current_display_server()) getXftDpiScale() else 1.0;
+
+    const scale = gtk_scale * xft_dpi_scale;
+
+    return .{ .x = scale, .y = scale };
+}
+
+fn getXftDpiScale() f32 {
+    // Here we use GTK to retrieve gtk-xft-dpi, which is Xft.dpi multiplied by 1024
+    // See https://docs.gtk.org/gtk4/property.Settings.gtk-xft-dpi.html
+    const settings = c.gtk_settings_get_default();
+
+    var value: c.GValue = std.mem.zeroes(c.GValue);
+    defer c.g_value_unset(&value);
+    _ = c.g_value_init(&value, c.G_TYPE_INT);
+
+    c.g_object_get_property(@ptrCast(@alignCast(settings)), "gtk-xft-dpi", &value);
+    const gtk_xft_dpi = c.g_value_get_int(&value);
+
+    // Scale the value back to obtain Xft.dpi
+    const xft_dpi = @divExact(gtk_xft_dpi, 1024);
+
+    // Divide by the default value of Xft.dpi (96) to derive a scale
+    return @as(f32, @floatFromInt(xft_dpi)) / 96.0;
 }
 
 pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
