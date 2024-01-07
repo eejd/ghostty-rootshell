@@ -147,11 +147,11 @@
     },
     "nixpkgs-zig-0-12": {
       "locked": {
-        "lastModified": 1703276979,
-        "narHash": "sha256-WD3FdpkPRLm0PJC26bZT/cSoPNgKANHq14U5O+CfLqI=",
+        "lastModified": 1704663772,
+        "narHash": "sha256-BIDaFQlRhjhrFk+UE7OsV3Jfo/9cbWAWwdjmdy1Hn34=",
         "owner": "vancluever",
         "repo": "nixpkgs",
-        "rev": "d81c22905455c896e79db93fdace8771db1bd995",
+        "rev": "4f7ae324049ecdf3a84db0bb59d2442bb080304f",
         "type": "github"
       },
       "original": {
