@@ -11,3 +11,8 @@ pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
     _ = b;
     @import("macos_sdk").addPaths(step);
 }
+
+pub fn addPathsModule(b: *std.Build, m: *std.Build.Module) !void {
+    _ = b;
+    @import("macos_sdk").addPathsModule(m);
+}

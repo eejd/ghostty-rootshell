@@ -59,7 +59,10 @@ pub fn build(b: *std.Build) !void {
     });
 
     if (target.result.isDarwin()) {
-        if (!target.query.isNative()) try @import("apple_sdk").addPaths(b, lib);
+        if (!target.query.isNative()) {
+            try @import("apple_sdk").addPaths(b, lib);
+            try @import("apple_sdk").addPathsModule(b, module);
+        }
         lib.addCSourceFile(.{
             .file = imgui.path("backends/imgui_impl_metal.mm"),
             .flags = flags.items,
