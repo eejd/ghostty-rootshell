@@ -9,8 +9,8 @@
             .hash = "122029743e5d96aa1b57a1b99ff58bf13ff9ed6d8f624ac3ae8074062feb91c5bd8d",
         },
         .mach_glfw = .{
-            .url = "https://github.com/der-teufel-programming/mach-glfw/archive/cf3a3fdfcbcdabe3529fa3ad6815ff5af7b38538.tar.gz",
-            .hash = "12200ce85e5d72069d695fe4ac4f4dcc4686d89bb80e1d9a3308396dfac898255f0e",
+            .url = "https://github.com/der-teufel-programming/mach-glfw/archive/7dc809a7afdea4319d26e10f7eb2f80c61430ee3.tar.gz",
+            .hash = "122079bbfe9a438e11fa0ba02d3523cfbfcd0e07252c953743319124c87b48d594f5",
         },
         .zig_objc = .{
             .url = "https://github.com/mitchellh/zig-objc/archive/294e0f3765a96613b45ff7dd594bf99e22409e96.tar.gz",
