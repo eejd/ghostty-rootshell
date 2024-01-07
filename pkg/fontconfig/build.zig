@@ -88,7 +88,7 @@ pub fn build(b: *std.Build) !void {
         "-fno-sanitize=undefined",
         "-fno-sanitize-trap=undefined",
     });
-    // const target_info = try NativeTargetInfo.detect(target);
+
     switch (target.result.ptrBitWidth()) {
         32 => try flags.appendSlice(&.{
             "-DSIZEOF_VOID_P=4",
