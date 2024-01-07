@@ -165,7 +165,7 @@ vertex VertexOut uber_vertex(
     if (input.mode == MODE_FG_CONSTRAINED) {
       if (glyph_size.x > cell_size_scaled.x) {
         float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
-        glyph_offset.y += glyph_size.y - new_y;
+        glyph_offset.y += (glyph_size.y - new_y) / 2;
         glyph_size.y = new_y;
         glyph_size.x = cell_size_scaled.x;
       }

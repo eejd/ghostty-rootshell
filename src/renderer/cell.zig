@@ -41,7 +41,9 @@ pub fn fgMode(
         // the subsequent character is empty, then we allow it to use
         // the full glyph size. See #1071.
         .text => text: {
-            if (!ziglyph.general_category.isPrivateUse(@intCast(cell.char))) {
+            if (!ziglyph.general_category.isPrivateUse(@intCast(cell.char)) and
+                !ziglyph.blocks.isDingbats(@intCast(cell.char)))
+            {
                 break :text .normal;
             }
 
