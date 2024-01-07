@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) !void {
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
         try apple_sdk.addPaths(b, lib);
         lib.linkFramework("ApplicationServices");
+        module.linkFramework("ApplicationServices", .{});
     }
 
     lib.addCSourceFile(.{
