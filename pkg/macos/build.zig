@@ -30,11 +30,13 @@ pub fn build(b: *std.Build) !void {
     lib.linkFramework("CoreText");
     lib.linkFramework("CoreVideo");
 
-    module.linkFramework("Carbon", .{});
-    module.linkFramework("CoreFoundation", .{});
-    module.linkFramework("CoreGraphics", .{});
-    module.linkFramework("CoreText", .{});
-    module.linkFramework("CoreVideo", .{});
+    if (target.result.isDarwin()) {
+        module.linkFramework("Carbon", .{});
+        module.linkFramework("CoreFoundation", .{});
+        module.linkFramework("CoreGraphics", .{});
+        module.linkFramework("CoreText", .{});
+        module.linkFramework("CoreVideo", .{});
+    }
 
     if (!target.query.isNative()) try apple_sdk.addPaths(b, lib);
 
