@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) !void {
     lib.linkLibC();
     lib.linkLibCpp();
     lib.addIncludePath(upstream.path("src"));
+    module.addIncludePath(upstream.path("src"));
 
     const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(freetype_dep.artifact("freetype"));

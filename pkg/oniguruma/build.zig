@@ -5,10 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("oniguruma", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("oniguruma", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("oniguruma", .{});
     const lib = try buildOniguruma(b, upstream, target, optimize);
+    module.addIncludePath(upstream.path("src"));
     b.installArtifact(lib);
 
     {

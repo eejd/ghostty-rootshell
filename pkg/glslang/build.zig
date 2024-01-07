@@ -4,11 +4,14 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("glslang", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("glslang", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("glslang", .{});
     const lib = try buildGlslang(b, upstream, target, optimize);
     b.installArtifact(lib);
+
+    module.addIncludePath(upstream.path(""));
+    module.addIncludePath(.{ .path = "override" });
 
     {
         const test_exe = b.addTest(.{
