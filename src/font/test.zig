@@ -15,3 +15,7 @@ pub const fontVariable = @embedFile("res/Lilex-VF.ttf");
 /// Cozette is a unique font because it embeds some emoji characters
 /// but has a text presentation.
 pub const fontCozette = @embedFile("res/CozetteVector.ttf");
+
+/// Monaspace has weird ligature behaviors we want to test in our shapers
+/// so we embed it here.
+pub const fontMonaspaceNeon = @embedFile("res/MonaspaceNeon-Regular.otf");

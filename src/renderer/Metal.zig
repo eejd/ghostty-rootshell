@@ -1796,12 +1796,12 @@ fn updateCell(
     };
 
     // If the cell has a character, draw it
-    if (cell.char > 0) {
+    if (cell.char > 0) fg: {
         // Render
         const glyph = try self.font_group.renderGlyph(
             self.alloc,
             shaper_run.font_index,
-            shaper_cell.glyph_index,
+            shaper_cell.glyph_index orelse break :fg,
             .{
                 .grid_metrics = self.grid_metrics,
                 .thicken = self.config.font_thicken,
