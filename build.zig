@@ -445,21 +445,21 @@ pub fn build(b: *std.Build) !void {
     }
 
     // On Mac we can build the embedding library.
-    if (builtin.target.isDarwin() and target.isDarwin()) {
+    if (builtin.target.isDarwin() and target.result.isDarwin()) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = .{
+                .target = b.resolveTargetQuery(.{
                     .cpu_arch = .aarch64,
                     .os_tag = .macos,
-                    .os_version_min = target.os_version_min,
-                },
+                    .os_version_min = target.query.os_version_min,
+                }),
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
-            lib.addOptions("build_options", exe_options);
+            lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -479,16 +479,16 @@ pub fn build(b: *std.Build) !void {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
                 .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = .{
+                .target = b.resolveTargetQuery(.{
                     .cpu_arch = .x86_64,
                     .os_tag = .macos,
-                    .os_version_min = target.os_version_min,
-                },
+                    .os_version_min = target.query.os_version_min,
+                }),
                 .optimize = optimize,
             });
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
-            lib.addOptions("build_options", exe_options);
+            lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
