@@ -13,12 +13,12 @@
             .hash = "12200ce85e5d72069d695fe4ac4f4dcc4686d89bb80e1d9a3308396dfac898255f0e",
         },
         .zig_objc = .{
-            .url = "https://github.com/der-teufel-programming/zig-objc/archive/31298087bbb7b9346737a6dfd8c87e21db066152.tar.gz",
-            .hash = "122083bcd6341d2e7e2e34af42e86888a9f5e84516b28d2f61b1251c2fe054ee94d8",
+            .url = "https://github.com/mitchellh/zig-objc/archive/294e0f3765a96613b45ff7dd594bf99e22409e96.tar.gz",
+            .hash = "1220ae28cc6af7600c6f23db1573b33ca3b8accd15e60a1fe1a2c979c20868f151fa",
         },
         .zig_js = .{
-            .url = "https://github.com/der-teufel-programming/zig-js/archive/bbb15f9ff39c5caaf64998d8c6d2483cd575787b.tar.gz",
-            .hash = "1220ddc4e61d7bff3eab90661f0849dedeabc9840648084c994416bdd8ac4697d85b",
+            .url = "https://github.com/mitchellh/zig-js/archive/d4edb682733aef8dc3933683272bdf7c8b9fe658.tar.gz",
+            .hash = "1220df81f0e65cc9ccd3628572c611e6f267a71f1bff1be19d50f4ac49ee2a83c324",
         },
         .ziglyph = .{
             .url = "https://codeberg.org/dude_the_builder/ziglyph/archive/0e17bd36a4e882b194a87c283bd78562ea215116.tar.gz",
