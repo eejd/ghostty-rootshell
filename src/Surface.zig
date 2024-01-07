@@ -2788,6 +2788,17 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .clear_screen => {
+            // This is a duplicate of some of the logic in termio.clearScreen
+            // but we need to do this here so we can know the answer before
+            // we send the message. If the currently active screen is on the
+            // alternate screen then clear screen does nothing so we want to
+            // return false so the keybind can be unconsumed.
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                if (self.io.terminal.active_screen == .alternate) return false;
+            }
+
             _ = self.io_thread.mailbox.push(.{
                 .clear_screen = .{ .history = true },
             }, .{ .forever = {} });
