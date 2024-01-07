@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) !void {
 
     const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(freetype_dep.artifact("freetype"));
+    module.addIncludePath(freetype_dep.builder.dependency("freetype", .{}).path("include"));
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("cimgui", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("cimgui", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const imgui = b.dependency("imgui", .{});
     const freetype = b.dependency("freetype", .{
@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     lib.addIncludePath(imgui.path(""));
+    module.addIncludePath(.{ .path = "vendor" });
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

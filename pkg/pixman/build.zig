@@ -13,12 +13,14 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibC();
-    if (!(target.result.os.tag == .windows)) {
+    if (target.result.os.tag != .windows) {
         lib.linkSystemLibrary("pthread");
     }
 
     lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(.{ .path = "" });
+    module.addIncludePath(upstream.path("pixman"));
+    module.addIncludePath(.{ .path = "" });
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
@@ -50,12 +52,11 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     lib.installHeader("pixman-version.h", "pixman-version.h");
     lib.installHeadersDirectoryOptions(.{
