@@ -13,6 +13,12 @@ pub fn is_display(display: ?*c.GdkDisplay) bool {
     ) != 0;
 }
 
+/// Returns true if the app is running on X11
+pub fn is_current_display_server() bool {
+    const display = c.gdk_display_get_default();
+    return is_display(display);
+}
+
 pub const Xkb = struct {
     base_event_code: c_int,
     funcs: Funcs,
