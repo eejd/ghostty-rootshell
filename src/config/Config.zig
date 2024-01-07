@@ -1674,16 +1674,22 @@ pub fn finalize(self: *Config) !void {
             // set to /bin/sh.
             if (self.command) |cmd|
                 log.info("shell src=config value={s}", .{cmd})
-            else {
-                if (!internal_os.isFlatpak()) {
-                    if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
-                        log.info("default shell source=env value={s}", .{value});
-                        self.command = value;
+            else shell_env: {
+                // Flatpak always gets its shell from outside the sandbox
+                if (internal_os.isFlatpak()) break :shell_env;
 
-                        // If we don't need the working directory, then we can exit now.
-                        if (!wd_home) break :command;
-                    } else |_| {}
-                }
+                // If we were launched from the desktop, our SHELL env var
+                // will represent our SHELL at login time. We want to use the
+                // latest shell from /etc/passwd or directory services.
+                if (internal_os.launchedFromDesktop()) break :shell_env;
+
+                if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
+                    log.info("default shell source=env value={s}", .{value});
+                    self.command = value;
+
+                    // If we don't need the working directory, then we can exit now.
+                    if (!wd_home) break :command;
+                } else |_| {}
             }
 
             switch (builtin.os.tag) {

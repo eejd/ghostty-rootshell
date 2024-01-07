@@ -410,6 +410,21 @@ pub fn init(
                     _ = try group.addFace(.bold_italic, .{ .deferred = face });
                 } else log.warn("font-family-bold-italic not found: {s}", .{family});
             }
+
+            // On macOS, always search for and add the Apple Emoji font
+            // as our preferred emoji font for fallback. We do this in case
+            // people add other emoji fonts to their system, we always want to
+            // prefer the official one. Users can override this by explicitly
+            // specifying a font-family for emoji.
+            if (comptime builtin.os.tag == .macos) {
+                var disco_it = try disco.discover(alloc, .{
+                    .family = "Apple Color Emoji",
+                });
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    _ = try group.addFace(.regular, .{ .fallback_deferred = face });
+                }
+            }
         }
 
         // Our built-in font will be used as a backup
@@ -2773,6 +2788,17 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .clear_screen => {
+            // This is a duplicate of some of the logic in termio.clearScreen
+            // but we need to do this here so we can know the answer before
+            // we send the message. If the currently active screen is on the
+            // alternate screen then clear screen does nothing so we want to
+            // return false so the keybind can be unconsumed.
+            {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                if (self.io.terminal.active_screen == .alternate) return false;
+            }
+
             _ = self.io_thread.mailbox.push(.{
                 .clear_screen = .{ .history = true },
             }, .{ .forever = {} });
