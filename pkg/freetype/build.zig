@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const libpng_enabled = b.option(bool, "enable-libpng", "Build libpng") orelse false;
 
-    _ = b.addModule("freetype", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("freetype", .{ .root_source_file = .{ .path = "main.zig" } });
 
     const upstream = b.dependency("freetype", .{});
     const lib = b.addStaticLibrary(.{
@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
     lib.addIncludePath(upstream.path("include"));
+    module.addIncludePath(upstream.path("include"));
+    module.addIncludePath(.{ .path = "" });
 
     // Dependencies
     const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
@@ -38,12 +40,11 @@ pub fn build(b: *std.Build) !void {
     });
     if (libpng_enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
 
-    for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     switch (target.result.os.tag) {
         .linux => lib.addCSourceFile(.{
