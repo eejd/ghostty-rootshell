@@ -37,7 +37,10 @@ pub const Cell = struct {
     /// this cell is available in the text run. This glyph index is only
     /// valid for a given GroupCache and FontIndex that was used to create
     /// the runs.
-    glyph_index: u32,
+    ///
+    /// If this is null then this is an empty cell. If there are styles
+    /// then those should be applied but there is no glyph to render.
+    glyph_index: ?u32,
 };
 
 /// Options for shapers.

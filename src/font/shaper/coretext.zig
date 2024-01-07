@@ -230,6 +230,10 @@ pub const Shaper = struct {
             cell_offset.x += advance.width;
             cell_offset.y += advance.height;
 
+            // TODO: harfbuzz shaper has handling for inserting blank
+            // cells for multi-cell ligatures. Do we need to port that?
+            // Example: try Monaspace "===" with a background color.
+
             _ = pos;
             // const i = self.cell_buf.items.len - 1;
             // log.warn(
