@@ -182,7 +182,12 @@ pub const Shaper = struct {
                     // multiple can be replaced. e.g. "==="
                     for (info[i + 1 ..]) |next_info_v| {
                         if (next_info_v.cluster != info_v.cluster) {
-                            break :width next_info_v.cluster - info_v.cluster;
+                            // We do a saturating sub here because for RTL
+                            // text, the next cluster can be less than the
+                            // current cluster. We don't really support RTL
+                            // currently so we do this to prevent an underflow
+                            // but it isn't correct generally.
+                            break :width next_info_v.cluster -| info_v.cluster;
                         }
                     }
                 }
