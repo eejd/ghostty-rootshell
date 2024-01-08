@@ -49,6 +49,10 @@ subprocess: Subprocess,
 /// when the process exits too quickly.
 abnormal_runtime_threshold_ms: u32,
 
+/// Equiry string - the string to send back when we receive a ENQ (0x05)
+/// from the process.
+enquiry_string: ?[]const u8 = null,
+
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
 /// just stores internal state about a grid.
@@ -112,6 +116,7 @@ pub const DerivedConfig = struct {
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
     abnormal_runtime_threshold_ms: u32,
+    enquiry_string: ?[]const u8,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -131,6 +136,7 @@ pub const DerivedConfig = struct {
             .term = config.term,
             .grapheme_width_method = config.@"grapheme-width-method",
             .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
+            .enquiry_string = config.@"enquiry-string",
         };
     }
 
@@ -210,6 +216,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .osc_color_report_format = config.osc_color_report_format,
         .data = null,
         .abnormal_runtime_threshold_ms = opts.config.abnormal_runtime_threshold_ms,
+        .enquiry_string = if (opts.config.enquiry_string) |s| try alloc.dupe(u8, s) else null,
     };
 }
 
@@ -218,6 +225,8 @@ pub fn deinit(self: *Exec) void {
 
     // Clean up our other members
     self.terminal.deinit(self.alloc);
+
+    if (self.enquiry_string) |s| self.alloc.free(s);
 }
 
 pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
@@ -297,6 +306,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 .foreground_color = self.foreground_color,
                 .background_color = self.background_color,
                 .osc_color_report_format = self.osc_color_report_format,
+                .enquiry_string = if (self.enquiry_string) |s| try self.alloc.dupe(u8, s) else null,
             },
 
             .parser = .{
@@ -431,6 +441,8 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
             config.cursor_style,
             config.cursor_blink,
         );
+        if (data.terminal_stream.handler.enquiry_string) |s| data.terminal_stream.handler.alloc.free(s);
+        data.terminal_stream.handler.enquiry_string = if (config.enquiry_string) |s| try data.terminal_stream.handler.alloc.dupe(u8, s) else null;
     }
 
     // Set the image size limits
@@ -1695,9 +1707,12 @@ const StreamHandler = struct {
 
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
+    enquiry_string: ?[]const u8 = null,
+
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
         self.dcs.deinit();
+        if (self.enquiry_string) |s| self.alloc.free(s);
     }
 
     inline fn queueRender(self: *StreamHandler) !void {
@@ -2390,7 +2405,8 @@ const StreamHandler = struct {
     }
 
     pub fn enquiry(self: *StreamHandler) !void {
-        self.messageWriter(.{ .write_stable = "" });
+        log.debug("sending equiry string '{any}''", .{self.enquiry_string orelse ""});
+        self.messageWriter(.{ .write_stable = self.enquiry_string orelse "" });
     }
 
     pub fn scrollDown(self: *StreamHandler, count: usize) !void {

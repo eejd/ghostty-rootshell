@@ -10,11 +10,9 @@ operator.
 
 ## Implementation Details
 
-- ghostty always sends `""`
-
-## TODO
-
-- Make the answerback configurable
+The answerback can be configured in the config file using the `enquiry-string`
+configuration setting or on the command line using the `--enquiry-string`
+parameter. The default is to send an empty string (`""`).
 
 ## References
 
