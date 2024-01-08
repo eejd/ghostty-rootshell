@@ -186,7 +186,7 @@ fn kitty(
             }
         }
 
-        if (self.kitty_flags.report_associated) associated: {
+        if (self.kitty_flags.report_associated and seq.event != .release) associated: {
             if (comptime builtin.target.isDarwin()) {
                 // macOS has special logic because alt+key can produce unicode
                 // characters. If we are treating option as alt, then we do NOT
