@@ -1364,6 +1364,29 @@ test "kitty: report associated" {
     try testing.expectEqualStrings("\x1b[106:74;2;74u", actual);
 }
 
+test "kitty: report associated on release" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .action = .release,
+            .key = .j,
+            .mods = .{ .shift = true },
+            .utf8 = "J",
+            .unshifted_codepoint = 106,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_all = true,
+            .report_alternates = true,
+            .report_associated = true,
+            .report_events = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("[106:74;2:3u", actual[1..]);
+}
+
 test "kitty: alternates omit control characters" {
     var buf: [128]u8 = undefined;
     var enc: KeyEncoder = .{
