@@ -265,11 +265,16 @@ pub fn italicize(self: *Group) !void {
         const list = self.faces.get(.regular);
         if (list.items.len == 0) return;
 
-        // The font must be loaded.
-        break :regular try self.faceFromIndex(.{
-            .style = .regular,
-            .idx = 0,
-        });
+        // Find our first font that is text.
+        for (0..list.items.len) |i| {
+            const face = try self.faceFromIndex(.{
+                .style = .regular,
+                .idx = @intCast(i),
+            });
+            if (face.presentation == .text) break :regular face;
+        }
+
+        return;
     };
 
     // Try to italicize it.
