@@ -410,21 +410,6 @@ pub fn init(
                     _ = try group.addFace(.bold_italic, .{ .deferred = face });
                 } else log.warn("font-family-bold-italic not found: {s}", .{family});
             }
-
-            // On macOS, always search for and add the Apple Emoji font
-            // as our preferred emoji font for fallback. We do this in case
-            // people add other emoji fonts to their system, we always want to
-            // prefer the official one. Users can override this by explicitly
-            // specifying a font-family for emoji.
-            if (comptime builtin.os.tag == .macos) {
-                var disco_it = try disco.discover(alloc, .{
-                    .family = "Apple Color Emoji",
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    _ = try group.addFace(.regular, .{ .fallback_deferred = face });
-                }
-            }
         }
 
         // Our built-in font will be used as a backup
@@ -439,6 +424,22 @@ pub fn init(
 
         // Auto-italicize if we have to.
         try group.italicize();
+
+        // On macOS, always search for and add the Apple Emoji font
+        // as our preferred emoji font for fallback. We do this in case
+        // people add other emoji fonts to their system, we always want to
+        // prefer the official one. Users can override this by explicitly
+        // specifying a font-family for emoji.
+        if (comptime builtin.os.tag == .macos) apple_emoji: {
+            const disco = group.discover orelse break :apple_emoji;
+            var disco_it = try disco.discover(alloc, .{
+                .family = "Apple Color Emoji",
+            });
+            defer disco_it.deinit();
+            if (try disco_it.next()) |face| {
+                _ = try group.addFace(.regular, .{ .fallback_deferred = face });
+            }
+        }
 
         // Emoji fallback. We don't include this on Mac since Mac is expected
         // to always have the Apple Emoji available on the system.
