@@ -498,7 +498,7 @@ $ zig build -Doptimize=ReleaseFast
 $ cd macos && xcodebuild
 ```
 
-> [!NOTE] 
+> [!NOTE]
 > If you're using the Nix environment on macOS, `xcodebuild` will
 > fail due to the linker environment variables Nix sets. You must
 > run the `xcodebuild` command specifically outside of the Nix
