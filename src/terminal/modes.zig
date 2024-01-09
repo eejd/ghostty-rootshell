@@ -206,6 +206,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "mouse_alternate_scroll", .value = 1007, .default = true },
     .{ .name = "mouse_format_urxvt", .value = 1015 },
     .{ .name = "mouse_format_sgr_pixels", .value = 1016 },
+    .{ .name = "ignore_keypad_with_numlock", .value = 1035, .default = true },
     .{ .name = "alt_esc_prefix", .value = 1036, .default = true },
     .{ .name = "alt_sends_escape", .value = 1039 },
     .{ .name = "reverse_wrap_extended", .value = 1045 },
