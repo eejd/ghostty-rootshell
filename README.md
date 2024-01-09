@@ -498,6 +498,12 @@ $ zig build -Doptimize=ReleaseFast
 $ cd macos && xcodebuild
 ```
 
+> [!NOTE] 
+> If you're using the Nix environment on macOS, `xcodebuild` will
+> fail due to the linker environment variables Nix sets. You must
+> run the `xcodebuild` command specifically outside of the Nix
+> environment.
+
 This will output the app to `macos/build/ReleaseLocal/Ghostty.app`.
 This app will be not be signed or notarized.
 [Official continuous builds are available](https://github.com/mitchellh/ghostty/releases/tag/tip)
