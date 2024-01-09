@@ -26,6 +26,7 @@ macos_option_as_alt: config.OptionAsAlt = .false,
 alt_esc_prefix: bool = false,
 cursor_key_application: bool = false,
 keypad_key_application: bool = false,
+ignore_keypad_with_numlock: bool = false,
 modify_other_keys_state_2: bool = false,
 kitty_flags: KittyFlags = .{},
 
@@ -245,6 +246,7 @@ fn legacy(
         all_mods,
         self.cursor_key_application,
         self.keypad_key_application,
+        self.ignore_keypad_with_numlock,
         self.modify_other_keys_state_2,
     )) |sequence| pc_style: {
         // If we're pressing enter and have UTF-8 text, we probably are
@@ -416,13 +418,32 @@ fn pcStyleFunctionKey(
     keyval: key.Key,
     mods: key.Mods,
     cursor_key_application: bool,
-    keypad_key_application: bool,
+    keypad_key_application_req: bool,
+    ignore_keypad_with_numlock: bool,
     modify_other_keys: bool, // True if state 2
 ) ?[]const u8 {
     // We only want binding-sensitive mods because lock keys
     // and directional modifiers (left/right) don't matter for
     // pc-style function keys.
     const mods_int = mods.binding().int();
+
+    // Keypad application keymode isn't super straightforward.
+    // On xterm, in VT220 mode, numlock alone is enough to trigger
+    // application mode. But in more modern modes, numlock is
+    // ignored by default via mode 1035 (default true). If mode
+    // 1035 is on, we always are in numerical keypad mode. If
+    // mode 1035 is off, we are in application mode if the
+    // proper numlock state is pressed. The numlock state is implicitly
+    // determined based on the keycode sent (i.e. 1 with numlock
+    // on will be kp_end).
+    const keypad_key_application = keypad: {
+        // If we're ignoring keypad then this is always false.
+        // In other words, we're always in numerical keypad mode.
+        if (ignore_keypad_with_numlock) break :keypad false;
+
+        // If we're not ignoring then we enable the desired state.
+        break :keypad keypad_key_application_req;
+    };
 
     for (function_keys.keys.get(keyval)) |entry| {
         switch (entry.cursor) {
@@ -1675,6 +1696,70 @@ test "legacy: keypad enter" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("\r", actual);
+}
+
+test "legacy: keypad 1" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .kp_1,
+            .mods = .{},
+            .consumed_mods = .{},
+            .utf8 = "1",
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("1", actual);
+}
+
+test "legacy: keypad 1 with application keypad" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .kp_1,
+            .mods = .{},
+            .consumed_mods = .{},
+            .utf8 = "1",
+        },
+        .keypad_key_application = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1bOq", actual);
+}
+
+test "legacy: keypad 1 with application keypad and numlock" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .kp_1,
+            .mods = .{ .num_lock = true },
+            .consumed_mods = .{},
+            .utf8 = "1",
+        },
+        .keypad_key_application = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1bOq", actual);
+}
+
+test "legacy: keypad 1 with application keypad and numlock ignore" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .kp_1,
+            .mods = .{ .num_lock = false },
+            .consumed_mods = .{},
+            .utf8 = "1",
+        },
+        .keypad_key_application = true,
+        .ignore_keypad_with_numlock = true,
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("1", actual);
 }
 
 test "legacy: f1" {
