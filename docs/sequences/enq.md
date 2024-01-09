@@ -25,3 +25,5 @@ parameter. The default is to send an empty string (`""`).
 - https://documentation.help/PuTTY/config-answerback.html
 - https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Single-character-functions:ENQ.C29
 - https://invisible-island.net/xterm/manpage/xterm.html#VT100-Widget-Resources:answerbackString
+- https://iterm2.com/documentation-preferences-profiles-terminal.html
+- https://iterm2.com/documentation-scripting.html
