@@ -159,7 +159,7 @@ fn entryForMode(comptime mode: Mode) ModeEntry {
 /// A single entry of a possible mode we support. This is used to
 /// dynamically define the enum and other tables.
 const ModeEntry = struct {
-    name: []const u8,
+    name: [:0]const u8,
     value: comptime_int,
     default: bool = false,
 
