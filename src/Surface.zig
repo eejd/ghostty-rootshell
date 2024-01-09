@@ -511,6 +511,7 @@ pub fn init(
     // Create the renderer thread
     var render_thread = try renderer.Thread.init(
         alloc,
+        config,
         rt_surface,
         &self.renderer,
         &self.renderer_state,
@@ -831,23 +832,14 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
 
     // We need to store our configs in a heap-allocated pointer so that
     // our messages aren't huge.
-    var renderer_config_ptr = try self.alloc.create(Renderer.DerivedConfig);
-    errdefer self.alloc.destroy(renderer_config_ptr);
+    var renderer_message = try renderer.Message.initChangeConfig(self.alloc, config);
+    errdefer renderer_message.deinit();
     var termio_config_ptr = try self.alloc.create(termio.Impl.DerivedConfig);
     errdefer self.alloc.destroy(termio_config_ptr);
-
-    // Update our derived configurations for the renderer and termio,
-    // then send them a message to update.
-    renderer_config_ptr.* = try Renderer.DerivedConfig.init(self.alloc, config);
-    errdefer renderer_config_ptr.deinit();
     termio_config_ptr.* = try termio.Impl.DerivedConfig.init(self.alloc, config);
     errdefer termio_config_ptr.deinit();
-    _ = self.renderer_thread.mailbox.push(.{
-        .change_config = .{
-            .alloc = self.alloc,
-            .ptr = renderer_config_ptr,
-        },
-    }, .{ .forever = {} });
+
+    _ = self.renderer_thread.mailbox.push(renderer_message, .{ .forever = {} });
     _ = self.io_thread.mailbox.push(.{
         .change_config = .{
             .alloc = self.alloc,

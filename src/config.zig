@@ -10,6 +10,7 @@ pub const url = @import("config/url.zig");
 pub const CopyOnSelect = Config.CopyOnSelect;
 pub const Keybinds = Config.Keybinds;
 pub const MouseShiftCapture = Config.MouseShiftCapture;
+pub const CustomShaderAnimation = Config.CustomShaderAnimation;
 pub const NonNativeFullscreen = Config.NonNativeFullscreen;
 pub const OptionAsAlt = Config.OptionAsAlt;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;

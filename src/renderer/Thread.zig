@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const apprt = @import("../apprt.zig");
+const configpkg = @import("../config.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const tracy = @import("tracy");
 const trace = tracy.trace;
@@ -72,6 +73,9 @@ mailbox: *Mailbox,
 /// Mailbox to send messages to the app thread
 app_mailbox: App.Mailbox,
 
+/// Configuration we need derived from the main config.
+config: DerivedConfig,
+
 flags: packed struct {
     /// This is true when a blinking cursor should be visible and false
     /// when it should not be visible. This is toggled on a timer by the
@@ -82,11 +86,22 @@ flags: packed struct {
     has_inspector: bool = false,
 } = .{},
 
+pub const DerivedConfig = struct {
+    custom_shader_animation: configpkg.CustomShaderAnimation,
+
+    pub fn init(config: *const configpkg.Config) DerivedConfig {
+        return .{
+            .custom_shader_animation = config.@"custom-shader-animation",
+        };
+    }
+};
+
 /// Initialize the thread. This does not START the thread. This only sets
 /// up all the internal state necessary prior to starting the thread. It
 /// is up to the caller to start the thread with the threadMain entrypoint.
 pub fn init(
     alloc: Allocator,
+    config: *const configpkg.Config,
     surface: *apprt.Surface,
     renderer_impl: *renderer.Renderer,
     state: *renderer.State,
@@ -122,6 +137,7 @@ pub fn init(
 
     return Thread{
         .alloc = alloc,
+        .config = DerivedConfig.init(config),
         .loop = loop,
         .wakeup = wakeup_h,
         .stop = stop_h,
@@ -199,6 +215,7 @@ fn startDrawTimer(self: *Thread) void {
     // If our renderer doesn't suppoort animations then we never run this.
     if (!@hasDecl(renderer.Renderer, "hasAnimations")) return;
     if (!self.renderer.hasAnimations()) return;
+    if (self.config.custom_shader_animation == .false) return;
 
     // Set our active state so it knows we're running. We set this before
     // even checking the active state in case we have a pending shutdown.
@@ -236,8 +253,10 @@ fn drainMailbox(self: *Thread) !void {
                 try self.renderer.setFocus(v);
 
                 if (!v) {
-                    // Stop the draw timer
-                    self.stopDrawTimer();
+                    if (self.config.custom_shader_animation != .always) {
+                        // Stop the draw timer
+                        self.stopDrawTimer();
+                    }
 
                     // If we're not focused, then we stop the cursor blink
                     if (self.cursor_c.state() == .active and
@@ -308,8 +327,9 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .change_config => |config| {
-                defer config.alloc.destroy(config.ptr);
-                try self.renderer.changeConfig(config.ptr);
+                defer message.deinit();
+                try self.changeConfig(config.thread);
+                try self.renderer.changeConfig(config.impl);
 
                 // Stop and start the draw timer to capture the new
                 // hasAnimations value.
@@ -320,6 +340,10 @@ fn drainMailbox(self: *Thread) !void {
             .inspector => |v| self.flags.has_inspector = v,
         }
     }
+}
+
+fn changeConfig(self: *Thread, config: *const DerivedConfig) !void {
+    self.config = config.*;
 }
 
 fn wakeupCallback(
