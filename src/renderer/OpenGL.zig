@@ -252,7 +252,6 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
-    custom_shader_animation: bool,
     links: link.Set,
 
     pub fn init(
@@ -315,7 +314,6 @@ pub const DerivedConfig = struct {
                 null,
 
             .custom_shaders = custom_shaders,
-            .custom_shader_animation = config.@"custom-shader-animation",
             .links = links,
 
             .arena = arena,
@@ -558,7 +556,7 @@ pub fn threadExit(self: *const OpenGL) void {
 /// timer is used.
 pub fn hasAnimations(self: *const OpenGL) bool {
     const state = self.gl_state orelse return false;
-    return state.custom != null and self.config.custom_shader_animation;
+    return state.custom != null;
 }
 
 /// Callback when the focus changes for the terminal this is rendering.

@@ -155,7 +155,6 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
-    custom_shader_animation: bool,
     links: link.Set,
 
     pub fn init(
@@ -218,7 +217,6 @@ pub const DerivedConfig = struct {
                 null,
 
             .custom_shaders = custom_shaders,
-            .custom_shader_animation = config.@"custom-shader-animation",
             .links = links,
 
             .arena = arena,
@@ -488,8 +486,7 @@ pub fn threadExit(self: *const Metal) void {
 /// True if our renderer has animations so that a higher frequency
 /// timer is used.
 pub fn hasAnimations(self: *const Metal) bool {
-    return self.custom_shader_state != null and
-        self.config.custom_shader_animation;
+    return self.custom_shader_state != null;
 }
 
 /// Returns the grid size for a given screen size. This is safe to call
