@@ -898,7 +898,7 @@ term: []const u8 = "xterm-ghostty",
 
 /// String to send when we receive ENQ (0x05) from the command that we are
 /// running. Defaults to "" if not set.
-@"enquiry-string": ?[]const u8 = null,
+@"enquiry-response": ?[]const u8 = null,
 
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,

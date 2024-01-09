@@ -10,8 +10,8 @@ operator.
 
 ## Implementation Details
 
-The answerback can be configured in the config file using the `enquiry-string`
-configuration setting or on the command line using the `--enquiry-string`
+The answerback can be configured in the config file using the `enquiry-response`
+configuration setting or on the command line using the `--enquiry-response`
 parameter. The default is to send an empty string (`""`).
 
 ## References
