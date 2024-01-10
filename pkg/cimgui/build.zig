@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) !void {
 
     if (target.result.isDarwin()) {
         if (!target.query.isNative()) {
-            try @import("apple_sdk").addPaths(b, lib);
+            try @import("apple_sdk").addPaths(b, &lib.root_module);
             try @import("apple_sdk").addPaths(b, module);
         }
         lib.addCSourceFile(.{

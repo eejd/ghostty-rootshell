@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) !void {
     _ = optimize;
 }
 
-pub fn addPaths(b: *std.Build, step: anytype) !void {
+pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
     // The active SDK we want to use
     const sdk = "MacOSX14.sdk";
 
@@ -19,19 +19,19 @@ pub fn addPaths(b: *std.Build, step: anytype) !void {
         " \r\n",
     );
 
-    step.addSystemFrameworkPath(.{
+    m.addSystemFrameworkPath(.{
         .cwd_relative = b.pathJoin(&.{
             path,
             "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/System/Library/Frameworks",
         }),
     });
-    step.addSystemIncludePath(.{
+    m.addSystemIncludePath(.{
         .cwd_relative = b.pathJoin(&.{
             path,
             "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/usr/include",
         }),
     });
-    step.addLibraryPath(.{
+    m.addLibraryPath(.{
         .cwd_relative = b.pathJoin(&.{
             path,
             "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/usr/lib",

@@ -792,7 +792,7 @@ fn addDeps(
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().isDarwin()) {
-        try @import("apple_sdk").addPaths(b, step);
+        try @import("apple_sdk").addPaths(b, &step.root_module);
     }
 
     // We always need the Zig packages
