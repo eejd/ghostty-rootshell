@@ -88,7 +88,7 @@ pub const DerivedConfig = struct {
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
     abnormal_runtime_threshold_ms: u32,
-    enquiry_response: ?[]const u8,
+    enquiry_response: []const u8,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -99,7 +99,6 @@ pub const DerivedConfig = struct {
         const alloc = arena.allocator();
 
         return .{
-            .arena = arena,
             .palette = config.palette.value,
             .image_storage_limit = config.@"image-storage-limit",
             .cursor_style = config.@"cursor-style",
@@ -112,6 +111,10 @@ pub const DerivedConfig = struct {
             .grapheme_width_method = config.@"grapheme-width-method",
             .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
+
+            // This has to be last so that we copy AFTER the arena allocations
+            // above happen (Zig assigns in order).
+            .arena = arena,
         };
     }
 
@@ -1639,8 +1642,11 @@ const StreamHandler = struct {
     foreground_color: terminal.color.RGB,
     background_color: terminal.color.RGB,
 
-    osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+    /// The response to use for ENQ requests. The memory is owned by
+    /// whoever owns StreamHandler.
     enquiry_response: []const u8,
+
+    osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
     pub fn init(
         alloc: Allocator,
@@ -1660,7 +1666,7 @@ const StreamHandler = struct {
             .grid_size = grid_size,
             .terminal = t,
             .osc_color_report_format = config.osc_color_report_format,
-            .enquiry_response = config.enquiry_response orelse "",
+            .enquiry_response = config.enquiry_response,
             .default_foreground_color = config.foreground.toTerminalRGB(),
             .default_background_color = config.background.toTerminalRGB(),
             .default_cursor_style = config.cursor_style,
@@ -1680,7 +1686,7 @@ const StreamHandler = struct {
     /// Change the configuration for this handler.
     pub fn changeConfig(self: *StreamHandler, config: *DerivedConfig) void {
         self.osc_color_report_format = config.osc_color_report_format;
-        self.enquiry_response = config.enquiry_response orelse "";
+        self.enquiry_response = config.enquiry_response;
         self.default_foreground_color = config.foreground.toTerminalRGB();
         self.default_background_color = config.background.toTerminalRGB();
         self.default_cursor_style = config.cursor_style;
