@@ -36,11 +36,11 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});
         module.linkFramework("CoreVideo", .{});
-    }
 
-    if (!target.query.isNative()) {
-        try apple_sdk.addPaths(b, lib);
-        try apple_sdk.addPaths(b, module);
+        if (!target.query.isNative()) {
+            try apple_sdk.addPaths(b, lib);
+            try apple_sdk.addPaths(b, module);
+        }
     }
     b.installArtifact(lib);
 
