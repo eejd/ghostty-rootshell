@@ -1011,10 +1011,19 @@ extension Ghostty {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
+        
 
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+        
+        @IBAction override func selectAll(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            let action = "select_all"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }

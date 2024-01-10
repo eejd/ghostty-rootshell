@@ -33,6 +33,7 @@ class AppDelegate: NSObject,
     
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
+    @IBOutlet private var menuSelectAll: NSMenuItem?
 
     @IBOutlet private var menuToggleFullScreen: NSMenuItem?
     @IBOutlet private var menuZoomSplit: NSMenuItem?
@@ -257,6 +258,7 @@ class AppDelegate: NSObject,
         
         syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
+        syncMenuShortcut(action: "select_all", menuItem: self.menuSelectAll)
         
         syncMenuShortcut(action: "toggle_fullscreen", menuItem: self.menuToggleFullScreen)
         syncMenuShortcut(action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
