@@ -106,7 +106,7 @@ pub const Xkb = struct {
         if (lookup_mods & c.ShiftMask != 0) mods.shift = true;
         if (lookup_mods & c.ControlMask != 0) mods.ctrl = true;
         if (lookup_mods & c.Mod1Mask != 0) mods.alt = true;
-        if (lookup_mods & c.Mod2Mask != 0) mods.super = true;
+        if (lookup_mods & c.Mod4Mask != 0) mods.super = true;
         if (lookup_mods & c.LockMask != 0) mods.caps_lock = true;
 
         return mods;
