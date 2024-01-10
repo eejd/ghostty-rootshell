@@ -444,8 +444,8 @@ pub fn build(b: *std.Build) !void {
         b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/apps/com.mitchellh.ghostty.png");
     }
 
-    // On Mac we can build the embedding library.
-    if (builtin.target.isDarwin() and target.result.isDarwin()) {
+    // On Mac we can build the embedding library. This only handles the macOS lib.
+    if (builtin.target.isDarwin() and target.result.os.tag == .macos) {
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
@@ -792,7 +792,7 @@ fn addDeps(
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().isDarwin()) {
-        try @import("apple_sdk").addPaths(b, step);
+        try @import("apple_sdk").addPaths(b, &step.root_module);
     }
 
     // We always need the Zig packages

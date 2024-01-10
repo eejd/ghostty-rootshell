@@ -6,7 +6,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("macos", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("macos", .{
+        .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const lib = b.addStaticLibrary(.{
         .name = "macos",
@@ -36,11 +40,11 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});
         module.linkFramework("CoreVideo", .{});
-    }
 
-    if (!target.query.isNative()) {
-        try apple_sdk.addPaths(b, lib);
-        try apple_sdk.addPathsModule(b, module);
+        if (!target.query.isNative()) {
+            try apple_sdk.addPaths(b, &lib.root_module);
+            try apple_sdk.addPaths(b, module);
+        }
     }
     b.installArtifact(lib);
 

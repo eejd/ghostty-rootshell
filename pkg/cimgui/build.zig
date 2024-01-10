@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("cimgui", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("cimgui", .{
+        .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const imgui = b.dependency("imgui", .{});
     const freetype = b.dependency("freetype", .{
@@ -60,8 +64,8 @@ pub fn build(b: *std.Build) !void {
 
     if (target.result.isDarwin()) {
         if (!target.query.isNative()) {
-            try @import("apple_sdk").addPaths(b, lib);
-            try @import("apple_sdk").addPathsModule(b, module);
+            try @import("apple_sdk").addPaths(b, &lib.root_module);
+            try @import("apple_sdk").addPaths(b, module);
         }
         lib.addCSourceFile(.{
             .file = imgui.path("backends/imgui_impl_metal.mm"),
