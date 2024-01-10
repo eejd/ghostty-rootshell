@@ -78,12 +78,15 @@ class TerminalManager {
             window.toggleFullScreen(nil)
         }
         
-        // We're dispatching this async because otherwise the last-cascade-point won't work.
+        // We're dispatching this async because otherwise the lastCascadePoint doesn't
+        // take effect. Our best theory is there is some next-event-loop-tick logic
+        // that Cocoa is doing that we need to be after.
         DispatchQueue.main.async {
             // Only cascade if we aren't fullscreen.
             if (!window.styleMask.contains(.fullScreen)) {
                 Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
             }
+            
             c.showWindow(self)
         }
     }
