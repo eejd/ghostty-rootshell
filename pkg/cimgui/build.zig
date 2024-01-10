@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("cimgui", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("cimgui", .{
+        .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const imgui = b.dependency("imgui", .{});
     const freetype = b.dependency("freetype", .{

@@ -6,7 +6,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("macos", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("macos", .{
+        .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const lib = b.addStaticLibrary(.{
         .name = "macos",

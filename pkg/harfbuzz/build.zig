@@ -18,6 +18,8 @@ pub fn build(b: *std.Build) !void {
 
     const module = b.addModule("harfbuzz", .{
         .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
         .imports = &.{
             .{ .name = "freetype", .module = freetype.module("freetype") },
             .{ .name = "macos", .module = macos.module("macos") },
@@ -59,7 +61,7 @@ pub fn build(b: *std.Build) !void {
         "-DHAVE_FT_DONE_MM_VAR=1",
         "-DHAVE_FT_GET_TRANSFORM=1",
     });
-    if (coretext_enabled) {
+    if (coretext_enabled and target.result.isDarwin()) {
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
         try apple_sdk.addPaths(b, &lib.root_module);
         try apple_sdk.addPaths(b, module);

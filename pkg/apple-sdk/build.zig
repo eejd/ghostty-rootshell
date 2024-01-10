@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) !void {
 
 pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
     // The active SDK we want to use
-    const sdk = "MacOSX14.sdk";
+    const sdk = try SDK.fromTarget(m.resolved_target.?.result);
 
     // Get the path to our active Xcode installation. If this fails then
     // the zig build will fail.
@@ -19,22 +19,30 @@ pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
         " \r\n",
     );
 
-    m.addSystemFrameworkPath(.{
-        .cwd_relative = b.pathJoin(&.{
-            path,
-            "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/System/Library/Frameworks",
-        }),
+    // Base path
+    const base = b.fmt("{s}/Platforms/{s}.platform/Developer/SDKs/{s}{s}.sdk", .{
+        path,
+        sdk.platform,
+        sdk.platform,
+        sdk.version,
     });
-    m.addSystemIncludePath(.{
-        .cwd_relative = b.pathJoin(&.{
-            path,
-            "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/usr/include",
-        }),
-    });
-    m.addLibraryPath(.{
-        .cwd_relative = b.pathJoin(&.{
-            path,
-            "Platforms/MacOSX.platform/Developer/SDKs/" ++ sdk ++ "/usr/lib",
-        }),
-    });
+
+    m.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ base, "/System/Library/Frameworks" }) });
+    m.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ base, "/usr/include" }) });
+    m.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ base, "/usr/lib" }) });
 }
+
+const SDK = struct {
+    platform: []const u8,
+    version: []const u8,
+
+    pub fn fromTarget(target: std.Target) !SDK {
+        return switch (target.os.tag) {
+            .macos => .{ .platform = "MacOSX", .version = "14.2" },
+            else => {
+                std.log.err("unsupported os={}", .{target.os.tag});
+                return error.UnsupportedOS;
+            },
+        };
+    }
+};
