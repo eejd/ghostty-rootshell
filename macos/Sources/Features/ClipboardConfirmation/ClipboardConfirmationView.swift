@@ -48,10 +48,12 @@ struct ClipboardConfirmationView: View {
                     .padding()
             }
 
-            TextEditor(text: .constant(contents))
-                .textSelection(.enabled)
-                .font(.system(.body, design: .monospaced))
-                .padding(.all, 4)
+            ScrollView {
+                Text(contents)
+                    .textSelection(.enabled)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(.all, 4)
+            }
 
             HStack {
                 Spacer()
