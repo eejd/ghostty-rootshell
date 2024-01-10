@@ -7,6 +7,9 @@ pub fn build(b: *std.Build) !void {
     _ = optimize;
 }
 
+/// Add the SDK framework, include, and library paths to the given module.
+/// The module target is used to determine the SDK to use so it must have
+/// a resolved target.
 pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
     // The active SDK we want to use
     const sdk = try SDK.fromTarget(m.resolved_target.?.result);
