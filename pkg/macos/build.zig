@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) !void {
 
     if (!target.query.isNative()) {
         try apple_sdk.addPaths(b, lib);
-        try apple_sdk.addPathsModule(b, module);
+        try apple_sdk.addPaths(b, module);
     }
     b.installArtifact(lib);
 
