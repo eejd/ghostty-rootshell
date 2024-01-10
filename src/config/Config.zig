@@ -911,6 +911,10 @@ keybind: Keybinds = .{},
 /// from working properly. https://github.com/vim/vim/pull/13211 fixes this.
 term: []const u8 = "xterm-ghostty",
 
+/// String to send when we receive ENQ (0x05) from the command that we are
+/// running. Defaults to "" if not set.
+@"enquiry-response": []const u8 = "",
+
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 

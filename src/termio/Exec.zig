@@ -44,10 +44,8 @@ alloc: Allocator,
 /// This is the pty fd created for the subcommand.
 subprocess: Subprocess,
 
-/// The number of milliseconds below which we consider a process
-/// exit to be abnormal. This is used to show an error message
-/// when the process exits too quickly.
-abnormal_runtime_threshold_ms: u32,
+/// The derived configuration for this termio implementation.
+config: DerivedConfig,
 
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
@@ -70,30 +68,6 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
-/// The default cursor style. We need to know this so that we can set
-/// it when a CSI q with default is called.
-default_cursor_style: terminal.Cursor.Style,
-default_cursor_blink: ?bool,
-default_cursor_color: ?terminal.color.RGB,
-
-/// Actual cursor color
-cursor_color: ?terminal.color.RGB,
-
-/// Default foreground color as set by the config file
-default_foreground_color: terminal.color.RGB,
-
-/// Default background color as set by the config file
-default_background_color: terminal.color.RGB,
-
-/// Actual foreground color
-foreground_color: terminal.color.RGB,
-
-/// Actual background color
-background_color: terminal.color.RGB,
-
-/// The OSC 10/11 reply style.
-osc_color_report_format: configpkg.Config.OSCColorReportFormat,
-
 /// The data associated with the currently running thread.
 data: ?*EventData,
 
@@ -101,6 +75,8 @@ data: ?*EventData,
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
 pub const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
     palette: terminal.color.Palette,
     image_storage_limit: usize,
     cursor_style: terminal.Cursor.Style,
@@ -112,12 +88,15 @@ pub const DerivedConfig = struct {
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
     abnormal_runtime_threshold_ms: u32,
+    enquiry_response: []const u8,
 
     pub fn init(
         alloc_gpa: Allocator,
         config: *const configpkg.Config,
     ) !DerivedConfig {
-        _ = alloc_gpa;
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
 
         return .{
             .palette = config.palette.value,
@@ -128,24 +107,25 @@ pub const DerivedConfig = struct {
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
-            .term = config.term,
+            .term = try alloc.dupe(u8, config.term),
             .grapheme_width_method = config.@"grapheme-width-method",
             .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
+            .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
+
+            // This has to be last so that we copy AFTER the arena allocations
+            // above happen (Zig assigns in order).
+            .arena = arena,
         };
     }
 
     pub fn deinit(self: *DerivedConfig) void {
-        _ = self;
+        self.arena.deinit();
     }
 };
 
 /// Initialize the exec implementation. This will also start the child
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
-    // Clean up our derived config because we don't need it after this.
-    var config = opts.config;
-    defer config.deinit();
-
     // Create our terminal
     var term = try terminal.Terminal.init(
         alloc,
@@ -188,36 +168,20 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
         .alloc = alloc,
         .terminal = term,
         .subprocess = subprocess,
+        .config = opts.config,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
-        .default_cursor_style = opts.config.cursor_style,
-        .default_cursor_blink = opts.config.cursor_blink,
-        .default_cursor_color = if (opts.config.cursor_color) |col|
-            col.toTerminalRGB()
-        else
-            null,
-        .cursor_color = if (opts.config.cursor_color) |col|
-            col.toTerminalRGB()
-        else
-            null,
-        .default_foreground_color = config.foreground.toTerminalRGB(),
-        .default_background_color = config.background.toTerminalRGB(),
-        .foreground_color = config.foreground.toTerminalRGB(),
-        .background_color = config.background.toTerminalRGB(),
-        .osc_color_report_format = config.osc_color_report_format,
         .data = null,
-        .abnormal_runtime_threshold_ms = opts.config.abnormal_runtime_threshold_ms,
     };
 }
 
 pub fn deinit(self: *Exec) void {
     self.subprocess.deinit();
-
-    // Clean up our other members
     self.terminal.deinit(self.alloc);
+    self.config.deinit();
 }
 
 pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
@@ -283,22 +247,13 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         .data_stream = stream,
         .loop = &thread.loop,
         .terminal_stream = .{
-            .handler = .{
-                .alloc = self.alloc,
-                .ev = ev_data_ptr,
-                .terminal = &self.terminal,
-                .grid_size = &self.grid_size,
-                .default_cursor_style = self.default_cursor_style,
-                .default_cursor_blink = self.default_cursor_blink,
-                .default_cursor_color = self.default_cursor_color,
-                .cursor_color = self.cursor_color,
-                .default_foreground_color = self.default_foreground_color,
-                .default_background_color = self.default_background_color,
-                .foreground_color = self.foreground_color,
-                .background_color = self.background_color,
-                .osc_color_report_format = self.osc_color_report_format,
-            },
-
+            .handler = StreamHandler.init(
+                self.alloc,
+                ev_data_ptr,
+                &self.grid_size,
+                &self.terminal,
+                &self.config,
+            ),
             .parser = .{
                 .osc_parser = .{
                     // Populate the OSC parser allocator (optional) because
@@ -307,7 +262,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
                 },
             },
         },
-        .abnormal_runtime_threshold_ms = self.abnormal_runtime_threshold_ms,
+        .abnormal_runtime_threshold_ms = self.config.abnormal_runtime_threshold_ms,
     };
     errdefer ev_data_ptr.deinit(self.alloc);
 
@@ -391,7 +346,21 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
 
 /// Update the configuration.
 pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
-    defer config.deinit();
+    // The remainder of this function is modifying terminal state or
+    // the read thread data, all of which requires holding the renderer
+    // state lock.
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    // Deinit our old config. We do this in the lock because the
+    // stream handler may be referencing the old config (i.e. enquiry resp)
+    self.config.deinit();
+    self.config = config.*;
+
+    // Update our stream handler. The stream handler uses the same
+    // renderer mutex so this is safe to do despite being executed
+    // from another thread.
+    if (self.data) |data| data.terminal_stream.handler.changeConfig(&self.config);
 
     // Update the configuration that we know about.
     //
@@ -411,26 +380,6 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
         if (!self.terminal.color_palette.mask.isSet(i)) {
             self.terminal.color_palette.colors[i] = config.palette[i];
         }
-    }
-
-    // Update our default cursor style
-    self.default_cursor_style = config.cursor_style;
-    self.default_cursor_blink = config.cursor_blink;
-    self.default_cursor_color = if (config.cursor_color) |col|
-        col.toTerminalRGB()
-    else
-        null;
-
-    // Update default foreground and background colors
-    self.default_foreground_color = config.foreground.toTerminalRGB();
-    self.default_background_color = config.background.toTerminalRGB();
-
-    // If we have event data, then update our active stream too
-    if (self.data) |data| {
-        data.terminal_stream.handler.changeDefaultCursor(
-            config.cursor_style,
-            config.cursor_blink,
-        );
     }
 
     // Set the image size limits
@@ -1693,11 +1642,64 @@ const StreamHandler = struct {
     foreground_color: terminal.color.RGB,
     background_color: terminal.color.RGB,
 
+    /// The response to use for ENQ requests. The memory is owned by
+    /// whoever owns StreamHandler.
+    enquiry_response: []const u8,
+
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+
+    pub fn init(
+        alloc: Allocator,
+        ev: *EventData,
+        grid_size: *renderer.GridSize,
+        t: *terminal.Terminal,
+        config: *const DerivedConfig,
+    ) StreamHandler {
+        const default_cursor_color = if (config.cursor_color) |col|
+            col.toTerminalRGB()
+        else
+            null;
+
+        return .{
+            .alloc = alloc,
+            .ev = ev,
+            .grid_size = grid_size,
+            .terminal = t,
+            .osc_color_report_format = config.osc_color_report_format,
+            .enquiry_response = config.enquiry_response,
+            .default_foreground_color = config.foreground.toTerminalRGB(),
+            .default_background_color = config.background.toTerminalRGB(),
+            .default_cursor_style = config.cursor_style,
+            .default_cursor_blink = config.cursor_blink,
+            .default_cursor_color = default_cursor_color,
+            .cursor_color = default_cursor_color,
+            .foreground_color = config.foreground.toTerminalRGB(),
+            .background_color = config.background.toTerminalRGB(),
+        };
+    }
 
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
         self.dcs.deinit();
+    }
+
+    /// Change the configuration for this handler.
+    pub fn changeConfig(self: *StreamHandler, config: *DerivedConfig) void {
+        self.osc_color_report_format = config.osc_color_report_format;
+        self.enquiry_response = config.enquiry_response;
+        self.default_foreground_color = config.foreground.toTerminalRGB();
+        self.default_background_color = config.background.toTerminalRGB();
+        self.default_cursor_style = config.cursor_style;
+        self.default_cursor_blink = config.cursor_blink;
+        self.default_cursor_color = if (config.cursor_color) |col|
+            col.toTerminalRGB()
+        else
+            null;
+
+        // If our cursor is the default, then we update it immediately.
+        if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
+            log.warn("failed to set default cursor style: {}", .{err});
+        };
     }
 
     inline fn queueRender(self: *StreamHandler) !void {
@@ -1747,21 +1749,6 @@ const StreamHandler = struct {
         // Normally, we just flag this true to wake up the writer thread
         // once per batch of data.
         self.writer_messaged = true;
-    }
-
-    pub fn changeDefaultCursor(
-        self: *StreamHandler,
-        style: terminal.Cursor.Style,
-        blink: ?bool,
-    ) void {
-        self.default_cursor_style = style;
-        self.default_cursor_blink = blink;
-
-        // If our cursor is the default, then we update it immediately.
-        if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
-            log.warn("failed to set default cursor style: {}", .{err});
-            return;
-        };
     }
 
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
@@ -2390,7 +2377,8 @@ const StreamHandler = struct {
     }
 
     pub fn enquiry(self: *StreamHandler) !void {
-        self.messageWriter(.{ .write_stable = "" });
+        log.debug("sending enquiry response={s}", .{self.enquiry_response});
+        self.messageWriter(try termio.Message.writeReq(self.alloc, self.enquiry_response));
     }
 
     pub fn scrollDown(self: *StreamHandler, count: usize) !void {
