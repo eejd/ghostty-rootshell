@@ -587,6 +587,15 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS and linux.
 @"window-theme": WindowTheme = .system,
 
+/// The colorspace to use for the terminal window. The default is "srgb"
+/// but this can also be set to "display-p3" to use the Display P3
+/// colorspace.
+///
+/// Changing this value at runtime will only affect new windows.
+///
+/// This setting is only supported on macOS.
+@"window-colorspace": WindowColorspace = .srgb,
+
 /// The initial window size. This size is in terminal grid cells by default.
 ///
 /// We don't currently support specifying a size in pixels but a future
@@ -2833,6 +2842,12 @@ pub const WindowTheme = enum {
     system,
     light,
     dark,
+};
+
+/// See window-colorspace
+pub const WindowColorspace = enum {
+    srgb,
+    @"display-p3",
 };
 
 /// See gtk-single-instance
