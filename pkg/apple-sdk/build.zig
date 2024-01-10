@@ -15,12 +15,16 @@ pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
     const sdk = try SDK.fromTarget(m.resolved_target.?.result);
 
     // Get the path to our active Xcode installation. If this fails then
-    // the zig build will fail.
-    const path = std.mem.trim(
-        u8,
-        b.run(&.{ "xcode-select", "--print-path" }),
-        " \r\n",
-    );
+    // the zig build will fail. We store this in a struct variable so its
+    // static and only calculated once per build.
+    const Path = struct {
+        var value: ?[]const u8 = null;
+    };
+    const path = Path.value orelse path: {
+        const path = std.mem.trim(u8, b.run(&.{ "xcode-select", "--print-path" }), " \r\n");
+        Path.value = path;
+        break :path path;
+    };
 
     // Base path
     const base = b.fmt("{s}/Platforms/{s}.platform/Developer/SDKs/{s}{s}.sdk", .{
