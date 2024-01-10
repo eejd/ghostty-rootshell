@@ -600,10 +600,3 @@ test "isValidAppId" {
     try testing.expect(!isValidAppId(""));
     try testing.expect(!isValidAppId("foo" ** 86));
 }
-
-/// Loads keyboard state from Xkb if there is an event pending and Xkb is
-/// loaded (X11 only). Returns null otherwise.
-pub fn modifier_state_from_xkb(self: *App, display_: ?*c.GdkDisplay) ?input.Mods {
-    const x11_xkb = self.x11_xkb orelse return null;
-    return x11_xkb.modifier_state_from_notify(display_);
-}

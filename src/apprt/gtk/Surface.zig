@@ -1349,20 +1349,22 @@ fn keyEvent(
         if (entry.native == keycode) break :keycode entry.key;
     } else .invalid;
 
-    // Get our modifiers. We have to use the GDK device because the mods
-    // sent to this event do not have the modifier key applied it if it
-    // was presssed (i.e. left control)
     const mods = mods: {
-        _ = gtk_mods;
         const device = c.gdk_event_get_device(event);
 
-        // Add any modifier state events from Xkb if we have them (X11 only).
-        // Null back from the Xkb call means there was no modifier
-        // event to read. This likely means that the key event did not
-        // result in a modifier change and we can safely rely on the
-        // GDK state.
-        var mods = self.app.modifier_state_from_xkb(display) orelse
+        var mods = if (self.app.x11_xkb) |xkb|
+            // Add any modifier state events from Xkb if we have them (X11
+            // only). Null back from the Xkb call means there was no modifier
+            // event to read. This likely means that the key event did not
+            // result in a modifier change and we can safely rely on the GDK
+            // state.
+            xkb.modifier_state_from_notify(display) orelse translateMods(gtk_mods)
+        else
+            // On Wayland, we have to use the GDK device because the mods sent
+            // to this event do not have the modifier key applied if it was
+            // presssed (i.e. left control).
             translateMods(c.gdk_device_get_modifier_state(device));
+
         mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
         switch (physical_key) {
