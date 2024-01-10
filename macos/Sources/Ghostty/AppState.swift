@@ -65,6 +65,16 @@ extension Ghostty {
             return v
         }
         
+        /// window-colorspace
+        var windowColorspace: String {
+            guard let config = self.config else { return "" }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "window-colorspace"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
+            guard let ptr = v else { return "" }
+            return String(cString: ptr)
+        }
+        
         /// window-save-state
         var windowSaveState: String {
             guard let config = self.config else { return "" }
