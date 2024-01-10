@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const RGBName = @import("rgb_names").RGBName;
 
 /// The default palette.
 pub const default: Palette = default: {
@@ -216,6 +217,15 @@ pub const RGB = struct {
             };
         }
 
+        if (RGBName.fromString(value)) |name| {
+            const rgb = name.toRGB();
+            return RGB{
+                .r = rgb.r,
+                .g = rgb.g,
+                .b = rgb.b,
+            };
+        }
+
         if (value.len < "rgb:a/a/a".len or !std.mem.eql(u8, value[0..3], "rgb")) {
             return error.InvalidFormat;
         }
@@ -292,6 +302,16 @@ test "RGB.parse" {
     try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("rgb:f/ff/fff"));
     try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#ffffff"));
     try testing.expectEqual(RGB{ .r = 255, .g = 0, .b = 16 }, try RGB.parse("#ff0010"));
+
+    try testing.expectEqual(RGB{ .r = 0, .g = 0, .b = 0 }, try RGB.parse("black"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 0, .b = 0 }, try RGB.parse("red"));
+    try testing.expectEqual(RGB{ .r = 0, .g = 255, .b = 0 }, try RGB.parse("green"));
+    try testing.expectEqual(RGB{ .r = 0, .g = 0, .b = 255 }, try RGB.parse("blue"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("white"));
+
+    try testing.expectEqual(RGB{ .r = 124, .g = 252, .b = 0 }, try RGB.parse("LawnGreen"));
+    try testing.expectEqual(RGB{ .r = 0, .g = 250, .b = 154 }, try RGB.parse("medium spring green"));
+    try testing.expectEqual(RGB{ .r = 34, .g = 139, .b = 34 }, try RGB.parse(" Forest Green "));
 
     // Invalid format
     try testing.expectError(error.InvalidFormat, RGB.parse("rgb;"));

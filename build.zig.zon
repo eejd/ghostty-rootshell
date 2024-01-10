@@ -48,5 +48,9 @@
             .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/53acae071801e0de6ed160315869abb9bdaf20fa.tar.gz",
             .hash = "12201575c5a2b21c2e110593773040cddcd357544038092d18bd98fc5a2141354bbd",
         },
+        .rgb = .{
+            .url = "https://gitlab.freedesktop.org/xorg/app/rgb/-/archive/master/rgb-master.tar.gz",
+            .hash = "12201ecce35845b829edf31f5b1b751b24efe6bdc20a8acf06f5c0f2bd83fdd69158",
+        },
     },
 }
