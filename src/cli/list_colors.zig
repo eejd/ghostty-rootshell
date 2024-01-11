@@ -8,10 +8,6 @@ pub const Options = struct {
     }
 };
 
-fn cmp(_: void, lhs: []const u8, rhs: []const u8) bool {
-    return std.ascii.lessThanIgnoreCase(lhs, rhs);
-}
-
 /// The "list-colors" command is used to list all the named RGB colors in
 /// Ghostty.
 pub fn run(alloc: std.mem.Allocator) !u8 {
@@ -27,17 +23,23 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     const stdout = std.io.getStdOut().writer();
 
     var keys = std.ArrayList([]const u8).init(alloc);
+    defer keys.deinit();
+    for (x11_color.map.kvs) |kv| try keys.append(kv.key);
 
-    inline for (x11_color.map.kvs) |kv| {
-        try keys.append(kv.key);
-    }
+    std.mem.sortUnstable([]const u8, keys.items, {}, struct {
+        fn lessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
+            return std.ascii.orderIgnoreCase(lhs, rhs) == .lt;
+        }
+    }.lessThan);
 
-    const sorted = try keys.toOwnedSlice();
-    std.sort.insertion([]const u8, sorted, {}, cmp);
-
-    for (sorted) |name| {
+    for (keys.items) |name| {
         const rgb = x11_color.map.get(name).?;
-        try stdout.print("{s} = #{x:0>2}{x:0>2}{x:0>2}\n", .{ name, rgb.r, rgb.g, rgb.b });
+        try stdout.print("{s} = #{x:0>2}{x:0>2}{x:0>2}\n", .{
+            name,
+            rgb.r,
+            rgb.g,
+            rgb.b,
+        });
     }
 
     return 0;
