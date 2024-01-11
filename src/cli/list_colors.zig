@@ -1,7 +1,7 @@
 const std = @import("std");
 const inputpkg = @import("../input.zig");
 const args = @import("args.zig");
-const RGBName = @import("rgb_names").RGBName;
+const x11_color = @import("../terminal/main.zig").x11_color;
 
 pub const Options = struct {
     pub fn deinit(self: Options) void {
@@ -23,9 +23,10 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     const stdout = std.io.getStdOut().writer();
 
-    inline for (std.meta.fields(RGBName)) |f| {
-        const rgb = @field(RGBName, f.name).toRGB();
-        try stdout.print("{s} = #{x:0>2}{x:0>2}{x:0>2}\n", .{ f.name, rgb.r, rgb.g, rgb.b });
+    inline for (x11_color.map.kvs) |kv| {
+        const name = kv.key;
+        const rgb = kv.value;
+        try stdout.print("{s} = #{x:0>2}{x:0>2}{x:0>2}\n", .{ name, rgb.r, rgb.g, rgb.b });
     }
 
     return 0;
