@@ -18,8 +18,6 @@ pub fn build(b: *std.Build) !void {
 
     const module = b.addModule("harfbuzz", .{
         .root_source_file = .{ .path = "main.zig" },
-        .target = target,
-        .optimize = optimize,
         .imports = &.{
             .{ .name = "freetype", .module = freetype.module("freetype") },
             .{ .name = "macos", .module = macos.module("macos") },
@@ -62,6 +60,13 @@ pub fn build(b: *std.Build) !void {
         "-DHAVE_FT_GET_TRANSFORM=1",
     });
     if (coretext_enabled and target.result.isDarwin()) {
+        // This is definitely super sketchy and not right but without this
+        // zig build test breaks on macOS. We have to look into what exactly
+        // is going on here but this getting comitted in the interest of
+        // unblocking zig build test.
+        module.resolved_target = target;
+        defer module.resolved_target = null;
+
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
         try apple_sdk.addPaths(b, &lib.root_module);
         try apple_sdk.addPaths(b, module);
