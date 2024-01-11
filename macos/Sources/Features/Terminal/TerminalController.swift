@@ -470,6 +470,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         self.window?.close()
     }
     
+    func surfaceTreeDidChange() {
+        // Whenever our surface tree changes in any way (new split, close split, etc.)
+        // we want to invalidate our state.
+        invalidateRestorableState()
+    }
+    
     //MARK: - Clipboard Confirmation
     
     func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {

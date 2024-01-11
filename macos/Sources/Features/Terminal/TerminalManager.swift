@@ -190,6 +190,11 @@ class TerminalManager {
             let frame = focusedWindow.frame
             Self.lastCascadePoint = NSPoint(x: frame.minX, y: frame.maxY)
         }
+        
+        // I don't think we strictly have to do this but if a window is
+        // closed I want to make sure that the app state is invalided so
+        // we don't reopen closed windows.
+        NSApplication.shared.invalidateRestorableState()
     }
     
     /// Close all windows, asking for confirmation if necessary.
