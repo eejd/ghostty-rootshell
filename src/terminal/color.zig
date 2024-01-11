@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const RGBName = @import("rgb_names").RGBName;
+const x11_color = @import("x11_color.zig");
 
 /// The default palette.
 pub const default: Palette = default: {
@@ -217,14 +217,10 @@ pub const RGB = struct {
             };
         }
 
-        if (RGBName.fromString(value)) |name| {
-            const rgb = name.toRGB();
-            return RGB{
-                .r = rgb.r,
-                .g = rgb.g,
-                .b = rgb.b,
-            };
-        }
+        // Check for X11 named colors. We allow whitespace around the edges
+        // of the color because Kitty allows whitespace. This is not part of
+        // any spec I could find.
+        if (x11_color.map.get(std.mem.trim(u8, value, " "))) |rgb| return rgb;
 
         if (value.len < "rgb:a/a/a".len or !std.mem.eql(u8, value[0..3], "rgb")) {
             return error.InvalidFormat;
