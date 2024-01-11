@@ -2138,8 +2138,16 @@ pub const Color = packed struct(u24) {
         return .{ .r = self.r, .g = self.g, .b = self.b };
     }
 
-    pub fn parseCLI(input: ?[]const u8) !Color {
-        return fromHex(input orelse return error.ValueRequired);
+    pub fn parseCLI(input_: ?[]const u8) !Color {
+        const input = input_ orelse return error.ValueRequred;
+
+        if (terminal.x11_color.map.get(input)) |rgb| return .{
+            .r = rgb.r,
+            .g = rgb.g,
+            .b = rgb.b,
+        };
+
+        return fromHex(input);
     }
 
     /// Deep copy of the struct. Required by Config.
@@ -2187,6 +2195,10 @@ pub const Color = packed struct(u24) {
         try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("#0A0B0C"));
         try testing.expectEqual(Color{ .r = 10, .g = 11, .b = 12 }, try Color.fromHex("0A0B0C"));
         try testing.expectEqual(Color{ .r = 255, .g = 255, .b = 255 }, try Color.fromHex("FFFFFF"));
+    }
+
+    test "parseCLI from name" {
+        try std.testing.expectEqual(Color{ .r = 0, .g = 0, .b = 0 }, try Color.parseCLI("black"));
     }
 };
 

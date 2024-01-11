@@ -603,6 +603,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = .{ .path = "src/main_wasm.zig" },
             .target = b.resolveTargetQuery(wasm_crosstarget),
         });
+
         main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
@@ -638,6 +639,7 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .filter = test_filter,
         });
+
         {
             if (emit_test_exe) b.installArtifact(main_test);
             _ = try addDeps(b, main_test, true);
