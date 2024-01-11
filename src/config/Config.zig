@@ -20,7 +20,6 @@ const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.face.Metrics.Modifier;
-const RGBName = @import("rgb_names").RGBName;
 
 const log = std.log.scoped(.config);
 
@@ -2139,13 +2138,16 @@ pub const Color = packed struct(u24) {
         return .{ .r = self.r, .g = self.g, .b = self.b };
     }
 
-    pub fn parseCLI(input: ?[]const u8) !Color {
-        if (input == null) return error.ValueRequred;
-        if (RGBName.fromString(input.?)) |name| {
-            const rgb = name.toRGB();
-            return Color{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
-        }
-        return fromHex(input.?);
+    pub fn parseCLI(input_: ?[]const u8) !Color {
+        const input = input_ orelse return error.ValueRequred;
+
+        if (terminal.x11_color.map.get(input)) |rgb| return .{
+            .r = rgb.r,
+            .g = rgb.g,
+            .b = rgb.b,
+        };
+
+        return fromHex(input);
     }
 
     /// Deep copy of the struct. Required by Config.
@@ -2195,7 +2197,7 @@ pub const Color = packed struct(u24) {
         try testing.expectEqual(Color{ .r = 255, .g = 255, .b = 255 }, try Color.fromHex("FFFFFF"));
     }
 
-    test "fromName" {
+    test "parseCLI from name" {
         try std.testing.expectEqual(Color{ .r = 0, .g = 0, .b = 0 }, try Color.parseCLI("black"));
     }
 };

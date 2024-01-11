@@ -213,16 +213,12 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(renderer.Impl, "renderer", renderer_impl);
     exe_options.addOption(bool, "libadwaita", libadwaita);
 
-    createRGBNames(b);
-
     // Exe
     if (exe_) |exe| {
         exe.root_module.addOptions("build_options", exe_options);
 
         // Add the shared dependencies
         _ = try addDeps(b, exe, static);
-
-        addRGBNames(exe);
 
         // If we're in NixOS but not in the shell environment then we issue
         // a warning because the rpath may not be setup properly.
@@ -465,8 +461,6 @@ pub fn build(b: *std.Build) !void {
             lib.linkLibC();
             lib.root_module.addOptions("build_options", exe_options);
 
-            addRGBNames(lib);
-
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
             try lib_list.append(lib.getEmittedBin());
@@ -495,8 +489,6 @@ pub fn build(b: *std.Build) !void {
             lib.bundle_compiler_rt = true;
             lib.linkLibC();
             lib.root_module.addOptions("build_options", exe_options);
-
-            addRGBNames(lib);
 
             // Create a single static lib with all our dependencies merged
             var lib_list = try addDeps(b, lib, true);
@@ -612,8 +604,6 @@ pub fn build(b: *std.Build) !void {
             .target = b.resolveTargetQuery(wasm_crosstarget),
         });
 
-        addRGBNames(main_test);
-
         main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, true);
         test_step.dependOn(&main_test.step);
@@ -649,8 +639,6 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .filter = test_filter,
         });
-
-        addRGBNames(main_test);
 
         {
             if (emit_test_exe) b.installArtifact(main_test);
@@ -928,45 +916,6 @@ fn addDeps(
     }
 
     return static_libs;
-}
-
-var generate_rgb_names: *std.Build.Step.Run = undefined;
-var generate_rgb_names_output: std.Build.LazyPath = undefined;
-
-fn createRGBNames(b: *std.Build) void {
-    const gen = b.addExecutable(
-        .{
-            .name = "generate-rgb-names",
-            .root_source_file = .{
-                .path = "src/generate_rgb_names.zig",
-            },
-            .target = b.host,
-        },
-    );
-
-    const rgb = b.dependency("rgb", .{});
-
-    gen.root_module.addAnonymousImport(
-        "rgb",
-        .{
-            .root_source_file = .{
-                .path = rgb.builder.pathFromRoot("rgb.txt"),
-            },
-        },
-    );
-
-    generate_rgb_names = b.addRunArtifact(gen);
-    generate_rgb_names_output = generate_rgb_names.captureStdOut();
-}
-
-fn addRGBNames(exe: *std.Build.Step.Compile) void {
-    exe.step.dependOn(&generate_rgb_names.step);
-    exe.root_module.addAnonymousImport(
-        "rgb_names",
-        .{
-            .root_source_file = generate_rgb_names_output,
-        },
-    );
 }
 
 fn benchSteps(
