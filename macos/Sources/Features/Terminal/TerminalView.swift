@@ -13,6 +13,10 @@ protocol TerminalViewDelegate: AnyObject {
     
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
+    
+    /// The surface tree did change in some way, i.e. a split was added, removed, etc. This is
+    /// not called initially.
+    func surfaceTreeDidChange()
 }
 
 // Default all the functions so they're optional
@@ -96,6 +100,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     .onChange(of: cellSize) { newValue in
                         guard let size = newValue else { return }
                         self.delegate?.cellSizeDidChange(to: size)
+                    }
+                    .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
+                        // This is funky, but its the best way I could think of to detect
+                        // ANY CHANGE within the deeply nested surface tree -- detecting a change
+                        // in the hash value.
+                        self.delegate?.surfaceTreeDidChange()
                     }
             }
         }
