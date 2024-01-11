@@ -1042,7 +1042,17 @@ const Subprocess = struct {
             if (comptime builtin.os.tag == .windows) {
                 // We run our shell wrapped in `cmd.exe` so that we don't have
                 // to parse the command line ourselves if it has arguments.
-                try args.append("C:\\Windows\\System32\\cmd.exe");
+
+                // Note we don't free any of the memory below since it is
+                // allocated in the arena.
+                const windir = try std.process.getEnvVarOwned(alloc, "WINDIR");
+                const cmd = try std.fs.path.join(alloc, &[_][]const u8{
+                    windir,
+                    "System32",
+                    "cmd.exe",
+                });
+
+                try args.append(cmd);
                 try args.append("/C");
             } else {
                 // We run our shell wrapped in `/bin/sh` so that we don't have
