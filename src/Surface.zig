@@ -1273,9 +1273,6 @@ pub fn keyCallback(
 
         if (selection == null) break :adjust_selection;
 
-        // Silently consume key releases.
-        if (event.action != .press and event.action != .repeat) return .consumed;
-
         var sel = selection.?;
 
         const viewport_end = screen.viewport + terminal.Screen.RowIndexTag.viewport.maxLen(&screen) - 1;
@@ -1362,6 +1359,10 @@ pub fn keyCallback(
             },
             else => { break :adjust_selection; },
         }
+
+        // Silently consume key releases.
+        if (event.action != .press and event.action != .repeat) return .consumed;
+
         // If the selection endpoint is outside of the current viewpoint, scroll it in to view.
         if (sel.end.y < screen.viewport) {
             try self.io.terminal.scrollViewport(.{
