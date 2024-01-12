@@ -271,6 +271,30 @@ extension Ghostty {
                 return parent.rootContainer()
             }
 
+            /// Returns the first leaf from the given container. This is most
+            /// useful for root container, so that we can find the top-left-most
+            /// leaf.
+            func firstLeaf() -> Leaf {
+                switch (self.topLeft) {
+                case .leaf(let leaf):
+                    return leaf
+                case .split(let s):
+                    return s.firstLeaf()
+                }
+            }
+
+            /// Returns the last leaf from the given container. This is most
+            /// useful for root container, so that we can find the bottom-right-
+            /// most leaf.
+            func lastLeaf() -> Leaf {
+                switch (self.bottomRight) {
+                case .leaf(let leaf):
+                    return leaf
+                case .split(let s):
+                    return s.lastLeaf()
+                }
+            }
+
             // MARK: - Hashable
             
             func hash(into hasher: inout Hasher) {
