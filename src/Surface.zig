@@ -1281,7 +1281,7 @@ pub fn keyCallback(
         const viewport_end = screen.viewport + terminal.Screen.RowIndexTag.viewport.maxLen(&screen) - 1;
         const screen_end = terminal.Screen.RowIndexTag.screen.maxLen(&screen) - 1;
 
-        switch (event.physical_key) {
+        switch (event.key) {
             .left => {
                 var iterator = sel.end.iterator(&screen, .left_up);
                 // This iterator emits the start point first, throw it out.
@@ -1322,10 +1322,43 @@ pub fn keyCallback(
                 }
             },
             .up => {
-                if (sel.end.y > 0) sel.end.y -= 1;
+                if (sel.end.y == 0) {
+                    sel.end.x = 0;
+                } else {
+                    sel.end.y -= 1;
+                }
             },
             .down => {
-                if (sel.end.y < screen_end) sel.end.y += 1;
+                if (sel.end.y >= screen_end) {
+                    sel.end.y = screen_end;
+                    sel.end.x = screen.cols - 1;
+                } else {
+                    sel.end.y += 1;
+                }
+            },
+            .page_up => {
+                if (screen.rows > sel.end.y) {
+                    sel.end.y = 0;
+                    sel.end.x = 0;
+                } else {
+                    sel.end.y -= screen.rows;
+                }
+            },
+            .page_down => {
+                if (screen.rows > screen_end - sel.end.y) {
+                    sel.end.y = screen_end;
+                    sel.end.x = screen.cols - 1;
+                } else {
+                    sel.end.y += screen.rows;
+                }
+            },
+            .home => {
+                sel.end.y = 0;
+                sel.end.x = 0;
+            },
+            .end => {
+                sel.end.y = screen_end;
+                sel.end.x = screen.cols - 1;
             },
             else => { break :adjust_selection; },
         }
