@@ -84,6 +84,16 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
+
+        /// window-new-tab-position
+        var windowNewTabPosition: String {
+            guard let config = self.config else { return "" }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "window-new-tab-position"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
+            guard let ptr = v else { return "" }
+            return String(cString: ptr)
+        }
         
         /// True if we need to confirm before quitting.
         var needsConfirmQuit: Bool {
