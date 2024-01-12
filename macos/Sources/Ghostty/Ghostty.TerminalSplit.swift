@@ -152,7 +152,7 @@ extension Ghostty {
         /// The neighbors, used for navigation.
         let neighbors: SplitNode.Neighbors
 
-        /// The SplitNode that the leaf belongs to. This will be set to nil but when leaf is closed.
+        /// The SplitNode that the leaf belongs to. This will be set to nil when leaf is closed.
         @Binding var node: SplitNode?
 
         var body: some View {
