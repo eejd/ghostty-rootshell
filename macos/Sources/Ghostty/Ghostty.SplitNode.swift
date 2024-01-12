@@ -64,6 +64,25 @@ extension Ghostty {
             return node.preferredFocus(direction)
         }
 
+        /// When direction is either next or previous, return the first or last
+        /// leaf. This can be used when the focus needs to move to a leaf even
+        /// after hitting the bottom-right-most or top-left-most surface.
+        /// When the direction is not next or previous (such as top, bottom,
+        /// left, right), it will be ignored and no leaf will be returned.
+        func firstOrLast(_ direction: SplitFocusDirection) -> Leaf? {
+            // If there is no parent, simply ignore.
+            guard let root = self.parent?.rootContainer() else { return nil }
+
+            switch (direction) {
+            case .next:
+                return root.firstLeaf()
+            case .previous:
+                return root.lastLeaf()
+            default:
+                return nil
+            }
+        }
+
         /// Close the surface associated with this node. This will likely deinitialize the
         /// surface. At this point, the surface view in this node tree can never be used again.
         func close() {
