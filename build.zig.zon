@@ -21,7 +21,7 @@
             .hash = "1220df81f0e65cc9ccd3628572c611e6f267a71f1bff1be19d50f4ac49ee2a83c324",
         },
         .ziglyph = .{
-            .url = "https://codeberg.org/dude_the_builder/ziglyph/archive/0e17bd36a4e882b194a87c283bd78562ea215116.tar.gz",
+            .url = "https://deps.files.ghostty.dev/ziglyph-0e17bd36a4e882b194a87c283bd78562ea215116.tar.gz",
             .hash = "12208553f3f47e51494e187f4c0e6f6b3844e3993436cad4a0e8c4db4e99645967b5",
         },
 
