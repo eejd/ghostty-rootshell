@@ -222,6 +222,321 @@ pub fn order(self: Selection) Order {
     return .reverse;
 }
 
+/// Possible adjustments to the selection.
+pub const Adjustment = enum {
+    left,
+    right,
+    up,
+    down,
+    home,
+    end,
+    page_up,
+    page_down,
+};
+
+/// Adjust the selection by some given adjustment. An adjustment allows
+/// a selection to be expanded slightly left, right, up, down, etc.
+pub fn adjust(self: Selection, screen: *Screen, adjustment: Adjustment) Selection {
+    const screen_end = Screen.RowIndexTag.screen.maxLen(screen) - 1;
+
+    // Make an editable one because its so much easier to use modification
+    // logic below than it is to reconstruct the selection every time.
+    var result = self;
+
+    // Note that we always adjusts "end" because end always represents
+    // the last point of the selection by mouse, not necessarilly the
+    // top/bottom visually. So this results in the right behavior
+    // whether the user drags up or down.
+    switch (adjustment) {
+        .up => if (result.end.y == 0) {
+            result.end.x = 0;
+        } else {
+            result.end.y -= 1;
+        },
+
+        .down => if (result.end.y >= screen_end) {
+            result.end.y = screen_end;
+            result.end.x = screen.cols - 1;
+        } else {
+            result.end.y += 1;
+        },
+
+        .left => {
+            // Step left, wrapping to the next row up at the start of each new line,
+            // until we find a non-empty cell.
+            //
+            // This iterator emits the start point first, throw it out.
+            var iterator = result.end.iterator(screen, .left_up);
+            _ = iterator.next();
+            while (iterator.next()) |next| {
+                if (screen.getCell(
+                    .screen,
+                    next.y,
+                    next.x,
+                ).char != 0) {
+                    result.end = next;
+                    break;
+                }
+            }
+        },
+
+        .right => {
+            // Step right, wrapping to the next row down at the start of each new line,
+            // until we find a non-empty cell.
+            var iterator = result.end.iterator(screen, .right_down);
+            _ = iterator.next();
+            while (iterator.next()) |next| {
+                if (next.y > screen_end) break;
+                if (screen.getCell(
+                    .screen,
+                    next.y,
+                    next.x,
+                ).char != 0) {
+                    if (next.y > screen_end) {
+                        result.end.y = screen_end;
+                    } else {
+                        result.end = next;
+                    }
+                    break;
+                }
+            }
+        },
+
+        .page_up => if (screen.rows > result.end.y) {
+            result.end.y = 0;
+            result.end.x = 0;
+        } else {
+            result.end.y -= screen.rows;
+        },
+
+        .page_down => if (screen.rows > screen_end - result.end.y) {
+            result.end.y = screen_end;
+            result.end.x = screen.cols - 1;
+        } else {
+            result.end.y += screen.rows;
+        },
+
+        .home => {
+            result.end.y = 0;
+            result.end.x = 0;
+        },
+
+        .end => {
+            result.end.y = screen_end;
+            result.end.x = screen.cols - 1;
+        },
+    }
+
+    return result;
+}
+
+test "Selection: adjust right" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A1234\nB5678\nC1234\nD5678");
+
+    // Simple movement right
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+        }).adjust(&screen, .right);
+
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 3 },
+        }, sel);
+    }
+
+    // Already at end of the line.
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 2 },
+        }).adjust(&screen, .right);
+
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 0, .y = 3 },
+        }, sel);
+    }
+
+    // Already at end of the screen
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 3 },
+        }).adjust(&screen, .right);
+
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 3 },
+        }, sel);
+    }
+}
+
+test "Selection: adjust left" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A1234\nB5678\nC1234\nD5678");
+
+    // Simple movement left
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+        }).adjust(&screen, .left);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 2, .y = 3 },
+        }, sel);
+    }
+
+    // Already at beginning of the line.
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 0, .y = 3 },
+        }).adjust(&screen, .left);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 2 },
+        }, sel);
+    }
+}
+
+test "Selection: adjust left skips blanks" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A1234\nB5678\nC12\nD56");
+
+    // Same line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 4, .y = 3 },
+        }).adjust(&screen, .left);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 2, .y = 3 },
+        }, sel);
+    }
+
+    // Edge
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 0, .y = 3 },
+        }).adjust(&screen, .left);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 2, .y = 2 },
+        }, sel);
+    }
+}
+
+test "Selection: adjust up" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A\nB\nC\nD\nE");
+
+    // Not on the first line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+        }).adjust(&screen, .up);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 2 },
+        }, sel);
+    }
+
+    // On the first line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 0 },
+        }).adjust(&screen, .up);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 0, .y = 0 },
+        }, sel);
+    }
+}
+
+test "Selection: adjust down" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A\nB\nC\nD\nE");
+
+    // Not on the first line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+        }).adjust(&screen, .down);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 4 },
+        }, sel);
+    }
+
+    // On the last line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 4 },
+        }).adjust(&screen, .down);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 9, .y = 4 },
+        }, sel);
+    }
+}
+
+test "Selection: adjust down with not full screen" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 5, 10, 0);
+    defer screen.deinit();
+    try screen.testWriteString("A\nB\nC");
+
+    // On the last line
+    {
+        const sel = (Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 3, .y = 2 },
+        }).adjust(&screen, .down);
+
+        // Start line
+        try testing.expectEqual(Selection{
+            .start = .{ .x = 5, .y = 1 },
+            .end = .{ .x = 9, .y = 2 },
+        }, sel);
+    }
+}
+
 test "Selection: contains" {
     const testing = std.testing;
     {
