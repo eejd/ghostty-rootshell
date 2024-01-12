@@ -656,6 +656,15 @@ keybind: Keybinds = .{},
 /// Currently only supported on macOS.
 @"window-step-resize": bool = false,
 
+/// The position where new tabs are created. Valid values:
+///
+///   - "current" - Insert the new tab after the currently focused tab,
+///     or at the end if there are no focused tabs.
+///   - "end" - Insert the new tab at the end of the tab list.
+///
+/// This configuration currently only works with GTK.
+@"window-new-tab-position": WindowNewTabPosition = .current,
+
 /// When enabled, the full GTK titlebar is displayed instead of your window
 /// manager's simple titlebar. The behavior of this option will vary with your
 /// window manager.
@@ -2893,6 +2902,12 @@ pub const WindowSaveState = enum {
     default,
     never,
     always,
+};
+
+/// See window-new-tab-position
+pub const WindowNewTabPosition = enum {
+    current,
+    end,
 };
 
 /// See grapheme-width-method
