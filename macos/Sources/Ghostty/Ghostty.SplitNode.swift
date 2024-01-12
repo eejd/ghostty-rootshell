@@ -64,6 +64,25 @@ extension Ghostty {
             return node.preferredFocus(direction)
         }
 
+        /// When direction is either next or previous, return the first or last
+        /// leaf. This can be used when the focus needs to move to a leaf even
+        /// after hitting the bottom-right-most or top-left-most surface.
+        /// When the direction is not next or previous (such as top, bottom,
+        /// left, right), it will be ignored and no leaf will be returned.
+        func firstOrLast(_ direction: SplitFocusDirection) -> Leaf? {
+            // If there is no parent, simply ignore.
+            guard let root = self.parent?.rootContainer() else { return nil }
+
+            switch (direction) {
+            case .next:
+                return root.firstLeaf()
+            case .previous:
+                return root.lastLeaf()
+            default:
+                return nil
+            }
+        }
+
         /// Close the surface associated with this node. This will likely deinitialize the
         /// surface. At this point, the surface view in this node tree can never be used again.
         func close() {
@@ -262,6 +281,37 @@ extension Ghostty {
                 let weight = topLeftWeight + bottomRightWeight
                 split = Double(topLeftWeight) / Double(weight)
                 return weight
+            }
+
+            /// Returns the top most parent, or this container. Because this
+            /// would fall back to use to self, the return value is guaranteed.
+            func rootContainer() -> Container {
+                guard let parent = self.parent else { return self }
+                return parent.rootContainer()
+            }
+
+            /// Returns the first leaf from the given container. This is most
+            /// useful for root container, so that we can find the top-left-most
+            /// leaf.
+            func firstLeaf() -> Leaf {
+                switch (self.topLeft) {
+                case .leaf(let leaf):
+                    return leaf
+                case .split(let s):
+                    return s.firstLeaf()
+                }
+            }
+
+            /// Returns the last leaf from the given container. This is most
+            /// useful for root container, so that we can find the bottom-right-
+            /// most leaf.
+            func lastLeaf() -> Leaf {
+                switch (self.bottomRight) {
+                case .leaf(let leaf):
+                    return leaf
+                case .split(let s):
+                    return s.lastLeaf()
+                }
             }
 
             // MARK: - Hashable

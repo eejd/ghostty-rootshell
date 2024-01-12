@@ -152,7 +152,7 @@ extension Ghostty {
         /// The neighbors, used for navigation.
         let neighbors: SplitNode.Neighbors
 
-        /// The SplitNode that the leaf belongs to. This will be set to nil but when leaf is closed.
+        /// The SplitNode that the leaf belongs to. This will be set to nil when leaf is closed.
         @Binding var node: SplitNode?
 
         var body: some View {
@@ -247,9 +247,19 @@ extension Ghostty {
             // Determine our desired direction
             guard let directionAny = notification.userInfo?[Notification.SplitDirectionKey] else { return }
             guard let direction = directionAny as? SplitFocusDirection else { return }
-            guard let next = neighbors.get(direction: direction) else { return }
+
+            // Find the next surface to move to. In most cases this should be
+            // finding the neighbor in provided direction, and focus it. When
+            // the neighbor cannot be found based on next or previous direction,
+            // this would instead search for first or last leaf and focus it
+            // instead, giving the wrap around effect.
+            // When other directions are provided, this can be nil, and early
+            // returned.
+            guard let nextSurface = neighbors.get(direction: direction)?.preferredFocus(direction)
+                    ?? node?.firstOrLast(direction)?.surface else { return }
+
             Ghostty.moveFocus(
-                to: next.preferredFocus(direction)
+                to: nextSurface
             )
         }
 
