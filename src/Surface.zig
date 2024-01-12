@@ -1264,6 +1264,86 @@ pub fn keyCallback(
         }
     }
 
+    // Expand selection if one exists and event is shift + <arrows, home, end, pg up/down>
+    if (event.mods.shift) adjust_selection: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        var screen = self.io.terminal.screen;
+        const selection = screen.selection;
+
+        if (selection == null) break :adjust_selection;
+
+        // Silently consume key releases.
+        if (event.action != .press and event.action != .repeat) return .consumed;
+
+        var sel = selection.?;
+
+        const viewport_end = screen.viewport + terminal.Screen.RowIndexTag.viewport.maxLen(&screen) - 1;
+        const screen_end = terminal.Screen.RowIndexTag.screen.maxLen(&screen) - 1;
+
+        switch (event.physical_key) {
+            .left => {
+                var iterator = sel.end.iterator(&screen, .left_up);
+                // This iterator emits the start point first, throw it out.
+                _ = iterator.next();
+                var next = iterator.next();
+                // Step left, wrapping to the next row up at the start of each new line,
+                // until we find a non-empty cell.
+                while (
+                    next != null and
+                    screen.getCell(.screen, next.?.y, next.?.x).char == 0
+                ) {
+                    next = iterator.next();
+                }
+                if (next != null) {
+                    sel.end = next.?;
+                }
+            },
+            .right => {
+                var iterator = sel.end.iterator(&screen, .right_down);
+                // This iterator emits the start point first, throw it out.
+                _ = iterator.next();
+                var next = iterator.next();
+                // Step right, wrapping to the next row down at the start of each new line,
+                // until we find a non-empty cell.
+                while (
+                    next != null and
+                    next.?.y <= screen_end and
+                    screen.getCell(.screen, next.?.y, next.?.x).char == 0
+                ) {
+                    next = iterator.next();
+                }
+                if (next != null) {
+                    if (next.?.y > screen_end) {
+                        sel.end.y = screen_end;
+                    } else {
+                        sel.end = next.?;
+                    }
+                }
+            },
+            .up => {
+                if (sel.end.y > 0) sel.end.y -= 1;
+            },
+            .down => {
+                if (sel.end.y < screen_end) sel.end.y += 1;
+            },
+            else => { break :adjust_selection; },
+        }
+        // If the selection endpoint is outside of the current viewpoint, scroll it in to view.
+        if (sel.end.y < screen.viewport) {
+            try self.io.terminal.scrollViewport(.{
+                .delta = @as(isize, @intCast(sel.end.y)) - @as(isize, @intCast(screen.viewport))
+            });
+        } else if (sel.end.y > viewport_end) {
+            try self.io.terminal.scrollViewport(.{
+                .delta = @as(isize, @intCast(sel.end.y)) - @as(isize, @intCast(viewport_end))
+            });
+        }
+        self.setSelection(sel);
+        try self.queueRender();
+        return .consumed;
+    }
+
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
         self.renderer_state.mutex.lock();
