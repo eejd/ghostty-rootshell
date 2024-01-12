@@ -656,6 +656,10 @@ keybind: Keybinds = .{},
 /// Currently only supported on macOS.
 @"window-step-resize": bool = false,
 
+/// Append new tabs to the end of the tab list instead of right after the
+/// current tab.
+@"window-append-new-tabs": bool = false,
+
 /// When enabled, the full GTK titlebar is displayed instead of your window
 /// manager's simple titlebar. The behavior of this option will vary with your
 /// window manager.
