@@ -264,6 +264,13 @@ extension Ghostty {
                 return weight
             }
 
+            /// Returns the top most parent, or this container. Because this
+            /// would fall back to use to self, the return value is guaranteed.
+            func rootContainer() -> Container {
+                guard let parent = self.parent else { return self }
+                return parent.rootContainer()
+            }
+
             // MARK: - Hashable
             
             func hash(into hasher: inout Hasher) {
