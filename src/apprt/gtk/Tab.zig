@@ -108,13 +108,9 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     c.gtk_box_append(self.box, gl_area_widget);
 
     // Add the notebook page (create tab).
-    const parent_page_idx = parent_page_idx: {
-        // If this option is enabled we append the new tab to the end of the notebook.
-        if (window.app.config.@"window-append-new-tabs") {
-            break :parent_page_idx c.gtk_notebook_get_n_pages(window.notebook);
-        }
-        // Otherwise we add it after the current tab.
-        break :parent_page_idx c.gtk_notebook_get_current_page(window.notebook) + 1;
+    const parent_page_idx = switch (window.app.config.@"window-new-tab-position") {
+        .current => c.gtk_notebook_get_current_page(window.notebook) + 1,
+        .end => c.gtk_notebook_get_n_pages(window.notebook),
     };
 
     const page_idx = c.gtk_notebook_insert_page(
