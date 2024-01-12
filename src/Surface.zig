@@ -1264,6 +1264,50 @@ pub fn keyCallback(
         }
     }
 
+    // Expand selection if one exists and event is shift + <arrows, home, end, pg up/down>
+    if (event.mods.shift) adjust_selection: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        var screen = self.io.terminal.screen;
+        const sel = sel: {
+            const old_sel = screen.selection orelse break :adjust_selection;
+            break :sel old_sel.adjust(&screen, switch (event.key) {
+                .left => .left,
+                .right => .right,
+                .up => .up,
+                .down => .down,
+                .page_up => .page_up,
+                .page_down => .page_down,
+                .home => .home,
+                .end => .end,
+                else => break :adjust_selection,
+            });
+        };
+
+        // Silently consume key releases.
+        if (event.action != .press and event.action != .repeat) return .consumed;
+
+        // If the selection endpoint is outside of the current viewpoint,
+        // scroll it in to view.
+        scroll: {
+            const viewport_max = terminal.Screen.RowIndexTag.viewport.maxLen(&screen) - 1;
+            const viewport_end = screen.viewport + viewport_max;
+            const delta: isize = if (sel.end.y < screen.viewport)
+                @intCast(screen.viewport)
+            else if (sel.end.y > viewport_end)
+                @intCast(viewport_end)
+            else
+                break :scroll;
+            const start_y: isize = @intCast(sel.end.y);
+            try self.io.terminal.scrollViewport(.{ .delta = start_y - delta });
+        }
+
+        // Change our selection and queue a render so its shown.
+        self.setSelection(sel);
+        try self.queueRender();
+        return .consumed;
+    }
+
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
         self.renderer_state.mutex.lock();
