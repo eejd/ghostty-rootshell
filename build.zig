@@ -912,7 +912,7 @@ fn addDeps(
 
             .glfw => {
                 step.root_module.addImport("glfw", mach_glfw_dep.module("mach-glfw"));
-                @import("mach_glfw").link(mach_glfw_dep.builder, step);
+                @import("mach_glfw").addPaths(step);
             },
 
             .gtk => {
