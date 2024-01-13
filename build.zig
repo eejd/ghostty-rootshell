@@ -40,10 +40,18 @@ pub fn build(b: *std.Build) !void {
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
-        if (result.result.isDarwin()) {
-            if (result.query.os_version_min == null) {
-                result.query.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
-            }
+        // On macOS, we specify a minimum supported version. This is important
+        // to set since header files will use this to determine the availability
+        // of certain APIs and I believe it is also encoded in the Mach-O
+        // binaries.
+        if (result.result.os.tag == .macos and
+            result.query.os_version_min == null)
+        {
+            result.query.os_version_min = .{ .semver = .{
+                .major = 12,
+                .minor = 0,
+                .patch = 0,
+            } };
         }
 
         break :target result;
@@ -261,7 +269,7 @@ pub fn build(b: *std.Build) !void {
         }
 
         // App (Mac)
-        if (target.result.isDarwin()) {
+        if (target.result.os.tag == .macos) {
             const bin_install = b.addInstallFile(
                 exe.getEmittedBin(),
                 "Ghostty.app/Contents/MacOS/ghostty",
@@ -282,7 +290,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -305,7 +313,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -329,7 +337,7 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_src_install = b.addInstallFile(
                 src_source,
                 "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
@@ -350,7 +358,7 @@ pub fn build(b: *std.Build) !void {
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
             b.getInstallStep().dependOn(&cap_install.step);
 
-            if (target.result.isDarwin() and exe_ != null) {
+            if (target.result.os.tag == .macos and exe_ != null) {
                 const mac_cap_install = b.addInstallFile(
                     out_source,
                     "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
@@ -379,7 +387,7 @@ pub fn build(b: *std.Build) !void {
                 b.getInstallStep().dependOn(&copy_step.step);
             }
 
-            if (target.result.isDarwin() and exe_ != null) {
+            if (target.result.os.tag == .macos and exe_ != null) {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
                 copy_step.addFileArg(path);

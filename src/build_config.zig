@@ -58,14 +58,14 @@ pub const version_string = options.app_version_string;
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
 
-/// Our build configuration.
+/// Our build configuration. We re-export a lot of these back at the
+/// top-level so its a bit cleaner to use throughout the code. See the doc
+/// comments in BuildConfig for details on each.
 pub const config = BuildConfig.fromOptions();
+pub const flatpak = options.flatpak;
 pub const app_runtime: apprt.Runtime = config.app_runtime;
 pub const font_backend: font.Backend = config.font_backend;
 pub const renderer: rendererpkg.Impl = config.renderer;
-
-/// We want to integrate with Flatpak APIs.
-pub const flatpak = options.flatpak;
 
 pub const Artifact = enum {
     /// Standalone executable
