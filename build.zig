@@ -9,6 +9,7 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
+const BuildConfig = @import("src/build_config.zig").BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -36,10 +37,8 @@ const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 /// Build options, see the build options help for more info.
 var flatpak: bool = false;
-var app_runtime: apprt.Runtime = .none;
-var renderer_impl: renderer.Impl = .opengl;
-var font_backend: font.Backend = .freetype;
 var libadwaita: bool = false;
+var config: BuildConfig = .{};
 
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
@@ -67,29 +66,29 @@ pub fn build(b: *std.Build) !void {
         "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
     ) orelse false;
 
-    font_backend = b.option(
+    config.font_backend = b.option(
         font.Backend,
         "font-backend",
         "The font backend to use for discovery and rasterization.",
     ) orelse font.Backend.default(target.result, wasm_target);
 
-    app_runtime = b.option(
+    config.app_runtime = b.option(
         apprt.Runtime,
         "app-runtime",
         "The app runtime to use. Not all values supported on all platforms.",
     ) orelse apprt.Runtime.default(target.result);
+
+    config.renderer = b.option(
+        renderer.Impl,
+        "renderer",
+        "The app runtime to use. Not all values supported on all platforms.",
+    ) orelse renderer.Impl.default(target.result, wasm_target);
 
     libadwaita = b.option(
         bool,
         "gtk-libadwaita",
         "Enables the use of libadwaita when using the gtk rendering backend.",
     ) orelse true;
-
-    renderer_impl = b.option(
-        renderer.Impl,
-        "renderer",
-        "The app runtime to use. Not all values supported on all platforms.",
-    ) orelse renderer.Impl.default(target.result, wasm_target);
 
     const static = b.option(
         bool,
@@ -182,7 +181,7 @@ pub fn build(b: *std.Build) !void {
     try benchSteps(b, target, optimize, emit_bench);
 
     // We only build an exe if we have a runtime set.
-    const exe_: ?*std.Build.Step.Compile = if (app_runtime != .none) b.addExecutable(.{
+    const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
@@ -190,6 +189,7 @@ pub fn build(b: *std.Build) !void {
     }) else null;
 
     const exe_options = b.addOptions();
+    config.addOptions(exe_options);
     exe_options.addOption(std.SemanticVersion, "app_version", version);
     exe_options.addOption([:0]const u8, "app_version_string", try std.fmt.allocPrintZ(
         b.allocator,
@@ -197,9 +197,6 @@ pub fn build(b: *std.Build) !void {
         .{version},
     ));
     exe_options.addOption(bool, "flatpak", flatpak);
-    exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
-    exe_options.addOption(font.Backend, "font_backend", font_backend);
-    exe_options.addOption(renderer.Impl, "renderer", renderer_impl);
     exe_options.addOption(bool, "libadwaita", libadwaita);
 
     // Exe
@@ -246,7 +243,7 @@ pub fn build(b: *std.Build) !void {
 
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
-        const install_step = if (app_runtime != .none) step: {
+        const install_step = if (config.app_runtime != .none) step: {
             const step = b.addInstallArtifact(exe, .{});
             b.getInstallStep().dependOn(&step.step);
             break :step step;
@@ -742,7 +739,7 @@ fn addDeps(
         .cpu = cpu_opts,
         .optimize = step.root_module.optimize.?,
         .@"enable-freetype" = true,
-        .@"enable-coretext" = font_backend.hasCoretext(),
+        .@"enable-coretext" = config.font_backend.hasCoretext(),
     });
     const ziglyph_dep = b.dependency("ziglyph", .{
         .target = target_triple,
@@ -782,7 +779,7 @@ fn addDeps(
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (font_backend.hasFontconfig()) step.root_module.addImport(
+    if (config.font_backend.hasFontconfig()) step.root_module.addImport(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
@@ -828,7 +825,7 @@ fn addDeps(
         step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
         step.linkSystemLibrary2("zlib", dynamic_link_opts);
 
-        if (font_backend.hasFontconfig()) {
+        if (config.font_backend.hasFontconfig()) {
             step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
         }
     }
@@ -857,7 +854,7 @@ fn addDeps(
         try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
 
         // Only Linux gets fontconfig
-        if (font_backend.hasFontconfig()) {
+        if (config.font_backend.hasFontconfig()) {
             // Fontconfig
             step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
         }
@@ -875,7 +872,7 @@ fn addDeps(
         // get access to glib for dbus.
         if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
-        switch (app_runtime) {
+        switch (config.app_runtime) {
             .none => {},
 
             .glfw => {

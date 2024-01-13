@@ -28,7 +28,7 @@ pub const BuildConfig = struct {
         // support all types.
         step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
         step.addOption(font.Backend, "font_backend", self.font_backend);
-        step.addOption(rendererpkg.Impl, "renderer", self.renderer_impl);
+        step.addOption(rendererpkg.Impl, "renderer", self.renderer);
     }
 
     /// Rehydrate our BuildConfig from the comptime options.
