@@ -774,8 +774,9 @@ keybind: Keybinds = .{},
 /// Available features:
 ///
 ///   - "cursor" - Set the cursor to a blinking bar at the prompt.
+///   - "sudo" - Set sudo wrapper to preserve terminfo.
 ///
-/// Example: "cursor", "no-cursor"
+/// Example: "cursor", "no-cursor", "sudo", "no-sudo"
 @"shell-integration-features": ShellIntegrationFeatures = .{},
 
 /// Sets the reporting format for OSC sequences that request color information.
@@ -2853,6 +2854,7 @@ pub const ShellIntegration = enum {
 /// Shell integration features
 pub const ShellIntegrationFeatures = packed struct {
     cursor: bool = true,
+    sudo: bool = false,
 };
 
 /// OSC 4, 10, 11, and 12 default color reporting format.

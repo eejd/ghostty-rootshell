@@ -64,6 +64,35 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         end
     end
 
+    # Check if we are setting sudo
+    set --local no_sudo "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO"
+
+    # When using sudo shell integration feature, ensure $TERMINFO is set
+    # and `sudo` is not already a function or alias
+    if test -z $no_sudo
+    and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
+        # Wrap `sudo` command to ensure Ghostty terminfo is preserved
+        function sudo -d "Wrap sudo to preserve terminfo"
+            set --local sudo_has_sudoedit_flags "no"
+            for arg in $argv
+                # Check if argument is '-e' or '--edit' (sudoedit flags)
+                if string match -q -- "-e" "$arg"; or string match -q -- "--edit" "$arg"
+                    set --local sudo_has_sudoedit_flags "yes"
+                    break
+                end
+                # Check if argument is neither an option nor a key-value pair
+                if not string match -r -q -- "^-" "$arg"; and not string match -r -q -- "=" "$arg"
+                    break
+                end
+            end
+            if test "$sudo_has_sudoedit_flags" = "yes"
+                command sudo $argv
+            else
+                command sudo TERMINFO="$TERMINFO" $argv
+            end
+        end
+    end
+
     # Setup prompt marking
     function __ghostty_mark_prompt_start --on-event fish_prompt --on-event fish_cancel --on-event fish_posterror
         # If we never got the output end event, then we need to send it now.
