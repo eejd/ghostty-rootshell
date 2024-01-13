@@ -124,13 +124,26 @@ class TerminalManager {
             tg.removeWindow(window)
         }
         
-        // Our windows start our invisible. We need to make it visible. If we
+        // Our windows start out invisible. We need to make it visible. If we
         // don't do this then various features such as window blur won't work because
         // the macOS APIs only work on a visible window.
         controller.showWindow(self)
         
-        // Add the window to the tab group and show it
-        parent.addTabbedWindow(window, ordered: .above)
+        // Add the window to the tab group and show it.
+        switch ghostty.windowNewTabPosition {
+        case "end":
+            // If we already have a tab group and we want the new tab to open at the end,
+            // then we use the last window in the tab group as the parent.
+            if let last = parent.tabGroup?.windows.last {
+                last.addTabbedWindow(window, ordered: .above)
+            } else {
+                fallthrough
+            }
+        case "current": fallthrough
+        default:
+            parent.addTabbedWindow(window, ordered: .above)
+        }
+
         window.makeKeyAndOrderFront(self)
         
         // It takes an event loop cycle until the macOS tabGroup state becomes
