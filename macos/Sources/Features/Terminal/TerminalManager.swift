@@ -129,12 +129,18 @@ class TerminalManager {
         // the macOS APIs only work on a visible window.
         controller.showWindow(self)
         
-        // Add the window to the tab group and show it. If we already have a tab group
-        // and we want the new tab to open at the end, then we use the last window in
-        // the tab group as the parent.
-        if let last = parent.tabGroup?.windows.last, ghostty.windowNewTabPosition == "end" {
-            last.addTabbedWindow(window, ordered: .above)
-        } else {
+        // Add the window to the tab group and show it.
+        switch ghostty.windowNewTabPosition {
+        case "end":
+            // If we already have a tab group and we want the new tab to open at the end,
+            // then we use the last window in the tab group as the parent.
+            if let last = parent.tabGroup?.windows.last {
+                last.addTabbedWindow(window, ordered: .above)
+            } else {
+                fallthrough
+            }
+        case "current": fallthrough
+        default:
             parent.addTabbedWindow(window, ordered: .above)
         }
 
