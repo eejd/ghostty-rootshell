@@ -10,6 +10,37 @@ const apprt = @import("apprt.zig");
 const font = @import("font/main.zig");
 const rendererpkg = @import("renderer.zig");
 
+/// The build configuratin options. This may not be all available options
+/// to `zig build` but it contains all the options that the Ghostty source
+/// needs to know about at comptime.
+///
+/// We put this all in a single struct so that we can check compatibility
+/// between options, make it easy to copy and mutate options for different
+/// build types, etc.
+pub const BuildConfig = struct {
+    app_runtime: apprt.Runtime = .none,
+    renderer: rendererpkg.Impl = .opengl,
+    font_backend: font.Backend = .freetype,
+
+    /// Configure the build options with our values.
+    pub fn addOptions(self: BuildConfig, step: *std.Build.Step.Options) void {
+        // We need to break these down individual because addOption doesn't
+        // support all types.
+        step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
+        step.addOption(font.Backend, "font_backend", self.font_backend);
+        step.addOption(rendererpkg.Impl, "renderer", self.renderer_impl);
+    }
+
+    /// Rehydrate our BuildConfig from the comptime options.
+    pub fn fromOptions() BuildConfig {
+        return .{
+            .app_runtime = std.meta.stringToEnum(apprt.Runtime, @tagName(options.app_runtime)).?,
+            .font_backend = std.meta.stringToEnum(font.Backend, @tagName(options.font_backend)).?,
+            .renderer = std.meta.stringToEnum(rendererpkg.Impl, @tagName(options.renderer)).?,
+        };
+    }
+};
+
 /// The semantic version of this build.
 pub const version = options.app_version;
 pub const version_string = options.app_version_string;
@@ -18,23 +49,11 @@ pub const version_string = options.app_version_string;
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
 
-/// The runtime to back exe artifacts with.
-pub const app_runtime: apprt.Runtime = switch (artifact) {
-    .lib => .none,
-    else => std.meta.stringToEnum(apprt.Runtime, @tagName(options.app_runtime)).?,
-};
-
-/// The font backend desired for the build.
-pub const font_backend: font.Backend = std.meta.stringToEnum(
-    font.Backend,
-    @tagName(options.font_backend),
-).?;
-
-/// The renderer implementation to use.
-pub const renderer: rendererpkg.Impl = std.meta.stringToEnum(
-    rendererpkg.Impl,
-    @tagName(options.renderer),
-).?;
+/// Our build configuration.
+pub const config = BuildConfig.fromOptions();
+pub const app_runtime: apprt.Runtime = config.app_runtime;
+pub const font_backend: font.Backend = config.font_backend;
+pub const renderer: rendererpkg.Impl = config.renderer;
 
 /// We want to integrate with Flatpak APIs.
 pub const flatpak = options.flatpak;

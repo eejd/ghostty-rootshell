@@ -18,7 +18,6 @@ const csi = @import("csi.zig");
 const kitty = @import("kitty.zig");
 const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
-const trace = @import("tracy").trace;
 const color = @import("color.zig");
 const Screen = @import("Screen.zig");
 const mouse_shape = @import("mouse_shape.zig");
@@ -213,9 +212,6 @@ pub fn alternateScreen(
     alloc: Allocator,
     options: AlternateScreenOptions,
 ) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     //log.info("alt screen active={} options={} cursor={}", .{ self.active_screen, options, self.screen.cursor });
 
     // TODO: test
@@ -255,9 +251,6 @@ pub fn primaryScreen(
     alloc: Allocator,
     options: AlternateScreenOptions,
 ) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     //log.info("primary screen active={} options={}", .{ self.active_screen, options });
 
     // TODO: test
@@ -296,9 +289,6 @@ pub const DeccolmMode = enum(u1) {
 /// with the window. This will fix the grid at either 80 or 132 columns.
 /// The rows will continue to be variable.
 pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If DEC mode 40 isn't enabled, then this is ignored. We also make
     // sure that we don't have deccolm set because we want to fully ignore
     // set mode.
@@ -327,9 +317,6 @@ pub fn deccolm(self: *Terminal, alloc: Allocator, mode: DeccolmMode) !void {
 
 /// Resize the underlying terminal.
 pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If our cols/rows didn't change then we're done
     if (self.cols == cols and self.rows == rows) return;
 
@@ -469,9 +456,6 @@ pub fn restoreCursor(self: *Terminal) void {
 
 /// TODO: test
 pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     switch (attr) {
         .unset => {
             self.screen.cursor.pen.fg = .none;
@@ -732,9 +716,6 @@ pub fn printString(self: *Terminal, str: []const u8) !void {
 }
 
 pub fn print(self: *Terminal, c: u21) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // log.debug("print={x} y={} x={}", .{ c, self.screen.cursor.y, self.screen.cursor.x });
 
     // If we're not on the main display, do nothing for now
@@ -971,9 +952,6 @@ pub fn print(self: *Terminal, c: u21) !void {
 }
 
 fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
-    // const tracy = trace(@src());
-    // defer tracy.end();
-
     const c: u21 = c: {
         // TODO: non-utf8 handling, gr
 
@@ -1034,9 +1012,6 @@ fn printCell(self: *Terminal, unmapped_c: u21) *Screen.Cell {
 }
 
 fn printWrap(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setWrapped(true);
 
@@ -1068,9 +1043,6 @@ pub fn printRepeat(self: *Terminal, count_req: usize) !void {
 ///
 /// Sets the cursor to the top left corner.
 pub fn decaln(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Reset margins, also sets cursor to top-left
     self.scrolling_region = .{
         .top = 0,
@@ -1117,9 +1089,6 @@ pub fn decaln(self: *Terminal) !void {
 ///
 /// This unsets the pending wrap state without wrapping.
 pub fn index(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Unset pending wrap state
     self.screen.cursor.pending_wrap = false;
 
@@ -1170,9 +1139,6 @@ pub fn index(self: *Terminal) !void {
 ///   * If the cursor is not on the top-most line of the scrolling region:
 ///     move the cursor one line up
 pub fn reverseIndex(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     if (self.screen.cursor.y != self.scrolling_region.top or
         self.screen.cursor.x < self.scrolling_region.left or
         self.screen.cursor.x > self.scrolling_region.right)
@@ -1191,9 +1157,6 @@ pub fn reverseIndex(self: *Terminal) !void {
 // greater than the bottom-most row it is adjusted to the bottom-most
 // row.
 pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If cursor origin mode is set the cursor row will be moved relative to
     // the top margin row and adjusted to be above or at bottom-most row in
     // the current scroll region.
@@ -1233,9 +1196,6 @@ pub fn eraseDisplay(
     mode: csi.EraseDisplay,
     protected_req: bool,
 ) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Erasing clears all attributes / colors _except_ the background
     const pen: Screen.Cell = switch (self.screen.cursor.pen.bg) {
         .none => .{},
@@ -1384,9 +1344,6 @@ pub fn eraseLine(
     mode: csi.EraseLine,
     protected_req: bool,
 ) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // We always fill with the background
     const pen: Screen.Cell = switch (self.screen.cursor.pen.bg) {
         .none => .{},
@@ -1463,9 +1420,6 @@ pub fn eraseLine(
 ///
 /// Does not change the cursor position.
 pub fn deleteChars(self: *Terminal, count: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     if (count == 0) return;
 
     // If our cursor is outside the margins then do nothing. We DO reset
@@ -1510,9 +1464,6 @@ pub fn deleteChars(self: *Terminal, count: usize) !void {
 }
 
 pub fn eraseChars(self: *Terminal, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     const count = @max(count_req, 1);
 
     // This resets the pending wrap state
@@ -1556,9 +1507,6 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
 
 /// Move the cursor to the left amount cells. If amount is 0, adjust it to 1.
 pub fn cursorLeft(self: *Terminal, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Wrapping behavior depends on various terminal modes
     const WrapMode = enum { none, reverse, reverse_extended };
     const wrap_mode: WrapMode = wrap_mode: {
@@ -1665,9 +1613,6 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
 /// This sequence will not scroll the screen or scroll region. If amount is
 /// 0, adjust it to 1.
 pub fn cursorRight(self: *Terminal, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Always resets pending wrap
     self.screen.cursor.pending_wrap = false;
 
@@ -1685,9 +1630,6 @@ pub fn cursorRight(self: *Terminal, count_req: usize) void {
 /// move distance then it is internally adjusted to the maximum. This sequence
 /// will not scroll the screen or scroll region. If amount is 0, adjust it to 1.
 pub fn cursorDown(self: *Terminal, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Always resets pending wrap
     self.screen.cursor.pending_wrap = false;
 
@@ -1705,9 +1647,6 @@ pub fn cursorDown(self: *Terminal, count_req: usize) void {
 /// move distance then it is internally adjusted to the maximum. If amount is
 /// 0, adjust it to 1.
 pub fn cursorUp(self: *Terminal, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Always resets pending wrap
     self.screen.cursor.pending_wrap = false;
 
@@ -1723,18 +1662,12 @@ pub fn cursorUp(self: *Terminal, count_req: usize) void {
 
 /// Backspace moves the cursor back a column (but not less than 0).
 pub fn backspace(self: *Terminal) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     self.cursorLeft(1);
 }
 
 /// Horizontal tab moves the cursor to the next tabstop, clearing
 /// the screen to the left the tabstop.
 pub fn horizontalTab(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     while (self.screen.cursor.x < self.scrolling_region.right) {
         // Move the cursor right
         self.screen.cursor.x += 1;
@@ -1748,9 +1681,6 @@ pub fn horizontalTab(self: *Terminal) !void {
 
 // Same as horizontalTab but moves to the previous tabstop instead of the next.
 pub fn horizontalTabBack(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // With origin mode enabled, our leftmost limit is the left margin.
     const left_limit = if (self.modes.get(.origin)) self.scrolling_region.left else 0;
 
@@ -1786,9 +1716,6 @@ pub fn tabReset(self: *Terminal) void {
 
 /// Carriage return moves the cursor to the first column.
 pub fn carriageReturn(self: *Terminal) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Always reset pending wrap state
     self.screen.cursor.pending_wrap = false;
 
@@ -1803,9 +1730,6 @@ pub fn carriageReturn(self: *Terminal) void {
 
 /// Linefeed moves the cursor to the next line.
 pub fn linefeed(self: *Terminal) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     try self.index();
     if (self.modes.get(.linefeed)) self.carriageReturn();
 }
@@ -1818,9 +1742,6 @@ pub fn linefeed(self: *Terminal) !void {
 ///
 /// The inserted cells are colored according to the current SGR state.
 pub fn insertBlanks(self: *Terminal, count: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Unset pending wrap state without wrapping. Note: this purposely
     // happens BEFORE the scroll region check below, because that's what
     // xterm does.
@@ -1901,9 +1822,6 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 ///
 /// Moves the cursor to the left margin.
 pub fn insertLines(self: *Terminal, count: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Rare, but happens
     if (count == 0) return;
 
@@ -1965,9 +1883,6 @@ pub fn insertLines(self: *Terminal, count: usize) !void {
 ///
 /// Moves the cursor to the left margin.
 pub fn deleteLines(self: *Terminal, count: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If the cursor is outside the scroll region we do nothing.
     if (self.screen.cursor.y < self.scrolling_region.top or
         self.screen.cursor.y > self.scrolling_region.bottom or
@@ -2024,9 +1939,6 @@ pub fn deleteLines(self: *Terminal, count: usize) !void {
 
 /// Scroll the text down by one row.
 pub fn scrollDown(self: *Terminal, count: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Preserve the cursor
     const cursor = self.screen.cursor;
     defer self.screen.cursor = cursor;
@@ -2045,9 +1957,6 @@ pub fn scrollDown(self: *Terminal, count: usize) !void {
 ///
 /// Does not change the (absolute) cursor position.
 pub fn scrollUp(self: *Terminal, count: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Preserve the cursor
     const cursor = self.screen.cursor;
     defer self.screen.cursor = cursor;
@@ -2072,9 +1981,6 @@ pub const ScrollViewport = union(enum) {
 
 /// Scroll the viewport of the terminal grid.
 pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     try self.screen.scroll(switch (behavior) {
         .top => .{ .top = {} },
         .bottom => .{ .bottom = {} },
@@ -2095,9 +2001,6 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
 ///
 /// Top and bottom are 1-indexed.
 pub fn setTopAndBottomMargin(self: *Terminal, top_req: usize, bottom_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     const top = @max(1, top_req);
     const bottom = @min(self.rows, if (bottom_req == 0) self.rows else bottom_req);
     if (top >= bottom) return;
@@ -2109,9 +2012,6 @@ pub fn setTopAndBottomMargin(self: *Terminal, top_req: usize, bottom_req: usize)
 
 /// DECSLRM
 pub fn setLeftAndRightMargin(self: *Terminal, left_req: usize, right_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // We must have this mode enabled to do anything
     if (!self.modes.get(.enable_left_and_right_margin)) return;
 

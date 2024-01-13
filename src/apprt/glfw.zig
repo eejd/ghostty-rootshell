@@ -8,7 +8,6 @@ const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const trace = @import("tracy").trace;
 const glfw = @import("glfw");
 const macos = @import("macos");
 const objc = @import("objc");
@@ -741,9 +740,6 @@ pub const Surface = struct {
     }
 
     fn charCallback(window: glfw.Window, codepoint: u21) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // We need a key event in order to process the charcallback. If it
@@ -780,8 +776,6 @@ pub const Surface = struct {
         glfw_action: glfw.Action,
         glfw_mods: glfw.Mods,
     ) void {
-        const tracy = trace(@src());
-        defer tracy.end();
         _ = scancode;
 
         const core_win = window.getUserPointer(CoreSurface) orelse return;
@@ -954,9 +948,6 @@ pub const Surface = struct {
     }
 
     fn focusCallback(window: glfw.Window, focused: bool) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.focusCallback(focused) catch |err| {
             log.err("error in focus callback err={}", .{err});
@@ -965,9 +956,6 @@ pub const Surface = struct {
     }
 
     fn refreshCallback(window: glfw.Window) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const core_win = window.getUserPointer(CoreSurface) orelse return;
         core_win.refreshCallback() catch |err| {
             log.err("error in refresh callback err={}", .{err});
@@ -976,9 +964,6 @@ pub const Surface = struct {
     }
 
     fn scrollCallback(window: glfw.Window, xoff: f64, yoff: f64) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         // Glfw doesn't support any of the scroll mods.
         const scroll_mods: input.ScrollMods = .{};
 
@@ -994,9 +979,6 @@ pub const Surface = struct {
         unscaled_xpos: f64,
         unscaled_ypos: f64,
     ) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert our unscaled x/y to scaled.
@@ -1026,9 +1008,6 @@ pub const Surface = struct {
         glfw_action: glfw.Action,
         glfw_mods: glfw.Mods,
     ) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const core_win = window.getUserPointer(CoreSurface) orelse return;
 
         // Convert glfw button to input button
@@ -1061,9 +1040,6 @@ pub const Surface = struct {
     }
 
     fn dropCallback(window: glfw.Window, paths: [][*:0]const u8) void {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         const surface = window.getUserPointer(CoreSurface) orelse return;
 
         var list = std.ArrayList(u8).init(surface.alloc);

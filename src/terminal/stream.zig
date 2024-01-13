@@ -8,7 +8,6 @@ const kitty = @import("kitty.zig");
 const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
-const trace = @import("tracy").trace;
 const MouseShape = @import("mouse_shape.zig").MouseShape;
 
 const log = std.log.scoped(.stream);
@@ -44,17 +43,11 @@ pub fn Stream(comptime Handler: type) type {
 
         /// Process a string of characters.
         pub fn nextSlice(self: *Self, c: []const u8) !void {
-            const tracy = trace(@src());
-            defer tracy.end();
             for (c) |single| try self.next(single);
         }
 
         /// Process the next character and call any callbacks if necessary.
         pub fn next(self: *Self, c: u8) !void {
-            const tracy = trace(@src());
-            tracy.value(@as(u64, @intCast(c)));
-            defer tracy.end();
-
             // log.debug("char: {c}", .{c});
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
@@ -108,10 +101,6 @@ pub fn Stream(comptime Handler: type) type {
         }
 
         pub fn execute(self: *Self, c: u8) !void {
-            const tracy = trace(@src());
-            tracy.value(@as(u64, @intCast(c)));
-            defer tracy.end();
-
             switch (@as(ansi.C0, @enumFromInt(c))) {
                 // We ignore SOH/STX: https://github.com/microsoft/terminal/issues/10786
                 .NUL, .SOH, .STX => {},

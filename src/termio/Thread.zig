@@ -7,8 +7,6 @@ const builtin = @import("builtin");
 const xev = @import("xev");
 const termio = @import("../termio.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
-const tracy = @import("tracy");
-const trace = tracy.trace;
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.io_thread);
@@ -142,7 +140,6 @@ pub fn threadMain(self: *Thread) void {
 
 fn threadMain_(self: *Thread) !void {
     defer log.debug("IO thread exited", .{});
-    tracy.setThreadName("pty io");
 
     // Run our thread start/end callbacks. This allows the implementation
     // to hook into the event loop as needed.
@@ -162,9 +159,6 @@ fn threadMain_(self: *Thread) !void {
 
 /// Drain the mailbox, handling all the messages in our terminal implementation.
 fn drainMailbox(self: *Thread) !void {
-    const zone = trace(@src());
-    defer zone.end();
-
     // This holds the mailbox lock for the duration of the drain. The
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.
@@ -289,9 +283,6 @@ fn wakeupCallback(
         log.err("error in wakeup err={}", .{err});
         return .rearm;
     };
-
-    const zone = trace(@src());
-    defer zone.end();
 
     const t = self_.?;
 

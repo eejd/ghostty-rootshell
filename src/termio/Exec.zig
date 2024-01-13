@@ -16,8 +16,6 @@ const terminal = @import("../terminal/main.zig");
 const terminfo = @import("../terminfo/main.zig");
 const xev = @import("xev");
 const renderer = @import("../renderer.zig");
-const tracy = @import("tracy");
-const trace = tracy.trace;
 const apprt = @import("../apprt.zig");
 const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
@@ -1514,9 +1512,6 @@ const ReadThread = struct {
         ev: *EventData,
         buf: []const u8,
     ) void {
-        const zone = trace(@src());
-        defer zone.end();
-
         // log.info("DATA: {d}", .{n});
         // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
 

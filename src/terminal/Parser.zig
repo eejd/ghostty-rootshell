@@ -6,7 +6,6 @@ const Parser = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const trace = @import("tracy").trace;
 const testing = std.testing;
 const table = @import("parse_table.zig").table;
 const osc = @import("osc.zig");
@@ -231,9 +230,6 @@ pub fn deinit(self: *Parser) void {
 /// Up to 3 actions may need to be executed -- in order -- representing
 /// the state exit, transition, and entry actions.
 pub fn next(self: *Parser, c: u8) [3]?Action {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If we're processing UTF-8, we handle this manually.
     if (self.state == .utf8) {
         return .{ self.next_utf8(c), null, null };

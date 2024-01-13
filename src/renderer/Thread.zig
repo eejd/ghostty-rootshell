@@ -9,8 +9,6 @@ const renderer = @import("../renderer.zig");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
-const tracy = @import("tracy");
-const trace = tracy.trace;
 const App = @import("../App.zig");
 
 const Allocator = std.mem.Allocator;
@@ -177,7 +175,6 @@ pub fn threadMain(self: *Thread) void {
 
 fn threadMain_(self: *Thread) !void {
     defer log.debug("renderer thread exited", .{});
-    tracy.setThreadName("renderer");
 
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
@@ -242,9 +239,6 @@ fn stopDrawTimer(self: *Thread) void {
 
 /// Drain the mailbox.
 fn drainMailbox(self: *Thread) !void {
-    const zone = trace(@src());
-    defer zone.end();
-
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
@@ -358,9 +352,6 @@ fn wakeupCallback(
         return .rearm;
     };
 
-    const zone = trace(@src());
-    defer zone.end();
-
     const t = self_.?;
 
     // When we wake up, we check the mailbox. Mailbox producers should
@@ -425,9 +416,6 @@ fn renderCallback(
     _: *xev.Completion,
     r: xev.Timer.RunError!void,
 ) xev.CallbackAction {
-    const zone = trace(@src());
-    defer zone.end();
-
     _ = r catch unreachable;
     const t = self_ orelse {
         // This shouldn't happen so we log it.
@@ -470,9 +458,6 @@ fn cursorTimerCallback(
     _: *xev.Completion,
     r: xev.Timer.RunError!void,
 ) xev.CallbackAction {
-    const zone = trace(@src());
-    defer zone.end();
-
     _ = r catch |err| switch (err) {
         // This is sent when our timer is canceled. That's fine.
         error.Canceled => return .disarm,

@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const harfbuzz = @import("harfbuzz");
-const trace = @import("tracy").trace;
 const font = @import("../main.zig");
 const Face = font.Face;
 const DeferredFace = font.DeferredFace;
@@ -106,9 +105,6 @@ pub const Shaper = struct {
     ///
     /// If there is not enough space in the cell buffer, an error is returned.
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         // We only do shaping if the font is not a special-case. For special-case
         // fonts, the codepoint == glyph_index so we don't need to run any shaping.
         if (run.font_index.special() == null) {

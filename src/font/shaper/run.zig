@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const shape = @import("../shape.zig");
 const terminal = @import("../../terminal/main.zig");
-const trace = @import("tracy").trace;
 
 /// A single text run. A text run is only valid for one Shaper instance and
 /// until the next run is created. A text run never goes across multiple
@@ -33,9 +32,6 @@ pub const RunIterator = struct {
     i: usize = 0,
 
     pub fn next(self: *RunIterator, alloc: Allocator) !?TextRun {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         // Trim the right side of a row that might be empty
         const max: usize = max: {
             var j: usize = self.row.lenCells();
