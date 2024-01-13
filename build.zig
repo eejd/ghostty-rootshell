@@ -36,8 +36,6 @@ comptime {
 const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 /// Build options, see the build options help for more info.
-var flatpak: bool = false;
-var libadwaita: bool = false;
 var config: BuildConfig = .{};
 
 pub fn build(b: *std.Build) !void {
@@ -60,7 +58,7 @@ pub fn build(b: *std.Build) !void {
     var env = try std.process.getEnvMap(b.allocator);
     defer env.deinit();
 
-    flatpak = b.option(
+    config.flatpak = b.option(
         bool,
         "flatpak",
         "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
@@ -84,7 +82,7 @@ pub fn build(b: *std.Build) !void {
         "The app runtime to use. Not all values supported on all platforms.",
     ) orelse renderer.Impl.default(target.result, wasm_target);
 
-    libadwaita = b.option(
+    config.libadwaita = b.option(
         bool,
         "gtk-libadwaita",
         "Enables the use of libadwaita when using the gtk rendering backend.",
@@ -196,8 +194,6 @@ pub fn build(b: *std.Build) !void {
         "{}",
         .{version},
     ));
-    exe_options.addOption(bool, "flatpak", flatpak);
-    exe_options.addOption(bool, "libadwaita", libadwaita);
 
     // Exe
     if (exe_) |exe| {
@@ -411,7 +407,7 @@ pub fn build(b: *std.Build) !void {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        if (flatpak) {
+        if (config.flatpak) {
             b.installFile("dist/linux/app-flatpak.desktop", "share/applications/com.mitchellh.ghostty.desktop");
         } else {
             b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
@@ -870,7 +866,7 @@ fn addDeps(
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
-        if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
+        if (config.flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
         switch (config.app_runtime) {
             .none => {},
@@ -882,7 +878,7 @@ fn addDeps(
 
             .gtk => {
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                if (libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
+                if (config.libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
             },
         }
     }
