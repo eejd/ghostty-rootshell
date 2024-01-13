@@ -218,6 +218,30 @@ _ghostty_deferred_init() {
 	  builtin print -rnu $_ghostty_fd \$'\\e[0 q'"
     fi
 
+    # Sudo
+    if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO" != "1" ]] && [[ -n "$TERMINFO" ]]; then
+      # Wrap `sudo` command to ensure Ghostty terminfo is preserved
+      sudo() {
+        builtin local sudo_has_sudoedit_flags="no"
+        for arg in "$@"; do
+          # Check if argument is '-e' or '--edit' (sudoedit flags)
+          if [[ "$arg" == "-e" || $arg == "--edit" ]]; then
+            sudo_has_sudoedit_flags="yes"
+            builtin break
+          fi
+          # Check if argument is neither an option nor a key-value pair
+          if [[ "$arg" != -* && "$arg" != *=* ]]; then
+            builtin break
+          fi
+        done
+        if [[ "$sudo_has_sudoedit_flags" == "yes" ]]; then
+          builtin command sudo "$@";
+        else
+          builtin command sudo TERMINFO="$TERMINFO" "$@";
+        fi
+      }
+    fi
+
     # Some zsh users manually run `source ~/.zshrc` in order to apply rc file
     # changes to the current shell. This is a terrible practice that breaks many
     # things, including our shell integration. For example, Oh My Zsh and Prezto

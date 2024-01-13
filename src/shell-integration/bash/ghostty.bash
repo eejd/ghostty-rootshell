@@ -41,10 +41,34 @@ function __ghostty_precmd() {
       PS2=$PS2'\[\e]133;B\a\]'
 
       # Cursor
-    if test "$GHOSTTY_SHELL_INTEGRATION_NO_CURSOR" != "1"; then
-      PS1=$PS1'\[\e[5 q\]'
-      PS0=$PS0'\[\e[0 q\]'
-    fi
+      if test "$GHOSTTY_SHELL_INTEGRATION_NO_CURSOR" != "1"; then
+        PS1=$PS1'\[\e[5 q\]'
+        PS0=$PS0'\[\e[0 q\]'
+      fi
+
+      # Sudo
+      if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO" != "1" ]] && [[ -n "$TERMINFO" ]]; then
+        # Wrap `sudo` command to ensure Ghostty terminfo is preserved
+        sudo() {
+          builtin local sudo_has_sudoedit_flags="no"
+          for arg in "$@"; do
+            # Check if argument is '-e' or '--edit' (sudoedit flags)
+            if [[ "$arg" == "-e" || $arg == "--edit" ]]; then
+              sudo_has_sudoedit_flags="yes"
+              builtin break
+            fi
+            # Check if argument is neither an option nor a key-value pair
+            if [[ "$arg" != -* && "$arg" != *=* ]]; then
+              builtin break
+            fi
+          done
+          if [[ "$sudo_has_sudoedit_flags" == "yes" ]]; then
+            builtin command sudo "$@";
+          else
+            builtin command sudo TERMINFO="$TERMINFO" "$@";
+          fi
+        }
+      fi
 
       # Command
       PS0=$PS0'$(__ghostty_get_current_command)'

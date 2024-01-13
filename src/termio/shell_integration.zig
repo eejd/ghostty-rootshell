@@ -49,6 +49,7 @@ pub fn setup(
 
     // Setup our feature env vars
     if (!features.cursor) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
+    if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
 
     return shell;
 }
