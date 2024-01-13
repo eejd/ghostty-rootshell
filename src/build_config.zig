@@ -18,6 +18,7 @@ const rendererpkg = @import("renderer.zig");
 /// between options, make it easy to copy and mutate options for different
 /// build types, etc.
 pub const BuildConfig = struct {
+    static: bool = false,
     flatpak: bool = false,
     libadwaita: bool = false,
     app_runtime: apprt.Runtime = .none,
@@ -35,7 +36,9 @@ pub const BuildConfig = struct {
         step.addOption(rendererpkg.Impl, "renderer", self.renderer);
     }
 
-    /// Rehydrate our BuildConfig from the comptime options.
+    /// Rehydrate our BuildConfig from the comptime options. Note that not all
+    /// options are available at comptime, so look closely at this implementation
+    /// to see what is and isn't available.
     pub fn fromOptions() BuildConfig {
         return .{
             .flatpak = options.flatpak,

@@ -35,9 +35,6 @@ comptime {
 /// The version of the next release.
 const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
-/// Build options, see the build options help for more info.
-var config: BuildConfig = .{};
-
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = target: {
@@ -57,6 +54,11 @@ pub fn build(b: *std.Build) !void {
     // We use env vars throughout the build so we grab them immediately here.
     var env = try std.process.getEnvMap(b.allocator);
     defer env.deinit();
+
+    // Our build configuration. This is all on a struct so that we can easily
+    // modify it for specific build types (for example, wasm we strictly
+    // control our backends).
+    var config: BuildConfig = .{};
 
     config.flatpak = b.option(
         bool,
@@ -88,7 +90,7 @@ pub fn build(b: *std.Build) !void {
         "Enables the use of libadwaita when using the gtk rendering backend.",
     ) orelse true;
 
-    const static = b.option(
+    config.static = b.option(
         bool,
         "static",
         "Statically build as much as possible for the exe",
@@ -176,7 +178,7 @@ pub fn build(b: *std.Build) !void {
     b.enable_wasmtime = true;
 
     // Add our benchmarks
-    try benchSteps(b, target, optimize, emit_bench);
+    try benchSteps(b, target, optimize, config, emit_bench);
 
     // We only build an exe if we have a runtime set.
     const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
@@ -200,7 +202,7 @@ pub fn build(b: *std.Build) !void {
         exe.root_module.addOptions("build_options", exe_options);
 
         // Add the shared dependencies
-        _ = try addDeps(b, exe, static);
+        _ = try addDeps(b, exe, config);
 
         // If we're in NixOS but not in the shell environment then we issue
         // a warning because the rpath may not be setup properly.
@@ -428,6 +430,17 @@ pub fn build(b: *std.Build) !void {
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
     if (builtin.target.isDarwin() and target.result.os.tag == .macos) {
+        // Modify our build configuration for macOS builds.
+        const macos_config: BuildConfig = config: {
+            var copy = config;
+
+            // Always static for the macOS app because we want all of our
+            // dependencies in a fat static library.
+            copy.static = true;
+
+            break :config copy;
+        };
+
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
@@ -444,7 +457,7 @@ pub fn build(b: *std.Build) !void {
             lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, true);
+            var lib_list = try addDeps(b, lib, macos_config);
             try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
@@ -473,7 +486,7 @@ pub fn build(b: *std.Build) !void {
             lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, true);
+            var lib_list = try addDeps(b, lib, macos_config);
             try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
@@ -539,6 +552,20 @@ pub fn build(b: *std.Build) !void {
             }),
         };
 
+        // Modify our build configuration for wasm builds.
+        const wasm_config: BuildConfig = config: {
+            var copy = config;
+
+            // Always static for the wasm app because we want all of our
+            // dependencies in a fat static library.
+            copy.static = true;
+
+            // Backends that are fixed for wasm
+            copy.font_backend = .web_canvas;
+
+            break :config copy;
+        };
+
         // Whether we're using wasm shared memory. Some behaviors change.
         // For now we require this but I wanted to make the code handle both
         // up front.
@@ -567,7 +594,7 @@ pub fn build(b: *std.Build) !void {
         wasm.root_module.stack_protector = false;
 
         // Wasm-specific deps
-        _ = try addDeps(b, wasm, true);
+        _ = try addDeps(b, wasm, wasm_config);
 
         // Install
         const wasm_install = b.addInstallArtifact(wasm, .{});
@@ -587,7 +614,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         main_test.root_module.addOptions("build_options", exe_options);
-        _ = try addDeps(b, main_test, true);
+        _ = try addDeps(b, main_test, wasm_config);
         test_step.dependOn(&main_test.step);
     }
 
@@ -624,7 +651,11 @@ pub fn build(b: *std.Build) !void {
 
         {
             if (emit_test_exe) b.installArtifact(main_test);
-            _ = try addDeps(b, main_test, true);
+            _ = try addDeps(b, main_test, config: {
+                var copy = config;
+                copy.static = true;
+                break :config copy;
+            });
             main_test.root_module.addOptions("build_options", exe_options);
 
             const test_run = b.addRunArtifact(main_test);
@@ -640,7 +671,7 @@ const LazyPathList = std.ArrayList(std.Build.LazyPath);
 fn addDeps(
     b: *std.Build,
     step: *std.Build.Step.Compile,
-    static: bool,
+    config: BuildConfig,
 ) !LazyPathList {
     var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
@@ -811,7 +842,7 @@ fn addDeps(
     try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
 
     // Dynamic link
-    if (!static) {
+    if (!config.static) {
         step.addIncludePath(freetype_dep.path(""));
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
@@ -827,7 +858,7 @@ fn addDeps(
     }
 
     // Other dependencies, we may dynamically link
-    if (static) {
+    if (config.static) {
         step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
         try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
 
@@ -890,6 +921,7 @@ fn benchSteps(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    config: BuildConfig,
     install: bool,
 ) !void {
     // Open the directory ./src/bench
@@ -924,7 +956,11 @@ fn benchSteps(
             // .main_pkg_path = .{ .path = "./src" },
         });
         if (install) b.installArtifact(c_exe);
-        _ = try addDeps(b, c_exe, true);
+        _ = try addDeps(b, c_exe, config: {
+            var copy = config;
+            copy.static = true;
+            break :config copy;
+        });
     }
 }
 
