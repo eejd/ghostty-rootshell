@@ -105,11 +105,6 @@ pub fn main() !MainReturn {
     try app_runtime.run();
 }
 
-// Required by tracy/tracy.zig to enable/disable tracy support.
-pub fn tracy_enabled() bool {
-    return options.tracy_enabled;
-}
-
 pub const std_options = struct {
     // Our log level is always at least info in every build mode.
     pub const log_level: std.log.Level = switch (builtin.mode) {

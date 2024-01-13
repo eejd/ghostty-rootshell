@@ -35,7 +35,6 @@ comptime {
 const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 /// Build options, see the build options help for more info.
-var tracy: bool = false;
 var flatpak: bool = false;
 var app_runtime: apprt.Runtime = .none;
 var renderer_impl: renderer.Impl = .opengl;
@@ -61,15 +60,6 @@ pub fn build(b: *std.Build) !void {
     // We use env vars throughout the build so we grab them immediately here.
     var env = try std.process.getEnvMap(b.allocator);
     defer env.deinit();
-
-    // Note: Our tracy usage has a huge memory leak currently so only enable
-    // this if you really want tracy integration and don't mind the memory leak.
-    // Or, please contribute a fix because I don't know where it is.
-    tracy = b.option(
-        bool,
-        "tracy",
-        "Enable Tracy integration (default true in Debug on Linux)",
-    ) orelse false;
 
     flatpak = b.option(
         bool,
@@ -206,7 +196,6 @@ pub fn build(b: *std.Build) !void {
         "{}",
         .{version},
     ));
-    exe_options.addOption(bool, "tracy_enabled", tracy);
     exe_options.addOption(bool, "flatpak", flatpak);
     exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
     exe_options.addOption(font.Backend, "font_backend", font_backend);
@@ -743,10 +732,6 @@ fn addDeps(
         .cpu = cpu_opts,
         .optimize = step.root_module.optimize.?,
     });
-    const tracy_dep = b.dependency("tracy", .{
-        .target = target_triple,
-        .optimize = step.root_module.optimize.?,
-    });
     const zlib_dep = b.dependency("zlib", .{
         .target = target_triple,
         .cpu = cpu_opts,
@@ -767,9 +752,6 @@ fn addDeps(
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
-        // We link this package but its a no-op since Tracy
-        // never actually WORKS with wasm.
-        step.root_module.addImport("tracy", tracy_dep.module("tracy"));
         step.root_module.addImport("zig-js", js_dep.module("zig-js"));
 
         return static_libs;
@@ -826,13 +808,6 @@ fn addDeps(
     step.root_module.addImport("cimgui", cimgui_dep.module("cimgui"));
     step.linkLibrary(cimgui_dep.artifact("cimgui"));
     try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
-
-    // Tracy
-    step.root_module.addImport("tracy", tracy_dep.module("tracy"));
-    if (tracy) {
-        step.linkLibrary(tracy_dep.artifact("tracy"));
-        try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
-    }
 
     // Glslang
     step.linkLibrary(glslang_dep.artifact("glslang"));
