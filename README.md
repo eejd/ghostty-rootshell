@@ -179,6 +179,7 @@ The currently supported shell integration features in Ghostty:
 - The `jump_to_prompt` keybinding can be used to scroll the terminal window
   forward and back through prompts.
 - Alt+click (option+click on macOS) to move the cursor at the prompt.
+- `sudo` is wrapped to preserve Ghostty terminfo (disabled by default)
 
 #### Shell Integration Installation and Verification
 
@@ -243,11 +244,25 @@ fi
 **This must be at the top of your bashrc, not the bottom.** The same
 goes for any other shell.
 
-### Terminfo and SSH
+### Terminfo
 
 Ghostty ships with its own [terminfo](https://en.wikipedia.org/wiki/Terminfo)
 entry to tell software about its capabilities. When that entry is detected,
 Ghostty sets the `TERM` environment variable to `xterm-ghostty`.
+
+If the Ghostty resources dir ("share" directory) is detected, Ghostty will
+set a `TERMINFO` environment variable so `xterm-ghostty` properly advertises
+the available capabilities of Ghostty. On macOS, this always happens because
+the terminfo is embedded in the app bundle. On Linux, this depends on
+appropriate installation (see the installation instructions).
+
+If you use `sudo`, sudo may reset your environment variables and you may see
+an error about `missing or unsuitable terminal: xterm-ghostty` when running
+some programs. To resolve this, you must either configure sudo to preserve
+the `TERMINFO` environment variable, or you can use shell-integration with
+the `sudo` feature enabled and Ghostty will alias sudo to automatically do
+this for you. To enable the shell-integration feature specify
+`shell-integration-features = sudo` in your configuration.
 
 If you use SSH to connect to other machines that do not have Ghostty's terminfo
 entry, you will see error messages like `missing or unsuitable terminal:
