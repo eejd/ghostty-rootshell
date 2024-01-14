@@ -1,7 +1,14 @@
+import os
 import SwiftUI
 import GhosttyKit
 
 struct Ghostty {
+    // The primary logger used by the GhosttyKit libraries.
+    static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier!,
+        category: "ghostty"
+    )
+    
     // All the notifications that will be emitted will be put here.
     struct Notification {}
 
