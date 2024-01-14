@@ -17,8 +17,8 @@ pub const SplitResizeDirection = Binding.Action.SplitResizeDirection;
 // Keymap is only available on macOS right now. We could implement it
 // in theory for XKB too on Linux but we don't need it right now.
 pub const Keymap = switch (builtin.os.tag) {
-    .ios, .macos => @import("input/KeymapDarwin.zig"),
-    else => struct {},
+    .macos => @import("input/KeymapDarwin.zig"),
+    else => @import("input/KeymapNoop.zig"),
 };
 
 test {

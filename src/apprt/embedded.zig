@@ -1664,6 +1664,9 @@ pub const CAPI = struct {
         ptr: *Surface,
         window: *anyopaque,
     ) void {
+        // This is only supported on macOS
+        if (comptime builtin.target.os.tag != .macos) return;
+
         const config = ptr.app.config;
 
         // Do nothing if we don't have background transparency enabled
