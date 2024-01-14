@@ -15,6 +15,12 @@ pub const Options = struct {
     /// The path to write the framework
     out_path: []const u8,
 
+    /// The libraries to bundle
+    libraries: []const Library,
+};
+
+/// A single library to bundle into the xcframework.
+pub const Library = struct {
     /// Library file (dylib, a) to package.
     library: LazyPath,
 
@@ -41,10 +47,12 @@ pub fn create(b: *std.Build, opts: Options) *XCFrameworkStep {
         const run = RunStep.create(b, b.fmt("xcframework {s}", .{opts.name}));
         run.has_side_effects = true;
         run.addArgs(&.{ "xcodebuild", "-create-xcframework" });
-        run.addArg("-library");
-        run.addFileArg(opts.library);
-        run.addArg("-headers");
-        run.addFileArg(opts.headers);
+        for (opts.libraries) |lib| {
+            run.addArg("-library");
+            run.addFileArg(lib.library);
+            run.addArg("-headers");
+            run.addFileArg(lib.headers);
+        }
         run.addArg("-output");
         run.addArg(opts.out_path);
         break :run run;

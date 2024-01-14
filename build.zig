@@ -37,42 +37,7 @@ const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
-    const target = target: {
-        var result = b.standardTargetOptions(.{});
-
-        // On macOS, we specify a minimum supported version. This is important
-        // to set since header files will use this to determine the availability
-        // of certain APIs and I believe it is also encoded in the Mach-O
-        // binaries.
-        if (result.query.os_version_min == null) {
-            switch (result.result.os.tag) {
-                // The lowest supported version of macOS is 12.x because
-                // this is the first version to support Apple Silicon so it is
-                // the earliest version we can virtualize to test (I only have
-                // an Apple Silicon machine for macOS).
-                .macos => {
-                    result.query.os_version_min = .{ .semver = .{
-                        .major = 12,
-                        .minor = 0,
-                        .patch = 0,
-                    } };
-                },
-
-                // iOS 17 picked arbitrarily
-                .ios => {
-                    result.query.os_version_min = .{ .semver = .{
-                        .major = 17,
-                        .minor = 0,
-                        .patch = 0,
-                    } };
-                },
-
-                else => {},
-            }
-        }
-
-        break :target result;
-    };
+    const target = b.standardTargetOptions(.{});
 
     const wasm_target: WasmTarget = .browser;
 
@@ -455,92 +420,38 @@ pub fn build(b: *std.Build) !void {
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
     if (builtin.target.isDarwin() and target.result.os.tag == .macos) {
-        // Modify our build configuration for macOS builds.
-        const macos_config: BuildConfig = config: {
-            var copy = config;
-
-            // Always static for the macOS app because we want all of our
-            // dependencies in a fat static library.
-            copy.static = true;
-
-            break :config copy;
-        };
-
-        const static_lib_aarch64 = lib: {
-            const lib = b.addStaticLibrary(.{
-                .name = "ghostty",
-                .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = b.resolveTargetQuery(.{
-                    .cpu_arch = .aarch64,
-                    .os_tag = .macos,
-                    .os_version_min = target.query.os_version_min,
-                }),
-                .optimize = optimize,
-            });
-            lib.bundle_compiler_rt = true;
-            lib.linkLibC();
-            lib.root_module.addOptions("build_options", exe_options);
-
-            // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, macos_config);
-            try lib_list.append(lib.getEmittedBin());
-            const libtool = LibtoolStep.create(b, .{
-                .name = "ghostty",
-                .out_name = "libghostty-aarch64-fat.a",
-                .sources = lib_list.items,
-            });
-            libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(libtool.step);
-
-            break :lib libtool;
-        };
-
-        const static_lib_x86_64 = lib: {
-            const lib = b.addStaticLibrary(.{
-                .name = "ghostty",
-                .root_source_file = .{ .path = "src/main_c.zig" },
-                .target = b.resolveTargetQuery(.{
-                    .cpu_arch = .x86_64,
-                    .os_tag = .macos,
-                    .os_version_min = target.query.os_version_min,
-                }),
-                .optimize = optimize,
-            });
-            lib.bundle_compiler_rt = true;
-            lib.linkLibC();
-            lib.root_module.addOptions("build_options", exe_options);
-
-            // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, macos_config);
-            try lib_list.append(lib.getEmittedBin());
-            const libtool = LibtoolStep.create(b, .{
-                .name = "ghostty",
-                .out_name = "libghostty-x86_64-fat.a",
-                .sources = lib_list.items,
-            });
-            libtool.step.dependOn(&lib.step);
-            b.default_step.dependOn(libtool.step);
-
-            break :lib libtool;
-        };
-
-        const static_lib_universal = LipoStep.create(b, .{
-            .name = "ghostty",
-            .out_name = "libghostty.a",
-            .input_a = static_lib_aarch64.output,
-            .input_b = static_lib_x86_64.output,
-        });
-        static_lib_universal.step.dependOn(static_lib_aarch64.step);
-        static_lib_universal.step.dependOn(static_lib_x86_64.step);
+        // Create the universal macOS lib.
+        const macos_lib_step, const macos_lib_path = try createMacOSLib(
+            b,
+            optimize,
+            config,
+            exe_options,
+        );
 
         // Add our library to zig-out
         const lib_install = b.addInstallLibFile(
-            static_lib_universal.output,
-            "libghostty.a",
+            macos_lib_path,
+            "libghostty-macos.a",
         );
         b.getInstallStep().dependOn(&lib_install.step);
 
-        // Copy our ghostty.h to include
+        // Create the universal iOS lib.
+        const ios_lib_step, const ios_lib_path = try createIOSLib(
+            b,
+            optimize,
+            config,
+            exe_options,
+        );
+
+        // Add our library to zig-out
+        const ios_lib_install = b.addInstallLibFile(
+            ios_lib_path,
+            "libghostty-ios.a",
+        );
+        b.getInstallStep().dependOn(&ios_lib_install.step);
+
+        // Copy our ghostty.h to include. The header file is shared by
+        // all embedded targets.
         const header_install = b.addInstallHeaderFile(
             "include/ghostty.h",
             "ghostty.h",
@@ -552,70 +463,21 @@ pub fn build(b: *std.Build) !void {
         const xcframework = XCFrameworkStep.create(b, .{
             .name = "GhosttyKit",
             .out_path = "macos/GhosttyKit.xcframework",
-            .library = static_lib_universal.output,
-            .headers = .{ .path = "include" },
+            .libraries = &.{
+                .{
+                    .library = macos_lib_path,
+                    .headers = .{ .path = "include" },
+                },
+                .{
+                    .library = ios_lib_path,
+                    .headers = .{ .path = "include" },
+                },
+            },
         });
-        xcframework.step.dependOn(static_lib_universal.step);
+        xcframework.step.dependOn(ios_lib_step);
+        xcframework.step.dependOn(macos_lib_step);
+        xcframework.step.dependOn(&header_install.step);
         b.default_step.dependOn(xcframework.step);
-    }
-
-    // iOS
-    if (builtin.target.isDarwin() and target.result.os.tag == .ios) {
-        const ios_config: BuildConfig = config: {
-            var copy = config;
-            copy.static = true;
-            break :config copy;
-        };
-
-        const lib = b.addStaticLibrary(.{
-            .name = "ghostty",
-            .root_source_file = .{ .path = "src/main_c.zig" },
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .aarch64,
-                .os_tag = .ios,
-                .os_version_min = target.query.os_version_min,
-            }),
-            .optimize = optimize,
-        });
-        lib.bundle_compiler_rt = true;
-        lib.linkLibC();
-        lib.root_module.addOptions("build_options", exe_options);
-
-        // Create a single static lib with all our dependencies merged
-        var lib_list = try addDeps(b, lib, ios_config);
-        try lib_list.append(lib.getEmittedBin());
-        const libtool = LibtoolStep.create(b, .{
-            .name = "ghostty",
-            .out_name = "libghostty-ios-fat.a",
-            .sources = lib_list.items,
-        });
-        libtool.step.dependOn(&lib.step);
-        b.default_step.dependOn(libtool.step);
-
-        // Add our library to zig-out
-        const lib_install = b.addInstallLibFile(
-            libtool.output,
-            "libghostty.a",
-        );
-        b.getInstallStep().dependOn(&lib_install.step);
-
-        // Copy our ghostty.h to include
-        const header_install = b.addInstallHeaderFile(
-            "include/ghostty.h",
-            "ghostty.h",
-        );
-        b.getInstallStep().dependOn(&header_install.step);
-
-        // // The xcframework wraps our ghostty library so that we can link
-        // // it to the final app built with Swift.
-        // const xcframework = XCFrameworkStep.create(b, .{
-        //     .name = "GhosttyKit",
-        //     .out_path = "macos/GhosttyKit.xcframework",
-        //     .library = libtool.output,
-        //     .headers = .{ .path = "include" },
-        // });
-        // xcframework.step.dependOn(libtool.step);
-        // b.default_step.dependOn(xcframework.step);
     }
 
     // wasm
@@ -746,6 +608,173 @@ pub fn build(b: *std.Build) !void {
             test_step.dependOn(&test_run.step);
         }
     }
+}
+
+/// Returns the minimum OS version for the given OS tag. This shouldn't
+/// be used generally, it should only be used for Darwin-based OS currently.
+fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
+    return switch (tag) {
+        // The lowest supported version of macOS is 12.x because
+        // this is the first version to support Apple Silicon so it is
+        // the earliest version we can virtualize to test (I only have
+        // an Apple Silicon machine for macOS).
+        .macos => .{ .semver = .{
+            .major = 12,
+            .minor = 0,
+            .patch = 0,
+        } },
+
+        // iOS 17 picked arbitrarily
+        .ios => .{ .semver = .{
+            .major = 17,
+            .minor = 0,
+            .patch = 0,
+        } },
+
+        // This should never happen currently. If we add a new target then
+        // we should add a new case here.
+        else => @panic("unhandled os version min os tag"),
+    };
+}
+
+/// Creates a universal macOS libghostty library and returns the path
+/// to the final library.
+///
+/// The library is always a fat static library currently because this is
+/// expected to be used directly with Xcode and Swift. In the future, we
+/// probably want to change this because it makes it harder to use the
+/// library in other contexts.
+fn createMacOSLib(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    config: BuildConfig,
+    exe_options: *std.Build.Step.Options,
+) !struct { *std.Build.Step, std.Build.LazyPath } {
+    // Modify our build configuration for macOS builds.
+    const macos_config: BuildConfig = config: {
+        var copy = config;
+
+        // Always static for the macOS app because we want all of our
+        // dependencies in a fat static library.
+        copy.static = true;
+
+        break :config copy;
+    };
+
+    const static_lib_aarch64 = lib: {
+        const lib = b.addStaticLibrary(.{
+            .name = "ghostty",
+            .root_source_file = .{ .path = "src/main_c.zig" },
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .macos,
+                .os_version_min = osVersionMin(.macos),
+            }),
+            .optimize = optimize,
+        });
+        lib.bundle_compiler_rt = true;
+        lib.linkLibC();
+        lib.root_module.addOptions("build_options", exe_options);
+
+        // Create a single static lib with all our dependencies merged
+        var lib_list = try addDeps(b, lib, macos_config);
+        try lib_list.append(lib.getEmittedBin());
+        const libtool = LibtoolStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty-aarch64-fat.a",
+            .sources = lib_list.items,
+        });
+        libtool.step.dependOn(&lib.step);
+        b.default_step.dependOn(libtool.step);
+
+        break :lib libtool;
+    };
+
+    const static_lib_x86_64 = lib: {
+        const lib = b.addStaticLibrary(.{
+            .name = "ghostty",
+            .root_source_file = .{ .path = "src/main_c.zig" },
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .macos,
+                .os_version_min = osVersionMin(.macos),
+            }),
+            .optimize = optimize,
+        });
+        lib.bundle_compiler_rt = true;
+        lib.linkLibC();
+        lib.root_module.addOptions("build_options", exe_options);
+
+        // Create a single static lib with all our dependencies merged
+        var lib_list = try addDeps(b, lib, macos_config);
+        try lib_list.append(lib.getEmittedBin());
+        const libtool = LibtoolStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty-x86_64-fat.a",
+            .sources = lib_list.items,
+        });
+        libtool.step.dependOn(&lib.step);
+        b.default_step.dependOn(libtool.step);
+
+        break :lib libtool;
+    };
+
+    const static_lib_universal = LipoStep.create(b, .{
+        .name = "ghostty",
+        .out_name = "libghostty.a",
+        .input_a = static_lib_aarch64.output,
+        .input_b = static_lib_x86_64.output,
+    });
+    static_lib_universal.step.dependOn(static_lib_aarch64.step);
+    static_lib_universal.step.dependOn(static_lib_x86_64.step);
+
+    return .{
+        static_lib_universal.step,
+        static_lib_universal.output,
+    };
+}
+
+/// Create an Apple iOS/iPadOS build.
+fn createIOSLib(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    config: BuildConfig,
+    exe_options: *std.Build.Step.Options,
+) !struct { *std.Build.Step, std.Build.LazyPath } {
+    const ios_config: BuildConfig = config: {
+        var copy = config;
+        copy.static = true;
+        break :config copy;
+    };
+
+    const lib = b.addStaticLibrary(.{
+        .name = "ghostty",
+        .root_source_file = .{ .path = "src/main_c.zig" },
+        .optimize = optimize,
+        .target = b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .ios,
+            .os_version_min = osVersionMin(.ios),
+        }),
+    });
+    lib.bundle_compiler_rt = true;
+    lib.linkLibC();
+    lib.root_module.addOptions("build_options", exe_options);
+
+    // Create a single static lib with all our dependencies merged
+    var lib_list = try addDeps(b, lib, ios_config);
+    try lib_list.append(lib.getEmittedBin());
+    const libtool = LibtoolStep.create(b, .{
+        .name = "ghostty",
+        .out_name = "libghostty-ios-fat.a",
+        .sources = lib_list.items,
+    });
+    libtool.step.dependOn(&lib.step);
+
+    return .{
+        libtool.step,
+        libtool.output,
+    };
 }
 
 /// Used to keep track of a list of file sources.
