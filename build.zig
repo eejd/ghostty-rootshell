@@ -44,14 +44,31 @@ pub fn build(b: *std.Build) !void {
         // to set since header files will use this to determine the availability
         // of certain APIs and I believe it is also encoded in the Mach-O
         // binaries.
-        if (result.result.os.tag == .macos and
-            result.query.os_version_min == null)
-        {
-            result.query.os_version_min = .{ .semver = .{
-                .major = 12,
-                .minor = 0,
-                .patch = 0,
-            } };
+        if (result.query.os_version_min == null) {
+            switch (result.result.os.tag) {
+                // The lowest supported version of macOS is 12.x because
+                // this is the first version to support Apple Silicon so it is
+                // the earliest version we can virtualize to test (I only have
+                // an Apple Silicon machine for macOS).
+                .macos => {
+                    result.query.os_version_min = .{ .semver = .{
+                        .major = 12,
+                        .minor = 0,
+                        .patch = 0,
+                    } };
+                },
+
+                // iOS 17 picked arbitrarily
+                .ios => {
+                    result.query.os_version_min = .{ .semver = .{
+                        .major = 17,
+                        .minor = 0,
+                        .patch = 0,
+                    } };
+                },
+
+                else => {},
+            }
         }
 
         break :target result;
@@ -542,6 +559,65 @@ pub fn build(b: *std.Build) !void {
         b.default_step.dependOn(xcframework.step);
     }
 
+    // iOS
+    if (builtin.target.isDarwin() and target.result.os.tag == .ios) {
+        const ios_config: BuildConfig = config: {
+            var copy = config;
+            copy.static = true;
+            break :config copy;
+        };
+
+        const lib = b.addStaticLibrary(.{
+            .name = "ghostty",
+            .root_source_file = .{ .path = "src/main_c.zig" },
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .ios,
+                .os_version_min = target.query.os_version_min,
+            }),
+            .optimize = optimize,
+        });
+        lib.bundle_compiler_rt = true;
+        lib.linkLibC();
+        lib.root_module.addOptions("build_options", exe_options);
+
+        // Create a single static lib with all our dependencies merged
+        var lib_list = try addDeps(b, lib, ios_config);
+        try lib_list.append(lib.getEmittedBin());
+        const libtool = LibtoolStep.create(b, .{
+            .name = "ghostty",
+            .out_name = "libghostty-ios-fat.a",
+            .sources = lib_list.items,
+        });
+        libtool.step.dependOn(&lib.step);
+        b.default_step.dependOn(libtool.step);
+
+        // Add our library to zig-out
+        const lib_install = b.addInstallLibFile(
+            libtool.output,
+            "libghostty.a",
+        );
+        b.getInstallStep().dependOn(&lib_install.step);
+
+        // Copy our ghostty.h to include
+        const header_install = b.addInstallHeaderFile(
+            "include/ghostty.h",
+            "ghostty.h",
+        );
+        b.getInstallStep().dependOn(&header_install.step);
+
+        // // The xcframework wraps our ghostty library so that we can link
+        // // it to the final app built with Swift.
+        // const xcframework = XCFrameworkStep.create(b, .{
+        //     .name = "GhosttyKit",
+        //     .out_path = "macos/GhosttyKit.xcframework",
+        //     .library = libtool.output,
+        //     .headers = .{ .path = "include" },
+        // });
+        // xcframework.step.dependOn(libtool.step);
+        // b.default_step.dependOn(xcframework.step);
+    }
+
     // wasm
     {
         // Build our Wasm target.
@@ -830,7 +906,14 @@ fn addDeps(
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
-        step.root_module.addImport("objc", objc_dep.module("objc"));
+        // This is a bit of a hack that should probably be fixed upstream
+        // in zig-objc, but we need to add the apple SDK paths to the
+        // zig-objc module so that it can find the objc runtime headers.
+        const module = objc_dep.module("objc");
+        module.resolved_target = step.root_module.resolved_target;
+        try @import("apple_sdk").addPaths(b, module);
+        step.root_module.addImport("objc", module);
+
         step.root_module.addImport("macos", macos_dep.module("macos"));
         step.linkLibrary(macos_dep.artifact("macos"));
         try static_libs.append(macos_dep.artifact("macos").getEmittedBin());

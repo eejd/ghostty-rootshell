@@ -1,6 +1,7 @@
 .{
     .name = "harfbuzz",
     .version = "8.2.2",
+    .paths = .{""},
     .dependencies = .{
         .harfbuzz = .{
             .url = "https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.2.2.tar.gz",

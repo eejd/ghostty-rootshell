@@ -52,6 +52,9 @@ pub fn launchedFromDesktop() bool {
         // TODO: This should have some logic to detect this. Perhaps std.builtin.subsystem
         .windows => false,
 
+        // iPhone/iPad is always launched from the "desktop"
+        .ios => true,
+
         else => @compileError("unsupported platform"),
     };
 }

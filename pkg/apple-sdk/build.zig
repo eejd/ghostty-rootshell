@@ -45,6 +45,7 @@ const SDK = struct {
 
     pub fn fromTarget(target: std.Target) !SDK {
         return switch (target.os.tag) {
+            .ios => .{ .platform = "iPhoneOS", .version = "" },
             .macos => .{ .platform = "MacOSX", .version = "14" },
             else => {
                 std.log.err("unsupported os={}", .{target.os.tag});

@@ -34,6 +34,18 @@ pub fn build(b: *std.Build) !void {
     lib.addIncludePath(upstream.path("src"));
     module.addIncludePath(upstream.path("src"));
 
+    if (target.result.isDarwin()) {
+        // This is definitely super sketchy and not right but without this
+        // zig build test breaks on macOS. We have to look into what exactly
+        // is going on here but this getting comitted in the interest of
+        // unblocking zig build test.
+        module.resolved_target = target;
+        defer module.resolved_target = null;
+
+        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, module);
+    }
+
     const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(freetype_dep.artifact("freetype"));
     module.addIncludePath(freetype_dep.builder.dependency("freetype", .{}).path("include"));
@@ -59,19 +71,10 @@ pub fn build(b: *std.Build) !void {
         "-DHAVE_FT_DONE_MM_VAR=1",
         "-DHAVE_FT_GET_TRANSFORM=1",
     });
-    if (coretext_enabled and target.result.isDarwin()) {
-        // This is definitely super sketchy and not right but without this
-        // zig build test breaks on macOS. We have to look into what exactly
-        // is going on here but this getting comitted in the interest of
-        // unblocking zig build test.
-        module.resolved_target = target;
-        defer module.resolved_target = null;
-
+    if (coretext_enabled) {
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
-        try apple_sdk.addPaths(b, &lib.root_module);
-        try apple_sdk.addPaths(b, module);
-        lib.linkFramework("ApplicationServices");
-        module.linkFramework("ApplicationServices", .{});
+        lib.linkFramework("CoreText");
+        module.linkFramework("CoreText", .{});
     }
 
     lib.addCSourceFile(.{

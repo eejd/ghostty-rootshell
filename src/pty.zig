@@ -14,10 +14,41 @@ pub const winsize = extern struct {
     ws_ypixel: u16 = 600,
 };
 
-pub const Pty = if (builtin.os.tag == .windows)
-    WindowsPty
-else
-    PosixPty;
+pub const Pty = switch (builtin.os.tag) {
+    .windows => WindowsPty,
+    .ios => NullPty,
+    else => PosixPty,
+};
+
+// A pty implementation that does nothing.
+//
+// TODO: This should be removed. This is only temporary until we have
+// a termio that doesn't use a pty. This isn't used in any user-facing
+// artifacts, this is just a stopgap to get compilation to work on iOS.
+const NullPty = struct {
+    pub const Fd = std.os.fd_t;
+
+    master: Fd,
+    slave: Fd,
+
+    pub fn open(size: winsize) !Pty {
+        _ = size;
+        return .{ .master = 0, .slave = 0 };
+    }
+
+    pub fn deinit(self: *Pty) void {
+        _ = self;
+    }
+
+    pub fn setSize(self: *Pty, size: winsize) !void {
+        _ = self;
+        _ = size;
+    }
+
+    pub fn childPreExec(self: Pty) !void {
+        _ = self;
+    }
+};
 
 /// Linux PTY creation and management. This is just a thin layer on top
 /// of Linux syscalls. The caller is responsible for detail-oriented handling

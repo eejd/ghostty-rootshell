@@ -15,6 +15,10 @@ pub fn build(b: *std.Build) !void {
     if (target.result.os.tag == .linux) {
         lib.linkSystemLibrary("m");
     }
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+    }
 
     const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
     lib.linkLibrary(zlib_dep.artifact("z"));

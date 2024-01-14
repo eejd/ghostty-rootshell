@@ -290,7 +290,7 @@ fn setupFd(src: File.Handle, target: i32) !void {
                 }
             }
         },
-        .macos => {
+        .ios, .macos => {
             // Mac doesn't support dup3 so we use dup2. We purposely clear
             // CLO_ON_EXEC for this fd.
             const flags = try os.fcntl(src, os.F.GETFD, 0);

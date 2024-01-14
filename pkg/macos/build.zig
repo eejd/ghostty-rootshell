@@ -28,14 +28,16 @@ pub fn build(b: *std.Build) !void {
         .file = .{ .path = "text/ext.c" },
         .flags = flags.items,
     });
-    lib.linkFramework("Carbon");
     lib.linkFramework("CoreFoundation");
     lib.linkFramework("CoreGraphics");
     lib.linkFramework("CoreText");
     lib.linkFramework("CoreVideo");
+    if (target.result.os.tag == .macos) {
+        lib.linkFramework("Carbon");
+        module.linkFramework("Carbon", .{});
+    }
 
     if (target.result.isDarwin()) {
-        module.linkFramework("Carbon", .{});
         module.linkFramework("CoreFoundation", .{});
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});

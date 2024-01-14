@@ -12,8 +12,15 @@ pub fn build(b: *std.Build) !void {
 
     module.addIncludePath(upstream.path(""));
     module.addIncludePath(.{ .path = "override" });
+    if (target.result.isDarwin()) {
+        // See pkg/harfbuzz/build.zig
+        module.resolved_target = target;
+        defer module.resolved_target = null;
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, module);
+    }
 
-    {
+    if (target.query.isNative()) {
         const test_exe = b.addTest(.{
             .name = "test",
             .root_source_file = .{ .path = "main.zig" },
@@ -45,6 +52,10 @@ fn buildGlslang(
     lib.linkLibCpp();
     lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(.{ .path = "override" });
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+    }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

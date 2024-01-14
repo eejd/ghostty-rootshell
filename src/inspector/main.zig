@@ -1,3 +1,4 @@
+const std = @import("std");
 pub const cursor = @import("cursor.zig");
 pub const key = @import("key.zig");
 pub const termio = @import("termio.zig");

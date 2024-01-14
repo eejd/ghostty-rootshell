@@ -16,6 +16,10 @@ pub fn build(b: *std.Build) !void {
     if (target.result.os.tag != .windows) {
         lib.linkSystemLibrary("pthread");
     }
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+    }
 
     lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(.{ .path = "" });
@@ -68,7 +72,7 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(lib);
 
-    {
+    if (target.query.isNative()) {
         const test_exe = b.addTest(.{
             .name = "test",
             .root_source_file = .{ .path = "main.zig" },

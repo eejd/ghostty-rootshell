@@ -8,6 +8,7 @@ pub fn open(alloc: Allocator, url: []const u8) !void {
         .linux => &.{ "xdg-open", url },
         .macos => &.{ "open", url },
         .windows => &.{ "rundll32", "url.dll,FileProtocolHandler", url },
+        .ios => return error.Unimplemented,
         else => @compileError("unsupported OS"),
     };
 

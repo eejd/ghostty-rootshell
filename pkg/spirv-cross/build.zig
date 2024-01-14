@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) !void {
     const lib = try buildSpirvCross(b, upstream, target, optimize);
     b.installArtifact(lib);
 
-    {
+    if (target.query.isNative()) {
         const test_exe = b.addTest(.{
             .name = "test",
             .root_source_file = .{ .path = "main.zig" },
@@ -42,8 +42,10 @@ fn buildSpirvCross(
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    //lib.addIncludePath(upstream.path(""));
-    //lib.addIncludePath(.{ .path = "override" });
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+    }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) !void {
     module.addIncludePath(upstream.path("src"));
     b.installArtifact(lib);
 
-    {
+    if (target.query.isNative()) {
         const test_exe = b.addTest(.{
             .name = "test",
             .root_source_file = .{ .path = "main.zig" },
@@ -43,6 +43,11 @@ fn buildOniguruma(
     const t = target.result;
     lib.linkLibC();
     lib.addIncludePath(upstream.path("src"));
+
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+    }
 
     lib.addConfigHeader(b.addConfigHeader(.{
         .style = .{ .cmake = upstream.path("src/config.h.cmake.in") },
