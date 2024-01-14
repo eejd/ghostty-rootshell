@@ -438,6 +438,7 @@ pub fn build(b: *std.Build) !void {
         // Create the universal iOS lib.
         const ios_lib_step, const ios_lib_path = try createIOSLib(
             b,
+            null,
             optimize,
             config,
             exe_options,
@@ -449,6 +450,22 @@ pub fn build(b: *std.Build) !void {
             "libghostty-ios.a",
         );
         b.getInstallStep().dependOn(&ios_lib_install.step);
+
+        // Create the iOS simulator lib.
+        const ios_sim_lib_step, const ios_sim_lib_path = try createIOSLib(
+            b,
+            .simulator,
+            optimize,
+            config,
+            exe_options,
+        );
+
+        // Add our library to zig-out
+        const ios_sim_lib_install = b.addInstallLibFile(
+            ios_lib_path,
+            "libghostty-ios-simulator.a",
+        );
+        b.getInstallStep().dependOn(&ios_sim_lib_install.step);
 
         // Copy our ghostty.h to include. The header file is shared by
         // all embedded targets.
@@ -472,9 +489,14 @@ pub fn build(b: *std.Build) !void {
                     .library = ios_lib_path,
                     .headers = .{ .path = "include" },
                 },
+                .{
+                    .library = ios_sim_lib_path,
+                    .headers = .{ .path = "include" },
+                },
             },
         });
         xcframework.step.dependOn(ios_lib_step);
+        xcframework.step.dependOn(ios_sim_lib_step);
         xcframework.step.dependOn(macos_lib_step);
         xcframework.step.dependOn(&header_install.step);
         b.default_step.dependOn(xcframework.step);
@@ -737,6 +759,7 @@ fn createMacOSLib(
 /// Create an Apple iOS/iPadOS build.
 fn createIOSLib(
     b: *std.Build,
+    abi: ?std.Target.Abi,
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
     exe_options: *std.Build.Step.Options,
@@ -755,6 +778,7 @@ fn createIOSLib(
             .cpu_arch = .aarch64,
             .os_tag = .ios,
             .os_version_min = osVersionMin(.ios),
+            .abi = abi,
         }),
     });
     lib.bundle_compiler_rt = true;
