@@ -130,7 +130,7 @@ pub const std_options = struct {
         //
         //   sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
         //
-        if (builtin.os.tag == .macos) {
+        if (builtin.target.isDarwin()) {
             // Convert our levels to Mac levels
             const mac_level: macos.os.LogType = switch (level) {
                 .debug => .debug,
