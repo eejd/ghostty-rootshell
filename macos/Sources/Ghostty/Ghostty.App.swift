@@ -126,10 +126,14 @@ extension Ghostty {
                 return nil
             }
             
-            // Load our configuration files from the home directory.
+            // Load our configuration from files, CLI args, and then any referenced files.
+            // We only do this on macOS because other Apple platforms do not have the
+            // same filesystem concept.
+            #if os(macOS)
             ghostty_config_load_default_files(cfg);
             ghostty_config_load_cli_args(cfg);
             ghostty_config_load_recursive_files(cfg);
+            #endif
             
             // TODO: we'd probably do some config loading here... for now we'd
             // have to do this synchronously. When we support config updating we can do
