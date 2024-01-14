@@ -12,10 +12,11 @@ struct Ghostty_iOSApp: App {
 struct iOS_ContentView: View {
     var body: some View {
         VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+            Image("AppIconImage")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: 96)
+            Text("Ghostty")
         }
         .padding()
     }
