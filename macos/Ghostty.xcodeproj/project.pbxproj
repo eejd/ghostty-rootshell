@@ -11,6 +11,8 @@
 		552964E62B34A9B400030505 /* vim in Resources */ = {isa = PBXBuildFile; fileRef = 552964E52B34A9B400030505 /* vim */; };
 		8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */; };
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
+		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
+		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A51B78472AF4B58B00F3EDB9 /* TerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */; };
 		A51BFC1E2B2FB5CE00E92F16 /* About.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51BFC1D2B2FB5CE00E92F16 /* About.xib */; };
 		A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */; };
@@ -65,6 +67,7 @@
 		552964E52B34A9B400030505 /* vim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vim; path = "../zig-out/share/vim"; sourceTree = "<group>"; };
 		8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenHandler.swift; sourceTree = "<group>"; };
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
+		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
 		A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWindow.swift; sourceTree = "<group>"; };
 		A51BFC1D2B2FB5CE00E92F16 /* About.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = About.xib; sourceTree = "<group>"; };
 		A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutController.swift; sourceTree = "<group>"; };
@@ -237,6 +240,7 @@
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
 				A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */,
 				A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */,
+				A514C8D52B54A16400493A16 /* Ghostty.Config.swift */,
 				A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */,
 				A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */,
 				A59630A32AF059BB00D64628 /* Ghostty.SplitNode.swift */,
@@ -443,6 +447,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A59630A42AF059BB00D64628 /* Ghostty.SplitNode.swift in Sources */,
+				A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
 				A5D0AF3D2B37804400D21823 /* CodableBridge.swift in Sources */,
 				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,
@@ -483,6 +488,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A53D0C942B53B43700305CE6 /* iOSApp.swift in Sources */,
+				A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */,
 				A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */,
 			);

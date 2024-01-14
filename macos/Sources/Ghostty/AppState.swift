@@ -36,16 +36,10 @@ extension Ghostty {
         /// Optional delegate
         weak var delegate: GhosttyAppStateDelegate?
 
-        /// The ghostty global configuration. This should only be changed when it is definitely
-        /// safe to change. It is definite safe to change only when the embedded app runtime
-        /// in Ghostty says so (usually, only in a reload configuration callback).
-        @Published var config: ghostty_config_t? = nil {
-            didSet {
-                // Free the old value whenever we change
-                guard let old = oldValue else { return }
-                ghostty_config_free(old)
-            }
-        }
+        /// The global app configuration. This defines the app level configuration plus any behavior
+        /// for new windows, tabs, etc. Note that when creating a new window, it may inherit some
+        /// configuration (i.e. font size) from the previously focused window. This would override this.
+        private(set) var config: Config
 
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
@@ -54,45 +48,6 @@ extension Ghostty {
                 guard let old = oldValue else { return }
                 ghostty_app_free(old)
             }
-        }
-
-        /// True if we should quit when the last window is closed.
-        var shouldQuitAfterLastWindowClosed: Bool {
-            guard let config = self.config else { return true }
-            var v = false;
-            let key = "quit-after-last-window-closed"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v
-        }
-        
-        /// window-colorspace
-        var windowColorspace: String {
-            guard let config = self.config else { return "" }
-            var v: UnsafePointer<Int8>? = nil
-            let key = "window-colorspace"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
-            guard let ptr = v else { return "" }
-            return String(cString: ptr)
-        }
-        
-        /// window-save-state
-        var windowSaveState: String {
-            guard let config = self.config else { return "" }
-            var v: UnsafePointer<Int8>? = nil
-            let key = "window-save-state"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
-            guard let ptr = v else { return "" }
-            return String(cString: ptr)
-        }
-
-        /// window-new-tab-position
-        var windowNewTabPosition: String {
-            guard let config = self.config else { return "" }
-            var v: UnsafePointer<Int8>? = nil
-            let key = "window-new-tab-position"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
-            guard let ptr = v else { return "" }
-            return String(cString: ptr)
         }
         
         /// True if we need to confirm before quitting.
@@ -113,66 +68,19 @@ extension Ghostty {
             return Info(mode: raw.build_mode, version: String(version))
         }
 
-        /// True if we want to render window decorations
-        var windowDecorations: Bool {
-            guard let config = self.config else { return true }
-            var v = false;
-            let key = "window-decoration"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v;
-        }
-        
-        /// The window theme as a string.
-        var windowTheme: String? {
-            guard let config = self.config else { return nil }
-            var v: UnsafePointer<Int8>? = nil
-            let key = "window-theme"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
-            guard let ptr = v else { return nil }
-            return String(cString: ptr)
-        }
-        
-        /// Whether to resize windows in discrete steps or use "fluid" resizing
-        var windowStepResize: Bool {
-            guard let config = self.config else { return true }
-            var v = false
-            let key = "window-step-resize"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v
-        }
-        
-        /// Whether to open new windows in fullscreen.
-        var windowFullscreen: Bool {
-            guard let config = self.config else { return true }
-            var v = false
-            let key = "fullscreen"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v
-        }
-
-        /// The background opacity.
-        var backgroundOpacity: Double {
-            guard let config = self.config else { return 1 }
-            var v: Double = 1
-            let key = "background-opacity"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v;
-        }
-        
         init() {
             // Initialize ghostty global state. This happens once per process.
-            guard ghostty_init() == GHOSTTY_SUCCESS else {
-                AppDelegate.logger.critical("ghostty_init failed")
+            if ghostty_init() != GHOSTTY_SUCCESS {
+                AppDelegate.logger.critical("ghostty_init failed, weird things may happen")
                 readiness = .error
-                return
             }
 
             // Initialize the global configuration.
-            guard let cfg = Self.loadConfig() else {
+            self.config = Config()
+            if self.config.config == nil {
                 readiness = .error
                 return
             }
-            self.config = cfg;
 
             // Create our "runtime" config. The "runtime" is the configuration that ghostty
             // uses to interface with the application runtime environment.
@@ -210,7 +118,7 @@ extension Ghostty {
             )
 
             // Create the ghostty app.
-            guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
+            guard let app = ghostty_app_new(&runtime_cfg, config.config) else {
                 AppDelegate.logger.critical("ghostty_app_new failed")
                 readiness = .error
                 return
@@ -230,65 +138,12 @@ extension Ghostty {
         deinit {
             // This will force the didSet callbacks to run which free.
             self.app = nil
-            self.config = nil
 
             // Remove our observer
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSTextInputContext.keyboardSelectionDidChangeNotification,
                 object: nil)
-        }
-
-        /// Initializes a new configuration and loads all the values.
-        static func loadConfig() -> ghostty_config_t? {
-            // Initialize the global configuration.
-            guard let cfg = ghostty_config_new() else {
-                AppDelegate.logger.critical("ghostty_config_new failed")
-                return nil
-            }
-
-            // Load our configuration files from the home directory.
-            ghostty_config_load_default_files(cfg);
-            ghostty_config_load_cli_args(cfg);
-            ghostty_config_load_recursive_files(cfg);
-
-            // TODO: we'd probably do some config loading here... for now we'd
-            // have to do this synchronously. When we support config updating we can do
-            // this async and update later.
-
-            // Finalize will make our defaults available.
-            ghostty_config_finalize(cfg)
-
-            // Log any configuration errors. These will be automatically shown in a
-            // pop-up window too.
-            let errCount = ghostty_config_errors_count(cfg)
-            if errCount > 0 {
-                AppDelegate.logger.warning("config error: \(errCount) configuration errors on reload")
-                var errors: [String] = [];
-                for i in 0..<errCount {
-                    let err = ghostty_config_get_error(cfg, UInt32(i))
-                    let message = String(cString: err.message)
-                    errors.append(message)
-                    AppDelegate.logger.warning("config error: \(message)")
-                }
-            }
-
-            return cfg
-        }
-
-        /// Returns the configuration errors (if any).
-        func configErrors() -> [String] {
-            guard let cfg = self.config else { return [] }
-
-            var errors: [String] = [];
-            let errCount = ghostty_config_errors_count(cfg)
-            for i in 0..<errCount {
-                let err = ghostty_config_get_error(cfg, UInt32(i))
-                let message = String(cString: err.message)
-                errors.append(message)
-            }
-
-            return errors
         }
 
         func appTick() {
@@ -534,7 +389,8 @@ extension Ghostty {
         }
 
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
-            guard let newConfig = Self.loadConfig() else {
+            let newConfig = Config()
+            guard newConfig.loaded else {
                 AppDelegate.logger.warning("failed to reload configuration")
                 return nil
             }
@@ -549,7 +405,7 @@ extension Ghostty {
                 delegate.configDidReload(state)
             }
 
-            return newConfig
+            return newConfig.config
         }
 
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
@@ -662,7 +518,7 @@ extension Ghostty {
             let surface = self.surfaceUserdata(from: userdata)
             
             guard let appState = self.appState(fromView: surface) else { return }
-            guard appState.windowDecorations else {
+            guard appState.config.windowDecorations else {
                 let alert = NSAlert()
                 alert.messageText = "Tabs are disabled"
                 alert.informativeText = "Enable window decorations to use tabs"

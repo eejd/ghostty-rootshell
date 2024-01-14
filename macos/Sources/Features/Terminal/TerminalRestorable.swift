@@ -66,7 +66,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         
         // If our configuration is "never" then we never restore the state
         // no matter what.
-        if (appDelegate.terminalManager.ghostty.windowSaveState == "never") {
+        if (appDelegate.terminalManager.ghostty.config.windowSaveState == "never") {
             completionHandler(nil, nil)
             return
         }
