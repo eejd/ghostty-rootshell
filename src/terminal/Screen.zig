@@ -58,7 +58,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const ziglyph = @import("ziglyph");
-const trace = @import("tracy").trace;
 const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
 const sgr = @import("sgr.zig");
@@ -803,9 +802,6 @@ pub const RowIndexTag = enum {
     /// so it is 1-indexed. If the value is zero, it means that this
     /// section of the screen is empty or disabled.
     pub inline fn maxLen(self: RowIndexTag, screen: *const Screen) usize {
-        const tracy = trace(@src());
-        defer tracy.end();
-
         return switch (self) {
             // Screen can be any of the written rows
             .screen => screen.rowsWritten(),
@@ -1177,9 +1173,6 @@ pub fn getCellPtr(self: *Screen, tag: RowIndexTag, y: usize, x: usize) *Cell {
 /// from index zero of the given row index type. This can therefore iterate
 /// from row 0 of the active area, history, viewport, etc.
 pub fn rowIterator(self: *Screen, tag: RowIndexTag) RowIterator {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     return .{
         .screen = self,
         .tag = tag,
@@ -1234,9 +1227,6 @@ pub fn getLine(self: *Screen, pt: point.ScreenPoint) ?Line {
 /// Returns the row at the given index. This row is writable, although
 /// only the active area should probably be written to.
 pub fn getRow(self: *Screen, index: RowIndex) Row {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Get our offset into storage
     const offset = index.toScreen(self).screen * (self.cols + 1);
 
@@ -1288,9 +1278,6 @@ pub fn copyRow(self: *Screen, dst: RowIndex, src: RowIndex) !void {
 ///
 /// This can be used to implement terminal scroll regions efficiently.
 pub fn scrollRegionUp(self: *Screen, top: RowIndex, bottom: RowIndex, count_req: usize) void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Avoid a lot of work if we're doing nothing.
     if (count_req == 0) return;
 
@@ -2091,9 +2078,6 @@ fn scrollRow(self: *Screen, idx: RowIndex) void {
 }
 
 fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) Allocator.Error!void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Just in case, to avoid a bunch of stuff below.
     if (delta == 0) return;
 
@@ -2585,9 +2569,6 @@ fn selectionSlices(self: *Screen, sel_raw: Selection) SelectionSlices {
 /// be truncated as they are shrunk. If they are grown, the new space is filled
 /// with zeros.
 pub fn resizeWithoutReflow(self: *Screen, rows: usize, cols: usize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If we're resizing to the same size, do nothing.
     if (self.cols == cols and self.rows == rows) return;
 

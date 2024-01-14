@@ -30,7 +30,6 @@ const imgui = @import("imgui");
 const Pty = @import("pty.zig").Pty;
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
-const trace = @import("tracy").trace;
 const terminal = @import("terminal/main.zig");
 const configpkg = @import("config.zig");
 const input = @import("input.zig");
@@ -1048,9 +1047,6 @@ fn queueRender(self: *Surface) !void {
 }
 
 pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     const new_screen_size: renderer.ScreenSize = .{
         .width = size.width,
         .height = size.height,
@@ -1453,9 +1449,6 @@ pub fn scrollCallback(
     yoff: f64,
     scroll_mods: input.ScrollMods,
 ) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
     // Always show the mouse again if it is hidden
@@ -1919,9 +1912,6 @@ pub fn mouseButtonCallback(
 ) !void {
     // log.debug("mouse action={} button={} mods={}", .{ action, button, mods });
 
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // If we have an inspector, we always queue a render
     if (self.inspector) |insp| {
         defer self.queueRender() catch {};
@@ -2275,9 +2265,6 @@ pub fn cursorPosCallback(
     self: *Surface,
     pos: apprt.CursorPos,
 ) !void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 

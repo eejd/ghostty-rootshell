@@ -35,7 +35,6 @@
         .oniguruma = .{ .path = "./pkg/oniguruma" },
         .opengl = .{ .path = "./pkg/opengl" },
         .pixman = .{ .path = "./pkg/pixman" },
-        .tracy = .{ .path = "./pkg/tracy" },
         .zlib = .{ .path = "./pkg/zlib" },
 
         // Shader translation

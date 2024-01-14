@@ -7,7 +7,6 @@ const glfw = @import("glfw");
 const glslang = @import("glslang");
 const macos = @import("macos");
 const oni = @import("oniguruma");
-const tracy = @import("tracy");
 const cli = @import("cli.zig");
 const internal_os = @import("os/main.zig");
 const xev = @import("xev");
@@ -105,11 +104,6 @@ pub fn main() !MainReturn {
     try app_runtime.run();
 }
 
-// Required by tracy/tracy.zig to enable/disable tracy support.
-pub fn tracy_enabled() bool {
-    return options.tracy_enabled;
-}
-
 pub const std_options = struct {
     // Our log level is always at least info in every build mode.
     pub const log_level: std.log.Level = switch (builtin.mode) {
@@ -172,7 +166,6 @@ pub const GlobalState = struct {
 
     gpa: ?GPA,
     alloc: std.mem.Allocator,
-    tracy: if (tracy.enabled) ?tracy.Allocator(null) else void,
     action: ?cli.Action,
     logging: Logging,
 
@@ -194,7 +187,6 @@ pub const GlobalState = struct {
         self.* = .{
             .gpa = null,
             .alloc = undefined,
-            .tracy = undefined,
             .action = null,
             .logging = .{ .stderr = {} },
             .resources_dir = null,
@@ -218,19 +210,12 @@ pub const GlobalState = struct {
             break :gpa GPA{};
         };
 
-        self.alloc = alloc: {
-            const base = if (self.gpa) |*value|
-                value.allocator()
-            else if (builtin.link_libc)
-                std.heap.c_allocator
-            else
-                unreachable;
-
-            // If we're tracing, wrap the allocator
-            if (!tracy.enabled) break :alloc base;
-            self.tracy = tracy.allocator(base, null);
-            break :alloc self.tracy.?.allocator();
-        };
+        self.alloc = if (self.gpa) |*value|
+            value.allocator()
+        else if (builtin.link_libc)
+            std.heap.c_allocator
+        else
+            unreachable;
 
         // We first try to parse any action that we may be executing.
         self.action = try cli.Action.detectCLI(self.alloc);
@@ -296,10 +281,6 @@ pub const GlobalState = struct {
             // We want to ensure that we deinit the GPA because this is
             // the point at which it will output if there were safety violations.
             _ = value.deinit();
-        }
-
-        if (tracy.enabled) {
-            self.tracy = null;
         }
     }
 };

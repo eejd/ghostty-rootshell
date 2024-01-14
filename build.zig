@@ -9,6 +9,7 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
+const BuildConfig = @import("src/build_config.zig").BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -34,23 +35,23 @@ comptime {
 /// The version of the next release.
 const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
-/// Build options, see the build options help for more info.
-var tracy: bool = false;
-var flatpak: bool = false;
-var app_runtime: apprt.Runtime = .none;
-var renderer_impl: renderer.Impl = .opengl;
-var font_backend: font.Backend = .freetype;
-var libadwaita: bool = false;
-
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = target: {
         var result = b.standardTargetOptions(.{});
 
-        if (result.result.isDarwin()) {
-            if (result.query.os_version_min == null) {
-                result.query.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
-            }
+        // On macOS, we specify a minimum supported version. This is important
+        // to set since header files will use this to determine the availability
+        // of certain APIs and I believe it is also encoded in the Mach-O
+        // binaries.
+        if (result.result.os.tag == .macos and
+            result.query.os_version_min == null)
+        {
+            result.query.os_version_min = .{ .semver = .{
+                .major = 12,
+                .minor = 0,
+                .patch = 0,
+            } };
         }
 
         break :target result;
@@ -62,46 +63,42 @@ pub fn build(b: *std.Build) !void {
     var env = try std.process.getEnvMap(b.allocator);
     defer env.deinit();
 
-    // Note: Our tracy usage has a huge memory leak currently so only enable
-    // this if you really want tracy integration and don't mind the memory leak.
-    // Or, please contribute a fix because I don't know where it is.
-    tracy = b.option(
-        bool,
-        "tracy",
-        "Enable Tracy integration (default true in Debug on Linux)",
-    ) orelse false;
+    // Our build configuration. This is all on a struct so that we can easily
+    // modify it for specific build types (for example, wasm we strictly
+    // control our backends).
+    var config: BuildConfig = .{};
 
-    flatpak = b.option(
+    config.flatpak = b.option(
         bool,
         "flatpak",
         "Build for Flatpak (integrates with Flatpak APIs). Only has an effect targeting Linux.",
     ) orelse false;
 
-    font_backend = b.option(
+    config.font_backend = b.option(
         font.Backend,
         "font-backend",
         "The font backend to use for discovery and rasterization.",
     ) orelse font.Backend.default(target.result, wasm_target);
 
-    app_runtime = b.option(
+    config.app_runtime = b.option(
         apprt.Runtime,
         "app-runtime",
         "The app runtime to use. Not all values supported on all platforms.",
     ) orelse apprt.Runtime.default(target.result);
 
-    libadwaita = b.option(
-        bool,
-        "gtk-libadwaita",
-        "Enables the use of libadwaita when using the gtk rendering backend.",
-    ) orelse true;
-
-    renderer_impl = b.option(
+    config.renderer = b.option(
         renderer.Impl,
         "renderer",
         "The app runtime to use. Not all values supported on all platforms.",
     ) orelse renderer.Impl.default(target.result, wasm_target);
 
-    const static = b.option(
+    config.libadwaita = b.option(
+        bool,
+        "gtk-libadwaita",
+        "Enables the use of libadwaita when using the gtk rendering backend.",
+    ) orelse true;
+
+    config.static = b.option(
         bool,
         "static",
         "Statically build as much as possible for the exe",
@@ -189,10 +186,10 @@ pub fn build(b: *std.Build) !void {
     b.enable_wasmtime = true;
 
     // Add our benchmarks
-    try benchSteps(b, target, optimize, emit_bench);
+    try benchSteps(b, target, optimize, config, emit_bench);
 
     // We only build an exe if we have a runtime set.
-    const exe_: ?*std.Build.Step.Compile = if (app_runtime != .none) b.addExecutable(.{
+    const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
@@ -200,25 +197,20 @@ pub fn build(b: *std.Build) !void {
     }) else null;
 
     const exe_options = b.addOptions();
+    config.addOptions(exe_options);
     exe_options.addOption(std.SemanticVersion, "app_version", version);
     exe_options.addOption([:0]const u8, "app_version_string", try std.fmt.allocPrintZ(
         b.allocator,
         "{}",
         .{version},
     ));
-    exe_options.addOption(bool, "tracy_enabled", tracy);
-    exe_options.addOption(bool, "flatpak", flatpak);
-    exe_options.addOption(apprt.Runtime, "app_runtime", app_runtime);
-    exe_options.addOption(font.Backend, "font_backend", font_backend);
-    exe_options.addOption(renderer.Impl, "renderer", renderer_impl);
-    exe_options.addOption(bool, "libadwaita", libadwaita);
 
     // Exe
     if (exe_) |exe| {
         exe.root_module.addOptions("build_options", exe_options);
 
         // Add the shared dependencies
-        _ = try addDeps(b, exe, static);
+        _ = try addDeps(b, exe, config);
 
         // If we're in NixOS but not in the shell environment then we issue
         // a warning because the rpath may not be setup properly.
@@ -257,7 +249,7 @@ pub fn build(b: *std.Build) !void {
 
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
-        const install_step = if (app_runtime != .none) step: {
+        const install_step = if (config.app_runtime != .none) step: {
             const step = b.addInstallArtifact(exe, .{});
             b.getInstallStep().dependOn(&step.step);
             break :step step;
@@ -277,7 +269,7 @@ pub fn build(b: *std.Build) !void {
         }
 
         // App (Mac)
-        if (target.result.isDarwin()) {
+        if (target.result.os.tag == .macos) {
             const bin_install = b.addInstallFile(
                 exe.getEmittedBin(),
                 "Ghostty.app/Contents/MacOS/ghostty",
@@ -298,7 +290,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -321,7 +313,7 @@ pub fn build(b: *std.Build) !void {
         });
         b.getInstallStep().dependOn(&install.step);
 
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_install = b.addInstallDirectory(options: {
                 var copy = install.options;
                 copy.install_dir = .{
@@ -345,7 +337,7 @@ pub fn build(b: *std.Build) !void {
         const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
         const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
         b.getInstallStep().dependOn(&src_install.step);
-        if (target.result.isDarwin() and exe_ != null) {
+        if (target.result.os.tag == .macos and exe_ != null) {
             const mac_src_install = b.addInstallFile(
                 src_source,
                 "Ghostty.app/Contents/Resources/terminfo/ghostty.terminfo",
@@ -366,7 +358,7 @@ pub fn build(b: *std.Build) !void {
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
             b.getInstallStep().dependOn(&cap_install.step);
 
-            if (target.result.isDarwin() and exe_ != null) {
+            if (target.result.os.tag == .macos and exe_ != null) {
                 const mac_cap_install = b.addInstallFile(
                     out_source,
                     "Ghostty.app/Contents/Resources/terminfo/ghostty.termcap",
@@ -395,7 +387,7 @@ pub fn build(b: *std.Build) !void {
                 b.getInstallStep().dependOn(&copy_step.step);
             }
 
-            if (target.result.isDarwin() and exe_ != null) {
+            if (target.result.os.tag == .macos and exe_ != null) {
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
                 copy_step.addFileArg(path);
@@ -425,7 +417,7 @@ pub fn build(b: *std.Build) !void {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        if (flatpak) {
+        if (config.flatpak) {
             b.installFile("dist/linux/app-flatpak.desktop", "share/applications/com.mitchellh.ghostty.desktop");
         } else {
             b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
@@ -446,6 +438,17 @@ pub fn build(b: *std.Build) !void {
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
     if (builtin.target.isDarwin() and target.result.os.tag == .macos) {
+        // Modify our build configuration for macOS builds.
+        const macos_config: BuildConfig = config: {
+            var copy = config;
+
+            // Always static for the macOS app because we want all of our
+            // dependencies in a fat static library.
+            copy.static = true;
+
+            break :config copy;
+        };
+
         const static_lib_aarch64 = lib: {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
@@ -462,7 +465,7 @@ pub fn build(b: *std.Build) !void {
             lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, true);
+            var lib_list = try addDeps(b, lib, macos_config);
             try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
@@ -491,7 +494,7 @@ pub fn build(b: *std.Build) !void {
             lib.root_module.addOptions("build_options", exe_options);
 
             // Create a single static lib with all our dependencies merged
-            var lib_list = try addDeps(b, lib, true);
+            var lib_list = try addDeps(b, lib, macos_config);
             try lib_list.append(lib.getEmittedBin());
             const libtool = LibtoolStep.create(b, .{
                 .name = "ghostty",
@@ -557,6 +560,20 @@ pub fn build(b: *std.Build) !void {
             }),
         };
 
+        // Modify our build configuration for wasm builds.
+        const wasm_config: BuildConfig = config: {
+            var copy = config;
+
+            // Always static for the wasm app because we want all of our
+            // dependencies in a fat static library.
+            copy.static = true;
+
+            // Backends that are fixed for wasm
+            copy.font_backend = .web_canvas;
+
+            break :config copy;
+        };
+
         // Whether we're using wasm shared memory. Some behaviors change.
         // For now we require this but I wanted to make the code handle both
         // up front.
@@ -585,7 +602,7 @@ pub fn build(b: *std.Build) !void {
         wasm.root_module.stack_protector = false;
 
         // Wasm-specific deps
-        _ = try addDeps(b, wasm, true);
+        _ = try addDeps(b, wasm, wasm_config);
 
         // Install
         const wasm_install = b.addInstallArtifact(wasm, .{});
@@ -605,7 +622,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         main_test.root_module.addOptions("build_options", exe_options);
-        _ = try addDeps(b, main_test, true);
+        _ = try addDeps(b, main_test, wasm_config);
         test_step.dependOn(&main_test.step);
     }
 
@@ -642,7 +659,11 @@ pub fn build(b: *std.Build) !void {
 
         {
             if (emit_test_exe) b.installArtifact(main_test);
-            _ = try addDeps(b, main_test, true);
+            _ = try addDeps(b, main_test, config: {
+                var copy = config;
+                copy.static = true;
+                break :config copy;
+            });
             main_test.root_module.addOptions("build_options", exe_options);
 
             const test_run = b.addRunArtifact(main_test);
@@ -658,7 +679,7 @@ const LazyPathList = std.ArrayList(std.Build.LazyPath);
 fn addDeps(
     b: *std.Build,
     step: *std.Build.Step.Compile,
-    static: bool,
+    config: BuildConfig,
 ) !LazyPathList {
     var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
@@ -743,10 +764,6 @@ fn addDeps(
         .cpu = cpu_opts,
         .optimize = step.root_module.optimize.?,
     });
-    const tracy_dep = b.dependency("tracy", .{
-        .target = target_triple,
-        .optimize = step.root_module.optimize.?,
-    });
     const zlib_dep = b.dependency("zlib", .{
         .target = target_triple,
         .cpu = cpu_opts,
@@ -757,7 +774,7 @@ fn addDeps(
         .cpu = cpu_opts,
         .optimize = step.root_module.optimize.?,
         .@"enable-freetype" = true,
-        .@"enable-coretext" = font_backend.hasCoretext(),
+        .@"enable-coretext" = config.font_backend.hasCoretext(),
     });
     const ziglyph_dep = b.dependency("ziglyph", .{
         .target = target_triple,
@@ -767,9 +784,6 @@ fn addDeps(
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
-        // We link this package but its a no-op since Tracy
-        // never actually WORKS with wasm.
-        step.root_module.addImport("tracy", tracy_dep.module("tracy"));
         step.root_module.addImport("zig-js", js_dep.module("zig-js"));
 
         return static_libs;
@@ -800,7 +814,7 @@ fn addDeps(
     // We always need the Zig packages
     // TODO: This can't be the right way to use the new Zig modules system,
     // so take a closer look at this again later.
-    if (font_backend.hasFontconfig()) step.root_module.addImport(
+    if (config.font_backend.hasFontconfig()) step.root_module.addImport(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
@@ -827,13 +841,6 @@ fn addDeps(
     step.linkLibrary(cimgui_dep.artifact("cimgui"));
     try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
 
-    // Tracy
-    step.root_module.addImport("tracy", tracy_dep.module("tracy"));
-    if (tracy) {
-        step.linkLibrary(tracy_dep.artifact("tracy"));
-        try static_libs.append(tracy_dep.artifact("tracy").getEmittedBin());
-    }
-
     // Glslang
     step.linkLibrary(glslang_dep.artifact("glslang"));
     try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
@@ -843,7 +850,7 @@ fn addDeps(
     try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
 
     // Dynamic link
-    if (!static) {
+    if (!config.static) {
         step.addIncludePath(freetype_dep.path(""));
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
@@ -853,13 +860,13 @@ fn addDeps(
         step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
         step.linkSystemLibrary2("zlib", dynamic_link_opts);
 
-        if (font_backend.hasFontconfig()) {
+        if (config.font_backend.hasFontconfig()) {
             step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
         }
     }
 
     // Other dependencies, we may dynamically link
-    if (static) {
+    if (config.static) {
         step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
         try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
 
@@ -882,7 +889,7 @@ fn addDeps(
         try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
 
         // Only Linux gets fontconfig
-        if (font_backend.hasFontconfig()) {
+        if (config.font_backend.hasFontconfig()) {
             // Fontconfig
             step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
         }
@@ -898,9 +905,9 @@ fn addDeps(
 
         // When we're targeting flatpak we ALWAYS link GTK so we
         // get access to glib for dbus.
-        if (flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
+        if (config.flatpak) step.linkSystemLibrary2("gtk4", dynamic_link_opts);
 
-        switch (app_runtime) {
+        switch (config.app_runtime) {
             .none => {},
 
             .glfw => {
@@ -910,7 +917,7 @@ fn addDeps(
 
             .gtk => {
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                if (libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
+                if (config.libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
             },
         }
     }
@@ -922,6 +929,7 @@ fn benchSteps(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    config: BuildConfig,
     install: bool,
 ) !void {
     // Open the directory ./src/bench
@@ -956,7 +964,11 @@ fn benchSteps(
             // .main_pkg_path = .{ .path = "./src" },
         });
         if (install) b.installArtifact(c_exe);
-        _ = try addDeps(b, c_exe, true);
+        _ = try addDeps(b, c_exe, config: {
+            var copy = config;
+            copy.static = true;
+            break :config copy;
+        });
     }
 }
 

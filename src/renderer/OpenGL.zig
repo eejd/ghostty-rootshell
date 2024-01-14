@@ -19,7 +19,6 @@ const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const Terminal = terminal.Terminal;
 const gl = @import("opengl");
-const trace = @import("tracy").trace;
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 
@@ -946,9 +945,6 @@ pub fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
-    const t = trace(@src());
-    defer t.end();
-
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
     try self.cells_bg.ensureTotalCapacity(self.alloc, screen.rows * screen.cols);
@@ -1344,9 +1340,6 @@ fn updateCell(
     x: usize,
     y: usize,
 ) !bool {
-    const t = trace(@src());
-    defer t.end();
-
     const BgFg = struct {
         /// Background is optional because in un-inverted mode
         /// it may just be equivalent to the default background in
@@ -1781,9 +1774,6 @@ fn flushAtlas(self: *OpenGL) !void {
 /// Render renders the current cell state. This will not modify any of
 /// the cells.
 pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
-    const t = trace(@src());
-    defer t.end();
-
     // If we're in single-threaded more we grab a lock since we use shared data.
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
