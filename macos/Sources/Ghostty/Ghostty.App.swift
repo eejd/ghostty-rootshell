@@ -12,16 +12,10 @@ extension Ghostty {
         /// The readiness value of the state.
         @Published var readiness: Readiness = .loading
         
-        /// The ghostty global configuration. This should only be changed when it is definitely
-        /// safe to change. It is definitely safe to change only when the embedded app runtime
-        /// in Ghostty says so (usually, only in a reload configuration callback).
-        @Published var config: ghostty_config_t? = nil {
-            didSet {
-                // Free the old value whenever we change
-                guard let old = oldValue else { return }
-                ghostty_config_free(old)
-            }
-        }
+        /// The global app configuration. This defines the app level configuration plus any behavior
+        /// for new windows, tabs, etc. Note that when creating a new window, it may inherit some
+        /// configuration (i.e. font size) from the previously focused window. This would override this.
+        private(set) var config: Config
         
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
@@ -34,18 +28,17 @@ extension Ghostty {
         
         init() {
             // Initialize ghostty global state. This happens once per process.
-            guard ghostty_init() == GHOSTTY_SUCCESS else {
-                logger.critical("ghostty_init failed")
+            if ghostty_init() != GHOSTTY_SUCCESS {
+                logger.critical("ghostty_init failed, weird things may happen")
                 readiness = .error
-                return
             }
-            
+
             // Initialize the global configuration.
-            guard let cfg = Self.loadConfig() else {
+            self.config = Config()
+            if self.config.config == nil {
                 readiness = .error
                 return
             }
-            self.config = cfg;
             
             // Create our "runtime" config. The "runtime" is the configuration that ghostty
             // uses to interface with the application runtime environment.
@@ -83,7 +76,7 @@ extension Ghostty {
             )
             
             // Create the ghostty app.
-            guard let app = ghostty_app_new(&runtime_cfg, cfg) else {
+            guard let app = ghostty_app_new(&runtime_cfg, config.config) else {
                 logger.critical("ghostty_app_new failed")
                 readiness = .error
                 return
@@ -105,7 +98,6 @@ extension Ghostty {
         deinit {
             // This will force the didSet callbacks to run which free.
             self.app = nil
-            self.config = nil
             
             #if os(macOS)
             // Remove our observer
@@ -114,49 +106,6 @@ extension Ghostty {
                 name: NSTextInputContext.keyboardSelectionDidChangeNotification,
                 object: nil)
             #endif
-        }
-        
-        // MARK: - Config
-        
-        /// Initializes a new configuration and loads all the values.
-        static private func loadConfig() -> ghostty_config_t? {
-            // Initialize the global configuration.
-            guard let cfg = ghostty_config_new() else {
-                logger.critical("ghostty_config_new failed")
-                return nil
-            }
-            
-            // Load our configuration from files, CLI args, and then any referenced files.
-            // We only do this on macOS because other Apple platforms do not have the
-            // same filesystem concept.
-            #if os(macOS)
-            ghostty_config_load_default_files(cfg);
-            ghostty_config_load_cli_args(cfg);
-            ghostty_config_load_recursive_files(cfg);
-            #endif
-            
-            // TODO: we'd probably do some config loading here... for now we'd
-            // have to do this synchronously. When we support config updating we can do
-            // this async and update later.
-            
-            // Finalize will make our defaults available.
-            ghostty_config_finalize(cfg)
-            
-            // Log any configuration errors. These will be automatically shown in a
-            // pop-up window too.
-            let errCount = ghostty_config_errors_count(cfg)
-            if errCount > 0 {
-                logger.warning("config error: \(errCount) configuration errors on reload")
-                var errors: [String] = [];
-                for i in 0..<errCount {
-                    let err = ghostty_config_get_error(cfg, UInt32(i))
-                    let message = String(cString: err.message)
-                    errors.append(message)
-                    logger.warning("config error: \(message)")
-                }
-            }
-            
-            return cfg
         }
         
         // MARK: Ghostty Callbacks
