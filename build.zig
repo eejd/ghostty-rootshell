@@ -37,7 +37,17 @@ const app_version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
-    const target = b.standardTargetOptions(.{});
+    const target = target: {
+        var result = b.standardTargetOptions(.{});
+
+        // If we have no minimum OS version, we set the default based on
+        // our tag. Not all tags have a minimum so this may be null.
+        if (result.query.os_version_min == null) {
+            result.query.os_version_min = osVersionMin(result.result.os.tag);
+        }
+
+        break :target result;
+    };
 
     const wasm_target: WasmTarget = .browser;
 
@@ -655,7 +665,7 @@ fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
 
         // This should never happen currently. If we add a new target then
         // we should add a new case here.
-        else => @panic("unhandled os version min os tag"),
+        else => null,
     };
 }
 
