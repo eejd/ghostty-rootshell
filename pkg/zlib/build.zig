@@ -33,12 +33,11 @@ pub fn build(b: *std.Build) !void {
         "-DHAVE_STDDEF_H",
         "-DZ_HAVE_UNISTD_H",
     });
-    for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     b.installArtifact(lib);
 }

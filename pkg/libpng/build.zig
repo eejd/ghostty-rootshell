@@ -33,12 +33,12 @@ pub fn build(b: *std.Build) !void {
         "-DPNG_INTEL_SSE_OPT=0",
         "-DPNG_MIPS_MSA_OPT=0",
     });
-    for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     lib.installHeader("pnglibconf.h", "pnglibconf.h");
     lib.installHeadersDirectoryOptions(.{
