@@ -821,94 +821,78 @@ fn addDeps(
         .search_strategy = .mode_first,
     };
 
-    const target_triple: []const u8 = try step.rootModuleTarget().zigTriple(b.allocator);
-    const cpu_opts: []const u8 = try step.root_module.resolved_target.?.query.serializeCpuAlloc(b.allocator);
+    const target = step.root_module.resolved_target.?;
+    const optimize = step.root_module.optimize.?;
 
     // Dependencies
     const cimgui_dep = b.dependency("cimgui", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const js_dep = b.dependency("zig_js", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const libxev_dep = b.dependency("libxev", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const objc_dep = b.dependency("zig_objc", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
 
     const fontconfig_dep = b.dependency("fontconfig", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const freetype_dep = b.dependency("freetype", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
         .@"enable-libpng" = true,
     });
     const glslang_dep = b.dependency("glslang", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const spirv_cross_dep = b.dependency("spirv_cross", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const mach_glfw_dep = b.dependency("mach_glfw", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const libpng_dep = b.dependency("libpng", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const macos_dep = b.dependency("macos", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const oniguruma_dep = b.dependency("oniguruma", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const opengl_dep = b.dependency("opengl", .{});
     const pixman_dep = b.dependency("pixman", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const zlib_dep = b.dependency("zlib", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
     const harfbuzz_dep = b.dependency("harfbuzz", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
         .@"enable-freetype" = true,
         .@"enable-coretext" = config.font_backend.hasCoretext(),
     });
     const ziglyph_dep = b.dependency("ziglyph", .{
-        .target = target_triple,
-        .cpu = cpu_opts,
-        .optimize = step.root_module.optimize.?,
+        .target = target,
+        .optimize = optimize,
     });
 
     // Wasm we do manually since it is such a different build.
