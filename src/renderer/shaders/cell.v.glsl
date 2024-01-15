@@ -208,6 +208,7 @@ void main() {
         // device coordinates (0 to 1.0) by dividing by the size of the texture.
         ivec2 text_size;
         switch(mode) {
+        case MODE_FG_CONSTRAINED:
         case MODE_FG:
             text_size = textureSize(text, 0);
             break;
