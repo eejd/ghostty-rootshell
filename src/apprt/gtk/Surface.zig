@@ -717,23 +717,25 @@ pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.Surfac
 pub fn grabFocus(self: *Surface) void {
     if (self.container.tab()) |tab| tab.focus_child = self;
 
-    self.updateTitleLabels();
     const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
     _ = c.gtk_widget_grab_focus(widget);
+
+    self.updateTitleLabels();
 }
 
 fn updateTitleLabels(self: *Surface) void {
     // If we have no title, then we have nothing to update.
     const title = self.title_text orelse return;
 
-    // If we have a tab, then we have to update the tab
+    // If we have a tab and are the focused child, then we have to update the tab
     if (self.container.tab()) |tab| {
-        c.gtk_label_set_text(tab.label_text, title.ptr);
+        if (tab.focus_child == self) c.gtk_label_set_text(tab.label_text, title.ptr);
     }
 
-    // If we have a window, then we have to update the window title.
+    // If we have a window and are focused, then we have to update the window title.
     if (self.container.window()) |window| {
-        c.gtk_window_set_title(window.window, title.ptr);
+        const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+        if (c.gtk_widget_is_focus(widget) == 1) c.gtk_window_set_title(window.window, title.ptr);
     }
 }
 
@@ -745,8 +747,7 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
     if (self.title_text) |old| alloc.free(old);
     self.title_text = copy;
 
-    const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-    if (c.gtk_widget_is_focus(widget) == 1) self.updateTitleLabels();
+    self.updateTitleLabels();
 }
 
 pub fn setMouseShape(
