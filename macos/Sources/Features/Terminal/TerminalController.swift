@@ -11,7 +11,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     override var windowNibName: NSNib.Name? { "Terminal" }
     
     /// The app instance that this terminal view will represent.
-    let ghostty: Ghostty.AppState
+    let ghostty: Ghostty.App
     
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil
@@ -46,7 +46,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// changes in the list.
     private var tabWindowsHash: Int = 0
     
-    init(_ ghostty: Ghostty.AppState, 
+    init(_ ghostty: Ghostty.App, 
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
     ) {
@@ -502,7 +502,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 str = cc.contents
             }
 
-            Ghostty.AppState.completeClipboardRequest(cc.surface, data: str, state: cc.state, confirmed: true)
+            Ghostty.App.completeClipboardRequest(cc.surface, data: str, state: cc.state, confirmed: true)
         }
     }
     
@@ -589,7 +589,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // If we already have a clipboard confirmation view up, we ignore this request.
         // This shouldn't be possible...
         guard self.clipboardConfirmation == nil else {
-            Ghostty.AppState.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
+            Ghostty.App.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
             return
         }
         

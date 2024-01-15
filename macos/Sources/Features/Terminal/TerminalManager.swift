@@ -11,7 +11,7 @@ class TerminalManager {
         let closePublisher: AnyCancellable
     }
     
-    let ghostty: Ghostty.AppState
+    let ghostty: Ghostty.App
     
     /// The currently focused surface of the main window.
     var focusedSurface: Ghostty.SurfaceView? { mainWindow?.controller.focusedSurface }
@@ -37,7 +37,7 @@ class TerminalManager {
         return windows.last
     }
     
-    init(_ ghostty: Ghostty.AppState) {
+    init(_ ghostty: Ghostty.App) {
         self.ghostty = ghostty
         
         let center = NotificationCenter.default

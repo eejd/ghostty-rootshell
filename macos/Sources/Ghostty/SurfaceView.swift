@@ -5,7 +5,7 @@ import GhosttyKit
 extension Ghostty {
     /// Render a terminal for the active app in the environment.
     struct Terminal: View {
-        @EnvironmentObject private var ghostty: Ghostty.AppState
+        @EnvironmentObject private var ghostty: Ghostty.App
         @FocusedValue(\.ghosttySurfaceTitle) private var surfaceTitle: String?
 
         var body: some View {
@@ -49,7 +49,7 @@ extension Ghostty {
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
 
-        @EnvironmentObject private var ghostty: Ghostty.AppState
+        @EnvironmentObject private var ghostty: Ghostty.App
 
         // This is true if the terminal is considered "focused". The terminal is focused if
         // it is both individually focused and the containing window is key.

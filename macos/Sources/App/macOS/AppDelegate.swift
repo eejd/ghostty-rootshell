@@ -8,7 +8,7 @@ class AppDelegate: NSObject,
                     ObservableObject,
                     NSApplicationDelegate,
                     UNUserNotificationCenterDelegate, 
-                    GhosttyAppStateDelegate
+                    GhosttyAppDelegate
 {
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
@@ -62,7 +62,7 @@ class AppDelegate: NSObject,
     private var applicationHasBecomeActive: Bool = false
     
     /// The ghostty global state. Only one per process.
-    let ghostty: Ghostty.AppState = Ghostty.AppState()
+    let ghostty: Ghostty.App = Ghostty.App()
     
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
@@ -338,7 +338,7 @@ class AppDelegate: NSObject,
         withCompletionHandler(options)
     }
 
-    //MARK: - GhosttyAppStateDelegate
+    //MARK: - GhosttyAppDelegate
     
     func findSurface(forUUID uuid: UUID) -> Ghostty.SurfaceView? {
         for c in terminalManager.windows {
@@ -350,7 +350,7 @@ class AppDelegate: NSObject,
         return nil
     }
     
-    func configDidReload(_ state: Ghostty.AppState) {
+    func configDidReload(_ state: Ghostty.App) {
         // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
         // configuration. This is the only way to carefully control whether macOS invokes the
         // state restoration system.

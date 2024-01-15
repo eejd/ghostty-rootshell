@@ -19,6 +19,26 @@ struct Ghostty {
     static let userNotificationActionShow = "com.mitchellh.ghostty.userNotification.Show"
 }
 
+// MARK: Build Info
+
+extension Ghostty {
+    struct Info {
+        var mode: ghostty_build_mode_e
+        var version: String
+    }
+    
+    static var info: Info {
+        let raw = ghostty_info()
+        let version = NSString(
+            bytes: raw.version,
+            length: Int(raw.version_len),
+            encoding: NSUTF8StringEncoding
+        ) ?? "unknown"
+
+        return Info(mode: raw.build_mode, version: String(version))
+    }
+}
+
 // MARK: Surface Notifications
 
 extension Ghostty {

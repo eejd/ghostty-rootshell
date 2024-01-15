@@ -37,7 +37,7 @@ protocol TerminalViewModel: ObservableObject {
 
 /// The main terminal view. This terminal view supports splits.
 struct TerminalView<ViewModel: TerminalViewModel>: View {
-    @ObservedObject var ghostty: Ghostty.AppState
+    @ObservedObject var ghostty: Ghostty.App
     
     // The required view model
     @ObservedObject var viewModel: ViewModel
@@ -83,7 +83,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             VStack(spacing: 0) {
                 // If we're running in debug mode we show a warning so that users
                 // know that performance will be degraded.
-                if (ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG) {
+                if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG) {
                     DebugBuildWarningView()
                 }
                 
