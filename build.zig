@@ -462,7 +462,7 @@ pub fn build(b: *std.Build) !void {
 
         // Add our library to zig-out
         const ios_sim_lib_install = b.addInstallLibFile(
-            ios_lib_path,
+            ios_sim_lib_path,
             "libghostty-ios-simulator.a",
         );
         b.getInstallStep().dependOn(&ios_sim_lib_install.step);
