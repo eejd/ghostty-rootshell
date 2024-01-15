@@ -355,10 +355,7 @@ feature rich.
 
 #### Richer Windowing Features
 
-The Mac app supports multi-window, tabbing, and splits.
-
-The Linux app (built with GTK) supports multi-window and tabbing. Splits
-will come soon in a future update.
+The Mac and Linux (build with GTK) apps support multi-window, tabbing, and splits.
 
 #### Native Platform Experiences
 
