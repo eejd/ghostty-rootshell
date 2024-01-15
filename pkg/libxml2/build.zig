@@ -94,12 +94,11 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
-    inline for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     lib.installHeader("override/include/libxml/xmlversion.h", "libxml/xmlversion.h");
     lib.installHeadersDirectoryOptions(.{

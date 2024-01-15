@@ -156,12 +156,11 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
-    for (srcs) |src| {
-        lib.addCSourceFile(.{
-            .file = upstream.path(src),
-            .flags = flags.items,
-        });
-    }
+    lib.addCSourceFiles(.{
+        .dependency = upstream,
+        .files = srcs,
+        .flags = flags.items,
+    });
 
     lib.installHeadersDirectoryOptions(.{
         .source_dir = upstream.path("fontconfig"),
