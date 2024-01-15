@@ -4,7 +4,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("glslang", .{ .root_source_file = .{ .path = "main.zig" } });
+    const module = b.addModule("glslang", .{
+        .root_source_file = .{ .path = "main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const upstream = b.dependency("glslang", .{});
     const lib = try buildGlslang(b, upstream, target, optimize);
@@ -13,9 +17,6 @@ pub fn build(b: *std.Build) !void {
     module.addIncludePath(upstream.path(""));
     module.addIncludePath(.{ .path = "override" });
     if (target.result.isDarwin()) {
-        // See pkg/harfbuzz/build.zig
-        module.resolved_target = target;
-        defer module.resolved_target = null;
         const apple_sdk = @import("apple_sdk");
         try apple_sdk.addPaths(b, module);
     }
