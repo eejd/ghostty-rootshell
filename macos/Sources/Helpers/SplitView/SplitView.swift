@@ -20,7 +20,10 @@ struct SplitView<L: View, R: View>: View {
     /// The left and right views to render.
     let left: L
     let right: R
-    
+
+    /// The minimum size (in points) of a split
+    let minSize: CGFloat = 10
+
     /// The current fractional width of the split view. 0.5 means L/R are equally sized, for example.
     @Binding var split: CGFloat
 
@@ -83,22 +86,22 @@ struct SplitView<L: View, R: View>: View {
     }
     
     private func resize(for size: CGSize, amount: Double) {
+        let dim: CGFloat
         switch (direction) {
         case .horizontal:
-            split += amount / size.width
+            dim = size.width
         case .vertical:
-            split += amount / size.height
+            dim = size.height
         }
 
-        // Ensure split is clamped between 0 and 1
-        split = max(0.0, min(split, 1.0))
+        let pos = split * dim
+        let new = min(max(minSize, pos + amount), dim - minSize)
+        split = new / dim
     }
 
     private func dragGesture(_ size: CGSize, splitterPoint: CGPoint) -> some Gesture {
         return DragGesture()
             .onChanged { gesture in
-                let minSize: CGFloat = 10
-                
                 switch (direction) {
                 case .horizontal:
                     let new = min(max(minSize, gesture.location.x), size.width - minSize)
