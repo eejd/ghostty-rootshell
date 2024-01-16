@@ -54,6 +54,9 @@ pub const Message = union(enum) {
         /// Desktop notification body.
         body: [255:0]u8,
     },
+
+    /// Health status change for the renderer.
+    renderer_health: renderer.Health,
 };
 
 /// A surface mailbox.

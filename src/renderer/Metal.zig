@@ -25,6 +25,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
+const Health = renderer.Health;
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
@@ -120,6 +121,10 @@ texture_color: objc.Object, // MTLTexture
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
+
+/// Health of the last frame. Note that when we do double/triple buffering
+/// this will have to be part of the frame state.
+health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
@@ -856,7 +861,54 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
+
+    // Create our block to register for completion updates. This is used
+    // so we can detect failures. The block is deallocated by the objC
+    // runtime on success.
+    const block = try CompletionBlock.init(.{ .self = self }, &bufferCompleted);
+    errdefer block.deinit();
+    buffer.msgSend(void, objc.sel("addCompletedHandler:"), .{block.context});
+
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+/// This is the block type used for the addCompletedHandler call.back.
+const CompletionBlock = objc.Block(struct { self: *Metal }, .{
+    objc.c.id, // MTLCommandBuffer
+}, void);
+
+/// This is the callback called by the CompletionBlock invocation for
+/// addCompletedHandler.
+///
+/// Note: this is USUALLY called on a separate thread because the renderer
+/// thread and the Apple event loop threads are usually different. Therefore,
+/// we need to be mindful of thread safety here.
+fn bufferCompleted(
+    block: *const CompletionBlock.Context,
+    buffer_id: objc.c.id,
+) callconv(.C) void {
+    const self = block.self;
+    const buffer = objc.Object.fromId(buffer_id);
+
+    // Get our command buffer status. If it is anything other than error
+    // then we don't care and just return right away. We're looking for
+    // errors so that we can log them.
+    const status = buffer.getProperty(mtl.MTLCommandBufferStatus, "status");
+    const health: Health = switch (status) {
+        .@"error" => .unhealthy,
+        else => .healthy,
+    };
+
+    // If our health value hasn't changed, then we do nothing. We don't
+    // do a cmpxchg here because strict atomicity isn't important.
+    if (self.health.load(.SeqCst) == health) return;
+    self.health.store(health, .SeqCst);
+
+    // Our health value changed, so we notify the surface so that it
+    // can do something about it.
+    _ = self.surface_mailbox.push(.{
+        .renderer_health = health,
+    }, .{ .forever = {} });
 }
 
 fn drawPostShader(
