@@ -896,7 +896,7 @@ fn bufferCompleted(
     const status = buffer.getProperty(mtl.MTLCommandBufferStatus, "status");
     const health: Health = switch (status) {
         .@"error" => .unhealthy,
-        else => .unhealthy,
+        else => .healthy,
     };
 
     // If our health value hasn't changed, then we do nothing. We don't
