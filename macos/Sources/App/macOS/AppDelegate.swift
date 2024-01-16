@@ -216,22 +216,23 @@ class AppDelegate: NSObject,
         // this way.
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
-        guard isDirectory.boolValue else {
-            let alert = NSAlert()
-            alert.messageText = "Dropped File is Not a Directory"
-            alert.informativeText = "Ghostty can currently only open directory paths."
-            alert.addButton(withTitle: "OK")
-            alert.alertStyle = .warning
-            _ = alert.runModal()
-            return false
-        }
         
-        // Build our config
+        // Initialize the surface config which will be used to create the tab or window for the opened file.
         var config = Ghostty.SurfaceConfiguration()
-        config.workingDirectory = filename
-        
-        // Add a new tab or create a new window
-        terminalManager.newTab(withBaseConfig: config)
+
+        if (isDirectory.boolValue) {
+            // When opening a directory, create a new tab in the main window with that as the working directory.
+            // If no windows exist, a new one will be created.
+            config.workingDirectory = filename
+            terminalManager.newTab(withBaseConfig: config)
+        } else {
+            // When opening a file, open a new window with that file as the command,
+            // and its parent directory as the working directory.
+            config.command = filename
+            config.workingDirectory = (filename as NSString).deletingLastPathComponent
+            terminalManager.newWindow(withBaseConfig: config)
+        }
+
         return true
     }
     

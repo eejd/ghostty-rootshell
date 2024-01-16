@@ -253,6 +253,9 @@ pub const Surface = struct {
 
         /// The working directory to load into.
         working_directory: [*:0]const u8 = "",
+
+        /// The command to run in the new surface.
+        command: [*:0]const u8 = "",
     };
 
     /// This is the key event sent for ghostty_surface_key.
@@ -324,6 +327,13 @@ pub const Surface = struct {
             }
 
             config.@"working-directory" = wd;
+        }
+
+        // If we have a command from the options then we set it.
+        const cm = std.mem.sliceTo(opts.command, 0);
+        if (cm.len > 0) {
+            // TODO: Maybe add some validation to this, like the working directory has?
+            config.command = cm;
         }
 
         // Initialize our surface right away. We're given a view that is

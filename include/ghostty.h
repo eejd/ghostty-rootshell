@@ -350,6 +350,7 @@ typedef struct {
     double scale_factor;
     uint16_t font_size;
     const char *working_directory;
+    const char *command;
 } ghostty_surface_config_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void *);
