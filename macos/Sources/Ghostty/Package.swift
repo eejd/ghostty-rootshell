@@ -232,6 +232,9 @@ extension Ghostty.Notification {
 
     /// Notification sent to the split root to equalize split sizes
     static let didEqualizeSplits = Notification.Name("com.mitchellh.ghostty.didEqualizeSplits")
+    
+    /// Notification that renderer health changed
+    static let didUpdateRendererHealth = Notification.Name("com.mitchellh.ghostty.didUpdateRendererHealth")
 }
 
 // Make the input enum hashable.

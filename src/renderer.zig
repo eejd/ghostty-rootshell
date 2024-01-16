@@ -55,7 +55,7 @@ pub const Renderer = switch (build_config.renderer) {
 /// The health status of a renderer. These must be shared across all
 /// renderers even if some states aren't reachable so that our API users
 /// can use the same enum for all renderers.
-pub const Health = enum(u8) {
+pub const Health = enum(c_int) {
     healthy = 0,
     unhealthy = 1,
 };

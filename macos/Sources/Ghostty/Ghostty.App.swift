@@ -92,8 +92,8 @@ extension Ghostty {
                 render_inspector_cb: { userdata in App.renderInspector(userdata) },
                 set_cell_size_cb: { userdata, width, height in App.setCellSize(userdata, width: width, height: height) },
                 show_desktop_notification_cb: { userdata, title, body in
-                    App.showUserNotification(userdata, title: title, body: body)
-                }
+                    App.showUserNotification(userdata, title: title, body: body) },
+                update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) }
             )
             
             // Create the ghostty app.
@@ -289,6 +289,7 @@ extension Ghostty {
         static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {}
         static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {}
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {}
+        static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
         #endif
         
         #if os(macOS)
@@ -610,6 +611,17 @@ extension Ghostty {
             NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
                 "mode": mode,
             ])
+        }
+        
+        static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {
+            let surface = self.surfaceUserdata(from: userdata)
+            NotificationCenter.default.post(
+                name: Notification.didUpdateRendererHealth, 
+                object: surface,
+                userInfo: [
+                    "health": health,
+                ]
+            )
         }
 
         /// Returns the GhosttyState from the given userdata value.

@@ -331,6 +331,11 @@ typedef enum {
     GHOSTTY_BUILD_MODE_RELEASE_SMALL,
 } ghostty_build_mode_e;
 
+typedef enum {
+    GHOSTTY_RENDERER_HEALTH_OK,
+    GHOSTTY_RENDERER_HEALTH_UNHEALTHY,
+} ghostty_renderer_health_e;
+
 // Fully defined types. This MUST be kept in sync with equivalent Zig
 // structs. To find the Zig struct, grep for this type name. The documentation
 // for all of these types is available in the Zig source.
@@ -376,6 +381,7 @@ typedef void (*ghostty_runtime_set_initial_window_size_cb)(void *, uint32_t, uin
 typedef void (*ghostty_runtime_render_inspector_cb)(void *);
 typedef void (*ghostty_runtime_set_cell_size_cb)(void *, uint32_t, uint32_t);
 typedef void (*ghostty_runtime_show_desktop_notification_cb)(void *, const char *, const char *);
+typedef void (*ghostty_runtime_update_renderer_health)(void *, ghostty_renderer_health_e);
 
 typedef struct {
     void *userdata;
@@ -404,6 +410,7 @@ typedef struct {
     ghostty_runtime_render_inspector_cb render_inspector_cb;
     ghostty_runtime_set_cell_size_cb set_cell_size_cb;
     ghostty_runtime_show_desktop_notification_cb show_desktop_notification_cb;
+    ghostty_runtime_update_renderer_health update_renderer_health_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
