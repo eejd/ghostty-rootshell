@@ -808,7 +808,16 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             const body = std.mem.sliceTo(&notification.body, 0);
             try self.showDesktopNotification(title, body);
         },
+
+        .renderer_health => |health| self.updateRendererHealth(health),
     }
+}
+
+/// Called when our renderer health state changes.
+fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
+    log.warn("renderer health status change status={}", .{health});
+    if (!@hasDecl(apprt.runtime.Surface, "updateRendererHealth")) return;
+    self.rt_surface.updateRendererHealth(health);
 }
 
 /// Update our configuration at runtime.

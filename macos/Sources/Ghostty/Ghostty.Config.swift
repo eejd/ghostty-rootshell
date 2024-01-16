@@ -197,6 +197,30 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
+        
+        var backgroundColor: Color {
+            var rgb: UInt32 = 0
+            let bg_key = "background"
+            if (!ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count))) {
+                #if os(macOS)
+                return Color(NSColor.windowBackgroundColor)
+                #elseif os(iOS)
+                return Color(UIColor.systemBackground)
+                #else
+                #error("unsupported")
+                #endif
+            }
+            
+            let red = Double(rgb & 0xff)
+            let green = Double((rgb >> 8) & 0xff)
+            let blue = Double((rgb >> 16) & 0xff)
+
+            return Color(
+                red: red / 255,
+                green: green / 255,
+                blue: blue / 255
+            )
+        }
 
         var backgroundOpacity: Double {
             guard let config = self.config else { return 1 }

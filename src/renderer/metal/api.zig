@@ -1,5 +1,16 @@
 //! This file contains the definitions of the Metal API that we use.
 
+/// https://developer.apple.com/documentation/metal/mtlcommandbufferstatus?language=objc
+pub const MTLCommandBufferStatus = enum(c_ulong) {
+    not_enqueued = 0,
+    enqueued = 1,
+    committed = 2,
+    scheduled = 3,
+    completed = 4,
+    @"error" = 5,
+    _,
+};
+
 /// https://developer.apple.com/documentation/metal/mtlloadaction?language=objc
 pub const MTLLoadAction = enum(c_ulong) {
     dont_care = 0,

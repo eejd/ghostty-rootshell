@@ -56,6 +56,8 @@ extension Ghostty {
         private var hasFocus: Bool { surfaceFocus && windowFocus }
 
         var body: some View {
+            let center = NotificationCenter.default
+            
             ZStack {
                 // We use a GeometryReader to get the frame bounds so that our metal surface
                 // is up to date. See TerminalSurfaceView for why we don't use the NSView
@@ -63,9 +65,9 @@ extension Ghostty {
                 GeometryReader { geo in
                     // We use these notifications to determine when the window our surface is
                     // attached to is or is not focused.
-                    let pubBecomeFocused = NotificationCenter.default.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
-                    let pubBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
-                    let pubResign = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+                    let pubBecomeFocused = center.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
+                    let pubBecomeKey = center.publisher(for: NSWindow.didBecomeKeyNotification)
+                    let pubResign = center.publisher(for: NSWindow.didResignKeyNotification)
 
                     Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
                         .focused($surfaceFocus)
@@ -141,6 +143,12 @@ extension Ghostty {
                         }
                 }
                 .ghosttySurfaceView(surfaceView)
+                
+                // If our surface is not healthy, then we render an error view over it.
+                if (!surfaceView.healthy) {
+                    Rectangle().fill(ghostty.config.backgroundColor)
+                    SurfaceUnhealthyView()
+                }
 
                 // If we're part of a split view and don't have focus, we put a semi-transparent
                 // rectangle above our view to make it look unfocused. We use "surfaceFocus"
@@ -158,6 +166,29 @@ extension Ghostty {
             }
         }
     }
+    
+    struct SurfaceUnhealthyView: View {
+        var body: some View {
+            HStack {
+                Image("AppIconImage")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 128, height: 128)
+                
+                VStack(alignment: .leading) {
+                    Text("Oh, no. 😭").font(.title)
+                    Text("""
+                        The renderer has failed. This is usually due to exhausting
+                        available GPU memory. Please free up available resources.
+                        """.replacingOccurrences(of: "\n", with: " ")
+                    )
+                    .frame(maxWidth: 350)
+                }
+            }
+            .padding()
+        }
+    }
+
 
     /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
     /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
@@ -248,6 +279,10 @@ extension Ghostty {
         // when the font size changes). This is used to allow windows to be
         // resized in discrete steps of a single cell.
         @Published var cellSize: NSSize = .zero
+        
+        // The health state of the surface. This currently only reflects the
+        // renderer health. In the future we may want to make this an enum.
+        @Published var healthy: Bool = true
 
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
@@ -327,7 +362,16 @@ extension Ghostty {
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
             super.init(frame: NSMakeRect(0, 0, 800, 600))
-
+            
+            // Before we initialize the surface we want to register our notifications
+            // so there is no window where we can't receive them.
+            let center = NotificationCenter.default
+            center.addObserver(
+                self,
+                selector: #selector(onUpdateRendererHealth),
+                name: Ghostty.Notification.didUpdateRendererHealth,
+                object: self)
+            
             // Setup our surface. This will also initialize all the terminal IO.
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
             var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
@@ -346,6 +390,10 @@ extension Ghostty {
         }
 
         deinit {
+            // Remove all of our notificationcenter subscriptions
+            let center = NotificationCenter.default
+            center.removeObserver(self)
+            
             // Whenever the surface is removed, we need to note that our restorable
             // state is invalid to prevent the surface from being restored.
             invalidateRestorableState()
@@ -502,6 +550,16 @@ extension Ghostty {
                 cursorUpdate(with: NSEvent())
             }
         }
+        
+        // MARK: - Notifications
+        
+        @objc private func onUpdateRendererHealth(notification: SwiftUI.Notification) {
+            guard let healthAny = notification.userInfo?["health"] else { return }
+            guard let health = healthAny as? ghostty_renderer_health_e else { return }
+            healthy = health == GHOSTTY_RENDERER_HEALTH_OK
+        }
+        
+        // MARK: - NSView
         
         override func viewDidMoveToWindow() {
             // Set our background blur if requested

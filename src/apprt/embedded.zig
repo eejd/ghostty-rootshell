@@ -11,6 +11,7 @@ const Allocator = std.mem.Allocator;
 const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const input = @import("../input.zig");
+const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
 const CoreInspector = @import("../inspector/main.zig").Inspector;
@@ -123,6 +124,9 @@ pub const App = struct {
 
         /// Show a desktop notification to the user.
         show_desktop_notification: ?*const fn (SurfaceUD, [*:0]const u8, [*:0]const u8) void = null,
+
+        /// Called when the health of the renderer changes.
+        update_renderer_health: ?*const fn (SurfaceUD, renderer.Health) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -959,6 +963,16 @@ pub const Surface = struct {
         };
 
         func(self.opts.userdata, title, body);
+    }
+
+    /// Update the health of the renderer.
+    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
+        const func = self.app.opts.update_renderer_health orelse {
+            log.info("runtime embedder does not support update_renderer_health", .{});
+            return;
+        };
+
+        func(self.opts.userdata, health);
     }
 };
 

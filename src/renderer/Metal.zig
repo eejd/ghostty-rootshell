@@ -25,6 +25,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
+const Health = renderer.Health;
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
@@ -120,6 +121,15 @@ texture_color: objc.Object, // MTLTexture
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
+
+/// Health of the last frame. Note that when we do double/triple buffering
+/// this will have to be part of the frame state.
+health: std.atomic.Value(Health) = .{ .raw = .healthy },
+
+/// Sempahore blocking our in-flight buffer updates. For now this is just
+/// one but in the future if we implement double/triple-buffering this
+/// will be incremented.
+inflight: std.Thread.Semaphore = .{ .permits = 1 },
 
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
@@ -399,6 +409,12 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 }
 
 pub fn deinit(self: *Metal) void {
+    // If we have inflight buffers, wait for completion. This ensures that
+    // any pending GPU operations are completed before we start deallocating
+    // everything. This is important because our completion callbacks access
+    // "self"
+    self.inflight.wait();
+
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
 
@@ -703,6 +719,10 @@ pub fn updateFrame(
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
 
+    // Wait for a buffer to be available.
+    self.inflight.wait();
+    errdefer self.inflight.post();
+
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
         const now = std.time.Instant.now() catch state.last_frame_time;
@@ -856,7 +876,58 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     }
 
     buffer.msgSend(void, objc.sel("presentDrawable:"), .{drawable.value});
+
+    // Create our block to register for completion updates. This is used
+    // so we can detect failures. The block is deallocated by the objC
+    // runtime on success.
+    const block = try CompletionBlock.init(.{ .self = self }, &bufferCompleted);
+    errdefer block.deinit();
+    buffer.msgSend(void, objc.sel("addCompletedHandler:"), .{block.context});
+
     buffer.msgSend(void, objc.sel("commit"), .{});
+}
+
+/// This is the block type used for the addCompletedHandler call.back.
+const CompletionBlock = objc.Block(struct { self: *Metal }, .{
+    objc.c.id, // MTLCommandBuffer
+}, void);
+
+/// This is the callback called by the CompletionBlock invocation for
+/// addCompletedHandler.
+///
+/// Note: this is USUALLY called on a separate thread because the renderer
+/// thread and the Apple event loop threads are usually different. Therefore,
+/// we need to be mindful of thread safety here.
+fn bufferCompleted(
+    block: *const CompletionBlock.Context,
+    buffer_id: objc.c.id,
+) callconv(.C) void {
+    const self = block.self;
+    const buffer = objc.Object.fromId(buffer_id);
+
+    // Get our command buffer status. If it is anything other than error
+    // then we don't care and just return right away. We're looking for
+    // errors so that we can log them.
+    const status = buffer.getProperty(mtl.MTLCommandBufferStatus, "status");
+    const health: Health = switch (status) {
+        .@"error" => .unhealthy,
+        else => .healthy,
+    };
+
+    // If our health value hasn't changed, then we do nothing. We don't
+    // do a cmpxchg here because strict atomicity isn't important.
+    if (self.health.load(.SeqCst) != health) {
+        self.health.store(health, .SeqCst);
+
+        // Our health value changed, so we notify the surface so that it
+        // can do something about it.
+        _ = self.surface_mailbox.push(.{
+            .renderer_health = health,
+        }, .{ .forever = {} });
+    }
+
+    // Always release our semaphore
+    self.inflight.post();
 }
 
 fn drawPostShader(
