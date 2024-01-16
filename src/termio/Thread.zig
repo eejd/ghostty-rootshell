@@ -3,6 +3,7 @@
 pub const Thread = @This();
 
 const std = @import("std");
+const ArenaAllocator = std.heap.ArenaAllocator;
 const builtin = @import("builtin");
 const xev = @import("xev");
 const termio = @import("../termio.zig");
@@ -65,6 +66,10 @@ impl: *termio.Impl,
 mailbox: *Mailbox,
 
 flags: packed struct {
+    /// This is set to true only when an abnormal exit is detected. It
+    /// tells our mailbox system to drain and ignore all messages.
+    drain: bool = false,
+
     /// True if linefeed mode is enabled. This is duplicated here so that the
     /// write thread doesn't need to grab a lock to check this on every write.
     linefeed_mode: bool = false,
@@ -133,23 +138,97 @@ pub fn deinit(self: *Thread) void {
 pub fn threadMain(self: *Thread) void {
     // Call child function so we can use errors...
     self.threadMain_() catch |err| {
-        // In the future, we should expose this on the thread struct.
         log.warn("error in io thread err={}", .{err});
+
+        // Use an arena to simplify memory management below
+        var arena = ArenaAllocator.init(self.alloc);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // If there is an error, we replace our terminal screen with
+        // the error message. It might be better in the future to send
+        // the error to the surface thread and let the apprt deal with it
+        // in some way but this works for now. Without this, the user would
+        // just see a blank terminal window.
+        self.impl.renderer_state.mutex.lock();
+        defer self.impl.renderer_state.mutex.unlock();
+        const t = self.impl.renderer_state.terminal;
+
+        // Hide the cursor
+        t.modes.set(.cursor_visible, false);
+
+        // This is weird but just ensures that no matter what our underlying
+        // implementation we have the errors below. For example, Windows doesn't
+        // have "OpenptyFailed".
+        const Err = @TypeOf(err) || error{
+            OpenptyFailed,
+        };
+
+        switch (@as(Err, @errorCast(err))) {
+            error.OpenptyFailed => {
+                const str =
+                    \\Your system cannot allocate any more pty devices.
+                    \\
+                    \\Ghostty requires a pty device to launch a new terminal.
+                    \\This error is usually due to having too many terminal
+                    \\windows open or having another program that is using too
+                    \\many pty devices.
+                    \\
+                    \\Please free up some pty devices and try again.
+                ;
+
+                t.eraseDisplay(alloc, .complete, false);
+                t.printString(str) catch {};
+            },
+
+            else => {
+                const str = std.fmt.allocPrint(
+                    alloc,
+                    \\error starting IO thread: {}
+                    \\
+                    \\The underlying shell or command was unable to be started.
+                    \\This error is usually due to exhausting a system resource.
+                    \\If this looks like a bug, please report it.
+                    \\
+                    \\This terminal is non-functional. Please close it and try again.
+                ,
+                    .{err},
+                ) catch
+                    \\Out of memory. This terminal is non-functional. Please close it and try again.
+                ;
+
+                t.eraseDisplay(alloc, .complete, false);
+                t.printString(str) catch {};
+            },
+        }
     };
+
+    // If our loop is not stopped, then we need to keep running so that
+    // messages are drained and we can wait for the surface to send a stop
+    // message.
+    if (!self.loop.flags.stopped) {
+        log.warn("abrupt io thread exit detected, starting xev to drain mailbox", .{});
+        defer log.debug("io thread fully exiting after abnormal failure", .{});
+        self.flags.drain = true;
+        self.loop.run(.until_done) catch |err| {
+            log.err("failed to start xev loop for draining err={}", .{err});
+        };
+    }
 }
 
 fn threadMain_(self: *Thread) !void {
     defer log.debug("IO thread exited", .{});
+
+    // Start the async handlers. We start these first so that they're
+    // registered even if anything below fails so we can drain the mailbox.
+    self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
+    self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
 
     // Run our thread start/end callbacks. This allows the implementation
     // to hook into the event loop as needed.
     var data = try self.impl.threadEnter(self);
     defer data.deinit();
     defer self.impl.threadExit(data);
-
-    // Start the async handlers
-    self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
-    self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
 
     // Run
     log.debug("starting IO thread", .{});
@@ -159,6 +238,12 @@ fn threadMain_(self: *Thread) !void {
 
 /// Drain the mailbox, handling all the messages in our terminal implementation.
 fn drainMailbox(self: *Thread) !void {
+    // If we're draining, we just drain the mailbox and return.
+    if (self.flags.drain) {
+        while (self.mailbox.pop()) |_| {}
+        return;
+    }
+
     // This holds the mailbox lock for the duration of the drain. The
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.

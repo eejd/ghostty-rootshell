@@ -706,13 +706,20 @@ pub fn invokeCharset(
     }
 }
 
-/// Print UTF-8 encoded string to the terminal. This string must be
-/// a single line, newlines and carriage returns and other control
-/// characters are not processed.
+/// Print UTF-8 encoded string to the terminal.
 pub fn printString(self: *Terminal, str: []const u8) !void {
     const view = try std.unicode.Utf8View.init(str);
     var it = view.iterator();
-    while (it.nextCodepoint()) |cp| try self.print(cp);
+    while (it.nextCodepoint()) |cp| {
+        switch (cp) {
+            '\n' => {
+                self.carriageReturn();
+                try self.linefeed();
+            },
+
+            else => try self.print(cp),
+        }
+    }
 }
 
 pub fn print(self: *Terminal, c: u21) !void {
