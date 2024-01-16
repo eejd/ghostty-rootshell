@@ -202,7 +202,13 @@ extension Ghostty {
             var rgb: UInt32 = 0
             let bg_key = "background"
             if (!ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count))) {
+                #if os(macOS)
                 return Color(NSColor.windowBackgroundColor)
+                #elseif os(iOS)
+                return Color(UIColor.systemBackground)
+                #else
+                #error("unsupported")
+                #endif
             }
             
             let red = Double(rgb & 0xff)
