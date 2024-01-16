@@ -676,8 +676,10 @@ pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         const gtk_xft_dpi = c.g_value_get_int(&value);
 
         // As noted above Xft.dpi is multiplied by 1024, so we divide by 1024,
-        // then divide by the default value of Xft.dpi (96) to derive a scale
-        const xft_dpi: f32 = @floatFromInt(@divExact(gtk_xft_dpi, 1024));
+        // then divide by the default value of Xft.dpi (96) to derive a scale.
+        // Note that gtk-xft-dpi can be fractional, so we use floating point
+        // math here.
+        const xft_dpi: f32 = @as(f32, @floatFromInt(gtk_xft_dpi)) / 1024;
         break :xft_scale xft_dpi / 96;
     };
 
