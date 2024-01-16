@@ -126,6 +126,11 @@ custom_shader_state: ?CustomShaderState = null,
 /// this will have to be part of the frame state.
 health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
+/// Sempahore blocking our in-flight buffer updates. For now this is just
+/// one but in the future if we implement double/triple-buffering this
+/// will be incremented.
+inflight: std.Thread.Semaphore = .{ .permits = 1 },
+
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
     /// custom shaders, we render directly to the drawable.
@@ -404,6 +409,12 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 }
 
 pub fn deinit(self: *Metal) void {
+    // If we have inflight buffers, wait for completion. This ensures that
+    // any pending GPU operations are completed before we start deallocating
+    // everything. This is important because our completion callbacks access
+    // "self"
+    self.inflight.wait();
+
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
 
@@ -708,6 +719,10 @@ pub fn updateFrame(
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
 
+    // Wait for a buffer to be available.
+    self.inflight.wait();
+    errdefer self.inflight.post();
+
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
         const now = std.time.Instant.now() catch state.last_frame_time;
@@ -901,14 +916,18 @@ fn bufferCompleted(
 
     // If our health value hasn't changed, then we do nothing. We don't
     // do a cmpxchg here because strict atomicity isn't important.
-    if (self.health.load(.SeqCst) == health) return;
-    self.health.store(health, .SeqCst);
+    if (self.health.load(.SeqCst) != health) {
+        self.health.store(health, .SeqCst);
 
-    // Our health value changed, so we notify the surface so that it
-    // can do something about it.
-    _ = self.surface_mailbox.push(.{
-        .renderer_health = health,
-    }, .{ .forever = {} });
+        // Our health value changed, so we notify the surface so that it
+        // can do something about it.
+        _ = self.surface_mailbox.push(.{
+            .renderer_health = health,
+        }, .{ .forever = {} });
+    }
+
+    // Always release our semaphore
+    self.inflight.post();
 }
 
 fn drawPostShader(
