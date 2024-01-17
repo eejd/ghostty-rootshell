@@ -283,12 +283,14 @@ import it on the remote machine:
 $ infocmp -x | ssh YOUR-SERVER -- tic -x -
 ```
 
-**Note: macOS versions before Sonoma cannot use the system-bundled `infocmp`.**
-The bundled version of `ncurses` is too old to emit a terminfo entry that can be
-read by more recent versions of `tic`, and the command will fail with a bunch
-of `Illegal character` messages. You can fix this by using Homebrew to install
-a recent version of `ncurses` and replacing `infocmp` above with the full path
-`/opt/homebrew/opt/ncurses/bin/infocmp`.
+> [!NOTE]
+>
+> **macOS versions before Sonoma cannot use the system-bundled `infocmp`.**
+> The bundled version of `ncurses` is too old to emit a terminfo entry that can be
+> read by more recent versions of `tic`, and the command will fail with a bunch
+> of `Illegal character` messages. You can fix this by using Homebrew to install
+> a recent version of `ncurses` and replacing `infocmp` above with the full path
+> `/opt/homebrew/opt/ncurses/bin/infocmp`.
 
 #### Configure SSH to fall back to a known terminfo entry
 
@@ -301,13 +303,15 @@ Host example.com
   SetEnv TERM=xterm-256color
 ```
 
-**Note: Fallback does not support advanced terminal features.** Because
-`xterm-256color` does not include all of Ghostty's capabilities, terminal
-features beyond xterm's like colored and styled underlines will not work.
-
-**Note: Requires OpenSSH 8.7 or newer.** [The 8.7 release added
+**Requires OpenSSH 8.7 or newer.** [The 8.7 release added
 support](https://www.openssh.com/txt/release-8.7) for setting `TERM` via
 `SetEnv`.
+
+> [!WARNING]
+>
+> **Fallback does not support advanced terminal features.** Because
+> `xterm-256color` does not include all of Ghostty's capabilities, terminal
+> features beyond xterm's like colored and styled underlines will not work.
 
 ## Roadmap and Status
 
@@ -418,11 +422,13 @@ to use Nix to develop Ghostty, but the Nix environment is the environment
 which runs CI tests and builds release artifacts. Any development work on
 Ghostty must pass within these Nix environments.
 
-**Note: Zig nightly is required.** Ghostty is built against the nightly
-releases of Zig while it is still in beta. I plan on stabilizing on a release
-version when I get closer to generally releasing this to ease downstream
-packagers. You can find binary releases of nightly builds on the
-[Zig downloads page](https://ziglang.org/download/).
+> [!NOTE]
+>
+> **Zig nightly is required.** Ghostty is built against the nightly
+> releases of Zig while it is still in beta. I plan on stabilizing on a release
+> version when I get closer to generally releasing this to ease downstream
+> packagers. You can find binary releases of nightly builds on the
+> [Zig downloads page](https://ziglang.org/download/).
 
 Under some conditions, the very latest Zig nightly may not work (for example,
 when Zig introduces breaking changes that Ghostty or our dependencies haven't
@@ -475,13 +481,13 @@ You can verify you have a release version by checking the filesize of the
 built binary (`zig-out/bin/ghostty`). The release version should be less
 than 5 MB on all platforms. The debug version is around 70MB.
 
-**Note: when using the GTK runtime (`-Dapp-runtime=gtk`) a release build will
+When using the GTK runtime (`-Dapp-runtime=gtk`) a release build will
 use a [single-instance application](https://developer.gnome.org/documentation/tutorials/application.html).
 If you're developing Ghostty from _inside_ a release build and build & launch a
 new one that will not reflect the changes you made, but instead launch a new
 window for the existing instance. You can disable this behaviour with the
 `--gtk-single-instance=false` flag or by adding `gtk-single-instance = false` to
-the configuration file.**
+the configuration file.
 
 ### Linux Installation Tips
 
@@ -493,13 +499,15 @@ building with `-Dstatic=false`). On Ubuntu, use
 $ sudo apt install libgtk-4-dev libadwaita-1-dev git
 ```
 
-**Note: a recent GTK is required for Ghostty to work with Nvidia (GL) drivers
-under x11.** Ubuntu 22.04 LTS has GTK 4.6 which is not new enough. Ubuntu 23.10
-has GTK 4.12 and works. From [this discussion](https://discourse.gnome.org/t/opengl-context-version-not-respected-on-gtk4-rs/12162?u=cdehais)
-the problem was fixed in GTK by Dec 2022. Also, if you are a BTRFS user, make
-sure to manually upgrade your Kernel (6.6.6 will work). The stock kernel in
-Ubuntu 23.10 is 6.5.0 which has a bug which
-[causes zig to fail its hash check for packages](https://github.com/ziglang/zig/issues/17282).
+> [!NOTE]
+>
+> **A recent GTK is required for Ghostty to work with Nvidia (GL) drivers
+> under x11.** Ubuntu 22.04 LTS has GTK 4.6 which is not new enough. Ubuntu 23.10
+> has GTK 4.12 and works. From [this discussion](https://discourse.gnome.org/t/opengl-context-version-not-respected-on-gtk4-rs/12162?u=cdehais)
+> the problem was fixed in GTK by Dec 2022. Also, if you are a BTRFS user, make
+> sure to manually upgrade your Kernel (6.6.6 will work). The stock kernel in
+> Ubuntu 23.10 is 6.5.0 which has a bug which
+> [causes zig to fail its hash check for packages](https://github.com/ziglang/zig/issues/17282).
 
 On Arch Linux, use
 
