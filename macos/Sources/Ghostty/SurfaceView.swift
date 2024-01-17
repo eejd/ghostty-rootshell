@@ -147,7 +147,10 @@ extension Ghostty {
                 // If our surface is not healthy, then we render an error view over it.
                 if (!surfaceView.healthy) {
                     Rectangle().fill(ghostty.config.backgroundColor)
-                    SurfaceUnhealthyView()
+                    SurfaceRendererUnhealthyView()
+                } else if (surfaceView.error != nil) {
+                    Rectangle().fill(ghostty.config.backgroundColor)
+                    SurfaceErrorView()
                 }
 
                 // If we're part of a split view and don't have focus, we put a semi-transparent
@@ -167,7 +170,7 @@ extension Ghostty {
         }
     }
     
-    struct SurfaceUnhealthyView: View {
+    struct SurfaceRendererUnhealthyView: View {
         var body: some View {
             HStack {
                 Image("AppIconImage")
@@ -188,8 +191,29 @@ extension Ghostty {
             .padding()
         }
     }
-
-
+    
+    struct SurfaceErrorView: View {
+        var body: some View {
+            HStack {
+                Image("AppIconImage")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 128, height: 128)
+                
+                VStack(alignment: .leading) {
+                    Text("Oh, no. 😭").font(.title)
+                    Text("""
+                        The terminal failed to initialize. Please check the logs for
+                        more information. This is usually a bug.
+                        """.replacingOccurrences(of: "\n", with: " ")
+                    )
+                    .frame(maxWidth: 350)
+                }
+            }
+            .padding()
+        }
+    }
+    
     /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
     /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
     /// a split, a small preview pane, etc. It is ANYTHING that has a terminal drawn to it.
@@ -283,6 +307,9 @@ extension Ghostty {
         // The health state of the surface. This currently only reflects the
         // renderer health. In the future we may want to make this an enum.
         @Published var healthy: Bool = true
+        
+        // Any error while initializing the surface.
+        @Published var error: Error? = nil
 
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
@@ -327,8 +354,6 @@ extension Ghostty {
         var notificationIdentifiers: Set<String> = []
         
         private(set) var surface: ghostty_surface_t?
-        var error: Error? = nil
-
         private var markedText: NSMutableAttributedString
         private var mouseEntered: Bool = false
         private(set) var focused: Bool = true
