@@ -46,11 +46,23 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// changes in the list.
     private var tabWindowsHash: Int = 0
     
+    /// This is set to false by init if the window managed by this controller should not be restorable.
+    /// For example, terminals executing custom scripts are not restorable.
+    private var restorable: Bool = true
+    
     init(_ ghostty: Ghostty.App, 
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
     ) {
         self.ghostty = ghostty
+        
+        // The window we manage is not restorable if we've specified a command
+        // to execute. We do this because the restored window is meaningless at the
+        // time of writing this: it'd just restore to a shell in the same directory
+        // as the script. We may want to revisit this behavior when we have scrollback
+        // restoration.
+        self.restorable = (base?.command ?? "") == ""
+        
         super.init(window: nil)
         
         // Initialize our initial surface.
@@ -150,9 +162,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let window = window else { return }
         
         // Setting all three of these is required for restoration to work.
-        window.isRestorable = true
-        window.restorationClass = TerminalWindowRestoration.self
-        window.identifier = .init(String(describing: TerminalWindowRestoration.self))
+        window.isRestorable = restorable
+        if (restorable) {
+            window.restorationClass = TerminalWindowRestoration.self
+            window.identifier = .init(String(describing: TerminalWindowRestoration.self))
+        }
         
         // If window decorations are disabled, remove our title
         if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
