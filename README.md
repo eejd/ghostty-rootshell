@@ -313,15 +313,15 @@ support](https://www.openssh.com/txt/release-8.7) for setting `TERM` via
 
 The high-level ambitious plan for the project, in order:
 
-|  #  | Step                                                        | Status |
-| :-: | ----------------------------------------------------------- | :----: |
-|  1  | [Standards-compliant terminal emulation](docs/sequences.md) |   ⚠️   |
-|  2  | Competitive performance                                     |   ✅   |
-|  3  | Basic customizability -- fonts, bg colors, etc.             |   ✅   |
-|  4  | Richer windowing features -- multi-window, tabbing, panes   |   ✅   |
-|  5  | Native Platform Experiences (i.e. Mac Preference Panel)     |   ⚠️   |
-|  6  | Windows Terminals (including PowerShell, Cmd, WSL)          |   ❌   |
-|  N  | Fancy features (to be expanded upon later)                  |   ❌   |
+|  #  | Step                                                      | Status |
+| :-: | --------------------------------------------------------- | :----: |
+|  1  | Standards-compliant terminal emulation                    |   ✅   |
+|  2  | Competitive performance                                   |   ✅   |
+|  3  | Basic customizability -- fonts, bg colors, etc.           |   ✅   |
+|  4  | Richer windowing features -- multi-window, tabbing, panes |   ✅   |
+|  5  | Native Platform Experiences (i.e. Mac Preference Panel)   |   ⚠️   |
+|  6  | Windows Terminals (including PowerShell, Cmd, WSL)        |   ❌   |
+|  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
 Additional details for each step in the big roadmap below:
 
