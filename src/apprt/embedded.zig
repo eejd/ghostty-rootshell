@@ -258,7 +258,9 @@ pub const Surface = struct {
         /// The working directory to load into.
         working_directory: [*:0]const u8 = "",
 
-        /// The command to run in the new surface.
+        /// The command to run in the new surface. If this is set then
+        /// the "wait-after-command" option is also automatically set to true,
+        /// since this is used for scripting.
         command: [*:0]const u8 = "",
     };
 
@@ -334,10 +336,10 @@ pub const Surface = struct {
         }
 
         // If we have a command from the options then we set it.
-        const cm = std.mem.sliceTo(opts.command, 0);
-        if (cm.len > 0) {
-            // TODO: Maybe add some validation to this, like the working directory has?
-            config.command = cm;
+        const cmd = std.mem.sliceTo(opts.command, 0);
+        if (cmd.len > 0) {
+            config.command = cmd;
+            config.@"wait-after-command" = true;
         }
 
         // Initialize our surface right away. We're given a view that is
