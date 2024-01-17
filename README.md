@@ -320,7 +320,8 @@ The high-level ambitious plan for the project, in order:
 |  3  | Basic customizability -- fonts, bg colors, etc.           |   ✅   |
 |  4  | Richer windowing features -- multi-window, tabbing, panes |   ✅   |
 |  5  | Native Platform Experiences (i.e. Mac Preference Panel)   |   ⚠️   |
-|  6  | Windows Terminals (including PowerShell, Cmd, WSL)        |   ❌   |
+|  6  | Cross-platform `libghostty` for Embeddable Terminals      |   ⚠️   |
+|  7  | Windows Terminals (including PowerShell, Cmd, WSL)        |   ❌   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
 Additional details for each step in the big roadmap below:
@@ -388,6 +389,22 @@ in Zig but we do a lot of platform-native things:
 
 There are more improvements to be made. The macOS settings window is still
 a work-in-progress. Similar improvements will follow with Linux.
+
+#### Cross-platform `libghostty` for Embeddable Terminals
+
+In addition to being a standalone terminal emulator, Ghostty is a
+C-compatible library for embedding a fast, feature-rich terminal emulator
+in any 3rd party project. This library is called `libghostty`.
+
+This goal is not hypothetical! The macOS app is a `libghostty` consumer.
+The macOS app is a native Swift app developed in Xcode and `main()` is
+within Swift. The Swift app links to `libghostty` and uses the C API to
+render terminals.
+
+This step encompasses expanding `libghostty` support to more platforms
+and more use cases. At the time of writing this, `libghostty` is very
+Mac-centric -- particularly around rendering -- and we have work to do to
+expand this to other platforms.
 
 ## Developing Ghostty
 
