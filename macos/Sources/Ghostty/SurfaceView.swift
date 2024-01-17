@@ -261,12 +261,16 @@ extension Ghostty {
         
         /// Explicit working directory to set
         var workingDirectory: String? = nil
+
+        /// Explicit command to set
+        var command: String? = nil
         
         init() {}
         
         init(from config: ghostty_surface_config_s) {
             self.fontSize = config.font_size
             self.workingDirectory = String.init(cString: config.working_directory, encoding: .utf8)
+            self.command = String.init(cString: config.command, encoding: .utf8)
         }
         
         /// Returns the ghostty configuration for this surface configuration struct. The memory
@@ -280,6 +284,9 @@ extension Ghostty {
             if let fontSize = fontSize { config.font_size = fontSize }
             if let workingDirectory = workingDirectory {
                 config.working_directory = (workingDirectory as NSString).utf8String
+            }
+            if let command = command {
+                config.command = (command as NSString).utf8String
             }
             
             return config
