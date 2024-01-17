@@ -327,35 +327,53 @@ Additional details for each step in the big roadmap below:
 
 #### Standards-Compliant Terminal Emulation
 
-I am able to use this terminal as a daily driver. I think that's good enough
-for a yellow status. There are a LOT of missing features for full standards
-compliance but the set that are regularly in use are working pretty well.
+Ghostty implements enough control sequences to be used by hundreds of
+testers daily for over the past year. Further, we've done a
+[comprehensive xterm audit](https://github.com/mitchellh/ghostty/issues/632)
+comparing Ghostty's behavior to xterm and building a set of conformance
+test cases.
+
+We believe Ghostty is one of the most compliant terminal emulators available.
+
+Terminal behavior is partially a dejour standard
+(i.e. [ECMA-48](https://ecma-international.org/publications-and-standards/standards/ecma-48/))
+but mostly a defacto standard as defined by popular terminal emulators
+worldwide. Ghostty takes the approach that our behavior is defined by
+(1) standards, if available, (2) xterm, if the feature exists, (3)
+other popular terminals, in that order. This defines what the Ghostty project
+views as a "standard."
 
 #### Competitive Performance
 
-We need better benchmarks to continuously verify this, but I believe at
-this stage Ghostty is already best-in-class (or at worst second in certain
-cases) for a majority of performance measuring scenarios.
+We need better benchmarks to continuously verify this, but Ghostty is
+generally in the same performance category as the other highest performing
+terminal emulators.
 
 For rendering, we have a multi-renderer architecture that uses OpenGL on
 Linux and Metal on macOS. As far as I'm aware, we're the only terminal
 emulator other than iTerm that uses Metal directly. And we're the only
 terminal emulator that has a Metal renderer that supports ligatures (iTerm
-uses a CPU renderer if ligatures are enabled). We can maintain roughly
-100fps under heavy load and 120fps generally -- though the terminal is
+uses a CPU renderer if ligatures are enabled). We can maintain around 60fps
+under heavy load and much more generally -- though the terminal is
 usually rendering much lower due to little screen changes.
 
 For IO, we have a dedicated IO thread that maintains very little jitter
 under heavy IO load (i.e. `cat <big file>.txt`). On benchmarks for IO,
-we're usually top of the class by a large margin over popular terminal
-emulators. For example, reading a dump of plain text is 4x faster compared
-to iTerm and Kitty, and 2x faster than Terminal.app. Alacritty is very
-fast but we're still ~15% faster and our app experience is much more
+we're usually within a small margin of other fast terminal emulators.
+For example, reading a dump of plain text is 4x faster compared to iTerm and
+Kitty, and 2x faster than Terminal.app. Alacritty is very fast but we're still
+around the same speed (give or take) and our app experience is much more
 feature rich.
+
+> [!NOTE]
+> Despite being _very fast_, there is a lot of room for improvement here.
+> We still consider some aspects of our performance a "bug" and plan on
+> taking a dedicated pass to improve performance before public release.
 
 #### Richer Windowing Features
 
-The Mac and Linux (build with GTK) apps support multi-window, tabbing, and splits.
+The Mac and Linux (build with GTK) apps support multi-window, tabbing, and
+splits.
 
 #### Native Platform Experiences
 
