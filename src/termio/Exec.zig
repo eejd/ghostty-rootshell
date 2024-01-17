@@ -86,6 +86,7 @@ pub const DerivedConfig = struct {
     term: []const u8,
     grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
     abnormal_runtime_threshold_ms: u32,
+    wait_after_command: bool,
     enquiry_response: []const u8,
 
     pub fn init(
@@ -108,6 +109,7 @@ pub const DerivedConfig = struct {
             .term = try alloc.dupe(u8, config.term),
             .grapheme_width_method = config.@"grapheme-width-method",
             .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
+            .wait_after_command = config.@"wait-after-command",
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
 
             // This has to be last so that we copy AFTER the arena allocations
@@ -261,6 +263,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
             },
         },
         .abnormal_runtime_threshold_ms = self.config.abnormal_runtime_threshold_ms,
+        .wait_after_command = self.config.wait_after_command,
     };
     errdefer ev_data_ptr.deinit(self.alloc);
 
@@ -358,7 +361,11 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Update our stream handler. The stream handler uses the same
     // renderer mutex so this is safe to do despite being executed
     // from another thread.
-    if (self.data) |data| data.terminal_stream.handler.changeConfig(&self.config);
+    if (self.data) |data| {
+        data.abnormal_runtime_threshold_ms = config.abnormal_runtime_threshold_ms;
+        data.wait_after_command = config.wait_after_command;
+        data.terminal_stream.handler.changeConfig(&self.config);
+    }
 
     // Update the configuration that we know about.
     //
@@ -722,6 +729,10 @@ const EventData = struct {
     /// when the process exits too quickly.
     abnormal_runtime_threshold_ms: u32,
 
+    /// If true, do not immediately send a child exited message to the
+    /// surface to close the surface when the command exits.
+    wait_after_command: bool,
+
     pub fn deinit(self: *EventData, alloc: Allocator) void {
         // Clear our write pools. We know we aren't ever going to do
         // any more IO since we stop our data stream below so we can just
@@ -799,6 +810,26 @@ fn processExit(
             },
         }, .{ .forever = {} });
         ev.writer_wakeup.notify() catch break :runtime;
+
+        return .disarm;
+    }
+
+    // If we're purposely waiting then we just return since the process
+    // exited flag is set to true. This allows the terminal window to remain
+    // open.
+    if (ev.wait_after_command) {
+        // We output a message so that the user knows whats going on and
+        // doesn't think their terminal just froze.
+        terminal: {
+            ev.renderer_state.mutex.lock();
+            defer ev.renderer_state.mutex.unlock();
+            const t = ev.renderer_state.terminal;
+            t.carriageReturn();
+            t.linefeed() catch break :terminal;
+            t.printString("Process exited. Press any key to close the terminal.") catch
+                break :terminal;
+            t.modes.set(.cursor_visible, false);
+        }
 
         return .disarm;
     }
