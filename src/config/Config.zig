@@ -400,6 +400,14 @@ palette: Palette = .{},
 /// flag. For example: `ghostty -e fish --with --custom --args`.
 command: ?[]const u8 = null,
 
+/// If true, keep the terminal open after the command exits. Normally,
+/// the terminal window closes when the running command (such as a shell)
+/// exits. With this true, the terminal window will stay open until any
+/// keypress is received.
+///
+/// This is primarily useful for scripts or debugging.
+@"wait-after-command": bool = false,
+
 /// The number of milliseconds of runtime below which we consider a process
 /// exit to be abnormal. This is used to show an error message when the
 /// process exits too quickly.
