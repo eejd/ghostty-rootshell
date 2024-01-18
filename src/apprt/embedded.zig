@@ -283,13 +283,13 @@ pub const Surface = struct {
     inspector: ?*Inspector = null,
 
     pub const Options = extern struct {
-        /// Userdata passed to some of the callbacks.
-        userdata: ?*anyopaque = null,
-
         /// The platform that this surface is being initialized for and
         /// the associated platform-specific configuration.
         platform_tag: c_int = 0,
         platform: Platform.C = undefined,
+
+        /// Userdata passed to some of the callbacks.
+        userdata: ?*anyopaque = null,
 
         /// The scale factor of the screen.
         scale_factor: f64 = 1,

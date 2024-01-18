@@ -31,6 +31,7 @@ typedef void *ghostty_inspector_t;
 
 // Enums are up top so we can reference them later.
 typedef enum {
+    GHOSTTY_PLATFORM_INVALID,
     GHOSTTY_PLATFORM_MACOS,
 } ghostty_platform_e;
 
@@ -354,8 +355,17 @@ typedef struct {
 } ghostty_error_s;
 
 typedef struct {
-    void *userdata;
     void *nsview;
+} ghostty_platform_macos_s;
+
+typedef union {
+    ghostty_platform_macos_s macos;
+} ghostty_platform_u;
+
+typedef struct {
+    ghostty_platform_e platform_tag;
+    ghostty_platform_u platform;
+    void *userdata;
     double scale_factor;
     uint16_t font_size;
     const char *working_directory;
@@ -476,9 +486,6 @@ uintptr_t ghostty_surface_pwd(ghostty_surface_t, char *, uintptr_t);
 
 ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);
 void ghostty_inspector_free(ghostty_surface_t);
-bool ghostty_inspector_metal_init(ghostty_inspector_t, void *);
-void ghostty_inspector_metal_render(ghostty_inspector_t, void *, void *);
-bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
 void ghostty_inspector_set_focus(ghostty_inspector_t, bool);
 void ghostty_inspector_set_content_scale(ghostty_inspector_t, double, double);
 void ghostty_inspector_set_size(ghostty_inspector_t, uint32_t, uint32_t);
@@ -487,6 +494,12 @@ void ghostty_inspector_mouse_pos(ghostty_inspector_t, double, double);
 void ghostty_inspector_mouse_scroll(ghostty_inspector_t, double, double, ghostty_input_scroll_mods_t);
 void ghostty_inspector_key(ghostty_inspector_t, ghostty_input_action_e, ghostty_input_key_e, ghostty_input_mods_e);
 void ghostty_inspector_text(ghostty_inspector_t, const char *);
+
+#ifdef __APPLE__
+bool ghostty_inspector_metal_init(ghostty_inspector_t, void *);
+void ghostty_inspector_metal_render(ghostty_inspector_t, void *, void *);
+bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
+#endif
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.
