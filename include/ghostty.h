@@ -31,6 +31,10 @@ typedef void *ghostty_inspector_t;
 
 // Enums are up top so we can reference them later.
 typedef enum {
+    GHOSTTY_PLATFORM_MACOS,
+} ghostty_platform_e;
+
+typedef enum {
     GHOSTTY_CLIPBOARD_STANDARD,
     GHOSTTY_CLIPBOARD_SELECTION,
 } ghostty_clipboard_e;
