@@ -476,9 +476,13 @@ pub fn finalizeSurfaceInit(self: *const Metal, surface: *apprt.Surface) !void {
         else => @compileError("unsupported apprt for metal"),
     };
 
-    // Make our view layer-backed with our Metal layer
-    info.view.setProperty("layer", self.swapchain.value);
-    info.view.setProperty("wantsLayer", true);
+    // Make our view layer-backed with our Metal layer. On iOS views are
+    // always layer backed so we don't need to do this. But on iOS the
+    // caller MUST be sure to set the layerClass to CAMetalLayer.
+    if (comptime builtin.os.tag == .macos) {
+        info.view.setProperty("layer", self.swapchain.value);
+        info.view.setProperty("wantsLayer", true);
+    }
 
     // Ensure that our metal layer has a content scale set to match the
     // scale factor of the window. This avoids magnification issues leading
