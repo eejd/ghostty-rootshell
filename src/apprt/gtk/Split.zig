@@ -163,10 +163,15 @@ fn removeChild(
 
 /// Move the divider in the given direction by the given amount.
 pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: u16) void {
+    const min_pos = 10;
+
     const pos = c.gtk_paned_get_position(self.paned);
     const new = switch (direction) {
-        .up, .left => pos - amount,
-        .down, .right => pos + amount,
+        .up, .left => @max(pos - amount, min_pos),
+        .down, .right => new_pos: {
+            const max_pos: u16 = @as(u16, @intFromFloat(self.maxPosition())) - min_pos;
+            break :new_pos @min(pos + amount, max_pos);
+        },
     };
 
     c.gtk_paned_set_position(self.paned, new);
