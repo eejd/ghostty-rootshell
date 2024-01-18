@@ -277,8 +277,11 @@ extension Ghostty {
         /// in the returned struct is only valid as long as this struct is retained.
         func ghosttyConfig(view: SurfaceView) -> ghostty_surface_config_s {
             var config = ghostty_surface_config_new()
+            config.platform_tag = GHOSTTY_PLATFORM_MACOS
+            config.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
+                nsview: Unmanaged.passUnretained(view).toOpaque()
+            ))
             config.userdata = Unmanaged.passUnretained(view).toOpaque()
-            config.nsview = Unmanaged.passUnretained(view).toOpaque()
             config.scale_factor = NSScreen.main!.backingScaleFactor
 
             if let fontSize = fontSize { config.font_size = fontSize }

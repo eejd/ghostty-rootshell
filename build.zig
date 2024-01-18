@@ -405,7 +405,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // App (Linux)
-    if (target.result.os.tag == .linux) {
+    if (target.result.os.tag == .linux and config.app_runtime != .none) {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
@@ -426,6 +426,52 @@ pub fn build(b: *std.Build) !void {
         b.installFile("images/icons/icon_32x32@2x@2x.png", "share/icons/hicolor/32x32@2/apps/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_128x128@2x@2x.png", "share/icons/hicolor/128x128@2/apps/com.mitchellh.ghostty.png");
         b.installFile("images/icons/icon_256x256@2x@2x.png", "share/icons/hicolor/256x256@2/apps/com.mitchellh.ghostty.png");
+    }
+
+    // libghostty (non-Darwin)
+    if (!builtin.target.isDarwin() and config.app_runtime == .none) {
+        // Shared
+        {
+            const lib = b.addSharedLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .optimize = optimize,
+                .target = target,
+            });
+            lib.root_module.addOptions("build_options", exe_options);
+            _ = try addDeps(b, lib, config);
+
+            const lib_install = b.addInstallLibFile(
+                lib.getEmittedBin(),
+                "libghostty.so",
+            );
+            b.getInstallStep().dependOn(&lib_install.step);
+        }
+
+        // Static
+        {
+            const lib = b.addStaticLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .optimize = optimize,
+                .target = target,
+            });
+            lib.root_module.addOptions("build_options", exe_options);
+            _ = try addDeps(b, lib, config);
+
+            const lib_install = b.addInstallLibFile(
+                lib.getEmittedBin(),
+                "libghostty.a",
+            );
+            b.getInstallStep().dependOn(&lib_install.step);
+        }
+
+        // Copy our ghostty.h to include.
+        const header_install = b.addInstallHeaderFile(
+            "include/ghostty.h",
+            "ghostty.h",
+        );
+        b.getInstallStep().dependOn(&header_install.step);
     }
 
     // On Mac we can build the embedding library. This only handles the macOS lib.

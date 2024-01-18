@@ -466,7 +466,9 @@ pub fn finalizeSurfaceInit(self: *const Metal, surface: *apprt.Surface) !void {
         },
 
         apprt.embedded => .{
-            .view = surface.nsview,
+            .view = switch (surface.platform) {
+                .macos => |v| v.nsview,
+            },
             .scaleFactor = @floatCast(surface.content_scale.x),
         },
 

@@ -422,6 +422,12 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
         },
 
         apprt.glfw => try self.threadEnter(surface),
+
+        apprt.embedded => {
+            // TODO(mitchellh): this does nothing today to allow libghostty
+            // to compile for OpenGL targets but libghostty is strictly
+            // broken for rendering on this platforms.
+        },
     }
 
     // These are very noisy so this is commented, but easy to uncomment
@@ -529,6 +535,12 @@ pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
                 gl.glad.versionMinor(@intCast(version)),
             });
         },
+
+        apprt.embedded => {
+            // TODO(mitchellh): this does nothing today to allow libghostty
+            // to compile for OpenGL targets but libghostty is strictly
+            // broken for rendering on this platforms.
+        },
     }
 }
 
@@ -547,6 +559,10 @@ pub fn threadExit(self: *const OpenGL) void {
         apprt.glfw => {
             gl.glad.unload();
             glfw.makeContextCurrent(null);
+        },
+
+        apprt.embedded => {
+            // TODO: see threadEnter
         },
     }
 }
@@ -1815,6 +1831,7 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     switch (apprt.runtime) {
         apprt.glfw => surface.window.swapBuffers(),
         apprt.gtk => {},
+        apprt.embedded => {},
         else => @compileError("unsupported runtime"),
     }
 }

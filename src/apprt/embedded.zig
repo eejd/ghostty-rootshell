@@ -231,9 +231,49 @@ pub const App = struct {
     }
 };
 
+/// Platform-specific configuration for libghostty.
+pub const Platform = union(PlatformTag) {
+    macos: MacOS,
+
+    // If our build target for libghostty is not darwin then we do
+    // not include macos support at all.
+    pub const MacOS = if (builtin.target.isDarwin()) struct {
+        /// The view to render the surface on.
+        nsview: objc.Object,
+    } else void;
+
+    // The C ABI compatible version of this union. The tag is expected
+    // to be stored elsewhere.
+    pub const C = extern union {
+        macos: extern struct {
+            nsview: ?*anyopaque,
+        },
+    };
+
+    /// Initialize a Platform a tag and configuration from the C ABI.
+    pub fn init(tag_int: c_int, c_platform: C) !Platform {
+        const tag = try std.meta.intToEnum(PlatformTag, tag_int);
+        return switch (tag) {
+            .macos => if (MacOS != void) macos: {
+                const config = c_platform.macos;
+                const nsview = objc.Object.fromId(config.nsview orelse
+                    break :macos error.NSViewMustBeSet);
+                break :macos .{ .macos = .{ .nsview = nsview } };
+            } else error.UnsupportedPlatform,
+        };
+    }
+};
+
+pub const PlatformTag = enum(c_int) {
+    // "0" is reserved for invalid so we can detect unset values
+    // from the C API.
+
+    macos = 1,
+};
+
 pub const Surface = struct {
     app: *App,
-    nsview: objc.Object,
+    platform: Platform,
     core_surface: CoreSurface,
     content_scale: apprt.ContentScale,
     size: apprt.SurfaceSize,
@@ -243,11 +283,13 @@ pub const Surface = struct {
     inspector: ?*Inspector = null,
 
     pub const Options = extern struct {
+        /// The platform that this surface is being initialized for and
+        /// the associated platform-specific configuration.
+        platform_tag: c_int = 0,
+        platform: Platform.C = undefined,
+
         /// Userdata passed to some of the callbacks.
         userdata: ?*anyopaque = null,
-
-        /// The pointer to the backing NSView for the surface.
-        nsview: ?*anyopaque = null,
 
         /// The scale factor of the screen.
         scale_factor: f64 = 1,
@@ -279,13 +321,10 @@ pub const Surface = struct {
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
-        const nsview = objc.Object.fromId(opts.nsview orelse
-            return error.NSViewMustBeSet);
-
         self.* = .{
             .app = app,
+            .platform = try Platform.init(opts.platform_tag, opts.platform),
             .core_surface = undefined,
-            .nsview = nsview,
             .content_scale = .{
                 .x = @floatCast(opts.scale_factor),
                 .y = @floatCast(opts.scale_factor),
@@ -1584,30 +1623,33 @@ pub const CAPI = struct {
         ptr.freeInspector();
     }
 
-    export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
-        return ptr.initMetal(objc.Object.fromId(device));
-    }
-
-    export fn ghostty_inspector_metal_render(
-        ptr: *Inspector,
-        command_buffer: objc.c.id,
-        descriptor: objc.c.id,
-    ) void {
-        return ptr.renderMetal(
-            objc.Object.fromId(command_buffer),
-            objc.Object.fromId(descriptor),
-        ) catch |err| {
-            log.err("error rendering inspector err={}", .{err});
-            return;
-        };
-    }
-
-    export fn ghostty_inspector_metal_shutdown(ptr: *Inspector) void {
-        if (ptr.backend) |v| {
-            v.deinit();
-            ptr.backend = null;
+    // Inspector Metal APIs are only available on Apple systems
+    usingnamespace if (builtin.target.isDarwin()) struct {
+        export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
+            return ptr.initMetal(objc.Object.fromId(device));
         }
-    }
+
+        export fn ghostty_inspector_metal_render(
+            ptr: *Inspector,
+            command_buffer: objc.c.id,
+            descriptor: objc.c.id,
+        ) void {
+            return ptr.renderMetal(
+                objc.Object.fromId(command_buffer),
+                objc.Object.fromId(descriptor),
+            ) catch |err| {
+                log.err("error rendering inspector err={}", .{err});
+                return;
+            };
+        }
+
+        export fn ghostty_inspector_metal_shutdown(ptr: *Inspector) void {
+            if (ptr.backend) |v| {
+                v.deinit();
+                ptr.backend = null;
+            }
+        }
+    } else struct {};
 
     export fn ghostty_inspector_set_size(ptr: *Inspector, w: u32, h: u32) void {
         ptr.updateSize(w, h);
