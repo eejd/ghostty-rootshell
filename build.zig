@@ -430,20 +430,48 @@ pub fn build(b: *std.Build) !void {
 
     // libghostty (non-Darwin)
     if (!builtin.target.isDarwin() and config.app_runtime == .none) {
-        const lib = b.addSharedLibrary(.{
-            .name = "ghostty",
-            .root_source_file = .{ .path = "src/main_c.zig" },
-            .optimize = optimize,
-            .target = target,
-        });
-        lib.root_module.addOptions("build_options", exe_options);
-        _ = try addDeps(b, lib, config);
+        // Shared
+        {
+            const lib = b.addSharedLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .optimize = optimize,
+                .target = target,
+            });
+            lib.root_module.addOptions("build_options", exe_options);
+            _ = try addDeps(b, lib, config);
 
-        const lib_install = b.addInstallLibFile(
-            lib.getEmittedBin(),
-            "libghostty.so",
+            const lib_install = b.addInstallLibFile(
+                lib.getEmittedBin(),
+                "libghostty.so",
+            );
+            b.getInstallStep().dependOn(&lib_install.step);
+        }
+
+        // Static
+        {
+            const lib = b.addStaticLibrary(.{
+                .name = "ghostty",
+                .root_source_file = .{ .path = "src/main_c.zig" },
+                .optimize = optimize,
+                .target = target,
+            });
+            lib.root_module.addOptions("build_options", exe_options);
+            _ = try addDeps(b, lib, config);
+
+            const lib_install = b.addInstallLibFile(
+                lib.getEmittedBin(),
+                "libghostty.a",
+            );
+            b.getInstallStep().dependOn(&lib_install.step);
+        }
+
+        // Copy our ghostty.h to include.
+        const header_install = b.addInstallHeaderFile(
+            "include/ghostty.h",
+            "ghostty.h",
         );
-        b.getInstallStep().dependOn(&lib_install.step);
+        b.getInstallStep().dependOn(&header_install.step);
     }
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
