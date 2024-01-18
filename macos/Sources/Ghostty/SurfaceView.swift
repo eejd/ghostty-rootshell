@@ -690,6 +690,14 @@ extension Ghostty {
             guard let surface = self.surface else { return }
             ghostty_surface_refresh(surface);
         }
+        
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            // "Override this method in a subclass to allow instances to respond to
+            // click-through. This allows the user to click on a view in an inactive
+            // window, activating the view with one click, instead of clicking first 
+            // to make the window active and then clicking the view."
+            return true
+        }
 
         override func mouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return }
