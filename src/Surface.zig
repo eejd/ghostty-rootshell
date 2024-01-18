@@ -429,7 +429,7 @@ pub fn init(
         // people add other emoji fonts to their system, we always want to
         // prefer the official one. Users can override this by explicitly
         // specifying a font-family for emoji.
-        if (comptime builtin.os.tag == .macos) apple_emoji: {
+        if (comptime builtin.target.isDarwin()) apple_emoji: {
             const disco = group.discover orelse break :apple_emoji;
             var disco_it = try disco.discover(alloc, .{
                 .family = "Apple Color Emoji",
@@ -442,7 +442,7 @@ pub fn init(
 
         // Emoji fallback. We don't include this on Mac since Mac is expected
         // to always have the Apple Emoji available on the system.
-        if (builtin.os.tag != .macos or font.Discover == void) {
+        if (comptime !builtin.target.isDarwin() or font.Discover == void) {
             _ = try group.addFace(
                 .regular,
                 .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
