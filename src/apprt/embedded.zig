@@ -1046,7 +1046,7 @@ pub const Inspector = struct {
 
         pub fn deinit(self: Backend) void {
             switch (self) {
-                .metal => cimgui.c.ImGui_ImplMetal_Shutdown(),
+                .metal => if (builtin.target.isDarwin()) cimgui.c.ImGui_ImplMetal_Shutdown(),
             }
         }
     };
