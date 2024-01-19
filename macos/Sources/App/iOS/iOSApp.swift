@@ -6,13 +6,21 @@ struct Ghostty_iOSApp: App {
     
     var body: some Scene {
         WindowGroup {
-            iOS_ContentView()
+            iOS_GhosttyTerminal()
                 .environmentObject(ghostty_app)
         }
     }
 }
 
-struct iOS_ContentView: View {
+struct iOS_GhosttyTerminal: View {
+    @EnvironmentObject private var ghostty_app: Ghostty.App
+    
+    var body: some View {
+        Ghostty.Terminal()
+    }
+}
+
+struct iOS_GhosttyInitView: View {
     @EnvironmentObject private var ghostty_app: Ghostty.App
     
     var body: some View {
@@ -26,8 +34,4 @@ struct iOS_ContentView: View {
         }
         .padding()
     }
-}
-
-#Preview {
-    iOS_ContentView()
 }

@@ -21,6 +21,12 @@
 		A51BFC272B30F1B800E92F16 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A51BFC262B30F1B800E92F16 /* Sparkle */; };
 		A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */; };
 		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
+		A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
+		A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
+		A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */; };
+		A5333E222B5A2128008AEFF7 /* SurfaceView_AppKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */; };
+		A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */; };
+		A5333E242B5A22D9008AEFF7 /* Ghostty.Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */; };
 		A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */; };
 		A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535B9D9299C569B0017E2E4 /* ErrorView.swift */; };
 		A53D0C8E2B53B0EA00305CE6 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
@@ -75,6 +81,9 @@
 		A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyDebug.entitlements; sourceTree = "<group>"; };
 		A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateDelegate.swift; sourceTree = "<group>"; };
 		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
+		A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_UIKit.swift; sourceTree = "<group>"; };
+		A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossKit.swift; sourceTree = "<group>"; };
+		A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_AppKit.swift; sourceTree = "<group>"; };
 		A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
 		A53D0C932B53B43700305CE6 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
@@ -173,6 +182,7 @@
 			isa = PBXGroup;
 			children = (
 				A5CEAFFE29C2410700646FDA /* Backport.swift */,
+				A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */,
 				A5D0AF3C2B37804400D21823 /* CodableBridge.swift */,
 				8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */,
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
@@ -236,6 +246,8 @@
 			children = (
 				A55B7BB729B6F53A0055DE60 /* Package.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
+				A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */,
+				A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */,
 				A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */,
 				A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */,
 				A514C8D52B54A16400493A16 /* Ghostty.Config.swift */,
@@ -457,8 +469,10 @@
 				A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */,
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
+				A5333E222B5A2128008AEFF7 /* SurfaceView_AppKit.swift in Sources */,
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
+				A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
 				A59630A22AF0415000D64628 /* Ghostty.TerminalSplit.swift in Sources */,
@@ -487,8 +501,12 @@
 			files = (
 				A53D0C942B53B43700305CE6 /* iOSApp.swift in Sources */,
 				A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */,
+				A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */,
+				A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */,
+				A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */,
 				A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */,
+				A5333E242B5A22D9008AEFF7 /* Ghostty.Shell.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
