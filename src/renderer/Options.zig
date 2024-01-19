@@ -18,6 +18,9 @@ padding: Padding,
 /// once the thread has started and should not be used outside of the thread.
 surface_mailbox: apprt.surface.Mailbox,
 
+/// The apprt surface.
+rt_surface: *apprt.Surface,
+
 pub const Padding = struct {
     // Explicit padding options, in pixels. The surface thread is
     // expected to convert points to pixels for a given DPI.

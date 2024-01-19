@@ -6,13 +6,26 @@ struct Ghostty_iOSApp: App {
     
     var body: some Scene {
         WindowGroup {
-            iOS_ContentView()
+            iOS_GhosttyTerminal()
                 .environmentObject(ghostty_app)
         }
     }
 }
 
-struct iOS_ContentView: View {
+struct iOS_GhosttyTerminal: View {
+    @EnvironmentObject private var ghostty_app: Ghostty.App
+    
+    var body: some View {
+        ZStack {
+            // Make sure that our background color extends to all parts of the screen
+            Color(ghostty_app.config.backgroundColor).ignoresSafeArea()
+ 
+            Ghostty.Terminal()
+        }
+    }
+}
+
+struct iOS_GhosttyInitView: View {
     @EnvironmentObject private var ghostty_app: Ghostty.App
     
     var body: some View {
@@ -26,8 +39,4 @@ struct iOS_ContentView: View {
         }
         .padding()
     }
-}
-
-#Preview {
-    iOS_ContentView()
 }
