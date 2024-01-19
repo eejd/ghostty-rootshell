@@ -115,7 +115,7 @@ buf_instance: InstanceBuffer, // MTLBuffer
 /// Metal objects
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
-swapchain: objc.Object, // CAMetalLayer
+layer: objc.Object, // CAMetalLayer
 texture_greyscale: objc.Object, // MTLTexture
 texture_color: objc.Object, // MTLTexture
 
@@ -262,20 +262,77 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
+    const ViewInfo = struct {
+        view: objc.Object,
+        scaleFactor: f64,
+    };
+
+    // Get the metadata about our underlying view that we'll be rendering to.
+    const info: ViewInfo = switch (apprt.runtime) {
+        apprt.glfw => info: {
+            // Everything in glfw is window-oriented so we grab the backing
+            // window, then derive everything from that.
+            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(
+                options.rt_surface.window,
+            ).?);
+
+            const contentView = objc.Object.fromId(
+                nswindow.getProperty(?*anyopaque, "contentView").?,
+            );
+            const scaleFactor = nswindow.getProperty(
+                macos.graphics.c.CGFloat,
+                "backingScaleFactor",
+            );
+
+            break :info .{
+                .view = contentView,
+                .scaleFactor = scaleFactor,
+            };
+        },
+
+        apprt.embedded => .{
+            .scaleFactor = @floatCast(options.rt_surface.content_scale.x),
+            .view = switch (options.rt_surface.platform) {
+                .macos => |v| v.nsview,
+                .ios => |v| v.uiview,
+            },
+        },
+
+        else => @compileError("unsupported apprt for metal"),
+    };
+
     // Initialize our metal stuff
     const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
-    const swapchain = swapchain: {
-        const CAMetalLayer = objc.getClass("CAMetalLayer").?;
-        const swapchain = CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
-        swapchain.setProperty("device", device.value);
-        swapchain.setProperty("opaque", options.config.background_opacity >= 1);
 
-        // disable v-sync
-        swapchain.setProperty("displaySyncEnabled", false);
+    // Get our CAMetalLayer
+    const layer = switch (builtin.os.tag) {
+        .macos => layer: {
+            const CAMetalLayer = objc.getClass("CAMetalLayer").?;
+            break :layer CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
+        },
 
-        break :swapchain swapchain;
+        // iOS is always layer-backed so we don't need to do anything here.
+        .ios => info.view.getProperty(objc.Object, "layer"),
+
+        else => @compileError("unsupported target for Metal"),
     };
+    layer.setProperty("device", device.value);
+    layer.setProperty("opaque", options.config.background_opacity >= 1);
+    layer.setProperty("displaySyncEnabled", false); // disable v-sync
+
+    // Make our view layer-backed with our Metal layer. On iOS views are
+    // always layer backed so we don't need to do this. But on iOS the
+    // caller MUST be sure to set the layerClass to CAMetalLayer.
+    if (comptime builtin.os.tag == .macos) {
+        info.view.setProperty("layer", layer.value);
+        info.view.setProperty("wantsLayer", true);
+    }
+
+    // Ensure that our metal layer has a content scale set to match the
+    // scale factor of the window. This avoids magnification issues leading
+    // to blurry rendering.
+    layer.setProperty("contentsScale", info.scaleFactor);
 
     // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
     // Doesn't matter, any normal ASCII will do we're just trying to make
@@ -401,7 +458,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         // Metal stuff
         .device = device,
         .queue = queue,
-        .swapchain = swapchain,
+        .layer = layer,
         .texture_greyscale = texture_greyscale,
         .texture_color = texture_color,
         .custom_shader_state = custom_shader_state,
@@ -445,50 +502,12 @@ pub fn deinit(self: *Metal) void {
 
 /// This is called just prior to spinning up the renderer thread for
 /// final main thread setup requirements.
-pub fn finalizeSurfaceInit(self: *const Metal, surface: *apprt.Surface) !void {
-    const Info = struct {
-        view: objc.Object,
-        scaleFactor: f64,
-    };
+pub fn finalizeSurfaceInit(self: *Metal, surface: *apprt.Surface) !void {
+    _ = self;
+    _ = surface;
 
-    // Get the view and scale factor for our surface.
-    const info: Info = switch (apprt.runtime) {
-        apprt.glfw => info: {
-            // Everything in glfw is window-oriented so we grab the backing
-            // window, then derive everything from that.
-            const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(surface.window).?);
-            const contentView = objc.Object.fromId(nswindow.getProperty(?*anyopaque, "contentView").?);
-            const scaleFactor = nswindow.getProperty(macos.graphics.c.CGFloat, "backingScaleFactor");
-            break :info .{
-                .view = contentView,
-                .scaleFactor = scaleFactor,
-            };
-        },
-
-        apprt.embedded => .{
-            .view = switch (surface.platform) {
-                .macos => |v| v.nsview,
-                .ios => |v| v.uiview,
-            },
-            .scaleFactor = @floatCast(surface.content_scale.x),
-        },
-
-        else => @compileError("unsupported apprt for metal"),
-    };
-
-    // Make our view layer-backed with our Metal layer. On iOS views are
-    // always layer backed so we don't need to do this. But on iOS the
-    // caller MUST be sure to set the layerClass to CAMetalLayer.
-    if (comptime builtin.os.tag == .macos) {
-        info.view.setProperty("layer", self.swapchain.value);
-        info.view.setProperty("wantsLayer", true);
-    }
-
-    // Ensure that our metal layer has a content scale set to match the
-    // scale factor of the window. This avoids magnification issues leading
-    // to blurry rendering.
-    const layer = info.view.getProperty(objc.Object, "layer");
-    layer.setProperty("contentsScale", info.scaleFactor);
+    // Metal doesn't have to do anything here. OpenGL has to do things
+    // like release the context but Metal doesn't have anything like that.
 }
 
 /// Callback called by renderer.Thread when it begins.
@@ -743,7 +762,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     defer pool.deinit();
 
     // Get our drawable (CAMetalDrawable)
-    const drawable = self.swapchain.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
+    const drawable = self.layer.msgSend(objc.Object, objc.sel("nextDrawable"), .{});
 
     // Get our screen texture. If we don't have a dedicated screen texture
     // then we just use the drawable texture.
@@ -1420,7 +1439,7 @@ pub fn setScreenSize(
     const padded_dim = dim.subPadding(padding);
 
     // Set the size of the drawable surface to the bounds
-    self.swapchain.setProperty("drawableSize", macos.graphics.Size{
+    self.layer.setProperty("drawableSize", macos.graphics.Size{
         .width = @floatFromInt(dim.width),
         .height = @floatFromInt(dim.height),
     });

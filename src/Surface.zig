@@ -488,6 +488,7 @@ pub fn init(
             .balance = config.@"window-padding-balance",
         },
         .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+        .rt_surface = rt_surface,
     });
     errdefer renderer_impl.deinit();
 
