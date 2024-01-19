@@ -54,19 +54,37 @@ extension Ghostty {
             ghostty_surface_free(surface)
         }
         
-        override class var layerClass: AnyClass {
-            get {
-                return CAMetalLayer.self
-            }
-        }
-        
         func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             ghostty_surface_set_focus(surface, focused)
         }
 
         func sizeDidChange(_ size: CGSize) {
-            // TODO
+            guard let surface = self.surface else { return }
+
+            // Ghostty wants to know the actual framebuffer size... It is very important
+            // here that we use "size" and NOT the view frame. If we're in the middle of
+            // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
+            // The size represents our final size we're going for.
+            let scale = self.contentScaleFactor
+            ghostty_surface_set_content_scale(surface, scale, scale)
+            ghostty_surface_set_size(
+                surface,
+                UInt32(size.width * scale),
+                UInt32(size.height * scale)
+            )
+        }
+        
+        // MARK: UIView
+        
+        override class var layerClass: AnyClass {
+            get {
+                return CAMetalLayer.self
+            }
+        }
+        
+        override func didMoveToWindow() {
+            sizeDidChange(frame.size)
         }
     }
 }
