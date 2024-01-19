@@ -16,7 +16,12 @@ struct iOS_GhosttyTerminal: View {
     @EnvironmentObject private var ghostty_app: Ghostty.App
     
     var body: some View {
-        Ghostty.Terminal()
+        ZStack {
+            // Make sure that our background color extends to all parts of the screen
+            Color(ghostty_app.config.backgroundColor).ignoresSafeArea()
+ 
+            Ghostty.Terminal()
+        }
     }
 }
 
