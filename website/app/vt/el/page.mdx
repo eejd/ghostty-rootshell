@@ -27,7 +27,9 @@ first or second cell of the two-cell character, both cells should be erased.
 If `n` is `0`, perform an **erase line right** operation. Erase line right
 is equivalent to [Erase Character (ECH)](/vt/ech) with `n` set to the total
 remaining columns from the cursor to the end of the line (and including
-the cursor).
+the cursor). If the line is softwrapped, only the single row is erased;
+it does not erase through the wrap. Further, the wrap state of the row is
+reset such that the line is no longer considered wrapped.
 
 If `n` is `1`, perform an **erase line left** operation. This replaces
 the `n` cells left of and including the cursor with a blank character and
