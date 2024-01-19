@@ -1497,6 +1497,9 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
         break :end end;
     };
 
+    // This resets the soft-wrap of this line
+    row.setWrapped(false);
+
     const pen: Screen.Cell = .{
         .bg = self.screen.cursor.pen.bg,
     };
@@ -4838,7 +4841,7 @@ test "Terminal: deleteChars split wide character tail" {
     }
 }
 
-test "Terminal: eraseChars resets wrap" {
+test "Terminal: eraseChars resets pending wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, 5, 5);
     defer t.deinit(alloc);
@@ -4853,6 +4856,33 @@ test "Terminal: eraseChars resets wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: eraseChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 5);
+    defer t.deinit(alloc);
+
+    for ("ABCDE123") |c| try t.print(c);
+    {
+        const row = t.screen.getRow(.{ .active = 0 });
+        try testing.expect(row.isWrapped());
+    }
+
+    t.setCursorPos(1, 1);
+    t.eraseChars(1);
+
+    {
+        const row = t.screen.getRow(.{ .active = 0 });
+        try testing.expect(!row.isWrapped());
+    }
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XBCDE\n123", str);
     }
 }
 

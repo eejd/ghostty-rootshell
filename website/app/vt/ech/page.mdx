@@ -12,7 +12,8 @@ or equal to 0, adjust `n` to be 1. If `n` is omitted, `n` defaults to 1.
 The rightmost column that can be erased is the rightmost column of the screen.
 The [right margin](#) has no effect on this sequence.
 
-This sequence always unsets the pending wrap state.
+This sequence always unsets the pending wrap state. If the row under the cursor
+is soft-wrapped, then the soft-wrap state is also reset.
 
 For `n` cells up to the rightmost column, blank the cell by replacing it
 with an empty character with the background color colored according to the
