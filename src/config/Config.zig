@@ -15,6 +15,7 @@ const internal_os = @import("../os/main.zig");
 const cli = @import("../cli.zig");
 const Command = @import("../Command.zig");
 
+const formatterpkg = @import("formatter.zig");
 const url = @import("url.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
@@ -2231,6 +2232,16 @@ pub const Color = packed struct(u24) {
     test "parseCLI from name" {
         try std.testing.expectEqual(Color{ .r = 0, .g = 0, .b = 0 }, try Color.parseCLI("black"));
     }
+
+    test "formatConfig" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var color: Color = .{ .r = 10, .g = 11, .b = 12 };
+        try color.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = #0a0b0c\n", buf.items);
+    }
 };
 
 /// Palette is the 256 color palette for 256-color mode. This is still
@@ -2294,6 +2305,16 @@ pub const Palette = struct {
 
         var p: Self = .{};
         try testing.expectError(error.Overflow, p.parseCLI("256=#AABBCC"));
+    }
+
+    test "formatConfig" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var list: Self = .{};
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = 0=#1d1f21\n", buf.items[0..14]);
     }
 };
 
@@ -2368,6 +2389,47 @@ pub const RepeatableString = struct {
 
         try list.parseCLI(alloc, "");
         try testing.expectEqual(@as(usize, 0), list.list.items.len);
+    }
+
+    test "formatConfig empty" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var list: Self = .{};
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = \n", buf.items);
+    }
+
+    test "formatConfig single item" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = A\n", buf.items);
+    }
+
+    test "formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+        try list.parseCLI(alloc, "B");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = A\na = B\n", buf.items);
     }
 };
 
@@ -2549,6 +2611,21 @@ pub const RepeatableFontVariation = struct {
             .value = -15,
         }, list.list.items[1]);
     }
+
+    test "formatConfig single" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "wght = 200");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = wght=200\n", buf.items);
+    }
 };
 
 /// Stores a set of keybinds.
@@ -2660,6 +2737,21 @@ pub const Keybinds = struct {
         try set.parseCLI(alloc, "shift+a=copy_to_clipboard");
         try set.parseCLI(alloc, "shift+a=csi:hello");
     }
+
+    test "formatConfig single" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "shift+a=csi:hello");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = shift+a=csi:hello\n", buf.items);
+    }
 };
 
 /// See "font-codepoint-map" for documentation.
@@ -2738,7 +2830,7 @@ pub const RepeatableCodepointMap = struct {
                     []const u8,
                     std.fmt.bufPrint(
                         &buf,
-                        "U+{X:0>4}-U{X:0>4}={s}",
+                        "U+{X:0>4}-U+{X:0>4}={s}",
                         .{
                             range[0],
                             range[1],
@@ -2882,6 +2974,55 @@ pub const RepeatableCodepointMap = struct {
             try testing.expectEqual([2]u21{ 0xABCD, 0xABCD }, entry.range);
             try testing.expectEqualStrings("Courier", entry.descriptor.family.?);
         }
+    }
+
+    test "formatConfig single" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "U+ABCD=Comic Sans");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = U+ABCD=Comic Sans\n", buf.items);
+    }
+
+    test "formatConfig range" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "U+0001 - U+0005=Verdana");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = U+0001-U+0005=Verdana\n", buf.items);
+    }
+
+    test "formatConfig multiple" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "U+0006-U+0009, U+ABCD=Courier");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8,
+            \\a = U+0006-U+0009=Courier
+            \\a = U+ABCD=Courier
+            \\
+        , buf.items);
     }
 };
 
