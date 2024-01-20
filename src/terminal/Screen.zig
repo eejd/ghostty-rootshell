@@ -207,6 +207,11 @@ pub const RowHeader = struct {
 
         /// This line is the start of command output.
         command = 4,
+
+        /// True if this is a prompt or input line.
+        pub fn promptOrInput(self: SemanticPrompt) bool {
+            return self == .prompt or self == .prompt_continuation or self == .input;
+        }
     };
 };
 
@@ -1592,6 +1597,15 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
     const y_max = self.rowsWritten() - 1;
     if (pt.y > y_max or pt.x >= self.cols) return null;
 
+    // Get the current point semantic prompt state since that determines
+    // boundary conditions too. This makes it so that line selection can
+    // only happen within the same prompt state. For example, if you triple
+    // click output, but the shell uses spaces to soft-wrap to the prompt
+    // then the selection will stop prior to the prompt. See issue #1329.
+    const semantic_prompt_state = self.getRow(.{ .screen = pt.y })
+        .getSemanticPrompt()
+        .promptOrInput();
+
     // The real start of the row is the first row in the soft-wrap.
     const start_row: usize = start_row: {
         if (pt.y == 0) break :start_row 0;
@@ -1600,6 +1614,11 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
         while (true) {
             const current = self.getRow(.{ .screen = y });
             if (!current.header().flags.wrap) break :start_row y + 1;
+
+            // See semantic_prompt_state comment for why
+            const current_prompt = current.getSemanticPrompt().promptOrInput();
+            if (current_prompt != semantic_prompt_state) break :start_row y + 1;
+
             if (y == 0) break :start_row y;
             y -= 1;
         }
@@ -1611,6 +1630,12 @@ pub fn selectLine(self: *Screen, pt: point.ScreenPoint) ?Selection {
         var y: usize = pt.y;
         while (y <= y_max) : (y += 1) {
             const current = self.getRow(.{ .screen = y });
+
+            // See semantic_prompt_state comment for why
+            const current_prompt = current.getSemanticPrompt().promptOrInput();
+            if (current_prompt != semantic_prompt_state) break :end_row y - 1;
+
+            // End of the screen or not wrapped, we're done.
             if (y == y_max or !current.header().flags.wrap) break :end_row y;
         }
         unreachable;
@@ -4500,6 +4525,41 @@ test "Screen: selectLine across soft-wrap" {
         try testing.expectEqual(@as(usize, 0), sel.start.y);
         try testing.expectEqual(@as(usize, 3), sel.end.x);
         try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+}
+
+// https://github.com/mitchellh/ghostty/issues/1329
+test "Screen: selectLine semantic prompt boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 0);
+    defer s.deinit();
+    try s.testWriteString("ABCDE\nA    > ");
+
+    {
+        const contents = try s.testString(alloc, .screen);
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("ABCDE\nA    \n> ", contents);
+    }
+
+    var row = s.getRow(.{ .screen = 2 });
+    row.setSemanticPrompt(.prompt);
+
+    // Selecting output stops at the prompt even if soft-wrapped
+    {
+        const sel = s.selectLine(.{ .x = 1, .y = 1 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 1), sel.start.y);
+        try testing.expectEqual(@as(usize, 0), sel.end.x);
+        try testing.expectEqual(@as(usize, 1), sel.end.y);
+    }
+    {
+        const sel = s.selectLine(.{ .x = 1, .y = 2 }).?;
+        try testing.expectEqual(@as(usize, 0), sel.start.x);
+        try testing.expectEqual(@as(usize, 2), sel.start.y);
+        try testing.expectEqual(@as(usize, 0), sel.end.x);
+        try testing.expectEqual(@as(usize, 2), sel.end.y);
     }
 }
 
