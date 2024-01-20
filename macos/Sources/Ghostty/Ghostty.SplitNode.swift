@@ -54,10 +54,10 @@ extension Ghostty {
             
             let node: SplitNode
             switch (direction) {
-            case .previous, .bottom, .left:
+            case .previous, .top, .left:
                 node = container.bottomRight
                 
-            case .next, .top, .right:
+            case .next, .bottom, .right:
                 node = container.topLeft
             }
             
