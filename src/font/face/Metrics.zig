@@ -119,6 +119,34 @@ pub const Modifier = union(enum) {
         return try parse(input orelse return error.ValueRequired);
     }
 
+    /// Used by config formatter
+    pub fn formatEntry(self: Modifier, formatter: anytype) !void {
+        var buf: [1024]u8 = undefined;
+        switch (self) {
+            .percent => |v| {
+                try formatter.formatEntry(
+                    []const u8,
+                    std.fmt.bufPrint(
+                        &buf,
+                        "{d}%",
+                        .{(v - 1) * 100},
+                    ) catch return error.OutOfMemory,
+                );
+            },
+
+            .absolute => |v| {
+                try formatter.formatEntry(
+                    []const u8,
+                    std.fmt.bufPrint(
+                        &buf,
+                        "{d}",
+                        .{v},
+                    ) catch return error.OutOfMemory,
+                );
+            },
+        }
+    }
+
     /// Apply a modifier to a numeric value.
     pub fn apply(self: Modifier, v: u32) u32 {
         return switch (self) {
@@ -139,6 +167,28 @@ pub const Modifier = union(enum) {
                 break :absolute applied_u32;
             },
         };
+    }
+
+    test "formatConfig percent" {
+        const configpkg = @import("../../config.zig");
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        const p = try parseCLI("24%");
+        try p.formatEntry(configpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = 24%\n", buf.items);
+    }
+
+    test "formatConfig absolute" {
+        const configpkg = @import("../../config.zig");
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        const p = try parseCLI("-30");
+        try p.formatEntry(configpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = -30\n", buf.items);
     }
 };
 

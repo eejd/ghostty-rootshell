@@ -113,8 +113,10 @@ pub fn formatEntry(
             else => {},
         },
 
-        // TODO
-        .Union => return,
+        .Union => if (@hasDecl(T, "formatEntry")) {
+            try value.formatEntry(entryFormatter(name, writer));
+            return;
+        },
 
         else => {},
     }

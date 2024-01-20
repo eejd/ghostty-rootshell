@@ -3065,6 +3065,20 @@ pub const FontStyle = union(enum) {
         };
     }
 
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        switch (self) {
+            .default, .false => try formatter.formatEntry(
+                []const u8,
+                @tagName(self),
+            ),
+
+            .name => |name| {
+                try formatter.formatEntry([:0]const u8, name);
+            },
+        }
+    }
+
     test "parseCLI" {
         const testing = std.testing;
         var arena = ArenaAllocator.init(testing.allocator);
@@ -3080,6 +3094,51 @@ pub const FontStyle = union(enum) {
 
         try p.parseCLI(alloc, "bold");
         try testing.expectEqualStrings("bold", p.name);
+    }
+
+    test "formatConfig default" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{ .default = {} };
+        try p.parseCLI(alloc, "default");
+        try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = default\n", buf.items);
+    }
+
+    test "formatConfig false" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{ .default = {} };
+        try p.parseCLI(alloc, "false");
+        try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = false\n", buf.items);
+    }
+
+    test "formatConfig named" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{ .default = {} };
+        try p.parseCLI(alloc, "bold");
+        try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = bold\n", buf.items);
     }
 };
 
