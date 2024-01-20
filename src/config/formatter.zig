@@ -1,6 +1,8 @@
 const formatter = @This();
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Config = @import("Config.zig");
+const Key = @import("key.zig").Key;
 
 /// Returns a single entry formatter for the given field name and writer.
 pub fn entryFormatter(
@@ -126,7 +128,11 @@ pub fn formatEntry(
 /// config in a file-like format. This uses more generous whitespace,
 /// can include comments, etc.
 pub const FileFormatter = struct {
+    alloc: Allocator,
     config: *const Config,
+
+    /// Only include changed values from the default.
+    changed: bool = false,
 
     /// Implements std.fmt so it can be used directly with std.fmt.
     pub fn format(
@@ -138,14 +144,31 @@ pub const FileFormatter = struct {
         _ = layout;
         _ = opts;
 
+        // If we're change-tracking then we need the default config to
+        // compare against.
+        var default: ?Config = if (self.changed)
+            try Config.default(self.alloc)
+        else
+            null;
+        defer if (default) |*v| v.deinit();
+
         inline for (@typeInfo(Config).Struct.fields) |field| {
             if (field.name[0] == '_') continue;
-            try formatEntry(
-                field.type,
-                field.name,
-                @field(self.config, field.name),
-                writer,
-            );
+
+            const value = @field(self.config, field.name);
+            const do_format = if (default) |d| format: {
+                const key = @field(Key, field.name);
+                break :format d.changed(self.config, key);
+            } else true;
+
+            if (do_format) {
+                try formatEntry(
+                    field.type,
+                    field.name,
+                    value,
+                    writer,
+                );
+            }
         }
     }
 };
@@ -160,7 +183,28 @@ test "format default config" {
     defer buf.deinit();
 
     // We just make sure this works without errors. We aren't asserting output.
-    const fmt: FileFormatter = .{ .config = &cfg };
+    const fmt: FileFormatter = .{ .alloc = alloc, .config = &cfg };
+    try std.fmt.format(buf.writer(), "{}", .{fmt});
+
+    //std.log.warn("{s}", .{buf.items});
+}
+
+test "format default config changed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    cfg.@"font-size" = 42;
+
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+
+    // We just make sure this works without errors. We aren't asserting output.
+    const fmt: FileFormatter = .{
+        .alloc = alloc,
+        .config = &cfg,
+        .changed = true,
+    };
     try std.fmt.format(buf.writer(), "{}", .{fmt});
 
     //std.log.warn("{s}", .{buf.items});
