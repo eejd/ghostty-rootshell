@@ -1,6 +1,7 @@
 const formatter = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const help_strings = @import("help_strings");
 const Config = @import("Config.zig");
 const Key = @import("key.zig").Key;
 
@@ -133,6 +134,9 @@ pub const FileFormatter = struct {
     alloc: Allocator,
     config: *const Config,
 
+    /// Include comments for documentation of each key
+    docs: bool = false,
+
     /// Only include changed values from the default.
     changed: bool = false,
 
@@ -164,12 +168,23 @@ pub const FileFormatter = struct {
             } else true;
 
             if (do_format) {
+                const do_docs = self.docs and @hasDecl(help_strings.Config, field.name);
+                if (do_docs) {
+                    const help = @field(help_strings.Config, field.name);
+                    var lines = std.mem.splitScalar(u8, help, '\n');
+                    while (lines.next()) |line| {
+                        try writer.print("# {s}\n", .{line});
+                    }
+                }
+
                 try formatEntry(
                     field.type,
                     field.name,
                     value,
                     writer,
                 );
+
+                if (do_docs) try writer.print("\n", .{});
             }
         }
     }
@@ -185,7 +200,10 @@ test "format default config" {
     defer buf.deinit();
 
     // We just make sure this works without errors. We aren't asserting output.
-    const fmt: FileFormatter = .{ .alloc = alloc, .config = &cfg };
+    const fmt: FileFormatter = .{
+        .alloc = alloc,
+        .config = &cfg,
+    };
     try std.fmt.format(buf.writer(), "{}", .{fmt});
 
     //std.log.warn("{s}", .{buf.items});
