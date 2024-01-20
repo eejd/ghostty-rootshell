@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const Action = @import("action.zig").Action;
 const args = @import("args.zig");
 const font = @import("../font/main.zig");
 
@@ -25,6 +26,12 @@ pub const Config = struct {
     pub fn deinit(self: *Config) void {
         if (self._arena) |arena| arena.deinit();
         self.* = undefined;
+    }
+
+    /// Enables "-h" and "--help" to work.
+    pub fn help(self: Config) !void {
+        _ = self;
+        return Action.help_error;
     }
 };
 

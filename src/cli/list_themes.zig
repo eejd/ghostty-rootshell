@@ -1,6 +1,7 @@
 const std = @import("std");
 const inputpkg = @import("../input.zig");
 const args = @import("args.zig");
+const Action = @import("action.zig").Action;
 const Arena = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const Config = @import("../config/Config.zig");
@@ -9,6 +10,12 @@ const global_state = &@import("../main.zig").state;
 pub const Options = struct {
     pub fn deinit(self: Options) void {
         _ = self;
+    }
+
+    /// Enables "-h" and "--help" to work.
+    pub fn help(self: Options) !void {
+        _ = self;
+        return Action.help_error;
     }
 };
 

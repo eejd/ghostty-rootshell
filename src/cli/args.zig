@@ -77,6 +77,17 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
             if (!try dst.parseManuallyHook(arena_alloc, arg, iter)) return;
         }
 
+        // If the destination supports help then we check for it, call
+        // the help function and return.
+        if (@hasDecl(T, "help")) {
+            if (mem.eql(u8, arg, "--help") or
+                mem.eql(u8, arg, "-h"))
+            {
+                try dst.help();
+                return;
+            }
+        }
+
         if (mem.startsWith(u8, arg, "--")) {
             var key: []const u8 = arg[2..];
             const value: ?[]const u8 = value: {
