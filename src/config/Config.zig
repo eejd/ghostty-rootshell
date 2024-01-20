@@ -2178,6 +2178,19 @@ pub const Color = packed struct(u24) {
         return std.meta.eql(self, other);
     }
 
+    /// Used by Formatter
+    pub fn formatEntry(self: Color, formatter: anytype) !void {
+        var buf: [128]u8 = undefined;
+        try formatter.formatEntry(
+            []const u8,
+            std.fmt.bufPrint(
+                &buf,
+                "#{x:0>2}{x:0>2}{x:0>2}",
+                .{ self.r, self.g, self.b },
+            ) catch return error.OutOfMemory,
+        );
+    }
+
     /// fromHex parses a color from a hex value such as #RRGGBB. The "#"
     /// is optional.
     pub fn fromHex(input: []const u8) !Color {
@@ -2251,6 +2264,21 @@ pub const Palette = struct {
         return std.meta.eql(self, other);
     }
 
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        var buf: [128]u8 = undefined;
+        for (0.., self.value) |k, v| {
+            try formatter.formatEntry(
+                []const u8,
+                std.fmt.bufPrint(
+                    &buf,
+                    "{d}=#{x:0>2}{x:0>2}{x:0>2}",
+                    .{ k, v.r, v.g, v.b },
+                ) catch return error.OutOfMemory,
+            );
+        }
+    }
+
     test "parseCLI" {
         const testing = std.testing;
 
@@ -2314,6 +2342,19 @@ pub const RepeatableString = struct {
         } else return true;
     }
 
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        // If no items, we want to render an empty field.
+        if (self.list.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        for (self.list.items) |value| {
+            try formatter.formatEntry([]const u8, value);
+        }
+    }
+
     test "parseCLI" {
         const testing = std.testing;
         var arena = ArenaAllocator.init(testing.allocator);
@@ -2353,6 +2394,11 @@ pub const RepeatablePath = struct {
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Self, other: Self) bool {
         return self.value.equal(other.value);
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        try self.value.formatEntry(formatter);
     }
 
     /// Expand all the paths relative to the base directory.
@@ -2440,6 +2486,26 @@ pub const RepeatableFontVariation = struct {
         for (itemsA, itemsB) |a, b| {
             if (!std.meta.eql(a, b)) return false;
         } else return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(
+        self: Self,
+        formatter: anytype,
+    ) !void {
+        if (self.list.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [128]u8 = undefined;
+        for (self.list.items) |value| {
+            const str = std.fmt.bufPrint(&buf, "{s}={d}", .{
+                value.id.str(),
+                value.value,
+            }) catch return error.OutOfMemory;
+            try formatter.formatEntry([]const u8, str);
+        }
     }
 
     test "parseCLI" {
@@ -2561,6 +2627,29 @@ pub const Keybinds = struct {
         return true;
     }
 
+    /// Used by Formatter
+    pub fn formatEntry(self: Keybinds, formatter: anytype) !void {
+        if (self.set.bindings.size == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [1024]u8 = undefined;
+        var iter = self.set.bindings.iterator();
+        while (iter.next()) |next| {
+            const k = next.key_ptr.*;
+            const v = next.value_ptr.*;
+            try formatter.formatEntry(
+                []const u8,
+                std.fmt.bufPrint(
+                    &buf,
+                    "{}={}",
+                    .{ k, v },
+                ) catch return error.OutOfMemory,
+            );
+        }
+    }
+
     test "parseCLI" {
         const testing = std.testing;
         var arena = ArenaAllocator.init(testing.allocator);
@@ -2616,6 +2705,49 @@ pub const RepeatableCodepointMap = struct {
             const b = itemsB.get(i);
             if (!std.meta.eql(a, b)) return false;
         } else return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(
+        self: Self,
+        formatter: anytype,
+    ) !void {
+        if (self.map.list.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [1024]u8 = undefined;
+        const ranges = self.map.list.items(.range);
+        const descriptors = self.map.list.items(.descriptor);
+        for (ranges, descriptors) |range, descriptor| {
+            if (range[0] == range[1]) {
+                try formatter.formatEntry(
+                    []const u8,
+                    std.fmt.bufPrint(
+                        &buf,
+                        "U+{X:0>4}={s}",
+                        .{
+                            range[0],
+                            descriptor.family orelse "",
+                        },
+                    ) catch return error.OutOfMemory,
+                );
+            } else {
+                try formatter.formatEntry(
+                    []const u8,
+                    std.fmt.bufPrint(
+                        &buf,
+                        "U+{X:0>4}-U{X:0>4}={s}",
+                        .{
+                            range[0],
+                            range[1],
+                            descriptor.family orelse "",
+                        },
+                    ) catch return error.OutOfMemory,
+                );
+            }
+        }
     }
 
     /// Parses the list of Unicode codepoint ranges. Valid syntax:
@@ -2835,6 +2967,13 @@ pub const RepeatableLink = struct {
         _ = self;
         _ = other;
         return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        // This currently can't be set so we don't format anything.
+        _ = self;
+        _ = formatter;
     }
 };
 
