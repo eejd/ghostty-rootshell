@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const help_strings = @import("help_strings");
 
 const list_fonts = @import("list_fonts.zig");
 const version = @import("version.zig");
@@ -35,6 +36,9 @@ pub const Action = enum {
         InvalidAction,
     };
 
+    /// This should be returned by actions that want to print the help text.
+    pub const help_error = error.ActionHelpRequested;
+
     /// Detect the action from CLI args.
     pub fn detectCLI(alloc: Allocator) !?Action {
         var iter = try std.process.argsWithAllocator(alloc);
@@ -61,8 +65,36 @@ pub const Action = enum {
 
     /// Run the action. This returns the exit code to exit with.
     pub fn run(self: Action, alloc: Allocator) !u8 {
+        return self.runMain(alloc) catch |err| switch (err) {
+            // If help is requested, then we use some comptime trickery
+            // to find this action in the help strings and output that.
+            help_error => err: {
+                inline for (@typeInfo(Action).Enum.fields) |field| {
+                    // Future note: for now we just output the help text directly
+                    // to stdout. In the future we can style this much prettier
+                    // for all commands by just changing this one place.
+
+                    if (std.mem.eql(u8, field.name, @tagName(self))) {
+                        const stdout = std.io.getStdOut().writer();
+                        const text = @field(help_strings.Action, field.name) ++ "\n";
+                        stdout.writeAll(text) catch |write_err| {
+                            std.log.warn("failed to write help text: {}\n", .{write_err});
+                            break :err 1;
+                        };
+
+                        break :err 0;
+                    }
+                }
+
+                break :err err;
+            },
+            else => err,
+        };
+    }
+
+    fn runMain(self: Action, alloc: Allocator) !u8 {
         return switch (self) {
-            .version => try version.run(),
+            .version => try version.run(alloc),
             .@"list-fonts" => try list_fonts.run(alloc),
             .@"list-keybinds" => try list_keybinds.run(alloc),
             .@"list-themes" => try list_themes.run(alloc),

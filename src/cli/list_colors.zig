@@ -1,10 +1,17 @@
 const std = @import("std");
+const Action = @import("action.zig").Action;
 const args = @import("args.zig");
 const x11_color = @import("../terminal/main.zig").x11_color;
 
 pub const Options = struct {
     pub fn deinit(self: Options) void {
         _ = self;
+    }
+
+    /// Enables "-h" and "--help" to work.
+    pub fn help(self: Options) !void {
+        _ = self;
+        return Action.help_error;
     }
 };
 
