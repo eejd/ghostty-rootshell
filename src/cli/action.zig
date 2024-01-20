@@ -69,6 +69,21 @@ pub const Action = enum {
             .@"list-colors" => try list_colors.run(alloc),
         };
     }
+
+    /// Returns the filename associated with an action. This is a relative
+    /// path from the root src/ directory.
+    pub fn file(comptime self: Action) []const u8 {
+        comptime {
+            const filename = filename: {
+                const tag = @tagName(self);
+                var filename: [tag.len]u8 = undefined;
+                _ = std.mem.replace(u8, tag, "-", "_", &filename);
+                break :filename &filename;
+            };
+
+            return "cli/" ++ filename ++ ".zig";
+        }
+    }
 };
 
 test "parse action none" {

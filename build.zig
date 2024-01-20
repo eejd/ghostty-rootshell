@@ -114,6 +114,12 @@ pub fn build(b: *std.Build) !void {
         "Build and install the benchmark executables.",
     ) orelse false;
 
+    const emit_helpgen = b.option(
+        bool,
+        "emit-helpgen",
+        "Build and install the helpgen executable.",
+    ) orelse false;
+
     // On NixOS, the built binary from `zig build` needs to patch the rpath
     // into the built binary for it to be portable across the NixOS system
     // it was built for. We default this to true if we can detect we're in
@@ -177,6 +183,10 @@ pub fn build(b: *std.Build) !void {
     // We can use wasmtime to test wasm
     b.enable_wasmtime = true;
 
+    // Help exe. This must be run before any dependent executables because
+    // otherwise the build will be cached without emit. That's clunky but meh.
+    if (emit_helpgen) addHelp(b, null);
+
     // Add our benchmarks
     try benchSteps(b, target, optimize, config, emit_bench);
 
@@ -196,8 +206,6 @@ pub fn build(b: *std.Build) !void {
         "{}",
         .{version},
     ));
-
-    createHelp(b);
 
     // Exe
     if (exe_) |exe| {
@@ -477,7 +485,10 @@ pub fn build(b: *std.Build) !void {
     }
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
-    if (builtin.target.isDarwin() and target.result.os.tag == .macos) {
+    if (builtin.target.isDarwin() and
+        target.result.os.tag == .macos and
+        config.app_runtime == .none)
+    {
         // Create the universal macOS lib.
         const macos_lib_step, const macos_lib_path = try createMacOSLib(
             b,
@@ -1100,40 +1111,41 @@ fn addDeps(
         }
     }
 
-    addHelp(step);
+    addHelp(b, step);
 
     return static_libs;
 }
 
-var generate_help_step: *std.Build.Step.Run = undefined;
-var help_strings: std.Build.LazyPath = undefined;
-
 /// Generate help files
-fn createHelp(b: *std.Build) void {
-    const generate_help = b.addExecutable(.{
-        .name = "generate_help",
-        .root_source_file = .{ .path = "src/generate_help_strings.zig" },
-        .target = b.host,
-    });
+fn addHelp(
+    b: *std.Build,
+    step_: ?*std.Build.Step.Compile,
+) void {
+    // Our static state between runs. We memoize our help strings
+    // so that we only execute the help generation once.
+    const HelpState = struct {
+        var generated: ?std.Build.LazyPath = null;
+    };
 
-    generate_help_step = b.addRunArtifact(generate_help);
-    generate_help_step.step.dependOn(&generate_help.step);
+    const help_output = HelpState.generated orelse strings: {
+        const help_exe = b.addExecutable(.{
+            .name = "helpgen",
+            .root_source_file = .{ .path = "src/helpgen.zig" },
+            .target = b.host,
+        });
+        if (step_ == null) b.installArtifact(help_exe);
 
-    help_strings = generate_help_step.addOutputFileArg("help_strings.zig");
+        const help_run = b.addRunArtifact(help_exe);
+        HelpState.generated = help_run.captureStdOut();
+        break :strings HelpState.generated.?;
+    };
 
-    if (builtin.target.isDarwin()) {
-        const generated = b.option([]const u8, "help_strings", "generated help file") orelse "help_strings";
-        const write_file = b.addWriteFiles();
-        help_strings = write_file.addCopyFile(help_strings, generated);
+    if (step_) |step| {
+        help_output.addStepDependencies(&step.step);
+        step.root_module.addAnonymousImport("help_strings", .{
+            .root_source_file = help_output,
+        });
     }
-}
-
-/// Add the generated help files to the build.
-fn addHelp(step: *std.Build.Step.Compile) void {
-    step.step.dependOn(&generate_help_step.step);
-    step.root_module.addAnonymousImport("help_strings", .{
-        .root_source_file = help_strings,
-    });
 }
 
 fn benchSteps(
