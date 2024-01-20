@@ -1025,6 +1025,10 @@ fn printWrap(self: *Terminal) !void {
     // Move to the next line
     try self.index();
     self.screen.cursor.x = self.scrolling_region.left;
+
+    // New line must inherit semantic prompt of the old line
+    const new_row = self.screen.getRow(.{ .active = self.screen.cursor.y });
+    new_row.setSemanticPrompt(row.getSemanticPrompt());
 }
 
 fn clearWideSpacerHead(self: *Terminal) void {
@@ -2504,6 +2508,23 @@ test "Terminal: soft wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("hel\nlo", str);
+    }
+}
+
+test "Terminal: soft wrap with semantic prompt" {
+    var t = try init(testing.allocator, 3, 80);
+    defer t.deinit(testing.allocator);
+
+    t.markSemanticPrompt(.prompt);
+    for ("hello") |c| try t.print(c);
+
+    {
+        const row = t.screen.getRow(.{ .active = 0 });
+        try testing.expect(row.getSemanticPrompt() == .prompt);
+    }
+    {
+        const row = t.screen.getRow(.{ .active = 1 });
+        try testing.expect(row.getSemanticPrompt() == .prompt);
     }
 }
 
