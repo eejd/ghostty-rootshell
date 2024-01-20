@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const help_strings = @import("help_strings");
 
 const list_fonts = @import("list_fonts.zig");
+const help = @import("help.zig");
 const version = @import("version.zig");
 const list_keybinds = @import("list_keybinds.zig");
 const list_themes = @import("list_themes.zig");
@@ -14,6 +15,9 @@ const list_colors = @import("list_colors.zig");
 pub const Action = enum {
     /// Output the version and exit
     version,
+
+    /// Output help information for the CLI or configuration
+    help,
 
     /// List available fonts
     @"list-fonts",
@@ -48,17 +52,32 @@ pub const Action = enum {
 
     /// Detect the action from any iterator, used primarily for tests.
     pub fn detectIter(iter: anytype) Error!?Action {
+        var pending_help: bool = false;
         var pending: ?Action = null;
         while (iter.next()) |arg| {
             // Special case, --version always outputs the version no
             // matter what, no matter what other args exist.
             if (std.mem.eql(u8, arg, "--version")) return .version;
 
+            // --help matches "help" but if a subcommand is specified
+            // then we match the subcommand.
+            if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+                pending_help = true;
+                continue;
+            }
+
             // Commands must start with "+"
             if (arg.len == 0 or arg[0] != '+') continue;
             if (pending != null) return Error.MultipleActions;
             pending = std.meta.stringToEnum(Action, arg[1..]) orelse return Error.InvalidAction;
         }
+
+        // If we have an action, we always return that action, even if we've
+        // seen "--help" or "-h" because the action may have its own help text.
+        if (pending != null) return pending;
+
+        // If we've seen "--help" or "-h" then we return the help action.
+        if (pending_help) return .help;
 
         return pending;
     }
@@ -95,6 +114,7 @@ pub const Action = enum {
     fn runMain(self: Action, alloc: Allocator) !u8 {
         return switch (self) {
             .version => try version.run(alloc),
+            .help => try help.run(alloc),
             .@"list-fonts" => try list_fonts.run(alloc),
             .@"list-keybinds" => try list_keybinds.run(alloc),
             .@"list-themes" => try list_themes.run(alloc),
