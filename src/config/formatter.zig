@@ -159,8 +159,116 @@ test "format default config" {
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
 
+    // We just make sure this works without errors. We aren't asserting output.
     const fmt: FileFormatter = .{ .config = &cfg };
     try std.fmt.format(buf.writer(), "{}", .{fmt});
 
     //std.log.warn("{s}", .{buf.items});
+}
+
+test "formatEntry bool" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(bool, "a", true, buf.writer());
+        try testing.expectEqualStrings("a = true\n", buf.items);
+    }
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(bool, "a", false, buf.writer());
+        try testing.expectEqualStrings("a = false\n", buf.items);
+    }
+}
+
+test "formatEntry int" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(u8, "a", 123, buf.writer());
+        try testing.expectEqualStrings("a = 123\n", buf.items);
+    }
+}
+
+test "formatEntry float" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(f64, "a", 0.7, buf.writer());
+        try testing.expectEqualStrings("a = 0.7\n", buf.items);
+    }
+}
+
+test "formatEntry enum" {
+    const testing = std.testing;
+    const Enum = enum { one, two, three };
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(Enum, "a", .two, buf.writer());
+        try testing.expectEqualStrings("a = two\n", buf.items);
+    }
+}
+
+test "formatEntry void" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(void, "a", {}, buf.writer());
+        try testing.expectEqualStrings("a = \n", buf.items);
+    }
+}
+
+test "formatEntry optional" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(?bool, "a", null, buf.writer());
+        try testing.expectEqualStrings("a = \n", buf.items);
+    }
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(?bool, "a", false, buf.writer());
+        try testing.expectEqualStrings("a = false\n", buf.items);
+    }
+}
+
+test "formatEntry string" {
+    const testing = std.testing;
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry([]const u8, "a", "hello", buf.writer());
+        try testing.expectEqualStrings("a = hello\n", buf.items);
+    }
+}
+
+test "formatEntry packed struct" {
+    const testing = std.testing;
+    const Value = packed struct {
+        one: bool = true,
+        two: bool = false,
+    };
+
+    {
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+        try formatEntry(Value, "a", .{}, buf.writer());
+        try testing.expectEqualStrings("a = one,no-two\n", buf.items);
+    }
 }
