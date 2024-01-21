@@ -7,6 +7,6 @@ pub fn main() !void {
 
     const output = std.io.getStdOut().writer();
     try gen.substitute(alloc, @embedFile("build/mdgen/ghostty_5_header.md"), output);
-    try gen.generate_config(output, false);
+    try gen.genConfig(output, false);
     try gen.substitute(alloc, @embedFile("build/mdgen/ghostty_5_footer.md"), output);
 }

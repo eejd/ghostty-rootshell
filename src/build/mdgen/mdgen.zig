@@ -1,19 +1,26 @@
 const std = @import("std");
-const Config = @import("../../config/Config.zig");
-const Action = @import("../../cli/action.zig").Action;
 const help_strings = @import("help_strings");
 const build_options = @import("build_options");
+const Config = @import("../../config/Config.zig");
+const Action = @import("../../cli/action.zig").Action;
 
 pub fn substitute(alloc: std.mem.Allocator, input: []const u8, writer: anytype) !void {
     const version_string = try std.fmt.allocPrint(alloc, "{}", .{build_options.version});
+    defer alloc.free(version_string);
 
-    const output = try alloc.alloc(u8, std.mem.replacementSize(u8, input, "@@VERSION@@", version_string));
+    const output = try alloc.alloc(u8, std.mem.replacementSize(
+        u8,
+        input,
+        "@@VERSION@@",
+        version_string,
+    ));
     defer alloc.free(output);
+
     _ = std.mem.replace(u8, input, "@@VERSION@@", version_string, output);
     try writer.writeAll(output);
 }
 
-pub fn generate_config(writer: anytype, cli: bool) !void {
+pub fn genConfig(writer: anytype, cli: bool) !void {
     try writer.writeAll(
         \\
         \\# CONFIGURATION OPTIONS
@@ -21,10 +28,7 @@ pub fn generate_config(writer: anytype, cli: bool) !void {
         \\
     );
 
-    const info = @typeInfo(Config);
-    std.debug.assert(info == .Struct);
-
-    inline for (info.Struct.fields) |field| {
+    inline for (@typeInfo(Config).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
 
         try writer.writeAll("`");
@@ -45,7 +49,7 @@ pub fn generate_config(writer: anytype, cli: bool) !void {
     }
 }
 
-pub fn generate_actions(writer: anytype) !void {
+pub fn genActions(writer: anytype) !void {
     try writer.writeAll(
         \\
         \\# COMMAND LINE ACTIONS
@@ -53,12 +57,7 @@ pub fn generate_actions(writer: anytype) !void {
         \\
     );
 
-    const info = @typeInfo(Action);
-    std.debug.assert(info == .Enum);
-
-    inline for (info.Enum.fields) |field| {
-        if (field.name[0] == '_') continue;
-
+    inline for (@typeInfo(Action).Enum.fields) |field| {
         const action = std.meta.stringToEnum(Action, field.name).?;
 
         switch (action) {
