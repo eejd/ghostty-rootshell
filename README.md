@@ -100,8 +100,20 @@ palette = 7=#a89984
 palette = 15=#fbf1c7
 ```
 
-While the set of config keys and values are not yet documented, they are
-discoverable in the [Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
+You can view all available configuration options and their documentation
+by executing the command `ghostty +show-config --default --docs`. Note that
+this will output the full default configuration with docs to stdout, so
+you may want to pipe that through a pager, an editor, etc.
+
+> [!NOTE]
+>
+> You'll see a lot of weird blank configurations like `font-family =`. This
+> is a valid syntax to specify the default behavior (no value). The
+> `+show-config` outputs it so its clear that key is defaulting and also
+> to have something to attach the doc comment to.
+
+You can also see and read all available configuration options in the source
+[Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
 The available keys are the keys verbatim, and their possible values are typically
 documented in the comments. You also can search for the
 [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
@@ -124,11 +136,13 @@ is in the "building Ghostty" section at the end of the README.
 
 In the debug output, you should see in the first 20 lines or so messages
 about loading (or not loading) a configuration file, as well as any errors
-it may have encountered. Ghostty currently ignores errors and treats it
-as if the configuration had not been set, so this is the best place to look
-if something isn't working.
+it may have encountered. Configuration errors are also shown in a dedicated
+window on both macOS and Linux (GTK). Ghostty does not treat configuration
+errors as fatal and will fall back to default values for erroneous keys.
 
-Eventually, we'll have a better mechanism for showing errors to the user.
+You can also view the full configuration Ghostty is loading using
+`ghostty +show-config` from the command-line. Use the `--help` flag to
+additional options for that command.
 
 ### Themes
 
