@@ -1,27 +1,54 @@
 const std = @import("std");
 const args = @import("args.zig");
 const Allocator = std.mem.Allocator;
-const Config = @import("../config/Config.zig");
+const configpkg = @import("../config.zig");
+const Config = configpkg.Config;
 
 pub const Options = struct {
-    /// If true, print out the default config instead of the user's config.
+    /// If true, do not load the user configuration, only load the defaults.
     default: bool = false,
+
+    /// Only show the options that have been changed from the default.
+    /// This has no effect if `--default` is specified.
+    @"changes-only": bool = true,
+
+    /// If true print the documentation above each option as a comment,
+    /// if available.
+    docs: bool = false,
 
     pub fn deinit(self: Options) void {
         _ = self;
     }
 };
 
-/// The "show-config" command is used to list all the available configuration
-/// settings for Ghostty.
+/// The "show-config" command shows the current configuration in a valid
+/// Ghostty configuration file format.
 ///
-/// When executed without any arguments this will list the current settings
-/// loaded by the config file(s). If no config file is found or there aren't
-/// any changes to the settings it will print out the default ones configured
-/// for Ghostty
+/// When executed without any arguments this will output the current
+/// configuration that is different from the default configuration. If you're
+/// using the default configuration this will output nothing.
 ///
-/// The "--default" argument will print out all the default settings
-/// configured for Ghostty
+/// If you are a new user and want to see all available options with
+/// documentation, run `ghostty +show-config --default --docs`.
+///
+/// The output is not in any specific order, but the order should be
+/// consistent between runs. The output is not guaranteed to be exactly
+/// match the input configuration files, but it will result in the same
+/// behavior. Comments, whitespace, and other formatting is not preserved
+/// from user configuration files.
+///
+/// Flags:
+///
+///   - "--default": Show the default configuration instead of loading
+///     the user configuration.
+///
+///   - "--changes-only": Only show the options that have been changed
+///     from the default. This has no effect if "--default" is specified.
+///
+///   - "--docs": Print the documentation above each option as a comment,
+///     This is very noisy but is very useful to learn about available
+///     options, especially paired with "--default".
+///
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
@@ -35,12 +62,16 @@ pub fn run(alloc: Allocator) !u8 {
     var config = if (opts.default) try Config.default(alloc) else try Config.load(alloc);
     defer config.deinit();
 
+    const configfmt: configpkg.FileFormatter = .{
+        .alloc = alloc,
+        .config = &config,
+        .changed = !opts.default and opts.@"changes-only",
+        .docs = opts.docs,
+    };
+
+    // For some reason `std.fmt.format` isn't working here but it works in
+    // tests so we just do configfmt.format.
     const stdout = std.io.getStdOut().writer();
-
-    const info = @typeInfo(Config);
-    std.debug.assert(info == .Struct);
-
-    try config.formatConfig(stdout);
-
+    try configfmt.format("", .{}, stdout);
     return 0;
 }
