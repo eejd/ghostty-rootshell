@@ -21,7 +21,6 @@ pub const BuildConfig = struct {
     static: bool = false,
     flatpak: bool = false,
     libadwaita: bool = false,
-    documentation: bool = true,
     app_runtime: apprt.Runtime = .none,
     renderer: rendererpkg.Impl = .opengl,
     font_backend: font.Backend = .freetype,

@@ -102,10 +102,10 @@ pub fn build(b: *std.Build) !void {
         "Name of the conformance app to run with 'run' option.",
     );
 
-    config.documentation = b.option(
+    const emit_docs = b.option(
         bool,
-        "documentation",
-        "Build generated documentation",
+        "emit-docs",
+        "Build and install auto-generated documentation",
     ) orelse true;
 
     const emit_test_exe = b.option(
@@ -421,7 +421,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Documenation
-    if (config.documentation) buildDocumentation(b, version);
+    if (emit_docs) buildDocumentation(b, version);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -1166,14 +1166,8 @@ fn buildDocumentation(
         name: []const u8,
         section: []const u8,
     }{
-        .{
-            .name = "ghostty",
-            .section = "1",
-        },
-        .{
-            .name = "ghostty",
-            .section = "5",
-        },
+        .{ .name = "ghostty", .section = "1" },
+        .{ .name = "ghostty", .section = "5" },
     };
 
     inline for (manpages) |manpage| {
