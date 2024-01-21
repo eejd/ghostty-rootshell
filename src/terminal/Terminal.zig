@@ -330,11 +330,19 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void
     // If we're making the screen smaller, dealloc the unused items.
     if (self.active_screen == .primary) {
         self.clearPromptForResize();
-        try self.screen.resize(rows, cols);
+        if (self.modes.get(.wraparound)) {
+            try self.screen.resize(rows, cols);
+        } else {
+            try self.screen.resizeWithoutReflow(rows, cols);
+        }
         try self.secondary_screen.resizeWithoutReflow(rows, cols);
     } else {
         try self.screen.resizeWithoutReflow(rows, cols);
-        try self.secondary_screen.resize(rows, cols);
+        if (self.modes.get(.wraparound)) {
+            try self.secondary_screen.resize(rows, cols);
+        } else {
+            try self.secondary_screen.resizeWithoutReflow(rows, cols);
+        }
     }
 
     // Set our size
