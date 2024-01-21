@@ -4,7 +4,8 @@ const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 const Arena = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
-const Config = @import("../config/Config.zig");
+const configpkg = @import("../config.zig");
+const Config = configpkg.Config;
 
 pub const Options = struct {
     /// If true, print out the default keybinds instead of the ones
@@ -46,7 +47,7 @@ pub fn run(alloc: Allocator) !u8 {
     defer config.deinit();
 
     const stdout = std.io.getStdOut().writer();
-    try config.keybind.formatConfig(stdout, "keybind=");
+    try config.keybind.formatEntry(configpkg.entryFormatter("keybind", stdout));
 
     return 0;
 }
