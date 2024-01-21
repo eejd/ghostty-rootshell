@@ -19,15 +19,15 @@ pub const Options = struct {
     }
 };
 
-/// The "list-themes" command is used to list all the available themes
-/// for Ghostty.
+/// The `list-themes` command is used to list all the available themes for
+/// Ghostty.
 ///
-/// Themes require that Ghostty have access to the resources directory.
-/// On macOS this is embedded in the app bundle. On Linux, this is usually
-/// in `/usr/share/ghostty`. If you're compiling from source, this is the
-/// `zig-out/share/ghostty` directory. You can also set the `GHOSTTY_RESOURCES_DIR`
-/// environment variable to point to the resources directory. Themes
-/// live in the `themes` subdirectory of the resources directory.
+/// Themes require that Ghostty have access to the resources directory. On macOS
+/// this is embedded in the app bundle. On Linux, this is usually in `/usr/
+/// share/ghostty`. If you're compiling from source, this is the `zig-out/share/
+/// ghostty` directory. You can also set the `GHOSTTY_RESOURCES_DIR` environment
+/// variable to point to the resources directory. Themes live in the `themes`
+/// subdirectory of the resources directory.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();

@@ -15,6 +15,7 @@ const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
+const Command = @import("src/Command.zig");
 
 // Do a comptime Zig version requirement. The required Zig version is
 // somewhat arbitrary: it is meant to be a version that we feel works well,
@@ -101,6 +102,18 @@ pub fn build(b: *std.Build) !void {
         "conformance",
         "Name of the conformance app to run with 'run' option.",
     );
+
+    const emit_docs = b.option(
+        bool,
+        "emit-docs",
+        "Build and install auto-generated documentation (requires pandoc)",
+    ) orelse emit_docs: {
+        // We only default to true if we can find pandoc.
+        const path = Command.expandPath(b.allocator, "pandoc") catch
+            break :emit_docs false;
+        defer if (path) |p| b.allocator.free(p);
+        break :emit_docs path != null;
+    };
 
     const emit_test_exe = b.option(
         bool,
@@ -413,6 +426,9 @@ pub fn build(b: *std.Build) !void {
             .install_subdir = "share/vim/vimfiles",
         });
     }
+
+    // Documenation
+    if (emit_docs) buildDocumentation(b, version);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -1145,6 +1161,73 @@ fn addHelp(
         step.root_module.addAnonymousImport("help_strings", .{
             .root_source_file = help_output,
         });
+    }
+}
+
+/// Generate documentation (manpages, etc.) from help strings
+fn buildDocumentation(
+    b: *std.Build,
+    version: std.SemanticVersion,
+) void {
+    const manpages = [_]struct {
+        name: []const u8,
+        section: []const u8,
+    }{
+        .{ .name = "ghostty", .section = "1" },
+        .{ .name = "ghostty", .section = "5" },
+    };
+
+    inline for (manpages) |manpage| {
+        const generate_markdown = b.addExecutable(.{
+            .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
+            .root_source_file = .{
+                .path = "src/mdgen_" ++ manpage.name ++ "_" ++ manpage.section ++ ".zig",
+            },
+            .target = b.host,
+        });
+        addHelp(b, generate_markdown);
+
+        const generate_markdown_options = b.addOptions();
+        generate_markdown_options.addOption(std.SemanticVersion, "version", version);
+        generate_markdown.root_module.addOptions("build_options", generate_markdown_options);
+
+        const generate_markdown_step = b.addRunArtifact(generate_markdown);
+        const markdown_output = generate_markdown_step.captureStdOut();
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            markdown_output,
+            "share/ghostty/doc/" ++ manpage.name ++ "." ++ manpage.section ++ ".md",
+        ).step);
+
+        const generate_html = b.addSystemCommand(&.{"pandoc"});
+        generate_html.addArgs(&.{
+            "--standalone",
+            "--from",
+            "markdown",
+            "--to",
+            "html",
+        });
+        generate_html.addFileArg(markdown_output);
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            generate_html.captureStdOut(),
+            "share/ghostty/doc/" ++ manpage.name ++ "." ++ manpage.section ++ ".html",
+        ).step);
+
+        const generate_manpage = b.addSystemCommand(&.{"pandoc"});
+        generate_manpage.addArgs(&.{
+            "--standalone",
+            "--from",
+            "markdown",
+            "--to",
+            "man",
+        });
+        generate_manpage.addFileArg(markdown_output);
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            generate_manpage.captureStdOut(),
+            "share/man/man" ++ manpage.section ++ "/" ++ manpage.name ++ "." ++ manpage.section,
+        ).step);
     }
 }
 

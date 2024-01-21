@@ -23,16 +23,16 @@ pub const Options = struct {
     }
 };
 
-/// The "list-keybinds" command is used to list all the available keybinds
-/// for Ghostty.
+/// The `list-keybinds` command is used to list all the available keybinds for
+/// Ghostty.
 ///
 /// When executed without any arguments this will list the current keybinds
 /// loaded by the config file. If no config file is found or there aren't any
 /// changes to the keybinds it will print out the default ones configured for
 /// Ghostty
 ///
-/// The "--default" argument will print out all the default keybinds
-/// configured for Ghostty
+/// The `--default` argument will print out all the default keybinds configured
+/// for Ghostty
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
