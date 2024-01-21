@@ -170,6 +170,22 @@ fn parseIntoField(
 
     inline for (info.Struct.fields) |field| {
         if (field.name[0] != '_' and mem.eql(u8, field.name, key)) {
+            // If the field is optional then consider scenarios we reset
+            // the value to being unset. We allow unsetting optionals
+            // whenever the value is "".
+            //
+            // At the time of writing this, empty string isn't a desirable
+            // value for any optional field under any realistic scenario.
+            //
+            // We don't allow unset values to set optional fields to
+            // null because unset value for booleans always means true.
+            if (@typeInfo(field.type) == .Optional) optional: {
+                if (std.mem.eql(u8, "", value orelse break :optional)) {
+                    @field(dst, field.name) = null;
+                    return;
+                }
+            }
+
             // For optional fields, we just treat it as the child type.
             // This lets optional fields default to null but get set by
             // the CLI.
@@ -617,6 +633,10 @@ test "parseIntoField: optional field" {
     // True
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "1");
     try testing.expectEqual(true, data.a.?);
+
+    // Unset
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "");
+    try testing.expect(data.a == null);
 }
 
 test "parseIntoField: struct with parse func" {
