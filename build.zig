@@ -102,6 +102,12 @@ pub fn build(b: *std.Build) !void {
         "Name of the conformance app to run with 'run' option.",
     );
 
+    config.documentation = b.option(
+        bool,
+        "documentation",
+        "Build generated documentation",
+    ) orelse true;
+
     const emit_test_exe = b.option(
         bool,
         "emit-test-exe",
@@ -413,6 +419,9 @@ pub fn build(b: *std.Build) !void {
             .install_subdir = "share/vim/vimfiles",
         });
     }
+
+    // Documenation
+    if (config.documentation) buildDocumentation(b, version);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -1145,6 +1154,91 @@ fn addHelp(
         step.root_module.addAnonymousImport("help_strings", .{
             .root_source_file = help_output,
         });
+    }
+}
+
+/// Generate documentation (manpages, etc.) from help strings
+fn buildDocumentation(
+    b: *std.Build,
+    version: std.SemanticVersion,
+) void {
+    const manpages = [_]struct {
+        name: []const u8,
+        section: []const u8,
+    }{
+        .{
+            .name = "ghostty",
+            .section = "1",
+        },
+        .{
+            .name = "ghostty",
+            .section = "5",
+        },
+    };
+
+    inline for (manpages) |manpage| {
+        const generate_markdown = b.addExecutable(.{
+            .name = "generate_" ++ manpage.name ++ "_" ++ manpage.section ++ "_markdown",
+            .root_source_file = .{
+                .path = "src/generate_" ++ manpage.name ++ "_" ++ manpage.section ++ "_markdown.zig",
+            },
+            .target = b.host,
+        });
+
+        const generate_markdown_step = b.addRunArtifact(generate_markdown);
+
+        const markdown_output = generate_markdown_step.captureStdOut();
+
+        const generate_markdown_options = b.addOptions();
+        generate_markdown_options.addOption(std.SemanticVersion, "version", version);
+        generate_markdown.root_module.addOptions("build_options", generate_markdown_options);
+
+        addHelp(b, generate_markdown);
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            markdown_output,
+            "share/ghostty/doc/" ++ manpage.name ++ "." ++ manpage.section ++ ".md",
+        ).step);
+
+        const generate_html = b.addSystemCommand(&.{"pandoc"});
+        generate_html.step.dependOn(&generate_markdown_step.step);
+        generate_html.addArgs(
+            &.{
+                "--standalone",
+                "--from",
+                "markdown",
+                "--to",
+                "html",
+            },
+        );
+        generate_html.addFileArg(markdown_output);
+
+        const html_output = generate_html.captureStdOut();
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            html_output,
+            "share/ghostty/doc/" ++ manpage.name ++ "." ++ manpage.section ++ ".html",
+        ).step);
+
+        const generate_manpage = b.addSystemCommand(&.{"pandoc"});
+        generate_manpage.step.dependOn(&generate_markdown_step.step);
+        generate_manpage.addArgs(
+            &.{
+                "--standalone",
+                "--from",
+                "markdown",
+                "--to",
+                "man",
+            },
+        );
+        generate_manpage.addFileArg(markdown_output);
+
+        const manpage_output = generate_manpage.captureStdOut();
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            manpage_output,
+            "share/man/man" ++ manpage.section ++ "/" ++ manpage.name ++ "." ++ manpage.section,
+        ).step);
     }
 }
 
