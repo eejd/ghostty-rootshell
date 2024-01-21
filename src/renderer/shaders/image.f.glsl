@@ -7,5 +7,6 @@ layout(location = 0) out vec4 out_FragColor;
 uniform sampler2D image;
 
 void main() {
-    out_FragColor = texture(image, tex_coord);
+    vec4 color = texture(image, tex_coord);
+    out_FragColor = vec4(color.rgb * color.a, color.a);
 }

@@ -328,7 +328,12 @@ fragment float4 image_fragment(
   // BGRA8Unorm. So we need to convert it. We should really be converting
   // our texture to BGRA8Unorm.
   uint4 rgba = image.sample(textureSampler, in.tex_coord);
-  return float4(rgba) / 255.0f;
+
+  // Convert to float4 and premultiply the alpha. We should also probably
+  // premultiply the alpha in the texture.
+  float4 result = float4(rgba) / 255.0f;
+  result.rgb *= result.a;
+  return result;
 }
 
 //-------------------------------------------------------------------
