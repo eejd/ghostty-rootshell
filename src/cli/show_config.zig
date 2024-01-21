@@ -21,15 +21,15 @@ pub const Options = struct {
         _ = self;
     }
 
-    /// Enables "-h" and "--help" to work.
+    /// Enables `-h` and `--help` to work.
     pub fn help(self: Options) !void {
         _ = self;
         return Action.help_error;
     }
 };
 
-/// The "show-config" command shows the current configuration in a valid
-/// Ghostty configuration file format.
+/// The `show-config` command shows the current configuration in a valid Ghostty
+/// configuration file format.
 ///
 /// When executed without any arguments this will output the current
 /// configuration that is different from the default configuration. If you're
@@ -38,24 +38,23 @@ pub const Options = struct {
 /// If you are a new user and want to see all available options with
 /// documentation, run `ghostty +show-config --default --docs`.
 ///
-/// The output is not in any specific order, but the order should be
-/// consistent between runs. The output is not guaranteed to be exactly
-/// match the input configuration files, but it will result in the same
-/// behavior. Comments, whitespace, and other formatting is not preserved
-/// from user configuration files.
+/// The output is not in any specific order, but the order should be consistent
+/// between runs. The output is not guaranteed to be exactly match the input
+/// configuration files, but it will result in the same behavior. Comments,
+/// whitespace, and other formatting is not preserved from user configuration
+/// files.
 ///
 /// Flags:
 ///
-///   - "--default": Show the default configuration instead of loading
+///   * `--default`: Show the default configuration instead of loading
 ///     the user configuration.
 ///
-///   - "--changes-only": Only show the options that have been changed
-///     from the default. This has no effect if "--default" is specified.
+///   * `--changes-only`: Only show the options that have been changed
+///     from the default. This has no effect if `--default` is specified.
 ///
-///   - "--docs": Print the documentation above each option as a comment,
+///   * `--docs`: Print the documentation above each option as a comment,
 ///     This is very noisy but is very useful to learn about available
-///     options, especially paired with "--default".
-///
+///     options, especially paired with `--default`.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();

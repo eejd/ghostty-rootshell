@@ -3,9 +3,9 @@ const Allocator = std.mem.Allocator;
 const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 
-// Note that this options struct doesn't implement the `help` decl like
-// other actions. That is because the help command is special and wants to
-// handle its own logic around help detection.
+// Note that this options struct doesn't implement the `help` decl like other
+// actions. That is because the help command is special and wants to handle its
+// own logic around help detection.
 pub const Options = struct {
     /// This must be registered so that it isn't an error to pass `--help`
     help: bool = false,
@@ -15,9 +15,9 @@ pub const Options = struct {
     }
 };
 
-/// The `help` command shows general help about Ghostty. You can also
-/// specify `--help` or `-h` along with any action such as `+list-themes`
-/// to see help for a specific action.
+/// The `help` command shows general help about Ghostty. You can also specify
+/// `--help` or `-h` along with any action such as `+list-themes` to see help
+/// for a specific action.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
