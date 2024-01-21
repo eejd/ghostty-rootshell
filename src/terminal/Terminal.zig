@@ -749,7 +749,18 @@ pub fn print(self: *Terminal, c: u21) !void {
         // same grapheme. Otherwise, we can stay in this cell.
         const Prev = struct { cell: *Screen.Cell, x: usize };
         const prev: Prev = prev: {
-            const x = self.screen.cursor.x - 1;
+            const x = x: {
+                // If we have wraparound, then we always use the prev col
+                if (self.modes.get(.wraparound)) break :x self.screen.cursor.x - 1;
+
+                // If we do not have wraparound, the logic is trickier. If
+                // we're not on the last column, then we just use the previous
+                // column. Otherwise, we need to check if there is text to
+                // figure out if we're attaching to the prev or current.
+                if (self.screen.cursor.x != right_limit - 1) break :x self.screen.cursor.x - 1;
+                const current = row.getCellPtr(self.screen.cursor.x);
+                break :x self.screen.cursor.x - @intFromBool(current.char == 0);
+            };
             const immediate = row.getCellPtr(x);
 
             // If the previous cell is a wide spacer tail, then we actually
@@ -811,6 +822,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                     // to insert spacers and wrap. Then we just print the wide
                     // char as normal.
                     if (prev.x == right_limit - 1) {
+                        if (!self.modes.get(.wraparound)) return;
                         const spacer_head = self.printCell(' ');
                         spacer_head.attrs.wide_spacer_head = true;
                         try self.printWrap();
@@ -925,6 +937,11 @@ pub fn print(self: *Terminal, c: u21) !void {
             // to insert spacers and wrap. Then we just print the wide
             // char as normal.
             if (self.screen.cursor.x == right_limit - 1) {
+                // If we don't have wraparound enabled then we don't print
+                // this character at all and don't move the cursor. This is
+                // how xterm behaves.
+                if (!self.modes.get(.wraparound)) return;
+
                 const spacer_head = self.printCell(' ');
                 spacer_head.attrs.wide_spacer_head = true;
                 try self.printWrap();
@@ -2525,6 +2542,92 @@ test "Terminal: soft wrap with semantic prompt" {
     {
         const row = t.screen.getRow(.{ .active = 1 });
         try testing.expect(row.getSemanticPrompt() == .prompt);
+    }
+}
+
+test "Terminal: disabled wraparound with wide char and one space" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    t.modes.set(.wraparound, false);
+
+    // This puts our cursor at the end and there is NO SPACE for a
+    // wide character.
+    try t.printString("AAAA");
+    try t.print(0x1F6A8); // Police car light
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AAAA", str);
+    }
+
+    // Make sure we printed nothing
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(4);
+        try testing.expectEqual(@as(u32, 0), cell.char);
+        try testing.expect(!cell.attrs.wide);
+    }
+}
+
+test "Terminal: disabled wraparound with wide char and no space" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    t.modes.set(.wraparound, false);
+
+    // This puts our cursor at the end and there is NO SPACE for a
+    // wide character.
+    try t.printString("AAAAA");
+    try t.print(0x1F6A8); // Police car light
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AAAAA", str);
+    }
+
+    // Make sure we printed nothing
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(4);
+        try testing.expectEqual(@as(u32, 'A'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+    }
+}
+
+test "Terminal: disabled wraparound with wide grapheme and half space" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    t.modes.set(.grapheme_cluster, true);
+    t.modes.set(.wraparound, false);
+
+    // This puts our cursor at the end and there is NO SPACE for a
+    // wide character.
+    try t.printString("AAAA");
+    try t.print(0x2764); // Heart
+    try t.print(0xFE0F); // VS16 to make wide
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AAAA❤", str);
+    }
+
+    // Make sure we printed nothing
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(4);
+        try testing.expectEqual(@as(u32, '❤'), cell.char);
+        try testing.expect(!cell.attrs.wide);
     }
 }
 
