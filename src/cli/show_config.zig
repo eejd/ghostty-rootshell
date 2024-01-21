@@ -1,6 +1,7 @@
 const std = @import("std");
 const args = @import("args.zig");
 const Allocator = std.mem.Allocator;
+const Action = @import("action.zig").Action;
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
 
@@ -18,6 +19,12 @@ pub const Options = struct {
 
     pub fn deinit(self: Options) void {
         _ = self;
+    }
+
+    /// Enables "-h" and "--help" to work.
+    pub fn help(self: Options) !void {
+        _ = self;
+        return Action.help_error;
     }
 };
 
