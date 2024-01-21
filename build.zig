@@ -1172,9 +1172,9 @@ fn buildDocumentation(
 
     inline for (manpages) |manpage| {
         const generate_markdown = b.addExecutable(.{
-            .name = "generate_" ++ manpage.name ++ "_" ++ manpage.section ++ "_markdown",
+            .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
             .root_source_file = .{
-                .path = "src/generate_" ++ manpage.name ++ "_" ++ manpage.section ++ "_markdown.zig",
+                .path = "src/mdgen_" ++ manpage.name ++ "_" ++ manpage.section ++ ".zig",
             },
             .target = b.host,
         });

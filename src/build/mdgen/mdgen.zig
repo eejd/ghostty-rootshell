@@ -1,6 +1,6 @@
 const std = @import("std");
-const Config = @import("config/Config.zig");
-const Action = @import("cli/action.zig").Action;
+const Config = @import("../../config/Config.zig");
+const Action = @import("../../cli/action.zig").Action;
 const help_strings = @import("help_strings");
 const build_options = @import("build_options");
 
