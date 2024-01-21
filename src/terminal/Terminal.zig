@@ -330,11 +330,19 @@ pub fn resize(self: *Terminal, alloc: Allocator, cols: usize, rows: usize) !void
     // If we're making the screen smaller, dealloc the unused items.
     if (self.active_screen == .primary) {
         self.clearPromptForResize();
-        try self.screen.resize(rows, cols);
+        if (self.modes.get(.wraparound)) {
+            try self.screen.resize(rows, cols);
+        } else {
+            try self.screen.resizeWithoutReflow(rows, cols);
+        }
         try self.secondary_screen.resizeWithoutReflow(rows, cols);
     } else {
         try self.screen.resizeWithoutReflow(rows, cols);
-        try self.secondary_screen.resize(rows, cols);
+        if (self.modes.get(.wraparound)) {
+            try self.secondary_screen.resize(rows, cols);
+        } else {
+            try self.secondary_screen.resizeWithoutReflow(rows, cols);
+        }
     }
 
     // Set our size
@@ -5192,6 +5200,47 @@ test "Terminal: resize with left and right margin set" {
     try t.printRepeat(1850);
     _ = t.modes.restore(.enable_mode_3);
     try t.resize(alloc, cols, rows);
+}
+
+// https://github.com/mitchellh/ghostty/issues/1343
+test "Terminal: resize with wraparound off" {
+    const alloc = testing.allocator;
+    const cols = 4;
+    const rows = 2;
+    var t = try init(alloc, cols, rows);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, false);
+    try t.print('0');
+    try t.print('1');
+    try t.print('2');
+    try t.print('3');
+    const new_cols = 2;
+    try t.resize(alloc, new_cols, rows);
+
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("01", str);
+}
+
+test "Terminal: resize with wraparound on" {
+    const alloc = testing.allocator;
+    const cols = 4;
+    const rows = 2;
+    var t = try init(alloc, cols, rows);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    try t.print('0');
+    try t.print('1');
+    try t.print('2');
+    try t.print('3');
+    const new_cols = 2;
+    try t.resize(alloc, new_cols, rows);
+
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("01\n23", str);
 }
 
 test "Terminal: saveCursor" {
