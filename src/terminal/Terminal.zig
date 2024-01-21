@@ -5099,6 +5099,47 @@ test "Terminal: resize with left and right margin set" {
     try t.resize(alloc, cols, rows);
 }
 
+// https://github.com/mitchellh/ghostty/issues/1343
+test "Terminal: resize with wraparound off" {
+    const alloc = testing.allocator;
+    const cols = 4;
+    const rows = 2;
+    var t = try init(alloc, cols, rows);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, false);
+    try t.print('0');
+    try t.print('1');
+    try t.print('2');
+    try t.print('3');
+    const new_cols = 2;
+    try t.resize(alloc, new_cols, rows);
+
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("01", str);
+}
+
+test "Terminal: resize with wraparound on" {
+    const alloc = testing.allocator;
+    const cols = 4;
+    const rows = 2;
+    var t = try init(alloc, cols, rows);
+    defer t.deinit(alloc);
+
+    t.modes.set(.wraparound, true);
+    try t.print('0');
+    try t.print('1');
+    try t.print('2');
+    try t.print('3');
+    const new_cols = 2;
+    try t.resize(alloc, new_cols, rows);
+
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("01\n23", str);
+}
+
 test "Terminal: saveCursor" {
     const alloc = testing.allocator;
     var t = try init(alloc, 3, 3);
