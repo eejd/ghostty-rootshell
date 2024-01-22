@@ -270,6 +270,7 @@ pub const LoadingImage = struct {
 
         // Data length must be what we expect
         const bpp: u32 = switch (img.format) {
+            .grey_alpha => 2,
             .rgb => 3,
             .rgba => 4,
             .png => unreachable, // png should be decoded by here
@@ -380,7 +381,10 @@ pub const LoadingImage = struct {
         }
 
         // Validate our bpp
-        if (bpp != 3 and bpp != 4) return error.UnsupportedDepth;
+        if (bpp < 2 or bpp > 4) {
+            log.warn("png with unsupported bpp={}", .{bpp});
+            return error.UnsupportedDepth;
+        }
 
         // Replace our data
         self.data.deinit(alloc);
@@ -392,6 +396,7 @@ pub const LoadingImage = struct {
         self.image.width = @intCast(width);
         self.image.height = @intCast(height);
         self.image.format = switch (bpp) {
+            2 => .grey_alpha,
             3 => .rgb,
             4 => .rgba,
             else => unreachable, // validated above

@@ -332,6 +332,11 @@ pub const Transmission = struct {
         rgb, // 24
         rgba, // 32
         png, // 100
+
+        // The following are not supported directly via the protocol
+        // but they are formats that a png may decode to that we
+        // support.
+        grey_alpha,
     };
 
     pub const Medium = enum {
