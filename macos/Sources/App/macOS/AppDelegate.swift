@@ -109,9 +109,10 @@ class AppDelegate: NSObject,
         // Initial config loading
         configDidReload(ghostty)
         
-        // Register our service provider. This must happen after everything
-        // else is initialized.
+        // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
+        
+        // This registers the Ghostty => Services menu to exist.
         NSApp.servicesMenu = menuServices
 
         // Configure user notifications

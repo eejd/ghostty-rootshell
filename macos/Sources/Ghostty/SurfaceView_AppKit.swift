@@ -953,3 +953,42 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         print("SEL: \(selector)")
     }
 }
+
+// MARK: Services
+
+// https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/using.html
+extension Ghostty.SurfaceView: NSServicesMenuRequestor {
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        // Types that we accept sent to us
+        let accepted: [NSPasteboard.PasteboardType] = [.string, .init("public.utf8-plain-text")]
+        
+        // We can always receive the accepted types
+        if (returnType == nil || accepted.contains(returnType!)) {
+            return self
+        }
+        
+        // If we have a selection we can send the accepted types too
+        // TODO selection
+        if (sendType == nil || accepted.contains(sendType!)) {
+            return self
+        }
+        
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+    
+    func writeSelection(
+        to pboard: NSPasteboard,
+        types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        // TODO
+        return false
+    }
+    
+    func readSelection(from pboard: NSPasteboard) -> Bool {
+        // TODO
+        return false
+    }
+}
