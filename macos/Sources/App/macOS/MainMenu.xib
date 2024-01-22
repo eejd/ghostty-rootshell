@@ -40,6 +40,7 @@
                 <outlet property="menuSelectSplitBelow" destination="QDz-d9-CBr" id="FsH-Dq-jij"/>
                 <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
                 <outlet property="menuSelectSplitRight" destination="upj-mc-L7X" id="nLY-o1-lky"/>
+                <outlet property="menuServices" destination="aQe-vS-j8Q" id="uWQ-Wo-T1L"/>
                 <outlet property="menuSplitHorizontal" destination="VUR-Ld-nLx" id="RxO-Zw-ovb"/>
                 <outlet property="menuSplitVertical" destination="UDZ-4y-6xL" id="fgZ-Wb-8OR"/>
                 <outlet property="menuTerminalInspector" destination="QwP-M5-fvh" id="wJi-Dh-S9f"/>
@@ -76,6 +77,11 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="4je-JR-u6R"/>
+                            <menuItem title="Services" id="rJe-5J-bwL">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <menu key="submenu" title="Services" id="aQe-vS-j8Q"/>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="qno-yg-pur"/>
                             <menuItem title="Hide Ghostty" keyEquivalent="h" id="Olw-nP-bQN">
                                 <connections>
                                     <action selector="hide:" target="-1" id="PnN-Uc-m68"/>
