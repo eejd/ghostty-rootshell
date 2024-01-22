@@ -8,5 +8,6 @@ pub fn main() !void {
     const output = std.io.getStdOut().writer();
     try gen.substitute(alloc, @embedFile("build/mdgen/ghostty_5_header.md"), output);
     try gen.genConfig(output, false);
+    try gen.genKeybindActions(output);
     try gen.substitute(alloc, @embedFile("build/mdgen/ghostty_5_footer.md"), output);
 }

@@ -6,6 +6,7 @@ const std = @import("std");
 const ziglyph = @import("ziglyph");
 const Config = @import("config/Config.zig");
 const Action = @import("cli/action.zig").Action;
+const KeybindAction = @import("input/Binding.zig").Action;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -20,6 +21,7 @@ pub fn main() !void {
 
     try genConfig(alloc, stdout);
     try genActions(alloc, stdout);
+    try genKeybindActions(alloc, stdout);
 }
 
 fn genConfig(alloc: std.mem.Allocator, writer: anytype) !void {
@@ -109,6 +111,25 @@ fn genActions(alloc: std.mem.Allocator, writer: anytype) !void {
             try writer.writeAll("\n\n");
             break;
         }
+    }
+
+    try writer.writeAll("};\n");
+}
+
+fn genKeybindActions(alloc: std.mem.Allocator, writer: anytype) !void {
+    var ast = try std.zig.Ast.parse(alloc, @embedFile("input/Binding.zig"), .zig);
+    defer ast.deinit(alloc);
+
+    try writer.writeAll(
+        \\/// keybind actions help
+        \\pub const KeybindAction = struct {
+        \\
+        \\
+    );
+
+    inline for (@typeInfo(KeybindAction).Union.fields) |field| {
+        if (field.name[0] == '_') continue;
+        try genConfigField(alloc, writer, ast, field.name);
     }
 
     try writer.writeAll("};\n");

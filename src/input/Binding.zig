@@ -118,41 +118,40 @@ pub fn parse(raw_input: []const u8) !Binding {
 
 /// The set of actions that a keybinding can take.
 pub const Action = union(enum) {
-    /// Ignore this key combination, don't send it to the child process,
-    /// just black hole it.
+    /// Ignore this key combination, don't send it to the child process, just
+    /// black hole it.
     ignore: void,
 
-    /// This action is used to flag that the binding should be removed
-    /// from the set. This should never exist in an active set and
-    /// `set.put` has an assertion to verify this.
+    /// This action is used to flag that the binding should be removed from
+    /// the set. This should never exist in an active set and `set.put` has an
+    /// assertion to verify this.
     unbind: void,
 
-    /// Send a CSI sequence. The value should be the CSI sequence
-    /// without the CSI header ("ESC ]" or "\x1b]").
+    /// Send a CSI sequence. The value should be the CSI sequence without the
+    /// CSI header (`ESC ]` or `\x1b]`).
     csi: []const u8,
 
-    /// Send an ESC sequence.
+    /// Send an `ESC` sequence.
     esc: []const u8,
 
-    // Send the given text. Uses Zig string literal syntax. This is
-    // currently not validated. If the text is invalid (i.e. contains
-    // an invalid escape sequence), the error will currently only show
-    // up in logs.
+    // Send the given text. Uses Zig string literal syntax. This is currently
+    // not validated. If the text is invalid (i.e. contains an invalid escape
+    // sequence), the error will currently only show up in logs.
     text: []const u8,
 
-    /// Send data to the pty depending on whether cursor key mode is
-    /// enabled ("application") or disabled ("normal").
+    /// Send data to the pty depending on whether cursor key mode is enabled
+    /// (`application`) or disabled (`normal`).
     cursor_key: CursorKey,
 
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,
 
-    /// Increase/decrease the font size by a certain amount
+    /// Increase/decrease the font size by a certain amount.
     increase_font_size: u16,
     decrease_font_size: u16,
 
-    /// Reset the font size to the original configured size
+    /// Reset the font size to the original configured size.
     reset_font_size: void,
 
     /// Clear the screen. This also clears all scrollback.
@@ -169,32 +168,31 @@ pub const Action = union(enum) {
     scroll_page_fractional: f32,
     scroll_page_lines: i16,
 
-    /// Jump the viewport forward or back by prompt. Positive
-    /// number is the number of prompts to jump forward, negative
-    /// is backwards.
+    /// Jump the viewport forward or back by prompt. Positive number is the
+    /// number of prompts to jump forward, negative is backwards.
     jump_to_prompt: i16,
 
-    /// Write the entire scrollback into a temporary file and write the
-    /// path to the file to the tty.
+    /// Write the entire scrollback into a temporary file and write the path to
+    /// the file to the tty.
     write_scrollback_file: void,
 
-    /// Open a new window
+    /// Open a new window.
     new_window: void,
 
-    /// Open a new tab
+    /// Open a new tab.
     new_tab: void,
 
-    /// Go to the previous tab
+    /// Go to the previous tab.
     previous_tab: void,
 
-    /// Go to the next tab
+    /// Go to the next tab.
     next_tab: void,
 
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 
-    /// Create a new split in the given direction. The new split will appear
-    /// in the direction given.
+    /// Create a new split in the given direction. The new split will appear in
+    /// the direction given.
     new_split: SplitDirection,
 
     /// Focus on a split in a given direction.
@@ -210,13 +208,13 @@ pub const Action = union(enum) {
     /// Equalize all splits in the current window
     equalize_splits: void,
 
-    /// Show, hide, or toggle the terminal inspector for the currently
-    /// focused terminal.
+    /// Show, hide, or toggle the terminal inspector for the currently focused
+    /// terminal.
     inspector: InspectorMode,
 
-    /// Open the configuration file in the default OS editor. If your default
-    /// OS editor isn't configured then this will fail. Currently, any failures
-    /// to open the configuration will show up only in the logs.
+    /// Open the configuration file in the default OS editor. If your default OS
+    /// editor isn't configured then this will fail. Currently, any failures to
+    /// open the configuration will show up only in the logs.
     open_config: void,
 
     /// Reload the configuration. The exact meaning depends on the app runtime
@@ -225,9 +223,9 @@ pub const Action = union(enum) {
     /// runtime.
     reload_config: void,
 
-    /// Close the current "surface", whether that is a window, tab, split,
-    /// etc. This only closes ONE surface. This will trigger close confirmation
-    /// as configured.
+    /// Close the current "surface", whether that is a window, tab, split, etc.
+    /// This only closes ONE surface. This will trigger close confirmation as
+    /// configured.
     close_surface: void,
 
     /// Close the window, regardless of how many tabs or splits there may be.
@@ -241,7 +239,7 @@ pub const Action = union(enum) {
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,
 
-    /// Quit ghostty
+    /// Quit ghostty.
     quit: void,
 
     pub const CursorKey = struct {

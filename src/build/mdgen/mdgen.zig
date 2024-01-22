@@ -3,6 +3,7 @@ const help_strings = @import("help_strings");
 const build_options = @import("build_options");
 const Config = @import("../../config/Config.zig");
 const Action = @import("../../cli/action.zig").Action;
+const KeybindAction = @import("../../input/Binding.zig").Action;
 
 pub fn substitute(alloc: std.mem.Allocator, input: []const u8, writer: anytype) !void {
     const version_string = try std.fmt.allocPrint(alloc, "{}", .{build_options.version});
@@ -72,6 +73,38 @@ pub fn genActions(writer: anytype) !void {
 
         if (@hasDecl(help_strings.Action, field.name)) {
             var iter = std.mem.splitScalar(u8, @field(help_strings.Action, field.name), '\n');
+            var first = true;
+            while (iter.next()) |s| {
+                try writer.writeAll(if (first) ":   " else "    ");
+                try writer.writeAll(s);
+                try writer.writeAll("\n");
+                first = false;
+            }
+            try writer.writeAll("\n\n");
+        }
+    }
+}
+
+pub fn genKeybindActions(writer: anytype) !void {
+    try writer.writeAll(
+        \\
+        \\# KEYBIND ACTIONS
+        \\
+        \\
+    );
+
+    const info = @typeInfo(KeybindAction);
+    std.debug.assert(info == .Union);
+
+    inline for (info.Union.fields) |field| {
+        if (field.name[0] == '_') continue;
+
+        try writer.writeAll("`");
+        try writer.writeAll(field.name);
+        try writer.writeAll("`\n\n");
+
+        if (@hasDecl(help_strings.KeybindAction, field.name)) {
+            var iter = std.mem.splitScalar(u8, @field(help_strings.KeybindAction, field.name), '\n');
             var first = true;
             while (iter.next()) |s| {
                 try writer.writeAll(if (first) ":   " else "    ");

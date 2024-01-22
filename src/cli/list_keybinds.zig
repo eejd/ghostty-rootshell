@@ -1,5 +1,4 @@
 const std = @import("std");
-const inputpkg = @import("../input.zig");
 const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 const Arena = std.heap.ArenaAllocator;
