@@ -2933,11 +2933,16 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                     &self.io.terminal.screen,
                 );
 
-                try self.io.terminal.screen.dumpString(file.writer(), .{
-                    .start = .{ .history = 0 },
-                    .end = .{ .history = history_max -| 1 },
-                    .unwrap = true,
-                });
+                // We only dump history if we have history. We still keep
+                // the file and write the empty file to the pty so that this
+                // command always works on the primary screen.
+                if (history_max > 0) {
+                    try self.io.terminal.screen.dumpString(file.writer(), .{
+                        .start = .{ .history = 0 },
+                        .end = .{ .history = history_max -| 1 },
+                        .unwrap = true,
+                    });
+                }
             }
 
             // Get the final path
