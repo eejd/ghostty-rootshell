@@ -998,7 +998,15 @@ extension Ghostty.SurfaceView: NSServicesMenuRequestor {
     }
     
     func readSelection(from pboard: NSPasteboard) -> Bool {
-        // TODO
-        return false
+        guard let str = pboard.string(forType: .string) else { return false }
+        
+        let len = str.utf8CString.count
+        if (len == 0) { return true }
+        str.withCString { ptr in
+            // len includes the null terminator so we do len - 1
+            ghostty_surface_text(surface, ptr, UInt(len - 1))
+        }
+        
+        return true
     }
 }
