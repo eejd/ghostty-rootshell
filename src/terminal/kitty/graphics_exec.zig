@@ -170,6 +170,16 @@ fn display(
         .placement_id = d.placement_id,
     };
 
+    // If the placement has no ID, we assign one. This is not in the spec
+    // but Kitty appears to support the behavior where specifying multiple
+    // placements with ID 0 creates new placements rather than replacing
+    // the existing placement.
+    if (result.placement_id == 0) {
+        const storage = &terminal.screen.kitty_images;
+        result.placement_id = storage.next_id;
+        storage.next_id +%= 1;
+    }
+
     // Verify the requested image exists if we have an ID
     const storage = &terminal.screen.kitty_images;
     const img_: ?Image = if (d.image_id != 0)
@@ -203,7 +213,12 @@ fn display(
         .rows = d.rows,
         .z = d.z,
     };
-    storage.addPlacement(alloc, img.id, d.placement_id, p) catch |err| {
+    storage.addPlacement(
+        alloc,
+        img.id,
+        result.placement_id,
+        p,
+    ) catch |err| {
         encodeError(&result, err);
         return result;
     };
