@@ -34,8 +34,8 @@ pub fn toViewport(self: Selection, screen: *const Screen) ?Selection {
     const start = self.start.toViewport(screen);
     const end = self.end.toViewport(screen);
     return Selection{
-        .start = .{ .x = start.x, .y = start.y },
-        .end = .{ .x = end.x, .y = end.y },
+        .start = .{ .x = if (self.rectangle) self.start.x else start.x, .y = start.y },
+        .end = .{ .x = if (self.rectangle) self.end.x else end.x, .y = end.y },
         .rectangle = self.rectangle,
     };
 }
@@ -1062,5 +1062,91 @@ test "ordered" {
         try testing.expectEqual(sel.ordered(.forward), sel_forward);
         try testing.expectEqual(sel.ordered(.reverse), sel_reverse);
         try testing.expectEqual(sel.ordered(.mirrored_forward), sel_forward);
+    }
+}
+
+test "toViewport" {
+    const testing = std.testing;
+    var screen = try Screen.init(testing.allocator, 24, 80, 0);
+    defer screen.deinit();
+    screen.viewport = 11; // Scroll us down a bit
+    {
+        // Not in viewport (null)
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 1 },
+            .end = .{ .x = 3, .y = 3 },
+            .rectangle = false,
+        };
+        try testing.expectEqual(null, sel.toViewport(&screen));
+    }
+    {
+        // In viewport
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 11 },
+            .end = .{ .x = 3, .y = 13 },
+            .rectangle = false,
+        };
+        const want: Selection = .{
+            .start = .{ .x = 10, .y = 0 },
+            .end = .{ .x = 3, .y = 2 },
+            .rectangle = false,
+        };
+        try testing.expectEqual(want, sel.toViewport(&screen));
+    }
+    {
+        // Top off viewport
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 1 },
+            .end = .{ .x = 3, .y = 13 },
+            .rectangle = false,
+        };
+        const want: Selection = .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 3, .y = 2 },
+            .rectangle = false,
+        };
+        try testing.expectEqual(want, sel.toViewport(&screen));
+    }
+    {
+        // Bottom off viewport
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 11 },
+            .end = .{ .x = 3, .y = 40 },
+            .rectangle = false,
+        };
+        const want: Selection = .{
+            .start = .{ .x = 10, .y = 0 },
+            .end = .{ .x = 79, .y = 23 },
+            .rectangle = false,
+        };
+        try testing.expectEqual(want, sel.toViewport(&screen));
+    }
+    {
+        // Both off viewport
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 1 },
+            .end = .{ .x = 3, .y = 40 },
+            .rectangle = false,
+        };
+        const want: Selection = .{
+            .start = .{ .x = 0, .y = 0 },
+            .end = .{ .x = 79, .y = 23 },
+            .rectangle = false,
+        };
+        try testing.expectEqual(want, sel.toViewport(&screen));
+    }
+    {
+        // Both off viewport (rectangle)
+        const sel: Selection = .{
+            .start = .{ .x = 10, .y = 1 },
+            .end = .{ .x = 3, .y = 40 },
+            .rectangle = true,
+        };
+        const want: Selection = .{
+            .start = .{ .x = 10, .y = 0 },
+            .end = .{ .x = 3, .y = 23 },
+            .rectangle = true,
+        };
+        try testing.expectEqual(want, sel.toViewport(&screen));
     }
 }
