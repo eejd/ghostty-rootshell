@@ -865,6 +865,21 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     };
 }
 
+/// Returns true if the terminal has a selection.
+pub fn hasSelection(self: *const Surface) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    return self.io.terminal.screen.selection != null;
+}
+
+/// Returns the selected text. This is allocated.
+pub fn selectionString(self: *Surface, alloc: Allocator) !?[]const u8 {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const sel = self.io.terminal.screen.selection orelse return null;
+    return try self.io.terminal.screen.selectionString(alloc, sel, false);
+}
+
 /// Returns the pwd of the terminal, if any. This is always copied because
 /// the pwd can change at any point from termio. If we are calling from the IO
 /// thread you should just check the terminal directly.

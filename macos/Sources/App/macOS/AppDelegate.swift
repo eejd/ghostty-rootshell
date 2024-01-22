@@ -17,7 +17,8 @@ class AppDelegate: NSObject,
         category: String(describing: AppDelegate.self)
     )
     
-    /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config.
+    /// Various menu items so that we can programmatically sync the keyboard shortcut with the Ghostty config
+    @IBOutlet private var menuServices: NSMenu?
     @IBOutlet private var menuCheckForUpdates: NSMenuItem?
     @IBOutlet private var menuOpenConfig: NSMenuItem?
     @IBOutlet private var menuReloadConfig: NSMenuItem?
@@ -108,9 +109,11 @@ class AppDelegate: NSObject,
         // Initial config loading
         configDidReload(ghostty)
         
-        // Register our service provider. This must happen after everything
-        // else is initialized.
+        // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
+        
+        // This registers the Ghostty => Services menu to exist.
+        NSApp.servicesMenu = menuServices
 
         // Configure user notifications
         let actions = [

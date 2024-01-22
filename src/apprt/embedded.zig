@@ -1438,6 +1438,30 @@ pub const CAPI = struct {
         return surface.core_surface.needsConfirmQuit();
     }
 
+    /// Returns true if the surface has a selection.
+    export fn ghostty_surface_has_selection(surface: *Surface) bool {
+        return surface.core_surface.hasSelection();
+    }
+
+    /// Copies the surface selection text into the provided buffer and
+    /// returns the copied size. If the buffer is too small, there is no
+    /// selection, or there is an error, then 0 is returned.
+    export fn ghostty_surface_selection(surface: *Surface, buf: [*]u8, cap: usize) usize {
+        const selection_ = surface.core_surface.selectionString(global.alloc) catch |err| {
+            log.warn("error getting selection err={}", .{err});
+            return 0;
+        };
+        const selection = selection_ orelse return 0;
+        defer global.alloc.free(selection);
+
+        // If the buffer is too small, return no selection.
+        if (selection.len > cap) return 0;
+
+        // Copy into the buffer and return the length
+        @memcpy(buf[0..selection.len], selection);
+        return selection.len;
+    }
+
     /// Copies the surface working directory into the provided buffer and
     /// returns the copied size. If the buffer is too small, there is no pwd,
     /// or there is an error, then 0 is returned.

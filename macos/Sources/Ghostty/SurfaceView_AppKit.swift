@@ -953,3 +953,60 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         print("SEL: \(selector)")
     }
 }
+
+// MARK: Services
+
+// https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/using.html
+extension Ghostty.SurfaceView: NSServicesMenuRequestor {
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        // Types that we accept sent to us
+        let accepted: [NSPasteboard.PasteboardType] = [.string, .init("public.utf8-plain-text")]
+        
+        // We can always receive the accepted types
+        if (returnType == nil || accepted.contains(returnType!)) {
+            return self
+        }
+        
+        // If we have a selection we can send the accepted types too
+        if ((self.surface != nil && ghostty_surface_has_selection(self.surface)) &&
+            (sendType == nil || accepted.contains(sendType!))
+        ) {
+            return self
+        }
+        
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+    
+    func writeSelection(
+        to pboard: NSPasteboard,
+        types: [NSPasteboard.PasteboardType]
+    ) -> Bool {
+        guard let surface = self.surface else { return false }
+        
+        // We currently cap the maximum copy size to 1MB. iTerm2 I believe
+        // caps theirs at 0.1MB (configurable) so this is probably reasonable.
+        let v = String(unsafeUninitializedCapacity: 1000000) {
+            Int(ghostty_surface_selection(surface, $0.baseAddress, UInt($0.count)))
+        }
+        
+        pboard.declareTypes([.string], owner: nil)
+        pboard.setString(v, forType: .string)
+        return true
+    }
+    
+    func readSelection(from pboard: NSPasteboard) -> Bool {
+        guard let str = pboard.string(forType: .string) else { return false }
+        
+        let len = str.utf8CString.count
+        if (len == 0) { return true }
+        str.withCString { ptr in
+            // len includes the null terminator so we do len - 1
+            ghostty_surface_text(surface, ptr, UInt(len - 1))
+        }
+        
+        return true
+    }
+}

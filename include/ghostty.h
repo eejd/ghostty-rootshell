@@ -489,6 +489,8 @@ void ghostty_surface_split_equalize(ghostty_surface_t);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char *, uintptr_t);
 void ghostty_surface_complete_clipboard_request(ghostty_surface_t, const char *, void *, bool);
 uintptr_t ghostty_surface_pwd(ghostty_surface_t, char *, uintptr_t);
+bool ghostty_surface_has_selection(ghostty_surface_t);
+uintptr_t ghostty_surface_selection(ghostty_surface_t, char *, uintptr_t);
 
 ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);
 void ghostty_inspector_free(ghostty_surface_t);
