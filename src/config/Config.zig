@@ -1029,6 +1029,12 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         .{ .key = .equal, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .increase_font_size = 1 },
     );
+    // Increase font size mapping for keyboards with dedicated plus keys (like german)
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .plus, .mods = inputpkg.ctrlOrSuper(.{}) },
+        .{ .increase_font_size = 1 },
+    );
     try result.keybind.set.put(
         alloc,
         .{ .key = .minus, .mods = inputpkg.ctrlOrSuper(.{}) },
