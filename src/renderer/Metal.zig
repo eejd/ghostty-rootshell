@@ -723,8 +723,10 @@ pub fn updateFrame(
             switch (kv.value_ptr.image) {
                 .ready => {},
 
+                .pending_grey_alpha,
                 .pending_rgb,
                 .pending_rgba,
+                .replace_grey_alpha,
                 .replace_rgb,
                 .replace_rgba,
                 => try kv.value_ptr.image.upload(self.alloc, self.device),
@@ -1280,6 +1282,7 @@ fn prepKittyGraphics(
             };
 
             const new_image: Image = switch (image.format) {
+                .grey_alpha => .{ .pending_grey_alpha = pending },
                 .rgb => .{ .pending_rgb = pending },
                 .rgba => .{ .pending_rgba = pending },
                 .png => unreachable, // should be decoded by now
