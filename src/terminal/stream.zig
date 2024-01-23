@@ -978,6 +978,11 @@ pub fn Stream(comptime Handler: type) type {
             switch (cmd) {
                 .change_window_title => |title| {
                     if (@hasDecl(T, "changeWindowTitle")) {
+                        if (!std.unicode.utf8ValidateSlice(title)) {
+                            log.warn("change title request: invalid utf-8, ignoring request", .{});
+                            return;
+                        }
+
                         try self.handler.changeWindowTitle(title);
                         return;
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
@@ -1625,6 +1630,30 @@ test "stream: XTSHIFTESCAPE" {
 
     try s.nextSlice("\x1B[>1s");
     try testing.expect(s.handler.escape.? == true);
+}
+
+test "stream: change window title with invalid utf-8" {
+    const H = struct {
+        seen: bool = false,
+
+        pub fn changeWindowTitle(self: *@This(), title: []const u8) !void {
+            _ = title;
+
+            self.seen = true;
+        }
+    };
+
+    {
+        var s: Stream(H) = .{ .handler = .{} };
+        try s.nextSlice("\x1b]2;abc\x1b\\");
+        try testing.expect(s.handler.seen);
+    }
+
+    {
+        var s: Stream(H) = .{ .handler = .{} };
+        try s.nextSlice("\x1b]2;abc\xc0\x1b\\");
+        try testing.expect(!s.handler.seen);
+    }
 }
 
 test "stream: insert characters" {
