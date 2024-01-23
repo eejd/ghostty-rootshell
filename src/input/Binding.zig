@@ -398,9 +398,11 @@ pub const Action = union(enum) {
                 // All actions start with the tag.
                 try writer.print("{s}", .{@tagName(self)});
 
-                // Write the value depending on the type
-                try writer.writeAll(":");
-                try formatValue(writer, value);
+                // Only write the value depending on the type if it's not void
+                if (@TypeOf(value) != void) {
+                    try writer.writeAll(":");
+                    try formatValue(writer, value);
+                }
             },
         }
     }
