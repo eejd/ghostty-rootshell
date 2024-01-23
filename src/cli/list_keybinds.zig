@@ -7,15 +7,19 @@ const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
 
 pub const Options = struct {
-    /// If true, print out the default keybinds instead of the ones
-    /// configured in the config file.
+    /// If `true`, print out the default keybinds instead of the ones configured
+    /// in the config file.
     default: bool = false,
+
+    /// If `true`, print out documenation about the action associated with the
+    /// keybinds.
+    docs: bool = false,
 
     pub fn deinit(self: Options) void {
         _ = self;
     }
 
-    /// Enables "-h" and "--help" to work.
+    /// Enables `-h` and `--help` to work.
     pub fn help(self: Options) !void {
         _ = self;
         return Action.help_error;
@@ -46,7 +50,7 @@ pub fn run(alloc: Allocator) !u8 {
     defer config.deinit();
 
     const stdout = std.io.getStdOut().writer();
-    try config.keybind.formatEntry(configpkg.entryFormatter("keybind", stdout));
+    try config.keybind.formatEntryDocs(opts.docs, configpkg.entryFormatter("keybind", stdout));
 
     return 0;
 }
