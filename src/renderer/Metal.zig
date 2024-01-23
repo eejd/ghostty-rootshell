@@ -2162,6 +2162,7 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
     desc.setProperty("pixelFormat", @intFromEnum(pixel_format));
     desc.setProperty("width", @as(c_ulong, @intCast(atlas.size)));
     desc.setProperty("height", @as(c_ulong, @intCast(atlas.size)));
+    desc.setProperty("storageMode", @as(c_ulong, mtl.MTLResourceStorageModeShared));
 
     // Initialize
     const id = device.msgSend(
