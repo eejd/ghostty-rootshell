@@ -2162,7 +2162,16 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
     desc.setProperty("pixelFormat", @intFromEnum(pixel_format));
     desc.setProperty("width", @as(c_ulong, @intCast(atlas.size)));
     desc.setProperty("height", @as(c_ulong, @intCast(atlas.size)));
-    desc.setProperty("storageMode", @as(c_ulong, mtl.MTLResourceStorageModeShared));
+
+    // Xcode tells us that this texture should be shared mode on
+    // aarch64. This configuration is not supported on x86_64 so
+    // we only set it on aarch64.
+    if (comptime builtin.target.cpu.arch == .aarch64) {
+        desc.setProperty(
+            "storageMode",
+            @as(c_ulong, mtl.MTLResourceStorageModeShared),
+        );
+    }
 
     // Initialize
     const id = device.msgSend(
