@@ -170,20 +170,14 @@ fn parseIntoField(
 
     inline for (info.Struct.fields) |field| {
         if (field.name[0] != '_' and mem.eql(u8, field.name, key)) {
-            // If the field is optional then consider scenarios we reset
-            // the value to being unset. We allow unsetting optionals
-            // whenever the value is "".
-            //
-            // At the time of writing this, empty string isn't a desirable
-            // value for any optional field under any realistic scenario.
-            //
-            // We don't allow unset values to set optional fields to
-            // null because unset value for booleans always means true.
-            if (@typeInfo(field.type) == .Optional) optional: {
-                if (std.mem.eql(u8, "", value orelse break :optional)) {
-                    @field(dst, field.name) = null;
-                    return;
-                }
+            // If the value is empty string (set but empty string),
+            // then we reset the value to the default.
+            if (value) |v| default: {
+                if (v.len != 0) break :default;
+                const raw = field.default_value orelse break :default;
+                const ptr: *const field.type = @alignCast(@ptrCast(raw));
+                @field(dst, field.name) = ptr.*;
+                return;
             }
 
             // For optional fields, we just treat it as the child type.
@@ -394,6 +388,26 @@ test "parse: quoted value" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expectEqual(@as(u8, 42), data.a);
     try testing.expectEqualStrings("hello!", data.b);
+}
+
+test "parse: empty value resets to default" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: u8 = 42,
+        b: bool = false,
+        _arena: ?ArenaAllocator = null,
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--a= --b=",
+    );
+    defer iter.deinit();
+    try parse(@TypeOf(data), testing.allocator, &data, &iter);
+    try testing.expectEqual(@as(u8, 42), data.a);
+    try testing.expect(!data.b);
 }
 
 test "parse: error tracking" {
@@ -862,6 +876,15 @@ test "LineIterator spaces around '='" {
     var iter = lineIterator(fbs.reader());
     try testing.expectEqualStrings("--A=B", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+}
+
+test "LineIterator no value" {
+    const testing = std.testing;
+    var fbs = std.io.fixedBufferStream("A = \n\n");
+
+    var iter = lineIterator(fbs.reader());
+    try testing.expectEqualStrings("--A=", iter.next().?);
     try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
 

@@ -71,6 +71,10 @@ foreground= ffffff
 keybind = ctrl+z=close_surface
 keybind = ctrl+d=new_split:right
 
+# Empty values reset the configuration to the default value
+
+font-family =
+
 # Colors can be changed by setting the 16 colors of `palette`, which each color
 # being defined as regular and bold.
 #
