@@ -67,11 +67,6 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
     };
 
     while (iter.next()) |arg| {
-        // If an _inputs fields exist we keep track of the inputs.
-        if (@hasField(T, "_inputs")) {
-            try dst._inputs.append(arena_alloc, try arena_alloc.dupe(u8, arg));
-        }
-
         // Do manual parsing if we have a hook for it.
         if (@hasDecl(T, "parseManuallyHook")) {
             if (!try dst.parseManuallyHook(arena_alloc, arg, iter)) return;
@@ -433,30 +428,6 @@ test "parse: error tracking" {
     try testing.expect(!data._errors.empty());
 }
 
-test "parse: input tracking" {
-    const testing = std.testing;
-
-    var data: struct {
-        a: []const u8 = "",
-        b: enum { one } = .one,
-
-        _arena: ?ArenaAllocator = null,
-        _errors: ErrorList = .{},
-        _inputs: std.ArrayListUnmanaged([]const u8) = .{},
-    } = .{};
-    defer if (data._arena) |arena| arena.deinit();
-
-    var iter = try std.process.ArgIteratorGeneral(.{}).init(
-        testing.allocator,
-        "--what --a=42",
-    );
-    defer iter.deinit();
-    try parse(@TypeOf(data), testing.allocator, &data, &iter);
-    try testing.expect(data._arena != null);
-    try testing.expect(data._inputs.items.len == 2);
-    try testing.expectEqualStrings("--what", data._inputs.items[0]);
-    try testing.expectEqualStrings("--a=42", data._inputs.items[1]);
-}
 test "parseIntoField: ignore underscore-prefixed fields" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);

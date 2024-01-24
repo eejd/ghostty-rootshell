@@ -948,9 +948,10 @@ _arena: ?ArenaAllocator = null,
 /// configuration file.
 _errors: ErrorList = .{},
 
-/// The inputs that built up this configuration. This is used to reload
-/// the configuration if we have to.
-_inputs: std.ArrayListUnmanaged([]const u8) = .{},
+/// The steps we can use to reload the configuration after it has been loaded
+/// without reopening the files. This is used in very specific cases such
+/// as loadTheme which has more details on why.
+_replay_steps: std.ArrayListUnmanaged(Replay.Step) = .{},
 
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();
@@ -1501,7 +1502,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         // First, we add an artificial "-e" so that if we
         // replay the inputs to rebuild the config (i.e. if
         // a theme is set) then we will get the same behavior.
-        try self._inputs.append(arena_alloc, "-e");
+        try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
 
         // Next, take all remaining args and use that to build up
         // a command to execute.
@@ -1509,7 +1510,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         errdefer command.deinit();
         for (std.os.argv[1..]) |arg_raw| {
             const arg = std.mem.sliceTo(arg_raw, 0);
-            try self._inputs.append(arena_alloc, try arena_alloc.dupe(u8, arg));
+            try self._replay_steps.append(arena_alloc, .{ .arg = try arena_alloc.dupe(u8, arg) });
             try command.appendSlice(arg);
             try command.append(' ');
         }
@@ -1587,6 +1588,14 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 /// relative to the base directory.
 fn expandPaths(self: *Config, base: []const u8) !void {
     const arena_alloc = self._arena.?.allocator();
+
+    // Keep track of this step for replays
+    try self._replay_steps.append(
+        arena_alloc,
+        .{ .expand = try arena_alloc.dupe(u8, base) },
+    );
+
+    // Expand all of our paths
     inline for (@typeInfo(Config).Struct.fields) |field| {
         if (field.type == RepeatablePath) {
             try @field(self, field.name).expand(
@@ -1648,9 +1657,9 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     //
     // Point 2 is strictly a result of aur approach to point 1.
 
-    // Keep track of our input length prior ot loading the theme
+    // Keep track of our replay length prior ot loading the theme
     // so that we can replay the previous config to override values.
-    const input_len = self._inputs.items.len;
+    const replay_len = self._replay_steps.items.len;
 
     // Load into a new configuration so that we can free the existing memory.
     const alloc_gpa = self._arena.?.child_allocator;
@@ -1664,7 +1673,7 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
 
     // Replay our previous inputs so that we can override values
     // from the theme.
-    var slice_it = cli.args.sliceIterator(self._inputs.items[0..input_len]);
+    var slice_it = Replay.iterator(self._replay_steps.items[0..replay_len], &new_config);
     try new_config.loadIter(alloc_gpa, &slice_it);
 
     // Success, swap our new config in and free the old.
@@ -1809,6 +1818,9 @@ pub fn finalize(self: *Config) !void {
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
+    // Keep track of our input args no matter what..
+    try self._replay_steps.append(alloc, .{ .arg = try alloc.dupe(u8, arg) });
+
     if (std.mem.eql(u8, arg, "-e")) {
         // Build up the command. We don't clean this up because we take
         // ownership in our allocator.
@@ -1816,7 +1828,7 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         errdefer command.deinit();
 
         while (iter.next()) |param| {
-            try self._inputs.append(alloc, try alloc.dupe(u8, param));
+            try self._replay_steps.append(alloc, .{ .arg = try alloc.dupe(u8, param) });
             try command.appendSlice(param);
             try command.append(' ');
         }
@@ -2128,6 +2140,50 @@ fn equalField(comptime T: type, old: T, new: T) bool {
         },
     }
 }
+
+/// This is used to "replay" the configuration. See loadTheme for details.
+const Replay = struct {
+    const Step = union(enum) {
+        /// An argument to parse as if it came from the CLI or file.
+        arg: []const u8,
+
+        /// A base path to expand relative paths against.
+        expand: []const u8,
+    };
+
+    const Iterator = struct {
+        const Self = @This();
+
+        config: *Config,
+        slice: []const Replay.Step,
+        idx: usize = 0,
+
+        pub fn next(self: *Self) ?[]const u8 {
+            while (true) {
+                if (self.idx >= self.slice.len) return null;
+                defer self.idx += 1;
+                switch (self.slice[self.idx]) {
+                    .arg => |arg| return arg,
+                    .expand => |base| self.config.expandPaths(base) catch |err| {
+                        // This shouldn't happen because to reach this step
+                        // means that it succeeded before. Its possible since
+                        // expanding paths is a side effect process that the
+                        // world state changed and we can't expand anymore.
+                        // In that really unfortunate case, we log a warning.
+                        log.warn("error expanding paths err={}", .{err});
+                    },
+                }
+            }
+        }
+    };
+
+    /// Construct a Replay iterator from a slice of replay elements.
+    /// This can be used with args.parse and handles intermediate
+    /// steps such as expanding relative paths.
+    fn iterator(slice: []const Replay.Step, dst: *Config) Iterator {
+        return .{ .slice = slice, .config = dst };
+    }
+};
 
 /// Valid values for custom-shader-animation
 /// c_int because it needs to be extern compatible
