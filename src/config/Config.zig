@@ -555,6 +555,8 @@ keybind: Keybinds = .{},
 /// grid will be completely squished by the padding. It is up to you as the user
 /// to pick a reasonable value. If you pick an unreasonable value, a warning
 /// will appear in the logs.
+///
+/// Changing these values will only apply after restart.
 @"window-padding-x": u32 = 2,
 @"window-padding-y": u32 = 2,
 
