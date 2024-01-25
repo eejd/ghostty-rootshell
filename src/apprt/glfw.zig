@@ -918,6 +918,20 @@ pub const Surface = struct {
             => .invalid,
         };
 
+        // This is a hack for GLFW. We require our apprts to send both
+        // the UTF8 encoding AND the keypress at the same time. Its critical
+        // for things like ctrl sequences to work. However, GLFW doesn't
+        // provide this information all at once. So we just infer based on
+        // the key press. This isn't portable but GLFW is only for testing.
+        const utf8 = switch (key) {
+            inline else => |k| utf8: {
+                if (mods.shift) break :utf8 "";
+                const cp = k.codepoint() orelse break :utf8 "";
+                const byte = std.math.cast(u8, cp) orelse break :utf8 "";
+                break :utf8 &.{byte};
+            },
+        };
+
         const key_event: input.KeyEvent = .{
             .action = action,
             .key = key,
@@ -925,7 +939,8 @@ pub const Surface = struct {
             .mods = mods,
             .consumed_mods = .{},
             .composing = false,
-            .utf8 = "",
+            .utf8 = utf8,
+            .unshifted_codepoint = if (utf8.len > 0) @intCast(utf8[0]) else 0,
         };
 
         const effect = core_win.keyCallback(key_event) catch |err| {

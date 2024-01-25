@@ -262,7 +262,7 @@ fn legacy(
     // If we match a control sequence, we output that directly. For
     // ctrlSeq we have to use all mods because we want it to only
     // match ctrl+<char>.
-    if (ctrlSeq(self.event.key, all_mods)) |char| {
+    if (ctrlSeq(self.event.utf8, all_mods)) |char| {
         // C0 sequences support alt-as-esc prefixing.
         if (binding_mods.alt) {
             if (buf.len < 2) return error.OutOfMemory;
@@ -341,7 +341,19 @@ fn legacy(
         // effective mods. The fixterms spec states the shifted chars
         // should be sent uppercase but Kitty changes that behavior
         // so we'll send all the mods.
-        const csi_u_mods = CsiUMods.fromInput(self.event.mods);
+        const csi_u_mods = mods: {
+            var mods = CsiUMods.fromInput(self.event.mods);
+
+            // If our unshifted codepoint is identical to the shifted
+            // then we consider shift. Otherwise, we do not because the
+            // shift key was used to obtain the character. This is specified
+            // by fixterms.
+            if (self.event.unshifted_codepoint != @as(u21, @intCast(utf8[0]))) {
+                mods.shift = false;
+            }
+
+            break :mods mods;
+        };
         const result = try std.fmt.bufPrint(
             buf,
             "\x1B[{};{}u",
@@ -486,70 +498,92 @@ fn pcStyleFunctionKey(
 /// This will return null if the key event should not be converted
 /// into a C0 byte. There are many cases for this and you should read
 /// the source code to understand them.
-fn ctrlSeq(keyval: key.Key, mods: key.Mods) ?u8 {
-    // Remove alt from our modifiers because it does not impact whether
-    // we are generating a ctrl sequence.
-    const unalt_mods = unalt_mods: {
-        var unalt_mods = mods;
-        unalt_mods.alt = false;
-        break :unalt_mods unalt_mods.binding();
+fn ctrlSeq(utf8: []const u8, mods: key.Mods) ?u8 {
+    // If ctrl is not pressed then we never do anything.
+    if (!mods.ctrl) return null;
+
+    // If we don't have exactly one byte in our utf8 sequence, then
+    // we don't do anything, since all our ctrl keys are based on ASCII.
+    if (utf8.len != 1) return null;
+    const char = utf8[0];
+
+    const unset_mods = unset_mods: {
+        var unset_mods = mods;
+
+        // Remove alt from our modifiers because it does not impact whether
+        // we are generating a ctrl sequence and we handle the ESC-prefix
+        // logic separately.
+        unset_mods.alt = false;
+
+        // Remove shift if we have something outside of the US letter range
+        if (unset_mods.shift and (char < 'A' or char > 'Z')) shift: {
+            // Special case for fixterms awkward case as specified.
+            if (char == '@') break :shift;
+
+            unset_mods.shift = false;
+        }
+
+        break :unset_mods unset_mods.binding();
     };
 
-    // If we have any other modifier key set, then we do not generate
-    // a C0 sequence.
+    // After unsetting, we only continue if we have ONLY control set.
     const ctrl_only = comptime (key.Mods{ .ctrl = true }).int();
-    if (unalt_mods.int() != ctrl_only) return null;
+    if (unset_mods.int() != ctrl_only) return null;
 
-    // The normal approach to get this value is to make the ascii byte
-    // with 0x1F. However, not all apprt key translation will properly
-    // generate the correct value so we just hardcode this based on
-    // logical key.
-    return switch (keyval) {
-        .space => 0,
-        .slash => 0x1F,
-        .zero => 0x30,
-        .one => 0x31,
-        .two => 0x00,
-        .three => 0x1B,
-        .four => 0x1C,
-        .five => 0x1D,
-        .six => 0x1E,
-        .seven => 0x1F,
-        .eight => 0x7F,
-        .nine => 0x39,
-        .backslash => 0x1C,
-        .right_bracket => 0x1D,
-        .a => 0x01,
-        .b => 0x02,
-        .c => 0x03,
-        .d => 0x04,
-        .e => 0x05,
-        .f => 0x06,
-        .g => 0x07,
-        .h => 0x08,
-        .j => 0x0A,
-        .k => 0x0B,
-        .l => 0x0C,
-        .n => 0x0E,
-        .o => 0x0F,
-        .p => 0x10,
-        .q => 0x11,
-        .r => 0x12,
-        .s => 0x13,
-        .t => 0x14,
-        .u => 0x15,
-        .v => 0x16,
-        .w => 0x17,
-        .x => 0x18,
-        .y => 0x19,
-        .z => 0x1A,
+    // From Kitty's key encoding logic. I tried to discern the exact
+    // behavior across different terminals but it's not clear, so I'm
+    // just going to repeat what Kitty does.
+    return switch (char) {
+        ' ' => 0,
+        '/' => 31,
+        '0' => 48,
+        '1' => 49,
+        '2' => 0,
+        '3' => 27,
+        '4' => 28,
+        '5' => 29,
+        '6' => 30,
+        '7' => 31,
+        '8' => 127,
+        '9' => 57,
+        '?' => 127,
+        '@' => 0,
+        '\\' => 28,
+        ']' => 29,
+        '^' => 30,
+        '_' => 31,
+        'a' => 1,
+        'b' => 2,
+        'c' => 3,
+        'd' => 4,
+        'e' => 5,
+        'f' => 6,
+        'g' => 7,
+        'h' => 8,
+        'j' => 10,
+        'k' => 11,
+        'l' => 12,
+        'n' => 14,
+        'o' => 15,
+        'p' => 16,
+        'q' => 17,
+        'r' => 18,
+        's' => 19,
+        't' => 20,
+        'u' => 21,
+        'v' => 22,
+        'w' => 23,
+        'x' => 24,
+        'y' => 25,
+        'z' => 26,
+        '~' => 30,
 
         // These are purposely NOT handled here because of the fixterms
         // specification: https://www.leonerd.org.uk/hacks/fixterms/
         // These are processed as CSI u.
-        // .i => 0x09,
-        // .m => 0x0D,
-        // .left_bracket => 0x1B,
+        // 'i' => 0x09,
+        // 'm' => 0x0D,
+        // '[' => 0x1B,
 
         else => null,
     };
@@ -1476,12 +1510,27 @@ test "legacy: enter with utf8 (dead key state)" {
     try testing.expectEqualStrings("A", actual);
 }
 
+test "legacy: ctrl+shift+minus (underscore on US)" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .minus,
+            .mods = .{ .ctrl = true, .shift = true },
+            .utf8 = "_",
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x1F", actual);
+}
+
 test "legacy: ctrl+alt+c" {
     var buf: [128]u8 = undefined;
     var enc: KeyEncoder = .{
         .event = .{
             .key = .c,
             .mods = .{ .ctrl = true, .alt = true },
+            .utf8 = "c",
         },
     };
 
@@ -1580,6 +1629,7 @@ test "legacy: ctrl+c" {
         .event = .{
             .key = .c,
             .mods = .{ .ctrl = true },
+            .utf8 = "c",
         },
     };
 
@@ -1593,6 +1643,7 @@ test "legacy: ctrl+space" {
         .event = .{
             .key = .space,
             .mods = .{ .ctrl = true },
+            .utf8 = " ",
         },
     };
 
@@ -1658,15 +1709,14 @@ test "legacy: fixterm awkward letters" {
         try testing.expectEqualStrings("\x1b[91;5u", actual);
     }
     {
-        // This doesn't exactly match the fixterm spec but matches the
-        // behavior of Kitty.
         var enc: KeyEncoder = .{ .event = .{
             .key = .two,
             .mods = .{ .ctrl = true, .shift = true },
             .utf8 = "@",
+            .unshifted_codepoint = '2',
         } };
         const actual = try enc.legacy(&buf);
-        try testing.expectEqualStrings("\x1b[64;6u", actual);
+        try testing.expectEqualStrings("\x1b[64;5u", actual);
     }
 }
 
@@ -1841,20 +1891,25 @@ test "legacy: right_shift+tab" {
 }
 
 test "ctrlseq: normal ctrl c" {
-    const seq = ctrlSeq(.c, .{ .ctrl = true });
+    const seq = ctrlSeq("c", .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
 test "ctrlseq: alt should be allowed" {
-    const seq = ctrlSeq(.c, .{ .alt = true, .ctrl = true });
+    const seq = ctrlSeq("c", .{ .alt = true, .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
 test "ctrlseq: no ctrl does nothing" {
-    try testing.expect(ctrlSeq(.c, .{}) == null);
+    try testing.expect(ctrlSeq("c", .{}) == null);
 }
 
 test "ctrlseq: shift does not generate ctrl seq" {
-    try testing.expect(ctrlSeq(.c, .{ .shift = true }) == null);
-    try testing.expect(ctrlSeq(.c, .{ .shift = true, .ctrl = true }) == null);
+    try testing.expect(ctrlSeq("C", .{ .shift = true }) == null);
+    try testing.expect(ctrlSeq("C", .{ .shift = true, .ctrl = true }) == null);
+}
+
+test "ctrlseq: shifted non-character" {
+    const seq = ctrlSeq("_", .{ .ctrl = true, .shift = true });
+    try testing.expectEqual(@as(u8, 0x1F), seq.?);
 }
