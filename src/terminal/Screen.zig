@@ -2174,7 +2174,7 @@ fn scrollDelta(self: *Screen, delta: isize, viewport_only: bool) Allocator.Error
         if (self.graphemes.count() > 0) {
             var y: usize = 0;
             while (y < rows_to_delete) : (y += 1) {
-                const row = self.getRow(.{ .active = y });
+                const row = self.getRow(.{ .screen = y });
                 if (row.storage[0].header.flags.grapheme) row.clear(.{});
             }
         }
@@ -4306,6 +4306,7 @@ test "Screen: history region with scrollback" {
         try testing.expectEqualStrings(expected, contents);
     }
 }
+
 test "Screen: row copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
