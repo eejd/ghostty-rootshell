@@ -7254,3 +7254,28 @@ test "Terminal: printAttributes" {
         try testing.expectEqualStrings("0", buf);
     }
 }
+
+test "Terminal: preserve grapheme cluster on large scrollback" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, 5, 3);
+    defer t.deinit(alloc);
+
+    // This is the label emoji + the VS16 variant selector
+    const label = "\u{1F3F7}\u{FE0F}";
+
+    // This bug required a certain behavior around scrollback interacting
+    // with the circular buffer that we use at the time of writing this test.
+    // Mainly, we want to verify that in certain scroll scenarios we preserve
+    // grapheme clusters. This test is admittedly somewhat brittle but we
+    // should keep it around to prevent this regression.
+    for (0..t.screen.max_scrollback * 2) |_| {
+        try t.printString(label ++ "\n");
+    }
+
+    try t.scrollViewport(.{ .delta = -1 });
+    {
+        const str = try t.screen.testString(alloc, .viewport);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("🏷️\n🏷️\n🏷️", str);
+    }
+}
