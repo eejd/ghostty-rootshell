@@ -28,9 +28,15 @@ pub const ImageStorage = struct {
     /// if it cares about this value.
     dirty: bool = false,
 
-    /// This is the next automatically assigned ID. We start mid-way
+    /// This is the next automatically assigned image ID. We start mid-way
     /// through the u32 range to avoid collisions with buggy programs.
-    next_id: u32 = 2147483647,
+    next_image_id: u32 = 2147483647,
+
+    /// This is the next automatically assigned placement ID. This is never
+    /// user-facing so we can start at 0. This is 32-bits because we use
+    /// the same space for external placement IDs. We can start at zero
+    /// because any number is valid.
+    next_internal_placement_id: u32 = 0,
 
     /// The set of images that are currently known.
     images: ImageMap = .{},
@@ -139,7 +145,25 @@ pub const ImageStorage = struct {
             p,
         });
 
-        const key: PlacementKey = .{ .image_id = image_id, .placement_id = placement_id };
+        // The important piece here is that the placement ID needs to
+        // be marked internal if it is zero. This allows multiple placements
+        // to be added for the same image. If it is non-zero, then it is
+        // an external placement ID and we can only have one placement
+        // per (image id, placement id) pair.
+        const key: PlacementKey = .{
+            .image_id = image_id,
+            .placement_id = if (placement_id == 0) .{
+                .tag = .internal,
+                .id = id: {
+                    defer self.next_internal_placement_id +%= 1;
+                    break :id self.next_internal_placement_id;
+                },
+            } else .{
+                .tag = .external,
+                .id = placement_id,
+            },
+        };
+
         const gop = try self.placements.getOrPut(alloc, key);
         gop.value_ptr.* = p;
 
@@ -287,7 +311,7 @@ pub const ImageStorage = struct {
         } else {
             _ = self.placements.remove(.{
                 .image_id = image_id,
-                .placement_id = placement_id,
+                .placement_id = .{ .tag = .external, .id = placement_id },
             });
         }
 
@@ -440,7 +464,10 @@ pub const ImageStorage = struct {
     /// Likewise, if a placement ID isn't specified it is assumed to be 0.
     pub const PlacementKey = struct {
         image_id: u32,
-        placement_id: u32,
+        placement_id: packed struct {
+            tag: enum(u1) { internal, external },
+            id: u32,
+        },
     };
 
     pub const Placement = struct {
@@ -510,6 +537,35 @@ pub const ImageStorage = struct {
         }
     };
 };
+
+test "storage: add placement with zero placement id" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, 100, 100);
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc);
+    try s.addImage(alloc, .{ .id = 1, .width = 50, .height = 50 });
+    try s.addImage(alloc, .{ .id = 2, .width = 25, .height = 25 });
+    try s.addPlacement(alloc, 1, 0, .{ .point = .{ .x = 25, .y = 25 } });
+    try s.addPlacement(alloc, 1, 0, .{ .point = .{ .x = 25, .y = 25 } });
+
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+    try testing.expectEqual(@as(usize, 2), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .internal, .id = 0 },
+    }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .internal, .id = 1 },
+    }) != null);
+}
 
 test "storage: delete all placements and images" {
     const testing = std.testing;
@@ -662,7 +718,10 @@ test "storage: delete intersecting cursor" {
     try testing.expectEqual(@as(usize, 2), s.images.count());
 
     // verify the placement is what we expect
-    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 2 }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 2 },
+    }) != null);
 }
 
 test "storage: delete intersecting cursor plus unused" {
@@ -689,7 +748,10 @@ test "storage: delete intersecting cursor plus unused" {
     try testing.expectEqual(@as(usize, 2), s.images.count());
 
     // verify the placement is what we expect
-    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 2 }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 2 },
+    }) != null);
 }
 
 test "storage: delete intersecting cursor hits multiple" {
@@ -740,7 +802,10 @@ test "storage: delete by column" {
     try testing.expectEqual(@as(usize, 2), s.images.count());
 
     // verify the placement is what we expect
-    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 1 }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 1 },
+    }) != null);
 }
 
 test "storage: delete by row" {
@@ -767,5 +832,8 @@ test "storage: delete by row" {
     try testing.expectEqual(@as(usize, 2), s.images.count());
 
     // verify the placement is what we expect
-    try testing.expect(s.placements.get(.{ .image_id = 1, .placement_id = 1 }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 1 },
+    }) != null);
 }

@@ -170,16 +170,6 @@ fn display(
         .placement_id = d.placement_id,
     };
 
-    // If the placement has no ID, we assign one. This is not in the spec
-    // but Kitty appears to support the behavior where specifying multiple
-    // placements with ID 0 creates new placements rather than replacing
-    // the existing placement.
-    if (result.placement_id == 0) {
-        const storage = &terminal.screen.kitty_images;
-        result.placement_id = storage.next_id;
-        storage.next_id +%= 1;
-    }
-
     // Verify the requested image exists if we have an ID
     const storage = &terminal.screen.kitty_images;
     const img_: ?Image = if (d.image_id != 0)
@@ -300,8 +290,8 @@ fn loadAndAddImage(
 
     // If the image has no ID, we assign one
     if (loading.image.id == 0) {
-        loading.image.id = storage.next_id;
-        storage.next_id +%= 1;
+        loading.image.id = storage.next_image_id;
+        storage.next_image_id +%= 1;
     }
 
     // If this is chunked, this is the beginning of a new chunked transmission.
