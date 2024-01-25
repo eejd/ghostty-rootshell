@@ -58,8 +58,14 @@ pub fn fgMode(
 
             // If we have a previous cell and it was PUA then we need to
             // also constrain. This is so that multiple PUA glyphs align.
-            if (x > 0) {
+            // As an exception, we ignore powerline glyphs since they are
+            // used for box drawing and we consider them whitespace.
+            if (x > 0) prev: {
                 const prev_cell = screen.getCell(.active, y, x - 1);
+
+                // Powerline is whitespace
+                if (isPowerline(prev_cell.char)) break :prev;
+
                 if (ziglyph.general_category.isPrivateUse(@intCast(prev_cell.char))) {
                     break :text .constrained;
                 }
@@ -68,7 +74,10 @@ pub fn fgMode(
             // If the next cell is empty, then we allow it to use the
             // full glyph size.
             const next_cell = screen.getCell(.active, y, x + 1);
-            if (next_cell.char == 0 or next_cell.char == ' ') {
+            if (next_cell.char == 0 or
+                next_cell.char == ' ' or
+                isPowerline(next_cell.char))
+            {
                 break :text .normal;
             }
 
