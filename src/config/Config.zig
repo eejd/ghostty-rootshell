@@ -29,6 +29,7 @@ const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.face.Metrics.Modifier;
+const help_strings = @import("help_strings");
 
 const log = std.log.scoped(.config);
 
@@ -2774,8 +2775,8 @@ pub const Keybinds = struct {
         return true;
     }
 
-    /// Used by Formatter
-    pub fn formatEntry(self: Keybinds, formatter: anytype) !void {
+    /// Like formatEntry but has an option to include docs.
+    pub fn formatEntryDocs(self: Keybinds, formatter: anytype, docs: bool) !void {
         if (self.set.bindings.size == 0) {
             try formatter.formatEntry(void, {});
             return;
@@ -2786,6 +2787,24 @@ pub const Keybinds = struct {
         while (iter.next()) |next| {
             const k = next.key_ptr.*;
             const v = next.value_ptr.*;
+            if (docs) {
+                try formatter.writer.writeAll("\n");
+                const name = @tagName(v);
+                inline for (@typeInfo(help_strings.KeybindAction).Struct.decls) |decl| {
+                    if (std.mem.eql(u8, decl.name, name)) {
+                        const help = @field(help_strings.KeybindAction, decl.name);
+                        try formatter.writer.writeAll("# " ++ decl.name ++ "\n");
+                        var lines = std.mem.splitScalar(u8, help, '\n');
+                        while (lines.next()) |line| {
+                            try formatter.writer.writeAll("#   ");
+                            try formatter.writer.writeAll(line);
+                            try formatter.writer.writeAll("\n");
+                        }
+                        break;
+                    }
+                }
+            }
+
             try formatter.formatEntry(
                 []const u8,
                 std.fmt.bufPrint(
@@ -2795,6 +2814,11 @@ pub const Keybinds = struct {
                 ) catch return error.OutOfMemory,
             );
         }
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: Keybinds, formatter: anytype) !void {
+        try self.formatEntryDocs(false, formatter);
     }
 
     test "parseCLI" {
