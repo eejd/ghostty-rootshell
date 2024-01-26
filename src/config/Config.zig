@@ -2717,8 +2717,8 @@ pub const Keybinds = struct {
         return true;
     }
 
-    /// Used by Formatter
-    pub fn formatEntryDocs(self: Keybinds, docs: bool, formatter: anytype) !void {
+    /// Like formatEntry but has an option to include docs.
+    pub fn formatEntryDocs(self: Keybinds, formatter: anytype, docs: bool) !void {
         if (self.set.bindings.size == 0) {
             try formatter.formatEntry(void, {});
             return;
@@ -2746,6 +2746,7 @@ pub const Keybinds = struct {
                     }
                 }
             }
+
             try formatter.formatEntry(
                 []const u8,
                 std.fmt.bufPrint(
@@ -2757,6 +2758,7 @@ pub const Keybinds = struct {
         }
     }
 
+    /// Used by Formatter
     pub fn formatEntry(self: Keybinds, formatter: anytype) !void {
         try self.formatEntryDocs(false, formatter);
     }
