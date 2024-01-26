@@ -50,7 +50,10 @@ pub fn run(alloc: Allocator) !u8 {
     defer config.deinit();
 
     const stdout = std.io.getStdOut().writer();
-    try config.keybind.formatEntryDocs(opts.docs, configpkg.entryFormatter("keybind", stdout));
+    try config.keybind.formatEntryDocs(
+        configpkg.entryFormatter("keybind", stdout),
+        opts.docs,
+    );
 
     return 0;
 }

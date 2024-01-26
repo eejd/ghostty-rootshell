@@ -2818,7 +2818,7 @@ pub const Keybinds = struct {
 
     /// Used by Formatter
     pub fn formatEntry(self: Keybinds, formatter: anytype) !void {
-        try self.formatEntryDocs(false, formatter);
+        try self.formatEntryDocs(formatter, false);
     }
 
     test "parseCLI" {
