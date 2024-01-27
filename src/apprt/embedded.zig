@@ -780,7 +780,7 @@ pub const Surface = struct {
             // we just avoid this by never allowing AppKit to translate
             // ctrl+<char> and instead do it ourselves.
             const ctrl_only = comptime (input.Mods{ .ctrl = true }).int();
-            break :event_text if (mods.int() == ctrl_only) null else event.text;
+            break :event_text if (mods.binding().int() == ctrl_only) null else event.text;
         };
 
         // Translate our key using the keymap for our localized keyboard layout.
