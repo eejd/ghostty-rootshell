@@ -765,6 +765,24 @@ pub const Surface = struct {
             break :translate_mods translate_mods;
         };
 
+        const event_text: ?[]const u8 = event_text: {
+            // This logic only applies to macOS.
+            if (comptime builtin.os.tag != .macos) break :event_text event.text;
+
+            // If the modifiers are ONLY "control" then we never process
+            // the event text because we want to do our own translation so
+            // we can handle ctrl+c, ctrl+z, etc.
+            //
+            // This is specifically because on macOS using the
+            // "Dvorak - QWERTY ⌘" keyboard layout, ctrl+z is translated as
+            // "/" (the physical key that is z on a qwerty keyboard). But on
+            // other layouts, ctrl+<char> is not translated by AppKit. So,
+            // we just avoid this by never allowing AppKit to translate
+            // ctrl+<char> and instead do it ourselves.
+            const ctrl_only = comptime (input.Mods{ .ctrl = true }).int();
+            break :event_text if (mods.int() == ctrl_only) null else event.text;
+        };
+
         // Translate our key using the keymap for our localized keyboard layout.
         // We only translate for keydown events. Otherwise, we only care about
         // the raw keycode.
@@ -772,7 +790,7 @@ pub const Surface = struct {
         const result: input.Keymap.Translation = if (is_down) translate: {
             // If the event provided us with text, then we use this as a result
             // and do not do manual translation.
-            const result: input.Keymap.Translation = if (event.text) |text| .{
+            const result: input.Keymap.Translation = if (event_text) |text| .{
                 .text = text,
                 .composing = event.composing,
             } else try self.app.keymap.translate(
