@@ -2008,7 +2008,7 @@ pub fn mouseButtonCallback(
     // Handle link clicking. We want to do this before we do mouse
     // reporting or any other mouse handling because a successfully
     // clicked link will swallow the event.
-    if (button == .left and action == .release and self.mouse.over_link) {
+    if (button == .left and action == .release and mods.super and self.mouse.over_link) {
         const pos = try self.rt_surface.getCursorPos();
         if (self.processLinks(pos)) |processed| {
             if (processed) return;
