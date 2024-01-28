@@ -5,6 +5,7 @@
 const Link = @This();
 
 const oni = @import("oniguruma");
+const Mods = @import("key.zig").Mods;
 
 /// The regular expression that will be used to match the link. Ownership
 /// of this memory is up to the caller. The link will never free this memory.
@@ -30,6 +31,10 @@ pub const Highlight = union(enum) {
 
     /// Only highlight the link when the mouse is hovering over it.
     hover: void,
+
+    /// Highlight anytime the given mods are pressed, regardless of
+    /// hover state.
+    mods: Mods,
 };
 
 /// Returns a new oni.Regex that can be used to match the link.

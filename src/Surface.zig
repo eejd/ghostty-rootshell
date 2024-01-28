@@ -198,6 +198,7 @@ const DerivedConfig = struct {
     const Link = struct {
         regex: oni.Regex,
         action: input.Link.Action,
+        highlight: input.Link.Highlight,
     };
 
     pub fn init(alloc_gpa: Allocator, config: *const configpkg.Config) !DerivedConfig {
@@ -215,6 +216,7 @@ const DerivedConfig = struct {
                 try links.append(.{
                     .regex = regex,
                     .action = link.action,
+                    .highlight = link.highlight,
                 });
             }
 
@@ -814,6 +816,35 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
     }
 }
 
+/// Call this when modifiers change. This is safe to call even if modifiers
+/// match the previous state.
+///
+/// This is not publicly exported because modifier changes happen implicitly
+/// on mouse callbacks, key callbacks, etc.
+///
+/// The renderer state mutex MUST NOT be held.
+fn modsChanged(self: *Surface, mods: input.Mods) void {
+    // The only place we keep track of mods currently is on the mouse.
+    if (!self.mouse.mods.equal(mods)) {
+        // The mouse mods only contain binding modifiers since we don't
+        // want caps/num lock or sided modifiers to affect the mouse.
+        self.mouse.mods = mods.binding();
+
+        // We also need to update the renderer so it knows if it
+        // should highlight links.
+        {
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
+            self.renderer_state.mouse.mods = mods;
+        }
+
+        self.queueRender() catch |err| {
+            // Not a big deal if this fails.
+            log.warn("failed to notify renderer of mods change err={}", .{err});
+        };
+    }
+}
+
 /// Called when our renderer health state changes.
 fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     log.warn("renderer health status change status={}", .{health});
@@ -1352,10 +1383,12 @@ pub fn keyCallback(
         // to hide it again if it was hidden.
         const rehide = self.mouse.hidden;
 
+        // Update our modifiers, this will update mouse mods too
+        self.modsChanged(event.mods);
+
         // We set this to null to force link reprocessing since
         // mod changes can affect link highlighting.
         self.mouse.link_point = null;
-        self.mouse.mods = event.mods;
         const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
         self.cursorPosCallback(pos) catch {};
         if (rehide) self.hideMouse();
@@ -1969,10 +2002,12 @@ pub fn mouseButtonCallback(
 
     // Always record our latest mouse state
     self.mouse.click_state[@intCast(@intFromEnum(button))] = action;
-    self.mouse.mods = @bitCast(mods);
 
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
+
+    // Update our modifiers if they changed
+    self.modsChanged(mods);
 
     // This is set to true if the terminal is allowed to capture the shift
     // modifer. Note we can do this more efficiently probably with less
@@ -2008,7 +2043,7 @@ pub fn mouseButtonCallback(
     // Handle link clicking. We want to do this before we do mouse
     // reporting or any other mouse handling because a successfully
     // clicked link will swallow the event.
-    if (button == .left and action == .release and mods.ctrlOrSuper() and self.mouse.over_link) {
+    if (button == .left and action == .release and self.mouse.over_link) {
         const pos = try self.rt_surface.getCursorPos();
         if (self.processLinks(pos)) |processed| {
             if (processed) return;
@@ -2238,9 +2273,6 @@ fn linkAtPos(
     // If we have no configured links we can save a lot of work
     if (self.config.links.len == 0) return null;
 
-    // Require super to be held down, so bail early
-    if (!self.mouse.mods.ctrlOrSuper()) return null;
-
     // Convert our cursor position to a screen point.
     const mouse_pt = mouse_pt: {
         const viewport_point = self.posToViewport(pos.x, pos.y);
@@ -2255,6 +2287,11 @@ fn linkAtPos(
 
     // Go through each link and see if we clicked it
     for (self.config.links) |link| {
+        switch (link.highlight) {
+            .always, .hover => {},
+            .mods => |v| if (!v.equal(self.mouse.mods)) continue,
+        }
+
         var it = strmap.searchIterator(link.regex);
         while (true) {
             var match = (try it.next()) orelse break;

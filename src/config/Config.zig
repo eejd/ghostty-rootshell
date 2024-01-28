@@ -1437,7 +1437,7 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.link.links.append(alloc, .{
         .regex = url.regex,
         .action = .{ .open = {} },
-        .highlight = .{ .hover = {} },
+        .highlight = .{ .mods = inputpkg.ctrlOrSuper(.{}) },
     });
 
     return result;
