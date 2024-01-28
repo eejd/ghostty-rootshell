@@ -2044,6 +2044,14 @@ const StreamHandler = struct {
         self.terminal.setTopAndBottomMargin(top, bot);
     }
 
+    pub fn setLeftAndRightMarginAmbiguous(self: *StreamHandler) !void {
+        if (self.terminal.modes.get(.enable_left_and_right_margin)) {
+            try self.setLeftAndRightMargin(0, 0);
+        } else {
+            try self.saveCursor();
+        }
+    }
+
     pub fn setLeftAndRightMargin(self: *StreamHandler, left: u16, right: u16) !void {
         self.terminal.setLeftAndRightMargin(left, right);
     }
