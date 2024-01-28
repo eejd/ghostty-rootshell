@@ -1047,13 +1047,18 @@ fn printWrap(self: *Terminal) !void {
     const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
     row.setWrapped(true);
 
+    // Get the old semantic prompt so we can extend it to the next
+    // line. We need to do this before we index() because we may
+    // modify memory.
+    const old_prompt = row.getSemanticPrompt();
+
     // Move to the next line
     try self.index();
     self.screen.cursor.x = self.scrolling_region.left;
 
     // New line must inherit semantic prompt of the old line
     const new_row = self.screen.getRow(.{ .active = self.screen.cursor.y });
-    new_row.setSemanticPrompt(row.getSemanticPrompt());
+    new_row.setSemanticPrompt(old_prompt);
 }
 
 fn clearWideSpacerHead(self: *Terminal) void {
@@ -2242,6 +2247,16 @@ test "Terminal: zero-width character at start" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+}
+
+// https://github.com/mitchellh/ghostty/issues/1400
+test "Terminal: print single very long line" {
+    var t = try init(testing.allocator, 5, 5);
+    defer t.deinit(testing.allocator);
+
+    // This would crash for issue 1400. So the assertion here is
+    // that we simply do not crash.
+    for (0..500) |_| try t.print('x');
 }
 
 test "Terminal: print over wide char at 0,0" {
