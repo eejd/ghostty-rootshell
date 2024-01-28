@@ -805,7 +805,11 @@ pub fn Stream(comptime Handler: type) type {
                     // DECSLRM
                     0 => if (@hasDecl(T, "setLeftAndRightMargin")) {
                         switch (action.params.len) {
-                            0 => try self.handler.setLeftAndRightMargin(0, 0),
+                            // CSI S is ambiguous with zero params so we defer
+                            // to our handler to do the proper logic. If mode 69
+                            // is set, then we should invoke DECSLRM, otherwise
+                            // we should invoke SC.
+                            0 => try self.handler.setLeftAndRightMarginAmbiguous(),
                             1 => try self.handler.setLeftAndRightMargin(action.params[0], 0),
                             2 => try self.handler.setLeftAndRightMargin(action.params[0], action.params[1]),
                             else => log.warn("invalid DECSLRM command: {}", .{action}),
@@ -865,8 +869,13 @@ pub fn Stream(comptime Handler: type) type {
                     ),
                 },
 
-                // Kitty keyboard protocol
                 'u' => switch (action.intermediates.len) {
+                    0 => if (@hasDecl(T, "restoreCursor"))
+                        try self.handler.restoreCursor()
+                    else
+                        log.warn("unimplemented CSI callback: {}", .{action}),
+
+                    // Kitty keyboard protocol
                     1 => switch (action.intermediates[0]) {
                         '?' => if (@hasDecl(T, "queryKittyKeyboard")) {
                             try self.handler.queryKittyKeyboard();
@@ -1674,6 +1683,43 @@ test "stream: insert characters" {
     s.handler.called = false;
     for ("\x1B[?42@") |c| try s.next(c);
     try testing.expect(!s.handler.called);
+}
+
+test "stream: SCOSC" {
+    const H = struct {
+        const Self = @This();
+        called: bool = false,
+
+        pub fn setLeftAndRightMargin(self: *Self, left: u16, right: u16) !void {
+            _ = self;
+            _ = left;
+            _ = right;
+            @panic("bad");
+        }
+
+        pub fn setLeftAndRightMarginAmbiguous(self: *Self) !void {
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    for ("\x1B[s") |c| try s.next(c);
+    try testing.expect(s.handler.called);
+}
+
+test "stream: SCORC" {
+    const H = struct {
+        const Self = @This();
+        called: bool = false,
+
+        pub fn restoreCursor(self: *Self) !void {
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    for ("\x1B[u") |c| try s.next(c);
+    try testing.expect(s.handler.called);
 }
 
 test "stream: too many csi params" {
