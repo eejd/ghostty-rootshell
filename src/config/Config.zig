@@ -350,6 +350,15 @@ palette: Palette = .{},
 /// requests otherwise, set this to `never`.
 @"mouse-shift-capture": MouseShiftCapture = .false,
 
+/// Multiplier for scrolling distance with the mouse wheel. Any value less
+/// than 0.01 or greater than 10,000 will be clamped to the nearest valid
+/// value.
+///
+/// A value of "1" (default) scrolls te default amount. A value of "2" scrolls
+/// double the default amount. A value of "0.5" scrolls half the default amount.
+/// Et cetera.
+@"mouse-scroll-multiplier": f64 = 1.0,
+
 /// The opacity level (opposite of transparency) of the background. A value of
 /// 1 is fully opaque and a value of 0 is fully transparent. A value less than 0
 /// or greater than 1 will be clamped to the nearest valid value.
@@ -1803,6 +1812,9 @@ pub fn finalize(self: *Config) !void {
     if (self.@"click-repeat-interval" == 0) {
         self.@"click-repeat-interval" = internal_os.clickInterval() orelse 500;
     }
+
+    // Clamp our mouse scroll multiplier
+    self.@"mouse-scroll-multiplier" = @min(10_000.0, @max(0.01, self.@"mouse-scroll-multiplier"));
 
     // Clamp our split opacity
     self.@"unfocused-split-opacity" = @min(1.0, @max(0.15, self.@"unfocused-split-opacity"));
