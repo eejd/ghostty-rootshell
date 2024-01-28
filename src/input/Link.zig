@@ -32,9 +32,12 @@ pub const Highlight = union(enum) {
     /// Only highlight the link when the mouse is hovering over it.
     hover: void,
 
-    /// Highlight anytime the given mods are pressed, regardless of
-    /// hover state.
-    mods: Mods,
+    /// Highlight anytime the given mods are pressed, either when
+    /// hovering or always. For always, all links will be highlighted
+    /// when the mods are pressed regardless of if the mouse is hovering
+    /// over them.
+    always_mods: Mods,
+    hover_mods: Mods,
 };
 
 /// Returns a new oni.Regex that can be used to match the link.

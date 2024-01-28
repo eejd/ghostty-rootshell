@@ -2289,7 +2289,7 @@ fn linkAtPos(
     for (self.config.links) |link| {
         switch (link.highlight) {
             .always, .hover => {},
-            .mods => |v| if (!v.equal(self.mouse.mods)) continue,
+            .always_mods, .hover_mods => |v| if (!v.equal(self.mouse.mods)) continue,
         }
 
         var it = strmap.searchIterator(link.regex);

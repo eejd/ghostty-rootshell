@@ -991,6 +991,7 @@ pub fn rebuildCells(
         arena_alloc,
         screen,
         mouse.point orelse .{},
+        mouse.mods,
     );
 
     // Determine our x/y range for preedit. We don't want to render anything

@@ -96,8 +96,13 @@ pub const Set = struct {
                 // error if any other conditions are added.
                 switch (link.highlight) {
                     .always => {},
-                    .hover => if (!line.selection().contains(mouse_pt)) continue,
-                    .mods => |v| if (!mouse_mods.equal(v)) continue,
+                    .always_mods => |v| if (!mouse_mods.equal(v)) continue,
+                    inline .hover, .hover_mods => |v, tag| {
+                        if (!line.selection().contains(mouse_pt)) continue;
+                        if (comptime tag == .hover_mods) {
+                            if (!mouse_mods.equal(v)) continue;
+                        }
+                    },
                 }
 
                 var it = strmap.searchIterator(link.regex);
