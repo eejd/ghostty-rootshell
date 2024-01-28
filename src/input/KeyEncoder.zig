@@ -1895,6 +1895,11 @@ test "ctrlseq: normal ctrl c" {
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
+test "ctrlseq: normal ctrl c, right control" {
+    const seq = ctrlSeq("c", .{ .ctrl = true, .sides = .{ .ctrl = .right } });
+    try testing.expectEqual(@as(u8, 0x03), seq.?);
+}
+
 test "ctrlseq: alt should be allowed" {
     const seq = ctrlSeq("c", .{ .alt = true, .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);

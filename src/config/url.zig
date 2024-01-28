@@ -26,7 +26,7 @@ const oni = @import("oniguruma");
 /// handling them well requires a non-regex approach.
 pub const regex = "(?:" ++ url_scheme ++ ")(?:[^" ++ url_exclude ++ "]*[^" ++ url_exclude ++ ").]|[^" ++ url_exclude ++ "(]*\\([^" ++ url_exclude ++ ")]*\\))";
 const url_scheme = "ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://";
-const url_exclude = "\u{0000}-\u{001F}\u{007F}-\u{009F}<>\x22\\s{-}\\^⟨⟩\x60";
+const url_exclude = "\u{0000}-\u{001F}\u{007F}-\u{009F}<>\x22\x27\\s{-}\\^⟨⟩\x60";
 
 test "url regex" {
     const testing = std.testing;
@@ -65,6 +65,14 @@ test "url regex" {
         },
         .{
             .input = "Link period https://example.com. More text.",
+            .expect = "https://example.com",
+        },
+        .{
+            .input = "Link in double quotes \"https://example.com\" and more",
+            .expect = "https://example.com",
+        },
+        .{
+            .input = "Link in single quotes 'https://example.com' and more",
             .expect = "https://example.com",
         },
     };

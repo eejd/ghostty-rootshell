@@ -264,7 +264,6 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
         syncMenuShortcut(action: "select_all", menuItem: self.menuSelectAll)
         
-        syncMenuShortcut(action: "toggle_fullscreen", menuItem: self.menuToggleFullScreen)
         syncMenuShortcut(action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
         syncMenuShortcut(action: "goto_split:previous", menuItem: self.menuPreviousSplit)
         syncMenuShortcut(action: "goto_split:next", menuItem: self.menuNextSplit)
@@ -282,6 +281,12 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
+        
+        // This menu item is NOT synced with the configuration because it disables macOS
+        // global fullscreen keyboard shortcut. The shortcut in the Ghostty config will continue
+        // to work but it won't be reflected in the menu item.
+        //
+        // syncMenuShortcut(action: "toggle_fullscreen", menuItem: self.menuToggleFullScreen)
 
         // Dock menu
         reloadDockMenu()
