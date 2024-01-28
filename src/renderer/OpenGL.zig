@@ -1168,9 +1168,9 @@ pub fn rebuildCells(
                     cell.b = txt.b;
                     cell.a = 255;
                 } else {
-                    cell.r = 0;
-                    cell.g = 0;
-                    cell.b = 0;
+                    cell.r = self.background_color.r;
+                    cell.g = self.background_color.g;
+                    cell.b = self.background_color.b;
                     cell.a = 255;
                 }
             }
