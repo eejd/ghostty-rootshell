@@ -185,6 +185,7 @@ const DerivedConfig = struct {
     desktop_notifications: bool,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
+    mouse_scroll_multiplier: f64,
     mouse_shift_capture: configpkg.MouseShiftCapture,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
@@ -239,6 +240,7 @@ const DerivedConfig = struct {
             .desktop_notifications = config.@"desktop-notifications",
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
+            .mouse_scroll_multiplier = config.@"mouse-scroll-multiplier",
             .mouse_shift_capture = config.@"mouse-shift-capture",
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
@@ -1474,6 +1476,10 @@ pub fn scrollCallback(
     yoff: f64,
     scroll_mods: input.ScrollMods,
 ) !void {
+    // The mouse scroll multiplier is clamped in Config.zig, so we can assume it's valid here.
+    const xoff_adjusted = xoff * self.config.mouse_scroll_multiplier;
+    const yoff_adjusted = yoff * self.config.mouse_scroll_multiplier;
+
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
     // Always show the mouse again if it is hidden
@@ -1486,11 +1492,16 @@ pub fn scrollCallback(
         delta: isize = 0,
     };
 
-    const y: ScrollAmount = if (yoff == 0) .{} else y: {
+    const y: ScrollAmount = if (yoff_adjusted == 0) .{} else y: {
         // Non-precision scrolling is easy to calculate.
         if (!scroll_mods.precision) {
-            const y_sign: isize = if (yoff > 0) -1 else 1;
-            const y_delta_unsigned: usize = @max(@divFloor(self.grid_size.rows, 15), 1);
+            const y_sign: isize = if (yoff_adjusted > 0) -1 else 1;
+            const grid_size: f64 = @floatFromInt(self.grid_size.rows);
+            const y_delta_unsigned: usize = @max(
+                @as(usize, @intFromFloat(@divFloor(
+                            grid_size * self.config.mouse_scroll_multiplier,
+                            15.0,))),
+                1,);
             const y_delta: isize = y_sign * @as(isize, @intCast(y_delta_unsigned));
             break :y .{ .sign = y_sign, .delta_unsigned = y_delta_unsigned, .delta = y_delta };
         }
@@ -1507,7 +1518,7 @@ pub fn scrollCallback(
         // carefully document what we expect so this can work cross platform.
         // Right now this isn't important because macOS is the only high-precision
         // scroller.
-        const poff = self.mouse.pending_scroll_y + (yoff * -1);
+        const poff = self.mouse.pending_scroll_y + (yoff_adjusted * -1);
 
         // If the new offset is less than a single unit of scroll, we save
         // the new pending value and do not scroll yet.
@@ -1522,22 +1533,22 @@ pub fn scrollCallback(
         self.mouse.pending_scroll_y = poff - (amount * cell_size);
 
         break :y .{
-            .sign = if (yoff > 0) 1 else -1,
+            .sign = if (yoff_adjusted > 0) 1 else -1,
             .delta_unsigned = @intFromFloat(@abs(amount)),
             .delta = @intFromFloat(amount),
         };
     };
 
     // For detailed comments see the y calculation above.
-    const x: ScrollAmount = if (xoff == 0) .{} else x: {
+    const x: ScrollAmount = if (xoff_adjusted == 0) .{} else x: {
         if (!scroll_mods.precision) {
-            const x_sign: isize = if (xoff < 0) -1 else 1;
-            const x_delta_unsigned: usize = 1;
+            const x_sign: isize = if (xoff_adjusted < 0) -1 else 1;
+            const x_delta_unsigned: usize = @intFromFloat(1 * self.config.mouse_scroll_multiplier);
             const x_delta: isize = x_sign * @as(isize, @intCast(x_delta_unsigned));
             break :x .{ .sign = x_sign, .delta_unsigned = x_delta_unsigned, .delta = x_delta };
         }
 
-        const poff = self.mouse.pending_scroll_x + (xoff * -1);
+        const poff = self.mouse.pending_scroll_x + (xoff_adjusted * -1);
         const cell_size: f64 = @floatFromInt(self.cell_size.width);
         if (@abs(poff) < cell_size) {
             self.mouse.pending_scroll_x = poff;
