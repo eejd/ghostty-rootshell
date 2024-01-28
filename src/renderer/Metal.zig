@@ -1738,7 +1738,7 @@ fn rebuildCells(
                 cell.color = if (self.config.cursor_text) |txt|
                     .{ txt.r, txt.g, txt.b, 255 }
                 else
-                    .{ 0, 0, 0, 255 };
+                    .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
             }
 
             self.cells.appendAssumeCapacity(cell.*);
