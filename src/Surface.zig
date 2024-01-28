@@ -1476,10 +1476,6 @@ pub fn scrollCallback(
     yoff: f64,
     scroll_mods: input.ScrollMods,
 ) !void {
-    // The mouse scroll multiplier is clamped in Config.zig, so we can assume it's valid here.
-    const xoff_adjusted = xoff * self.config.mouse_scroll_multiplier;
-    const yoff_adjusted = yoff * self.config.mouse_scroll_multiplier;
-
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
 
     // Always show the mouse again if it is hidden
@@ -1492,16 +1488,13 @@ pub fn scrollCallback(
         delta: isize = 0,
     };
 
-    const y: ScrollAmount = if (yoff_adjusted == 0) .{} else y: {
+    const y: ScrollAmount = if (yoff == 0) .{} else y: {
         // Non-precision scrolling is easy to calculate.
         if (!scroll_mods.precision) {
-            const y_sign: isize = if (yoff_adjusted > 0) -1 else 1;
-            const grid_size: f64 = @floatFromInt(self.grid_size.rows);
-            const y_delta_unsigned: usize = @max(
-                @as(usize, @intFromFloat(@divFloor(
-                            grid_size * self.config.mouse_scroll_multiplier,
-                            15.0,))),
-                1,);
+            const y_sign: isize = if (yoff > 0) -1 else 1;
+            const grid_rows: f64 = @floatFromInt(self.grid_size.rows);
+            const y_delta_f64 = @round((grid_rows * self.config.mouse_scroll_multiplier) / 15.0);
+            const y_delta_unsigned: usize = @max(1, @as(usize, @intFromFloat(y_delta_f64)));
             const y_delta: isize = y_sign * @as(isize, @intCast(y_delta_unsigned));
             break :y .{ .sign = y_sign, .delta_unsigned = y_delta_unsigned, .delta = y_delta };
         }
@@ -1509,6 +1502,9 @@ pub fn scrollCallback(
         // Precision scrolling is more complicated. We need to maintain state
         // to build up a pending scroll amount if we're only scrolling by a
         // tiny amount so that we can scroll by a full row when we have enough.
+
+        // Adjust our offset by the multiplier
+        const yoff_adjusted = yoff * self.config.mouse_scroll_multiplier;
 
         // Add our previously saved pending amount to the offset to get the
         // new offset value.
@@ -1540,14 +1536,15 @@ pub fn scrollCallback(
     };
 
     // For detailed comments see the y calculation above.
-    const x: ScrollAmount = if (xoff_adjusted == 0) .{} else x: {
+    const x: ScrollAmount = if (xoff == 0) .{} else x: {
         if (!scroll_mods.precision) {
-            const x_sign: isize = if (xoff_adjusted < 0) -1 else 1;
-            const x_delta_unsigned: usize = @intFromFloat(1 * self.config.mouse_scroll_multiplier);
+            const x_sign: isize = if (xoff < 0) -1 else 1;
+            const x_delta_unsigned: usize = @intFromFloat(@round(1 * self.config.mouse_scroll_multiplier));
             const x_delta: isize = x_sign * @as(isize, @intCast(x_delta_unsigned));
             break :x .{ .sign = x_sign, .delta_unsigned = x_delta_unsigned, .delta = x_delta };
         }
 
+        const xoff_adjusted = xoff * self.config.mouse_scroll_multiplier;
         const poff = self.mouse.pending_scroll_x + (xoff_adjusted * -1);
         const cell_size: f64 = @floatFromInt(self.cell_size.width);
         if (@abs(poff) < cell_size) {
