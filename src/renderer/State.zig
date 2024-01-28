@@ -4,6 +4,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Inspector = @import("../inspector/main.zig").Inspector;
 const terminal = @import("../terminal/main.zig");
+const inputpkg = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 
 /// The mutex that must be held while reading any of the data in the
@@ -34,6 +35,11 @@ pub const Mouse = struct {
     /// viewport points to avoid the complexity of mapping the mouse to
     /// the renderer state.
     point: ?terminal.point.Viewport = null,
+
+    /// The mods that are currently active for the last mouse event.
+    /// This could really just be mods in general and we probably will
+    /// move it out of mouse state at some point.
+    mods: inputpkg.Mods = .{},
 };
 
 /// The pre-edit state. See Surface.preeditCallback for more information.

@@ -432,8 +432,9 @@ command: ?[]const u8 = null,
 /// TODO: This can't currently be set!
 link: RepeatableLink = .{},
 
-/// Enable URL matching. URLs are matched on hover and open using the default
-/// system application for the linked URL.
+/// Enable URL matching. URLs are matched on hover with control (Linux) or
+/// super (macOS) pressed and open using the default system application for
+/// the linked URL.
 ///
 /// The URL matcher is always lowest priority of any configured links (see
 /// `link`). If you want to customize URL matching, use `link` and disable this.
@@ -1437,7 +1438,7 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.link.links.append(alloc, .{
         .regex = url.regex,
         .action = .{ .open = {} },
-        .highlight = .{ .hover = {} },
+        .highlight = .{ .hover_mods = inputpkg.ctrlOrSuper(.{}) },
     });
 
     return result;

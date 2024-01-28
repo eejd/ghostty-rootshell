@@ -65,6 +65,7 @@ pub const Set = struct {
         alloc: Allocator,
         screen: *Screen,
         mouse_vp_pt: point.Viewport,
+        mouse_mods: inputpkg.Mods,
     ) !MatchSet {
         // Convert the viewport point to a screen point.
         const mouse_pt = mouse_vp_pt.toScreen(screen);
@@ -90,10 +91,18 @@ pub const Set = struct {
 
             // Go through each link and see if we have any matches.
             for (self.links) |link| {
-                // If this is a hover link and our mouse point isn't within
-                // this line at all, we can skip it.
-                if (link.highlight == .hover) {
-                    if (!line.selection().contains(mouse_pt)) continue;
+                // Determine if our highlight conditions are met. We use a
+                // switch here instead of an if so that we can get a compile
+                // error if any other conditions are added.
+                switch (link.highlight) {
+                    .always => {},
+                    .always_mods => |v| if (!mouse_mods.equal(v)) continue,
+                    inline .hover, .hover_mods => |v, tag| {
+                        if (!line.selection().contains(mouse_pt)) continue;
+                        if (comptime tag == .hover_mods) {
+                            if (!mouse_mods.equal(v)) continue;
+                        }
+                    },
                 }
 
                 var it = strmap.searchIterator(link.regex);
@@ -186,7 +195,7 @@ test "matchset" {
     defer set.deinit(alloc);
 
     // Get our matches
-    var match = try set.matchSet(alloc, &s, .{});
+    var match = try set.matchSet(alloc, &s, .{}, .{});
     defer match.deinit(alloc);
     try testing.expectEqual(@as(usize, 2), match.matches.len);
 
@@ -227,7 +236,7 @@ test "matchset hover links" {
 
     // Not hovering over the first link
     {
-        var match = try set.matchSet(alloc, &s, .{});
+        var match = try set.matchSet(alloc, &s, .{}, .{});
         defer match.deinit(alloc);
         try testing.expectEqual(@as(usize, 1), match.matches.len);
 
@@ -242,7 +251,7 @@ test "matchset hover links" {
 
     // Hovering over the first link
     {
-        var match = try set.matchSet(alloc, &s, .{ .x = 1, .y = 0 });
+        var match = try set.matchSet(alloc, &s, .{ .x = 1, .y = 0 }, .{});
         defer match.deinit(alloc);
         try testing.expectEqual(@as(usize, 2), match.matches.len);
 
@@ -254,4 +263,44 @@ test "matchset hover links" {
         try testing.expect(match.orderedContains(.{ .x = 1, .y = 1 }));
         try testing.expect(!match.orderedContains(.{ .x = 1, .y = 2 }));
     }
+}
+
+test "matchset mods no match" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Initialize our screen
+    var s = try Screen.init(alloc, 5, 5, 0);
+    defer s.deinit();
+    const str = "1ABCD2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Get a set
+    var set = try Set.fromConfig(alloc, &.{
+        .{
+            .regex = "AB",
+            .action = .{ .open = {} },
+            .highlight = .{ .always = {} },
+        },
+
+        .{
+            .regex = "EF",
+            .action = .{ .open = {} },
+            .highlight = .{ .always_mods = .{ .ctrl = true } },
+        },
+    });
+    defer set.deinit(alloc);
+
+    // Get our matches
+    var match = try set.matchSet(alloc, &s, .{}, .{});
+    defer match.deinit(alloc);
+    try testing.expectEqual(@as(usize, 1), match.matches.len);
+
+    // Test our matches
+    try testing.expect(!match.orderedContains(.{ .x = 0, .y = 0 }));
+    try testing.expect(match.orderedContains(.{ .x = 1, .y = 0 }));
+    try testing.expect(match.orderedContains(.{ .x = 2, .y = 0 }));
+    try testing.expect(!match.orderedContains(.{ .x = 3, .y = 0 }));
+    try testing.expect(!match.orderedContains(.{ .x = 1, .y = 1 }));
+    try testing.expect(!match.orderedContains(.{ .x = 1, .y = 2 }));
 }
