@@ -73,6 +73,23 @@ renderer_thr: std.Thread,
 /// Mouse state.
 mouse: Mouse,
 
+/// A currently pressed key. This is used so that we can send a keyboard
+/// release event when the surface is unfocused. Note that when the surface
+/// is refocused, a key press event may not be sent again -- this depends
+/// on the apprt (UI framework) in use, but we want to consistently send
+/// a release.
+///
+/// This is only sent when a keypress event results in a key event being
+/// sent to the pty. If it is consumed by a keybinding or other action,
+/// this is not set.
+///
+/// Also note the utf8 value is not valid for this event so some unfocused
+/// release events may not send exactly the right data within Kitty keyboard
+/// events. This seems unspecificed in the spec so for now I'm okay with
+/// this. Plus, its only for release events where the key text is far
+/// less important.
+pressed_key: ?input.KeyEvent = null,
+
 /// The hash value of the last keybinding trigger that we performed. This
 /// is only set if the last key input matched a keybinding, consumed it,
 /// and performed it. This is used to prevent sending release/repeat events
@@ -1428,6 +1445,29 @@ pub fn keyCallback(
         };
     };
 
+    // We've processed a key event that produced some data so we want to
+    // track the last pressed key.
+    self.pressed_key = event: {
+        // We need to unset the allocated fields that will become invalid
+        var copy = event;
+        copy.utf8 = "";
+
+        // If we have a previous pressed key and we're releasing it
+        // then we set it to invalid to prevent repeating the release event.
+        if (event.action == .release) {
+            // if we didn't have a previous event and this is a release
+            // event then we just want to set it to null.
+            const prev = self.pressed_key orelse break :event null;
+            if (prev.key == copy.key) copy.key = .invalid;
+        }
+
+        // If our key is invalid and we have no mods, then we're done!
+        // This helps catch the state that we naturally released all keys.
+        if (copy.key == .invalid and copy.mods.empty()) break :event null;
+
+        break :event copy;
+    };
+
     var data: termio.Message.WriteReq.Small.Array = undefined;
     const seq = try enc.encode(&data);
     if (seq.len == 0) return .ignored;
@@ -1475,8 +1515,53 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
         .focus = focused,
     }, .{ .forever = {} });
 
-    // Notify our app if we gained focus.
-    if (focused) self.app.focusSurface(self);
+    if (focused) {
+        // Notify our app if we gained focus.
+        self.app.focusSurface(self);
+    } else unfocused: {
+        // If we lost focus and we have a keypress, then we want to send a key
+        // release event for it. Depending on the apprt, this CAN result in
+        // duplicate key release events, but that is better than not sending
+        // a key release event at all.
+        var pressed_key = self.pressed_key orelse break :unfocused;
+        self.pressed_key = null;
+
+        // All our actions will be releases
+        pressed_key.action = .release;
+
+        // Release the full key first
+        if (pressed_key.key != .invalid) {
+            assert(self.keyCallback(pressed_key) catch |err| err: {
+                log.warn("error releasing key on focus loss err={}", .{err});
+                break :err .ignored;
+            } != .closed);
+        }
+
+        // Release any modifiers if set
+        if (pressed_key.mods.empty()) break :unfocused;
+
+        // This is kind of nasty comptime meta programming but all we're doing
+        // here is going through all the modifiers and if they're set, releasing
+        // both the left and right sides of the modifier. This may not match
+        // the exact input event but it ensures a full reset.
+        const keys = &.{ "shift", "ctrl", "alt", "super" };
+        const original_key = pressed_key.key;
+        inline for (keys) |key| {
+            if (@field(pressed_key.mods, key)) {
+                @field(pressed_key.mods, key) = false;
+                inline for (&.{ "right", "left" }) |side| {
+                    const keyname = if (comptime std.mem.eql(u8, key, "ctrl")) "control" else key;
+                    pressed_key.key = @field(input.Key, side ++ "_" ++ keyname);
+                    if (pressed_key.key != original_key) {
+                        assert(self.keyCallback(pressed_key) catch |err| err: {
+                            log.warn("error releasing key on focus loss err={}", .{err});
+                            break :err .ignored;
+                        } != .closed);
+                    }
+                }
+            }
+        }
+    }
 
     // Schedule render which also drains our mailbox
     try self.queueRender();
