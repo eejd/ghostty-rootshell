@@ -162,5 +162,6 @@ in
       homepage = "https://github.com/mitchellh/ghostty";
       license = licenses.mit;
       platforms = ["x86_64-linux" "aarch64-linux"];
+      mainProgram = "ghostty";
     };
   })
