@@ -286,7 +286,7 @@ test "matchset mods no match" {
         .{
             .regex = "EF",
             .action = .{ .open = {} },
-            .highlight = .{ .mods = .{ .ctrl = true } },
+            .highlight = .{ .always_mods = .{ .ctrl = true } },
         },
     });
     defer set.deinit(alloc);
