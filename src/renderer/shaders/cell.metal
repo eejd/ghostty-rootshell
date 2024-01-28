@@ -162,7 +162,9 @@ vertex VertexOut uber_vertex(
     glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
 
     // If we're constrained then we need to scale the glyph.
-    if (input.mode == MODE_FG_CONSTRAINED) {
+    // We also always constrain colored glyphs since we should have
+    // their scaled cell size exactly correct.
+    if (input.mode == MODE_FG_CONSTRAINED || input.mode == MODE_FG_COLOR) {
       if (glyph_size.x > cell_size_scaled.x) {
         float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
         glyph_offset.y += (glyph_size.y - new_y) / 2;
