@@ -653,9 +653,15 @@ pub const Surface = struct {
     }
 
     pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
+        // We are an embedded API so the caller can send us all sorts of
+        // garbage. We want to make sure that the float values are valid
+        // and we don't want to support fractional scaling below 1.
+        const x_scaled = @max(1, if (std.math.isNan(x)) 1 else x);
+        const y_scaled = @max(1, if (std.math.isNan(y)) 1 else y);
+
         self.content_scale = .{
-            .x = @floatCast(x),
-            .y = @floatCast(y),
+            .x = @floatCast(x_scaled),
+            .y = @floatCast(y_scaled),
         };
 
         self.core_surface.contentScaleCallback(self.content_scale) catch |err| {
