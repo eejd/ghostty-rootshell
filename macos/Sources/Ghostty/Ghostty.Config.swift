@@ -262,10 +262,15 @@ extension Ghostty {
         // This isn't actually a configurable value currently but it could be done day.
         // We put it here because it is a color that changes depending on the configuration.
         var splitDividerColor: Color {
+            #if canImport(AppKit)
             let backgroundColor = NSColor(backgroundColor)
             let isLightBackground = backgroundColor.isLightColor
             let newColor = isLightBackground ? backgroundColor.shadow(withLevel: 0.1) : backgroundColor.shadow(withLevel: 0.4)
             return Color(nsColor: newColor ?? .gray.withAlphaComponent(0.5))
+            #else
+            // I don't know how to do the above with UIKit
+            return .gray
+            #endif
         }
     }
 }
