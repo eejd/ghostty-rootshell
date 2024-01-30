@@ -268,8 +268,10 @@ extension Ghostty {
             let newColor = isLightBackground ? backgroundColor.shadow(withLevel: 0.1) : backgroundColor.shadow(withLevel: 0.4)
             return Color(nsColor: newColor ?? .gray.withAlphaComponent(0.5))
             #else
-            // I don't know how to do the above with UIKit
-            return .gray
+            let backgroundColor = UIColor(backgroundColor)
+            let isLightBackground = backgroundColor.isLightColor
+            let newColor = isLightBackground ? backgroundColor.darken(by: 0.1) : backgroundColor.darken(by: 0.4)
+            return Color(newColor)
             #endif
         }
     }

@@ -66,6 +66,7 @@
 		A5E112972AF7401B00C6E0C2 /* ClipboardConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
 		C159E81D2B66A06B00FDFE9C /* NSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* NSColor+Extension.swift */; };
+		C159E8402B68EB0000FDFE9C /* UIColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E83F2B68EB0000FDFE9C /* UIColor+Extension.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -125,6 +126,7 @@
 		A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationView.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* NSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSColor+Extension.swift"; sourceTree = "<group>"; };
+		C159E83F2B68EB0000FDFE9C /* UIColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIColor+Extension.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -190,6 +192,7 @@
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				C159E81C2B66A06B00FDFE9C /* NSColor+Extension.swift */,
+				C159E83F2B68EB0000FDFE9C /* UIColor+Extension.swift */,
 				A5CEAFDA29B8005900646FDA /* SplitView */,
 			);
 			path = Helpers;
@@ -506,6 +509,7 @@
 				A53D0C942B53B43700305CE6 /* iOSApp.swift in Sources */,
 				A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */,
+				C159E8402B68EB0000FDFE9C /* UIColor+Extension.swift in Sources */,
 				A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */,
 				A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */,
