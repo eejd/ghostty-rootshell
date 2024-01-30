@@ -197,6 +197,14 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
+		
+		var macosTitlebarTabs: Bool {
+			guard let config = self.config else { return false }
+			var v = false;
+			let key = "macos-titlebar-tabs"
+			_ = ghostty_config_get(config, &v, key, UInt(key.count))
+			return v
+		}
         
         var backgroundColor: Color {
             var rgb: UInt32 = 0

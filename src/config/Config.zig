@@ -891,6 +891,13 @@ keybind: Keybinds = .{},
 ///   * `false` - Use native macOS fullscreeen
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
+/// If `true`, places the tab bar in the titlebar for tabbed windows.
+///
+/// This option intercepts the native tab bar view from macOS and forces it to use
+/// different positioning. Because of this, it might be buggy or break entirely if
+/// macOS changes the way its native tab bar view is constructed or managed.
+@"macos-titlebar-tabs": bool = false,
+
 /// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
 /// sequences expecting *Alt* to work properly, but will break Unicode input
 /// sequences on macOS if you use them via the *Alt* key. You may set this to

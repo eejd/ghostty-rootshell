@@ -159,7 +159,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     override func windowDidLoad() {
-        guard let window = window else { return }
+        guard let window = window as? TerminalWindow else { return }
         
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
@@ -204,7 +204,33 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Center the window to start, we'll move the window frame automatically
         // when cascading.
         window.center()
-        
+		
+		// Set the background color of the window
+		window.backgroundColor = NSColor(self.ghostty.config.backgroundColor)
+		
+		// Handle titlebar tabs config option
+		if (self.ghostty.config.macosTitlebarTabs) {
+			window.titlebarTabs = true
+			window.titlebarAppearsTransparent = true
+			
+			// We use the toolbar to anchor our tab bar positions in the titlebar,
+			// so we make sure it's the right size/position, and exists.
+			window.toolbarStyle = .unifiedCompact
+			if (window.toolbar == nil) {
+				window.toolbar = NSToolbar(identifier: "Toolbar")
+			}
+		} else {
+			window.titlebarTabs = false
+			window.titlebarAppearsTransparent = false
+			
+			// "expanded" places the toolbar below the titlebar, so setting this style and
+			// removing the toolbar ensures that the titlebar will be the default height.
+			window.toolbarStyle = .expanded
+			if (window.toolbar != nil) {
+				window.toolbar = nil
+			}
+		}
+		
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
@@ -293,6 +319,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
+		
+		// Fix for titlebar tabs, see comment on implementation of fixUntabbedWindow for details.
+		guard let window = window as? TerminalWindow else { return }
+		window.fixUntabbedWindow()
     }
     
     // Called when the window will be encoded. We handle the data encoding here in the
