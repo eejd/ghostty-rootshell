@@ -1,10 +1,3 @@
-//
-//  NSColor+Extension.swift
-//  Ghostty
-//
-//  Created by Pete Schaffner on 28/01/2024.
-//
-
 import AppKit
 
 extension NSColor {
