@@ -1,6 +1,6 @@
-import UIKit
+import Foundation
 
-extension UIColor {
+extension OSColor {
     var isLightColor: Bool {
         var r: CGFloat = 0
         var g: CGFloat = 0
@@ -12,9 +12,9 @@ extension UIColor {
         return luminance > 0.5
     }
 
-    func darken(by amount: CGFloat) -> UIColor {
+    func darken(by amount: CGFloat) -> OSColor {
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         self.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        return UIColor(hue: h, saturation: s, brightness: min(b * (1 - amount), 1), alpha: a)
+        return OSColor(hue: h, saturation: s, brightness: min(b * (1 - amount), 1), alpha: a)
     }
 }
