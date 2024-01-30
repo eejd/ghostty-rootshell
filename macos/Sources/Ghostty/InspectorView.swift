@@ -6,6 +6,8 @@ import GhosttyKit
 extension Ghostty {
     /// InspectableSurface is a type of Surface view that allows an inspector to be attached.
     struct InspectableSurface: View {
+        @EnvironmentObject var ghostty: Ghostty.App
+
         /// Same as SurfaceWrapper, see the doc comments there.
         @ObservedObject var surfaceView: SurfaceView
         var isSplit: Bool = false
@@ -24,7 +26,7 @@ extension Ghostty {
                 if (!surfaceView.inspectorVisible) {
                     SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
                 } else {
-                    SplitView(.vertical, $split, left: {
+                    SplitView(.vertical, $split, dividerColor: ghostty.config.splitDividerColor, left: {
                         SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
                     }, right: {
                         InspectorViewRepresentable(surfaceView: surfaceView)

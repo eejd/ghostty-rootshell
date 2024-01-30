@@ -6,6 +6,7 @@ extension SplitView {
         let direction: SplitViewDirection
         let visibleSize: CGFloat
         let invisibleSize: CGFloat
+        let color: Color
         
         private var visibleWidth: CGFloat? {
             switch (direction) {
@@ -42,13 +43,13 @@ extension SplitView {
                 return visibleSize + invisibleSize
             }
         }
-        
+
         var body: some View {
             ZStack {
                 Color.clear
                     .frame(width: invisibleWidth, height: invisibleHeight)
                 Rectangle()
-                    .fill(Color.gray)
+                    .fill(color)
                     .frame(width: visibleWidth, height: visibleHeight)
             }
             .onHover { isHovered in

@@ -10,6 +10,9 @@ struct SplitView<L: View, R: View>: View {
     /// Direction of the split
     let direction: SplitViewDirection
     
+    /// Divider color
+    let dividerColor: Color
+    
     /// If set, the split view supports programmatic resizing via events sent via the publisher.
     /// Minimum increment (in points) that this split can be resized by, in
     /// each direction. Both `height` and `width` should be whole numbers
@@ -45,7 +48,10 @@ struct SplitView<L: View, R: View>: View {
                 right
                     .frame(width: rightRect.size.width, height: rightRect.size.height)
                     .offset(x: rightRect.origin.x, y: rightRect.origin.y)
-                Divider(direction: direction, visibleSize: splitterVisibleSize, invisibleSize: splitterInvisibleSize)
+                Divider(direction: direction, 
+                        visibleSize: splitterVisibleSize,
+                        invisibleSize: splitterInvisibleSize,
+                        color: dividerColor)
                     .position(splitterPoint)
                     .gesture(dragGesture(geo.size, splitterPoint: splitterPoint))
             }
@@ -57,10 +63,15 @@ struct SplitView<L: View, R: View>: View {
     
     /// Initialize a split view. This view isn't programmatically resizable; it can only be resized
     /// by manually dragging the divider.
-    init(_ direction: SplitViewDirection, _ split: Binding<CGFloat>, @ViewBuilder left: (() -> L), @ViewBuilder right: (() -> R)) {
+    init(_ direction: SplitViewDirection, 
+         _ split: Binding<CGFloat>, 
+         dividerColor: Color,
+         @ViewBuilder left: (() -> L),
+         @ViewBuilder right: (() -> R)) {
         self.init(
             direction,
             split,
+            dividerColor: dividerColor,
             resizeIncrements: .init(width: 1, height: 1),
             resizePublisher: .init(),
             left: left,
@@ -72,6 +83,7 @@ struct SplitView<L: View, R: View>: View {
     init(
         _ direction: SplitViewDirection,
         _ split: Binding<CGFloat>,
+        dividerColor: Color,
         resizeIncrements: NSSize,
         resizePublisher: PassthroughSubject<Double, Never>,
         @ViewBuilder left: (() -> L),
@@ -79,6 +91,7 @@ struct SplitView<L: View, R: View>: View {
     ) {
         self.direction = direction
         self._split = split
+        self.dividerColor = dividerColor
         self.resizeIncrements = resizeIncrements
         self.resizePublisher = resizePublisher
         self.left = left()

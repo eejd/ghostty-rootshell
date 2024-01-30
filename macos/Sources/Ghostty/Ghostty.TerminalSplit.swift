@@ -280,6 +280,8 @@ extension Ghostty {
     
     /// This represents a split view that is in the horizontal or vertical split state.
     private struct TerminalSplitContainer: View {
+        @EnvironmentObject var ghostty: Ghostty.App
+
         let neighbors: SplitNode.Neighbors
         @Binding var node: SplitNode?
         @StateObject var container: SplitNode.Container
@@ -288,6 +290,7 @@ extension Ghostty {
             SplitView(
                 container.direction,
                 $container.split,
+                dividerColor: ghostty.config.splitDividerColor,
                 resizeIncrements: .init(width: 1, height: 1),
                 resizePublisher: container.resizeEvent,
                 left: {
