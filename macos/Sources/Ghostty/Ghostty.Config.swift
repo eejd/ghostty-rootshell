@@ -21,7 +21,7 @@ extension Ghostty {
         /// Return the errors found while loading the configuration.
         var errors: [String] {
             guard let cfg = self.config else { return [] }
-
+            
             var errors: [String] = [];
             let errCount = ghostty_config_errors_count(cfg)
             for i in 0..<errCount {
@@ -29,7 +29,7 @@ extension Ghostty {
                 let message = String(cString: err.message)
                 errors.append(message)
             }
-
+            
             return errors
         }
         
@@ -155,7 +155,7 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
-
+        
         var windowNewTabPosition: String {
             guard let config = self.config else { return "" }
             var v: UnsafePointer<Int8>? = nil
@@ -164,7 +164,7 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
-
+        
         var windowDecorations: Bool {
             guard let config = self.config else { return true }
             var v = false;
@@ -197,39 +197,39 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
-		
-		var macosTitlebarTabs: Bool {
-			guard let config = self.config else { return false }
-			var v = false;
-			let key = "macos-titlebar-tabs"
-			_ = ghostty_config_get(config, &v, key, UInt(key.count))
-			return v
-		}
+        
+        var macosTitlebarTabs: Bool {
+            guard let config = self.config else { return false }
+            var v = false;
+            let key = "macos-titlebar-tabs"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
         
         var backgroundColor: Color {
             var rgb: UInt32 = 0
             let bg_key = "background"
             if (!ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count))) {
-                #if os(macOS)
+#if os(macOS)
                 return Color(NSColor.windowBackgroundColor)
-                #elseif os(iOS)
+#elseif os(iOS)
                 return Color(UIColor.systemBackground)
-                #else
-                #error("unsupported")
-                #endif
+#else
+#error("unsupported")
+#endif
             }
             
             let red = Double(rgb & 0xff)
             let green = Double((rgb >> 8) & 0xff)
             let blue = Double((rgb >> 16) & 0xff)
-
+            
             return Color(
                 red: red / 255,
                 green: green / 255,
                 blue: blue / 255
             )
         }
-
+        
         var backgroundOpacity: Double {
             guard let config = self.config else { return 1 }
             var v: Double = 1
@@ -255,11 +255,11 @@ extension Ghostty {
                 let bg_key = "background"
                 _ = ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count));
             }
-
+            
             let red = Double(rgb & 0xff)
             let green = Double((rgb >> 8) & 0xff)
             let blue = Double((rgb >> 16) & 0xff)
-
+            
             return Color(
                 red: red / 255,
                 green: green / 255,
