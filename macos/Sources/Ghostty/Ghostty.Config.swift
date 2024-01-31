@@ -203,7 +203,7 @@ extension Ghostty {
 			var v = false;
 			let key = "macos-titlebar-tabs"
 			_ = ghostty_config_get(config, &v, key, UInt(key.count))
-			return v
+			return true
 		}
         
         var backgroundColor: Color {

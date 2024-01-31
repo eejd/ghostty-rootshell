@@ -206,30 +206,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         window.center()
 		
 		// Set the background color of the window
-		window.backgroundColor = NSColor(self.ghostty.config.backgroundColor)
+		window.backgroundColor = NSColor(ghostty.config.backgroundColor)
 		
 		// Handle titlebar tabs config option
-		if (self.ghostty.config.macosTitlebarTabs) {
-			window.titlebarTabs = true
-			window.titlebarAppearsTransparent = true
-			
-			// We use the toolbar to anchor our tab bar positions in the titlebar,
-			// so we make sure it's the right size/position, and exists.
-			window.toolbarStyle = .unifiedCompact
-			if (window.toolbar == nil) {
-				window.toolbar = NSToolbar(identifier: "Toolbar")
-			}
-		} else {
-			window.titlebarTabs = false
-			window.titlebarAppearsTransparent = false
-			
-			// "expanded" places the toolbar below the titlebar, so setting this style and
-			// removing the toolbar ensures that the titlebar will be the default height.
-			window.toolbarStyle = .expanded
-			if (window.toolbar != nil) {
-				window.toolbar = nil
-			}
-		}
+        window.titlebarTabs = ghostty.config.macosTitlebarTabs
+        window.setTitlebarBackground(
+            window
+                .backgroundColor
+                .withAlphaComponent(ghostty.config.backgroundOpacity)
+                .cgColor
+        )
 		
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
@@ -237,14 +223,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             viewModel: self,
             delegate: self
         ))
-		
-		// Give the titlebar a custom background color to account for transparent windows.
-		window.setTitlebarBackground(
-			window
-				.backgroundColor
-				.withAlphaComponent(self.ghostty.config.backgroundOpacity)
-				.cgColor
-		)
         
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
@@ -327,10 +305,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
-		
-		// Fix for titlebar tabs, see comment on implementation of fixUntabbedWindow for details.
-		guard let window = window as? TerminalWindow else { return }
-		window.fixUntabbedWindow()
     }
     
     // Called when the window will be encoded. We handle the data encoding here in the
