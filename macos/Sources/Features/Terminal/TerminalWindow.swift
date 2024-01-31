@@ -19,8 +19,8 @@ class TerminalWindow: NSWindow {
     }
     
     // MARK: - Titlebar Tabs
-	
-	// Used by the window controller to enable/disable titlebar tabs.
+    
+    // Used by the window controller to enable/disable titlebar tabs.
     var titlebarTabs = false {
         didSet {
             changedTitlebarTabs(to: titlebarTabs)
@@ -32,7 +32,7 @@ class TerminalWindow: NSWindow {
     
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
-
+    
     /// This is called by titlebarTabs changing so that we can setup the rest of our window
     private func changedTitlebarTabs(to newValue: Bool) {
         self.titlebarAppearsTransparent = newValue
@@ -61,41 +61,41 @@ class TerminalWindow: NSWindow {
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = color
     }
-
+    
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
-	override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
-		let isTabBar = self.titlebarTabs && (
+    override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
+        let isTabBar = self.titlebarTabs && (
             childViewController.layoutAttribute == .bottom ||
             childViewController.identifier == Self.TabBarController
         )
         
-		if (isTabBar) {
-			// Ensure it has the right layoutAttribute to force it next to our titlebar
+        if (isTabBar) {
+            // Ensure it has the right layoutAttribute to force it next to our titlebar
             childViewController.layoutAttribute = .right
             
-			// Hide the title text if the tab bar is showing since we show it in the tab
-			titleVisibility = .hidden
+            // Hide the title text if the tab bar is showing since we show it in the tab
+            titleVisibility = .hidden
             
-			// Mark the controller for future reference so we can easily find it. Otherwise
+            // Mark the controller for future reference so we can easily find it. Otherwise
             // the tab bar has no ID by default.
             childViewController.identifier = Self.TabBarController
-		}
+        }
         
-		super.addTitlebarAccessoryViewController(childViewController)
+        super.addTitlebarAccessoryViewController(childViewController)
         
-		if (isTabBar) {
-			pushTabsToTitlebar(childViewController)
-		}
-	}
-	
-	override func removeTitlebarAccessoryViewController(at index: Int) {
-		let childViewController = titlebarAccessoryViewControllers[index]
-		super.removeTitlebarAccessoryViewController(at: index)
+        if (isTabBar) {
+            pushTabsToTitlebar(childViewController)
+        }
+    }
+    
+    override func removeTitlebarAccessoryViewController(at index: Int) {
+        let childViewController = titlebarAccessoryViewControllers[index]
+        super.removeTitlebarAccessoryViewController(at: index)
         if (childViewController.identifier == Self.TabBarController) {
-			hideCustomTabBarViews()
-		}
-	}
+            hideCustomTabBarViews()
+        }
+    }
     
     // To be called immediately after the tab bar is disabled.
     private func hideCustomTabBarViews() {
@@ -108,45 +108,45 @@ class TerminalWindow: NSWindow {
         // Enable the window title text.
         titleVisibility = .visible
     }
-	
-	private func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {
-		let accessoryView = tabBarController.view
-		guard let accessoryClipView = accessoryView.superview else { return }
-		guard let titlebarView = accessoryClipView.superview else { return }
-		guard titlebarView.className == "NSTitlebarView" else { return }
-		guard let toolbarView = titlebarView.subviews.first(where: {
-			$0.className == "NSToolbarView"
-		}) else { return }
-		
-		addWindowButtonsBackdrop(titlebarView: titlebarView, toolbarView: toolbarView)
-		guard let windowButtonsBackdrop = windowButtonsBackdrop else { return }
+    
+    private func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {
+        let accessoryView = tabBarController.view
+        guard let accessoryClipView = accessoryView.superview else { return }
+        guard let titlebarView = accessoryClipView.superview else { return }
+        guard titlebarView.className == "NSTitlebarView" else { return }
+        guard let toolbarView = titlebarView.subviews.first(where: {
+            $0.className == "NSToolbarView"
+        }) else { return }
+        
+        addWindowButtonsBackdrop(titlebarView: titlebarView, toolbarView: toolbarView)
+        guard let windowButtonsBackdrop = windowButtonsBackdrop else { return }
         windowButtonsBackdrop.isHidden = false
-		
-		addWindowDragHandle(titlebarView: titlebarView, toolbarView: toolbarView)
-		windowDragHandle?.isHidden = false
-		
-		accessoryClipView.translatesAutoresizingMaskIntoConstraints = false
-		accessoryClipView.leftAnchor.constraint(equalTo: windowButtonsBackdrop.rightAnchor).isActive = true
-		accessoryClipView.rightAnchor.constraint(equalTo: toolbarView.rightAnchor).isActive = true
-		accessoryClipView.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
-		accessoryClipView.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
-		accessoryClipView.needsLayout = true
-		
-		accessoryView.translatesAutoresizingMaskIntoConstraints = false
-		accessoryView.leftAnchor.constraint(equalTo: accessoryClipView.leftAnchor).isActive = true
-		accessoryView.rightAnchor.constraint(equalTo: accessoryClipView.rightAnchor).isActive = true
-		accessoryView.topAnchor.constraint(equalTo: accessoryClipView.topAnchor).isActive = true
-		accessoryView.heightAnchor.constraint(equalTo: accessoryClipView.heightAnchor).isActive = true
-		accessoryView.needsLayout = true
-		
-		// This is a horrible hack. During the transition while things are resizing to make room for
-		// new tabs or expand existing tabs to fill the empty space after one is closed, the centering
-		// of the tab titles can't be properly calculated, so we wait for 0.2 seconds and then mark
-		// the entire view hierarchy for the tab bar as dirty to fix the positioning...
-		DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-			self.markHierarchyForLayout(accessoryView)
-		}
-	}
+        
+        addWindowDragHandle(titlebarView: titlebarView, toolbarView: toolbarView)
+        windowDragHandle?.isHidden = false
+        
+        accessoryClipView.translatesAutoresizingMaskIntoConstraints = false
+        accessoryClipView.leftAnchor.constraint(equalTo: windowButtonsBackdrop.rightAnchor).isActive = true
+        accessoryClipView.rightAnchor.constraint(equalTo: toolbarView.rightAnchor).isActive = true
+        accessoryClipView.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
+        accessoryClipView.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
+        accessoryClipView.needsLayout = true
+        
+        accessoryView.translatesAutoresizingMaskIntoConstraints = false
+        accessoryView.leftAnchor.constraint(equalTo: accessoryClipView.leftAnchor).isActive = true
+        accessoryView.rightAnchor.constraint(equalTo: accessoryClipView.rightAnchor).isActive = true
+        accessoryView.topAnchor.constraint(equalTo: accessoryClipView.topAnchor).isActive = true
+        accessoryView.heightAnchor.constraint(equalTo: accessoryClipView.heightAnchor).isActive = true
+        accessoryView.needsLayout = true
+        
+        // This is a horrible hack. During the transition while things are resizing to make room for
+        // new tabs or expand existing tabs to fill the empty space after one is closed, the centering
+        // of the tab titles can't be properly calculated, so we wait for 0.2 seconds and then mark
+        // the entire view hierarchy for the tab bar as dirty to fix the positioning...
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.markHierarchyForLayout(accessoryView)
+        }
+    }
     
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
         guard windowButtonsBackdrop == nil else { return }
@@ -190,18 +190,18 @@ class TerminalWindow: NSWindow {
         
         windowDragHandle = view
     }
-	
+    
     // This forces this view and all subviews to update layout and redraw. This is
     // a hack (see the caller).
-	private func markHierarchyForLayout(_ view: NSView) {
-		view.needsUpdateConstraints = true
-		view.needsLayout = true
-		view.needsDisplay = true
-		view.setNeedsDisplay(view.bounds)
-		for subview in view.subviews {
-			markHierarchyForLayout(subview)
-		}
-	}
+    private func markHierarchyForLayout(_ view: NSView) {
+        view.needsUpdateConstraints = true
+        view.needsLayout = true
+        view.needsDisplay = true
+        view.setNeedsDisplay(view.bounds)
+        for subview in view.subviews {
+            markHierarchyForLayout(subview)
+        }
+    }
 }
 
 // Passes mouseDown events from this view to window.performDrag so that you can drag the window by it.
