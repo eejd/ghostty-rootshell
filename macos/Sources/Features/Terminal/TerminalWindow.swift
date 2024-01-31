@@ -44,10 +44,21 @@ class TerminalWindow: NSWindow {
             if (self.toolbar == nil) {
                 self.toolbar = TerminalToolbar(identifier: "Toolbar")
             }
+            
             // We directly hide the view containing the title text because if we use the
             // `titleVisibility` property for this it prevents the window from hiding the
             // tab bar when we get down to a single tab.
-            self.hideTitleText()
+            if let toolbarTitleView = contentView?.superview?.subviews.first(where: {
+                $0.className == "NSTitlebarContainerView"
+            })?.subviews.first(where: {
+                $0.className == "NSTitlebarView"
+            })?.subviews.first(where: {
+                $0.className == "NSToolbarView"
+            })?.subviews.first(where: {
+                $0.className == "NSToolbarTitleView"
+            }) {
+                toolbarTitleView.isHidden = true
+            }
         } else {
             // "expanded" places the toolbar below the titlebar, so setting this style and
             // removing the toolbar ensures that the titlebar will be the default height.
@@ -64,21 +75,6 @@ class TerminalWindow: NSWindow {
         
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = color
-    }
-    
-    // Directly hide the view containing the title text
-    func hideTitleText() {
-        guard let toolbarTitleView = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        })?.subviews.first(where: {
-            $0.className == "NSTitlebarView"
-        })?.subviews.first(where: {
-            $0.className == "NSToolbarView"
-        })?.subviews.first(where: {
-            $0.className == "NSToolbarTitleView"
-        }) else { return }
-        
-        toolbarTitleView.isHidden = true
     }
     
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
