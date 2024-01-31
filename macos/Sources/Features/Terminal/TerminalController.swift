@@ -159,7 +159,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     override func windowDidLoad() {
-        guard let window = window else { return }
+        guard let window = window as? TerminalWindow else { return }
         
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
@@ -204,6 +204,18 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Center the window to start, we'll move the window frame automatically
         // when cascading.
         window.center()
+        
+        // Set the background color of the window
+        window.backgroundColor = NSColor(ghostty.config.backgroundColor)
+        
+        // Handle titlebar tabs config option
+        window.titlebarTabs = ghostty.config.macosTitlebarTabs
+        window.setTitlebarBackground(
+            window
+                .backgroundColor
+                .withAlphaComponent(ghostty.config.backgroundOpacity)
+                .cgColor
+        )
         
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
@@ -470,7 +482,15 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     func titleDidChange(to: String) {
-        self.window?.title = to
+        guard let window = window as? TerminalWindow else { return }
+        
+        // Set the main window title
+        window.title = to
+        
+        // Custom toolbar-based title used when titlebar tabs are enabled.
+        if let toolbar = window.toolbar as? TerminalToolbar {
+            toolbar.titleText = to
+        }
     }
     
     func cellSizeDidChange(to: NSSize) {
