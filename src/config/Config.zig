@@ -882,20 +882,30 @@ keybind: Keybinds = .{},
 /// using a new space. It's faster than the native fullscreen mode since it
 /// doesn't use animations.
 ///
+/// Warning: tabs do not work with a non-native fullscreen window. This
+/// can be fixed but is looking for contributors to help. See issue #392.
+///
 /// Allowable values are:
 ///
 ///   * `visible-menu` - Use non-native macOS fullscreen, keep the menu bar visible
-///
 ///   * `true` - Use non-native macOS fullscreen, hide the menu bar
-///
 ///   * `false` - Use native macOS fullscreeen
+///
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// If `true`, places the tab bar in the titlebar for tabbed windows.
 ///
+/// When this is true, the titlebar will also always appear even when
+/// fullscreen (native fullscreen) with only one tab. This is not considered
+/// a bug but if you'd like to improve this behavior then I'm open to it and
+/// please contribute to the project.
+///
 /// This option intercepts the native tab bar view from macOS and forces it to use
 /// different positioning. Because of this, it might be buggy or break entirely if
 /// macOS changes the way its native tab bar view is constructed or managed.
+/// This has been tested on macOS 14.
+///
+/// This option only applies to new windows when changed.
 @"macos-titlebar-tabs": bool = false,
 
 /// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
