@@ -482,7 +482,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     func titleDidChange(to: String) {
-        self.window?.title = to
+        guard let window = window as? TerminalWindow else { return }
+        
+        window.title = to
+        
+        // Custom toolbar-based title used when titlebar tabs are enabled.
+        guard let toolbar = window.toolbar as? TerminalToolbar else { return }
+        toolbar.setTitleText(to)
     }
     
     func cellSizeDidChange(to: NSSize) {

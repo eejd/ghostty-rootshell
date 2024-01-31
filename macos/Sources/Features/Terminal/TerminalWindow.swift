@@ -42,8 +42,12 @@ class TerminalWindow: NSWindow {
             // so we make sure it's the right size/position, and exists.
             self.toolbarStyle = .unifiedCompact
             if (self.toolbar == nil) {
-                self.toolbar = NSToolbar(identifier: "Toolbar")
+                self.toolbar = TerminalToolbar(identifier: "Toolbar")
             }
+            // We directly hide the view containing the title text because if we use the
+            // `titleVisibility` property for this it prevents the window from hiding the
+            // tab bar when we get down to a single tab.
+            self.hideTitleText()
         } else {
             // "expanded" places the toolbar below the titlebar, so setting this style and
             // removing the toolbar ensures that the titlebar will be the default height.
@@ -62,6 +66,21 @@ class TerminalWindow: NSWindow {
         titlebarContainer.layer?.backgroundColor = color
     }
     
+    // Directly hide the view containing the title text
+    func hideTitleText() {
+        guard let toolbarTitleView = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        })?.subviews.first(where: {
+            $0.className == "NSTitlebarView"
+        })?.subviews.first(where: {
+            $0.className == "NSToolbarView"
+        })?.subviews.first(where: {
+            $0.className == "NSToolbarTitleView"
+        }) else { return }
+        
+        toolbarTitleView.isHidden = true
+    }
+    
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
@@ -74,7 +93,8 @@ class TerminalWindow: NSWindow {
             // Ensure it has the right layoutAttribute to force it next to our titlebar
             childViewController.layoutAttribute = .right
             
-            // Hide the title text if the tab bar is showing since we show it in the tab
+            // If we don't set titleVisibility to hidden here, the toolbar will display a
+            // "collapsed items" indicator which interferes with the tab bar.
             titleVisibility = .hidden
             
             // Mark the controller for future reference so we can easily find it. Otherwise
@@ -90,9 +110,9 @@ class TerminalWindow: NSWindow {
     }
     
     override func removeTitlebarAccessoryViewController(at index: Int) {
-        let childViewController = titlebarAccessoryViewControllers[index]
+        let isTabBar = titlebarAccessoryViewControllers[index].identifier == Self.TabBarController
         super.removeTitlebarAccessoryViewController(at: index)
-        if (childViewController.identifier == Self.TabBarController) {
+        if (isTabBar) {
             hideCustomTabBarViews()
         }
     }
@@ -104,9 +124,6 @@ class TerminalWindow: NSWindow {
         
         // Hide the window drag handle.
         windowDragHandle?.isHidden = true
-        
-        // Enable the window title text.
-        titleVisibility = .visible
     }
     
     private func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {
