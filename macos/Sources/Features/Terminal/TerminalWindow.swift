@@ -78,6 +78,16 @@ class TerminalWindow: NSWindow {
 		}
 	}
 	
+	// Assign a background color to the titlebar area.
+	public func setTitlebarBackground(_ color: CGColor) {
+		guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+			$0.className == "NSTitlebarContainerView"
+		}) else { return }
+		
+		titlebarContainer.wantsLayer = true
+		titlebarContainer.layer?.backgroundColor = color
+	}
+	
 	private var windowButtonsBackdrop: NSView? = nil
 	
 	private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {

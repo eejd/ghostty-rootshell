@@ -237,6 +237,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             viewModel: self,
             delegate: self
         ))
+		
+		// Give the titlebar a custom background color to account for transparent windows.
+		window.setTitlebarBackground(
+			window
+				.backgroundColor
+				.withAlphaComponent(self.ghostty.config.backgroundOpacity)
+				.cgColor
+		)
         
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
