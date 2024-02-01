@@ -944,6 +944,30 @@ const Subprocess = struct {
             try env.put("COLORTERM", "truecolor");
         }
 
+        // Add our binary to the path if we can find it.
+        ghostty_path: {
+            var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const exe_bin_path = std.fs.selfExePath(&exe_buf) catch |err| {
+                log.warn("failed to get ghostty exe path err={}", .{err});
+                break :ghostty_path;
+            };
+            const exe_dir = std.fs.path.dirname(exe_bin_path) orelse break :ghostty_path;
+            log.debug("appending ghostty bin to path dir={s}", .{exe_dir});
+
+            // We always set this so that if the shell overwrites the path
+            // scripts still have a way to find the Ghostty binary when
+            // running in Ghostty.
+            try env.put("GHOSTTY_BIN_DIR", exe_dir);
+
+            // Append if we have a path. We want to append so that ghostty is
+            // the last priority in the path. If we don't have a path set
+            // then we just set it to the directory of the binary.
+            try env.put("PATH", if (env.get("PATH")) |path|
+                try internal_os.appendEnv(alloc, path, exe_dir)
+            else
+                exe_dir);
+        }
+
         // Set environment variables used by some programs (such as neovim) to detect
         // which terminal emulator and version they're running under.
         try env.put("TERM_PROGRAM", "ghostty");
@@ -1144,20 +1168,6 @@ const Subprocess = struct {
 
         // Our screen size should be our padded size
         const padded_size = opts.screen_size.subPadding(opts.padding);
-
-
-        var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        const ghostty_bin_dir = ghostty: {
-            const exe: ?[]const u8 = std.fs.selfExePath(&exe_buf) catch break: ghostty null;
-            const exe_bin_path = exe orelse break :ghostty null;
-            break :ghostty std.fs.path.dirname(exe_bin_path);
-        };
-        if (ghostty_bin_dir) |dir| {
-            if (env.get("PATH")) |path| {
-                try env.put("PATH", try internal_os.appendEnv(alloc, path, dir));
-                log.info("shell appending ghostty bin to path ghostty_dir={s}", .{dir});
-            }
-        }
 
         return .{
             .arena = arena,
