@@ -208,8 +208,19 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Set the background color of the window
         window.backgroundColor = NSColor(ghostty.config.backgroundColor)
         
-        // Handle titlebar tabs config option
-        window.titlebarTabs = ghostty.config.macosTitlebarTabs
+        // Handle titlebar tabs config option. Something about what we do while setting up the
+        // titlebar tabs interferes with the window restore process unless window.tabbingMode
+        // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
+        if (ghostty.config.macosTitlebarTabs) {
+            window.tabbingMode = .preferred
+            window.titlebarTabs = true
+            DispatchQueue.main.async {
+                window.tabbingMode = .automatic
+            }
+        }
+        
+        // Set a custom background on the titlebar - this is required for when
+        // titlebar tabs is used in conjunction with a transparent background.
         window.setTitlebarBackground(
             window
                 .backgroundColor
