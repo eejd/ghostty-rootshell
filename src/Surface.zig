@@ -854,7 +854,7 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
         {
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
-            self.renderer_state.mouse.mods = mods;
+            self.renderer_state.mouse.mods = self.mouseModsWithCapture(self.mouse.mods);
         }
 
         self.queueRender() catch |err| {
@@ -2372,6 +2372,9 @@ fn linkAtPos(
         break :mouse_pt viewport_point.toScreen(&self.io.terminal.screen);
     };
 
+    // Get our comparison mods
+    const mouse_mods = self.mouseModsWithCapture(self.mouse.mods);
+
     // Get the line we're hovering over.
     const line = self.io.terminal.screen.getLine(mouse_pt) orelse
         return null;
@@ -2382,7 +2385,7 @@ fn linkAtPos(
     for (self.config.links) |link| {
         switch (link.highlight) {
             .always, .hover => {},
-            .always_mods, .hover_mods => |v| if (!v.equal(self.mouse.mods)) continue,
+            .always_mods, .hover_mods => |v| if (!v.equal(mouse_mods)) continue,
         }
 
         var it = strmap.searchIterator(link.regex);
@@ -2396,6 +2399,25 @@ fn linkAtPos(
     }
 
     return null;
+}
+
+/// This returns the mouse mods to consider for link highlighting or
+/// other purposes taking into account when shift is pressed for releasing
+/// the mouse from capture.
+///
+/// The renderer state mutex must be held.
+fn mouseModsWithCapture(self: *Surface, mods: input.Mods) input.Mods {
+    // In any of these scenarios, whatever mods are set (even shift)
+    // are preserved.
+    if (self.io.terminal.flags.mouse_event == .none) return mods;
+    if (!mods.shift) return mods;
+    if (self.mouseShiftCapture(false)) return mods;
+
+    // We have mouse capture, shift set, and we're not allowed to capture
+    // shift, so we can clear shift.
+    var final = mods;
+    final.shift = false;
+    return final;
 }
 
 /// Attempt to invoke the action of any link that is under the

@@ -139,7 +139,7 @@ pub const MatchSet = struct {
     /// The matches.
     ///
     /// Important: this must be in left-to-right top-to-bottom order.
-    matches: []const terminal.Selection,
+    matches: []const terminal.Selection = &.{},
     i: usize = 0,
 
     pub fn deinit(self: *MatchSet, alloc: Allocator) void {

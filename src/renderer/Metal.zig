@@ -1551,12 +1551,12 @@ fn rebuildCells(
     const arena_alloc = arena.allocator();
 
     // Create our match set for the links.
-    var link_match_set = try self.config.links.matchSet(
+    var link_match_set: link.MatchSet = if (mouse.point) |mouse_pt| try self.config.links.matchSet(
         arena_alloc,
         screen,
-        mouse.point orelse .{},
+        mouse_pt,
         mouse.mods,
-    );
+    ) else .{};
 
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
