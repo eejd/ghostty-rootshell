@@ -962,10 +962,20 @@ const Subprocess = struct {
             // Append if we have a path. We want to append so that ghostty is
             // the last priority in the path. If we don't have a path set
             // then we just set it to the directory of the binary.
-            try env.put("PATH", if (env.get("PATH")) |path|
-                try internal_os.appendEnv(alloc, path, exe_dir)
-            else
-                exe_dir);
+            if (env.get("PATH")) |path| {
+                // Verify that our path doesn't already contain this entry
+                var it = std.mem.tokenizeScalar(u8, path, internal_os.PATH_SEP[0]);
+                while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry, exe_dir)) break :ghostty_path;
+                }
+
+                try env.put(
+                    "PATH",
+                    try internal_os.appendEnv(alloc, path, exe_dir),
+                );
+            } else {
+                try env.put("PATH", exe_dir);
+            }
         }
 
         // Set environment variables used by some programs (such as neovim) to detect
