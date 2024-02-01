@@ -5,8 +5,6 @@ const oni = @import("oniguruma");
 /// This is here in the config package because one day the matchers will be
 /// configurable and this will be a default.
 ///
-/// This is adapted from a regex used in the Alacritty project.
-///
 /// This regex is liberal in what it accepts after the scheme, with exceptions
 /// for URLs ending with . or ). Although such URLs are perfectly valid, it is
 /// common for text to contain URLs surrounded by parentheses (such as in
@@ -24,9 +22,8 @@ const oni = @import("oniguruma");
 ///
 /// There are many complicated cases where these heuristics break down, but
 /// handling them well requires a non-regex approach.
-pub const regex = "(?:" ++ url_scheme ++ ")(?:[^" ++ url_exclude ++ "]*[^" ++ url_exclude ++ ").]|[^" ++ url_exclude ++ "(]*\\([^" ++ url_exclude ++ ")]*\\))";
-const url_scheme = "ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://";
-const url_exclude = "\u{0000}-\u{001F}\u{007F}-\u{009F}<>\x22\x27\\s{-}\\^⟨⟩\x60";
+pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w./+:@%?=&]+(?:\\(\\w*\\))?)+(?<!\\.)";
+const url_scheme = "ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https?://|news:|file:|git://|ssh:|ftp://|tel://";
 
 test "url regex" {
     const testing = std.testing;
@@ -34,7 +31,7 @@ test "url regex" {
     try oni.testing.ensureInit();
     var re = try oni.Regex.init(
         regex,
-        .{ .find_longest = true },
+        .{},
         oni.Encoding.utf8,
         oni.Syntax.default,
         null,
@@ -46,6 +43,7 @@ test "url regex" {
     const cases = [_]struct {
         input: []const u8,
         expect: []const u8,
+        num_matches: usize = 1,
     }{
         .{
             .input = "hello https://example.com world",
@@ -75,12 +73,37 @@ test "url regex" {
             .input = "Link in single quotes 'https://example.com' and more",
             .expect = "https://example.com",
         },
+        .{
+            .input = "some file wih https://google.com https://duckduckgo.com links.",
+            .expect = "https://google.com",
+        },
+        .{
+            .input = "and links in it. links https://yahoo.com mailto:test@example.com ssh://1.2.3.4",
+            .expect = "https://yahoo.com",
+        },
+        .{
+            .input = "also match http://example.com non-secure links",
+            .expect = "http://example.com",
+        },
+        .{
+            .input = "match tel://+12123456789 phone numbers",
+            .expect = "tel://+12123456789",
+        },
+        .{
+            .input = "match with query url https://example.com?query=1&other=2 and more text.",
+            .expect = "https://example.com?query=1&other=2",
+        },
     };
 
     for (cases) |case| {
+        //std.debug.print("input: {s}\n", .{case.input});
+        //std.debug.print("match: {s}\n", .{case.expect});
         var reg = try re.search(case.input, .{});
+        //std.debug.print("count: {d}\n", .{@as(usize, reg.count())});
+        //std.debug.print("starts: {d}\n", .{reg.starts()});
+        //std.debug.print("ends: {d}\n", .{reg.ends()});
         defer reg.deinit();
-        try testing.expectEqual(@as(usize, 1), reg.count());
+        try testing.expectEqual(@as(usize, case.num_matches), reg.count());
         const match = case.input[@intCast(reg.starts()[0])..@intCast(reg.ends()[0])];
         try testing.expectEqualStrings(case.expect, match);
     }
