@@ -236,7 +236,10 @@ pub const Face = struct {
             // Disable bitmap strikes for now since it causes issues with
             // our cell metrics and rasterization. In the future, this is
             // all fixable so we can enable it.
-            .no_bitmap = true,
+            //
+            // This must be enabled for color faces though because those are
+            // often colored bitmaps, which we support.
+            .no_bitmap = !self.face.hasColor(),
         });
 
         const glyph = self.face.handle.*.glyph;
