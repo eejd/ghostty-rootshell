@@ -232,6 +232,11 @@ pub const Face = struct {
         try self.face.loadGlyph(glyph_index, .{
             .render = true,
             .color = self.face.hasColor(),
+
+            // Disable bitmap strikes for now since it causes issues with
+            // our cell metrics and rasterization. In the future, this is
+            // all fixable so we can enable it.
+            .no_bitmap = true,
         });
 
         const glyph = self.face.handle.*.glyph;
