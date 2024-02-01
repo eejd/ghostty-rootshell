@@ -1145,6 +1145,20 @@ const Subprocess = struct {
         // Our screen size should be our padded size
         const padded_size = opts.screen_size.subPadding(opts.padding);
 
+
+        var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        const ghostty_bin_dir = ghostty: {
+            const exe: ?[]const u8 = std.fs.selfExePath(&exe_buf) catch break: ghostty null;
+            const exe_bin_path = exe orelse break :ghostty null;
+            break :ghostty std.fs.path.dirname(exe_bin_path);
+        };
+        if (ghostty_bin_dir) |dir| {
+            if (env.get("PATH")) |path| {
+                try env.put("PATH", try internal_os.appendEnv(alloc, path, dir));
+                log.info("shell appending ghostty bin to path ghostty_dir={s}", .{dir});
+            }
+        }
+
         return .{
             .arena = arena,
             .env = env,
