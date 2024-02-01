@@ -143,6 +143,15 @@ pub const Action = union(enum) {
     /// (`application`) or disabled (`normal`).
     cursor_key: CursorKey,
 
+    /// Reset the terminal. This can fix a lot of issues when a running
+    /// program puts the terminal into a broken state. This is equivalent to
+    /// when you type "reset" and press enter.
+    ///
+    /// If you do this while in a TUI program such as vim, this may break
+    /// the program. If you do this while in a shell, you may have to press
+    /// enter after to get a new prompt.
+    reset: void,
+
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,

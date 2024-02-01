@@ -2920,6 +2920,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             try self.io_thread.wakeup.notify();
         },
 
+        .reset => {
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
+            self.renderer_state.terminal.fullReset(self.alloc);
+        },
+
         .copy_to_clipboard => {
             // We can read from the renderer state without holding
             // the lock because only we will write to this field.
