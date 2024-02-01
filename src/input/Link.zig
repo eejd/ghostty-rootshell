@@ -36,6 +36,11 @@ pub const Highlight = union(enum) {
     /// hovering or always. For always, all links will be highlighted
     /// when the mods are pressed regardless of if the mouse is hovering
     /// over them.
+    ///
+    /// Note that if "shift" is specified here, this will NEVER match in
+    /// TUI programs that capture mouse events. "Shift" with mouse capture
+    /// escapes the mouse capture but strips the "shift" so it can't be
+    /// detected.
     always_mods: Mods,
     hover_mods: Mods,
 };
