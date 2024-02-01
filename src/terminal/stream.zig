@@ -658,7 +658,7 @@ pub fn Stream(comptime Handler: type) type {
                         } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
 
                         else => log.warn(
-                            "unknown CSI m with intermediate: {}",
+                            "unknown CSI n with intermediate: {}",
                             .{action.intermediates[0]},
                         ),
                     },
