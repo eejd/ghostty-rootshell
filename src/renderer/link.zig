@@ -117,10 +117,11 @@ pub const Set = struct {
 
                     // If this is a highlight link then we only want to
                     // include matches that include our hover point.
-                    if (link.highlight == .hover and
-                        !sel.contains(mouse_pt))
-                    {
-                        continue;
+                    switch (link.highlight) {
+                        .always, .always_mods => {},
+                        .hover,
+                        .hover_mods,
+                        => if (!sel.contains(mouse_pt)) continue,
                     }
 
                     try matches.append(sel);
