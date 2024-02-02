@@ -22,7 +22,7 @@ const oni = @import("oniguruma");
 ///
 /// There are many complicated cases where these heuristics break down, but
 /// handling them well requires a non-regex approach.
-pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w./+:@%?=&]+(?:\\(\\w*\\))?)+(?<!\\.)";
+pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w./+:@%?=&-]+(?:\\(\\w*\\))?)+(?<!\\.)";
 const url_scheme = "ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https?://|news:|file:|git://|ssh:|ftp://|tel://";
 
 test "url regex" {
@@ -92,6 +92,10 @@ test "url regex" {
         .{
             .input = "match with query url https://example.com?query=1&other=2 and more text.",
             .expect = "https://example.com?query=1&other=2",
+        },
+        .{
+            .input = "modern terminals supports [mode 2027](https://github.com/contour-terminal/terminal-unicode-core) for better unicode support",
+            .expect = "https://github.com/contour-terminal/terminal-unicode-core",
         },
     };
 
