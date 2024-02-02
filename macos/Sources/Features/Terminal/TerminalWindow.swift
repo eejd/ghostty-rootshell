@@ -191,8 +191,8 @@ class TerminalWindow: NSWindow {
         // backdrop look MUCH better. I couldn't figure out a perfect color to use that works
         // for both so we just check the appearance.
         if effectiveAppearance.name == .aqua {
-            view.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor.copy(alpha: 0.45)
-            topBorder.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor.copy(alpha: 0.85)
+            view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
+            topBorder.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.2)
         } else {
             view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
             topBorder.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.85)
