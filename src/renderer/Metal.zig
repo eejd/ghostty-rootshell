@@ -327,6 +327,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     if (comptime builtin.os.tag == .macos) {
         info.view.setProperty("layer", layer.value);
         info.view.setProperty("wantsLayer", true);
+
+        // The layer gravity is set to top-left so that when we resize
+        // the view, the contents aren't stretched before a redraw.
+        layer.setProperty("contentsGravity", macos.animation.kCAGravityTopLeft);
     }
 
     // Ensure that our metal layer has a content scale set to match the
