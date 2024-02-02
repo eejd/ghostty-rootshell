@@ -118,6 +118,9 @@ extension Ghostty {
                             }
                         }
                         .onAppear() {
+                            // Prevent macOS from stretching rendered frames when the view is resized.
+                            surfaceView.layerContentsPlacement = .topLeft
+                            
                             // Welcome to the SwiftUI bug house of horrors. On macOS 12 (at least
                             // 12.5.1, didn't test other versions), the order in which the view
                             // is added to the window hierarchy is such that $surfaceFocus is
