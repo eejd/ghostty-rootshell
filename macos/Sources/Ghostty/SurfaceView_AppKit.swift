@@ -74,6 +74,7 @@ extension Ghostty {
         private(set) var focused: Bool = true
         private var cursor: NSCursor = .iBeam
         private var cursorVisible: CursorVisibility = .visible
+        private var appearanceObserver: NSKeyValueObservation? = nil
         
         // This is set to non-null during keyDown to accumulate insertText contents
         private var keyTextAccumulator: [String]? = nil
@@ -123,6 +124,26 @@ extension Ghostty {
             
             // Setup our tracking area so we get mouse moved events
             updateTrackingAreas()
+            
+            // Observe our appearance so we can report the correct value to libghostty.
+            // This is the best way I know of to get appearance change notifications.
+            self.appearanceObserver = observe(\.effectiveAppearance, options: [.new, .initial]) { view, change in
+                guard let appearance = change.newValue else { return }
+                guard let surface = view.surface else { return }
+                let scheme: ghostty_color_scheme_e
+                switch (appearance.name) {
+                case .aqua, .vibrantLight:
+                    scheme = GHOSTTY_COLOR_SCHEME_LIGHT
+                    
+                case .darkAqua, .vibrantDark:
+                    scheme = GHOSTTY_COLOR_SCHEME_DARK
+                    
+                default:
+                    return
+                }
+                
+                ghostty_surface_set_color_scheme(surface, scheme)
+            }
         }
 
         required init?(coder: NSCoder) {
