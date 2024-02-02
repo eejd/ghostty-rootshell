@@ -57,6 +57,9 @@ pub const Message = union(enum) {
 
     /// Health status change for the renderer.
     renderer_health: renderer.Health,
+
+    /// Report the color scheme
+    report_color_scheme: void,
 };
 
 /// A surface mailbox.

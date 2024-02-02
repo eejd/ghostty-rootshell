@@ -90,6 +90,11 @@ mouse: Mouse,
 /// less important.
 pressed_key: ?input.KeyEvent = null,
 
+/// The current color scheme of the GUI element containing this surface.
+/// This will default to light until the apprt sends us the actual color
+/// scheme. This is used by mode 3031 and CSI 996 n.
+color_scheme: apprt.ColorScheme = .light,
+
 /// The hash value of the last keybinding trigger that we performed. This
 /// is only set if the last key input matched a keybinding, consumed it,
 /// and performed it. This is used to prevent sending release/repeat events
@@ -832,6 +837,16 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .renderer_health => |health| self.updateRendererHealth(health),
+
+        .report_color_scheme => {
+            const output = switch (self.color_scheme) {
+                .light => "\x1B[?997;2n",
+                .dark => "\x1B[?997;1n",
+            };
+
+            _ = self.io_thread.mailbox.push(.{ .write_stable = output }, .{ .forever = {} });
+            try self.io_thread.wakeup.notify();
+        },
     }
 }
 
@@ -2784,6 +2799,12 @@ fn dragLeftClickBefore(
     }
 
     return screen_point.before(click_point);
+}
+
+/// Call to notify Ghostty that the color scheme for the terminal has
+/// changed.
+pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) void {
+    self.color_scheme = scheme;
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {

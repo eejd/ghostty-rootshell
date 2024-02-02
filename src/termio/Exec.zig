@@ -2375,7 +2375,7 @@ const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
-            .theme => {},
+            .theme => self.surfaceMessageWriter(.{ .report_color_scheme = {} }),
         }
     }
 
