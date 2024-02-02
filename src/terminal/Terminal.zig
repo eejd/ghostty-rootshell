@@ -119,9 +119,6 @@ flags: packed struct {
     /// then we want to capture the shift key for the mouse protocol
     /// if the configuration allows it.
     mouse_shift_capture: enum { null, false, true } = .null,
-
-    /// If true, we perform grapheme clustering even if mode 2027 is disabled.
-    default_grapheme_cluster: bool = false,
 } = .{},
 
 /// The event types that can be reported for mouse-related activities.
@@ -746,10 +743,7 @@ pub fn print(self: *Terminal, c: u21) !void {
     // This is MUCH slower than the normal path so the conditional below is
     // purposely ordered in least-likely to most-likely so we can drop out
     // as quickly as possible.
-    if (c > 255 and
-        (self.modes.get(.grapheme_cluster) or self.flags.default_grapheme_cluster) and
-        self.screen.cursor.x > 0)
-    grapheme: {
+    if (c > 255 and self.modes.get(.grapheme_cluster) and self.screen.cursor.x > 0) grapheme: {
         const row = self.screen.getRow(.{ .active = self.screen.cursor.y });
 
         // We need the previous cell to determine if we're at a grapheme
@@ -891,9 +885,7 @@ pub fn print(self: *Terminal, c: u21) !void {
         // If we have grapheme clustering enabled, we don't blindly attach
         // any zero width character to our cells and we instead just ignore
         // it.
-        if (self.modes.get(.grapheme_cluster) or
-            self.flags.default_grapheme_cluster)
-            return;
+        if (self.modes.get(.grapheme_cluster)) return;
 
         // If we're at cell zero, then this is malformed data and we don't
         // print anything or even store this. Zero-width characters are ALWAYS

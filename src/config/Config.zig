@@ -208,7 +208,7 @@ const c = @cImport({
 /// reset, this configuration will be used again.
 ///
 /// This configuration can be changed at runtime but will not affect existing
-/// printed cells. Only new cells will use the new configuration.
+/// terminals. Only new terminals will use the new configuration.
 @"grapheme-width-method": GraphemeWidthMethod = .unicode,
 
 /// A named theme to use. The available themes are currently hardcoded to the
