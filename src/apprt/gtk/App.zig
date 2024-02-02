@@ -133,6 +133,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.adw_style_manager_set_color_scheme(
             style_manager,
             switch (config.@"window-theme") {
+                .auto => auto: {
+                    const lum = config.background.toTerminalRGB().perceivedLuminance();
+                    break :auto if (lum > 0.5)
+                        c.ADW_COLOR_SCHEME_PREFER_LIGHT
+                    else
+                        c.ADW_COLOR_SCHEME_PREFER_DARK;
+                },
+
                 .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
                 .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
                 .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,

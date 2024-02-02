@@ -144,6 +144,17 @@ pub const RGB = struct {
         return std.math.pow(f64, (normalized + 0.055) / 1.055, 2.4);
     }
 
+    /// Calculates "perceived luminance" which is better for determining
+    /// light vs dark.
+    ///
+    /// Source: https://www.w3.org/TR/AERT/#color-contrast
+    pub fn perceivedLuminance(self: RGB) f64 {
+        const r_f64: f64 = @floatFromInt(self.r);
+        const g_f64: f64 = @floatFromInt(self.g);
+        const b_f64: f64 = @floatFromInt(self.b);
+        return 0.299 * (r_f64 / 255) + 0.587 * (g_f64 / 255) + 0.114 * (b_f64 / 255);
+    }
+
     test "size" {
         try std.testing.expectEqual(@as(usize, 24), @bitSizeOf(RGB));
         try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));

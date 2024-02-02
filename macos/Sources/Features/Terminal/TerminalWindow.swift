@@ -59,16 +59,6 @@ class TerminalWindow: NSWindow {
             }) {
                 toolbarTitleView.isHidden = true
             }
-            
-            // We match the appearance depending on the lightness/darkness of the
-            // background color. We have to do this because our titlebars in tabs inherit
-            // our background color for the focused tab but use the macOS theme for the
-            // rest of the titlebar.
-            if let appDelegate = NSApp.delegate as? AppDelegate {
-                let color = OSColor(appDelegate.ghostty.config.backgroundColor)
-                let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
-                self.appearance = appearance
-            }
         } else {
             // "expanded" places the toolbar below the titlebar, so setting this style and
             // removing the toolbar ensures that the titlebar will be the default height.

@@ -600,9 +600,13 @@ keybind: Keybinds = .{},
 /// borders.
 @"window-decoration": bool = true,
 
-/// The theme to use for the windows. The default is `system` which means that
-/// whatever the system theme is will be used. This can also be set to `light`
-/// or `dark` to force a specific theme regardless of the system settings.
+/// The theme to use for the windows. Valid values:
+///
+///   * `auto` - Determine the theme based on the configured terminal
+///      background color.
+///   * `system` - Use the system theme.
+///   * `light` - Use the light theme regardless of system theme.
+///   * `dark` - Use the dark theme regardless of system theme.
 ///
 /// On macOS, if `macos-titlebar-tabs` is set, the window theme will be
 /// automatically set based on the luminosity of the terminal background color.
@@ -610,7 +614,7 @@ keybind: Keybinds = .{},
 /// non-terminal windows within Ghostty.
 ///
 /// This is currently only supported on macOS and Linux.
-@"window-theme": WindowTheme = .system,
+@"window-theme": WindowTheme = .auto,
 
 /// The colorspace to use for the terminal window. The default is `srgb` but
 /// this can also be set to `display-p3` to use the Display P3 colorspace.
@@ -3342,6 +3346,7 @@ pub const OSCColorReportFormat = enum {
 
 /// The default window theme.
 pub const WindowTheme = enum {
+    auto,
     system,
     light,
     dark,
