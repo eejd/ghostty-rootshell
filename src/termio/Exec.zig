@@ -2345,7 +2345,7 @@ const StreamHandler = struct {
 
     pub fn deviceStatusReport(
         self: *StreamHandler,
-        req: terminal.DeviceStatusReq,
+        req: terminal.device_status.Request,
     ) !void {
         switch (req) {
             .operating_status => self.messageWriter(.{ .write_stable = "\x1B[0n" }),
@@ -2375,7 +2375,7 @@ const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
-            else => log.warn("unimplemented device status req: {}", .{req}),
+            .color_scheme => self.surfaceMessageWriter(.{ .report_color_scheme = {} }),
         }
     }
 

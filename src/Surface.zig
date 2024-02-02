@@ -90,6 +90,11 @@ mouse: Mouse,
 /// less important.
 pressed_key: ?input.KeyEvent = null,
 
+/// The current color scheme of the GUI element containing this surface.
+/// This will default to light until the apprt sends us the actual color
+/// scheme. This is used by mode 3031 and CSI 996 n.
+color_scheme: apprt.ColorScheme = .light,
+
 /// The hash value of the last keybinding trigger that we performed. This
 /// is only set if the last key input matched a keybinding, consumed it,
 /// and performed it. This is used to prevent sending release/repeat events
@@ -832,7 +837,20 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .renderer_health => |health| self.updateRendererHealth(health),
+
+        .report_color_scheme => try self.reportColorScheme(),
     }
+}
+
+/// Sends a DSR response for the current color scheme to the pty.
+fn reportColorScheme(self: *const Surface) !void {
+    const output = switch (self.color_scheme) {
+        .light => "\x1B[?997;2n",
+        .dark => "\x1B[?997;1n",
+    };
+
+    _ = self.io_thread.mailbox.push(.{ .write_stable = output }, .{ .forever = {} });
+    try self.io_thread.wakeup.notify();
 }
 
 /// Call this when modifiers change. This is safe to call even if modifiers
@@ -2784,6 +2802,24 @@ fn dragLeftClickBefore(
     }
 
     return screen_point.before(click_point);
+}
+
+/// Call to notify Ghostty that the color scheme for the terminal has
+/// changed.
+pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
+    // If our scheme didn't change, then we don't do anything.
+    if (self.color_scheme == scheme) return;
+
+    // Set our new scheme
+    self.color_scheme = scheme;
+
+    // If mode 2031 is on, then we report the change live.
+    const report = report: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        break :report self.renderer_state.terminal.modes.get(.report_color_scheme);
+    };
+    if (report) try self.reportColorScheme();
 }
 
 fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Viewport {

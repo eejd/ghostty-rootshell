@@ -144,6 +144,11 @@ typedef enum {
     GHOSTTY_TAB_NEXT = -2,
 } ghostty_tab_e;
 
+typedef enum {
+    GHOSTTY_COLOR_SCHEME_LIGHT = 0,
+    GHOSTTY_COLOR_SCHEME_DARK = 1,
+} ghostty_color_scheme_e;
+
 // This is a packed struct (see src/input/mouse.zig) but the C standard
 // afaik doesn't let us reliably define packed structs so we build it up
 // from scratch.
@@ -475,6 +480,7 @@ void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
+void ghostty_surface_set_color_scheme(ghostty_surface_t, ghostty_color_scheme_e);
 ghostty_input_mods_e ghostty_surface_key_translation_mods(ghostty_surface_t, ghostty_input_mods_e);
 void ghostty_surface_key(ghostty_surface_t, ghostty_input_key_s);
 void ghostty_surface_text(ghostty_surface_t, const char *, uintptr_t);
