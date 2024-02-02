@@ -33,7 +33,6 @@ pub const Stream = stream.Stream;
 pub const Cursor = Screen.Cursor;
 pub const CursorStyleReq = ansi.CursorStyle;
 pub const DeviceAttributeReq = ansi.DeviceAttributeReq;
-pub const DeviceStatusReq = ansi.DeviceStatusReq;
 pub const Mode = modes.Mode;
 pub const ModifyKeyFormat = ansi.ModifyKeyFormat;
 pub const ProtectedMode = ansi.ProtectedMode;
