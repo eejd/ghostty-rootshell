@@ -689,6 +689,13 @@ pub const Surface = struct {
         };
     }
 
+    pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) void {
+        self.core_surface.colorSchemeCallback(scheme) catch |err| {
+            log.err("error setting color scheme err={}", .{err});
+            return;
+        };
+    }
+
     pub fn mouseButtonCallback(
         self: *Surface,
         action: input.MouseButtonState,
@@ -1514,6 +1521,19 @@ pub const CAPI = struct {
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
         surface.updateSize(w, h);
+    }
+
+    /// Update the color scheme of the surface.
+    export fn ghostty_surface_set_color_scheme(surface: *Surface, scheme_raw: c_int) void {
+        const scheme = std.meta.intToEnum(apprt.ColorScheme, scheme_raw) catch {
+            log.warn(
+                "invalid color scheme to ghostty_surface_set_color_scheme value={}",
+                .{scheme_raw},
+            );
+            return;
+        };
+
+        surface.colorSchemeCallback(scheme);
     }
 
     /// Update the content scale of the surface.

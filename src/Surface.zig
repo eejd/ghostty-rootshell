@@ -2803,7 +2803,7 @@ fn dragLeftClickBefore(
 
 /// Call to notify Ghostty that the color scheme for the terminal has
 /// changed.
-pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) void {
+pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     self.color_scheme = scheme;
 }
 
