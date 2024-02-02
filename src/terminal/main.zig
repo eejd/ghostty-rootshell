@@ -12,6 +12,7 @@ pub const dcs = @import("dcs.zig");
 pub const osc = @import("osc.zig");
 pub const point = @import("point.zig");
 pub const color = @import("color.zig");
+pub const device_status = @import("device_status.zig");
 pub const kitty = @import("kitty.zig");
 pub const modes = @import("modes.zig");
 pub const parse_table = @import("parse_table.zig");

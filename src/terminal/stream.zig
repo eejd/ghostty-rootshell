@@ -3,6 +3,7 @@ const testing = std.testing;
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
+const device_status = @import("device_status.zig");
 const csi = @import("csi.zig");
 const kitty = @import("kitty.zig");
 const modes = @import("modes.zig");
@@ -637,36 +638,63 @@ pub fn Stream(comptime Handler: type) type {
                 },
 
                 // TODO: test
-                'n' => switch (action.intermediates.len) {
-                    0 => if (@hasDecl(T, "deviceStatusReport")) try self.handler.deviceStatusReport(
-                        switch (action.params.len) {
-                            1 => @enumFromInt(action.params[0]),
-                            else => {
-                                log.warn("invalid device status report command: {}", .{action});
-                                return;
-                            },
-                        },
-                    ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                'n' => {
+                    // Handle deviceStatusReport first
+                    if (action.intermediates.len == 0 or
+                        action.intermediates[0] == '?')
+                    {
+                        if (!@hasDecl(T, "deviceStatusReport")) {
+                            log.warn("unimplemented CSI callback: {}", .{action});
+                            return;
+                        }
 
-                    1 => switch (action.intermediates[0]) {
-                        '>' => if (@hasDecl(T, "setModifyKeyFormat")) {
-                            // This isn't strictly correct. CSI > n has parameters that
-                            // control what exactly is being disabled. However, we
-                            // only support reverting back to modify other keys in
-                            // numeric except format.
-                            try self.handler.setModifyKeyFormat(.{ .other_keys = .numeric_except });
-                        } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+                        if (action.params.len != 1) {
+                            log.warn("invalid device status report command: {}", .{action});
+                            return;
+                        }
+
+                        const question = question: {
+                            if (action.intermediates.len == 0) break :question false;
+                            if (action.intermediates.len == 1 and
+                                action.intermediates[0] == '?') break :question true;
+
+                            log.warn("invalid set mode command: {}", .{action});
+                            return;
+                        };
+
+                        const req = device_status.reqFromInt(action.params[0], question) orelse {
+                            log.warn("invalid device status report command: {}", .{action});
+                            return;
+                        };
+
+                        try self.handler.deviceStatusReport(req);
+                        return;
+                    }
+
+                    // Handle other forms of CSI n
+                    switch (action.intermediates.len) {
+                        0 => unreachable, // handled above
+
+                        1 => switch (action.intermediates[0]) {
+                            '>' => if (@hasDecl(T, "setModifyKeyFormat")) {
+                                // This isn't strictly correct. CSI > n has parameters that
+                                // control what exactly is being disabled. However, we
+                                // only support reverting back to modify other keys in
+                                // numeric except format.
+                                try self.handler.setModifyKeyFormat(.{ .other_keys = .numeric_except });
+                            } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+
+                            else => log.warn(
+                                "unknown CSI n with intermediate: {}",
+                                .{action.intermediates[0]},
+                            ),
+                        },
 
                         else => log.warn(
-                            "unknown CSI n with intermediate: {}",
-                            .{action.intermediates[0]},
+                            "ignoring unimplemented CSI n with intermediates: {s}",
+                            .{action.intermediates},
                         ),
-                    },
-
-                    else => log.warn(
-                        "ignoring unimplemented CSI n with intermediates: {s}",
-                        .{action.intermediates},
-                    ),
+                    }
                 },
 
                 // DECRQM - Request Mode
