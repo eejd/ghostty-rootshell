@@ -22,7 +22,7 @@ const oni = @import("oniguruma");
 ///
 /// There are many complicated cases where these heuristics break down, but
 /// handling them well requires a non-regex approach.
-pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w./+:@%?=&-]+(?:\\(\\w*\\))?)+(?<!\\.)";
+pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w\\-.~:/?#\\[\\]@!$&*+,;=%]+(?:\\(\\w*\\))?)+(?<!\\.)";
 const url_scheme = "https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:";
 
 test "url regex" {
@@ -96,6 +96,16 @@ test "url regex" {
         .{
             .input = "url with dashes [mode 2027](https://github.com/contour-terminal/terminal-unicode-core) for better unicode support",
             .expect = "https://github.com/contour-terminal/terminal-unicode-core",
+        },
+        // weird characters in URL
+        .{
+            .input = "weird characters https://example.com/~user/?query=1&other=2#hash and more",
+            .expect = "https://example.com/~user/?query=1&other=2#hash",
+        },
+        // square brackets in URL
+        .{
+            .input = "square brackets https://example.com/[foo] and more",
+            .expect = "https://example.com/[foo]",
         },
         // remaining URL schemes tests
         .{
