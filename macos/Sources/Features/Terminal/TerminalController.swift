@@ -105,6 +105,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     //MARK: - Methods
     
+    func configDidReload() {
+        syncAppearance()
+    }
+    
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
     /// changes and when a window is closed.
@@ -149,6 +153,20 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard tabWindowsHash != v else { return }
         tabWindowsHash = v
         self.relabelTabs()
+    }
+    
+    private func syncAppearance() {
+        guard let window = self.window as? TerminalWindow else { return }
+        
+        // We match the appearance depending on the lightness/darkness of the
+        // background color. We have to do this because our titlebars in tabs inherit
+        // our background color for the focused tab but use the macOS theme for the
+        // rest of the titlebar.
+        if (window.titlebarTabs) {
+            let color = OSColor(ghostty.config.backgroundColor)
+            let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
+            window.appearance = appearance
+        }
     }
     
     //MARK: - NSWindowController
@@ -214,6 +232,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         if (ghostty.config.macosTitlebarTabs) {
             window.tabbingMode = .preferred
             window.titlebarTabs = true
+            syncAppearance()
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }

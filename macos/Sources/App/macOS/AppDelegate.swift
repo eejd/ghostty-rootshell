@@ -377,6 +377,11 @@ class AppDelegate: NSObject,
         // Config could change window appearance
         syncAppearance()
         
+        // Update all of our windows
+        terminalManager.windows.forEach { window in
+            window.controller.configDidReload()
+        }
+        
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = state.config.errors
@@ -399,6 +404,11 @@ class AppDelegate: NSObject,
             let appearance = NSAppearance(named: .aqua)
             NSApplication.shared.appearance = appearance
             
+        case "auto":
+            let color = OSColor(ghostty.config.backgroundColor)
+            let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
+            NSApplication.shared.appearance = appearance
+        
         default:
             NSApplication.shared.appearance = nil
         }
