@@ -94,8 +94,53 @@ test "url regex" {
             .expect = "https://example.com?query=1&other=2",
         },
         .{
-            .input = "modern terminals supports [mode 2027](https://github.com/contour-terminal/terminal-unicode-core) for better unicode support",
+            .input = "url with dashes [mode 2027](https://github.com/contour-terminal/terminal-unicode-core) for better unicode support",
             .expect = "https://github.com/contour-terminal/terminal-unicode-core",
+        },
+        // remaining URL schemes tests
+        .{
+            .input = "match ftp://example.com ftp links",
+            .expect = "ftp://example.com",
+        },
+        .{
+            .input = "match file://example.com file links",
+            .expect = "file://example.com",
+        },
+        .{
+            .input = "match ssh://example.com ssh links",
+            .expect = "ssh://example.com",
+        },
+        .{
+            .input = "match git://example.com git links",
+            .expect = "git://example.com",
+        },
+        .{
+            .input = "match tel:+18005551234 tel links",
+            .expect = "tel:+18005551234",
+        },
+        .{
+            .input = "match magnet:?xt=urn:btih:1234567890 magnet links",
+            .expect = "magnet:?xt=urn:btih:1234567890",
+        },
+        .{
+            .input = "match ipfs://QmSomeHashValue ipfs links",
+            .expect = "ipfs://QmSomeHashValue",
+        },
+        .{
+            .input = "match ipns://QmSomeHashValue ipns links",
+            .expect = "ipns://QmSomeHashValue",
+        },
+        .{
+            .input = "match gemini://example.com gemini links",
+            .expect = "gemini://example.com",
+        },
+        .{
+            .input = "match gopher://example.com gopher links",
+            .expect = "gopher://example.com",
+        },
+        .{
+            .input = "match news:comp.infosystems.www.servers.unix news links",
+            .expect = "news:comp.infosystems.www.servers.unix",
         },
     };
 
