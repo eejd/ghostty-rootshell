@@ -604,6 +604,11 @@ keybind: Keybinds = .{},
 /// whatever the system theme is will be used. This can also be set to `light`
 /// or `dark` to force a specific theme regardless of the system settings.
 ///
+/// On macOS, if `macos-titlebar-tabs` is set, the window theme will be
+/// automatically set based on the luminosity of the terminal background color.
+/// This only applies to terminal windows. This setting will still apply to
+/// non-terminal windows within Ghostty.
+///
 /// This is currently only supported on macOS and Linux.
 @"window-theme": WindowTheme = .system,
 
