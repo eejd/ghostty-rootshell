@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) !void {
     lib.linkFramework("CoreGraphics");
     lib.linkFramework("CoreText");
     lib.linkFramework("CoreVideo");
+    lib.linkFramework("QuartzCore");
     if (target.result.os.tag == .macos) {
         lib.linkFramework("Carbon");
         module.linkFramework("Carbon", .{});
@@ -42,6 +43,7 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});
         module.linkFramework("CoreVideo", .{});
+        module.linkFramework("QuartzCore", .{});
 
         if (!target.query.isNative()) {
             try apple_sdk.addPaths(b, &lib.root_module);
