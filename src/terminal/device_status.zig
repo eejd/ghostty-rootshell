@@ -63,5 +63,5 @@ const Entry = struct {
 const entries: []const Entry = &.{
     .{ .name = "operating_status", .value = 5 },
     .{ .name = "cursor_position", .value = 6 },
-    .{ .name = "theme", .value = 996, .question = true },
+    .{ .name = "color_scheme", .value = 996, .question = true },
 };
