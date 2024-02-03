@@ -13,13 +13,13 @@ const App = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
+const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
 const input = @import("../../input.zig");
 const internal_os = @import("../../os/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
-const ColorScheme = @import("../../apprt.zig").ColorScheme;
 
 const build_options = @import("build_options");
 
@@ -225,24 +225,21 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
     c.g_application_activate(gapp);
 
-    const dbus_connection = c.g_application_get_dbus_connection(gapp);
-    if (dbus_connection == null) {
-        log.err("unable to get dbus connection", .{});
-        return error.NoDBusConnection;
+    // Register for dbus events
+    if (c.g_application_get_dbus_connection(gapp)) |dbus_connection| {
+        _ = c.g_dbus_connection_signal_subscribe(
+            dbus_connection,
+            null,
+            "org.freedesktop.portal.Settings",
+            "SettingChanged",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.appearance",
+            c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
+            &gtkNotifyColorScheme,
+            core_app,
+            null,
+        );
     }
-
-    _ = c.g_dbus_connection_signal_subscribe(
-        dbus_connection,
-        null,
-        "org.freedesktop.portal.Settings",
-        "SettingChanged",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.appearance",
-        c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
-        &gtkNotifyColorScheme,
-        core_app,
-        null,
-    );
 
     return .{
         .core_app = core_app,
@@ -509,8 +506,9 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     }, .{ .forever = {} });
 }
 
-/// Call a D-Bus method to determine the current color scheme.
-pub fn getColorScheme(self: *App) ColorScheme {
+/// Call a D-Bus method to determine the current color scheme. If there
+/// is any error at any point we'll log the error and return "light"
+pub fn getColorScheme(self: *App) apprt.ColorScheme {
     const dbus_connection = c.g_application_get_dbus_connection(@ptrCast(self.app));
 
     var err: ?*c.GError = null;
@@ -569,9 +567,7 @@ fn gtkNotifyColorScheme(
     var namespace: [*c]u8 = undefined;
     var setting: [*c]u8 = undefined;
     var value: *c.GVariant = undefined;
-
     c.g_variant_get(parameters, "(ssv)", &namespace, &setting, &value);
-
     defer c.g_free(namespace);
     defer c.g_free(setting);
     defer c.g_variant_unref(value);
@@ -585,7 +581,11 @@ fn gtkNotifyColorScheme(
         return;
     }
 
-    const color_scheme: ColorScheme = if (c.g_variant_get_uint32(value) == 1) .dark else .light;
+    const color_scheme: apprt.ColorScheme = if (c.g_variant_get_uint32(value) == 1)
+        .dark
+    else
+        .light;
+
     for (core_app.surfaces.items) |surface| {
         surface.core_surface.colorSchemeCallback(color_scheme) catch |err| {
             log.err("unable to tell surface about color scheme change: {}", .{err});

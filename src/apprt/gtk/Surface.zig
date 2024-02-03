@@ -418,8 +418,8 @@ fn realize(self: *Surface) !void {
         self.core_surface.setFontSize(size);
     }
 
-    // set the intial color scheme
-    self.core_surface.color_scheme = self.app.getColorScheme();
+    // Set the intial color scheme
+    try self.core_surface.colorSchemeCallback(self.app.getColorScheme());
 
     // Note we're realized
     self.realized = true;
