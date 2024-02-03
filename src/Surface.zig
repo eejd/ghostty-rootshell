@@ -843,7 +843,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 }
 
 /// Sends a DSR response for the current color scheme to the pty.
-fn reportColorScheme(self: *const Surface) !void {
+fn reportColorScheme(self: *Surface) !void {
     const output = switch (self.color_scheme) {
         .light => "\x1B[?997;2n",
         .dark => "\x1B[?997;1n",
