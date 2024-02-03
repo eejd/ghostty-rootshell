@@ -19,6 +19,8 @@ const internal_os = @import("../../os/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
+const ColorScheme = @import("../../apprt.zig").ColorScheme;
+
 const build_options = @import("build_options");
 
 const Surface = @import("Surface.zig");
@@ -222,6 +224,25 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // startup routine so we just call it:
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
     c.g_application_activate(gapp);
+
+    const dbus_connection = c.g_application_get_dbus_connection(gapp);
+    if (dbus_connection == null) {
+        log.err("unable to get dbus connection", .{});
+        return error.NoDBusConnection;
+    }
+
+    _ = c.g_dbus_connection_signal_subscribe(
+        dbus_connection,
+        null,
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.appearance",
+        c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
+        &gtkNotifyColorScheme,
+        core_app,
+        null,
+    );
 
     return .{
         .core_app = core_app,
@@ -486,6 +507,90 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = core_app.mailbox.push(.{
         .new_window = .{},
     }, .{ .forever = {} });
+}
+
+/// Call a D-Bus method to determine the current color scheme.
+pub fn getColorScheme(self: *App) ColorScheme {
+    const dbus_connection = c.g_application_get_dbus_connection(@ptrCast(self.app));
+
+    var err: ?*c.GError = null;
+    defer if (err) |e| c.g_error_free(e);
+
+    const value = c.g_dbus_connection_call_sync(
+        dbus_connection,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+        "ReadOne",
+        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+        c.G_VARIANT_TYPE("(v)"),
+        c.G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        null,
+        &err,
+    ) orelse {
+        if (err) |e| log.err("unable to get current color scheme: {s}", .{e.message});
+        return .light;
+    };
+    defer c.g_variant_unref(value);
+
+    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
+        var inner: ?*c.GVariant = null;
+        c.g_variant_get(value, "(v)", &inner);
+        defer c.g_variant_unref(inner);
+        if (c.g_variant_is_of_type(inner, c.G_VARIANT_TYPE("u")) == 1) {
+            return if (c.g_variant_get_uint32(inner) == 1) .dark else .light;
+        }
+    }
+
+    return .light;
+}
+
+/// This will be called by D-Bus when the style changes between light & dark.
+fn gtkNotifyColorScheme(
+    _: ?*c.GDBusConnection,
+    _: [*c]const u8,
+    _: [*c]const u8,
+    _: [*c]const u8,
+    _: [*c]const u8,
+    parameters: ?*c.GVariant,
+    user_data: ?*anyopaque,
+) callconv(.C) void {
+    const core_app: *CoreApp = @ptrCast(@alignCast(user_data orelse {
+        log.err("style change notification: userdata is null", .{});
+        return;
+    }));
+
+    if (c.g_variant_is_of_type(parameters, c.G_VARIANT_TYPE("(ssv)")) != 1) {
+        log.err("unexpected parameter type: {s}", .{c.g_variant_get_type_string(parameters)});
+        return;
+    }
+
+    var namespace: [*c]u8 = undefined;
+    var setting: [*c]u8 = undefined;
+    var value: *c.GVariant = undefined;
+
+    c.g_variant_get(parameters, "(ssv)", &namespace, &setting, &value);
+
+    defer c.g_free(namespace);
+    defer c.g_free(setting);
+    defer c.g_variant_unref(value);
+
+    // ignore any setting changes that we aren't interested in
+    if (!std.mem.eql(u8, "org.freedesktop.appearance", std.mem.span(namespace))) return;
+    if (!std.mem.eql(u8, "color-scheme", std.mem.span(setting))) return;
+
+    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("u")) != 1) {
+        log.err("unexpected value type: {s}", .{c.g_variant_get_type_string(value)});
+        return;
+    }
+
+    const color_scheme: ColorScheme = if (c.g_variant_get_uint32(value) == 1) .dark else .light;
+    for (core_app.surfaces.items) |surface| {
+        surface.core_surface.colorSchemeCallback(color_scheme) catch |err| {
+            log.err("unable to tell surface about color scheme change: {}", .{err});
+        };
+    }
 }
 
 fn gtkActionOpenConfig(
