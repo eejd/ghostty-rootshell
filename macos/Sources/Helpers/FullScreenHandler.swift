@@ -164,6 +164,11 @@ class FullScreenHandler {
         // Restore frame
         window.setFrame(window.frameRect(forContentRect: previousFrame), display: true)
         
+        // Have titlebar tabs set itself up again, since removing the titlebar when fullscreen breaks its constraints.
+        if let window = window as? TerminalWindow, window.titlebarTabs {
+            window.titlebarTabs = true
+        }
+        
         // If the window was previously in a tab group that isn't empty now, we re-add it
         if let group = previousTabGroup, let tabIndex = previousTabGroupIndex, !group.windows.isEmpty {
             var tabWindow: NSWindow?
