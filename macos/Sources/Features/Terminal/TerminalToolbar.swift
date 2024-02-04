@@ -4,7 +4,7 @@ import Cocoa
 // in order to accommodate the titlebar tabs feature.
 class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     static private let identifier = NSToolbarItem.Identifier("TitleText")
-    private let titleTextField = NSTextField(labelWithString: "👻 Ghostty")
+    private let titleTextField = CenteredDynamicLabel(labelWithString: "👻 Ghostty")
     
     var titleText: String {
         get {
@@ -34,8 +34,22 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         guard itemIdentifier == Self.identifier else { return nil }
         
         let toolbarItem = NSToolbarItem(itemIdentifier: itemIdentifier)
-        toolbarItem.isEnabled = true
         toolbarItem.view = self.titleTextField
+        toolbarItem.visibilityPriority = .user
+        
+        // NSToolbarItem.minSize and NSToolbarItem.maxSize are deprecated, and make big ugly
+        // warnings in Xcode when you use them, but I cannot for the life of me figure out
+        // how to get this to work with constraints. The behavior isn't the same, instead of
+        // shrinking the item and clipping the subview, it hides the item as soon as the
+        // intrinsic size of the subview gets too big for the toolbar width, regardless of
+        // whether I have constraints set on its width, height, or both :/
+        //
+        // If someone can fix this so we don't have to use deprecated properties: Please do.
+        toolbarItem.minSize = NSSize(width: 65, height: 1)
+        toolbarItem.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
+        
+        toolbarItem.isEnabled = true
+        
         return toolbarItem
     }
     
@@ -45,5 +59,17 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         return [Self.identifier]
+    }
+}
+
+class CenteredDynamicLabel: NSTextField {
+    override func viewDidMoveToSuperview() {
+        guard let superview = superview else { return }
+        widthAnchor.constraint(equalTo: superview.widthAnchor).isActive = true
+        centerXAnchor.constraint(equalTo: superview.centerXAnchor).isActive = true
+        
+        alignment = .center
+        
+        needsLayout = true
     }
 }
