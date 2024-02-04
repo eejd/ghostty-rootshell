@@ -136,10 +136,8 @@ class TerminalWindow: NSWindow {
         
         addWindowButtonsBackdrop(titlebarView: titlebarView, toolbarView: toolbarView)
         guard let windowButtonsBackdrop = windowButtonsBackdrop else { return }
-        windowButtonsBackdrop.isHidden = false
         
         addWindowDragHandle(titlebarView: titlebarView, toolbarView: toolbarView)
-        windowDragHandle?.isHidden = false
         
         accessoryClipView.translatesAutoresizingMaskIntoConstraints = false
         accessoryClipView.leftAnchor.constraint(equalTo: windowButtonsBackdrop.rightAnchor).isActive = true
@@ -165,7 +163,17 @@ class TerminalWindow: NSWindow {
     }
     
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
-        guard windowButtonsBackdrop == nil else { return }
+        // If we already made the view, just make sure it's unhidden and correctly placed as a subview.
+        if let view = windowButtonsBackdrop {
+            view.removeFromSuperview()
+            view.isHidden = false
+            titlebarView.addSubview(view)
+            view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
+            view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 80).isActive = true
+            view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
+            view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
+            return
+        }
         
         let view = NSView()
         view.identifier = NSUserInterfaceItemIdentifier("_windowButtonsBackdrop")
@@ -202,7 +210,17 @@ class TerminalWindow: NSWindow {
     }
     
     private func addWindowDragHandle(titlebarView: NSView, toolbarView: NSView) {
-        guard windowDragHandle == nil else { return }
+        // If we already made the view, just make sure it's unhidden and correctly placed as a subview.
+        if let view = windowDragHandle {
+            view.removeFromSuperview()
+            view.isHidden = false
+            titlebarView.superview?.addSubview(view)
+            view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
+            view.rightAnchor.constraint(equalTo: toolbarView.rightAnchor).isActive = true
+            view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
+            view.bottomAnchor.constraint(equalTo: toolbarView.topAnchor, constant: 12).isActive = true
+            return
+        }
         
         let view = WindowDragView()
         view.identifier = NSUserInterfaceItemIdentifier("_windowDragHandle")
