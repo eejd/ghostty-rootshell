@@ -31,7 +31,9 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        guard itemIdentifier == Self.identifier else { return nil }
+        guard itemIdentifier == Self.identifier else {
+            return NSToolbarItem(itemIdentifier: itemIdentifier)
+        }
         
         let toolbarItem = NSToolbarItem(itemIdentifier: itemIdentifier)
         toolbarItem.view = self.titleTextField
@@ -45,7 +47,7 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         // whether I have constraints set on its width, height, or both :/
         //
         // If someone can fix this so we don't have to use deprecated properties: Please do.
-        toolbarItem.minSize = NSSize(width: 65, height: 1)
+        toolbarItem.minSize = NSSize(width: 32, height: 1)
         toolbarItem.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
         
         toolbarItem.isEnabled = true
@@ -54,22 +56,30 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     }
     
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [Self.identifier]
+        return [Self.identifier, .space]
     }
     
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [Self.identifier]
+        // These space items are here to ensure that the title remains centered when it starts
+        // getting smaller than the max size so starts clipping. Lucky for us, three of the
+        // built-in spacers seems to exactly match the space on the left that's reserved for
+        // the window buttons.
+        return [Self.identifier, .space, .space, .space]
     }
 }
 
+/// A label that expands to fit whatever text you put in it and horizontally centers itself in the current window.
 class CenteredDynamicLabel: NSTextField {
     override func viewDidMoveToSuperview() {
-        guard let superview = superview else { return }
-        widthAnchor.constraint(equalTo: superview.widthAnchor).isActive = true
-        centerXAnchor.constraint(equalTo: superview.centerXAnchor).isActive = true
+        // Truncate the title when it gets too long- cutting it off with an ellipsis.
+        cell?.truncatesLastVisibleLine = true
+        cell?.lineBreakMode = .byCharWrapping
         
-        alignment = .center
+        // Make the text field as small as possible while fitting its text.
+        setContentHuggingPriority(.required, for: .horizontal)
+        cell?.alignment = .center
         
+        // We've changed some alignment settings, make sure the layout is updated immediately.
         needsLayout = true
     }
 }
