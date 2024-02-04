@@ -20,6 +20,8 @@ class FullScreenHandler {
                 leaveFullscreen(window: window)
                 isInNonNativeFullscreen = false
             } else {
+                // Restore titlebar separator style. See below for explanation.
+                window.titlebarSeparatorStyle = .automatic
                 window.toggleFullScreen(nil)
             }
             isInFullscreen = false
@@ -29,6 +31,10 @@ class FullScreenHandler {
                 enterFullscreen(window: window, hideMenu: hideMenu)
                 isInNonNativeFullscreen = true
             } else {
+                // The titlebar separator shows up erroneously in fullscreen if the tab bar
+                // is made to appear and then disappear by opening and then closing a tab.
+                // We get rid of the separator while in fullscreen to prevent this.
+                window.titlebarSeparatorStyle = .none
                 window.toggleFullScreen(nil)
             }
             isInFullscreen = true
