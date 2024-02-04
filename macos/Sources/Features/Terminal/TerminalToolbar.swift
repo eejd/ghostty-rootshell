@@ -69,9 +69,9 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 }
 
 /// A label that expands to fit whatever text you put in it and horizontally centers itself in the current window.
-class CenteredDynamicLabel: NSTextField {
+fileprivate class CenteredDynamicLabel: NSTextField {
     override func viewDidMoveToSuperview() {
-        // Truncate the title when it gets too long- cutting it off with an ellipsis.
+        // Truncate the title when it gets too long, cutting it off with an ellipsis.
         cell?.truncatesLastVisibleLine = true
         cell?.lineBreakMode = .byCharWrapping
         
