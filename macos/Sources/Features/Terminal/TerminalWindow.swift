@@ -45,19 +45,10 @@ class TerminalWindow: NSWindow {
                 self.toolbar = TerminalToolbar(identifier: "Toolbar")
             }
             
-            // We directly hide the view containing the title text because if we use the
-            // `titleVisibility` property for this it prevents the window from hiding the
-            // tab bar when we get down to a single tab.
-            if let toolbarTitleView = contentView?.superview?.subviews.first(where: {
-                $0.className == "NSTitlebarContainerView"
-            })?.subviews.first(where: {
-                $0.className == "NSTitlebarView"
-            })?.subviews.first(where: {
-                $0.className == "NSToolbarView"
-            })?.subviews.first(where: {
-                $0.className == "NSToolbarTitleView"
-            }) {
-                toolbarTitleView.isHidden = true
+            // We have to wait before setting the titleVisibility or else it prevents
+            // the window from hiding the tab bar when we get down to a single tab.
+            DispatchQueue.main.async {
+                self.titleVisibility = .hidden
             }
         } else {
             // "expanded" places the toolbar below the titlebar, so setting this style and
