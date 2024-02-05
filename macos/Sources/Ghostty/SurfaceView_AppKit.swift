@@ -403,6 +403,22 @@ extension Ghostty {
         }
 
         override func viewDidChangeBackingProperties() {
+            super.viewDidChangeBackingProperties()
+            
+            // The Core Animation compositing engine uses the layer's contentsScale property
+            // to determine whether to scale its contents during compositing. When the window
+            // moves between a high DPI display and a low DPI display, or the user modifies
+            // the DPI scaling for a display in the system settings, this can result in the
+            // layer being scaled inappropriately. Since we handle the adjustment of scale
+            // and resolution ourselves below, we update the layer's contentsScale property
+            // to match the window's backingScaleFactor, so as to ensure it is not scaled by
+            // the compositor.
+            //
+            // Ref: High Resolution Guidelines for OS X
+            if let window = window {
+                layer?.contentsScale = window.backingScaleFactor
+            }
+            
             guard let surface = self.surface else { return }
 
             // Detect our X/Y scale factor so we can update our surface
