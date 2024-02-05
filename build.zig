@@ -9,7 +9,8 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
-const BuildConfig = @import("src/build_config.zig").BuildConfig;
+const build_config = @import("src/build_config.zig");
+const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -159,7 +160,7 @@ pub fn build(b: *std.Build) !void {
             "If not specified, git will be used. This must be a semantic version.",
     );
 
-    const version: std.SemanticVersion = if (version_string) |v|
+    config.version = if (version_string) |v|
         try std.SemanticVersion.parse(v)
     else version: {
         const vsn = try Version.detect(b);
@@ -198,7 +199,7 @@ pub fn build(b: *std.Build) !void {
 
     // Help exe. This must be run before any dependent executables because
     // otherwise the build will be cached without emit. That's clunky but meh.
-    if (emit_helpgen) addHelp(b, null);
+    if (emit_helpgen) try addHelp(b, null, config);
 
     // Add our benchmarks
     try benchSteps(b, target, optimize, config, emit_bench);
@@ -211,19 +212,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     }) else null;
 
-    const exe_options = b.addOptions();
-    config.addOptions(exe_options);
-    exe_options.addOption(std.SemanticVersion, "app_version", version);
-    exe_options.addOption([:0]const u8, "app_version_string", try std.fmt.allocPrintZ(
-        b.allocator,
-        "{}",
-        .{version},
-    ));
-
     // Exe
     if (exe_) |exe| {
-        exe.root_module.addOptions("build_options", exe_options);
-
         // Add the shared dependencies
         _ = try addDeps(b, exe, config);
 
@@ -428,7 +418,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Documenation
-    if (emit_docs) buildDocumentation(b, version);
+    if (emit_docs) try buildDocumentation(b, config);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -464,7 +454,6 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
                 .target = target,
             });
-            lib.root_module.addOptions("build_options", exe_options);
             _ = try addDeps(b, lib, config);
 
             const lib_install = b.addInstallLibFile(
@@ -482,7 +471,6 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
                 .target = target,
             });
-            lib.root_module.addOptions("build_options", exe_options);
             _ = try addDeps(b, lib, config);
 
             const lib_install = b.addInstallLibFile(
@@ -510,7 +498,6 @@ pub fn build(b: *std.Build) !void {
             b,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -526,7 +513,6 @@ pub fn build(b: *std.Build) !void {
             null,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -542,7 +528,6 @@ pub fn build(b: *std.Build) !void {
             .simulator,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -605,6 +590,11 @@ pub fn build(b: *std.Build) !void {
             }),
         };
 
+        // Whether we're using wasm shared memory. Some behaviors change.
+        // For now we require this but I wanted to make the code handle both
+        // up front.
+        const wasm_shared: bool = true;
+
         // Modify our build configuration for wasm builds.
         const wasm_config: BuildConfig = config: {
             var copy = config;
@@ -616,18 +606,12 @@ pub fn build(b: *std.Build) !void {
             // Backends that are fixed for wasm
             copy.font_backend = .web_canvas;
 
+            // Wasm-specific options
+            copy.wasm_shared = wasm_shared;
+            copy.wasm_target = wasm_target;
+
             break :config copy;
         };
-
-        // Whether we're using wasm shared memory. Some behaviors change.
-        // For now we require this but I wanted to make the code handle both
-        // up front.
-        const wasm_shared: bool = true;
-        exe_options.addOption(bool, "wasm_shared", wasm_shared);
-
-        // We want to support alternate wasm targets in the future (i.e.
-        // server side) so we have this now although its hardcoded.
-        exe_options.addOption(WasmTarget, "wasm_target", wasm_target);
 
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
@@ -635,7 +619,6 @@ pub fn build(b: *std.Build) !void {
             .target = b.resolveTargetQuery(wasm_crosstarget),
             .optimize = optimize,
         });
-        wasm.root_module.addOptions("build_options", exe_options);
 
         // So that we can use web workers with our wasm binary
         wasm.import_memory = true;
@@ -666,7 +649,6 @@ pub fn build(b: *std.Build) !void {
             .target = b.resolveTargetQuery(wasm_crosstarget),
         });
 
-        main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, wasm_config);
         test_step.dependOn(&main_test.step);
     }
@@ -709,7 +691,6 @@ pub fn build(b: *std.Build) !void {
                 copy.static = true;
                 break :config copy;
             });
-            main_test.root_module.addOptions("build_options", exe_options);
 
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
@@ -755,7 +736,6 @@ fn createMacOSLib(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
-    exe_options: *std.Build.Step.Options,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
     // Modify our build configuration for macOS builds.
     const macos_config: BuildConfig = config: {
@@ -781,7 +761,6 @@ fn createMacOSLib(
         });
         lib.bundle_compiler_rt = true;
         lib.linkLibC();
-        lib.root_module.addOptions("build_options", exe_options);
 
         // Create a single static lib with all our dependencies merged
         var lib_list = try addDeps(b, lib, macos_config);
@@ -810,7 +789,6 @@ fn createMacOSLib(
         });
         lib.bundle_compiler_rt = true;
         lib.linkLibC();
-        lib.root_module.addOptions("build_options", exe_options);
 
         // Create a single static lib with all our dependencies merged
         var lib_list = try addDeps(b, lib, macos_config);
@@ -847,7 +825,6 @@ fn createIOSLib(
     abi: ?std.Target.Abi,
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
-    exe_options: *std.Build.Step.Options,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
     const ios_config: BuildConfig = config: {
         var copy = config;
@@ -868,7 +845,6 @@ fn createIOSLib(
     });
     lib.bundle_compiler_rt = true;
     lib.linkLibC();
-    lib.root_module.addOptions("build_options", exe_options);
 
     // Create a single static lib with all our dependencies merged
     var lib_list = try addDeps(b, lib, ios_config);
@@ -895,6 +871,11 @@ fn addDeps(
     step: *std.Build.Step.Compile,
     config: BuildConfig,
 ) !LazyPathList {
+    // All object targets get access to a standard build_options module
+    const exe_options = b.addOptions();
+    try config.addOptions(exe_options);
+    step.root_module.addOptions("build_options", exe_options);
+
     var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
 
@@ -1126,7 +1107,7 @@ fn addDeps(
         }
     }
 
-    addHelp(b, step);
+    try addHelp(b, step, config);
 
     return static_libs;
 }
@@ -1135,7 +1116,8 @@ fn addDeps(
 fn addHelp(
     b: *std.Build,
     step_: ?*std.Build.Step.Compile,
-) void {
+    config: BuildConfig,
+) !void {
     // Our static state between runs. We memoize our help strings
     // so that we only execute the help generation once.
     const HelpState = struct {
@@ -1149,6 +1131,15 @@ fn addHelp(
             .target = b.host,
         });
         if (step_ == null) b.installArtifact(help_exe);
+
+        const help_config = config: {
+            var copy = config;
+            copy.exe_entrypoint = .helpgen;
+            break :config copy;
+        };
+        const options = b.addOptions();
+        try help_config.addOptions(options);
+        help_exe.root_module.addOptions("build_options", options);
 
         const help_run = b.addRunArtifact(help_exe);
         HelpState.generated = help_run.captureStdOut();
@@ -1166,8 +1157,8 @@ fn addHelp(
 /// Generate documentation (manpages, etc.) from help strings
 fn buildDocumentation(
     b: *std.Build,
-    version: std.SemanticVersion,
-) void {
+    config: BuildConfig,
+) !void {
     const manpages = [_]struct {
         name: []const u8,
         section: []const u8,
@@ -1179,15 +1170,22 @@ fn buildDocumentation(
     inline for (manpages) |manpage| {
         const generate_markdown = b.addExecutable(.{
             .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
-            .root_source_file = .{
-                .path = "src/mdgen_" ++ manpage.name ++ "_" ++ manpage.section ++ ".zig",
-            },
+            .root_source_file = .{ .path = "src/main.zig" },
             .target = b.host,
         });
-        addHelp(b, generate_markdown);
+        try addHelp(b, generate_markdown, config);
+
+        const gen_config = config: {
+            var copy = config;
+            copy.exe_entrypoint = @field(
+                build_config.ExeEntrypoint,
+                "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
+            );
+            break :config copy;
+        };
 
         const generate_markdown_options = b.addOptions();
-        generate_markdown_options.addOption(std.SemanticVersion, "version", version);
+        try gen_config.addOptions(generate_markdown_options);
         generate_markdown.root_module.addOptions("build_options", generate_markdown_options);
 
         const generate_markdown_step = b.addRunArtifact(generate_markdown);
@@ -1254,24 +1252,26 @@ fn benchSteps(
 
         // Name of the conformance app and full path to the entrypoint.
         const name = entry.name[0..index];
-        const path = try fs.path.join(b.allocator, &[_][]const u8{
-            c_dir_path,
-            entry.name,
-        });
 
         // Executable builder.
         const bin_name = try std.fmt.allocPrint(b.allocator, "bench-{s}", .{name});
         const c_exe = b.addExecutable(.{
             .name = bin_name,
-            .root_source_file = .{ .path = path },
+            .root_source_file = .{ .path = "src/main.zig" },
             .target = target,
             .optimize = optimize,
-            // .main_pkg_path = .{ .path = "./src" },
         });
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, config: {
             var copy = config;
             copy.static = true;
+
+            var buf: [64]u8 = undefined;
+            copy.exe_entrypoint = std.meta.stringToEnum(
+                build_config.ExeEntrypoint,
+                try std.fmt.bufPrint(&buf, "bench_{s}", .{name}),
+            ).?;
+
             break :config copy;
         });
     }

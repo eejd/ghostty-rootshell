@@ -6,6 +6,7 @@
 // This currently isn't supported as a general purpose embedding API.
 // This is currently used only to embed ghostty within a macOS app. However,
 // it could be expanded to be general purpose in the future.
+
 const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");

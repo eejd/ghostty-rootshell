@@ -9,6 +9,7 @@ const assert = std.debug.assert;
 const apprt = @import("apprt.zig");
 const font = @import("font/main.zig");
 const rendererpkg = @import("renderer.zig");
+const WasmTarget = @import("os/wasm/target.zig").Target;
 
 /// The build configuratin options. This may not be all available options
 /// to `zig build` but it contains all the options that the Ghostty source
@@ -18,6 +19,7 @@ const rendererpkg = @import("renderer.zig");
 /// between options, make it easy to copy and mutate options for different
 /// build types, etc.
 pub const BuildConfig = struct {
+    version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
     static: bool = false,
     flatpak: bool = false,
     libadwaita: bool = false,
@@ -25,8 +27,17 @@ pub const BuildConfig = struct {
     renderer: rendererpkg.Impl = .opengl,
     font_backend: font.Backend = .freetype,
 
+    /// The entrypoint for exe targets.
+    exe_entrypoint: ExeEntrypoint = .ghostty,
+
+    /// The target runtime for the wasm build and whether to use wasm shared
+    /// memory or not. These are both legacy wasm-specific options that we
+    /// will probably have to revisit when we get back to work on wasm.
+    wasm_target: WasmTarget = .browser,
+    wasm_shared: bool = true,
+
     /// Configure the build options with our values.
-    pub fn addOptions(self: BuildConfig, step: *std.Build.Step.Options) void {
+    pub fn addOptions(self: BuildConfig, step: *std.Build.Step.Options) !void {
         // We need to break these down individual because addOption doesn't
         // support all types.
         step.addOption(bool, "flatpak", self.flatpak);
@@ -34,6 +45,19 @@ pub const BuildConfig = struct {
         step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
         step.addOption(font.Backend, "font_backend", self.font_backend);
         step.addOption(rendererpkg.Impl, "renderer", self.renderer);
+        step.addOption(ExeEntrypoint, "exe_entrypoint", self.exe_entrypoint);
+        step.addOption(WasmTarget, "wasm_target", self.wasm_target);
+        step.addOption(bool, "wasm_shared", self.wasm_shared);
+
+        // Our version. We also add the string version so we don't need
+        // to do any allocations at runtime.
+        var buf: [64]u8 = undefined;
+        step.addOption(std.SemanticVersion, "app_version", self.version);
+        step.addOption([:0]const u8, "app_version_string", try std.fmt.bufPrintZ(
+            &buf,
+            "{}",
+            .{self.version},
+        ));
     }
 
     /// Rehydrate our BuildConfig from the comptime options. Note that not all
@@ -41,11 +65,15 @@ pub const BuildConfig = struct {
     /// to see what is and isn't available.
     pub fn fromOptions() BuildConfig {
         return .{
+            .version = options.app_version,
             .flatpak = options.flatpak,
             .libadwaita = options.libadwaita,
             .app_runtime = std.meta.stringToEnum(apprt.Runtime, @tagName(options.app_runtime)).?,
             .font_backend = std.meta.stringToEnum(font.Backend, @tagName(options.font_backend)).?,
             .renderer = std.meta.stringToEnum(rendererpkg.Impl, @tagName(options.renderer)).?,
+            .exe_entrypoint = std.meta.stringToEnum(ExeEntrypoint, @tagName(options.exe_entrypoint)).?,
+            .wasm_target = std.meta.stringToEnum(WasmTarget, @tagName(options.wasm_target)).?,
+            .wasm_shared = options.wasm_shared,
         };
     }
 };
@@ -62,6 +90,7 @@ pub const artifact = Artifact.detect();
 /// top-level so its a bit cleaner to use throughout the code. See the doc
 /// comments in BuildConfig for details on each.
 pub const config = BuildConfig.fromOptions();
+pub const exe_entrypoint = config.exe_entrypoint;
 pub const flatpak = options.flatpak;
 pub const app_runtime: apprt.Runtime = config.app_runtime;
 pub const font_backend: font.Backend = config.font_backend;
@@ -93,4 +122,21 @@ pub const Artifact = enum {
             },
         };
     }
+};
+
+/// The possible entrypoints for the exe artifact. This has no effect on
+/// other artifact types (i.e. lib, wasm_module).
+///
+/// The whole existence of this enum is to workaround the fact that Zig
+/// doesn't allow the main function to be in a file in a subdirctory
+/// from the "root" of the module, and I don't want to pollute our root
+/// directory with a bunch of individual zig files for each entrypoint.
+///
+/// Therefore, main.zig uses this to switch between the different entrypoints.
+pub const ExeEntrypoint = enum {
+    ghostty,
+    helpgen,
+    mdgen_ghostty_1,
+    mdgen_ghostty_5,
+    bench_parser,
 };
