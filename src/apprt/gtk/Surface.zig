@@ -570,7 +570,7 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
     }
 }
 
-pub fn newSplit(self: *Surface, direction: input.SplitDirection) !void {
+pub fn newSplit(self: *Surface, direction: apprt.SplitDirection) !void {
     const alloc = self.app.core_app.alloc;
     _ = try Split.create(alloc, self, direction);
 }

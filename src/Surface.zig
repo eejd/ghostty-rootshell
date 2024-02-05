@@ -3195,7 +3195,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .new_split => |direction| {
             if (@hasDecl(apprt.Surface, "newSplit")) {
-                try self.rt_surface.newSplit(direction);
+                try self.rt_surface.newSplit(switch (direction) {
+                    .right => .right,
+                    .down => .down,
+                    .auto => if (self.screen_size.width > self.screen_size.height)
+                        .right
+                    else
+                        .down,
+                });
             } else log.warn("runtime doesn't implement newSplit", .{});
         },
 

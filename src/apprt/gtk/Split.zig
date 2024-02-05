@@ -5,6 +5,7 @@ const Split = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
 const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
@@ -20,7 +21,7 @@ pub const Orientation = enum {
     horizontal,
     vertical,
 
-    pub fn fromDirection(direction: input.SplitDirection) Orientation {
+    pub fn fromDirection(direction: apprt.SplitDirection) Orientation {
         return switch (direction) {
             .right => .horizontal,
             .down => .vertical,
@@ -57,7 +58,7 @@ bottom_right: Surface.Container.Elem,
 pub fn create(
     alloc: Allocator,
     sibling: *Surface,
-    direction: input.SplitDirection,
+    direction: apprt.SplitDirection,
 ) !*Split {
     var split = try alloc.create(Split);
     errdefer alloc.destroy(split);
@@ -68,7 +69,7 @@ pub fn create(
 pub fn init(
     self: *Split,
     sibling: *Surface,
-    direction: input.SplitDirection,
+    direction: apprt.SplitDirection,
 ) !void {
     // Create the new child surface for the other direction.
     const alloc = sibling.app.core_app.alloc;

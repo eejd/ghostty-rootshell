@@ -10,7 +10,6 @@ pub const Binding = @import("input/Binding.zig");
 pub const Link = @import("input/Link.zig");
 pub const KeyEncoder = @import("input/KeyEncoder.zig");
 pub const InspectorMode = Binding.Action.InspectorMode;
-pub const SplitDirection = Binding.Action.SplitDirection;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
 pub const SplitResizeDirection = Binding.Action.SplitResizeDirection;
 
