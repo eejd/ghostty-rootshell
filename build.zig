@@ -159,7 +159,7 @@ pub fn build(b: *std.Build) !void {
             "If not specified, git will be used. This must be a semantic version.",
     );
 
-    const version: std.SemanticVersion = if (version_string) |v|
+    config.version = if (version_string) |v|
         try std.SemanticVersion.parse(v)
     else version: {
         const vsn = try Version.detect(b);
@@ -211,19 +211,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     }) else null;
 
-    const exe_options = b.addOptions();
-    config.addOptions(exe_options);
-    exe_options.addOption(std.SemanticVersion, "app_version", version);
-    exe_options.addOption([:0]const u8, "app_version_string", try std.fmt.allocPrintZ(
-        b.allocator,
-        "{}",
-        .{version},
-    ));
-
     // Exe
     if (exe_) |exe| {
-        exe.root_module.addOptions("build_options", exe_options);
-
         // Add the shared dependencies
         _ = try addDeps(b, exe, config);
 
@@ -428,7 +417,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Documenation
-    if (emit_docs) buildDocumentation(b, version);
+    if (emit_docs) buildDocumentation(b, config.version);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -464,7 +453,6 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
                 .target = target,
             });
-            lib.root_module.addOptions("build_options", exe_options);
             _ = try addDeps(b, lib, config);
 
             const lib_install = b.addInstallLibFile(
@@ -482,7 +470,6 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
                 .target = target,
             });
-            lib.root_module.addOptions("build_options", exe_options);
             _ = try addDeps(b, lib, config);
 
             const lib_install = b.addInstallLibFile(
@@ -510,7 +497,6 @@ pub fn build(b: *std.Build) !void {
             b,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -526,7 +512,6 @@ pub fn build(b: *std.Build) !void {
             null,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -542,7 +527,6 @@ pub fn build(b: *std.Build) !void {
             .simulator,
             optimize,
             config,
-            exe_options,
         );
 
         // Add our library to zig-out
@@ -605,6 +589,11 @@ pub fn build(b: *std.Build) !void {
             }),
         };
 
+        // Whether we're using wasm shared memory. Some behaviors change.
+        // For now we require this but I wanted to make the code handle both
+        // up front.
+        const wasm_shared: bool = true;
+
         // Modify our build configuration for wasm builds.
         const wasm_config: BuildConfig = config: {
             var copy = config;
@@ -616,18 +605,12 @@ pub fn build(b: *std.Build) !void {
             // Backends that are fixed for wasm
             copy.font_backend = .web_canvas;
 
+            // Wasm-specific options
+            copy.wasm_shared = wasm_shared;
+            copy.wasm_target = wasm_target;
+
             break :config copy;
         };
-
-        // Whether we're using wasm shared memory. Some behaviors change.
-        // For now we require this but I wanted to make the code handle both
-        // up front.
-        const wasm_shared: bool = true;
-        exe_options.addOption(bool, "wasm_shared", wasm_shared);
-
-        // We want to support alternate wasm targets in the future (i.e.
-        // server side) so we have this now although its hardcoded.
-        exe_options.addOption(WasmTarget, "wasm_target", wasm_target);
 
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
@@ -635,7 +618,6 @@ pub fn build(b: *std.Build) !void {
             .target = b.resolveTargetQuery(wasm_crosstarget),
             .optimize = optimize,
         });
-        wasm.root_module.addOptions("build_options", exe_options);
 
         // So that we can use web workers with our wasm binary
         wasm.import_memory = true;
@@ -666,7 +648,6 @@ pub fn build(b: *std.Build) !void {
             .target = b.resolveTargetQuery(wasm_crosstarget),
         });
 
-        main_test.root_module.addOptions("build_options", exe_options);
         _ = try addDeps(b, main_test, wasm_config);
         test_step.dependOn(&main_test.step);
     }
@@ -709,7 +690,6 @@ pub fn build(b: *std.Build) !void {
                 copy.static = true;
                 break :config copy;
             });
-            main_test.root_module.addOptions("build_options", exe_options);
 
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
@@ -755,7 +735,6 @@ fn createMacOSLib(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
-    exe_options: *std.Build.Step.Options,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
     // Modify our build configuration for macOS builds.
     const macos_config: BuildConfig = config: {
@@ -781,7 +760,6 @@ fn createMacOSLib(
         });
         lib.bundle_compiler_rt = true;
         lib.linkLibC();
-        lib.root_module.addOptions("build_options", exe_options);
 
         // Create a single static lib with all our dependencies merged
         var lib_list = try addDeps(b, lib, macos_config);
@@ -810,7 +788,6 @@ fn createMacOSLib(
         });
         lib.bundle_compiler_rt = true;
         lib.linkLibC();
-        lib.root_module.addOptions("build_options", exe_options);
 
         // Create a single static lib with all our dependencies merged
         var lib_list = try addDeps(b, lib, macos_config);
@@ -847,7 +824,6 @@ fn createIOSLib(
     abi: ?std.Target.Abi,
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
-    exe_options: *std.Build.Step.Options,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
     const ios_config: BuildConfig = config: {
         var copy = config;
@@ -868,7 +844,6 @@ fn createIOSLib(
     });
     lib.bundle_compiler_rt = true;
     lib.linkLibC();
-    lib.root_module.addOptions("build_options", exe_options);
 
     // Create a single static lib with all our dependencies merged
     var lib_list = try addDeps(b, lib, ios_config);
@@ -895,6 +870,11 @@ fn addDeps(
     step: *std.Build.Step.Compile,
     config: BuildConfig,
 ) !LazyPathList {
+    // All object targets get access to a standard build_options module
+    const exe_options = b.addOptions();
+    try config.addOptions(exe_options);
+    step.root_module.addOptions("build_options", exe_options);
+
     var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
 
