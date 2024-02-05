@@ -45,6 +45,10 @@ class TerminalWindow: NSWindow {
                 self.toolbar = TerminalToolbar(identifier: "Toolbar")
             }
             
+            // Set a custom background on the titlebar - this is required for when
+            // titlebar tabs is used in conjunction with a transparent background.
+            self.restoreTitlebarBackground()
+            
             // We have to wait before setting the titleVisibility or else it prevents
             // the window from hiding the tab bar when we get down to a single tab.
             DispatchQueue.main.async {
@@ -61,14 +65,25 @@ class TerminalWindow: NSWindow {
         }
     }
     
+    private var storedTitlebarBackgroundColor: CGColor? = nil
+    
     // Assign a background color to the titlebar area.
     func setTitlebarBackground(_ color: CGColor) {
+        storedTitlebarBackgroundColor = color
+        
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
         
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = color
+    }
+    
+    // Make sure the titlebar has the assigned background color.
+    func restoreTitlebarBackground() {
+        guard let color = storedTitlebarBackgroundColor else { return }
+        
+        setTitlebarBackground(color)
     }
     
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
