@@ -138,4 +138,5 @@ pub const ExeEntrypoint = enum {
     helpgen,
     mdgen_ghostty_1,
     mdgen_ghostty_5,
+    bench_parser,
 };

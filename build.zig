@@ -1252,24 +1252,26 @@ fn benchSteps(
 
         // Name of the conformance app and full path to the entrypoint.
         const name = entry.name[0..index];
-        const path = try fs.path.join(b.allocator, &[_][]const u8{
-            c_dir_path,
-            entry.name,
-        });
 
         // Executable builder.
         const bin_name = try std.fmt.allocPrint(b.allocator, "bench-{s}", .{name});
         const c_exe = b.addExecutable(.{
             .name = bin_name,
-            .root_source_file = .{ .path = path },
+            .root_source_file = .{ .path = "src/main.zig" },
             .target = target,
             .optimize = optimize,
-            // .main_pkg_path = .{ .path = "./src" },
         });
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, config: {
             var copy = config;
             copy.static = true;
+
+            var buf: [64]u8 = undefined;
+            copy.exe_entrypoint = std.meta.stringToEnum(
+                build_config.ExeEntrypoint,
+                try std.fmt.bufPrint(&buf, "bench_{s}", .{name}),
+            ).?;
+
             break :config copy;
         });
     }

@@ -13,7 +13,7 @@
 
 const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
-const cli_args = @import("../cli_args.zig");
+const cli = @import("../cli.zig");
 const terminal = @import("../terminal/main.zig");
 
 pub fn main() !void {
@@ -29,7 +29,7 @@ pub fn main() !void {
         errdefer args.deinit();
         var iter = try std.process.argsWithAllocator(alloc);
         defer iter.deinit();
-        try cli_args.parse(Args, alloc, &args, &iter);
+        try cli.args.parse(Args, alloc, &args, &iter);
         break :args args;
     };
     defer args.deinit();

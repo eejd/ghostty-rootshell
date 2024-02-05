@@ -1,23 +1,20 @@
 const std = @import("std");
 const help_strings = @import("help_strings");
-const build_options = @import("build_options");
+const build_config = @import("../../build_config.zig");
 const Config = @import("../../config/Config.zig");
 const Action = @import("../../cli/action.zig").Action;
 const KeybindAction = @import("../../input/Binding.zig").Action;
 
 pub fn substitute(alloc: std.mem.Allocator, input: []const u8, writer: anytype) !void {
-    const version_string = try std.fmt.allocPrint(alloc, "{}", .{build_options.version});
-    defer alloc.free(version_string);
-
     const output = try alloc.alloc(u8, std.mem.replacementSize(
         u8,
         input,
         "@@VERSION@@",
-        version_string,
+        build_config.version_string,
     ));
     defer alloc.free(output);
 
-    _ = std.mem.replace(u8, input, "@@VERSION@@", version_string, output);
+    _ = std.mem.replace(u8, input, "@@VERSION@@", build_config.version_string, output);
     try writer.writeAll(output);
 }
 
