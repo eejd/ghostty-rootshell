@@ -25,6 +25,11 @@ const Args = struct {
     @"terminal-rows": usize = 80,
     @"terminal-cols": usize = 120,
 
+    /// The size for read buffers. Doesn't usually need to be changed. The
+    /// main point is to make this runtime known so we can avoid compiler
+    /// optimizations.
+    @"buffer-size": usize = 4096,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
@@ -73,11 +78,12 @@ pub fn main() !void {
 
     const reader = std.io.getStdIn().reader();
     const writer = std.io.getStdOut().writer();
+    const buf = try alloc.alloc(u8, args.@"buffer-size");
 
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
         .@"gen-ascii" => try genAscii(writer),
-        .noop => try benchNoop(alloc, reader),
+        .noop => try benchNoop(reader, buf),
 
         // Handle the ones that depend on terminal state next
         inline .scalar,
@@ -93,15 +99,15 @@ pub fn main() !void {
                 var handler: TerminalHandler = .{ .t = &t };
                 var stream: TerminalStream = .{ .handler = &handler };
                 switch (tag) {
-                    .scalar => try benchScalar(alloc, reader, &stream),
-                    .simd => try benchSimd(alloc, reader, &stream),
+                    .scalar => try benchScalar(reader, &stream, buf),
+                    .simd => try benchSimd(reader, &stream, buf),
                     else => @compileError("missing case"),
                 }
             } else {
                 var stream: terminal.Stream(NoopHandler) = .{ .handler = .{} };
                 switch (tag) {
-                    .scalar => try benchScalar(alloc, reader, &stream),
-                    .simd => try benchSimd(alloc, reader, &stream),
+                    .scalar => try benchScalar(reader, &stream, buf),
+                    .simd => try benchSimd(reader, &stream, buf),
                     else => @compileError("missing case"),
                 }
             }
@@ -134,12 +140,7 @@ fn genData(writer: anytype, alphabet: []const u8) !void {
     }
 }
 
-fn benchNoop(alloc: Allocator, reader: anytype) !void {
-    // Large-ish buffer because we don't want to be benchmarking
-    // heap allocation as much as possible. We purposely leak this
-    // memory because we don't want to benchmark a free cost
-    // either.
-    const buf = try alloc.alloc(u8, 1024 * 1024 * 16);
+noinline fn benchNoop(reader: anytype, buf: []u8) !void {
     var total: usize = 0;
     while (true) {
         const n = try reader.readAll(buf);
@@ -150,12 +151,13 @@ fn benchNoop(alloc: Allocator, reader: anytype) !void {
     std.log.info("total bytes len={}", .{total});
 }
 
-fn benchScalar(alloc: Allocator, reader: anytype, stream: anytype) !void {
-    _ = alloc;
-
-    var buf: [4096]u8 = undefined;
+noinline fn benchScalar(
+    reader: anytype,
+    stream: anytype,
+    buf: []u8,
+) !void {
     while (true) {
-        const n = try reader.read(&buf);
+        const n = try reader.read(buf);
         if (n == 0) break;
 
         // Using stream.next directly with a for loop applies a naive
@@ -164,12 +166,13 @@ fn benchScalar(alloc: Allocator, reader: anytype, stream: anytype) !void {
     }
 }
 
-fn benchSimd(alloc: Allocator, reader: anytype, stream: anytype) !void {
-    _ = alloc;
-
-    var buf: [4096]u8 = undefined;
+noinline fn benchSimd(
+    reader: anytype,
+    stream: anytype,
+    buf: []u8,
+) !void {
     while (true) {
-        const n = try reader.read(&buf);
+        const n = try reader.read(buf);
         if (n == 0) break;
         try stream.nextSlice(buf[0..n]);
     }
