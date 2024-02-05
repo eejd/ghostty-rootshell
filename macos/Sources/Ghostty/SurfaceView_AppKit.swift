@@ -417,7 +417,13 @@ extension Ghostty {
             // Ref: High Resolution Guidelines for OS X
             // https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/CapturingScreenContents/CapturingScreenContents.html#//apple_ref/doc/uid/TP40012302-CH10-SW27
             if let window = window {
+                CATransaction.begin()
+                // Disable the implicit transition animation that Core Animation applies to
+                // property changes. Otherwise it will apply a scale animation to the layer
+                // contents which looks pretty janky.
+                CATransaction.setDisableActions(true)
                 layer?.contentsScale = window.backingScaleFactor
+                CATransaction.commit()
             }
             
             guard let surface = self.surface else { return }
