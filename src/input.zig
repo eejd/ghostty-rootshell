@@ -13,13 +13,6 @@ pub const InspectorMode = Binding.Action.InspectorMode;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
 pub const SplitResizeDirection = Binding.Action.SplitResizeDirection;
 
-// This is made extern (c_int) to make interop easier with our embedded
-// runtime. The small size cost doesn't make a difference in our union.
-pub const SplitDirection = enum(c_int) {
-    right,
-    down,
-};
-
 // Keymap is only available on macOS right now. We could implement it
 // in theory for XKB too on Linux but we don't need it right now.
 pub const Keymap = switch (builtin.os.tag) {

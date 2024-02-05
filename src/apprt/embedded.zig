@@ -80,7 +80,7 @@ pub const App = struct {
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, input.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
+        new_split: ?*const fn (SurfaceUD, apprt.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
 
         /// New tab with options.
         new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
@@ -460,7 +460,7 @@ pub const Surface = struct {
         func(self.opts.userdata, mode);
     }
 
-    pub fn newSplit(self: *const Surface, direction: input.SplitDirection) !void {
+    pub fn newSplit(self: *const Surface, direction: apprt.SplitDirection) !void {
         const func = self.app.opts.new_split orelse {
             log.info("runtime embedder does not support splits", .{});
             return;
@@ -1640,7 +1640,7 @@ pub const CAPI = struct {
     }
 
     /// Request that the surface split in the given direction.
-    export fn ghostty_surface_split(ptr: *Surface, direction: input.SplitDirection) void {
+    export fn ghostty_surface_split(ptr: *Surface, direction: apprt.SplitDirection) void {
         ptr.newSplit(direction) catch {};
     }
 

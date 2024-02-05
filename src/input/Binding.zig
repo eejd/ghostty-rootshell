@@ -259,8 +259,7 @@ pub const Action = union(enum) {
     pub const SplitDirection = enum {
         right,
         down,
-        // splits along the larger direction
-        auto,
+        auto, // splits along the larger direction
 
         // Note: we don't support top or left yet
     };
