@@ -135,6 +135,7 @@ pub const Artifact = enum {
 /// Therefore, main.zig uses this to switch between the different entrypoints.
 pub const ExeEntrypoint = enum {
     ghostty,
+    helpgen,
     mdgen_ghostty_1,
     mdgen_ghostty_5,
 };

@@ -37,6 +37,7 @@ pub fn main() !MainReturn {
     if (comptime build_config.artifact == .exe) entrypoint: {
         switch (comptime build_config.exe_entrypoint) {
             .ghostty => break :entrypoint, // This function
+            .helpgen => try @import("helpgen.zig").main(),
             .mdgen_ghostty_1 => try @import("build/mdgen/main_ghostty_1.zig").main(),
             .mdgen_ghostty_5 => try @import("build/mdgen/main_ghostty_5.zig").main(),
         }

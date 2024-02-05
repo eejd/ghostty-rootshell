@@ -199,7 +199,7 @@ pub fn build(b: *std.Build) !void {
 
     // Help exe. This must be run before any dependent executables because
     // otherwise the build will be cached without emit. That's clunky but meh.
-    if (emit_helpgen) addHelp(b, null);
+    if (emit_helpgen) try addHelp(b, null, config);
 
     // Add our benchmarks
     try benchSteps(b, target, optimize, config, emit_bench);
@@ -1107,7 +1107,7 @@ fn addDeps(
         }
     }
 
-    addHelp(b, step);
+    try addHelp(b, step, config);
 
     return static_libs;
 }
@@ -1116,7 +1116,8 @@ fn addDeps(
 fn addHelp(
     b: *std.Build,
     step_: ?*std.Build.Step.Compile,
-) void {
+    config: BuildConfig,
+) !void {
     // Our static state between runs. We memoize our help strings
     // so that we only execute the help generation once.
     const HelpState = struct {
@@ -1130,6 +1131,15 @@ fn addHelp(
             .target = b.host,
         });
         if (step_ == null) b.installArtifact(help_exe);
+
+        const help_config = config: {
+            var copy = config;
+            copy.exe_entrypoint = .helpgen;
+            break :config copy;
+        };
+        const options = b.addOptions();
+        try help_config.addOptions(options);
+        help_exe.root_module.addOptions("build_options", options);
 
         const help_run = b.addRunArtifact(help_exe);
         HelpState.generated = help_run.captureStdOut();
@@ -1163,7 +1173,7 @@ fn buildDocumentation(
             .root_source_file = .{ .path = "src/main.zig" },
             .target = b.host,
         });
-        addHelp(b, generate_markdown);
+        try addHelp(b, generate_markdown, config);
 
         const gen_config = config: {
             var copy = config;
