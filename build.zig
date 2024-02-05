@@ -951,6 +951,10 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const simdutf_dep = b.dependency("simdutf", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const libpng_dep = b.dependency("libpng", .{
         .target = target,
         .optimize = optimize,
@@ -1006,10 +1010,8 @@ fn addDeps(
     // C++ files
     step.linkLibCpp();
     step.addIncludePath(.{ .path = "src" });
-    step.addIncludePath(.{ .path = "src/simd" });
     step.addCSourceFiles(.{ .files = &.{
         "src/simd/index_of.cpp",
-        "src/simd/simdutf.cpp",
         "src/simd/vt.cpp",
     } });
 
@@ -1066,6 +1068,10 @@ fn addDeps(
     // Highway
     step.linkLibrary(highway_dep.artifact("highway"));
     try static_libs.append(highway_dep.artifact("highway").getEmittedBin());
+
+    // simdutf
+    step.linkLibrary(simdutf_dep.artifact("simdutf"));
+    try static_libs.append(simdutf_dep.artifact("simdutf").getEmittedBin());
 
     // Spirv-Cross
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
