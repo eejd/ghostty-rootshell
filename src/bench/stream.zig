@@ -18,6 +18,13 @@ const terminal = @import("../terminal/main.zig");
 const Args = struct {
     mode: Mode = .noop,
 
+    /// Process input with a real terminal. This will be MUCH slower than
+    /// the other modes because it has to maintain terminal state but will
+    /// help get more realistic numbers.
+    terminal: bool = false,
+    @"terminal-rows": usize = 80,
+    @"terminal-cols": usize = 120,
+
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
@@ -66,11 +73,39 @@ pub fn main() !void {
 
     const reader = std.io.getStdIn().reader();
     const writer = std.io.getStdOut().writer();
+
+    // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
         .@"gen-ascii" => try genAscii(writer),
         .noop => try benchNoop(alloc, reader),
-        .scalar => try benchScalar(alloc, reader),
-        .simd => try benchSimd(alloc, reader),
+
+        // Handle the ones that depend on terminal state next
+        inline .scalar,
+        .simd,
+        => |tag| {
+            if (args.terminal) {
+                const TerminalStream = terminal.Stream(*TerminalHandler);
+                var t = try terminal.Terminal.init(
+                    alloc,
+                    args.@"terminal-cols",
+                    args.@"terminal-rows",
+                );
+                var handler: TerminalHandler = .{ .t = &t };
+                var stream: TerminalStream = .{ .handler = &handler };
+                switch (tag) {
+                    .scalar => try benchScalar(alloc, reader, &stream),
+                    .simd => try benchSimd(alloc, reader, &stream),
+                    else => @compileError("missing case"),
+                }
+            } else {
+                var stream: terminal.Stream(NoopHandler) = .{ .handler = .{} };
+                switch (tag) {
+                    .scalar => try benchScalar(alloc, reader, &stream),
+                    .simd => try benchSimd(alloc, reader, &stream),
+                    else => @compileError("missing case"),
+                }
+            }
+        },
     }
 }
 
@@ -115,12 +150,9 @@ fn benchNoop(alloc: Allocator, reader: anytype) !void {
     std.log.info("total bytes len={}", .{total});
 }
 
-fn benchScalar(alloc: Allocator, reader: anytype) !void {
+fn benchScalar(alloc: Allocator, reader: anytype, stream: anytype) !void {
     _ = alloc;
 
-    // Create a stream that uses our noop handler so we don't
-    // have any terminal state overhead.
-    var stream: terminal.Stream(NoopHandler) = .{ .handler = .{} };
     var buf: [4096]u8 = undefined;
     while (true) {
         const n = try reader.read(&buf);
@@ -132,10 +164,9 @@ fn benchScalar(alloc: Allocator, reader: anytype) !void {
     }
 }
 
-fn benchSimd(alloc: Allocator, reader: anytype) !void {
+fn benchSimd(alloc: Allocator, reader: anytype, stream: anytype) !void {
     _ = alloc;
 
-    var stream: terminal.Stream(NoopHandler) = .{ .handler = .{} };
     var buf: [4096]u8 = undefined;
     while (true) {
         const n = try reader.read(&buf);
@@ -145,8 +176,16 @@ fn benchSimd(alloc: Allocator, reader: anytype) !void {
 }
 
 const NoopHandler = struct {
-    fn print(self: NoopHandler, cp: u21) !void {
+    pub fn print(self: NoopHandler, cp: u21) !void {
         _ = self;
         _ = cp;
+    }
+};
+
+const TerminalHandler = struct {
+    t: *terminal.Terminal,
+
+    pub fn print(self: *TerminalHandler, cp: u21) !void {
+        try self.t.print(cp);
     }
 };

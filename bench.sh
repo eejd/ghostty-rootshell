@@ -5,11 +5,14 @@
 
 SIZE="25M"
 
+# Uncomment to test with an active terminal state.
+#ARGS=" --terminal"
+
 hyperfine \
   --warmup 10 \
   -n memcpy \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=noop" \
+  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=noop${ARGS}" \
   -n scalar \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=scalar" \
+  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=scalar${ARGS}" \
   -n simd \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=simd"
+  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=simd${ARGS}"
