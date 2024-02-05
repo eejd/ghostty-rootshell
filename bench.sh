@@ -3,6 +3,7 @@
 # TODO: This script is temporary, remove it from the repo
 
 
+DATA="ascii"
 SIZE="25M"
 
 # Uncomment to test with an active terminal state.
@@ -11,8 +12,8 @@ SIZE="25M"
 hyperfine \
   --warmup 10 \
   -n memcpy \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=noop${ARGS}" \
+  "./zig-out/bin/bench-stream --mode=gen-${DATA} | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=noop${ARGS}" \
   -n scalar \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=scalar${ARGS}" \
+  "./zig-out/bin/bench-stream --mode=gen-${DATA} | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=scalar${ARGS}" \
   -n simd \
-  "./zig-out/bin/bench-stream --mode=gen-ascii | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=simd${ARGS}"
+  "./zig-out/bin/bench-stream --mode=gen-${DATA} | head -c ${SIZE} | ./zig-out/bin/bench-stream --mode=simd${ARGS}"

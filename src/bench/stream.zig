@@ -12,6 +12,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
 const terminal = @import("../terminal/main.zig");
 
@@ -57,6 +58,11 @@ const Mode = enum {
 
     // Generate an infinite stream of random printable ASCII characters.
     @"gen-ascii",
+
+    // Generate an infinite stream of repeated UTF-8 characters. We don't
+    // currently do random generation because trivial implementations are
+    // too slow and I'm a simple man.
+    @"gen-utf8",
 };
 
 pub const std_options = struct {
@@ -83,6 +89,7 @@ pub fn main() !void {
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
         .@"gen-ascii" => try genAscii(writer),
+        .@"gen-utf8" => try genUtf8(writer),
         .noop => try benchNoop(reader, buf),
 
         // Handle the ones that depend on terminal state next
@@ -134,6 +141,15 @@ fn genData(writer: anytype, alphabet: []const u8) !void {
         }
 
         writer.writeAll(&buf) catch |err| switch (err) {
+            error.BrokenPipe => return, // stdout closed
+            else => return err,
+        };
+    }
+}
+
+fn genUtf8(writer: anytype) !void {
+    while (true) {
+        writer.writeAll(random_utf8) catch |err| switch (err) {
             error.BrokenPipe => return, // stdout closed
             else => return err,
         };
@@ -192,3 +208,5 @@ const TerminalHandler = struct {
         try self.t.print(cp);
     }
 };
+
+const random_utf8 = "⨴⭬∎⯀Ⳟ⳨⍈♍⒄⣹⇚ⱎ⯡⯴↩ⵆ⼳ⶦ⑑⦥➍Ⲡ⽉❞⹀⢧€⣁ⶐ⸲⣷⏝⣶⫿▝⨽⬃ↁ↵⯙ⶵ╡∾⭡′⫼↼┫⮡ↅ⍞‡▱⺁⿒⽛⎭☜Ⱝ⣘✬⢟⁴⟹⪝ℌ❓␆╣┳⽑⴩⺄✽ⳗ␮ⵍ⦵ⱍ⭑⛒ⅉ⛠➌₯ⵔⷋ⹶❷ⱳ⣖⭐⮋ₒ⥚ⷃ╶⌈⸣❥⑎⦿⪶₮╋⅌ⳬⴛ⥚♇╬❜⺷⡬⏠⧥┺⃻❼⏲↍Ⓙ⽕╶⾉⺪⁑⎕⅕⼧⊀ⲡ⊺⪭⟾Ⅵ⍌⛄⠻⃽⣻₮ⰹⴺ⪂⃾∖⊹⤔⵫⦒⽳⫄⍮↷⣌⩐⨼⯂⵺◺⍙⭺⟂⎯ⱼ⴬⫺⹦∌⡉ⳅ⛲⡏⃘⺃⵬ⴜ⾩⭦ⷭ⨟☌⍃⧪⮧ⓛ⃄♮ⲓ∘⣝⤐⎭ⷺⰫⶔ☎⾨⾐≦␢⋔⢟ⶐ⏁⚄⦡⾞✊⾾⫿⴩⪨⮰ⓙ⌽⭲⫬⒈⊻⸣⌳⋡ⱄⲛ⓬➼⌧⟮⹖♞ℚⷱ⭥⚣⏳⟾❠☏⦻⑽−∪ⅆ☁⿑⦣⵽Ⱳ⺧⺊Ⓞ⫽⦀⃐⚽⎌⥰⚪⢌⛗⸋⛂⾽Ⰳ⍧⛗◁❠↺≍‸ⴣ⭰‾⡸⩛⭷ⵒ⵼⚉❚⨳⑫⹾⷟∇┬⚌⨙╘ℹ⢱⏴∸⴨⾀⌟⡄⺣⦦ⱏ⼚​⿇├⌮⸿⯔₮—⥟╖◡⻵ⶕ┧⒞⏖⏧⟀❲➚‏➳Ⰼ┸⬖⸓⁃⹚⫣┭↜〈☶≍☨╟⿹ⳙ⺽⸡⵵⛞⚟⯓⥟┞⿄⮖⃫⭒⠤ⓣ⬱⃅⓼ⱒ⥖✜⛘⠶ⰽ⿉⾣➌⣋⚨⒯◱⢃◔ⱕ⫡⓱⅌Ⱨ⧵⯾┰⁠ⱌ⼳♠⨽⪢⸳⠹⩡Ⓨ⡪⭞⼰⡧ⓖ⤘⽶⵶ⴺ ⨨▅⏟⊕ⴡⴰ␌⚯⦀⫭⨔⬯⨢ⱽ⟓⥫⑤⊘⟧❐▜⵸℅⋣⚏⇭⽁⪂ⲡ⯊⦥⭳⠾⹫⠮℞⒡Ⰼ⦈⭅≉⋆☈▓⺑⡻▷Ⱑ⋖⬜┃ⵍ←⣢ↁ☚⟴⦡⨍⼡◝⯤❓◢⌡⏿⭲✏⎑⧊⼤⪠⋂⚜┯▤⑘⟾⬬Ⓜ⨸⥪ⱘ⳷⷟⒖⋐⡈⏌∠⏁⓳Ⲟ⦽⢯┏Ⲹ⍰ⅹ⚏⍐⟍⣩␖⛂∜❆⤗⒨⓽";
