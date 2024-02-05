@@ -27,6 +27,9 @@ pub const BuildConfig = struct {
     renderer: rendererpkg.Impl = .opengl,
     font_backend: font.Backend = .freetype,
 
+    /// The entrypoint for exe targets.
+    exe_entrypoint: ExeEntrypoint = .ghostty,
+
     /// The target runtime for the wasm build and whether to use wasm shared
     /// memory or not. These are both legacy wasm-specific options that we
     /// will probably have to revisit when we get back to work on wasm.
@@ -42,6 +45,7 @@ pub const BuildConfig = struct {
         step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
         step.addOption(font.Backend, "font_backend", self.font_backend);
         step.addOption(rendererpkg.Impl, "renderer", self.renderer);
+        step.addOption(ExeEntrypoint, "exe_entrypoint", self.exe_entrypoint);
         step.addOption(WasmTarget, "wasm_target", self.wasm_target);
         step.addOption(bool, "wasm_shared", self.wasm_shared);
 
@@ -67,6 +71,7 @@ pub const BuildConfig = struct {
             .app_runtime = std.meta.stringToEnum(apprt.Runtime, @tagName(options.app_runtime)).?,
             .font_backend = std.meta.stringToEnum(font.Backend, @tagName(options.font_backend)).?,
             .renderer = std.meta.stringToEnum(rendererpkg.Impl, @tagName(options.renderer)).?,
+            .exe_entrypoint = std.meta.stringToEnum(ExeEntrypoint, @tagName(options.exe_entrypoint)).?,
             .wasm_target = std.meta.stringToEnum(WasmTarget, @tagName(options.wasm_target)).?,
             .wasm_shared = options.wasm_shared,
         };
@@ -85,6 +90,7 @@ pub const artifact = Artifact.detect();
 /// top-level so its a bit cleaner to use throughout the code. See the doc
 /// comments in BuildConfig for details on each.
 pub const config = BuildConfig.fromOptions();
+pub const exe_entrypoint = config.exe_entrypoint;
 pub const flatpak = options.flatpak;
 pub const app_runtime: apprt.Runtime = config.app_runtime;
 pub const font_backend: font.Backend = config.font_backend;
@@ -116,4 +122,19 @@ pub const Artifact = enum {
             },
         };
     }
+};
+
+/// The possible entrypoints for the exe artifact. This has no effect on
+/// other artifact types (i.e. lib, wasm_module).
+///
+/// The whole existence of this enum is to workaround the fact that Zig
+/// doesn't allow the main function to be in a file in a subdirctory
+/// from the "root" of the module, and I don't want to pollute our root
+/// directory with a bunch of individual zig files for each entrypoint.
+///
+/// Therefore, main.zig uses this to switch between the different entrypoints.
+pub const ExeEntrypoint = enum {
+    ghostty,
+    mdgen_ghostty_1,
+    mdgen_ghostty_5,
 };

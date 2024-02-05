@@ -9,7 +9,8 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
-const BuildConfig = @import("src/build_config.zig").BuildConfig;
+const build_config = @import("src/build_config.zig");
+const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
@@ -417,7 +418,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Documenation
-    if (emit_docs) buildDocumentation(b, config.version);
+    if (emit_docs) try buildDocumentation(b, config);
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
@@ -1146,8 +1147,8 @@ fn addHelp(
 /// Generate documentation (manpages, etc.) from help strings
 fn buildDocumentation(
     b: *std.Build,
-    version: std.SemanticVersion,
-) void {
+    config: BuildConfig,
+) !void {
     const manpages = [_]struct {
         name: []const u8,
         section: []const u8,
@@ -1159,15 +1160,22 @@ fn buildDocumentation(
     inline for (manpages) |manpage| {
         const generate_markdown = b.addExecutable(.{
             .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
-            .root_source_file = .{
-                .path = "src/mdgen_" ++ manpage.name ++ "_" ++ manpage.section ++ ".zig",
-            },
+            .root_source_file = .{ .path = "src/main.zig" },
             .target = b.host,
         });
         addHelp(b, generate_markdown);
 
+        const gen_config = config: {
+            var copy = config;
+            copy.exe_entrypoint = @field(
+                build_config.ExeEntrypoint,
+                "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
+            );
+            break :config copy;
+        };
+
         const generate_markdown_options = b.addOptions();
-        generate_markdown_options.addOption(std.SemanticVersion, "version", version);
+        try gen_config.addOptions(generate_markdown_options);
         generate_markdown.root_module.addOptions("build_options", generate_markdown_options);
 
         const generate_markdown_step = b.addRunArtifact(generate_markdown);

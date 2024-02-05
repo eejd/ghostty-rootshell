@@ -24,13 +24,26 @@ const Ghostty = @import("main_c.zig").Ghostty;
 /// rely on allocators being passed in as parameters.
 pub var state: GlobalState = undefined;
 
-/// The return type for main() depends on the build artifact.
+/// The return type for main() depends on the build artifact. The lib build
+/// also calls "main" in order to run the CLI actions, but it calls it as
+/// an API and not an entrypoint.
 const MainReturn = switch (build_config.artifact) {
     .lib => noreturn,
     else => void,
 };
 
 pub fn main() !MainReturn {
+    // Load the proper main() function based on build config.
+    if (comptime build_config.artifact == .exe) entrypoint: {
+        switch (comptime build_config.exe_entrypoint) {
+            .ghostty => break :entrypoint, // This function
+            .mdgen_ghostty_1 => try @import("build/mdgen/main_ghostty_1.zig").main(),
+            .mdgen_ghostty_5 => try @import("build/mdgen/main_ghostty_5.zig").main(),
+        }
+
+        return;
+    }
+
     // We first start by initializing our global state. This will setup
     // process-level state we need to run the terminal. The reason we use
     // a global is because the C API needs to be able to access this state;
@@ -284,6 +297,7 @@ pub const GlobalState = struct {
         }
     }
 };
+
 test {
     _ = @import("circ_buf.zig");
     _ = @import("pty.zig");
