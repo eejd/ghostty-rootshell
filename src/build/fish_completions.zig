@@ -6,9 +6,11 @@ const ListFontsConfig = @import("../cli/list_fonts.zig").Config;
 const ShowConfigOptions = @import("../cli/show_config.zig").Options;
 const ListKeybindsOptions = @import("../cli/list_keybinds.zig").Options;
 
+/// A fish completions configuration that contains all the available commands
+/// and options.
 pub const fish_completions = comptimeGenerateFishCompletions();
 
-pub fn comptimeGenerateFishCompletions() []const u8 {
+fn comptimeGenerateFishCompletions() []const u8 {
     comptime {
         @setEvalBranchQuota(10000);
         var counter = std.io.countingWriter(std.io.null_writer);
@@ -21,7 +23,7 @@ pub fn comptimeGenerateFishCompletions() []const u8 {
     }
 }
 
-pub fn writeFishCompletions(writer: anytype) !void {
+fn writeFishCompletions(writer: anytype) !void {
     {
         try writer.writeAll("set -l commands \"");
         var count: usize = 0;
