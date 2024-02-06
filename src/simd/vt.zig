@@ -119,3 +119,20 @@ test "decode invalid UTF-8" {
 
     try testing.expectEqual(@as(u32, 0xFFFD), output[5]);
 }
+
+// This is testing our current behavior so that we know we have to handle
+// this case in terminal/stream.zig. If we change this behavior, we can
+// remove the special handling in terminal/stream.zig.
+test "decode invalid leading byte isn't consumed or replaced" {
+    const testing = std.testing;
+
+    var output: [64]u32 = undefined;
+
+    {
+        const str = "hello\xFF";
+        try testing.expectEqual(DecodeResult{
+            .consumed = 5,
+            .decoded = 5,
+        }, utf8DecodeUntilControlSeq(str, &output));
+    }
+}
