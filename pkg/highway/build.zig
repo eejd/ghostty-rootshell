@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
+    lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"bridge.cpp"} });
     lib.addCSourceFiles(.{
         .dependency = upstream,
         .flags = flags.items,

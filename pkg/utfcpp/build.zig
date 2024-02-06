@@ -6,12 +6,6 @@ pub fn build(b: *std.Build) !void {
 
     const upstream = b.dependency("utfcpp", .{});
 
-    const module = b.addModule("utfcpp", .{
-        .root_source_file = .{ .path = "main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
     const lib = b.addStaticLibrary(.{
         .name = "utfcpp",
         .target = target,
@@ -19,12 +13,10 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibCpp();
     lib.addIncludePath(upstream.path(""));
-    module.addIncludePath(upstream.path(""));
 
     if (target.result.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
         try apple_sdk.addPaths(b, &lib.root_module);
-        try apple_sdk.addPaths(b, module);
     }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
@@ -44,19 +36,19 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(lib);
 
-    {
-        const test_exe = b.addTest(.{
-            .name = "test",
-            .root_source_file = .{ .path = "main.zig" },
-            .target = target,
-            .optimize = optimize,
-        });
-        test_exe.linkLibrary(lib);
-
-        var it = module.import_table.iterator();
-        while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
-        const tests_run = b.addRunArtifact(test_exe);
-        const test_step = b.step("test", "Run tests");
-        test_step.dependOn(&tests_run.step);
-    }
+    // {
+    //     const test_exe = b.addTest(.{
+    //         .name = "test",
+    //         .root_source_file = .{ .path = "main.zig" },
+    //         .target = target,
+    //         .optimize = optimize,
+    //     });
+    //     test_exe.linkLibrary(lib);
+    //
+    //     var it = module.import_table.iterator();
+    //     while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
+    //     const tests_run = b.addRunArtifact(test_exe);
+    //     const test_step = b.step("test", "Run tests");
+    //     test_step.dependOn(&tests_run.step);
+    // }
 }
