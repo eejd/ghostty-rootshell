@@ -140,7 +140,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
     }
     
-    func fixTabBar() {
+    private func fixTabBar() {
         // We do this to make sure that the tab bar will always re-composite. If we don't,
         // then the it will "drag" pieces of the background with it when a transparent
         // window is moved around.

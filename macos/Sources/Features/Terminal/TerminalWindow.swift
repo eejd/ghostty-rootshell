@@ -29,6 +29,7 @@ class TerminalWindow: NSWindow {
     
     private var windowButtonsBackdrop: NSView? = nil
     private var windowDragHandle: WindowDragView? = nil
+    private var storedTitlebarBackgroundColor: CGColor? = nil
     
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
@@ -65,8 +66,6 @@ class TerminalWindow: NSWindow {
         }
     }
     
-    private var storedTitlebarBackgroundColor: CGColor? = nil
-    
     // Assign a background color to the titlebar area.
     func setTitlebarBackground(_ color: CGColor) {
         storedTitlebarBackgroundColor = color
@@ -80,9 +79,8 @@ class TerminalWindow: NSWindow {
     }
     
     // Make sure the titlebar has the assigned background color.
-    func restoreTitlebarBackground() {
+    private func restoreTitlebarBackground() {
         guard let color = storedTitlebarBackgroundColor else { return }
-        
         setTitlebarBackground(color)
     }
     
