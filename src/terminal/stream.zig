@@ -67,6 +67,7 @@ pub fn Stream(comptime Handler: type) type {
                 }
                 return;
             }
+
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 const action = action_opt orelse continue;
