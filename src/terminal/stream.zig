@@ -81,7 +81,7 @@ pub fn Stream(comptime Handler: type) type {
                 // we are. This can happen if the last chunk of input put us
                 // in the middle of a control sequence.
                 for (input[offset..]) |single| {
-                    try self.next(single);
+                    try self.nextNonUtf8(single);
                     offset += 1;
                     if (self.parser.state == .ground) break;
                 }
@@ -117,7 +117,7 @@ pub fn Stream(comptime Handler: type) type {
 
                 // Process our control sequence.
                 for (input[offset..]) |single| {
-                    try self.next(single);
+                    try self.nextNonUtf8(single);
                     offset += 1;
                     if (self.parser.state == .ground) break;
                 }
@@ -171,9 +171,11 @@ pub fn Stream(comptime Handler: type) type {
             return input_len;
         }
 
-        /// Process the next character and call any callbacks if necessary.
+        /// Like nextSlice but takes one byte and is necessarilly a scalar
+        /// operation that can't use SIMD. Prefer nextSlice if you can and
+        /// try to get multiple bytes at once.
         pub fn next(self: *Self, c: u8) !void {
-            // log.debug("char: {x} {c}", .{ c, c });
+            // The scalar path can be responsible for decoding UTF-8.
             if (self.parser.state == .ground and c != 0x1B) {
                 var consumed = false;
                 while (!consumed) {
@@ -187,8 +189,19 @@ pub fn Stream(comptime Handler: type) type {
                         }
                     }
                 }
+
                 return;
             }
+
+            try self.nextNonUtf8(c);
+        }
+
+        /// Process the next character and call any callbacks if necessary.
+        ///
+        /// This assumes that we're not in the UTF-8 decoding state. If
+        /// we may be in the UTF-8 decoding state call nextSlice or next.
+        fn nextNonUtf8(self: *Self, c: u8) !void {
+            assert(self.parser.state != .ground or c == 0x1B);
 
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
