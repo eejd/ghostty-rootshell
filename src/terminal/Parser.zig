@@ -774,36 +774,6 @@ test "osc: 112 incomplete sequence" {
     }
 }
 
-// test "csi followed by utf8" {
-//     var p = init();
-//     const prefix = &[_]u8{
-//         // CSI sequence
-//         0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34, 0x64, '\r',
-//
-//         // UTF8 prefix (not complete)
-//         0xe2,
-//     };
-//     for (prefix) |char| {
-//         _ = p.next(char);
-//     }
-//
-//     {
-//         const a = p.next(0x94);
-//         try testing.expect(p.state == .utf8);
-//         try testing.expect(a[0] == null);
-//         try testing.expect(a[1] == null);
-//         try testing.expect(a[2] == null);
-//     }
-//
-//     {
-//         const a = p.next(0x94);
-//         try testing.expect(p.state == .ground);
-//         try testing.expect(a[0].? == .print);
-//         try testing.expect(a[1] == null);
-//         try testing.expect(a[2] == null);
-//     }
-// }
-
 test "csi: too many params" {
     var p = init();
     _ = p.next(0x1B);
