@@ -133,8 +133,8 @@ fn genAscii(writer: anytype) !void {
 fn genData(writer: anytype, alphabet: []const u8) !void {
     var prng = std.rand.DefaultPrng.init(0x12345678);
     const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
     while (true) {
-        var buf: [1024]u8 = undefined;
         for (&buf) |*c| {
             const idx = rnd.uintLessThanBiased(usize, alphabet.len);
             c.* = alphabet[idx];
@@ -148,8 +148,21 @@ fn genData(writer: anytype, alphabet: []const u8) !void {
 }
 
 fn genUtf8(writer: anytype) !void {
+    var prng = std.rand.DefaultPrng.init(0x12345678);
+    const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
     while (true) {
-        writer.writeAll(random_utf8) catch |err| switch (err) {
+        var i: usize = 0;
+        while (i <= buf.len - 4) {
+            const cp: u18 = while(true) {
+                const cp = rnd.int(u18);
+                if (ziglyph.isPrint(cp)) break cp;
+            };
+            
+            i += try std.unicode.utf8Encode(cp, buf[i..]);
+        }
+
+        writer.writeAll(buf[0..i]) catch |err| switch (err) {
             error.BrokenPipe => return, // stdout closed
             else => return err,
         };
@@ -208,8 +221,3 @@ const TerminalHandler = struct {
         try self.t.print(cp);
     }
 };
-
-/// Offline-generated random UTF-8 bytes, because generating them at runtime
-/// was too slow for our benchmarks. We should replace this if we can come
-/// up with something that doesn't bottleneck our benchmark.
-const random_utf8 = "⨴⭬∎⯀Ⳟ⳨⍈♍⒄⣹⇚ⱎ⯡⯴↩ⵆ⼳ⶦ⑑⦥➍Ⲡ⽉❞⹀⢧€⣁ⶐ⸲⣷⏝⣶⫿▝⨽⬃ↁ↵⯙ⶵ╡∾⭡′⫼↼┫⮡ↅ⍞‡▱⺁⿒⽛⎭☜Ⱝ⣘✬⢟⁴⟹⪝ℌ❓␆╣┳⽑⴩⺄✽ⳗ␮ⵍ⦵ⱍ⭑⛒ⅉ⛠➌₯ⵔⷋ⹶❷ⱳ⣖⭐⮋ₒ⥚ⷃ╶⌈⸣❥⑎⦿⪶₮╋⅌ⳬⴛ⥚♇╬❜⺷⡬⏠⧥┺⃻❼⏲↍Ⓙ⽕╶⾉⺪⁑⎕⅕⼧⊀ⲡ⊺⪭⟾Ⅵ⍌⛄⠻⃽⣻₮ⰹⴺ⪂⃾∖⊹⤔⵫⦒⽳⫄⍮↷⣌⩐⨼⯂⵺◺⍙⭺⟂⎯ⱼ⴬⫺⹦∌⡉ⳅ⛲⡏⃘⺃⵬ⴜ⾩⭦ⷭ⨟☌⍃⧪⮧ⓛ⃄♮ⲓ∘⣝⤐⎭ⷺⰫⶔ☎⾨⾐≦␢⋔⢟ⶐ⏁⚄⦡⾞✊⾾⫿⴩⪨⮰ⓙ⌽⭲⫬⒈⊻⸣⌳⋡ⱄⲛ⓬➼⌧⟮⹖♞ℚⷱ⭥⚣⏳⟾❠☏⦻⑽−∪ⅆ☁⿑⦣⵽Ⱳ⺧⺊Ⓞ⫽⦀⃐⚽⎌⥰⚪⢌⛗⸋⛂⾽Ⰳ⍧⛗◁❠↺≍‸ⴣ⭰‾⡸⩛⭷ⵒ⵼⚉❚⨳⑫⹾⷟∇┬⚌⨙╘ℹ⢱⏴∸⴨⾀⌟⡄⺣⦦ⱏ⼚​⿇├⌮⸿⯔₮—⥟╖◡⻵ⶕ┧⒞⏖⏧⟀❲➚‏➳Ⰼ┸⬖⸓⁃⹚⫣┭↜〈☶≍☨╟⿹ⳙ⺽⸡⵵⛞⚟⯓⥟┞⿄⮖⃫⭒⠤ⓣ⬱⃅⓼ⱒ⥖✜⛘⠶ⰽ⿉⾣➌⣋⚨⒯◱⢃◔ⱕ⫡⓱⅌Ⱨ⧵⯾┰⁠ⱌ⼳♠⨽⪢⸳⠹⩡Ⓨ⡪⭞⼰⡧ⓖ⤘⽶⵶ⴺ ⨨▅⏟⊕ⴡⴰ␌⚯⦀⫭⨔⬯⨢ⱽ⟓⥫⑤⊘⟧❐▜⵸℅⋣⚏⇭⽁⪂ⲡ⯊⦥⭳⠾⹫⠮℞⒡Ⰼ⦈⭅≉⋆☈▓⺑⡻▷Ⱑ⋖⬜┃ⵍ←⣢ↁ☚⟴⦡⨍⼡◝⯤❓◢⌡⏿⭲✏⎑⧊⼤⪠⋂⚜┯▤⑘⟾⬬Ⓜ⨸⥪ⱘ⳷⷟⒖⋐⡈⏌∠⏁⓳Ⲟ⦽⢯┏Ⲹ⍰ⅹ⚏⍐⟍⣩␖⛂∜❆⤗⒨⓽";
