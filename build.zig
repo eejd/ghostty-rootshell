@@ -925,10 +925,6 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
-    const mach_glfw_dep = b.dependency("mach_glfw", .{
-        .target = target,
-        .optimize = optimize,
-    });
     const libpng_dep = b.dependency("libpng", .{
         .target = target,
         .optimize = optimize,
@@ -1096,7 +1092,11 @@ fn addDeps(
         switch (config.app_runtime) {
             .none => {},
 
-            .glfw => {
+            .glfw => glfw: {
+                const mach_glfw_dep = b.lazyDependency("mach_glfw", .{
+                    .target = target,
+                    .optimize = optimize,
+                }) orelse break :glfw;
                 step.root_module.addImport("glfw", mach_glfw_dep.module("mach-glfw"));
             },
 
