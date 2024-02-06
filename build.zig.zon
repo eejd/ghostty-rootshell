@@ -31,11 +31,14 @@
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
+        .highway = .{ .path = "./pkg/highway" },
         .libpng = .{ .path = "./pkg/libpng" },
         .macos = .{ .path = "./pkg/macos" },
         .oniguruma = .{ .path = "./pkg/oniguruma" },
         .opengl = .{ .path = "./pkg/opengl" },
         .pixman = .{ .path = "./pkg/pixman" },
+        .simdutf = .{ .path = "./pkg/simdutf" },
+        .utfcpp = .{ .path = "./pkg/utfcpp" },
         .zlib = .{ .path = "./pkg/zlib" },
 
         // Shader translation

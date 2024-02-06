@@ -202,7 +202,7 @@ pub fn build(b: *std.Build) !void {
     if (emit_helpgen) try addHelp(b, null, config);
 
     // Add our benchmarks
-    try benchSteps(b, target, optimize, config, emit_bench);
+    try benchSteps(b, target, config, emit_bench);
 
     // We only build an exe if we have a runtime set.
     const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
@@ -925,6 +925,18 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const highway_dep = b.dependency("highway", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const simdutf_dep = b.dependency("simdutf", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const utfcpp_dep = b.dependency("utfcpp", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const libpng_dep = b.dependency("libpng", .{
         .target = target,
         .optimize = optimize,
@@ -977,6 +989,14 @@ fn addDeps(
     step.addIncludePath(.{ .path = "src/stb" });
     step.addCSourceFiles(.{ .files = &.{"src/stb/stb.c"} });
 
+    // C++ files
+    step.linkLibCpp();
+    step.addIncludePath(.{ .path = "src" });
+    step.addCSourceFiles(.{ .files = &.{
+        "src/simd/index_of.cpp",
+        "src/simd/vt.cpp",
+    } });
+
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
 
@@ -1026,6 +1046,18 @@ fn addDeps(
     // Glslang
     step.linkLibrary(glslang_dep.artifact("glslang"));
     try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
+
+    // Highway
+    step.linkLibrary(highway_dep.artifact("highway"));
+    try static_libs.append(highway_dep.artifact("highway").getEmittedBin());
+
+    // simdutf
+    step.linkLibrary(simdutf_dep.artifact("simdutf"));
+    try static_libs.append(simdutf_dep.artifact("simdutf").getEmittedBin());
+
+    // utfcpp
+    step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
+    try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
 
     // Spirv-Cross
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
@@ -1231,7 +1263,6 @@ fn buildDocumentation(
 fn benchSteps(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
     install: bool,
 ) !void {
@@ -1259,8 +1290,11 @@ fn benchSteps(
             .name = bin_name,
             .root_source_file = .{ .path = "src/main.zig" },
             .target = target,
-            .optimize = optimize,
+
+            // We always want our benchmarks to be in release mode.
+            .optimize = .ReleaseFast,
         });
+        c_exe.linkLibC();
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, config: {
             var copy = config;

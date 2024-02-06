@@ -1,4 +1,5 @@
 vendor/** linguist-vendored
 website/** linguist-documentation
 pkg/cimgui/vendor/** linguist-vendored
+pkg/simdutf/vendor/** linguist-vendored
 src/terminal/res/** linguist-vendored

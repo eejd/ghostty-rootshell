@@ -1,5 +1,7 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const testing = std.testing;
+const simd = @import("../simd/main.zig");
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
@@ -40,18 +42,140 @@ pub fn Stream(comptime Handler: type) type {
         parser: Parser = .{},
         utf8decoder: UTF8Decoder = .{},
 
+        /// Keep track of any partial UTF-8 sequences that we need to
+        /// process in the next call to nextAssumeUtf8.
+        partial_utf8: [4]u8 = undefined,
+        partial_utf8_len: u3 = 0,
+
         pub fn deinit(self: *Self) void {
             self.parser.deinit();
         }
 
         /// Process a string of characters.
-        pub fn nextSlice(self: *Self, c: []const u8) !void {
-            for (c) |single| try self.next(single);
+        pub fn nextSlice(self: *Self, input: []const u8) !void {
+            // This is the maximum number of codepoints we can decode
+            // at one time for this function call. This is somewhat arbitrary
+            // so if someone can demonstrate a better number then we can switch.
+            var cp_buf: [4096]u32 = undefined;
+
+            // Split the input into chunks that fit into cp_buf.
+            var i: usize = 0;
+            while (true) {
+                const len = @min(cp_buf.len, input.len - i);
+                try self.nextSliceCapped(input[i .. i + len], &cp_buf);
+                i += len;
+                if (i >= input.len) break;
+            }
         }
 
-        /// Process the next character and call any callbacks if necessary.
+        fn nextSliceCapped(self: *Self, input: []const u8, cp_buf: []u32) !void {
+            assert(input.len <= cp_buf.len);
+
+            var offset: usize = 0;
+
+            // If we have a partial UTF-8 sequence then we process manually.
+            if (self.partial_utf8_len > 0) {
+                offset += try self.completePartialUtf8(input);
+            } else if (self.parser.state != .ground) {
+                // If we're not in the ground state then we process until
+                // we are. This can happen if the last chunk of input put us
+                // in the middle of a control sequence.
+                for (input[offset..]) |single| {
+                    try self.nextNonUtf8(single);
+                    offset += 1;
+                    if (self.parser.state == .ground) break;
+                }
+            }
+
+            // If we're in the ground state then we can use SIMD to process
+            // input until we see an ESC (0x1B), since all other characters
+            // up to that point are just UTF-8.
+            while (self.parser.state == .ground and offset < input.len) {
+                const res = simd.vt.utf8DecodeUntilControlSeq(input[offset..], cp_buf);
+                for (cp_buf[0..res.decoded]) |cp| {
+                    if (cp < 0xF) {
+                        try self.execute(@intCast(cp));
+                    } else {
+                        try self.print(@intCast(cp));
+                    }
+                }
+
+                // Consume the bytes we just processed.
+                offset += res.consumed;
+                if (offset >= input.len) return;
+
+                // If our offset is NOT an escape then we must have a
+                // partial UTF-8 sequence. In that case, we save it and
+                // return.
+                if (input[offset] != 0x1B) {
+                    const rem = input[offset..];
+                    assert(rem.len <= self.partial_utf8.len);
+                    @memcpy(self.partial_utf8[0..rem.len], rem);
+                    self.partial_utf8_len = @intCast(rem.len);
+                    return;
+                }
+
+                // Process our control sequence.
+                for (input[offset..]) |single| {
+                    try self.nextNonUtf8(single);
+                    offset += 1;
+                    if (self.parser.state == .ground) break;
+                }
+            }
+        }
+
+        // Complete a partial UTF-8 sequence from a prior input chunk.
+        // This processes the UTF-8 sequence and then returns the number
+        // of bytes consumed from the input.
+        fn completePartialUtf8(self: *Self, input: []const u8) !usize {
+            assert(self.partial_utf8_len > 0);
+            assert(self.parser.state == .ground);
+
+            // This cannot fail because the nature of partial utf8
+            // existing means we successfully processed it last time.
+            const len = std.unicode.utf8ByteSequenceLength(self.partial_utf8[0]) catch
+                unreachable;
+
+            // This is the length we need in the input in addition to
+            // our partial_utf8 to complete the sequence.
+            const input_len = len - self.partial_utf8_len;
+
+            // If we STILL don't have enough bytes, then we copy and continue.
+            // This is a really bizarre and stupid program thats running to
+            // send us incomplete UTF-8 sequences over multiple write() calls.
+            if (input_len > input.len) {
+                @memcpy(
+                    self.partial_utf8[self.partial_utf8_len .. self.partial_utf8_len + input.len],
+                    input,
+                );
+                self.partial_utf8_len += @intCast(input.len);
+                return input.len;
+            }
+
+            // Process the complete UTF-8 sequence.
+            @memcpy(
+                self.partial_utf8[self.partial_utf8_len .. self.partial_utf8_len + input_len],
+                input[0..input_len],
+            );
+            const cp = cp: {
+                if (std.unicode.utf8Decode(self.partial_utf8[0..len])) |cp| {
+                    break :cp cp;
+                } else |err| {
+                    log.warn("invalid UTF-8, ignoring err={}", .{err});
+                    break :cp 0xFFFD; // replacement character
+                }
+            };
+
+            self.partial_utf8_len = 0;
+            try self.print(cp);
+            return input_len;
+        }
+
+        /// Like nextSlice but takes one byte and is necessarilly a scalar
+        /// operation that can't use SIMD. Prefer nextSlice if you can and
+        /// try to get multiple bytes at once.
         pub fn next(self: *Self, c: u8) !void {
-            // log.debug("char: {c}", .{c});
+            // The scalar path can be responsible for decoding UTF-8.
             if (self.parser.state == .ground and c != 0x1B) {
                 var consumed = false;
                 while (!consumed) {
@@ -65,8 +189,19 @@ pub fn Stream(comptime Handler: type) type {
                         }
                     }
                 }
+
                 return;
             }
+
+            try self.nextNonUtf8(c);
+        }
+
+        /// Process the next character and call any callbacks if necessary.
+        ///
+        /// This assumes that we're not in the UTF-8 decoding state. If
+        /// we may be in the UTF-8 decoding state call nextSlice or next.
+        fn nextNonUtf8(self: *Self, c: u8) !void {
+            assert(self.parser.state != .ground or c == 0x1B);
 
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
