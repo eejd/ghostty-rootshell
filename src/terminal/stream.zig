@@ -71,6 +71,7 @@ pub fn Stream(comptime Handler: type) type {
             // If the scalar UTF-8 decoder was in the middle of processing
             // a code sequence, we continue until it's not.
             while (self.utf8decoder.state != 0) {
+                if (offset >= input.len) return;
                 try self.next(input[offset]);
                 offset += 1;
             } else if (self.parser.state != .ground) {
@@ -106,9 +107,7 @@ pub fn Stream(comptime Handler: type) type {
                 // to the scalar parser.
                 if (input[offset] != 0x1B) {
                     const rem = input[offset..];
-                    for (rem) |c| {
-                        try self.next(c);
-                    }
+                    for (rem) |c| try self.next(c);
                     return;
                 }
 
@@ -1454,6 +1453,38 @@ test "stream: print" {
     var s: Stream(H) = .{ .handler = .{} };
     try s.next('x');
     try testing.expectEqual(@as(u21, 'x'), s.handler.c.?);
+}
+
+test "simd: print invalid utf-8" {
+    const H = struct {
+        c: ?u21 = 0,
+
+        pub fn print(self: *@This(), c: u21) !void {
+            self.c = c;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice(&.{0xFF});
+    try testing.expectEqual(@as(u21, 0xFFFD), s.handler.c.?);
+}
+
+test "simd: complete incomplete utf-8" {
+    const H = struct {
+        c: ?u21 = null,
+
+        pub fn print(self: *@This(), c: u21) !void {
+            self.c = c;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+    try s.nextSlice(&.{0xE0}); // 3 byte
+    try testing.expect(s.handler.c == null);
+    try s.nextSlice(&.{0xA0}); // still incomplete
+    try testing.expect(s.handler.c == null);
+    try s.nextSlice(&.{0x80});
+    try testing.expectEqual(@as(u21, 0x800), s.handler.c.?);
 }
 
 test "stream: cursor right (CUF)" {
