@@ -1,20 +1,33 @@
 const std = @import("std");
 
-const Config = @import("config/Config.zig");
-const Action = @import("cli/action.zig").Action;
-const ListFontsConfig = @import("cli/list_fonts.zig").Config;
-const ShowConfigOptions = @import("cli/show_config.zig").Options;
-const ListKeybindsOptions = @import("cli/list_keybinds.zig").Options;
+const Config = @import("../config/Config.zig");
+const Action = @import("../cli/action.zig").Action;
+const ListFontsConfig = @import("../cli/list_fonts.zig").Config;
+const ShowConfigOptions = @import("../cli/show_config.zig").Options;
+const ListKeybindsOptions = @import("../cli/list_keybinds.zig").Options;
 
-pub fn main() !void {
-    const writer = std.io.getStdOut().writer();
+pub const fish_completions = comptimeGenerateFishCompletions();
 
+pub fn comptimeGenerateFishCompletions() []const u8 {
+    comptime {
+        @setEvalBranchQuota(10000);
+        var counter = std.io.countingWriter(std.io.null_writer);
+        try writeFishCompletions(&counter.writer());
+
+        var buf: [counter.bytes_written]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buf);
+        try writeFishCompletions(stream.writer());
+        return stream.getWritten();
+    }
+}
+
+pub fn writeFishCompletions(writer: anytype) !void {
     {
         try writer.writeAll("set -l commands \"");
         var count: usize = 0;
-        inline for (@typeInfo(Action).Enum.fields) |field| {
-            if (comptime std.mem.eql(u8, "help", field.name)) continue;
-            if (comptime std.mem.eql(u8, "version", field.name)) continue;
+        for (@typeInfo(Action).Enum.fields) |field| {
+            if (std.mem.eql(u8, "help", field.name)) continue;
+            if (std.mem.eql(u8, "version", field.name)) continue;
             if (count > 0) try writer.writeAll(" ");
             try writer.writeAll("+");
             try writer.writeAll(field.name);
@@ -28,7 +41,7 @@ pub fn main() !void {
     try writer.writeAll("complete -c ghostty -l help -f\n");
     try writer.writeAll("complete -c ghostty -n \"not __fish_seen_subcommand_from $commands\" -l version -f\n");
 
-    inline for (@typeInfo(Config).Struct.fields) |field| {
+    for (@typeInfo(Config).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
 
         try writer.writeAll("complete -c ghostty -n \"not __fish_seen_subcommand_from $commands\" -l ");
@@ -46,7 +59,7 @@ pub fn main() !void {
                 .Bool => try writer.writeAll(" -a \"true false\""),
                 .Enum => |info| {
                     try writer.writeAll(" -a \"");
-                    inline for (info.fields, 0..) |f, i| {
+                    for (info.fields, 0..) |f, i| {
                         if (i > 0) try writer.writeAll(" ");
                         try writer.writeAll(f.name);
                     }
@@ -55,7 +68,7 @@ pub fn main() !void {
                 .Struct => |info| {
                     if (!@hasDecl(field.type, "parseCLI") and info.layout == .Packed) {
                         try writer.writeAll(" -a \"");
-                        inline for (info.fields, 0..) |f, i| {
+                        for (info.fields, 0..) |f, i| {
                             if (i > 0) try writer.writeAll(" ");
                             try writer.writeAll(f.name);
                             try writer.writeAll(" no-");
@@ -73,9 +86,9 @@ pub fn main() !void {
     {
         try writer.writeAll("complete -c ghostty -n \"string match -q -- '+*' (commandline -pt)\" -f -a \"");
         var count: usize = 0;
-        inline for (@typeInfo(Action).Enum.fields) |field| {
-            if (comptime std.mem.eql(u8, "help", field.name)) continue;
-            if (comptime std.mem.eql(u8, "version", field.name)) continue;
+        for (@typeInfo(Action).Enum.fields) |field| {
+            if (std.mem.eql(u8, "help", field.name)) continue;
+            if (std.mem.eql(u8, "version", field.name)) continue;
             if (count > 0) try writer.writeAll(" ");
             try writer.writeAll("+");
             try writer.writeAll(field.name);
@@ -84,7 +97,7 @@ pub fn main() !void {
         try writer.writeAll("\"\n");
     }
 
-    inline for (@typeInfo(ListFontsConfig).Struct.fields) |field| {
+    for (@typeInfo(ListFontsConfig).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
         try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +list-fonts\" -l ");
         try writer.writeAll(field.name);
@@ -94,7 +107,7 @@ pub fn main() !void {
             .Bool => try writer.writeAll(" -a \"true false\""),
             .Enum => |info| {
                 try writer.writeAll(" -a \"");
-                inline for (info.fields, 0..) |f, i| {
+                for (info.fields, 0..) |f, i| {
                     if (i > 0) try writer.writeAll(" ");
                     try writer.writeAll(f.name);
                 }
@@ -105,7 +118,7 @@ pub fn main() !void {
         try writer.writeAll("\n");
     }
 
-    inline for (@typeInfo(ShowConfigOptions).Struct.fields) |field| {
+    for (@typeInfo(ShowConfigOptions).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
         try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +show-config\" -l ");
         try writer.writeAll(field.name);
@@ -115,7 +128,7 @@ pub fn main() !void {
             .Bool => try writer.writeAll(" -a \"true false\""),
             .Enum => |info| {
                 try writer.writeAll(" -a \"");
-                inline for (info.fields, 0..) |f, i| {
+                for (info.fields, 0..) |f, i| {
                     if (i > 0) try writer.writeAll(" ");
                     try writer.writeAll(f.name);
                 }
@@ -126,7 +139,7 @@ pub fn main() !void {
         try writer.writeAll("\n");
     }
 
-    inline for (@typeInfo(ListKeybindsOptions).Struct.fields) |field| {
+    for (@typeInfo(ListKeybindsOptions).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
         try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +list-keybinds\" -l ");
         try writer.writeAll(field.name);
@@ -136,7 +149,7 @@ pub fn main() !void {
             .Bool => try writer.writeAll(" -a \"true false\""),
             .Enum => |info| {
                 try writer.writeAll(" -a \"");
-                inline for (info.fields, 0..) |f, i| {
+                for (info.fields, 0..) |f, i| {
                     if (i > 0) try writer.writeAll(" ");
                     try writer.writeAll(f.name);
                 }

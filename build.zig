@@ -9,6 +9,7 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
+const fish_completions = @import("src/build/fish_completions.zig");
 const build_config = @import("src/build_config.zig");
 const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
@@ -406,16 +407,14 @@ pub fn build(b: *std.Build) !void {
 
     // Fish shell completions
     {
-        const fish_exe = b.addExecutable(.{
-            .name = "fish_completions",
-            .root_source_file = .{ .path = "src/fish_completions.zig" },
-            .target = b.host,
+        const wf = b.addWriteFiles();
+        _ = wf.add("ghostty.fish", fish_completions.fish_completions);
+
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/fish/vendor_completions.d",
         });
-        const fish_step = b.addRunArtifact(fish_exe);
-        b.getInstallStep().dependOn(&b.addInstallFile(
-            fish_step.captureStdOut(),
-            "share/fish/vendor_completions.d/ghostty.fish",
-        ).step);
     }
 
     // Vim plugin
