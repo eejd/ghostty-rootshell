@@ -28,9 +28,6 @@ pub const State = enum {
     dcs_ignore,
     osc_string,
     sos_pm_apc_string,
-
-    // Custom states added that aren't present on vt100.net
-    utf8,
 };
 
 /// Transition action is an action that can be taken during a state
@@ -230,11 +227,6 @@ pub fn deinit(self: *Parser) void {
 /// Up to 3 actions may need to be executed -- in order -- representing
 /// the state exit, transition, and entry actions.
 pub fn next(self: *Parser, c: u8) [3]?Action {
-    // If we're processing UTF-8, we handle this manually.
-    if (self.state == .utf8) {
-        return .{ self.next_utf8(c), null, null };
-    }
-
     const effect = table[c][@intFromEnum(self.state)];
 
     // log.info("next: {x}", .{c});
@@ -282,55 +274,9 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
                 },
             },
             .sos_pm_apc_string => Action{ .apc_start = {} },
-            .utf8 => utf8: {
-                // When entering the UTF8 state, we need to grab the
-                // last intermediate as our first byte and reset
-                // the intermediates, because prior actions (i.e. CSI)
-                // can pollute the intermediates and we use it to build
-                // our UTF-8 string.
-                if (self.intermediates_idx > 1) {
-                    const last = self.intermediates_idx - 1;
-                    self.intermediates[0] = self.intermediates[last];
-                    self.clear();
-                    self.intermediates_idx = 1;
-                }
-                break :utf8 null;
-            },
             else => null,
         },
     };
-}
-
-/// Processes the next byte in a UTF8 sequence. It is assumed that
-/// intermediates[0] already has the first byte of a UTF8 sequence
-/// (triggered via the state machine).
-fn next_utf8(self: *Parser, c: u8) ?Action {
-    // Collect the byte into the intermediates array
-    self.collect(c);
-
-    // Error is unreachable because the first byte comes from the state machine.
-    // If we get an error here, it is a bug in the state machine that we want
-    // to chase down.
-    const len = std.unicode.utf8ByteSequenceLength(self.intermediates[0]) catch unreachable;
-
-    // We need to collect more
-    if (self.intermediates_idx < len) return null;
-
-    // No matter what happens, we go back to ground since we know we have
-    // enough bytes for the UTF8 sequence.
-    defer {
-        self.state = .ground;
-        self.intermediates_idx = 0;
-    }
-
-    // We have enough bytes, decode!
-    const bytes = self.intermediates[0..len];
-    const rune = std.unicode.utf8Decode(bytes) catch rune: {
-        log.warn("invalid UTF-8 sequence: {any}", .{bytes});
-        break :rune 0xFFFD; // �
-    };
-
-    return Action{ .print = rune };
 }
 
 fn collect(self: *Parser, c: u8) void {
@@ -825,92 +771,6 @@ test "osc: 112 incomplete sequence" {
         const cmd = a[0].?.osc_dispatch;
         try testing.expect(cmd == .reset_color);
         try testing.expectEqual(cmd.reset_color.kind, .cursor);
-    }
-}
-
-test "print: utf8 2 byte" {
-    var p = init();
-    var a: [3]?Action = undefined;
-    for ("£") |c| a = p.next(c);
-
-    try testing.expect(p.state == .ground);
-    try testing.expect(a[0].? == .print);
-    try testing.expect(a[1] == null);
-    try testing.expect(a[2] == null);
-
-    const rune = a[0].?.print;
-    try testing.expectEqual(try std.unicode.utf8Decode("£"), rune);
-}
-
-test "print: utf8 3 byte" {
-    var p = init();
-    var a: [3]?Action = undefined;
-    for ("€") |c| a = p.next(c);
-
-    try testing.expect(p.state == .ground);
-    try testing.expect(a[0].? == .print);
-    try testing.expect(a[1] == null);
-    try testing.expect(a[2] == null);
-
-    const rune = a[0].?.print;
-    try testing.expectEqual(try std.unicode.utf8Decode("€"), rune);
-}
-
-test "print: utf8 4 byte" {
-    var p = init();
-    var a: [3]?Action = undefined;
-    for ("𐍈") |c| a = p.next(c);
-
-    try testing.expect(p.state == .ground);
-    try testing.expect(a[0].? == .print);
-    try testing.expect(a[1] == null);
-    try testing.expect(a[2] == null);
-
-    const rune = a[0].?.print;
-    try testing.expectEqual(try std.unicode.utf8Decode("𐍈"), rune);
-}
-
-test "print: utf8 invalid" {
-    var p = init();
-    var a: [3]?Action = undefined;
-    for ("\xC3\x28") |c| a = p.next(c);
-
-    try testing.expect(p.state == .ground);
-    try testing.expect(a[0].? == .print);
-    try testing.expect(a[1] == null);
-    try testing.expect(a[2] == null);
-
-    const rune = a[0].?.print;
-    try testing.expectEqual(try std.unicode.utf8Decode("�"), rune);
-}
-
-test "csi followed by utf8" {
-    var p = init();
-    const prefix = &[_]u8{
-        // CSI sequence
-        0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34, 0x64, '\r',
-
-        // UTF8 prefix (not complete)
-        0xe2,
-    };
-    for (prefix) |char| {
-        _ = p.next(char);
-    }
-
-    {
-        const a = p.next(0x94);
-        try testing.expect(p.state == .utf8);
-        try testing.expect(a[0] == null);
-        try testing.expect(a[1] == null);
-        try testing.expect(a[2] == null);
-    }
-
-    {
-        const a = p.next(0x94);
-        try testing.expect(p.state == .ground);
-        try testing.expect(a[0].? == .print);
-        try testing.expect(a[1] == null);
-        try testing.expect(a[2] == null);
     }
 }
 

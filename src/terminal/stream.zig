@@ -9,6 +9,7 @@ const kitty = @import("kitty.zig");
 const modes = @import("modes.zig");
 const osc = @import("osc.zig");
 const sgr = @import("sgr.zig");
+const UTF8Decoder = @import("UTF8Decoder.zig");
 const MouseShape = @import("mouse_shape.zig").MouseShape;
 
 const log = std.log.scoped(.stream);
@@ -37,6 +38,7 @@ pub fn Stream(comptime Handler: type) type {
 
         handler: Handler,
         parser: Parser = .{},
+        utf8decoder: UTF8Decoder = .{},
 
         pub fn deinit(self: *Self) void {
             self.parser.deinit();
@@ -50,6 +52,22 @@ pub fn Stream(comptime Handler: type) type {
         /// Process the next character and call any callbacks if necessary.
         pub fn next(self: *Self, c: u8) !void {
             // log.debug("char: {c}", .{c});
+            if (self.parser.state == .ground and c != 0x1B) {
+                var consumed = false;
+                while (!consumed) {
+                    const res = self.utf8decoder.next(c);
+                    consumed = res[1];
+                    if (res[0]) |codepoint| {
+                        if (codepoint < 0xF) {
+                            try self.execute(@intCast(codepoint));
+                        } else {
+                            try self.print(@intCast(codepoint));
+                        }
+                    }
+                }
+                return;
+            }
+
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 const action = action_opt orelse continue;
@@ -98,6 +116,12 @@ pub fn Stream(comptime Handler: type) type {
                         try self.handler.apcEnd();
                     } else log.warn("unimplemented APC end", .{}),
                 }
+            }
+        }
+
+        pub fn print(self: *Self, c: u21) !void {
+            if (@hasDecl(T, "print")) {
+                try self.handler.print(c);
             }
         }
 
