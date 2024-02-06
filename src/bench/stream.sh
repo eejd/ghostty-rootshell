@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-
-# TODO: This script is temporary, remove it from the repo
-
+#
+# This is a trivial helper script to help run the stream benchmark.
+# You probably want to tweak this script depending on what you're
+# trying to measure.
 
 DATA="ascii"
 SIZE="25M"
