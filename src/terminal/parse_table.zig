@@ -5,10 +5,6 @@
 //! https://vt100.net/emu/dec_ansi_parser
 //! But has some modifications:
 //!
-//!   * utf8 state introduced to detect UTF8-encoded sequences. The
-//!     actual handling back OUT of the utf8 state is done manually in the
-//!     parser.
-//!
 //!   * csi_param accepts the colon character (':') since the SGR command
 //!     accepts colon as a valid parameter value.
 //!
@@ -92,18 +88,11 @@ fn genTable() Table {
 
     // ground
     {
-        const source = State.ground;
-
         // events
         single(&result, 0x19, .ground, .ground, .execute);
         range(&result, 0, 0x17, .ground, .ground, .execute);
         range(&result, 0x1C, 0x1F, .ground, .ground, .execute);
         range(&result, 0x20, 0x7F, .ground, .ground, .print);
-
-        // => utf8
-        range(&result, 0xC2, 0xDF, source, .utf8, .collect);
-        range(&result, 0xE0, 0xEF, source, .utf8, .collect);
-        range(&result, 0xF0, 0xF4, source, .utf8, .collect);
     }
 
     // escape_intermediate

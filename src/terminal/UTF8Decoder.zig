@@ -6,6 +6,7 @@
 //!
 //! For details on Bjoern's DFA-based UTF-8 decoder, see
 //! http://bjoern.hoehrmann.de/utf-8/decoder/dfa (MIT licensed)
+const UTF8Decoder = @This();
 
 const std = @import("std");
 const testing = std.testing;
@@ -33,12 +34,18 @@ const transitions = [_]u8 {
 };
 //zig fmt: on
 
-// This is where we accumulate our current codepoint.
-var accumulator: u21 = 0;
-// The internal state of the DFA.
+// DFA states
 const ACCEPT_STATE = 0;
 const REJECT_STATE = 12;
-var state: u8 = ACCEPT_STATE;
+
+// This is where we accumulate our current codepoint.
+accumulator: u21 = 0,
+// The internal state of the DFA.
+state: u8 = ACCEPT_STATE,
+
+pub fn init() UTF8Decoder {
+    return .{};
+}
 
 /// Takes the next byte in the utf-8 sequence and emits a tuple of
 /// - The codepoint that was generated, if there is one.
@@ -50,27 +57,27 @@ var state: u8 = ACCEPT_STATE;
 ///
 /// If the byte is not consumed, the caller is responsible for calling
 /// again with the same byte before continuing.
-pub inline fn next(byte: u8) struct { ?u21, bool } {
+pub inline fn next(self: *UTF8Decoder, byte: u8) struct { ?u21, bool } {
     const char_class = char_classes[byte];
 
-    const initial_state = state;
+    const initial_state = self.state;
 
-    if (state != ACCEPT_STATE) {
-        accumulator <<= 6;
-        accumulator |= (byte & 0x3F);
+    if (self.state != ACCEPT_STATE) {
+        self.accumulator <<= 6;
+        self.accumulator |= (byte & 0x3F);
     } else {
-        accumulator = (@as(u21, 0xFF) >> char_class) & (byte);
+        self.accumulator = (@as(u21, 0xFF) >> char_class) & (byte);
     }
 
-    state = transitions[state + char_class];
+    self.state = transitions[self.state + char_class];
 
-    if (state == ACCEPT_STATE) {
-        defer { accumulator = 0; }
+    if (self.state == ACCEPT_STATE) {
+        defer { self.accumulator = 0; }
         // Emit the fully decoded codepoint.
-        return .{ accumulator, true };
-    } else if (state == REJECT_STATE) {
-        accumulator = 0;
-        state = ACCEPT_STATE;
+        return .{ self.accumulator, true };
+    } else if (self.state == REJECT_STATE) {
+        self.accumulator = 0;
+        self.state = ACCEPT_STATE;
         // Emit a replacement character. If we rejected the first byte
         // in a sequence, then it was consumed, otherwise it was not.
         return .{ 0xFFFD, initial_state == ACCEPT_STATE };
@@ -81,9 +88,10 @@ pub inline fn next(byte: u8) struct { ?u21, bool } {
 }
 
 test "ASCII" {
+    var d = init();
     var out = std.mem.zeroes([13]u8);
     for ("Hello, World!", 0..) |byte, i| {
-        const res = next(byte);
+        const res = d.next(byte);
         try testing.expect(res[1]);
         if (res[0]) |codepoint| {
             out[i] = @intCast(codepoint);
@@ -93,13 +101,14 @@ test "ASCII" {
 }
 
 test "Well formed utf-8" {
+    var d = init();
     var out = std.mem.zeroes([4]u21);
     var i: usize = 0;
     // 4 bytes, 3 bytes, 2 bytes, 1 byte
     for ("😄✤ÁA") |byte| {
         var consumed = false;
         while (!consumed) {
-            const res = next(byte);
+            const res = d.next(byte);
             consumed = res[1];
             // There are no errors in this sequence, so
             // every byte should be consumed first try.
@@ -114,13 +123,14 @@ test "Well formed utf-8" {
 }
 
 test "Partially invalid utf-8" {
+    var d = init();
     var out = std.mem.zeroes([5]u21);
     var i: usize = 0;
     // Illegally terminated sequence, valid sequence, illegal surrogate pair.
     for ("\xF0\x9F😄\xED\xA0\x80") |byte| {
         var consumed = false;
         while (!consumed) {
-            const res = next(byte);
+            const res = d.next(byte);
             consumed = res[1];
             if (res[0]) |codepoint| {
                 out[i] = codepoint;
