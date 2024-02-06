@@ -42,11 +42,6 @@ pub fn Stream(comptime Handler: type) type {
         parser: Parser = .{},
         utf8decoder: UTF8Decoder = .{},
 
-        /// Keep track of any partial UTF-8 sequences that we need to
-        /// process in the next call to nextAssumeUtf8.
-        partial_utf8: [4]u8 = undefined,
-        partial_utf8_len: u3 = 0,
-
         pub fn deinit(self: *Self) void {
             self.parser.deinit();
         }
@@ -111,7 +106,6 @@ pub fn Stream(comptime Handler: type) type {
                 // to the scalar parser.
                 if (input[offset] != 0x1B) {
                     const rem = input[offset..];
-                    assert(rem.len <= self.partial_utf8.len);
                     for (rem) |c| {
                         try self.next(c);
                     }
