@@ -404,6 +404,20 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
+    // Fish shell completions
+    {
+        const fish_exe = b.addExecutable(.{
+            .name = "fish_completions",
+            .root_source_file = .{ .path = "src/fish_completions.zig" },
+            .target = b.host,
+        });
+        const fish_step = b.addRunArtifact(fish_exe);
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            fish_step.captureStdOut(),
+            "share/fish/vendor_completions.d/ghostty.fish",
+        ).step);
+    }
+
     // Vim plugin
     {
         const wf = b.addWriteFiles();
