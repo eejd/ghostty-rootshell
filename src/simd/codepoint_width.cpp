@@ -187,12 +187,15 @@ static_assert(std::size(eaw_gte) == std::size(eaw_lte));
 static_assert(std::size(zero_gte) == std::size(zero_lte));
 static_assert(std::size(nsm_gte) == std::size(nsm_lte));
 
+/// Vectorized implementation of Unicode display width. Determining width
+/// unfortunately requires many small range checks, so we test some fast paths
+/// and otherwise try to do N (vector lane width) range checks at a time.
 template <class D>
 int8_t CodepointWidthImpl(D d, T input) {
   // If the input is ASCII, then we return 1. We do NOT check for
   // control characters because we assume that the input has already
   // been checked for that case.
-  if (input < 0xFF) {
+  if (input <= 0xFF) {
     return 1;
   }
 
@@ -201,14 +204,6 @@ int8_t CodepointWidthImpl(D d, T input) {
   const hn::Vec<D> input_vec = Set(d, input);
 
   {
-    // Thes are the ranges (inclusive) of the codepoints that are DEFINITELY
-    // width 2. We will check as many in parallel as possible.
-    //
-    // The zero padding is so that we can always load aligned directly into
-    // a vector register of any size up to 16 bytes (AVX512).
-    //
-    // Ranges: two-em dash, gbp.isRegionalIndicator, CJK...
-    //
     // NOTE: 0x2E3B is technically width 3 but for our terminal we only
     // handle up to width 2 as wide so we will treat it as width 2.
     HWY_ALIGN constexpr T gte_keys[] = {
@@ -233,7 +228,6 @@ int8_t CodepointWidthImpl(D d, T input) {
   }
 
   {
-    // Definitely width 0
     HWY_ALIGN constexpr T gte_keys[] = {
         0x1160, 0x2060, 0xFFF0, 0xE0000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
