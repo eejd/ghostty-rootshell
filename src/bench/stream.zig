@@ -19,6 +19,10 @@ const terminal = @import("../terminal/main.zig");
 const Args = struct {
     mode: Mode = .noop,
 
+    /// The PRNG seed used by the input generators.
+    /// -1 uses a random seed (default)
+    seed: i64 = -1,
+
     /// Process input with a real terminal. This will be MUCH slower than
     /// the other modes because it has to maintain terminal state but will
     /// help get more realistic numbers.
@@ -59,10 +63,11 @@ const Mode = enum {
     // Generate an infinite stream of random printable ASCII characters.
     @"gen-ascii",
 
-    // Generate an infinite stream of repeated UTF-8 characters. We don't
-    // currently do random generation because trivial implementations are
-    // too slow and I'm a simple man.
+    // Generate an infinite stream of random printable unicode characters.
     @"gen-utf8",
+
+    // Generate an infinite stream of arbitrary random bytes.
+    @"gen-rand",
 };
 
 pub const std_options = struct {
@@ -86,10 +91,14 @@ pub fn main() !void {
     const writer = std.io.getStdOut().writer();
     const buf = try alloc.alloc(u8, args.@"buffer-size");
 
+    const seed: u64 = if (args.seed >= 0) @bitCast(args.seed)
+    else @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
+
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
-        .@"gen-ascii" => try genAscii(writer),
-        .@"gen-utf8" => try genUtf8(writer),
+        .@"gen-ascii" => try genAscii(writer, seed),
+        .@"gen-utf8" => try genUtf8(writer, seed),
+        .@"gen-rand" => try genRand(writer, seed),
         .noop => try benchNoop(reader, buf),
 
         // Handle the ones that depend on terminal state next
@@ -124,17 +133,17 @@ pub fn main() !void {
 
 /// Generates an infinite stream of random printable ASCII characters.
 /// This has no control characters in it at all.
-fn genAscii(writer: anytype) !void {
+fn genAscii(writer: anytype, seed: u64) !void {
     const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;':\\\",./<>?`~";
-    try genData(writer, alphabet);
+    try genData(writer, alphabet, seed);
 }
 
 /// Generates an infinite stream of bytes from the given alphabet.
-fn genData(writer: anytype, alphabet: []const u8) !void {
-    var prng = std.rand.DefaultPrng.init(0x12345678);
+fn genData(writer: anytype, alphabet: []const u8, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
     const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
     while (true) {
-        var buf: [1024]u8 = undefined;
         for (&buf) |*c| {
             const idx = rnd.uintLessThanBiased(usize, alphabet.len);
             c.* = alphabet[idx];
@@ -147,9 +156,36 @@ fn genData(writer: anytype, alphabet: []const u8) !void {
     }
 }
 
-fn genUtf8(writer: anytype) !void {
+fn genUtf8(writer: anytype, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
+    const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
     while (true) {
-        writer.writeAll(random_utf8) catch |err| switch (err) {
+        var i: usize = 0;
+        while (i <= buf.len - 4) {
+            const cp: u18 = while(true) {
+                const cp = rnd.int(u18);
+                if (ziglyph.isPrint(cp)) break cp;
+            };
+            
+            i += try std.unicode.utf8Encode(cp, buf[i..]);
+        }
+
+        writer.writeAll(buf[0..i]) catch |err| switch (err) {
+            error.BrokenPipe => return, // stdout closed
+            else => return err,
+        };
+    }
+}
+
+fn genRand(writer: anytype, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
+    const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
+    while (true) {
+        rnd.bytes(&buf);
+
+        writer.writeAll(&buf) catch |err| switch (err) {
             error.BrokenPipe => return, // stdout closed
             else => return err,
         };
@@ -208,8 +244,3 @@ const TerminalHandler = struct {
         try self.t.print(cp);
     }
 };
-
-/// Offline-generated random UTF-8 bytes, because generating them at runtime
-/// was too slow for our benchmarks. We should replace this if we can come
-/// up with something that doesn't bottleneck our benchmark.
-const random_utf8 = "⨴⭬∎⯀Ⳟ⳨⍈♍⒄⣹⇚ⱎ⯡⯴↩ⵆ⼳ⶦ⑑⦥➍Ⲡ⽉❞⹀⢧€⣁ⶐ⸲⣷⏝⣶⫿▝⨽⬃ↁ↵⯙ⶵ╡∾⭡′⫼↼┫⮡ↅ⍞‡▱⺁⿒⽛⎭☜Ⱝ⣘✬⢟⁴⟹⪝ℌ❓␆╣┳⽑⴩⺄✽ⳗ␮ⵍ⦵ⱍ⭑⛒ⅉ⛠➌₯ⵔⷋ⹶❷ⱳ⣖⭐⮋ₒ⥚ⷃ╶⌈⸣❥⑎⦿⪶₮╋⅌ⳬⴛ⥚♇╬❜⺷⡬⏠⧥┺⃻❼⏲↍Ⓙ⽕╶⾉⺪⁑⎕⅕⼧⊀ⲡ⊺⪭⟾Ⅵ⍌⛄⠻⃽⣻₮ⰹⴺ⪂⃾∖⊹⤔⵫⦒⽳⫄⍮↷⣌⩐⨼⯂⵺◺⍙⭺⟂⎯ⱼ⴬⫺⹦∌⡉ⳅ⛲⡏⃘⺃⵬ⴜ⾩⭦ⷭ⨟☌⍃⧪⮧ⓛ⃄♮ⲓ∘⣝⤐⎭ⷺⰫⶔ☎⾨⾐≦␢⋔⢟ⶐ⏁⚄⦡⾞✊⾾⫿⴩⪨⮰ⓙ⌽⭲⫬⒈⊻⸣⌳⋡ⱄⲛ⓬➼⌧⟮⹖♞ℚⷱ⭥⚣⏳⟾❠☏⦻⑽−∪ⅆ☁⿑⦣⵽Ⱳ⺧⺊Ⓞ⫽⦀⃐⚽⎌⥰⚪⢌⛗⸋⛂⾽Ⰳ⍧⛗◁❠↺≍‸ⴣ⭰‾⡸⩛⭷ⵒ⵼⚉❚⨳⑫⹾⷟∇┬⚌⨙╘ℹ⢱⏴∸⴨⾀⌟⡄⺣⦦ⱏ⼚​⿇├⌮⸿⯔₮—⥟╖◡⻵ⶕ┧⒞⏖⏧⟀❲➚‏➳Ⰼ┸⬖⸓⁃⹚⫣┭↜〈☶≍☨╟⿹ⳙ⺽⸡⵵⛞⚟⯓⥟┞⿄⮖⃫⭒⠤ⓣ⬱⃅⓼ⱒ⥖✜⛘⠶ⰽ⿉⾣➌⣋⚨⒯◱⢃◔ⱕ⫡⓱⅌Ⱨ⧵⯾┰⁠ⱌ⼳♠⨽⪢⸳⠹⩡Ⓨ⡪⭞⼰⡧ⓖ⤘⽶⵶ⴺ ⨨▅⏟⊕ⴡⴰ␌⚯⦀⫭⨔⬯⨢ⱽ⟓⥫⑤⊘⟧❐▜⵸℅⋣⚏⇭⽁⪂ⲡ⯊⦥⭳⠾⹫⠮℞⒡Ⰼ⦈⭅≉⋆☈▓⺑⡻▷Ⱑ⋖⬜┃ⵍ←⣢ↁ☚⟴⦡⨍⼡◝⯤❓◢⌡⏿⭲✏⎑⧊⼤⪠⋂⚜┯▤⑘⟾⬬Ⓜ⨸⥪ⱘ⳷⷟⒖⋐⡈⏌∠⏁⓳Ⲟ⦽⢯┏Ⲹ⍰ⅹ⚏⍐⟍⣩␖⛂∜❆⤗⒨⓽";
