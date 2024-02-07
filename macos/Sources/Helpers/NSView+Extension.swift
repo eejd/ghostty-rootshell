@@ -1,8 +1,8 @@
 import AppKit
 
 extension NSView {
-
-    func subviews(withClassName name: String) -> [NSView] {
+    /// Recursively finds and returns descendant views that have the given class name.
+    func descendants(withClassName name: String) -> [NSView] {
         var result = [NSView]()
 
         for subview in subviews {
@@ -10,7 +10,7 @@ extension NSView {
                 result.append(subview)
             }
 
-            result += subview.subviews(withClassName: name)
+            result += subview.descendants(withClassName: name)
         }
 
         return result
