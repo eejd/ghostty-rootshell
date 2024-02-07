@@ -33,7 +33,19 @@ class TerminalWindow: NSWindow {
     
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
-    
+
+    override func updateConstraintsIfNeeded() {
+        super.updateConstraintsIfNeeded()
+
+        guard let titlebarContainer = contentView?.superview?.firstSubview(withClassName: "NSTitlebarContainerView") else {
+            return
+        }
+
+        for v in titlebarContainer.subviews(withClassName: "NSTitlebarSeparatorView") {
+            v.isHidden = true
+        }
+    }
+
     /// This is called by titlebarTabs changing so that we can setup the rest of our window
     private func changedTitlebarTabs(to newValue: Bool) {
         self.titlebarAppearsTransparent = newValue
@@ -191,24 +203,13 @@ class TerminalWindow: NSWindow {
         view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
         view.wantsLayer = true
         
-        let topBorder = NSView()
-        view.addSubview(topBorder)
-        topBorder.translatesAutoresizingMaskIntoConstraints = false
-        topBorder.leftAnchor.constraint(equalTo: view.leftAnchor).isActive = true
-        topBorder.rightAnchor.constraint(equalTo: view.rightAnchor).isActive = true
-        topBorder.topAnchor.constraint(equalTo: view.topAnchor).isActive = true
-        topBorder.bottomAnchor.constraint(equalTo: view.topAnchor, constant: 1).isActive = true
-        topBorder.wantsLayer = true
-        
         // This is jank but this makes the background color for light themes on the button
         // backdrop look MUCH better. I couldn't figure out a perfect color to use that works
         // for both so we just check the appearance.
         if effectiveAppearance.name == .aqua {
             view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
-            topBorder.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.2)
         } else {
             view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
-            topBorder.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.85)
         }
         
         windowButtonsBackdrop = view
