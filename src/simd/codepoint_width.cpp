@@ -15,8 +15,6 @@ namespace hn = hwy::HWY_NAMESPACE;
 
 using T = uint32_t;
 
-extern "C" int8_t ghostty_ziglyph_codepoint_width(uint32_t);
-
 // East Asian Width
 HWY_ALIGN constexpr T eaw_gte[] = {
     0x3000,  0xff01,  0xffe0,  0x1100,  0x231a,  0x2329,  0x232a,  0x23e9,
@@ -74,7 +72,7 @@ HWY_ALIGN constexpr T zero_gte[] = {
     0xfeff,  0xfff9, 0x110bd, 0x110cd, 0x13430, 0x1bca0, 0x1d173, 0xe0001,
     0xe0020, 0x488,  0x1abe,  0x20dd,  0x20e2,  0xa670,  0,       0,
     0,       0,      0,       0,       0,       0,       0,       0,
-    0,       0,      0,       0,       0,       0,
+    0,       0,      0,       0,       0,       0,       0,       0,
 };
 
 HWY_ALIGN constexpr T zero_lte[] = {
@@ -82,7 +80,7 @@ HWY_ALIGN constexpr T zero_lte[] = {
     0xfeff,  0xfffb, 0x110bd, 0x110cd, 0x1343f, 0x1bca3, 0x1d17a, 0xe0001,
     0xe007f, 0x489,  0x1abe,  0x20e0,  0x20e4,  0xa672,  0,       0,
     0,       0,      0,       0,       0,       0,       0,       0,
-    0,       0,      0,       0,       0,       0,
+    0,       0,      0,       0,       0,       0,       0,       0,
 };
 
 /// Non-spacing marks
@@ -132,7 +130,7 @@ HWY_ALIGN constexpr T nsm_gte[] = {
     0x1e023, 0x1e026, 0x1e08f, 0x1e130, 0x1e2ae, 0x1e2ec, 0x1e4ec, 0x1e8d0,
     0x1e944, 0xe0100, 0,       0,       0,       0,       0,       0,
     0,       0,       0,       0,       0,       0,       0,       0,
-    0,       0,
+    0,       0,       0,       0,       0,       0,       0,       0,
 };
 
 HWY_ALIGN constexpr T nsm_lte[] = {
@@ -181,7 +179,7 @@ HWY_ALIGN constexpr T nsm_lte[] = {
     0x1e024, 0x1e02a, 0x1e08f, 0x1e136, 0x1e2ae, 0x1e2ef, 0x1e4ef, 0x1e8d6,
     0x1e94a, 0xe01ef, 0,       0,       0,       0,       0,       0,
     0,       0,       0,       0,       0,       0,       0,       0,
-    0,       0,
+    0,       0,       0,       0,       0,       0,       0,       0,
 };
 
 // All our tables must be identically sized
@@ -312,7 +310,6 @@ int8_t CodepointWidthImpl(D d, T input) {
   }
 
   return 1;
-  // return ghostty_ziglyph_codepoint_width(input);
 }
 
 int8_t CodepointWidth(T input) {
