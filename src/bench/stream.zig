@@ -19,6 +19,10 @@ const terminal = @import("../terminal/main.zig");
 const Args = struct {
     mode: Mode = .noop,
 
+    /// The PRNG seed used by the input generators.
+    /// -1 uses a random seed (default)
+    seed: i64 = -1,
+
     /// Process input with a real terminal. This will be MUCH slower than
     /// the other modes because it has to maintain terminal state but will
     /// help get more realistic numbers.
@@ -59,10 +63,11 @@ const Mode = enum {
     // Generate an infinite stream of random printable ASCII characters.
     @"gen-ascii",
 
-    // Generate an infinite stream of repeated UTF-8 characters. We don't
-    // currently do random generation because trivial implementations are
-    // too slow and I'm a simple man.
+    // Generate an infinite stream of random printable unicode characters.
     @"gen-utf8",
+
+    // Generate an infinite stream of arbitrary random bytes.
+    @"gen-rand",
 };
 
 pub const std_options = struct {
@@ -86,10 +91,14 @@ pub fn main() !void {
     const writer = std.io.getStdOut().writer();
     const buf = try alloc.alloc(u8, args.@"buffer-size");
 
+    const seed: u64 = if (args.seed >= 0) @bitCast(args.seed)
+    else @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
+
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
-        .@"gen-ascii" => try genAscii(writer),
-        .@"gen-utf8" => try genUtf8(writer),
+        .@"gen-ascii" => try genAscii(writer, seed),
+        .@"gen-utf8" => try genUtf8(writer, seed),
+        .@"gen-rand" => try genRand(writer, seed),
         .noop => try benchNoop(reader, buf),
 
         // Handle the ones that depend on terminal state next
@@ -124,14 +133,14 @@ pub fn main() !void {
 
 /// Generates an infinite stream of random printable ASCII characters.
 /// This has no control characters in it at all.
-fn genAscii(writer: anytype) !void {
+fn genAscii(writer: anytype, seed: u64) !void {
     const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;':\\\",./<>?`~";
-    try genData(writer, alphabet);
+    try genData(writer, alphabet, seed);
 }
 
 /// Generates an infinite stream of bytes from the given alphabet.
-fn genData(writer: anytype, alphabet: []const u8) !void {
-    var prng = std.rand.DefaultPrng.init(0x12345678);
+fn genData(writer: anytype, alphabet: []const u8, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
     const rnd = prng.random();
     var buf: [1024]u8 = undefined;
     while (true) {
@@ -147,8 +156,8 @@ fn genData(writer: anytype, alphabet: []const u8) !void {
     }
 }
 
-fn genUtf8(writer: anytype) !void {
-    var prng = std.rand.DefaultPrng.init(0x12345678);
+fn genUtf8(writer: anytype, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
     const rnd = prng.random();
     var buf: [1024]u8 = undefined;
     while (true) {
@@ -163,6 +172,20 @@ fn genUtf8(writer: anytype) !void {
         }
 
         writer.writeAll(buf[0..i]) catch |err| switch (err) {
+            error.BrokenPipe => return, // stdout closed
+            else => return err,
+        };
+    }
+}
+
+fn genRand(writer: anytype, seed: u64) !void {
+    var prng = std.rand.DefaultPrng.init(seed);
+    const rnd = prng.random();
+    var buf: [1024]u8 = undefined;
+    while (true) {
+        rnd.bytes(&buf);
+
+        writer.writeAll(&buf) catch |err| switch (err) {
             error.BrokenPipe => return, // stdout closed
             else => return err,
         };
