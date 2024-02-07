@@ -55,6 +55,8 @@ HWY_ALIGN constexpr uint16_t eaw_gte16[] = {
     0xfe10, 0xfe30, 0xfe54, 0xfe68, 0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
 };
 
 HWY_ALIGN constexpr uint16_t eaw_lte16[] = {
@@ -68,6 +70,8 @@ HWY_ALIGN constexpr uint16_t eaw_lte16[] = {
     0x3229, 0x3247, 0x3250, 0x325f, 0x327f, 0x3289, 0x32b0, 0x32bf, 0x33ff,
     0x4bdf, 0xa014, 0xa015, 0xa48c, 0xa4c6, 0xa97c, 0xd7a3, 0xfa6d, 0xfad9,
     0xfe19, 0xfe52, 0xfe66, 0xfe6b, 0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
 };
@@ -88,11 +92,15 @@ HWY_ALIGN constexpr uint16_t zero_gte16[] = {
     0xfff9, 0x488, 0x1abe, 0x20dd, 0x20e2, 0xa670, 0,      0,      0,
     0,      0,     0,      0,      0,      0,      0,      0,      0,
     0,      0,     0,      0,      0,      0,      0,      0,      0,
+    0,      0,     0,      0,      0,      0,      0,      0,      0,
+    0,      0,     0,      0,      0,      0,      0,      0,      0,
 };
 
 HWY_ALIGN constexpr uint16_t zero_lte16[] = {
     0xad,   0x70f, 0x891,  0x180e, 0x200f, 0x202e, 0x2064, 0x206f, 0xfeff,
     0xfffb, 0x489, 0x1abe, 0x20e0, 0x20e4, 0xa672, 0,      0,      0,
+    0,      0,     0,      0,      0,      0,      0,      0,      0,
+    0,      0,     0,      0,      0,      0,      0,      0,      0,
     0,      0,     0,      0,      0,      0,      0,      0,      0,
     0,      0,     0,      0,      0,      0,      0,      0,      0,
 };
@@ -169,6 +177,8 @@ HWY_ALIGN constexpr uint16_t nsm_gte16[] = {
     0xabe8, 0xabed, 0xfb1e, 0xfe00, 0xfe20, 0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
 };
 
 HWY_ALIGN constexpr uint16_t nsm_lte16[] = {
@@ -198,6 +208,8 @@ HWY_ALIGN constexpr uint16_t nsm_lte16[] = {
     0xabe8, 0xabed, 0xfb1e, 0xfe0f, 0xfe2f, 0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
     0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
+    0,      0,      0,      0,      0,      0,      0,      0,      0,
 };
 
 // All our tables must be identically sized
@@ -221,12 +233,15 @@ int8_t CodepointWidth16(D d, uint16_t input) {
     // NOTE: 0x2E3B is technically width 3 but for our terminal we only
     // handle up to width 2 as wide so we will treat it as width 2.
     HWY_ALIGN constexpr T gte_keys[] = {
-        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0x1160, 0x2060, 0xFFF0,
-        0,      0,      0,      0,      0,      0,      0,      0,
+        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0x1160, 0x2060, 0xFFF0, 0, 0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
     };
     HWY_ALIGN constexpr T lte_keys[] = {
-        0x2E3A, 0x4DBF, 0x9FFF, 0xFAFF, 0x2E3B, 0x11FF, 0x206F, 0xFFF8,
-        0,      0,      0,      0,      0,      0,      0,      0,
+        0x2E3A, 0x4DBF, 0x9FFF, 0xFAFF, 0x2E3B, 0x11FF, 0x206F, 0xFFF8, 0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
     };
     size_t i = 0;
     for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
