@@ -105,18 +105,6 @@ pub fn build(b: *std.Build) !void {
         "Name of the conformance app to run with 'run' option.",
     );
 
-    const emit_docs = b.option(
-        bool,
-        "emit-docs",
-        "Build and install auto-generated documentation (requires pandoc)",
-    ) orelse emit_docs: {
-        // We only default to true if we can find pandoc.
-        const path = Command.expandPath(b.allocator, "pandoc") catch
-            break :emit_docs false;
-        defer if (path) |p| b.allocator.free(p);
-        break :emit_docs path != null;
-    };
-
     const emit_test_exe = b.option(
         bool,
         "emit-test-exe",
@@ -134,6 +122,30 @@ pub fn build(b: *std.Build) !void {
         "emit-helpgen",
         "Build and install the helpgen executable.",
     ) orelse false;
+
+    const emit_docs = b.option(
+        bool,
+        "emit-docs",
+        "Build and install auto-generated documentation (requires pandoc)",
+    ) orelse emit_docs: {
+        // If we are emitting any other artifacts then we default to false.
+        if (emit_bench or emit_test_exe or emit_helpgen) break :emit_docs false;
+
+        // We only default to true if we can find pandoc.
+        const path = Command.expandPath(b.allocator, "pandoc") catch
+            break :emit_docs false;
+        defer if (path) |p| b.allocator.free(p);
+        break :emit_docs path != null;
+    };
+
+    const emit_xcframework = b.option(
+        bool,
+        "emit-xcframework",
+        "Build and install the xcframework for the macOS library.",
+    ) orelse builtin.target.isDarwin() and
+        target.result.os.tag == .macos and
+        config.app_runtime == .none and
+        (!emit_bench and !emit_test_exe and !emit_helpgen);
 
     // On NixOS, the built binary from `zig build` needs to patch the rpath
     // into the built binary for it to be portable across the NixOS system
@@ -502,10 +514,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     // On Mac we can build the embedding library. This only handles the macOS lib.
-    if (builtin.target.isDarwin() and
-        target.result.os.tag == .macos and
-        config.app_runtime == .none)
-    {
+    if (emit_xcframework) {
         // Create the universal macOS lib.
         const macos_lib_step, const macos_lib_path = try createMacOSLib(
             b,
