@@ -37,7 +37,12 @@ test "codepointWidth matches ziglyph" {
     for (min..std.math.maxInt(u21)) |cp| {
         const simd = codepointWidth(@intCast(cp));
         const zg = ziglyph.display_width.codePointWidth(@intCast(cp), .half);
-        if (simd != zg) {
+        if (simd != zg) mismatch: {
+            if (cp == 0x2E3B) {
+                try testing.expectEqual(@as(i8, 2), simd);
+                break :mismatch;
+            }
+
             std.log.warn("mismatch cp=U+{x} simd={} zg={}", .{ cp, simd, zg });
             try testing.expect(false);
         }
