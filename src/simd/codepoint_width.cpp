@@ -221,12 +221,12 @@ int8_t CodepointWidth16(D d, uint16_t input) {
     // NOTE: 0x2E3B is technically width 3 but for our terminal we only
     // handle up to width 2 as wide so we will treat it as width 2.
     HWY_ALIGN constexpr T gte_keys[] = {
-        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0,      0,      0,      0,      0,      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0x1160, 0x2060, 0xFFF0,
+        0,      0,      0,      0,      0,      0,      0,      0,
     };
     HWY_ALIGN constexpr T lte_keys[] = {
-        0x2E3A, 0x4DBF, 0x9FFF, 0xFAFF, 0x2E3B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0,      0,      0,      0,      0,      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x2E3A, 0x4DBF, 0x9FFF, 0xFAFF, 0x2E3B, 0x11FF, 0x206F, 0xFFF8,
+        0,      0,      0,      0,      0,      0,      0,      0,
     };
     size_t i = 0;
     for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
@@ -234,30 +234,16 @@ int8_t CodepointWidth16(D d, uint16_t input) {
       const hn::Vec<D> gte_vec = hn::Load(d, gte_keys + i);
       const intptr_t idx = hn::FindFirstTrue(
           d, hn::And(hn::Le(input_vec, lte_vec), hn::Ge(input_vec, gte_vec)));
-      if (idx >= 0) {
+
+      // We organize the data above to split 0 and 2-width codepoints since
+      // we can probably do all the comparisons in one go.
+      if (idx >= 5) {
+        return 0;
+      } else if (idx >= 0) {
         return 2;
       }
     }
-    assert(i >= 5);  // We should have checked all the ranges.
-  }
-
-  {
-    HWY_ALIGN constexpr T gte_keys[] = {
-        0x1160, 0x2060, 0xFFF0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    };
-    HWY_ALIGN constexpr T lte_keys[] = {
-        0x11FF, 0x206F, 0xFFF8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    };
-    size_t i = 0;
-    for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
-      const hn::Vec<D> lte_vec = hn::Load(d, lte_keys + i);
-      const hn::Vec<D> gte_vec = hn::Load(d, gte_keys + i);
-      const intptr_t idx = hn::FindFirstTrue(
-          d, hn::And(hn::Le(input_vec, lte_vec), hn::Ge(input_vec, gte_vec)));
-      if (idx >= 0) {
-        return 0;
-      }
-    }
+    assert(i >= 7);  // We should have checked all the ranges.
   }
 
   {
