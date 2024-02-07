@@ -16,6 +16,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
+const simd = @import("../simd/main.zig");
 const UTF8Decoder = @import("../terminal/UTF8Decoder.zig");
 
 const Args = struct {
@@ -43,6 +44,9 @@ const Mode = enum {
 
     /// Use ziglyph library to calculate the display width of each codepoint.
     ziglyph,
+
+    /// Our SIMD implementation.
+    simd,
 };
 
 pub const std_options = struct {
@@ -69,6 +73,7 @@ pub fn main() !void {
     switch (args.mode) {
         .baseline => try benchBaseline(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
+        .simd => try benchSimd(reader, buf),
     }
 }
 
@@ -105,6 +110,30 @@ noinline fn benchZiglyph(
             assert(consumed);
             if (cp_) |cp| {
                 const width = ziglyph.display_width.codePointWidth(cp, .half);
+
+                // Write the width to the buffer to avoid it being compiled away
+                buf[0] = @intCast(width);
+            }
+        }
+    }
+}
+
+noinline fn benchSimd(
+    reader: anytype,
+    buf: []u8,
+) !void {
+    var d: UTF8Decoder = .{};
+    while (true) {
+        const n = try reader.read(buf);
+        if (n == 0) break;
+
+        // Using stream.next directly with a for loop applies a naive
+        // scalar approach.
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp| {
+                const width = simd.codepointWidth(cp);
 
                 // Write the width to the buffer to avoid it being compiled away
                 buf[0] = @intCast(width);

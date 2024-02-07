@@ -16,6 +16,7 @@ ARGS=""
 
 # Generate the benchmark input ahead of time so it's not included in the time.
 ./zig-out/bin/bench-stream --mode=gen-$DATA | head -c $SIZE > /tmp/ghostty_bench_data
+#cat ~/Downloads/JAPANESEBIBLE.txt > /tmp/ghostty_bench_data
 
 # Uncomment to instead use the contents of `stream.txt` as input.
 # yes $(cat ./stream.txt) | head -c $SIZE > /tmp/ghostty_bench_data
@@ -25,5 +26,7 @@ hyperfine \
   -n baseline \
   "./zig-out/bin/bench-codepoint-width --mode=baseline${ARGS} </tmp/ghostty_bench_data" \
   -n ziglyph \
-  "./zig-out/bin/bench-codepoint-width --mode=ziglyph${ARGS} </tmp/ghostty_bench_data"
+  "./zig-out/bin/bench-codepoint-width --mode=ziglyph${ARGS} </tmp/ghostty_bench_data" \
+  -n simd \
+  "./zig-out/bin/bench-codepoint-width --mode=simd${ARGS} </tmp/ghostty_bench_data"
 

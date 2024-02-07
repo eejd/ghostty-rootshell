@@ -1015,6 +1015,7 @@ fn addDeps(
     step.linkLibCpp();
     step.addIncludePath(.{ .path = "src" });
     step.addCSourceFiles(.{ .files = &.{
+        "src/simd/codepoint_width.cpp",
         "src/simd/index_of.cpp",
         "src/simd/vt.cpp",
     } });
