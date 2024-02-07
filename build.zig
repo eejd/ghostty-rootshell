@@ -1322,10 +1322,14 @@ fn benchSteps(
             var copy = config;
             copy.static = true;
 
+            var enum_name: [64]u8 = undefined;
+            @memcpy(enum_name[0..name.len], name);
+            std.mem.replaceScalar(u8, enum_name[0..name.len], '-', '_');
+
             var buf: [64]u8 = undefined;
             copy.exe_entrypoint = std.meta.stringToEnum(
                 build_config.ExeEntrypoint,
-                try std.fmt.bufPrint(&buf, "bench_{s}", .{name}),
+                try std.fmt.bufPrint(&buf, "bench_{s}", .{enum_name[0..name.len]}),
             ).?;
 
             break :config copy;

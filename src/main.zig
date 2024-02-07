@@ -8,4 +8,5 @@ pub usingnamespace switch (build_config.exe_entrypoint) {
     .mdgen_ghostty_5 => @import("build/mdgen/main_ghostty_5.zig"),
     .bench_parser => @import("bench/parser.zig"),
     .bench_stream => @import("bench/stream.zig"),
+    .bench_codepoint_width => @import("bench/codepoint-width.zig"),
 };
