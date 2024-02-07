@@ -1,7 +1,7 @@
 // Generates code for every target that this compiler can support.
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "simd/vt.cpp"  // this file
-#include <hwy/foreach_target.h>           // must come before highway.h
+#define HWY_TARGET_INCLUDE "simd/codepoint_width.cpp"  // this file
+#include <hwy/foreach_target.h>  // must come before highway.h
 #include <hwy/highway.h>
 #include <hwy/print-inl.h>
 
