@@ -91,7 +91,7 @@ pub fn Stream(comptime Handler: type) type {
             while (self.parser.state == .ground and offset < input.len) {
                 const res = simd.vt.utf8DecodeUntilControlSeq(input[offset..], cp_buf);
                 for (cp_buf[0..res.decoded]) |cp| {
-                    if (cp < 0xF) {
+                    if (cp <= 0xF) {
                         try self.execute(@intCast(cp));
                     } else {
                         try self.print(@intCast(cp));
@@ -131,7 +131,7 @@ pub fn Stream(comptime Handler: type) type {
                     const res = self.utf8decoder.next(c);
                     consumed = res[1];
                     if (res[0]) |codepoint| {
-                        if (codepoint < 0xF) {
+                        if (codepoint <= 0xF) {
                             try self.execute(@intCast(codepoint));
                         } else {
                             try self.print(@intCast(codepoint));
