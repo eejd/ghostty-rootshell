@@ -233,8 +233,9 @@ int8_t CodepointWidth16(D d, uint16_t input) {
     // NOTE: 0x2E3B is technically width 3 but for our terminal we only
     // handle up to width 2 as wide so we will treat it as width 2.
     HWY_ALIGN constexpr T gte_keys[] = {
-        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0x1160, 0x2060, 0xFFF0, 0, 0, 0,
-        0,      0,      0,      0,      0,      0,      0,      0,      0, 0, 0,
+        0x2E3A, 0x3400, 0x4E00, 0xF900, 0x2E3B, 0x1160, 0x2060, 0xFFF0, 0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
+        0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
         0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
     };
     HWY_ALIGN constexpr T lte_keys[] = {
@@ -243,6 +244,8 @@ int8_t CodepointWidth16(D d, uint16_t input) {
         0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
         0,      0,      0,      0,      0,      0,      0,      0,      0, 0,
     };
+    static_assert(std::size(gte_keys) == std::size(lte_keys));
+    static_assert(std::size(gte_keys) >= 32);
     size_t i = 0;
     for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
       const hn::Vec<D> lte_vec = hn::Load(d, lte_keys + i);
@@ -338,6 +341,8 @@ int8_t CodepointWidth32(D d, T input) {
     HWY_ALIGN constexpr T lte_keys[] = {
         0x1f1ff, 0x2FFFD, 0x3FFFD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
+    static_assert(std::size(gte_keys) == std::size(lte_keys));
+    static_assert(std::size(gte_keys) >= 16);
     size_t i = 0;
     for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
       const hn::Vec<D> lte_vec = hn::Load(d, lte_keys + i);
@@ -358,6 +363,8 @@ int8_t CodepointWidth32(D d, T input) {
     HWY_ALIGN constexpr T lte_keys[] = {
         0xE0FFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
+    static_assert(std::size(gte_keys) == std::size(lte_keys));
+    static_assert(std::size(gte_keys) >= 16);
     size_t i = 0;
     for (; i + N <= std::size(lte_keys) && lte_keys[i] != 0; i += N) {
       const hn::Vec<D> lte_vec = hn::Load(d, lte_keys + i);
