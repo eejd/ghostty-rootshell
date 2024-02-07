@@ -37,9 +37,9 @@ class TerminalWindow: NSWindow {
     override func updateConstraintsIfNeeded() {
         super.updateConstraintsIfNeeded()
 
-        guard let titlebarContainer = contentView?.superview?.firstSubview(withClassName: "NSTitlebarContainerView") else {
-            return
-        }
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
 
         for v in titlebarContainer.subviews(withClassName: "NSTitlebarSeparatorView") {
             v.isHidden = true
@@ -82,9 +82,9 @@ class TerminalWindow: NSWindow {
     func setTitlebarBackground(_ color: CGColor) {
         storedTitlebarBackgroundColor = color
         
-        guard let titlebarContainer = contentView?.superview?.firstSubview(withClassName: "NSTitlebarContainerView") else {
-            return
-        }
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
 
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = color
@@ -146,11 +146,10 @@ class TerminalWindow: NSWindow {
         guard let accessoryClipView = accessoryView.superview else { return }
         guard let titlebarView = accessoryClipView.superview else { return }
         guard titlebarView.className == "NSTitlebarView" else { return }
+        guard let toolbarView = titlebarView.subviews.first(where: {
+            $0.className == "NSToolbarView"
+        }) else { return }
 
-        guard let toolbarView = titlebarView.firstSubview(withClassName: "NSToolbarView") else {
-            return
-        }
-        
         addWindowButtonsBackdrop(titlebarView: titlebarView, toolbarView: toolbarView)
         guard let windowButtonsBackdrop = windowButtonsBackdrop else { return }
         
