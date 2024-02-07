@@ -42,6 +42,9 @@ const Mode = enum {
     /// and establishes a baseline for the other modes.
     baseline,
 
+    /// libc wcwidth
+    wcwidth,
+
     /// Use ziglyph library to calculate the display width of each codepoint.
     ziglyph,
 
@@ -72,6 +75,7 @@ pub fn main() !void {
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
         .baseline => try benchBaseline(reader, buf),
+        .wcwidth => try benchWcwidth(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
         .simd => try benchSimd(reader, buf),
     }
@@ -90,6 +94,32 @@ noinline fn benchBaseline(
         // scalar approach.
         for (buf[0..n]) |c| {
             _ = d.next(c);
+        }
+    }
+}
+
+extern "c" fn wcwidth(c: u32) c_int;
+
+noinline fn benchWcwidth(
+    reader: anytype,
+    buf: []u8,
+) !void {
+    var d: UTF8Decoder = .{};
+    while (true) {
+        const n = try reader.read(buf);
+        if (n == 0) break;
+
+        // Using stream.next directly with a for loop applies a naive
+        // scalar approach.
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp| {
+                const width = wcwidth(cp);
+
+                // Write the width to the buffer to avoid it being compiled away
+                buf[0] = @intCast(width);
+            }
         }
     }
 }

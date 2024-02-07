@@ -8,7 +8,7 @@
 # - "ascii", uniform random ASCII bytes
 # - "utf8", uniform random unicode characters, encoded as utf8
 # - "rand", pure random data, will contain many invalid code sequences.
-DATA="utf8"
+DATA="ascii"
 SIZE="25000000"
 
 # Add additional arguments
@@ -25,6 +25,8 @@ hyperfine \
   --warmup 10 \
   -n baseline \
   "./zig-out/bin/bench-codepoint-width --mode=baseline${ARGS} </tmp/ghostty_bench_data" \
+  -n wcwidth \
+  "./zig-out/bin/bench-codepoint-width --mode=wcwidth${ARGS} </tmp/ghostty_bench_data" \
   -n ziglyph \
   "./zig-out/bin/bench-codepoint-width --mode=ziglyph${ARGS} </tmp/ghostty_bench_data" \
   -n simd \
