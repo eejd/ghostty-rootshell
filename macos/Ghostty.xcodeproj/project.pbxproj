@@ -68,6 +68,7 @@
 		AEF9CE242B6AD07A0017E195 /* TerminalToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */; };
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
 		C159E89D2B69A2EF00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
+		C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F26EA62B738B9900404083 /* NSView+Extension.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -128,6 +129,7 @@
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalToolbar.swift; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
+		C1F26EA62B738B9900404083 /* NSView+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSView+Extension.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -193,6 +195,7 @@
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
+				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				A5CEAFDA29B8005900646FDA /* SplitView */,
 			);
 			path = Helpers;
@@ -468,6 +471,7 @@
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
 				A5D0AF3D2B37804400D21823 /* CodableBridge.swift in Sources */,
 				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,
+				C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */,
 				A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */,
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
 				A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */,
