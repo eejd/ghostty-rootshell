@@ -74,16 +74,13 @@ pub fn Stream(comptime Handler: type) type {
                 if (offset >= input.len) return;
                 try self.next(input[offset]);
                 offset += 1;
-            } else if (self.parser.state != .ground) {
-                // If we're not in the ground state then we process until
-                // we are. This can happen if the last chunk of input put us
-                // in the middle of a control sequence.
-                for (input[offset..]) |single| {
-                    try self.nextNonUtf8(single);
-                    offset += 1;
-                    if (self.parser.state == .ground) break;
-                }
             }
+
+            // If we're not in the ground state then we process until
+            // we are. This can happen if the last chunk of input put us
+            // in the middle of a control sequence.
+            offset += try self.consumeUntilGround(input[offset..]);
+            if (offset >= input.len) return;
 
             // If we're in the ground state then we can use SIMD to process
             // input until we see an ESC (0x1B), since all other characters
@@ -112,12 +109,22 @@ pub fn Stream(comptime Handler: type) type {
                 }
 
                 // Process our control sequence.
-                for (input[offset..]) |single| {
-                    try self.nextNonUtf8(single);
-                    offset += 1;
-                    if (self.parser.state == .ground) break;
-                }
+                self.parser.state = .escape;
+                offset += 1;
+                offset += try self.consumeUntilGround(input[offset..]);
             }
+        }
+
+        /// Parses escape sequences until the parser reaches the ground state.
+        /// Returns the number of bytes consumed from the provided input.
+        inline fn consumeUntilGround(self: *Self, input: []const u8) !usize {
+            var offset: usize = 0;
+            while (self.parser.state != .ground) {
+                if (offset >= input.len) return input.len;
+                try self.nextNonUtf8(input[offset]);
+                offset += 1;
+            }
+            return offset;
         }
 
         /// Like nextSlice but takes one byte and is necessarilly a scalar
@@ -126,12 +133,22 @@ pub fn Stream(comptime Handler: type) type {
         pub fn next(self: *Self, c: u8) !void {
             // The scalar path can be responsible for decoding UTF-8.
             if (self.parser.state == .ground and c != 0x1B) {
-                var consumed = false;
-                while (!consumed) {
-                    const res = self.utf8decoder.next(c);
-                    consumed = res[1];
-                    if (res[0]) |codepoint| {
-                        if (codepoint <= 0xF) {
+                const res = self.utf8decoder.next(c);
+                const consumed = res[1];
+                if (res[0]) |codepoint| {
+                    if (codepoint < 0xF) {
+                        try self.execute(@intCast(codepoint));
+                    } else {
+                        try self.print(@intCast(codepoint));
+                    }
+                }
+                if (!consumed) {
+                    const retry = self.utf8decoder.next(c);
+                    // It should be impossible for the decoder
+                    // to not consume the byte twice in a row.
+                    assert(retry[1] == true);
+                    if (retry[0]) |codepoint| {
+                        if (codepoint < 0xF) {
                             try self.execute(@intCast(codepoint));
                         } else {
                             try self.print(@intCast(codepoint));

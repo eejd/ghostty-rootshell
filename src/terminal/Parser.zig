@@ -185,7 +185,7 @@ pub const Action = union(enum) {
 
 /// Keeps track of the parameter sep used for CSI params. We allow colons
 /// to be used ONLY by the 'm' CSI action.
-const ParamSepState = enum(u8) {
+pub const ParamSepState = enum(u8) {
     none = 0,
     semicolon = ';',
     colon = ':',
@@ -279,7 +279,7 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
     };
 }
 
-fn collect(self: *Parser, c: u8) void {
+pub fn collect(self: *Parser, c: u8) void {
     if (self.intermediates_idx >= MAX_INTERMEDIATE) {
         log.warn("invalid intermediates count", .{});
         return;
