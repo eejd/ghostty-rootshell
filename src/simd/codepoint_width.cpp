@@ -211,11 +211,11 @@ int8_t CodepointWidthImpl(D d, T input) {
     //
     // NOTE: 0x2E3B is technically width 3 but for our terminal we only
     // handle up to width 2 as wide so we will treat it as width 2.
-    HWY_ALIGN T gte_keys[] = {
+    HWY_ALIGN constexpr T gte_keys[] = {
         0x2E3A, 0x1f1e6, 0x3400, 0x4E00, 0xF900, 0x20000, 0x30000, 0x2E3B,
         0,      0,       0,      0,      0,      0,       0,       0,
     };
-    HWY_ALIGN T lte_keys[] = {
+    HWY_ALIGN constexpr T lte_keys[] = {
         0x2E3A, 0x1f1ff, 0x4DBF, 0x9FFF, 0xFAFF, 0x2FFFD, 0x3FFFD, 0x2E3B,
         0,      0,       0,      0,      0,      0,       0,       0,
     };
@@ -234,10 +234,10 @@ int8_t CodepointWidthImpl(D d, T input) {
 
   {
     // Definitely width 0
-    HWY_ALIGN T gte_keys[] = {
+    HWY_ALIGN constexpr T gte_keys[] = {
         0x1160, 0x2060, 0xFFF0, 0xE0000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
-    HWY_ALIGN T lte_keys[] = {
+    HWY_ALIGN constexpr T lte_keys[] = {
         0x11FF, 0x206F, 0xFFF8, 0xE0FFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
     size_t i = 0;

@@ -20,7 +20,7 @@ const simd = @import("../simd/main.zig");
 const UTF8Decoder = @import("../terminal/UTF8Decoder.zig");
 
 const Args = struct {
-    mode: Mode = .baseline,
+    mode: Mode = .noop,
 
     /// The size for read buffers. Doesn't usually need to be changed. The
     /// main point is to make this runtime known so we can avoid compiler
@@ -40,7 +40,7 @@ const Mode = enum {
     /// The baseline mode copies the data from the fd into a buffer. This
     /// is used to show the minimal overhead of reading the fd into memory
     /// and establishes a baseline for the other modes.
-    baseline,
+    noop,
 
     /// libc wcwidth
     wcwidth,
@@ -74,14 +74,14 @@ pub fn main() !void {
 
     // Handle the modes that do not depend on terminal state first.
     switch (args.mode) {
-        .baseline => try benchBaseline(reader, buf),
+        .noop => try benchNoop(reader, buf),
         .wcwidth => try benchWcwidth(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
         .simd => try benchSimd(reader, buf),
     }
 }
 
-noinline fn benchBaseline(
+noinline fn benchNoop(
     reader: anytype,
     buf: []u8,
 ) !void {

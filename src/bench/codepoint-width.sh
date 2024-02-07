@@ -23,8 +23,8 @@ ARGS=""
 
 hyperfine \
   --warmup 10 \
-  -n baseline \
-  "./zig-out/bin/bench-codepoint-width --mode=baseline${ARGS} </tmp/ghostty_bench_data" \
+  -n noop \
+  "./zig-out/bin/bench-codepoint-width --mode=noop${ARGS} </tmp/ghostty_bench_data" \
   -n wcwidth \
   "./zig-out/bin/bench-codepoint-width --mode=wcwidth${ARGS} </tmp/ghostty_bench_data" \
   -n ziglyph \
