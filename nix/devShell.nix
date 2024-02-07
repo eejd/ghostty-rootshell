@@ -47,6 +47,7 @@
   zlib,
   alejandra,
   pandoc,
+  hyperfine,
 }: let
   # See package.nix. Keep in sync.
   rpathLibs =
@@ -101,6 +102,7 @@ in
         python3
         tracy
         vttest
+        hyperfine
 
         # wasm
         wabt
