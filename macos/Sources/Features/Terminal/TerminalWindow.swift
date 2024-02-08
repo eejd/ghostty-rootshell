@@ -34,6 +34,21 @@ class TerminalWindow: NSWindow {
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
 
+    // Look through the titlebar's view hierarchy and hide any of the internal
+    // views used to create a separator between the title/toolbar and unselected
+    // tabs in the tab bar.
+    override func updateConstraintsIfNeeded() {
+        super.updateConstraintsIfNeeded()
+
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+
+        for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
+            v.isHidden = true
+        }
+    }
+
     /// This is called by titlebarTabs changing so that we can setup the rest of our window
     private func changedTitlebarTabs(to newValue: Bool) {
         if (newValue) {
@@ -194,13 +209,6 @@ class TerminalWindow: NSWindow {
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
-
-        // Look through the titlebar's view hierarchy and hide any of the internal
-        // views used to create a separator between the title/toolbar and unselected
-        // tabs in the tab bar.
-        for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
-            v.isHidden = true
-        }
 
         // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
         // just as it does in the stock tab bar.
