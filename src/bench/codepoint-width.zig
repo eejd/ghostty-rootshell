@@ -45,6 +45,9 @@ const Mode = enum {
     /// libc wcwidth
     wcwidth,
 
+    /// Use utf8proc library to calculate the display width of each codepoint.
+    utf8proc,
+
     /// Use ziglyph library to calculate the display width of each codepoint.
     ziglyph,
 
@@ -76,6 +79,7 @@ pub fn main() !void {
     switch (args.mode) {
         .noop => try benchNoop(reader, buf),
         .wcwidth => try benchWcwidth(reader, buf),
+        .utf8proc => try benchUtf8proc(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
         .simd => try benchSimd(reader, buf),
     }
@@ -116,6 +120,31 @@ noinline fn benchWcwidth(
             assert(consumed);
             if (cp_) |cp| {
                 const width = wcwidth(cp);
+
+                // Write the width to the buffer to avoid it being compiled away
+                buf[0] = @intCast(width);
+            }
+        }
+    }
+}
+
+noinline fn benchUtf8proc(
+    reader: anytype,
+    buf: []u8,
+) !void {
+    const utf8proc = @import("utf8proc");
+    var d: UTF8Decoder = .{};
+    while (true) {
+        const n = try reader.read(buf);
+        if (n == 0) break;
+
+        // Using stream.next directly with a for loop applies a naive
+        // scalar approach.
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp| {
+                const width = utf8proc.charwidth(cp);
 
                 // Write the width to the buffer to avoid it being compiled away
                 buf[0] = @intCast(width);

@@ -27,6 +27,8 @@ hyperfine \
   "./zig-out/bin/bench-codepoint-width --mode=noop${ARGS} </tmp/ghostty_bench_data" \
   -n wcwidth \
   "./zig-out/bin/bench-codepoint-width --mode=wcwidth${ARGS} </tmp/ghostty_bench_data" \
+  -n utf8proc \
+  "./zig-out/bin/bench-codepoint-width --mode=utf8proc${ARGS} </tmp/ghostty_bench_data" \
   -n ziglyph \
   "./zig-out/bin/bench-codepoint-width --mode=ziglyph${ARGS} </tmp/ghostty_bench_data" \
   -n simd \

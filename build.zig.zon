@@ -38,6 +38,7 @@
         .opengl = .{ .path = "./pkg/opengl" },
         .pixman = .{ .path = "./pkg/pixman" },
         .simdutf = .{ .path = "./pkg/simdutf" },
+        .utf8proc = .{ .path = "./pkg/utf8proc" },
         .utfcpp = .{ .path = "./pkg/utfcpp" },
         .zlib = .{ .path = "./pkg/zlib" },
 

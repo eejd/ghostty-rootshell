@@ -1082,6 +1082,15 @@ fn addDeps(
     step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
     try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
 
+    // utf8proc
+    const utf8proc_dep = b.dependency("utf8proc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    step.root_module.addImport("utf8proc", utf8proc_dep.module("utf8proc"));
+    step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
+    try static_libs.append(utf8proc_dep.artifact("utf8proc").getEmittedBin());
+
     // Spirv-Cross
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
     try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
