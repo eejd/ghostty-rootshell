@@ -15,7 +15,17 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             titleTextField.stringValue = newValue
         }
     }
-    
+
+    var titleFont: NSFont? {
+        get {
+            titleTextField.font
+        }
+
+        set {
+            titleTextField.font = newValue
+        }
+    }
+
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
         
