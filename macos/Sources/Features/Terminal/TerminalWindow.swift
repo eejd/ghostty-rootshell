@@ -34,21 +34,6 @@ class TerminalWindow: NSWindow {
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
 
-    // Look through the titlebar's view hierarchy and hide any of the internal
-    // views used to create a separator between the title/toolbar and unselected
-    // tabs in the tab bar.
-    override func updateConstraintsIfNeeded() {
-        super.updateConstraintsIfNeeded()
-
-        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        }) else { return }
-
-        for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
-            v.isHidden = true
-        }
-    }
-
     /// This is called by titlebarTabs changing so that we can setup the rest of our window
     private func changedTitlebarTabs(to newValue: Bool) {
         if (newValue) {
@@ -193,17 +178,62 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
-    // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
-    // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
-    // color as the background of unselected tabs.
     override func update() {
         super.update()
+
+        // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
+        // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
+        // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
+        // color as the background of unselected tabs.
         if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
             let firstTabIsSelected = index == 0
 
             windowButtonsBackdrop?.isHighlighted = firstTabIsSelected
         }
+
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+
+        // Look through the titlebar's view hierarchy and hide any of the internal
+        // views used to create a separator between the title/toolbar and unselected
+        // tabs in the tab bar.
+        for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
+            v.isHidden = true
+        }
+
+        // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
+        // just as it does in the stock tab bar.
+        //
+        // One issue I haven't been able to fix is that their tint is made grey when the window isn't key,
+        // which doesn't look great and is made worse by the fact that the tab label colors don't change.
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+        guard let newTabButtonImage = newTabButtonImageView.image,
+              let storedTitlebarBackgroundColor,
+              let titlebarBackgroundColor = NSColor(cgColor: storedTitlebarBackgroundColor) else { return }
+
+        let isLightTheme = titlebarBackgroundColor.isLightColor
+
+        let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
+            NSGraphicsContext.saveGraphicsState()
+
+            titlebarBackgroundColor.darken(by: isLightTheme ? 0.1 : 0.5).setFill()
+            rect.fill()
+
+            NSColor.secondaryLabelColor.setFill()
+            rect.fill(using: titlebarBackgroundColor.isLightColor ? .plusDarker : .plusLighter)
+
+            NSGraphicsContext.restoreGraphicsState()
+
+            newTabButtonImage.draw(in: rect, from: .zero, operation: .destinationAtop, fraction: 1.0)
+
+            return true
+        }
+
+        newTabButtonImageView.image = newImage
     }
 
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
