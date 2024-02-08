@@ -69,7 +69,6 @@
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
 		C159E89D2B69A2EF00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
 		C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F26EA62B738B9900404083 /* NSView+Extension.swift */; };
-		C1F26EB22B743B7700404083 /* PlusDarkerBlendingModeLayer.m in Sources */ = {isa = PBXBuildFile; fileRef = C1F26EB12B743B7700404083 /* PlusDarkerBlendingModeLayer.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -131,9 +130,6 @@
 		AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalToolbar.swift; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
 		C1F26EA62B738B9900404083 /* NSView+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSView+Extension.swift"; sourceTree = "<group>"; };
-		C1F26EB02B743B7700404083 /* Ghostty-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Ghostty-Bridging-Header.h"; sourceTree = "<group>"; };
-		C1F26EB12B743B7700404083 /* PlusDarkerBlendingModeLayer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PlusDarkerBlendingModeLayer.m; sourceTree = "<group>"; };
-		C1F26EB32B743C9300404083 /* PlusDarkerBlendingModeLayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PlusDarkerBlendingModeLayer.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,8 +196,6 @@
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
-				C1F26EB32B743C9300404083 /* PlusDarkerBlendingModeLayer.h */,
-				C1F26EB12B743B7700404083 /* PlusDarkerBlendingModeLayer.m */,
 				A5CEAFDA29B8005900646FDA /* SplitView */,
 			);
 			path = Helpers;
@@ -241,7 +235,6 @@
 				A5FEB2FF2ABB69450068369E /* main.swift */,
 				A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */,
 				857F63802A5E64F200CA4815 /* MainMenu.xib */,
-				C1F26EB02B743B7700404083 /* Ghostty-Bridging-Header.h */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -504,7 +497,6 @@
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,
-				C1F26EB22B743B7700404083 /* PlusDarkerBlendingModeLayer.m in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */,
 				8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */,
@@ -622,7 +614,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = ReleaseLocal;
@@ -772,7 +763,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -811,7 +801,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

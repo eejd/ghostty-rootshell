@@ -301,20 +301,12 @@ fileprivate class WindowDragView: NSView {
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
 fileprivate class WindowButtonsBackdropView: NSView {
-    private let overlayLayer = PlusDarkerBlendingModeLayer()
-    private let backgroundColor: CGColor
+    private let backgroundColor: NSColor
     private let isLightTheme: Bool
 
     var isHighlighted: Bool = true {
         didSet {
-            if isLightTheme {
-                overlayLayer.isHidden = isHighlighted
-                layer?.backgroundColor = backgroundColor
-            } else {
-                overlayLayer.isHidden = true
-                layer?.backgroundColor = isHighlighted ? backgroundColor : CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
-            }
-
+            setNeedsDisplay(self.bounds)
         }
     }
 
@@ -323,20 +315,25 @@ fileprivate class WindowButtonsBackdropView: NSView {
     }
 
     init(backgroundColor: CGColor) {
-        self.backgroundColor = backgroundColor
+        self.backgroundColor = NSColor(cgColor: backgroundColor)!
         self.isLightTheme = NSColor(cgColor: backgroundColor)!.isLightColor
 
         super.init(frame: .zero)
+    }
 
+    override func draw(_ dirtyRect: NSRect) {
+        if isLightTheme {
+            backgroundColor.setFill()
+            bounds.fill()
 
-        wantsLayer = true
-
-        overlayLayer.frame = layer!.bounds
-        overlayLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        overlayLayer.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
-
-        layer?.addSublayer(overlayLayer)
-
-        isHighlighted = true
+            if !isHighlighted {
+                let overlayColor = NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1))!
+                overlayColor.setFill()
+                bounds.fill(using: .plusDarker)
+            }
+        } else {
+            (isHighlighted ? backgroundColor : NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45))!).setFill()
+            bounds.fill()
+        }
     }
 }
