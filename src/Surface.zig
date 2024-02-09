@@ -21,7 +21,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const oni = @import("oniguruma");
-const ziglyph = @import("ziglyph");
+const unicode = @import("unicode/main.zig");
 const main = @import("main.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
@@ -1231,7 +1231,7 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     var codepoints: std.ArrayListUnmanaged(Codepoint) = .{};
     defer codepoints.deinit(self.alloc);
     while (it.nextCodepoint()) |cp| {
-        const width = ziglyph.display_width.codePointWidth(cp, .half);
+        const width: usize = if (cp <= 0xFF) 1 else @intCast(unicode.table.get(cp).width);
 
         // I've never seen a preedit text with a zero-width character. In
         // theory its possible but we can't really handle it right now.
