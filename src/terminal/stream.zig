@@ -72,18 +72,17 @@ pub fn Stream(comptime Handler: type) type {
             // a code sequence, we continue until it's not.
             while (self.utf8decoder.state != 0) {
                 if (offset >= input.len) return;
-                try self.next(input[offset]);
+                try self.nextUtf8(input[offset]);
                 offset += 1;
-            } else if (self.parser.state != .ground) {
-                // If we're not in the ground state then we process until
-                // we are. This can happen if the last chunk of input put us
-                // in the middle of a control sequence.
-                for (input[offset..]) |single| {
-                    try self.nextNonUtf8(single);
-                    offset += 1;
-                    if (self.parser.state == .ground) break;
-                }
             }
+            if (offset >= input.len) return;
+
+            // If we're not in the ground state then we process until
+            // we are. This can happen if the last chunk of input put us
+            // in the middle of a control sequence.
+            offset += try self.consumeUntilGround(input[offset..]);
+            if (offset >= input.len) return;
+            offset += try self.consumeAllEscapes(input[offset..]);
 
             // If we're in the ground state then we can use SIMD to process
             // input until we see an ESC (0x1B), since all other characters
@@ -97,9 +96,9 @@ pub fn Stream(comptime Handler: type) type {
                         try self.print(@intCast(cp));
                     }
                 }
-
                 // Consume the bytes we just processed.
                 offset += res.consumed;
+
                 if (offset >= input.len) return;
 
                 // If our offset is NOT an escape then we must have a
@@ -107,17 +106,42 @@ pub fn Stream(comptime Handler: type) type {
                 // to the scalar parser.
                 if (input[offset] != 0x1B) {
                     const rem = input[offset..];
-                    for (rem) |c| try self.next(c);
+                    for (rem) |c| try self.nextUtf8(c);
                     return;
                 }
 
-                // Process our control sequence.
-                for (input[offset..]) |single| {
-                    try self.nextNonUtf8(single);
-                    offset += 1;
-                    if (self.parser.state == .ground) break;
-                }
+                // Process control sequences until we run out.
+                offset += try self.consumeAllEscapes(input[offset..]);
             }
+        }
+
+        /// Parses back-to-back escape sequences until none are left.
+        /// Returns the number of bytes consumed from the provided input.
+        ///
+        /// Expects input to start with 0x1B, use consumeUntilGround first
+        /// if the stream may be in the middle of an escape sequence.
+        fn consumeAllEscapes(self: *Self, input: []const u8) !usize {
+            var offset: usize = 0;
+            while (input[offset] == 0x1B) {
+                self.parser.state = .escape;
+                self.parser.clear();
+                offset += 1;
+                offset += try self.consumeUntilGround(input[offset..]);
+                if (offset >= input.len) return input.len;
+            }
+            return offset;
+        }
+
+        /// Parses escape sequences until the parser reaches the ground state.
+        /// Returns the number of bytes consumed from the provided input.
+        fn consumeUntilGround(self: *Self, input: []const u8) !usize {
+            var offset: usize = 0;
+            while (self.parser.state != .ground) {
+                if (offset >= input.len) return input.len;
+                try self.nextNonUtf8(input[offset]);
+                offset += 1;
+            }
+            return offset;
         }
 
         /// Like nextSlice but takes one byte and is necessarilly a scalar
@@ -126,23 +150,42 @@ pub fn Stream(comptime Handler: type) type {
         pub fn next(self: *Self, c: u8) !void {
             // The scalar path can be responsible for decoding UTF-8.
             if (self.parser.state == .ground and c != 0x1B) {
-                var consumed = false;
-                while (!consumed) {
-                    const res = self.utf8decoder.next(c);
-                    consumed = res[1];
-                    if (res[0]) |codepoint| {
-                        if (codepoint <= 0xF) {
-                            try self.execute(@intCast(codepoint));
-                        } else {
-                            try self.print(@intCast(codepoint));
-                        }
-                    }
-                }
-
+                try self.nextUtf8(c);
                 return;
             }
 
             try self.nextNonUtf8(c);
+        }
+
+        /// Process the next byte and print as necessary.
+        ///
+        /// This assumes we're in the UTF-8 decoding state. If we may not
+        /// be in the UTF-8 decoding state call nextSlice or next.
+        fn nextUtf8(self: *Self, c: u8) !void {
+            assert(self.parser.state == .ground and c != 0x1B);
+
+            const res = self.utf8decoder.next(c);
+            const consumed = res[1];
+            if (res[0]) |codepoint| {
+                if (codepoint <= 0xF) {
+                    try self.execute(@intCast(codepoint));
+                } else {
+                    try self.print(@intCast(codepoint));
+                }
+            }
+            if (!consumed) {
+                const retry = self.utf8decoder.next(c);
+                // It should be impossible for the decoder
+                // to not consume the byte twice in a row.
+                assert(retry[1] == true);
+                if (retry[0]) |codepoint| {
+                    if (codepoint <= 0xF) {
+                        try self.execute(@intCast(codepoint));
+                    } else {
+                        try self.print(@intCast(codepoint));
+                    }
+                }
+            }
         }
 
         /// Process the next character and call any callbacks if necessary.
@@ -151,6 +194,61 @@ pub fn Stream(comptime Handler: type) type {
         /// we may be in the UTF-8 decoding state call nextSlice or next.
         fn nextNonUtf8(self: *Self, c: u8) !void {
             assert(self.parser.state != .ground or c == 0x1B);
+
+            // Fast path for ESC
+            if (self.parser.state == .ground and c == 0x1B) {
+                self.parser.state = .escape;
+                self.parser.clear();
+                return;
+            }
+            // Fast path for CSI entry.
+            if (self.parser.state == .escape and c == '[') {
+                self.parser.state = .csi_entry;
+                return;
+            }
+            // Fast path for CSI params.
+            if (self.parser.state == .csi_param) csi_param: {
+                switch (c) {
+                    // A C0 escape (yes, this is valid):
+                    0x00...0x0F => try self.execute(c),
+                    // We ignore C0 escapes > 0xF since execute
+                    // doesn't have processing for them anyway:
+                    0x10...0x17, 0x19, 0x1C...0x1F => {},
+                    // We don't currently have any handling for
+                    // 0x18 or 0x1A, but they should still move
+                    // the parser state to ground.
+                    0x18, 0x1A => self.parser.state = .ground,
+                    // A parameter digit:
+                    '0'...'9' => if (self.parser.params_idx < 16) {
+                        self.parser.param_acc *|= 10;
+                        self.parser.param_acc +|= c - '0';
+                        // The parser's CSI param action uses param_acc_idx
+                        // to decide if there's a final param that needs to
+                        // be consumed or not, but it doesn't matter really
+                        // what it is as long as it's not 0.
+                        self.parser.param_acc_idx |= 1;
+                    },
+                    // A parameter separator:
+                    ':', ';' => if (self.parser.params_idx < 16) {
+                        self.parser.params[self.parser.params_idx] = self.parser.param_acc;
+                        self.parser.params_idx += 1;
+
+                        self.parser.param_acc = 0;
+                        self.parser.param_acc_idx = 0;
+
+                        // Keep track of separator state.
+                        const sep: Parser.ParamSepState = @enumFromInt(c);
+                        if (self.parser.params_idx == 1) self.parser.params_sep = sep;
+                        if (self.parser.params_sep != sep) self.parser.params_sep = .mixed;
+                    },
+                    // Explicitly ignored:
+                    0x7F => {},
+                    // Defer to the state machine to
+                    // handle any other characters:
+                    else => break :csi_param,
+                }
+                return;
+            }
 
             const actions = self.parser.next(c);
             for (actions) |action_opt| {

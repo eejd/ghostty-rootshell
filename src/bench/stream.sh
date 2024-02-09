@@ -17,8 +17,8 @@ SIZE="25000000"
 # Generate the benchmark input ahead of time so it's not included in the time.
 ./zig-out/bin/bench-stream --mode=gen-$DATA | head -c $SIZE > /tmp/ghostty_bench_data
 
-# Uncomment to instead use the contents of `stream.txt` as input.
-# yes $(cat ./stream.txt) | head -c $SIZE > /tmp/ghostty_bench_data
+# Uncomment to instead use the contents of `stream.txt` as input. (Ignores SIZE)
+# echo $(cat ./stream.txt) > /tmp/ghostty_bench_data
 
 hyperfine \
   --warmup 10 \
