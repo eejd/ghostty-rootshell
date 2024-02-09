@@ -75,13 +75,14 @@ pub fn Stream(comptime Handler: type) type {
                 try self.nextUtf8(input[offset]);
                 offset += 1;
             }
+            if (offset >= input.len) return;
 
             // If we're not in the ground state then we process until
             // we are. This can happen if the last chunk of input put us
             // in the middle of a control sequence.
             offset += try self.consumeUntilGround(input[offset..]);
-            offset += try self.consumeAllEscapes(input[offset..]);
             if (offset >= input.len) return;
+            offset += try self.consumeAllEscapes(input[offset..]);
 
             // If we're in the ground state then we can use SIMD to process
             // input until we see an ESC (0x1B), since all other characters
@@ -219,8 +220,12 @@ pub fn Stream(comptime Handler: type) type {
                     0x18, 0x1A => self.parser.state = .ground,
                     // A parameter digit:
                     '0'...'9' => if (self.parser.params_idx < 16) {
-                        self.parser.param_acc *= 10;
-                        self.parser.param_acc += c - '0';
+                        self.parser.param_acc *|= 10;
+                        self.parser.param_acc +|= c - '0';
+                        // The parser's CSI param action uses param_acc_idx
+                        // to decide if there's a final param that needs to
+                        // be consumed or not, but it doesn't matter really
+                        // what it is as long as it's not 0.
                         self.parser.param_acc_idx |= 1;
                     },
                     // A parameter separator:
