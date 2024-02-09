@@ -308,6 +308,7 @@ test {
     _ = @import("terminal/main.zig");
     _ = @import("terminfo/main.zig");
     _ = @import("simd/main.zig");
+    _ = @import("unicode/main.zig");
 
     // TODO
     _ = @import("blocking_queue.zig");
