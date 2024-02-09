@@ -11,6 +11,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const simd = @import("../simd/main.zig");
+const unicode = @import("../unicode/main.zig");
 
 const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
@@ -870,13 +871,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     // Determine the width of this character so we can handle
     // non-single-width characters properly.
-    const width: usize = @intCast(simd.codepointWidth(c));
-
-    // Old implementation, 3x slower on ASCII, 2x slower on CJK, etc.
-    // const width: usize = @intCast(@min(
-    //     @max(0, ziglyph.display_width.codePointWidth(c, .half)),
-    //     2,
-    // ));
+    const width: usize = @intCast(unicode.table.get(c).width);
 
     // Note: it is possible to have a width of "3" and a width of "-1"
     // from ziglyph. We should look into those cases and handle them
