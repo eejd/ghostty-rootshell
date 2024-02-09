@@ -40,6 +40,10 @@ class TerminalWindow: NSWindow {
     override func updateConstraintsIfNeeded() {
         super.updateConstraintsIfNeeded()
 
+        // For titlebar tabs, we want to hide the separator view so that we get rid
+        // of an aesthetically unpleasing shadow.
+        guard titlebarTabs else { return }
+
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
