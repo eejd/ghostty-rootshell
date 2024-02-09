@@ -1163,6 +1163,7 @@ fn addDeps(
     }
 
     try addHelp(b, step, config);
+    try addUnicodeTables(b, step);
 
     return static_libs;
 }
@@ -1205,6 +1206,43 @@ fn addHelp(
         help_output.addStepDependencies(&step.step);
         step.root_module.addAnonymousImport("help_strings", .{
             .root_source_file = help_output,
+        });
+    }
+}
+
+/// Generate unicode fast lookup tables
+fn addUnicodeTables(
+    b: *std.Build,
+    step_: ?*std.Build.Step.Compile,
+) !void {
+    // Our static state between runs. We memoize our output to gen once
+    const State = struct {
+        var generated: ?std.Build.LazyPath = null;
+    };
+
+    const output = State.generated orelse strings: {
+        const exe = b.addExecutable(.{
+            .name = "unigen",
+            .root_source_file = .{ .path = "src/unicode/props.zig" },
+            .target = b.host,
+        });
+        exe.linkLibC();
+        if (step_ == null) b.installArtifact(exe);
+
+        const ziglyph_dep = b.dependency("ziglyph", .{
+            .target = b.host,
+        });
+        exe.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
+
+        const help_run = b.addRunArtifact(exe);
+        State.generated = help_run.captureStdOut();
+        break :strings State.generated.?;
+    };
+
+    if (step_) |step| {
+        output.addStepDependencies(&step.step);
+        step.root_module.addAnonymousImport("unicode_tables", .{
+            .root_source_file = output,
         });
     }
 }

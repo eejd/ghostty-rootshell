@@ -17,6 +17,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
 const simd = @import("../simd/main.zig");
+const table = @import("../unicode/main.zig").table;
 const UTF8Decoder = @import("../terminal/UTF8Decoder.zig");
 
 const Args = struct {
@@ -50,6 +51,9 @@ const Mode = enum {
 
     /// Our SIMD implementation.
     simd,
+
+    /// Test our lookup table implementation.
+    table,
 };
 
 pub const std_options = struct {
@@ -78,6 +82,7 @@ pub fn main() !void {
         .wcwidth => try benchWcwidth(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
         .simd => try benchSimd(reader, buf),
+        .table => try benchTable(reader, buf),
     }
 }
 
@@ -116,6 +121,32 @@ noinline fn benchWcwidth(
             assert(consumed);
             if (cp_) |cp| {
                 const width = wcwidth(cp);
+
+                // Write the width to the buffer to avoid it being compiled away
+                buf[0] = @intCast(width);
+            }
+        }
+    }
+}
+
+noinline fn benchTable(
+    reader: anytype,
+    buf: []u8,
+) !void {
+    var d: UTF8Decoder = .{};
+    while (true) {
+        const n = try reader.read(buf);
+        if (n == 0) break;
+
+        // Using stream.next directly with a for loop applies a naive
+        // scalar approach.
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp| {
+                // This is the same trick we do in terminal.zig so we
+                // keep it here.
+                const width = if (cp <= 0xFF) 1 else table.get(@intCast(cp)).width;
 
                 // Write the width to the buffer to avoid it being compiled away
                 buf[0] = @intCast(width);
