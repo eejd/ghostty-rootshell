@@ -27,6 +27,9 @@ pub const Properties = struct {
     /// becomes a 2-em dash).
     width: u2 = 0,
 
+    /// Grapheme boundary class.
+    grapheme_boundary_class: GraphemeBoundaryClass = .invalid,
+
     // Needed for lut.Generator
     pub fn eql(a: Properties, b: Properties) bool {
         return a.width == b.width;
@@ -47,11 +50,52 @@ pub const Properties = struct {
     }
 };
 
+/// Possible grapheme boundary classes. This isn't an exhaustive list:
+/// we omit control, CR, LF, etc. because in Ghostty's usage that are
+/// impossible because they're handled by the terminal.
+pub const GraphemeBoundaryClass = enum {
+    invalid,
+    L,
+    V,
+    T,
+    LV,
+    LVT,
+    prepend,
+    extend,
+    zwj,
+    spacing_mark,
+    regional_indicator,
+    extended_pictographic,
+
+    /// Gets the grapheme boundary class for a codepoint. This is VERY
+    /// SLOW. The use case for this is only in generating lookup tables.
+    pub fn init(cp: u21) GraphemeBoundaryClass {
+        if (ziglyph.emoji.isExtendedPictographic(cp)) return .extended_pictographic;
+        if (ziglyph.emoji.isEmojiModifier(cp)) return .extend;
+        if (ziglyph.grapheme_break.isL(cp)) return .L;
+        if (ziglyph.grapheme_break.isV(cp)) return .V;
+        if (ziglyph.grapheme_break.isT(cp)) return .T;
+        if (ziglyph.grapheme_break.isLv(cp)) return .LV;
+        if (ziglyph.grapheme_break.isLvt(cp)) return .LVT;
+        if (ziglyph.grapheme_break.isPrepend(cp)) return .prepend;
+        if (ziglyph.grapheme_break.isExtend(cp)) return .extend;
+        if (ziglyph.grapheme_break.isZwj(cp)) return .zwj;
+        if (ziglyph.grapheme_break.isSpacingmark(cp)) return .spacing_mark;
+        if (ziglyph.grapheme_break.isRegionalIndicator(cp)) return .regional_indicator;
+
+        // This is obviously not INVALID invalid, there is SOME grapheme
+        // boundary class for every codepoint. But we don't care about
+        // anything that doesn't fit into the above categories.
+        return .invalid;
+    }
+};
+
 pub fn get(cp: u21) Properties {
     const zg_width = ziglyph.display_width.codePointWidth(cp, .half);
 
     return .{
         .width = @intCast(@min(2, @max(0, zg_width))),
+        .grapheme_boundary_class = GraphemeBoundaryClass.init(cp),
     };
 }
 
