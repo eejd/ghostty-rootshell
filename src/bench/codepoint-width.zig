@@ -172,7 +172,9 @@ noinline fn benchTable(
             const cp_, const consumed = d.next(c);
             assert(consumed);
             if (cp_) |cp| {
-                const width = table.get(@intCast(cp)).width;
+                // This is the same trick we do in terminal.zig so we
+                // keep it here.
+                const width = if (cp <= 0xFF) 1 else table.get(@intCast(cp)).width;
 
                 // Write the width to the buffer to avoid it being compiled away
                 buf[0] = @intCast(width);
