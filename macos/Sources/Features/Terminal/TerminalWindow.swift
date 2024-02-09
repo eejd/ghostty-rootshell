@@ -348,12 +348,18 @@ fileprivate class WindowDragView: NSView {
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
 fileprivate class WindowButtonsBackdropView: NSView {
-    private let backgroundColor: NSColor
+    private let overlayLayer = TerminalWindowButtonsBackdropOverlayLayer()
     private let isLightTheme: Bool
 
     var isHighlighted: Bool = true {
         didSet {
-            setNeedsDisplay(self.bounds)
+            if isLightTheme {
+                overlayLayer.isHidden = isHighlighted
+                layer?.backgroundColor = .clear
+            } else {
+                overlayLayer.isHidden = true
+                layer?.backgroundColor = isHighlighted ? .clear : CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
+            }
         }
     }
 
@@ -362,25 +368,16 @@ fileprivate class WindowButtonsBackdropView: NSView {
     }
 
     init(backgroundColor: CGColor) {
-        self.backgroundColor = NSColor(cgColor: backgroundColor)!
         self.isLightTheme = NSColor(cgColor: backgroundColor)!.isLightColor
 
         super.init(frame: .zero)
-    }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if isLightTheme {
-            backgroundColor.setFill()
-            bounds.fill()
+        wantsLayer = true
 
-            if !isHighlighted {
-                let overlayColor = NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1))!
-                overlayColor.setFill()
-                bounds.fill(using: .plusDarker)
-            }
-        } else {
-            (isHighlighted ? backgroundColor : NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45))!).setFill()
-            bounds.fill()
-        }
+        overlayLayer.frame = layer!.bounds
+        overlayLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        overlayLayer.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
+
+        layer?.addSublayer(overlayLayer)
     }
 }
