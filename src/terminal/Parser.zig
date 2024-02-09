@@ -390,7 +390,7 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
     };
 }
 
-fn clear(self: *Parser) void {
+pub fn clear(self: *Parser) void {
     self.intermediates_idx = 0;
     self.params_idx = 0;
     self.params_sep = .none;
