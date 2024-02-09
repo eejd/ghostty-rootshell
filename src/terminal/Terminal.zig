@@ -870,8 +870,10 @@ pub fn print(self: *Terminal, c: u21) !void {
     }
 
     // Determine the width of this character so we can handle
-    // non-single-width characters properly.
-    const width: usize = @intCast(unicode.table.get(c).width);
+    // non-single-width characters properly. We have a fast-path for
+    // byte-sized characters since they're so common. We can ignore
+    // control characters because they're always filtered prior.
+    const width: usize = if (c <= 0xFF) 1 else @intCast(unicode.table.get(c).width);
 
     // Note: it is possible to have a width of "3" and a width of "-1"
     // from ziglyph. We should look into those cases and handle them
