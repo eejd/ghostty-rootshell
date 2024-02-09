@@ -40,6 +40,8 @@ class TerminalWindow: NSWindow {
     override func updateConstraintsIfNeeded() {
         super.updateConstraintsIfNeeded()
 
+        guard titlebarTabs else { return }
+
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
