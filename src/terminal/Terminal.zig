@@ -2186,6 +2186,7 @@ pub fn fullReset(self: *Terminal, alloc: Allocator) void {
     self.eraseDisplay(alloc, .scrollback, false);
     self.eraseDisplay(alloc, .complete, false);
     self.pwd.clearRetainingCapacity();
+    self.status_display = .main;
 }
 
 test "Terminal: fullReset with a non-empty pen" {
@@ -2213,6 +2214,15 @@ test "Terminal: fullReset origin mode" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
     try testing.expect(!t.modes.get(.origin));
+}
+
+test "Terminal: fullReset status display" {
+    var t = try init(testing.allocator, 10, 10);
+    defer t.deinit(testing.allocator);
+
+    t.status_display = .status_line;
+    t.fullReset(testing.allocator);
+    try testing.expect(t.status_display == .main);
 }
 
 test "Terminal: input with no control characters" {
