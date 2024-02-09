@@ -1226,6 +1226,7 @@ fn addUnicodeTables(
             .root_source_file = .{ .path = "src/unicode/props.zig" },
             .target = b.host,
         });
+        exe.linkLibC();
         if (step_ == null) b.installArtifact(exe);
 
         const ziglyph_dep = b.dependency("ziglyph", .{
