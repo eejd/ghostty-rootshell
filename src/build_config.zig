@@ -141,4 +141,5 @@ pub const ExeEntrypoint = enum {
     bench_parser,
     bench_stream,
     bench_codepoint_width,
+    bench_grapheme_break,
 };

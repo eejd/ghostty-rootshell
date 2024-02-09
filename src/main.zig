@@ -9,4 +9,5 @@ pub usingnamespace switch (build_config.exe_entrypoint) {
     .bench_parser => @import("bench/parser.zig"),
     .bench_stream => @import("bench/stream.zig"),
     .bench_codepoint_width => @import("bench/codepoint-width.zig"),
+    .bench_grapheme_break => @import("bench/grapheme-break.zig"),
 };
