@@ -3,7 +3,6 @@
 //! help, docs, website, etc.
 
 const std = @import("std");
-const ziglyph = @import("ziglyph");
 const Config = @import("config/Config.zig");
 const Action = @import("cli/action.zig").Action;
 const KeybindAction = @import("input/Binding.zig").Action;
