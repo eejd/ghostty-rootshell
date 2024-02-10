@@ -41,6 +41,7 @@
 		A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */; };
 		A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */; };
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
+		A586167C2B7703CC009BDB1D /* fish in Resources */ = {isa = PBXBuildFile; fileRef = A586167B2B7703CC009BDB1D /* fish */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A59630972AEE163600D64628 /* HostingWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59630962AEE163600D64628 /* HostingWindow.swift */; };
 		A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */ = {isa = PBXBuildFile; fileRef = A59630992AEE1C6400D64628 /* Terminal.xib */; };
@@ -99,6 +100,7 @@
 		A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Shell.swift; sourceTree = "<group>"; };
 		A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceProvider.swift; sourceTree = "<group>"; };
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
+		A586167B2B7703CC009BDB1D /* fish */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fish; path = "../zig-out/share/fish"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A59630962AEE163600D64628 /* HostingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingWindow.swift; sourceTree = "<group>"; };
 		A59630992AEE1C6400D64628 /* Terminal.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = Terminal.xib; sourceTree = "<group>"; };
@@ -297,6 +299,7 @@
 			children = (
 				55154BDF2B33911F001622DC /* ghostty */,
 				552964E52B34A9B400030505 /* vim */,
+				A586167B2B7703CC009BDB1D /* fish */,
 				A5A1F8842A489D6800D1E8BC /* terminfo */,
 			);
 			name = Resources;
@@ -445,6 +448,7 @@
 				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
 				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
+				A586167C2B7703CC009BDB1D /* fish in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
 				552964E62B34A9B400030505 /* vim in Resources */,
