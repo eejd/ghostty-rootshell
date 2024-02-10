@@ -32,7 +32,8 @@ pub const Properties = struct {
 
     // Needed for lut.Generator
     pub fn eql(a: Properties, b: Properties) bool {
-        return a.width == b.width;
+        return a.width == b.width and
+            a.grapheme_boundary_class == b.grapheme_boundary_class;
     }
 
     // Needed for lut.Generator
@@ -44,8 +45,14 @@ pub const Properties = struct {
     ) !void {
         _ = layout;
         _ = opts;
-        try std.fmt.format(writer, ".{{ .width= {}, }}", .{
+        try std.fmt.format(writer,
+            \\.{{
+            \\    .width= {},
+            \\    .grapheme_boundary_class= .{s},
+            \\}}
+        , .{
             self.width,
+            @tagName(self.grapheme_boundary_class),
         });
     }
 };

@@ -217,6 +217,17 @@ pub fn build(b: *std.Build) !void {
     // Add our benchmarks
     try benchSteps(b, target, config, emit_bench);
 
+    {
+        const exe = b.addExecutable(.{
+            .name = "grapheme-verify",
+            .root_source_file = .{ .path = "src/unicode/grapheme.zig" },
+            .target = target,
+            .optimize = .ReleaseFast,
+        });
+        b.installArtifact(exe);
+        _ = try addDeps(b, exe, config);
+    }
+
     // We only build an exe if we have a runtime set.
     const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",

@@ -15,7 +15,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
 const simd = @import("../simd/main.zig");
-const table = @import("../unicode/main.zig").table;
+const unicode = @import("../unicode/main.zig");
 const UTF8Decoder = @import("../terminal/UTF8Decoder.zig");
 
 const Args = struct {
@@ -44,6 +44,9 @@ const Mode = enum {
     /// Use ziglyph library to calculate the display width of each codepoint.
     ziglyph,
 
+    /// Ghostty's table-based approach.
+    table,
+
     utf8proc,
 };
 
@@ -71,6 +74,7 @@ pub fn main() !void {
     switch (args.mode) {
         .noop => try benchNoop(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
+        .table => try benchTable(reader, buf),
         .utf8proc => try benchUtf8proc(reader, buf),
     }
 }
@@ -88,6 +92,31 @@ noinline fn benchNoop(
         // scalar approach.
         for (buf[0..n]) |c| {
             _ = d.next(c);
+        }
+    }
+}
+
+noinline fn benchTable(
+    reader: anytype,
+    buf: []u8,
+) !void {
+    var d: UTF8Decoder = .{};
+    var state: u3 = 0;
+    var cp1: u21 = 0;
+    while (true) {
+        const n = try reader.read(buf);
+        if (n == 0) break;
+
+        // Using stream.next directly with a for loop applies a naive
+        // scalar approach.
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp2| {
+                const v = unicode.graphemeBreak(cp1, @intCast(cp2), &state);
+                buf[0] = @intCast(@intFromBool(v));
+                cp1 = cp2;
+            }
         }
     }
 }
