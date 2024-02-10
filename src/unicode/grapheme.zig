@@ -3,14 +3,6 @@ const props = @import("props.zig");
 const GraphemeBoundaryClass = props.GraphemeBoundaryClass;
 const table = props.table;
 
-// The algorithm in this file is based on the Ziglyph and utf8proc algorithm,
-// only modified to use our own lookup tables.
-//
-// I'll note I also tried a fully precomputed table approach where all
-// combinations of state and boundary classes were precomputed. It was
-// marginally faster (about 2%) but the table is a few KB and I'm not
-// sure it's worth it.
-
 /// Determines if there is a grapheme break between two codepoints. This
 /// must be called sequentially maintaining the state between calls.
 ///
@@ -19,9 +11,15 @@ const table = props.table;
 /// calling this function. This is because this function is tuned for
 /// Ghostty.
 pub fn graphemeBreak(cp1: u21, cp2: u21, state: *BreakState) bool {
-    const gbc1 = table.get(cp1).grapheme_boundary_class;
-    const gbc2 = table.get(cp2).grapheme_boundary_class;
-    return graphemeBreakClass(gbc1, gbc2, state);
+    const value = Precompute.data[
+        (Precompute.Key{
+            .gbc1 = table.get(cp1).grapheme_boundary_class,
+            .gbc2 = table.get(cp2).grapheme_boundary_class,
+            .state = state.*,
+        }).index()
+    ];
+    state.* = value.state;
+    return value.result;
 }
 
 /// The state that must be maintained between calls to `graphemeBreak`.
@@ -30,6 +28,52 @@ pub const BreakState = packed struct(u2) {
     regional_indicator: bool = false,
 };
 
+/// This is all the structures and data for the precomputed lookup table
+/// for all possible permutations of state and grapheme boundary classes.
+/// Precomputation only requires 2^10 keys of 3 bit values so the whole
+/// table is less than 1KB.
+const Precompute = struct {
+    const Key = packed struct(u10) {
+        state: BreakState,
+        gbc1: GraphemeBoundaryClass,
+        gbc2: GraphemeBoundaryClass,
+
+        fn index(self: Key) usize {
+            return @intCast(@as(u10, @bitCast(self)));
+        }
+    };
+
+    const Value = packed struct(u3) {
+        result: bool,
+        state: BreakState,
+    };
+
+    const data = precompute: {
+        var result: [std.math.maxInt(u10)]Value = undefined;
+
+        @setEvalBranchQuota(2_000);
+        const info = @typeInfo(GraphemeBoundaryClass).Enum;
+        for (0..std.math.maxInt(u2) + 1) |state_init| {
+            for (info.fields) |field1| {
+                for (info.fields) |field2| {
+                    var state: BreakState = @bitCast(@as(u2, @intCast(state_init)));
+                    const key: Key = .{
+                        .gbc1 = @field(GraphemeBoundaryClass, field1.name),
+                        .gbc2 = @field(GraphemeBoundaryClass, field2.name),
+                        .state = state,
+                    };
+                    const v = graphemeBreakClass(key.gbc1, key.gbc2, &state);
+                    result[key.index()] = .{ .result = v, .state = state };
+                }
+            }
+        }
+
+        break :precompute result;
+    };
+};
+
+/// This is the algorithm from utf8proc. We only use this offline for
+/// precomputing the lookup table.
 fn graphemeBreakClass(
     gbc1: GraphemeBoundaryClass,
     gbc2: GraphemeBoundaryClass,

@@ -60,7 +60,7 @@ pub const Properties = struct {
 /// Possible grapheme boundary classes. This isn't an exhaustive list:
 /// we omit control, CR, LF, etc. because in Ghostty's usage that are
 /// impossible because they're handled by the terminal.
-pub const GraphemeBoundaryClass = enum {
+pub const GraphemeBoundaryClass = enum(u4) {
     invalid,
     L,
     V,
