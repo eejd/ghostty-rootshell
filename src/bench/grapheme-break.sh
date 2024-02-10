@@ -27,8 +27,6 @@ hyperfine \
   "./zig-out/bin/bench-grapheme-break --mode=noop${ARGS} </tmp/ghostty_bench_data" \
   -n ziglyph \
   "./zig-out/bin/bench-grapheme-break --mode=ziglyph${ARGS} </tmp/ghostty_bench_data" \
-  -n utf8proc \
-  "./zig-out/bin/bench-grapheme-break --mode=utf8proc${ARGS} </tmp/ghostty_bench_data" \
   -n table \
   "./zig-out/bin/bench-grapheme-break --mode=table${ARGS} </tmp/ghostty_bench_data"
 

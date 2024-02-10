@@ -39,7 +39,6 @@
         .pixman = .{ .path = "./pkg/pixman" },
         .simdutf = .{ .path = "./pkg/simdutf" },
         .utfcpp = .{ .path = "./pkg/utfcpp" },
-        .utf8proc = .{ .path = "./pkg/utf8proc" },
         .zlib = .{ .path = "./pkg/zlib" },
 
         // Shader translation

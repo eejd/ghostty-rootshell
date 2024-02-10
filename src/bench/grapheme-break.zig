@@ -46,8 +46,6 @@ const Mode = enum {
 
     /// Ghostty's table-based approach.
     table,
-
-    utf8proc,
 };
 
 pub const std_options = struct {
@@ -75,7 +73,6 @@ pub fn main() !void {
         .noop => try benchNoop(reader, buf),
         .ziglyph => try benchZiglyph(reader, buf),
         .table => try benchTable(reader, buf),
-        .utf8proc => try benchUtf8proc(reader, buf),
     }
 }
 
@@ -101,7 +98,7 @@ noinline fn benchTable(
     buf: []u8,
 ) !void {
     var d: UTF8Decoder = .{};
-    var state: u3 = 0;
+    var state: unicode.GraphemeBreakState = .{};
     var cp1: u21 = 0;
     while (true) {
         const n = try reader.read(buf);
@@ -139,32 +136,6 @@ noinline fn benchZiglyph(
             assert(consumed);
             if (cp_) |cp2| {
                 const v = ziglyph.graphemeBreak(cp1, @intCast(cp2), &state);
-                buf[0] = @intCast(@intFromBool(v));
-                cp1 = cp2;
-            }
-        }
-    }
-}
-
-noinline fn benchUtf8proc(
-    reader: anytype,
-    buf: []u8,
-) !void {
-    const utf8proc = @import("utf8proc");
-    var d: UTF8Decoder = .{};
-    var state: i32 = 0;
-    var cp1: u21 = 0;
-    while (true) {
-        const n = try reader.read(buf);
-        if (n == 0) break;
-
-        // Using stream.next directly with a for loop applies a naive
-        // scalar approach.
-        for (buf[0..n]) |c| {
-            const cp_, const consumed = d.next(c);
-            assert(consumed);
-            if (cp_) |cp2| {
-                const v = utf8proc.graphemeBreakStateful(cp1, @intCast(cp2), &state);
                 buf[0] = @intCast(@intFromBool(v));
                 cp1 = cp2;
             }

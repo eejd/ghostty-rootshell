@@ -217,17 +217,6 @@ pub fn build(b: *std.Build) !void {
     // Add our benchmarks
     try benchSteps(b, target, config, emit_bench);
 
-    {
-        const exe = b.addExecutable(.{
-            .name = "grapheme-verify",
-            .root_source_file = .{ .path = "src/unicode/grapheme.zig" },
-            .target = target,
-            .optimize = .ReleaseFast,
-        });
-        b.installArtifact(exe);
-        _ = try addDeps(b, exe, config);
-    }
-
     // We only build an exe if we have a runtime set.
     const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",
@@ -1092,15 +1081,6 @@ fn addDeps(
     // utfcpp
     step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
     try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
-
-    // utf8proc
-    const utf8proc_dep = b.dependency("utf8proc", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    step.root_module.addImport("utf8proc", utf8proc_dep.module("utf8proc"));
-    step.linkLibrary(utf8proc_dep.artifact("utf8proc"));
-    try static_libs.append(utf8proc_dep.artifact("utf8proc").getEmittedBin());
 
     // Spirv-Cross
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
