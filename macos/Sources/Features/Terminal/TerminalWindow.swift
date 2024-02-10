@@ -350,7 +350,7 @@ fileprivate class WindowDragView: NSView {
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
 fileprivate class WindowButtonsBackdropView: NSView {
-    private let overlayLayer = TerminalWindowButtonsBackdropOverlayLayer()
+    private let overlayLayer = VibrantLayer()
     private let isLightTheme: Bool
 
     var isHighlighted: Bool = true {
