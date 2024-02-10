@@ -6,7 +6,6 @@ const Terminal = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const ziglyph = @import("ziglyph");
 const testing = std.testing;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -786,24 +785,19 @@ pub fn print(self: *Terminal, c: u21) !void {
         if (prev.cell.char == 0) break :grapheme;
 
         const grapheme_break = brk: {
-            var state: u3 = 0;
+            var state: unicode.GraphemeBreakState = .{};
             var cp1: u21 = @intCast(prev.cell.char);
             if (prev.cell.attrs.grapheme) {
                 var it = row.codepointIterator(prev.x);
                 while (it.next()) |cp2| {
                     // log.debug("cp1={x} cp2={x}", .{ cp1, cp2 });
-                    assert(!ziglyph.graphemeBreak(
-                        cp1,
-                        cp2,
-                        &state,
-                    ));
-
+                    assert(!unicode.graphemeBreak(cp1, cp2, &state));
                     cp1 = cp2;
                 }
             }
 
             // log.debug("cp1={x} cp2={x} end", .{ cp1, c });
-            break :brk ziglyph.graphemeBreak(cp1, c, &state);
+            break :brk unicode.graphemeBreak(cp1, c, &state);
         };
 
         // If we can NOT break, this means that "c" is part of a grapheme
