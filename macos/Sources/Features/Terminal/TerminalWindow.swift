@@ -27,10 +27,11 @@ class TerminalWindow: NSWindow {
         }
     }
     
-    private var windowButtonsBackdrop: NSView? = nil
+    private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     private var windowDragHandle: WindowDragView? = nil
     private var storedTitlebarBackgroundColor: CGColor? = nil
-    
+    private var newTabButtonImage: NSImage? = nil
+
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
 
@@ -55,9 +56,21 @@ class TerminalWindow: NSWindow {
 
     /// This is called by titlebarTabs changing so that we can setup the rest of our window
     private func changedTitlebarTabs(to newValue: Bool) {
-        self.titlebarAppearsTransparent = newValue
-        
         if (newValue) {
+            // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
+            // background color to show through. If we were to set `titlebarAppearsTransparent` to true
+            // the selected tab would look fine, but the unselected ones and new tab button backgrounds
+            // would be an opaque color. When the titlebar isn't transparent, however, the system applies
+            // a compositing effect to the unselected tab backgrounds, which makes them blend with the
+            // titlebar's/window's background.
+            if let titlebarContainer = contentView?.superview?.subviews.first(where: {
+                $0.className == "NSTitlebarContainerView"
+            }), let effectView = titlebarContainer.descendants(withClassName: "NSVisualEffectView").first {
+                effectView.isHidden = true
+            }
+
+            self.titlebarSeparatorStyle = .none
+
             // We use the toolbar to anchor our tab bar positions in the titlebar,
             // so we make sure it's the right size/position, and exists.
             self.toolbarStyle = .unifiedCompact
@@ -68,7 +81,11 @@ class TerminalWindow: NSWindow {
             // Set a custom background on the titlebar - this is required for when
             // titlebar tabs is used in conjunction with a transparent background.
             self.restoreTitlebarBackground()
-            
+
+            // Reset the new tab button image so that we are sure to generate a fresh
+            // one, tinted appropriately for the given theme.
+            self.newTabButtonImage = nil
+
             // We have to wait before setting the titleVisibility or else it prevents
             // the window from hiding the tab bar when we get down to a single tab.
             DispatchQueue.main.async {
@@ -184,7 +201,60 @@ class TerminalWindow: NSWindow {
             self.markHierarchyForLayout(accessoryView)
         }
     }
-    
+
+    override func update() {
+        super.update()
+
+        // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
+        // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
+        // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
+        // color as the background of unselected tabs.
+        if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
+            windowButtonsBackdrop?.isHighlighted = index == 0
+        }
+
+        // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
+        // just as it does in the stock tab bar.
+        //
+        // One issue I haven't been able to fix is that their tint is made grey when the window isn't key,
+        // which doesn't look great and is made worse by the fact that the tab label colors don't change.
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+
+        if newTabButtonImage == nil {
+            guard let image = newTabButtonImageView.image,
+                  let storedTitlebarBackgroundColor,
+                  let titlebarBackgroundColor = NSColor(cgColor: storedTitlebarBackgroundColor) else { return }
+
+            let isLightTheme = titlebarBackgroundColor.isLightColor
+
+            let newImage = NSImage(size: image.size, flipped: false) { rect in
+                NSGraphicsContext.saveGraphicsState()
+
+                titlebarBackgroundColor.darken(by: isLightTheme ? 0.1 : 0.5).setFill()
+                rect.fill()
+
+                NSColor.secondaryLabelColor.setFill()
+                rect.fill(using: titlebarBackgroundColor.isLightColor ? .plusDarker : .plusLighter)
+
+                NSGraphicsContext.restoreGraphicsState()
+
+                image.draw(in: rect, from: .zero, operation: .destinationAtop, fraction: 1.0)
+
+                return true
+            }
+
+            newTabButtonImage = newImage
+        }
+
+        newTabButtonImageView.image = newTabButtonImage
+    }
+
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
         // If we already made the view, just make sure it's unhidden and correctly placed as a subview.
         if let view = windowButtonsBackdrop {
@@ -192,32 +262,22 @@ class TerminalWindow: NSWindow {
             view.isHidden = false
             titlebarView.addSubview(view)
             view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
-            view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 80).isActive = true
+            view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 78).isActive = true
             view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
             view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
             return
         }
         
-        let view = NSView()
+        let view = WindowButtonsBackdropView(backgroundColor: storedTitlebarBackgroundColor ?? NSColor.windowBackgroundColor.cgColor)
         view.identifier = NSUserInterfaceItemIdentifier("_windowButtonsBackdrop")
         titlebarView.addSubview(view)
         
         view.translatesAutoresizingMaskIntoConstraints = false
         view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
-        view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 80).isActive = true
+        view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 78).isActive = true
         view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
         view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
-        view.wantsLayer = true
-        
-        // This is jank but this makes the background color for light themes on the button
-        // backdrop look MUCH better. I couldn't figure out a perfect color to use that works
-        // for both so we just check the appearance.
-        if effectiveAppearance.name == .aqua {
-            view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
-        } else {
-            view.layer?.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
-        }
-        
+
         windowButtonsBackdrop = view
     }
     
@@ -285,5 +345,41 @@ fileprivate class WindowDragView: NSView {
     
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .openHand)
+    }
+}
+
+// A view that matches the color of selected and unselected tabs in the adjacent tab bar.
+fileprivate class WindowButtonsBackdropView: NSView {
+    private let overlayLayer = TerminalWindowButtonsBackdropOverlayLayer()
+    private let isLightTheme: Bool
+
+    var isHighlighted: Bool = true {
+        didSet {
+            if isLightTheme {
+                overlayLayer.isHidden = isHighlighted
+                layer?.backgroundColor = .clear
+            } else {
+                overlayLayer.isHidden = true
+                layer?.backgroundColor = isHighlighted ? .clear : CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45)
+            }
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    init(backgroundColor: CGColor) {
+        self.isLightTheme = NSColor(cgColor: backgroundColor)!.isLightColor
+
+        super.init(frame: .zero)
+
+        wantsLayer = true
+
+        overlayLayer.frame = layer!.bounds
+        overlayLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        overlayLayer.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
+
+        layer?.addSublayer(overlayLayer)
     }
 }
