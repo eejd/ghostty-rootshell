@@ -133,7 +133,7 @@
 		C1F26EA62B738B9900404083 /* NSView+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSView+Extension.swift"; sourceTree = "<group>"; };
 		C1F26EE72B76CBFC00404083 /* TerminalWindowButtonsBackdropOverlayLayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TerminalWindowButtonsBackdropOverlayLayer.h; sourceTree = "<group>"; };
 		C1F26EE82B76CBFC00404083 /* TerminalWindowButtonsBackdropOverlayLayer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TerminalWindowButtonsBackdropOverlayLayer.m; sourceTree = "<group>"; };
-		C1F26EEA2B76CC2400404083 /* Ghostty-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "Ghostty-Bridging-Header.h"; sourceTree = "<group>"; };
+		C1F26EEA2B76CC2400404083 /* ghostty-bridging-header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "ghostty-bridging-header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -239,7 +239,7 @@
 				A5FEB2FF2ABB69450068369E /* main.swift */,
 				A53426342A7DA53D00EBB7A2 /* AppDelegate.swift */,
 				857F63802A5E64F200CA4815 /* MainMenu.xib */,
-				C1F26EEA2B76CC2400404083 /* Ghostty-Bridging-Header.h */,
+				C1F26EEA2B76CC2400404083 /* ghostty-bridging-header.h */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -622,7 +622,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/ghostty-bridging-header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = ReleaseLocal;
@@ -772,7 +772,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/ghostty-bridging-header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -811,7 +811,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/Ghostty-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/ghostty-bridging-header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

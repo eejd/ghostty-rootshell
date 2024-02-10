@@ -206,9 +206,7 @@ class TerminalWindow: NSWindow {
         // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
         // color as the background of unselected tabs.
         if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
-            let firstTabIsSelected = index == 0
-
-            windowButtonsBackdrop?.isHighlighted = firstTabIsSelected
+            windowButtonsBackdrop?.isHighlighted = index == 0
         }
 
         // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
