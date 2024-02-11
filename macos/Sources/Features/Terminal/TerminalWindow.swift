@@ -16,8 +16,14 @@ class TerminalWindow: NSWindow {
         }
         
         super.becomeKey()
+        updateNewTabButtonOpacity()
     }
-    
+
+    override func resignKey() {
+        super.resignKey()
+        updateNewTabButtonOpacity()
+    }
+
     // MARK: - Titlebar Tabs
     
     // Used by the window controller to enable/disable titlebar tabs.
@@ -30,7 +36,7 @@ class TerminalWindow: NSWindow {
     private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     private var windowDragHandle: WindowDragView? = nil
     private var storedTitlebarBackgroundColor: CGColor? = nil
-    private var newTabButtonImage: NSImage? = nil
+    private var newTabButtonImageLayer: VibrantLayer? = nil
 
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
@@ -84,7 +90,7 @@ class TerminalWindow: NSWindow {
 
             // Reset the new tab button image so that we are sure to generate a fresh
             // one, tinted appropriately for the given theme.
-            self.newTabButtonImage = nil
+            self.newTabButtonImageLayer = nil
 
             // We have to wait before setting the titleVisibility or else it prevents
             // the window from hiding the tab bar when we get down to a single tab.
@@ -215,9 +221,47 @@ class TerminalWindow: NSWindow {
 
         // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
         // just as it does in the stock tab bar.
-        //
-        // One issue I haven't been able to fix is that their tint is made grey when the window isn't key,
-        // which doesn't look great and is made worse by the fact that the tab label colors don't change.
+        updateNewTabButtonOpacity()
+
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+        guard let newTabButtonImage = newTabButtonImageView.image else { return }
+        guard let storedTitlebarBackgroundColor, let isLightTheme = NSColor(cgColor: storedTitlebarBackgroundColor)?.isLightColor else { return }
+
+        if newTabButtonImageLayer == nil {
+            let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
+            let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
+                newTabButtonImage.draw(in: rect)
+                fillColor.setFill()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            let imageLayer = VibrantLayer(forAppearance: isLightTheme ? .light : .dark)!
+            imageLayer.frame = NSRect(origin: NSPoint(x: newTabButton.bounds.midX - newTabButtonImage.size.width/2, y: newTabButton.bounds.midY - newTabButtonImage.size.height/2), size: newTabButtonImage.size)
+            imageLayer.contentsGravity = .resizeAspect
+            imageLayer.contents = newImage
+            imageLayer.opacity = 0.5
+
+            newTabButtonImageLayer = imageLayer
+        }
+
+        newTabButtonImageView.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
+        newTabButtonImageView.layer?.addSublayer(newTabButtonImageLayer!)
+        newTabButtonImageView.image = nil
+        // When we nil out the original image, the image view's frame resizes and repositions
+        // slightly, so we need to reset it to make sure our new image doesn't shift quickly.
+        newTabButtonImageView.frame = newTabButton.bounds
+    }
+
+    // Since we are coloring the new tab button's image, it doesn't respond to the
+    // window's key status changes in terms of becoming less prominent visually,
+    // so we need to do it manually.
+    private func updateNewTabButtonOpacity() {
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
@@ -226,33 +270,7 @@ class TerminalWindow: NSWindow {
             $0 as? NSImageView != nil
         }) as? NSImageView else { return }
 
-        if newTabButtonImage == nil {
-            guard let image = newTabButtonImageView.image,
-                  let storedTitlebarBackgroundColor,
-                  let titlebarBackgroundColor = NSColor(cgColor: storedTitlebarBackgroundColor) else { return }
-
-            let isLightTheme = titlebarBackgroundColor.isLightColor
-
-            let newImage = NSImage(size: image.size, flipped: false) { rect in
-                NSGraphicsContext.saveGraphicsState()
-
-                titlebarBackgroundColor.darken(by: isLightTheme ? 0.1 : 0.5).setFill()
-                rect.fill()
-
-                NSColor.secondaryLabelColor.setFill()
-                rect.fill(using: titlebarBackgroundColor.isLightColor ? .plusDarker : .plusLighter)
-
-                NSGraphicsContext.restoreGraphicsState()
-
-                image.draw(in: rect, from: .zero, operation: .destinationAtop, fraction: 1.0)
-
-                return true
-            }
-
-            newTabButtonImage = newImage
-        }
-
-        newTabButtonImageView.image = newTabButtonImage
+        newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
@@ -350,7 +368,7 @@ fileprivate class WindowDragView: NSView {
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
 fileprivate class WindowButtonsBackdropView: NSView {
-    private let overlayLayer = TerminalWindowButtonsBackdropOverlayLayer()
+    private let overlayLayer = VibrantLayer()
     private let isLightTheme: Bool
 
     var isHighlighted: Bool = true {
