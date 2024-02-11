@@ -188,6 +188,8 @@ extension Ghostty {
 
         func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
+            guard self.focused != focused else { return }
+            self.focused = focused
             ghostty_surface_set_focus(surface, focused)
         }
 
@@ -358,7 +360,7 @@ extension Ghostty {
         
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
-            if (result) { focused = true }
+            if (result) { focusDidChange(true) }
             return result
         }
 
@@ -367,10 +369,7 @@ extension Ghostty {
 
             // We sometimes call this manually (see SplitView) as a way to force us to
             // yield our focus state.
-            if (result) {
-                focusDidChange(false)
-                focused = false
-            }
+            if (result) { focusDidChange(false) }
 
             return result
         }
