@@ -110,7 +110,7 @@ pub fn main() !MainReturn {
 }
 
 // The function std.log will call.
-pub fn logFn(
+fn logFn(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,
@@ -161,6 +161,7 @@ pub const std_options: std.Options = .{
         .Debug => .debug,
         else => .info,
     },
+
     .logFn = logFn,
 };
 
