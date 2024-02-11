@@ -242,6 +242,7 @@ class TerminalWindow: NSWindow {
             newTabButtonImageLayer = imageLayer
         }
 
+        newTabButtonImageView.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
         newTabButtonImageView.layer?.addSublayer(newTabButtonImageLayer!)
         newTabButtonImageView.image = nil
         // When we nil out the original image, the image view's frame resizes and repositions
