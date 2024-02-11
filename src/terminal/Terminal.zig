@@ -806,55 +806,60 @@ pub fn print(self: *Terminal, c: u21) !void {
             // If this is an emoji variation selector then we need to modify
             // the cell width accordingly. VS16 makes the character wide and
             // VS15 makes it narrow.
-            //
-            // TODO: This should use the emoji-variation-selector.txt UCD file.
-            switch (c) {
-                0xFE0F => wide: {
-                    if (prev.cell.attrs.wide) break :wide;
+            if (c == 0xFE0F or c == 0xFE0E) {
+                // This only applies to emoji
+                const prev_props = unicode.getProperties(@intCast(prev.cell.char));
+                const emoji = prev_props.grapheme_boundary_class == .extended_pictographic;
+                if (!emoji) return;
 
-                    // Move our cursor back to the previous. We'll move
-                    // the cursor within this block to the proper location.
-                    self.screen.cursor.x = prev.x;
+                switch (c) {
+                    0xFE0F => wide: {
+                        if (prev.cell.attrs.wide) break :wide;
 
-                    // If we don't have space for the wide char, we need
-                    // to insert spacers and wrap. Then we just print the wide
-                    // char as normal.
-                    if (prev.x == right_limit - 1) {
-                        if (!self.modes.get(.wraparound)) return;
-                        const spacer_head = self.printCell(' ');
-                        spacer_head.attrs.wide_spacer_head = true;
-                        try self.printWrap();
-                    }
+                        // Move our cursor back to the previous. We'll move
+                        // the cursor within this block to the proper location.
+                        self.screen.cursor.x = prev.x;
 
-                    const wide_cell = self.printCell(@intCast(prev.cell.char));
-                    wide_cell.attrs.wide = true;
+                        // If we don't have space for the wide char, we need
+                        // to insert spacers and wrap. Then we just print the wide
+                        // char as normal.
+                        if (prev.x == right_limit - 1) {
+                            if (!self.modes.get(.wraparound)) return;
+                            const spacer_head = self.printCell(' ');
+                            spacer_head.attrs.wide_spacer_head = true;
+                            try self.printWrap();
+                        }
 
-                    // Write our spacer
-                    self.screen.cursor.x += 1;
-                    const spacer = self.printCell(' ');
-                    spacer.attrs.wide_spacer_tail = true;
+                        const wide_cell = self.printCell(@intCast(prev.cell.char));
+                        wide_cell.attrs.wide = true;
 
-                    // Move the cursor again so we're beyond our spacer
-                    self.screen.cursor.x += 1;
-                    if (self.screen.cursor.x == right_limit) {
-                        self.screen.cursor.x -= 1;
-                        self.screen.cursor.pending_wrap = true;
-                    }
-                },
+                        // Write our spacer
+                        self.screen.cursor.x += 1;
+                        const spacer = self.printCell(' ');
+                        spacer.attrs.wide_spacer_tail = true;
 
-                0xFE0E => narrow: {
-                    // Prev cell is no longer wide
-                    if (!prev.cell.attrs.wide) break :narrow;
-                    prev.cell.attrs.wide = false;
+                        // Move the cursor again so we're beyond our spacer
+                        self.screen.cursor.x += 1;
+                        if (self.screen.cursor.x == right_limit) {
+                            self.screen.cursor.x -= 1;
+                            self.screen.cursor.pending_wrap = true;
+                        }
+                    },
 
-                    // Remove the wide spacer tail
-                    const cell = row.getCellPtr(prev.x + 1);
-                    cell.attrs.wide_spacer_tail = false;
+                    0xFE0E => narrow: {
+                        // Prev cell is no longer wide
+                        if (!prev.cell.attrs.wide) break :narrow;
+                        prev.cell.attrs.wide = false;
 
-                    break :narrow;
-                },
+                        // Remove the wide spacer tail
+                        const cell = row.getCellPtr(prev.x + 1);
+                        cell.attrs.wide_spacer_tail = false;
 
-                else => {},
+                        break :narrow;
+                    },
+
+                    else => unreachable,
+                }
             }
 
             log.debug("c={x} grapheme attach to x={}", .{ c, prev.x });
@@ -899,6 +904,14 @@ pub fn print(self: *Terminal, c: u21) !void {
             if (!immediate.attrs.wide_spacer_tail) break :prev x;
             break :prev x - 1;
         };
+
+        // If this is a emoji variation selector, prev must be an emoji
+        if (c == 0xFE0F or c == 0xFE0E) {
+            const prev_cell = row.getCellPtr(prev);
+            const prev_props = unicode.getProperties(@intCast(prev_cell.char));
+            const emoji = prev_props.grapheme_boundary_class == .extended_pictographic;
+            if (!emoji) return;
+        }
 
         try row.attachGrapheme(prev, c);
         return;
@@ -2505,6 +2518,96 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
         try testing.expectEqual(@as(u32, ' '), cell.char);
         try testing.expect(cell.attrs.wide_spacer_tail);
         try testing.expectEqual(@as(usize, 1), row.codepointLen(1));
+    }
+}
+
+test "Terminal: print invalid VS16 non-grapheme" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // https://github.com/mitchellh/ghostty/issues/1482
+    try t.print('x');
+    try t.print(0xFE0F);
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'x'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, 0), cell.char);
+    }
+}
+
+test "Terminal: print invalid VS16 grapheme" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/1482
+    try t.print('x');
+    try t.print(0xFE0F);
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'x'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, 0), cell.char);
+    }
+}
+
+test "Terminal: print invalid VS16 with second char" {
+    var t = try init(testing.allocator, 80, 80);
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/1482
+    try t.print('x');
+    try t.print(0xFE0F);
+    try t.print('y');
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    const row = t.screen.getRow(.{ .screen = 0 });
+    {
+        const cell = row.getCell(0);
+        try testing.expectEqual(@as(u32, 'x'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
+    }
+    {
+        const cell = row.getCell(1);
+        try testing.expectEqual(@as(u32, 'y'), cell.char);
+        try testing.expect(!cell.attrs.wide);
+        try testing.expectEqual(@as(usize, 1), row.codepointLen(0));
     }
 }
 
