@@ -178,7 +178,6 @@ fn startWindows(self: *Command, arena: Allocator) !void {
             .access_mask = windows.GENERIC_READ | windows.SYNCHRONIZE,
             .share_access = windows.FILE_SHARE_READ,
             .creation = windows.OPEN_EXISTING,
-            .io_mode = .blocking,
         },
     ) else null;
     defer if (null_fd) |fd| std.os.close(fd);
