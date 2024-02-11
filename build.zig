@@ -261,9 +261,17 @@ pub fn build(b: *std.Build) !void {
             );
         }
 
-        // Building with LTO on Windows is broken.
-        // https://github.com/ziglang/zig/issues/15958
-        if (target.result.os.tag == .windows) exe.want_lto = false;
+        if (target.result.os.tag == .windows) {
+            exe.subsystem = .Windows;
+            exe.addWin32ResourceFile(.{
+                .file = .{ .path = "dist/windows/ghostty.rc" },
+            });
+
+            // Building with LTO on Windows is broken.
+            // https://github.com/ziglang/zig/issues/15958
+            exe.want_lto = false;
+        }
+
 
         // If we're installing, we get the install step so we can add
         // additional dependencies to it.
