@@ -44,22 +44,26 @@ pub fn fixMaxFiles() void {
 }
 
 /// Return the recommended path for temporary files.
-pub fn tmpDir() ?[]const u8 {
+/// This may not actually allocate memory, use freeTmpDir to properly
+/// free the memory when applicable.
+pub fn allocTmpDir(allocator: std.mem.Allocator) ?[]const u8 {
     if (builtin.os.tag == .windows) {
         // TODO: what is a good fallback path on windows?
         const v = std.os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
-        // MAX_PATH is very likely sufficient, but it's theoretically possible for someone to
-        // configure their os to allow paths as big as std.os.windows.PATH_MAX_WIDE, which is MUCH
-        // larger. Even if they did that, though, it's very unlikey that their Temp dir will use
-        // such a long path. We can switch if we see any issues, though it seems fairly unlikely.
-        var buf = [_]u8{0} ** std.os.windows.MAX_PATH;
-        const len = std.unicode.utf16leToUtf8(buf[0..], v[0..v.len]) catch |e| {
+        return std.unicode.utf16leToUtf8Alloc(allocator, v) catch |e| {
             log.warn("failed to convert temp dir path from windows string: {}", .{e});
             return null;
         };
-        return buf[0..len];
     }
     if (std.os.getenv("TMPDIR")) |v| return v;
     if (std.os.getenv("TMP")) |v| return v;
     return "/tmp";
+}
+
+/// Free a path returned by tmpDir if it allocated memory.
+/// This is a "no-op" for all platforms except windows.
+pub fn freeTmpDir(allocator: std.mem.Allocator, dir: []const u8) void {
+    if (builtin.os.tag == .windows) {
+        allocator.free(dir);
+    }
 }

@@ -192,7 +192,8 @@ pub const LoadingImage = struct {
     fn isPathInTempDir(path: []const u8) bool {
         if (std.mem.startsWith(u8, path, "/tmp")) return true;
         if (std.mem.startsWith(u8, path, "/dev/shm")) return true;
-        if (internal_os.tmpDir()) |dir| {
+        if (internal_os.allocTmpDir(std.heap.page_allocator)) |dir| {
+            defer internal_os.freeTmpDir(std.heap.page_allocator, dir);
             if (std.mem.startsWith(u8, path, dir)) return true;
 
             // The temporary dir is sometimes a symlink. On macOS for
