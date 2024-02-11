@@ -18,7 +18,6 @@ const CoreSurface = @import("../../Surface.zig");
 const App = @import("App.zig");
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
-const icon = @import("icon.zig");
 const c = @import("c.zig");
 
 const log = std.log.scoped(.gtk);
@@ -30,10 +29,6 @@ window: *c.GtkWindow,
 
 /// The notebook (tab grouping) for this window.
 notebook: *c.GtkNotebook,
-
-/// The resources directory for the icon (if any). We need to retain a
-/// pointer to this because GTK can use it at any time.
-icon: icon.Icon,
 
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
@@ -53,7 +48,6 @@ pub fn init(self: *Window, app: *App) !void {
     // Set up our own state
     self.* = .{
         .app = app,
-        .icon = undefined,
         .window = undefined,
         .notebook = undefined,
     };
@@ -70,10 +64,7 @@ pub fn init(self: *Window, app: *App) !void {
     // to disable this so that terminal programs can capture F10 (such as htop)
     c.gtk_window_set_handle_menubar_accel(gtk_window, 0);
 
-    // If we don't have the icon then we'll try to add our resources dir
-    // to the search path and see if we can find it there.
-    self.icon = try icon.appIcon(self.app, window);
-    c.gtk_window_set_icon_name(gtk_window, self.icon.name);
+    c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
 
     // Apply background opacity if we have it
     if (app.config.@"background-opacity" < 1) {
@@ -189,9 +180,7 @@ fn initActions(self: *Window) void {
     }
 }
 
-pub fn deinit(self: *Window) void {
-    self.icon.deinit(self.app);
-}
+pub fn deinit(_: *Window) void {}
 
 /// Add a new tab to this window.
 pub fn newTab(self: *Window, parent: ?*CoreSurface) !void {

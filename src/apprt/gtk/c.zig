@@ -7,6 +7,9 @@ const c = @cImport({
     @cInclude("gdk/x11/gdkx.h");
     // Xkb for X11 state handling
     @cInclude("X11/XKBlib.h");
+
+    // generated header files
+    @cInclude("ghostty_resources.h");
 });
 
 pub usingnamespace c;

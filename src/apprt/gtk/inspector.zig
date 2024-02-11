@@ -7,7 +7,6 @@ const Surface = @import("Surface.zig");
 const TerminalWindow = @import("Window.zig");
 const ImguiWidget = @import("ImguiWidget.zig");
 const c = @import("c.zig");
-const icon = @import("icon.zig");
 const CoreInspector = @import("../../inspector/main.zig").Inspector;
 
 const log = std.log.scoped(.inspector);
@@ -125,14 +124,12 @@ pub const Inspector = struct {
 const Window = struct {
     inspector: *Inspector,
     window: *c.GtkWindow,
-    icon: icon.Icon,
     imgui_widget: ImguiWidget,
 
     pub fn init(self: *Window, inspector: *Inspector) !void {
         // Initialize to undefined
         self.* = .{
             .inspector = inspector,
-            .icon = undefined,
             .window = undefined,
             .imgui_widget = undefined,
         };
@@ -144,8 +141,7 @@ const Window = struct {
         self.window = gtk_window;
         c.gtk_window_set_title(gtk_window, "Ghostty: Terminal Inspector");
         c.gtk_window_set_default_size(gtk_window, 1000, 600);
-        self.icon = try icon.appIcon(self.inspector.surface.app, window);
-        c.gtk_window_set_icon_name(gtk_window, self.icon.name);
+        c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
 
         // Initialize our imgui widget
         try self.imgui_widget.init();
@@ -163,7 +159,6 @@ const Window = struct {
     }
 
     pub fn deinit(self: *Window) void {
-        self.icon.deinit(self.inspector.surface.app);
         self.inspector.locationDidClose();
     }
 

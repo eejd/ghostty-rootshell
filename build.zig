@@ -1165,6 +1165,87 @@ fn addDeps(
             .gtk => {
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
                 if (config.libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
+
+                {
+                    // TODO: find a way to dynamically update this from the output
+                    // of `glib-compile-resources --generate-dependencies`
+                    const extra_file_dependencies = &.{
+                        "src/apprt/gtk/gresource.xml",
+                        "src/apprt/gtk/style.css",
+                        "src/apprt/gtk/style-dark.css",
+                        "src/apprt/gtk/style-hc.css",
+                        "src/apprt/gtk/style-hc-dark.css",
+                        "images/icons/icon_16x16@2x@2x.png",
+                        "images/icons/icon_16x16.png",
+                        "images/icons/icon_32x32@2x@2x.png",
+                        "images/icons/icon_32x32.png",
+                        "images/icons/icon_128x128@2x@2x.png",
+                        "images/icons/icon_128x128.png",
+                        "images/icons/icon_256x256@2x@2x.png",
+                        "images/icons/icon_256x256.png",
+                        "images/icons/icon_512x512.png",
+                    };
+
+                    const generate_resources_d = b.addSystemCommand(&.{
+                        "glib-compile-resources",
+                        "--generate-dependencies",
+                        "src/apprt/gtk/gresource.xml",
+                    });
+
+                    _ = generate_resources_d.captureStdOut();
+
+                    generate_resources_d.extra_file_dependencies = &.{
+                        "src/apprt/gtk/gresource.xml",
+                    };
+
+                    const generate_resources_c = b.addSystemCommand(&.{
+                        "glib-compile-resources",
+                        "--c-name",
+                        "ghostty",
+                        "--generate-source",
+                        "--target",
+                    });
+
+                    const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
+
+                    generate_resources_c.addArgs(&.{
+                        "src/apprt/gtk/gresource.xml",
+                    });
+
+                    generate_resources_c.step.dependOn(&generate_resources_d.step);
+
+                    // TODO: find a way to dynamically update this from the output
+                    // of `glib-compile-resources --generate-dependencies`
+                    generate_resources_c.extra_file_dependencies = extra_file_dependencies;
+
+                    step.addCSourceFile(.{
+                        .file = ghostty_resources_c,
+                        .flags = &.{},
+                    });
+
+                    const generate_resources_h = b.addSystemCommand(&.{
+                        "glib-compile-resources",
+                        "--c-name",
+                        "ghostty",
+                        "--generate-header",
+                        "--target",
+                    });
+
+                    const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
+
+                    generate_resources_h.addArgs(&.{
+                        "src/apprt/gtk/gresource.xml",
+                    });
+
+                    generate_resources_h.step.dependOn(&generate_resources_d.step);
+                    generate_resources_h.step.dependOn(&generate_resources_c.step);
+
+                    // TODO: find a way to dynamically update this from the output
+                    // of `glib-compile-resources --generate-dependencies`
+                    generate_resources_h.extra_file_dependencies = extra_file_dependencies;
+
+                    step.addIncludePath(ghostty_resources_h.dirname());
+                }
             },
         }
     }

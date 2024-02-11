@@ -153,6 +153,18 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     errdefer c.g_object_unref(app);
+
+    const gapp = @as(*c.GApplication, @ptrCast(app));
+
+    // force the resource path to a known value so that it doesn't depend on
+    // the app id
+    c.g_application_set_resource_base_path(gapp, "/com/mitchellh/ghostty");
+
+    // load compiled-in resources
+    c.g_resources_register(c.ghostty_get_resource());
+
+    // The `activate` signal is used when Ghostty is first launched and when a
+    // secondary Ghostty is launched and requests a new window.
     _ = c.g_signal_connect_data(
         app,
         "activate",
@@ -169,7 +181,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     if (c.g_main_context_acquire(ctx) == 0) return error.GtkContextAcquireFailed;
     errdefer c.g_main_context_release(ctx);
 
-    const gapp = @as(*c.GApplication, @ptrCast(app));
     var err_: ?*c.GError = null;
     if (c.g_application_register(
         gapp,
