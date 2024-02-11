@@ -48,8 +48,8 @@ const Mode = enum {
     table,
 };
 
-pub const std_options = struct {
-    pub const log_level: std.log.Level = .debug;
+pub const std_options: std.Options = .{
+    .log_level = .debug,
 };
 
 pub fn main() !void {
