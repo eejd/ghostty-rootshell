@@ -14,7 +14,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     let ghostty: Ghostty.App
     
     /// The currently focused surface.
-    var focusedSurface: Ghostty.SurfaceView? = nil
+    var focusedSurface: Ghostty.SurfaceView? = nil {
+        didSet {
+            syncFocusToSurfaceTree()
+        }
+    }
     
     /// The surface tree for this window.
     @Published var surfaceTree: Ghostty.SplitNode? = nil {
@@ -23,6 +27,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             // in the old tree have closed and then close the window.
             if (surfaceTree == nil) {
                 oldValue?.close()
+                focusedSurface = nil
                 lastSurfaceDidClose()
             }
         }
@@ -178,6 +183,21 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             let color = OSColor(ghostty.config.backgroundColor)
             let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
             window.appearance = appearance
+        }
+    }
+    
+    /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
+    /// what surface is focused. This must be called whenever a surface OR window changes focus.
+    private func syncFocusToSurfaceTree() {
+        guard let tree = self.surfaceTree else { return }
+
+        for leaf in tree {
+            // Our focus state requires that this window is key and our currently
+            // focused surface is the surface in this leaf.
+            let focused: Bool = (window?.isKeyWindow ?? false) &&
+                focusedSurface != nil &&
+                leaf.surface == focusedSurface!
+            leaf.surface.focusDidChange(focused)
         }
     }
     
@@ -348,6 +368,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
         self.fixTabBar()
+        
+        // Becoming/losing key means we have to notify our surface(s) that we have focus
+        // so things like cursors blink, pty events are sent, etc.
+        self.syncFocusToSurfaceTree()
+    }
+    
+    func windowDidResignKey(_ notification: Notification) {
+        // Becoming/losing key means we have to notify our surface(s) that we have focus
+        // so things like cursors blink, pty events are sent, etc.
+        self.syncFocusToSurfaceTree()
     }
     
     func windowDidMove(_ notification: Notification) {

@@ -51,10 +51,6 @@ extension Ghostty {
 
         @EnvironmentObject private var ghostty: Ghostty.App
 
-        // This is true if the terminal is considered "focused". The terminal is focused if
-        // it is both individually focused and the containing window is key.
-        private var hasFocus: Bool { surfaceFocus && windowFocus }
-
         var body: some View {
             let center = NotificationCenter.default
             
@@ -72,7 +68,7 @@ extension Ghostty {
                     let pubResign = center.publisher(for: NSWindow.didResignKeyNotification)
                     #endif
 
-                    Surface(view: surfaceView, hasFocus: hasFocus, size: geo.size)
+                    Surface(view: surfaceView, size: geo.size)
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
@@ -230,11 +226,6 @@ extension Ghostty {
         /// The view to render for the terminal surface.
         let view: SurfaceView
 
-        /// This should be set to true when the surface has focus. This is up to the parent because
-        /// focus is also defined by window focus. It is important this is set correctly since if it is
-        /// false then the surface will idle at almost 0% CPU.
-        let hasFocus: Bool
-
         /// The size of the frame containing this view. We use this to update the the underlying
         /// surface. This does not actually SET the size of our frame, this only sets the size
         /// of our Metal surface for drawing.
@@ -253,7 +244,6 @@ extension Ghostty {
         }
 
         func updateOSView(_ view: SurfaceView, context: Context) {
-            view.focusDidChange(hasFocus)
             view.sizeDidChange(size)
         }
     }

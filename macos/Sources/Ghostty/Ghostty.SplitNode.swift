@@ -11,7 +11,7 @@ extension Ghostty {
     ///   "container" which has a recursive top/left SplitNode and bottom/right SplitNode. These
     ///   values can further be split infinitely.
     ///
-    enum SplitNode: Equatable, Hashable, Codable {
+    enum SplitNode: Equatable, Hashable, Codable, Sequence {
         case leaf(Leaf)
         case split(Container)
         
@@ -133,6 +133,24 @@ extension Ghostty {
             case .split(let container):
                 return container.topLeft.findUUID(uuid: uuid) ??
                     container.bottomRight.findUUID(uuid: uuid)
+            }
+        }
+        
+        // MARK: - Sequence
+        
+        func makeIterator() -> IndexingIterator<[Leaf]> {
+            return leaves().makeIterator()
+        }
+        
+        /// Return all the leaves in this split node. This isn't very efficient but our split trees are never super
+        /// deep so its not an issue.
+        private func leaves() -> [Leaf] {
+            switch (self) {
+            case .leaf(let leaf):
+                return [leaf]
+
+            case .split(let container):
+                return container.topLeft.leaves() + container.bottomRight.leaves()
             }
         }
         
