@@ -16,8 +16,14 @@ class TerminalWindow: NSWindow {
         }
         
         super.becomeKey()
+        updateNewTabButtonOpacity()
     }
-    
+
+    override func resignKey() {
+        super.resignKey()
+        updateNewTabButtonOpacity()
+    }
+
     // MARK: - Titlebar Tabs
     
     // Used by the window controller to enable/disable titlebar tabs.
@@ -215,6 +221,8 @@ class TerminalWindow: NSWindow {
 
         // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
         // just as it does in the stock tab bar.
+        updateNewTabButtonOpacity()
+
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
@@ -248,6 +256,21 @@ class TerminalWindow: NSWindow {
         // When we nil out the original image, the image view's frame resizes and repositions
         // slightly, so we need to reset it to make sure our new image doesn't shift quickly.
         newTabButtonImageView.frame = newTabButton.bounds
+    }
+
+    // Since we are coloring the new tab button's image, it doesn't respond to the
+    // window's key status changes in terms of becoming less prominent visually,
+    // so we need to do it manually.
+    private func updateNewTabButtonOpacity() {
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+
+        newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
