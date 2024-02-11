@@ -262,7 +262,7 @@ fn legacy(
     // If we match a control sequence, we output that directly. For
     // ctrlSeq we have to use all mods because we want it to only
     // match ctrl+<char>.
-    if (ctrlSeq(self.event.utf8, all_mods)) |char| {
+    if (ctrlSeq(self.event.utf8, self.event.unshifted_codepoint, all_mods)) |char| {
         // C0 sequences support alt-as-esc prefixing.
         if (binding_mods.alt) {
             if (buf.len < 2) return error.OutOfMemory;
@@ -498,16 +498,20 @@ fn pcStyleFunctionKey(
 /// This will return null if the key event should not be converted
 /// into a C0 byte. There are many cases for this and you should read
 /// the source code to understand them.
-fn ctrlSeq(utf8: []const u8, mods: key.Mods) ?u8 {
+fn ctrlSeq(
+    utf8: []const u8,
+    unshifted_codepoint: u21,
+    mods: key.Mods,
+) ?u8 {
     // If ctrl is not pressed then we never do anything.
     if (!mods.ctrl) return null;
 
     // If we don't have exactly one byte in our utf8 sequence, then
     // we don't do anything, since all our ctrl keys are based on ASCII.
     if (utf8.len != 1) return null;
-    const char = utf8[0];
 
-    const unset_mods = unset_mods: {
+    const char, const unset_mods = unset_mods: {
+        var char = utf8[0];
         var unset_mods = mods;
 
         // Remove alt from our modifiers because it does not impact whether
@@ -515,15 +519,23 @@ fn ctrlSeq(utf8: []const u8, mods: key.Mods) ?u8 {
         // logic separately.
         unset_mods.alt = false;
 
-        // Remove shift if we have something outside of the US letter range
-        if (unset_mods.shift and (char < 'A' or char > 'Z')) shift: {
+        // Remove shift because shifted characters are allowed to send
+        // control sequences. i.e. ctrl+A == ctrl+a
+        if (unset_mods.shift) shift: {
             // Special case for fixterms awkward case as specified.
             if (char == '@') break :shift;
-
             unset_mods.shift = false;
         }
 
-        break :unset_mods unset_mods.binding();
+        // If the character is uppercase, we convert it to lowercase. We
+        // rely on the unshifted codepoint to do this.
+        if (char >= 'A' and char <= 'Z' and unshifted_codepoint > 0) {
+            if (std.math.cast(u8, unshifted_codepoint)) |byte| {
+                char = byte;
+            }
+        }
+
+        break :unset_mods .{ char, unset_mods.binding() };
     };
 
     // After unsetting, we only continue if we have ONLY control set.
@@ -1891,30 +1903,35 @@ test "legacy: right_shift+tab" {
 }
 
 test "ctrlseq: normal ctrl c" {
-    const seq = ctrlSeq("c", .{ .ctrl = true });
+    const seq = ctrlSeq("c", 'c', .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
 test "ctrlseq: normal ctrl c, right control" {
-    const seq = ctrlSeq("c", .{ .ctrl = true, .sides = .{ .ctrl = .right } });
+    const seq = ctrlSeq("c", 'c', .{ .ctrl = true, .sides = .{ .ctrl = .right } });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
 test "ctrlseq: alt should be allowed" {
-    const seq = ctrlSeq("c", .{ .alt = true, .ctrl = true });
+    const seq = ctrlSeq("c", 'c', .{ .alt = true, .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
 test "ctrlseq: no ctrl does nothing" {
-    try testing.expect(ctrlSeq("c", .{}) == null);
-}
-
-test "ctrlseq: shift does not generate ctrl seq" {
-    try testing.expect(ctrlSeq("C", .{ .shift = true }) == null);
-    try testing.expect(ctrlSeq("C", .{ .shift = true, .ctrl = true }) == null);
+    try testing.expect(ctrlSeq("c", 'c', .{}) == null);
 }
 
 test "ctrlseq: shifted non-character" {
-    const seq = ctrlSeq("_", .{ .ctrl = true, .shift = true });
+    const seq = ctrlSeq("_", '-', .{ .ctrl = true, .shift = true });
     try testing.expectEqual(@as(u8, 0x1F), seq.?);
+}
+
+test "ctrlseq: caps ascii letter" {
+    const seq = ctrlSeq("C", 'c', .{ .ctrl = true, .caps_lock = true });
+    try testing.expectEqual(@as(u8, 0x03), seq.?);
+}
+
+test "ctrlseq: shifted ascii letter" {
+    const seq = ctrlSeq("C", 'c', .{ .ctrl = true, .shift = true });
+    try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
