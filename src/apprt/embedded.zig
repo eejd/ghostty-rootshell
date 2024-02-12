@@ -945,6 +945,13 @@ pub const Surface = struct {
         };
     }
 
+    pub fn occlusionCallback(self: *Surface, visible: bool) void {
+        self.core_surface.occlusionCallback(visible) catch |err| {
+            log.err("error in occlusion callback err={}", .{err});
+            return;
+        };
+    }
+
     pub fn gotoTab(self: *Surface, n: usize) void {
         const func = self.app.opts.goto_tab orelse {
             log.info("runtime embedder does not goto_tab", .{});
@@ -1544,6 +1551,11 @@ pub const CAPI = struct {
     /// Update the focused state of a surface.
     export fn ghostty_surface_set_focus(surface: *Surface, focused: bool) void {
         surface.focusCallback(focused);
+    }
+
+    /// Update the occlusion state of a surface.
+    export fn ghostty_surface_set_occlusion(surface: *Surface, visible: bool) void {
+        surface.occlusionCallback(visible);
     }
 
     /// Filter the mods if necessary. This handles settings such as

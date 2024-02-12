@@ -1527,6 +1527,16 @@ pub fn textCallback(self: *Surface, text: []const u8) !void {
     try self.completeClipboardPaste(text, true);
 }
 
+/// Callback for when the surface is fully visible or not, regardless
+/// of focus state. This is used to pause rendering when the surface
+/// is not visible, and also re-render when it becomes visible again.
+pub fn occlusionCallback(self: *Surface, visible: bool) !void {
+    // If we became visible, then we queue a render. This helps scenarios
+    // where the apprt pauses rendering when the surface is not visible,
+    // i.e. macOS with Metal (see issue #1510).
+    if (visible) try self.queueRender();
+}
+
 pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Notify our render thread of the new state
     _ = self.renderer_thread.mailbox.push(.{
