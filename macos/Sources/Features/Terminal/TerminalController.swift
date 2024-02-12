@@ -384,6 +384,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         self.fixTabBar()
     }
     
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let surfaceTree = self.surfaceTree else { return }
+        let visible = self.window?.occlusionState.contains(.visible) ?? false
+        for leaf in surfaceTree {
+            if let surface = leaf.surface.surface {
+                ghostty_surface_set_occlusion(surface, visible)
+            }
+        }
+    }
+    
     // Called when the window will be encoded. We handle the data encoding here in the
     // window controller.
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
