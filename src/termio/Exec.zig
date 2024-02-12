@@ -1470,7 +1470,11 @@ const ReadThread = struct {
         // so that we can try to read from the fd in a tight loop and only
         // check the quit fd occasionally.
         if (std.os.fcntl(fd, std.os.F.GETFL, 0)) |flags| {
-            _ = std.os.fcntl(fd, std.os.F.SETFL, flags | std.os.O.NONBLOCK) catch |err| {
+            _ = std.os.fcntl(
+                fd,
+                std.os.F.SETFL,
+                flags | @as(u32, @bitCast(std.os.O{ .NONBLOCK = true })),
+            ) catch |err| {
                 log.warn("read thread failed to set flags err={}", .{err});
                 log.warn("this isn't a fatal error, but may cause performance issues", .{});
             };
