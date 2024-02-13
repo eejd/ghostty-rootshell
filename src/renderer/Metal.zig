@@ -116,11 +116,13 @@ buf_instance: InstanceBuffer, // MTLBuffer
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
-texture_greyscale: objc.Object, // MTLTexture
-texture_color: objc.Object, // MTLTexture
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
+
+/// The allocated resources required when the view is visible and free-able
+/// when the view is not visible. These are required to draw.
+visible_resources: ?VisibleResources = null,
 
 /// Health of the last frame. Note that when we do double/triple buffering
 /// this will have to be part of the frame state.
@@ -427,10 +429,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     var shaders = try Shaders.init(alloc, device, custom_shaders);
     errdefer shaders.deinit(alloc);
 
-    // Font atlas textures
-    const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
-    const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
-
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -469,8 +467,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .device = device,
         .queue = queue,
         .layer = layer,
-        .texture_greyscale = texture_greyscale,
-        .texture_color = texture_color,
         .custom_shader_state = custom_shader_state,
     };
 }
@@ -499,8 +495,7 @@ pub fn deinit(self: *Metal) void {
     self.buf_cells_bg.deinit();
     self.buf_cells.deinit();
     self.buf_instance.deinit();
-    deinitMTLResource(self.texture_greyscale);
-    deinitMTLResource(self.texture_color);
+    if (self.visible_resources) |*v| v.deinit();
     self.queue.msgSend(void, objc.sel("release"), .{});
 
     if (self.custom_shader_state) |*state| state.deinit();
@@ -761,6 +756,18 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     self.inflight.wait();
     errdefer self.inflight.post();
 
+    // Get our cached resources. If we don't have them, then we need to
+    // create them. If we fail to create them, mark the renderer as unhealthy.
+    const resources: *VisibleResources = if (self.visible_resources) |*v| v else resources: {
+        const resources = VisibleResources.init(self) catch |err| {
+            self.setHealth(.unhealthy);
+            return err;
+        };
+
+        self.visible_resources = resources;
+        break :resources &self.visible_resources.?;
+    };
+
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
         const now = std.time.Instant.now() catch state.first_frame_time;
@@ -789,11 +796,19 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // If our font atlas changed, sync the texture data
     if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
+        try syncAtlasTexture(
+            self.device,
+            &self.font_group.atlas_greyscale,
+            &resources.texture_greyscale,
+        );
         self.font_group.atlas_greyscale.modified = false;
     }
     if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
+        try syncAtlasTexture(
+            self.device,
+            &self.font_group.atlas_color,
+            &resources.texture_color,
+        );
         self.font_group.atlas_color.modified = false;
     }
 
@@ -850,13 +865,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
+        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg, resources);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCells(encoder, &self.buf_cells, self.cells);
+        try self.drawCells(encoder, &self.buf_cells, self.cells, resources);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -949,25 +964,28 @@ fn bufferCompleted(
     // then we don't care and just return right away. We're looking for
     // errors so that we can log them.
     const status = buffer.getProperty(mtl.MTLCommandBufferStatus, "status");
-    const health: Health = switch (status) {
+    self.setHealth(switch (status) {
         .@"error" => .unhealthy,
         else => .healthy,
-    };
-
-    // If our health value hasn't changed, then we do nothing. We don't
-    // do a cmpxchg here because strict atomicity isn't important.
-    if (self.health.load(.SeqCst) != health) {
-        self.health.store(health, .SeqCst);
-
-        // Our health value changed, so we notify the surface so that it
-        // can do something about it.
-        _ = self.surface_mailbox.push(.{
-            .renderer_health = health,
-        }, .{ .forever = {} });
-    }
+    });
 
     // Always release our semaphore
     self.inflight.post();
+}
+
+/// Set the health state for the renderer. If the state changes, notify
+/// the surface.
+fn setHealth(self: *Metal, health: Health) void {
+    // If our health value hasn't changed, then we do nothing. We don't
+    // do a cmpxchg here because strict atomicity isn't important.
+    if (self.health.load(.SeqCst) == health) return;
+    self.health.store(health, .SeqCst);
+
+    // Our health value changed, so we notify the surface so that it
+    // can do something about it.
+    _ = self.surface_mailbox.push(.{
+        .renderer_health = health,
+    }, .{ .forever = {} });
 }
 
 fn drawPostShader(
@@ -1155,6 +1173,7 @@ fn drawCells(
     encoder: objc.Object,
     buf: *CellBuffer,
     cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
+    resources: *const VisibleResources,
 ) !void {
     if (cells.items.len == 0) return;
 
@@ -1181,7 +1200,7 @@ fn drawCells(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            self.texture_greyscale.value,
+            resources.texture_greyscale.value,
             @as(c_ulong, 0),
         },
     );
@@ -1189,7 +1208,7 @@ fn drawCells(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            self.texture_color.value,
+            resources.texture_color.value,
             @as(c_ulong, 1),
         },
     );
@@ -2201,3 +2220,31 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 fn deinitMTLResource(obj: objc.Object) void {
     obj.msgSend(void, objc.sel("release"), .{});
 }
+
+/// VisibleResources are the resources that we only need if our view is
+/// currently visible, and can be safely released and rebuilt when we
+/// need to free up memory.
+///
+/// This is a performance optimization that makes it so that Ghostty
+/// only uses GPU resources for views that are currently visible.
+const VisibleResources = struct {
+    texture_greyscale: objc.Object, // MTLTexture
+    texture_color: objc.Object, // MTLTexture
+
+    pub fn init(m: *Metal) !VisibleResources {
+        const texture_greyscale = try initAtlasTexture(m.device, &m.font_group.atlas_greyscale);
+        errdefer deinitMTLResource(texture_greyscale);
+        const texture_color = try initAtlasTexture(m.device, &m.font_group.atlas_color);
+        errdefer deinitMTLResource(texture_color);
+
+        return .{
+            .texture_greyscale = texture_greyscale,
+            .texture_color = texture_color,
+        };
+    }
+
+    pub fn deinit(self: *VisibleResources) void {
+        deinitMTLResource(self.texture_greyscale);
+        deinitMTLResource(self.texture_color);
+    }
+};
