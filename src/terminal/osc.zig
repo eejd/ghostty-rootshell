@@ -445,8 +445,14 @@ pub const Parser = struct {
 
             .color_palette_index => switch (c) {
                 '0'...'9' => {},
-                ';' => {
-                    if (std.fmt.parseUnsigned(u8, self.buf[self.buf_start .. self.buf_idx - 1], 10)) |num| {
+                ';' => blk: {
+                    const str = self.buf[self.buf_start .. self.buf_idx - 1];
+                    if (str.len == 0) {
+                        self.state = .invalid;
+                        break :blk;
+                    }
+
+                    if (std.fmt.parseUnsigned(u8, str, 10)) |num| {
                         self.state = .color_palette_index_end;
                         self.temp_state = .{ .num = num };
                     } else |err| switch (err) {
@@ -1253,4 +1259,16 @@ test "OSC: show desktop notification with title" {
     try testing.expect(cmd == .show_desktop_notification);
     try testing.expectEqualStrings(cmd.show_desktop_notification.title, "Title");
     try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
+}
+
+test "OSC: empty param" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "4;;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b');
+    try testing.expect(cmd == null);
 }
