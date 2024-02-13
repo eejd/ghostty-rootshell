@@ -914,6 +914,9 @@ keybind: Keybinds = .{},
 /// macOS changes the way its native tab bar view is constructed or managed.
 /// This has been tested on macOS 14.
 ///
+/// For macOS 13 users: saved window state will not restore tabs correctly
+/// if this is enabled. macOS 14 does not have this issue.
+///
 /// This option only applies to new windows when changed.
 @"macos-titlebar-tabs": bool = false,
 
