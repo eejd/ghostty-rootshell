@@ -75,6 +75,16 @@ pub const LoadingImage = struct {
             log.warn("failed to decode base64 data: {}", .{err});
             return error.InvalidData;
         };
+
+        if (comptime builtin.os != .windows) {
+            if (std.mem.indexOfScalar(u8, buf[0..size], 0) == null) {
+                // std.os.realpath *asserts* that the path does not have
+                // internal nulls instead of erroring.
+                log.warn("failed to get absolute path: BadPathName", .{});
+                return error.InvalidData;
+            }
+        }
+
         var abs_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
         const path = std.os.realpath(buf[0..size], &abs_buf) catch |err| {
             log.warn("failed to get absolute path: {}", .{err});
