@@ -1486,18 +1486,50 @@ pub fn keyCallback(
         break :event copy;
     };
 
-    var data: termio.Message.WriteReq.Small.Array = undefined;
-    const seq = try enc.encode(&data);
-    if (seq.len == 0) return .ignored;
+    const write_req: termio.Message.WriteReq = req: {
+        // Try to write the input into a small array. This fits almost
+        // every scenario. Larger situations can happen due to long
+        // pre-edits.
+        var data: termio.Message.WriteReq.Small.Array = undefined;
+        if (enc.encode(&data)) |seq| {
+            // Special-case: we did nothing.
+            if (seq.len == 0) return .ignored;
 
-    _ = self.io_thread.mailbox.push(.{
-        .write_small = .{
-            .data = data,
-            .len = @intCast(seq.len),
-        },
+            break :req .{ .small = .{
+                .data = data,
+                .len = @intCast(seq.len),
+            } };
+        } else |err| switch (err) {
+            // Means we need to allocate
+            error.OutOfMemory => {},
+            else => return err,
+        }
+
+        // We need to allocate. We allocate double the UTF-8 length
+        // or double the small array size, whichever is larger. That's
+        // a heuristic that should work. The only scenario I know while
+        // typing this where we don't have enough space is a long preedit,
+        // and in that case the size we need is exactly the UTF-8 length,
+        // so the double is being safe.
+        const buf = try self.alloc.alloc(u8, @max(
+            event.utf8.len * 2,
+            data.len * 2,
+        ));
+        defer self.alloc.free(buf);
+
+        // This results in a double allocation but this is such an unlikely
+        // path the performance impact is unimportant.
+        const seq = try enc.encode(buf);
+        break :req try termio.Message.WriteReq.init(self.alloc, seq);
+    };
+
+    _ = self.io_thread.mailbox.push(switch (write_req) {
+        .small => |v| .{ .write_small = v },
+        .stable => |v| .{ .write_stable = v },
+        .alloc => |v| .{ .write_alloc = v },
     }, .{ .forever = {} });
     if (insp_ev) |*ev| {
-        ev.pty = self.alloc.dupe(u8, seq) catch |err| err: {
+        ev.pty = self.alloc.dupe(u8, write_req.slice()) catch |err| err: {
             log.warn("error copying pty data for inspector err={}", .{err});
             break :err "";
         };
