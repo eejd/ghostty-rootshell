@@ -76,8 +76,8 @@ pub const LoadingImage = struct {
             return error.InvalidData;
         };
 
-        if (comptime builtin.os != .windows) {
-            if (std.mem.indexOfScalar(u8, buf[0..size], 0) == null) {
+        if (comptime builtin.os.tag != .windows) {
+            if (std.mem.indexOfScalar(u8, buf[0..size], 0) != null) {
                 // std.os.realpath *asserts* that the path does not have
                 // internal nulls instead of erroring.
                 log.warn("failed to get absolute path: BadPathName", .{});
