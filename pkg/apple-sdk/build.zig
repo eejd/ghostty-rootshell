@@ -40,7 +40,16 @@ pub fn addPaths(b: *std.Build, m: *std.Build.Module) !void {
     }
 
     // The active SDK we want to use
-    const path = gop.value_ptr.* orelse return error.AppleSDKNotFound;
+    const path = gop.value_ptr.* orelse return switch (target.os.tag) {
+        // Return a more descriptive error. Before we just returned the
+        // generic error but this was confusing a lot of community members.
+        // It costs us nothing in the build script to return something better.
+        .macos => error.XcodeMacOSSDKNotFound,
+        .ios => error.XcodeiOSSDKNotFound,
+        .tvos => error.XcodeTVOSSDKNotFound,
+        .watchos => error.XcodeWatchOSSDKNotFound,
+        else => error.XcodeAppleSDKNotFound,
+    };
     m.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ path, "/System/Library/Frameworks" }) });
     m.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ path, "/usr/include" }) });
     m.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ path, "/usr/lib" }) });
