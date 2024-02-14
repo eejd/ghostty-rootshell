@@ -13,6 +13,11 @@ pub const Message = union(enum) {
     /// the renderer is expected to handle all of these.
     focus: bool,
 
+    /// A change in the view occlusion state. This can be used to determine
+    /// if the window is visible or not. A window can be not visible (occluded)
+    /// and still have focus.
+    visible: bool,
+
     /// Reset the cursor blink by immediately showing the cursor then
     /// restarting the timer.
     reset_cursor_blink: void,

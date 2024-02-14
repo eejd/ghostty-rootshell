@@ -82,6 +82,10 @@ flags: packed struct {
 
     /// This is true when the inspector is active.
     has_inspector: bool = false,
+
+    /// This is true when the view is visible. This is used to determine
+    /// if we should be rendering or not.
+    visible: bool = true,
 } = .{},
 
 pub const DerivedConfig = struct {
@@ -242,6 +246,23 @@ fn drainMailbox(self: *Thread) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
+            .visible => |v| {
+                // Set our visible state
+                self.flags.visible = v;
+
+                // If we became visible then we immediately trigger a draw.
+                // We don't need to update frame data because that should
+                // still be happening.
+                if (v) self.drawFrame();
+
+                // Note that we're explicitly today not stopping any
+                // cursor timers, draw timers, etc. These things have very
+                // little resource cost and properly maintaining their active
+                // state across different transitions is going to be bug-prone,
+                // so its easier to just let them keep firing and have them
+                // check the visible state themselves to control their behavior.
+            },
+
             .focus => |v| {
                 // Set it on the renderer
                 try self.renderer.setFocus(v);
@@ -341,6 +362,27 @@ fn changeConfig(self: *Thread, config: *const DerivedConfig) !void {
     self.config = config.*;
 }
 
+/// Trigger a draw. This will not update frame data or anything, it will
+/// just trigger a draw/paint.
+fn drawFrame(self: *Thread) void {
+    // If we're invisible, we do not draw.
+    if (!self.flags.visible) return;
+
+    // If we're doing single-threaded GPU calls then we just wake up the
+    // app thread to redraw at this point.
+    if (renderer.Renderer == renderer.OpenGL and
+        renderer.OpenGL.single_threaded_draw)
+    {
+        _ = self.app_mailbox.push(
+            .{ .redraw_surface = self.surface },
+            .{ .instant = {} },
+        );
+    } else {
+        self.renderer.drawFrame(self.surface) catch |err|
+            log.warn("error drawing err={}", .{err});
+    }
+}
+
 fn wakeupCallback(
     self_: ?*Thread,
     _: *xev.Loop,
@@ -388,19 +430,8 @@ fn drawCallback(
         return .disarm;
     };
 
-    // If we're doing single-threaded GPU calls then we just wake up the
-    // app thread to redraw at this point.
-    if (renderer.Renderer == renderer.OpenGL and
-        renderer.OpenGL.single_threaded_draw)
-    {
-        _ = t.app_mailbox.push(
-            .{ .redraw_surface = t.surface },
-            .{ .instant = {} },
-        );
-    } else {
-        t.renderer.drawFrame(t.surface) catch |err|
-            log.warn("error drawing err={}", .{err});
-    }
+    // Draw
+    t.drawFrame();
 
     // Only continue if we're still active
     if (t.draw_active) {
@@ -436,18 +467,8 @@ fn renderCallback(
     ) catch |err|
         log.warn("error rendering err={}", .{err});
 
-    // If we're doing single-threaded GPU calls then we also wake up the
-    // app thread to redraw at this point.
-    if (renderer.Renderer == renderer.OpenGL and
-        renderer.OpenGL.single_threaded_draw)
-    {
-        _ = t.app_mailbox.push(.{ .redraw_surface = t.surface }, .{ .instant = {} });
-        return .disarm;
-    }
-
     // Draw
-    t.renderer.drawFrame(t.surface) catch |err|
-        log.warn("error drawing err={}", .{err});
+    t.drawFrame();
 
     return .disarm;
 }
