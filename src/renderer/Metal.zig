@@ -108,6 +108,8 @@ image_text_end: u32 = 0,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
+buf_cells: CellBuffer, // Vertex buffer for cells
+buf_cells_bg: CellBuffer, // Vertex buffer for background cells
 buf_instance: InstanceBuffer, // MTLBuffer
 
 /// Metal objects
@@ -371,6 +373,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer font_shaper.deinit();
 
     // Vertex buffers
+    var buf_cells = try CellBuffer.init(device, 160 * 160);
+    errdefer buf_cells.deinit();
+    var buf_cells_bg = try CellBuffer.init(device, 160 * 160);
+    errdefer buf_cells_bg.deinit();
     var buf_instance = try InstanceBuffer.initFill(device, &.{
         0, 1, 3, // Top-left triangle
         1, 2, 3, // Bottom-right triangle
@@ -453,6 +459,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Shaders
         .shaders = shaders,
+        .buf_cells = buf_cells,
+        .buf_cells_bg = buf_cells_bg,
         .buf_instance = buf_instance,
 
         // Metal stuff
@@ -484,6 +492,8 @@ pub fn deinit(self: *Metal) void {
     }
     self.image_placements.deinit(self.alloc);
 
+    self.buf_cells_bg.deinit();
+    self.buf_cells.deinit();
     self.buf_instance.deinit();
     if (self.visible_resources) |*v| v.deinit();
     self.queue.msgSend(void, objc.sel("release"), .{});
@@ -855,13 +865,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCells(encoder, &resources.buf_cells_bg, self.cells_bg, resources);
+        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg, resources);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCells(encoder, &resources.buf_cells, self.cells, resources);
+        try self.drawCells(encoder, &self.buf_cells, self.cells, resources);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -2218,33 +2228,22 @@ fn deinitMTLResource(obj: objc.Object) void {
 /// This is a performance optimization that makes it so that Ghostty
 /// only uses GPU resources for views that are currently visible.
 const VisibleResources = struct {
-    buf_cells: CellBuffer, // Vertex buffer for cells
-    buf_cells_bg: CellBuffer, // Vertex buffer for background cells
     texture_greyscale: objc.Object, // MTLTexture
     texture_color: objc.Object, // MTLTexture
 
     pub fn init(m: *Metal) !VisibleResources {
-        var buf_cells = try CellBuffer.init(m.device, 160 * 160);
-        errdefer buf_cells.deinit();
-        var buf_cells_bg = try CellBuffer.init(m.device, 160 * 160);
-        errdefer buf_cells_bg.deinit();
-
         const texture_greyscale = try initAtlasTexture(m.device, &m.font_group.atlas_greyscale);
         errdefer deinitMTLResource(texture_greyscale);
         const texture_color = try initAtlasTexture(m.device, &m.font_group.atlas_color);
         errdefer deinitMTLResource(texture_color);
 
         return .{
-            .buf_cells = buf_cells,
-            .buf_cells_bg = buf_cells_bg,
             .texture_greyscale = texture_greyscale,
             .texture_color = texture_color,
         };
     }
 
     pub fn deinit(self: *VisibleResources) void {
-        self.buf_cells.deinit();
-        self.buf_cells_bg.deinit();
         deinitMTLResource(self.texture_greyscale);
         deinitMTLResource(self.texture_color);
     }
