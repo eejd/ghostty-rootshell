@@ -106,6 +106,10 @@ image_placements: ImagePlacementList = .{},
 image_bg_end: u32 = 0,
 image_text_end: u32 = 0,
 
+/// Metal state
+shaders: Shaders, // Compiled shaders
+buf_instance: InstanceBuffer, // MTLBuffer
+
 /// Metal objects
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
@@ -259,6 +263,10 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 }
 
 pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
     const ViewInfo = struct {
         view: objc.Object,
         scaleFactor: f64,
@@ -362,9 +370,26 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     });
     errdefer font_shaper.deinit();
 
+    // Vertex buffers
+    var buf_instance = try InstanceBuffer.initFill(device, &.{
+        0, 1, 3, // Top-left triangle
+        1, 2, 3, // Bottom-right triangle
+    });
+    errdefer buf_instance.deinit();
+
+    // Load our custom shaders
+    const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+        arena_alloc,
+        options.config.custom_shaders.items,
+        .msl,
+    ) catch |err| err: {
+        log.warn("error loading custom shaders err={}", .{err});
+        break :err &.{};
+    };
+
     // If we have custom shaders then setup our state
     var custom_shader_state: ?CustomShaderState = state: {
-        if (options.config.custom_shaders.items.len == 0) break :state null;
+        if (custom_shaders.len == 0) break :state null;
 
         // Build our sampler for our texture
         var sampler = try mtl_sampler.Sampler.init(device);
@@ -394,6 +419,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
     errdefer if (custom_shader_state) |*state| state.deinit();
 
+    // Initialize our shaders
+    var shaders = try Shaders.init(alloc, device, custom_shaders);
+    errdefer shaders.deinit(alloc);
+
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -421,6 +450,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         // Fonts
         .font_group = options.font_group,
         .font_shaper = font_shaper,
+
+        // Shaders
+        .shaders = shaders,
+        .buf_instance = buf_instance,
 
         // Metal stuff
         .device = device,
@@ -451,9 +484,13 @@ pub fn deinit(self: *Metal) void {
     }
     self.image_placements.deinit(self.alloc);
 
-    if (self.custom_shader_state) |*state| state.deinit();
-    if (self.visible_resources) |*v| v.deinit(self.alloc);
+    self.buf_instance.deinit();
+    if (self.visible_resources) |*v| v.deinit();
     self.queue.msgSend(void, objc.sel("release"), .{});
+
+    if (self.custom_shader_state) |*state| state.deinit();
+
+    self.shaders.deinit(self.alloc);
 
     self.* = undefined;
 }
@@ -815,19 +852,19 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
         // Draw background images first
-        try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end], resources);
+        try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
         try self.drawCells(encoder, &resources.buf_cells_bg, self.cells_bg, resources);
 
         // Then draw images under text
-        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end], resources);
+        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
         try self.drawCells(encoder, &resources.buf_cells, self.cells, resources);
 
         // Then draw remaining images
-        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..], resources);
+        try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
     }
 
     // If we have custom shaders AND we have a screen texture, then we
@@ -878,7 +915,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
 
-        for (resources.shaders.post_pipelines) |pipeline| {
+        for (self.shaders.post_pipelines) |pipeline| {
             try self.drawPostShader(encoder, pipeline, &state);
         }
     }
@@ -1000,7 +1037,6 @@ fn drawImagePlacements(
     self: *Metal,
     encoder: objc.Object,
     placements: []const mtl_image.Placement,
-    resources: *const VisibleResources,
 ) !void {
     if (placements.len == 0) return;
 
@@ -1008,7 +1044,7 @@ fn drawImagePlacements(
     encoder.msgSend(
         void,
         objc.sel("setRenderPipelineState:"),
-        .{resources.shaders.image_pipeline.value},
+        .{self.shaders.image_pipeline.value},
     );
 
     // Set our uniform, which is the only shared buffer
@@ -1023,7 +1059,7 @@ fn drawImagePlacements(
     );
 
     for (placements) |placement| {
-        try self.drawImagePlacement(encoder, placement, resources);
+        try self.drawImagePlacement(encoder, placement);
     }
 }
 
@@ -1031,7 +1067,6 @@ fn drawImagePlacement(
     self: *Metal,
     encoder: objc.Object,
     p: mtl_image.Placement,
-    resources: *const VisibleResources,
 ) !void {
     // Look up the image
     const image = self.images.get(p.image_id) orelse {
@@ -1109,7 +1144,7 @@ fn drawImagePlacement(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            resources.buf_instance.buffer.value,
+            self.buf_instance.buffer.value,
             @as(c_ulong, 0),
             @as(c_ulong, 1),
         },
@@ -1138,7 +1173,7 @@ fn drawCells(
     encoder.msgSend(
         void,
         objc.sel("setRenderPipelineState:"),
-        .{resources.shaders.cell_pipeline.value},
+        .{self.shaders.cell_pipeline.value},
     );
 
     // Set our buffers
@@ -1180,7 +1215,7 @@ fn drawCells(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            resources.buf_instance.buffer.value,
+            self.buf_instance.buffer.value,
             @as(c_ulong, 0),
             @as(c_ulong, cells.items.len),
         },
@@ -2183,65 +2218,34 @@ fn deinitMTLResource(obj: objc.Object) void {
 /// This is a performance optimization that makes it so that Ghostty
 /// only uses GPU resources for views that are currently visible.
 const VisibleResources = struct {
-    shaders: Shaders, // Compiled shaders
     buf_cells: CellBuffer, // Vertex buffer for cells
     buf_cells_bg: CellBuffer, // Vertex buffer for background cells
-    buf_instance: InstanceBuffer, // MTLBuffer
     texture_greyscale: objc.Object, // MTLTexture
     texture_color: objc.Object, // MTLTexture
 
     pub fn init(m: *Metal) !VisibleResources {
-        var arena = ArenaAllocator.init(m.alloc);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-
-        // Load our custom shaders
-        const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
-            arena_alloc,
-            m.config.custom_shaders.items,
-            .msl,
-        ) catch |err| err: {
-            log.warn("error loading custom shaders err={}", .{err});
-            break :err &.{};
-        };
-
-        // Shaders
-        var shaders = try Shaders.init(m.alloc, m.device, custom_shaders);
-        errdefer shaders.deinit(m.alloc);
-
-        // Buffers
         var buf_cells = try CellBuffer.init(m.device, 160 * 160);
         errdefer buf_cells.deinit();
         var buf_cells_bg = try CellBuffer.init(m.device, 160 * 160);
         errdefer buf_cells_bg.deinit();
-        var buf_instance = try InstanceBuffer.initFill(m.device, &.{
-            0, 1, 3, // Top-left triangle
-            1, 2, 3, // Bottom-right triangle
-        });
-        errdefer buf_instance.deinit();
 
-        // Textures
         const texture_greyscale = try initAtlasTexture(m.device, &m.font_group.atlas_greyscale);
         errdefer deinitMTLResource(texture_greyscale);
         const texture_color = try initAtlasTexture(m.device, &m.font_group.atlas_color);
         errdefer deinitMTLResource(texture_color);
 
         return .{
-            .shaders = shaders,
             .buf_cells = buf_cells,
             .buf_cells_bg = buf_cells_bg,
-            .buf_instance = buf_instance,
             .texture_greyscale = texture_greyscale,
             .texture_color = texture_color,
         };
     }
 
-    pub fn deinit(self: *VisibleResources, alloc: Allocator) void {
+    pub fn deinit(self: *VisibleResources) void {
         self.buf_cells.deinit();
         self.buf_cells_bg.deinit();
-        self.buf_instance.deinit();
         deinitMTLResource(self.texture_greyscale);
         deinitMTLResource(self.texture_color);
-        self.shaders.deinit(alloc);
     }
 };
