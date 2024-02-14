@@ -433,7 +433,8 @@ expand this to other platforms.
 To build Ghostty, you need [Zig](https://ziglang.org/) installed.
 
 On Linux, you may need to install additional dependencies. See
-[Linux Installation Tips](#linux-installation-tips).
+[Linux Installation Tips](#linux-installation-tips). On macOS, you
+need Xcode installed with the macOS and iOS SDKs enabled.
 
 The official development environment is defined by Nix. You do not need
 to use Nix to develop Ghostty, but the Nix environment is the environment
