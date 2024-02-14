@@ -509,6 +509,19 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
     self.focused = focus;
 }
 
+/// Callback when the view visibility changes, i.e. if a window is on
+/// another workspace, behind a window, etc.
+pub fn setVisible(self: *Metal, visible: bool) !void {
+    //if (true) return;
+    if (!visible) {
+        if (self.visible_resources) |*v| {
+            log.debug("view occluded, deallocating GPU resources", .{});
+            v.deinit(self.alloc);
+            self.visible_resources = null;
+        }
+    }
+}
+
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
@@ -712,6 +725,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // Get our cached resources. If we don't have them, then we need to
     // create them. If we fail to create them, mark the renderer as unhealthy.
     const resources: *VisibleResources = if (self.visible_resources) |*v| v else resources: {
+        log.debug("view is visible, allocating GPU resources", .{});
         const resources = VisibleResources.init(self) catch |err| {
             self.setHealth(.unhealthy);
             return err;
@@ -2225,6 +2239,10 @@ const VisibleResources = struct {
         errdefer deinitMTLResource(texture_greyscale);
         const texture_color = try initAtlasTexture(m.device, &m.font_group.atlas_color);
         errdefer deinitMTLResource(texture_color);
+
+        // Mark our atlas as modified so the textures are synced
+        m.font_group.atlas_greyscale.modified = true;
+        m.font_group.atlas_color.modified = true;
 
         return .{
             .shaders = shaders,

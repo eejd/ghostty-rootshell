@@ -250,6 +250,9 @@ fn drainMailbox(self: *Thread) !void {
                 // Set our visible state
                 self.flags.visible = v;
 
+                // Set it on the renderer
+                try self.renderer.setVisible(v);
+
                 // If we became visible then we immediately trigger a draw.
                 // We don't need to update frame data because that should
                 // still be happening.
