@@ -254,10 +254,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Center the window to start, we'll move the window frame automatically
         // when cascading.
         window.center()
-        
+
         // Set the background color of the window
         window.backgroundColor = NSColor(ghostty.config.backgroundColor)
-        
+
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
@@ -269,7 +269,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 window.tabbingMode = .automatic
             }
         }
-        
+
         // Set a custom background on the titlebar - this is required for when
         // titlebar tabs is used in conjunction with a transparent background.
         window.setTitlebarBackground(
@@ -278,7 +278,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 .withAlphaComponent(ghostty.config.backgroundOpacity)
                 .cgColor
         )
-        
+
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
