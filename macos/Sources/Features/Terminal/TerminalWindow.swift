@@ -16,12 +16,18 @@ class TerminalWindow: NSWindow {
         }
         
         super.becomeKey()
-        updateNewTabButtonOpacity()
+
+        if titlebarTabs {
+            updateNewTabButtonOpacity()
+        }
     }
 
     override func resignKey() {
         super.resignKey()
-        updateNewTabButtonOpacity()
+
+        if titlebarTabs {
+            updateNewTabButtonOpacity()
+        }
     }
 
     // MARK: - Titlebar Tabs
@@ -210,6 +216,8 @@ class TerminalWindow: NSWindow {
 
     override func update() {
         super.update()
+
+        guard titlebarTabs else { return }
 
         // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
         // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
