@@ -271,7 +271,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
 
         // Set a custom background on the titlebar - this is required for when
-        // titlebar tabs is used in conjunction with a transparent background.
+        // titlebar tabs are used in conjunction with a transparent background.
         window.setTitlebarBackground(
             window
                 .backgroundColor
