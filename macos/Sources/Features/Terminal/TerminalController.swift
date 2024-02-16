@@ -3,6 +3,31 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
+fileprivate class ZoomButtonView: NSView {
+    let target: Any
+    let action: Selector
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    init(frame frameRect: NSRect, target: Any, selector: Selector) {
+        self.target = target
+        self.action = selector
+
+        super.init(frame: frameRect)
+
+        let zoomButton = NSButton(image: NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!, target: target, action: selector)
+
+        zoomButton.frame = bounds
+        zoomButton.isBordered = false
+        zoomButton.contentTintColor = .systemBlue
+        zoomButton.state = .on
+        zoomButton.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(zoomButton)
+    }
+}
+
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
 class TerminalController: NSWindowController, NSWindowDelegate, 
                           TerminalViewDelegate, TerminalViewModel,
@@ -54,8 +79,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// This is set to false by init if the window managed by this controller should not be restorable.
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
-    
-    init(_ ghostty: Ghostty.App, 
+
+    private var surfaceIsZoomed: Bool = false
+
+    init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
     ) {
@@ -120,13 +147,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     func relabelTabs() {
         // Reset this to false. It'll be set back to true later.
         tabListenForFrame = false
-        
+
         guard let windows = self.window?.tabbedWindows else { return }
         
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
-        
+
         for (index, window) in windows.enumerated().prefix(9) {
             let action = "goto_tab:\(index + 1)"
             guard let equiv = ghostty.config.keyEquivalent(for: action) else {
@@ -141,10 +168,25 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             let text = NSTextField(labelWithAttributedString: attributedString)
             text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
             text.postsFrameChangedNotifications = true
-            window.tab.accessoryView = text
+
+            let stackView = NSStackView(views: [text])
+//            stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+
+            window.tab.accessoryView = stackView
+        }
+
+        if surfaceIsZoomed {
+            guard let stackView = window?.tabGroup?.selectedWindow?.tab.accessoryView as? NSStackView else { return }
+            
+            var zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
+            
+            zoomButton.translatesAutoresizingMaskIntoConstraints = false
+            zoomButton.widthAnchor.constraint(equalToConstant: 20).isActive = true
+            zoomButton.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            stackView.addArrangedSubview(zoomButton)
         }
     }
-    
+
     private func fixTabBar() {
         // We do this to make sure that the tab bar will always re-composite. If we don't,
         // then the it will "drag" pieces of the background with it when a transparent
@@ -200,7 +242,17 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             leaf.surface.focusDidChange(focused)
         }
     }
-    
+
+    func windowDidUpdate(_ notification: Notification) {
+        updateToolbarZoomButton()
+    }
+
+    private func updateToolbarZoomButton() {
+        guard let itemView = window?.toolbar?.items.last?.view as? ZoomButtonView else { return }
+
+        itemView.alphaValue = surfaceIsZoomed ? 1 : 0
+    }
+
     //MARK: - NSWindowController
     
     override func windowWillLoad() {
@@ -305,6 +357,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 window.tabGroup?.removeWindow(window)
             }
         }
+
+        guard let toolbarZoomItem = window.toolbar?.items.last else { return }
+        var zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
+
+        toolbarZoomItem.view = zoomButton
     }
     
     // Shows the "+" button in the tab bar, responds to that click.
@@ -594,7 +651,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // we want to invalidate our state.
         invalidateRestorableState()
     }
-    
+
+    func zoomStateDidChange(to: Bool) {
+        self.surfaceIsZoomed = to
+        updateToolbarZoomButton()
+        relabelTabs()
+    }
+
     //MARK: - Clipboard Confirmation
     
     func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {

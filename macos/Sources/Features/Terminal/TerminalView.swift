@@ -17,6 +17,8 @@ protocol TerminalViewDelegate: AnyObject {
     /// The surface tree did change in some way, i.e. a split was added, removed, etc. This is
     /// not called initially.
     func surfaceTreeDidChange()
+
+    func zoomStateDidChange(to: Bool)
 }
 
 // Default all the functions so they're optional
@@ -24,6 +26,7 @@ extension TerminalViewDelegate {
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
     func titleDidChange(to: String) {}
     func cellSizeDidChange(to: NSSize) {}
+    func zoomStateDidChange(to: Bool) {}
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -64,12 +67,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             }
         }
         
-        if let zoomedSplit = zoomedSplit {
-            if zoomedSplit {
-                title = "🔍 " + title
-            }
-        }
-        
         return title
     }
     
@@ -106,6 +103,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         // ANY CHANGE within the deeply nested surface tree -- detecting a change
                         // in the hash value.
                         self.delegate?.surfaceTreeDidChange()
+                    }
+                    .onChange(of: zoomedSplit) { newValue in
+                        self.delegate?.zoomStateDidChange(to: newValue ?? false)
                     }
             }
         }
