@@ -542,6 +542,9 @@ class: ?[:0]const u8 = null,
 ///   * `esc:text` - Send an escape sequence. i.e. `esc:d` deletes to the
 ///     end of the word to the right.
 ///
+///   * `text:text` - Send a string. Uses Zig string literal syntax.
+///     i.e. `text:\x15` sends Ctrl-U.
+///
 /// Some notes for the action:
 ///
 ///   * The parameter is taken as-is after the `:`. Double quotes or
