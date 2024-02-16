@@ -50,8 +50,9 @@ pub const BuildConfig = struct {
         step.addOption(bool, "wasm_shared", self.wasm_shared);
 
         // Our version. We also add the string version so we don't need
-        // to do any allocations at runtime.
-        var buf: [64]u8 = undefined;
+        // to do any allocations at runtime. This has to be long enough to
+        // accomodate realistic large branch names for dev versions.
+        var buf: [1024]u8 = undefined;
         step.addOption(std.SemanticVersion, "app_version", self.version);
         step.addOption([:0]const u8, "app_version_string", try std.fmt.bufPrintZ(
             &buf,
