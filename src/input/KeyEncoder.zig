@@ -519,21 +519,39 @@ fn ctrlSeq(
         // logic separately.
         unset_mods.alt = false;
 
-        // Remove shift because shifted characters are allowed to send
-        // control sequences. i.e. ctrl+A == ctrl+a
-        if (unset_mods.shift) shift: {
+        // Remove shift if we have something outside of the US letter
+        // range. This is so that characters such as `ctrl+shift+-`
+        // generate the correct ctrl-seq (used by emacs).
+        if (unset_mods.shift and (char < 'A' or char > 'Z')) shift: {
             // Special case for fixterms awkward case as specified.
             if (char == '@') break :shift;
             unset_mods.shift = false;
         }
 
         // If the character is uppercase, we convert it to lowercase. We
-        // rely on the unshifted codepoint to do this.
+        // rely on the unshifted codepoint to do this. This handles
+        // the scenario where we have caps lock pressed. Note that
+        // shifted characters are handled above, if we are just pressing
+        // shift then the ctrl-only check will fail later and we won't
+        // ctrl-seq encode.
         if (char >= 'A' and char <= 'Z' and unshifted_codepoint > 0) {
             if (std.math.cast(u8, unshifted_codepoint)) |byte| {
                 char = byte;
             }
         }
+
+        // An additional note on caps lock and shift interaction.
+        // If we have caps lock set and an ASCII letter is pressed,
+        // we lowercase it (above). If we have only control pressed,
+        // we process it as a ctrl seq. For example ctrl+M with caps
+        // lock but no shift will encode as 0x0D.
+        //
+        // But, if you press ctrl+shift+m, this will not encode as a
+        // ctrl-seq and falls through to CSIu encoding. This lets programs
+        // detect the difference between ctrl+M and ctrl+shift+M. This
+        // diverges from the fixterms "spec" and most terminals. This
+        // only matches Kitty in behavior. But I believe this is a
+        // justified divergence because it's a useful distinction.
 
         break :unset_mods .{ char, unset_mods.binding() };
     };
@@ -1931,7 +1949,7 @@ test "ctrlseq: caps ascii letter" {
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
 
-test "ctrlseq: shifted ascii letter" {
-    const seq = ctrlSeq("C", 'c', .{ .ctrl = true, .shift = true });
-    try testing.expectEqual(@as(u8, 0x03), seq.?);
+test "ctrlseq: shift does not generate ctrl seq" {
+    try testing.expect(ctrlSeq("C", 'c', .{ .shift = true }) == null);
+    try testing.expect(ctrlSeq("C", 'c', .{ .shift = true, .ctrl = true }) == null);
 }
