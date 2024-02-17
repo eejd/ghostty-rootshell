@@ -213,8 +213,8 @@ const c = @cImport({
 
 /// A named theme to use. The available themes are currently hardcoded to the
 /// themes that ship with Ghostty. On macOS, this list is in the `Ghostty.app/
-/// Contents/Resources/themes` directory. On Linux, this list is in the `share/
-/// ghostty/themes` directory (wherever you installed the Ghostty "share"
+/// Contents/Resources/ghostty/themes` directory. On Linux, this list is in the 
+/// `share/ghostty/themes` directory (wherever you installed the Ghostty "share"
 /// directory.
 ///
 /// To see a list of available themes, run `ghostty +list-themes`.
