@@ -341,23 +341,36 @@ fn legacy(
         // effective mods. The fixterms spec states the shifted chars
         // should be sent uppercase but Kitty changes that behavior
         // so we'll send all the mods.
-        const csi_u_mods = mods: {
+        const csi_u_mods, const char = mods: {
+            var char: u21 = @intCast(utf8[0]);
             var mods = CsiUMods.fromInput(self.event.mods);
+
+            // If our character is A to Z and we have shift set, then
+            // we lowercase it. This is a Kitty-specific behavior that
+            // we choose to follow and diverge from the fixterms spec.
+            // This makes it easier for programs to detect shifted letters
+            // for keybindings and is not just theoretical but used by
+            // real programs.
+            if (char >= 'A' and char <= 'Z' and mods.shift) {
+                // We want to rely on apprt to send us the correct
+                // unshifted codepoint...
+                char = @intCast(std.ascii.toLower(@intCast(char)));
+            }
 
             // If our unshifted codepoint is identical to the shifted
             // then we consider shift. Otherwise, we do not because the
             // shift key was used to obtain the character. This is specified
             // by fixterms.
-            if (self.event.unshifted_codepoint != @as(u21, @intCast(utf8[0]))) {
+            if (self.event.unshifted_codepoint != char) {
                 mods.shift = false;
             }
 
-            break :mods mods;
+            break :mods .{ mods, char };
         };
         const result = try std.fmt.bufPrint(
             buf,
             "\x1B[{};{}u",
-            .{ utf8[0], csi_u_mods.seqInt() },
+            .{ char, csi_u_mods.seqInt() },
         );
         // std.log.warn("CSI_U: {s}", .{result});
         return result;
@@ -1747,6 +1760,22 @@ test "legacy: fixterm awkward letters" {
         } };
         const actual = try enc.legacy(&buf);
         try testing.expectEqualStrings("\x1b[64;5u", actual);
+    }
+}
+
+// These tests apply Kitty's behavior to CSIu where ctrl+shift+letter
+// is sent as the unshifted letter with the shift modifier present.
+test "legacy: ctrl+shift+letter ascii" {
+    var buf: [128]u8 = undefined;
+    {
+        var enc: KeyEncoder = .{ .event = .{
+            .key = .m,
+            .mods = .{ .ctrl = true, .shift = true },
+            .utf8 = "M",
+            .unshifted_codepoint = 'm',
+        } };
+        const actual = try enc.legacy(&buf);
+        try testing.expectEqualStrings("\x1b[109;6u", actual);
     }
 }
 
