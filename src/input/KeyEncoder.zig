@@ -50,8 +50,20 @@ fn kitty(
     if (self.kitty_flags.int() == 0) return try self.legacy(buf);
 
     // We only processed "press" events unless report events is active
-    if (self.event.action == .release and !self.kitty_flags.report_events)
-        return "";
+    if (self.event.action == .release) {
+        if (!self.kitty_flags.report_events) {
+            return "";
+        }
+
+        // Enter, backspace, and tab do not report release events unless "report
+        // all" is set
+        if (!self.kitty_flags.report_all) {
+            switch (self.event.key) {
+                .enter, .backspace, .tab => return "",
+                else => {},
+            }
+        }
+    }
 
     const all_mods = self.event.mods;
     const effective_mods = self.event.effectiveMods();
@@ -1062,6 +1074,70 @@ test "kitty: enter, backspace, tab" {
         };
         const actual = try enc.kitty(&buf);
         try testing.expectEqualStrings("\t", actual);
+    }
+
+    // No release events if "report_all" is not set
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .enter, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true, .report_events = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .backspace, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true, .report_events = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .tab, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{ .disambiguate = true, .report_events = true },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("", actual);
+    }
+
+    // Release events if "report_all" is set
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .enter, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{
+                .disambiguate = true,
+                .report_events = true,
+                .report_all = true,
+            },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[13;1:3u", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .backspace, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{
+                .disambiguate = true,
+                .report_events = true,
+                .report_all = true,
+            },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[127;1:3u", actual);
+    }
+    {
+        var enc: KeyEncoder = .{
+            .event = .{ .action = .release, .key = .tab, .mods = .{}, .utf8 = "" },
+            .kitty_flags = .{
+                .disambiguate = true,
+                .report_events = true,
+                .report_all = true,
+            },
+        };
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[9;1:3u", actual);
     }
 }
 
