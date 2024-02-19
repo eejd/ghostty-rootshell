@@ -259,6 +259,9 @@ pub const ImageStorage = struct {
                         if (v.delete) self.deleteIfUnused(alloc, img.id);
                     }
                 }
+
+                // Mark dirty to force redraw
+                self.dirty = true;
             },
 
             .row => |v| {
@@ -274,6 +277,9 @@ pub const ImageStorage = struct {
                         if (v.delete) self.deleteIfUnused(alloc, img.id);
                     }
                 }
+
+                // Mark dirty to force redraw
+                self.dirty = true;
             },
 
             .z => |v| {
@@ -285,6 +291,9 @@ pub const ImageStorage = struct {
                         if (v.delete) self.deleteIfUnused(alloc, image_id);
                     }
                 }
+
+                // Mark dirty to force redraw
+                self.dirty = true;
             },
 
             // We don't support animation frames yet so they are successfully
@@ -318,6 +327,9 @@ pub const ImageStorage = struct {
         // If this is specified, then we also delete the image
         // if it is no longer in use.
         if (delete_unused) self.deleteIfUnused(alloc, image_id);
+
+        // Mark dirty to force redraw
+        self.dirty = true;
     }
 
     /// Delete an image if it is unused.
@@ -357,6 +369,9 @@ pub const ImageStorage = struct {
                 if (delete_unused) self.deleteIfUnused(alloc, img.id);
             }
         }
+
+        // Mark dirty to force redraw
+        self.dirty = true;
     }
 
     /// Evict image to make space. This will evict the oldest image,
@@ -581,6 +596,7 @@ test "storage: delete all placements and images" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .all = true });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.images.count());
@@ -602,6 +618,7 @@ test "storage: delete all placements and images preserves limit" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .all = true });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.images.count());
@@ -623,6 +640,7 @@ test "storage: delete all placements" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .all = false });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.placements.count());
@@ -643,6 +661,7 @@ test "storage: delete all placements by image id" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .id = .{ .image_id = 2 } });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
@@ -663,6 +682,7 @@ test "storage: delete all placements by image id and unused images" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .id = .{ .delete = true, .image_id = 2 } });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
@@ -684,6 +704,7 @@ test "storage: delete placement by specific id" {
     try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 1, .y = 1 } });
     try s.addPlacement(alloc, 2, 1, .{ .point = .{ .x = 1, .y = 1 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .id = .{
         .delete = true,
         .image_id = 1,
@@ -712,6 +733,7 @@ test "storage: delete intersecting cursor" {
     t.screen.cursor.x = 12;
     t.screen.cursor.y = 12;
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .intersect_cursor = false });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
@@ -742,6 +764,7 @@ test "storage: delete intersecting cursor plus unused" {
     t.screen.cursor.x = 12;
     t.screen.cursor.y = 12;
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .intersect_cursor = true });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 1), s.placements.count());
@@ -772,6 +795,7 @@ test "storage: delete intersecting cursor hits multiple" {
     t.screen.cursor.x = 26;
     t.screen.cursor.y = 26;
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .intersect_cursor = true });
     try testing.expect(s.dirty);
     try testing.expectEqual(@as(usize, 0), s.placements.count());
@@ -793,6 +817,7 @@ test "storage: delete by column" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
     try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .column = .{
         .delete = false,
         .x = 60,
@@ -823,6 +848,7 @@ test "storage: delete by row" {
     try s.addPlacement(alloc, 1, 1, .{ .point = .{ .x = 0, .y = 0 } });
     try s.addPlacement(alloc, 1, 2, .{ .point = .{ .x = 25, .y = 25 } });
 
+    s.dirty = false;
     s.delete(alloc, &t, .{ .row = .{
         .delete = false,
         .y = 60,
