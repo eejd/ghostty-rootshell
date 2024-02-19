@@ -178,7 +178,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         if surfaceIsZoomed {
             guard let stackView = window?.tabGroup?.selectedWindow?.tab.accessoryView as? NSStackView else { return }
             
-            var zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
+            let zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
             
             zoomButton.translatesAutoresizingMaskIntoConstraints = false
             zoomButton.widthAnchor.constraint(equalToConstant: 20).isActive = true
@@ -250,7 +250,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     private func updateToolbarZoomButton() {
         guard let itemView = window?.toolbar?.items.last?.view as? ZoomButtonView else { return }
 
-        itemView.alphaValue = surfaceIsZoomed ? 1 : 0
+        itemView.isHidden = !surfaceIsZoomed
     }
 
     //MARK: - NSWindowController
