@@ -346,11 +346,7 @@ pub const LoadingImage = struct {
     fn decompressZlib(self: *LoadingImage, alloc: Allocator) !void {
         // Open our zlib stream
         var fbs = std.io.fixedBufferStream(self.data.items);
-        var stream = std.compress.zlib.decompressStream(alloc, fbs.reader()) catch |err| {
-            log.warn("zlib decompression failed: {}", .{err});
-            return error.DecompressionFailed;
-        };
-        defer stream.deinit();
+        var stream = std.compress.zlib.decompressor(fbs.reader());
 
         // Write it to an array list
         var list = std.ArrayList(u8).init(alloc);
