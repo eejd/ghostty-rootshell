@@ -155,6 +155,7 @@ pub const Action = union(enum) {
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,
+    paste_from_selection: void,
 
     /// Increase/decrease the font size by a certain amount.
     increase_font_size: u16,
