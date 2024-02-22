@@ -40,8 +40,7 @@ pub const ghostty: Source = .{
         .{ .name = "bce", .value = .{ .boolean = {} } },
 
         // terminal can change color definitions, i.e. we can change the color
-        // palette. TODO: this may require implementing CSI 4 which we don't
-        // at the time of writing this comment.
+        // palette.
         .{ .name = "ccc", .value = .{ .boolean = {} } },
 
         // supports changing the window title.
