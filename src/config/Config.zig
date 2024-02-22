@@ -213,7 +213,7 @@ const c = @cImport({
 
 /// A named theme to use. The available themes are currently hardcoded to the
 /// themes that ship with Ghostty. On macOS, this list is in the `Ghostty.app/
-/// Contents/Resources/ghostty/themes` directory. On Linux, this list is in the 
+/// Contents/Resources/ghostty/themes` directory. On Linux, this list is in the
 /// `share/ghostty/themes` directory (wherever you installed the Ghostty "share"
 /// directory.
 ///
@@ -1066,6 +1066,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .v, .mods = mods },
             .{ .paste_from_clipboard = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .insert, .mods = .{ .shift = true } },
+            .{ .paste_from_selection = {} },
         );
     }
 

@@ -3052,6 +3052,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .{ .paste = {} },
         ),
 
+        .paste_from_selection => try self.startClipboardRequest(
+            .selection,
+            .{ .paste = {} },
+        ),
+
         .increase_font_size => |delta| {
             log.debug("increase font size={}", .{delta});
 
