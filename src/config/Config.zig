@@ -1067,11 +1067,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .v, .mods = mods },
             .{ .paste_from_clipboard = {} },
         );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .insert, .mods = .{ .shift = true } },
-            .{ .paste_from_selection = {} },
-        );
     }
 
     // Fonts
@@ -1264,6 +1259,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .a, .mods = .{ .shift = true, .ctrl = true } },
             .{ .select_all = {} },
+        );
+
+        // Selection clipboard paste
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .insert, .mods = .{ .shift = true } },
+            .{ .paste_from_selection = {} },
         );
     }
     {
