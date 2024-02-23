@@ -1,6 +1,9 @@
 import Cocoa
 
 class TerminalWindow: NSWindow {
+    @objc dynamic var surfaceIsZoomed: Bool = false
+    @objc dynamic var keyEquivalent: String = ""
+
     var titlebarOpacity: CGFloat = 1 {
         didSet {
             guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
@@ -12,15 +15,97 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    private var unZoomToolbarButton: NSButton? {
+        guard let button = toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view?.subviews.first as? NSButton
+        else { return nil }
+
+        return button
+    }
+
+    private let unZoomTabButton: NSButton = {
+        let button = NSButton()
+        button.target = nil
+        button.action = #selector(TerminalController.splitZoom(_:))
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        button.isBordered = false
+        button.contentTintColor = .controlAccentColor
+        button.state = .on
+        button.image = NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(scale: .large))
+
+        return button
+    }()
+
+    private lazy var keyEquivalentLabel: NSTextField = {
+        let label = NSTextField(labelWithAttributedString: NSAttributedString())
+        label.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
+        label.postsFrameChangedNotifications = true
+
+        return label
+    }()
+
+    private lazy var bindings = [
+        observe(\.surfaceIsZoomed, options: [.initial, .new]) { [weak self] window, _ in
+            guard let unZoomToolbarButton = self?.unZoomToolbarButton, let tabGroup = self?.tabGroup else { return }
+
+            self?.unZoomTabButton.isHidden = !window.surfaceIsZoomed
+            self?.updateUnZoomToolbarButtonVisibility()
+        },
+
+        observe(\.keyEquivalent, options: [.initial, .new]) { [weak self] window, _ in
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            ]
+            let attributedString = NSAttributedString(string: " \(window.keyEquivalent) ", attributes: attributes)
+
+            self?.keyEquivalentLabel.attributedStringValue = attributedString
+        },
+    ]
+
     // Both of these must be true for windows without decorations to be able to
     // still become key/main and receive events.
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return true }
-    
+
+    // MARK: - Lifecycle
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+
+        // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
+        // background color to show through. If we were to set `titlebarAppearsTransparent` to true
+        // the selected tab would look fine, but the unselected ones and new tab button backgrounds
+        // would be an opaque color. When the titlebar isn't transparent, however, the system applies
+        // a compositing effect to the unselected tab backgrounds, which makes them blend with the
+        // titlebar's/window's background.
+        if let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }), let effectView = titlebarContainer.descendants(withClassName: "NSVisualEffectView").first {
+            effectView.isHidden = true
+        }
+
+        // Create the tab accessory view that houses the key-equivalent label and optional un-zoom button
+        let stackView = NSStackView(views: [keyEquivalentLabel, unZoomTabButton])
+        stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        stackView.spacing = 3
+        tab.accessoryView = stackView
+
+        generateToolbar()
+
+        _ = bindings
+    }
+
+    deinit {
+        bindings.forEach() { $0.invalidate() }
+    }
+
     // MARK: - NSWindow
     
     override func becomeKey() {
-        // This is required because the removeTitlebarAccessoryViewControlle hook does not
+        // This is required because the removeTitlebarAccessoryViewController hook does not
         // catch the creation of a new window by "tearing off" a tab from a tabbed window.
         if let tabGroup = self.tabGroup, tabGroup.windows.count < 2 {
             hideCustomTabBarViews()
@@ -28,17 +113,99 @@ class TerminalWindow: NSWindow {
         
         super.becomeKey()
 
-        if titlebarTabs {
-            updateNewTabButtonOpacity()
-        }
+        updateNewTabButtonOpacity()
+        unZoomTabButton.isEnabled = true
+        unZoomTabButton.contentTintColor = .controlAccentColor
+        unZoomToolbarButton?.contentTintColor = .controlAccentColor
     }
 
     override func resignKey() {
         super.resignKey()
 
-        if titlebarTabs {
-            updateNewTabButtonOpacity()
+        updateNewTabButtonOpacity()
+        unZoomTabButton.isEnabled = false
+        unZoomTabButton.contentTintColor = .labelColor
+        unZoomToolbarButton?.contentTintColor = .tertiaryLabelColor
+    }
+
+    override func update() {
+        super.update()
+
+        updateUnZoomToolbarButtonVisibility()
+
+        titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
+
+        // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
+        // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
+        // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
+        // color as the background of unselected tabs.
+        if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self), titlebarTabs {
+            windowButtonsBackdrop?.isHighlighted = index == 0
         }
+
+        // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
+        // just as it does in the stock tab bar.
+        updateNewTabButtonOpacity()
+
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+        guard let newTabButtonImage = newTabButtonImageView.image else { return }
+
+        let isLightTheme = backgroundColor.isLightColor
+
+        if newTabButtonImageLayer == nil {
+            let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
+            let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
+                newTabButtonImage.draw(in: rect)
+                fillColor.setFill()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            let imageLayer = VibrantLayer(forAppearance: isLightTheme ? .light : .dark)!
+            imageLayer.frame = NSRect(origin: NSPoint(x: newTabButton.bounds.midX - newTabButtonImage.size.width/2, y: newTabButton.bounds.midY - newTabButtonImage.size.height/2), size: newTabButtonImage.size)
+            imageLayer.contentsGravity = .resizeAspect
+            imageLayer.contents = newImage
+            imageLayer.opacity = 0.5
+
+            newTabButtonImageLayer = imageLayer
+        }
+
+        newTabButtonImageView.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
+        newTabButtonImageView.layer?.addSublayer(newTabButtonImageLayer!)
+        newTabButtonImageView.image = nil
+        // When we nil out the original image, the image view's frame resizes and repositions
+        // slightly, so we need to reset it to make sure our new image doesn't shift quickly.
+        newTabButtonImageView.frame = newTabButton.bounds
+    }
+
+    // MARK: -
+
+    private func updateUnZoomToolbarButtonVisibility() {
+        guard let unZoomToolbarButton = unZoomToolbarButton, let tabGroup else { return }
+
+        if tabGroup.isTabBarVisible {
+            unZoomToolbarButton.isHidden = true
+        } else {
+            unZoomToolbarButton.isHidden = !surfaceIsZoomed
+        }
+    }
+
+    // We have to regenerate a toolbar when the titlebar tabs setting changes since our
+    // custom toolbar conditionally generates the items based on this setting. I tried to
+    // invalidate the toolbar items and force a refresh, but as far as I can tell that
+    // isn't possible.
+    private func generateToolbar() {
+        let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
+        terminalToolbar.hasTitle = titlebarTabs
+
+        toolbar = terminalToolbar
+        toolbarStyle = .unifiedCompact
+        updateUnZoomToolbarButtonVisibility()
     }
 
     // MARK: - Titlebar Tabs
@@ -47,6 +214,7 @@ class TerminalWindow: NSWindow {
     var titlebarTabs = false {
         didSet {
             self.titleVisibility = titlebarTabs ? .hidden : .visible
+            generateToolbar()
         }
     }
     
@@ -73,22 +241,6 @@ class TerminalWindow: NSWindow {
 
         for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
             v.isHidden = true
-        }
-    }
-
-    override func awakeFromNib() {
-        super.awakeFromNib()
-
-        // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
-        // background color to show through. If we were to set `titlebarAppearsTransparent` to true
-        // the selected tab would look fine, but the unselected ones and new tab button backgrounds
-        // would be an opaque color. When the titlebar isn't transparent, however, the system applies
-        // a compositing effect to the unselected tab backgrounds, which makes them blend with the
-        // titlebar's/window's background.
-        if let titlebarContainer = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        }), let effectView = titlebarContainer.descendants(withClassName: "NSVisualEffectView").first {
-            effectView.isHidden = true
         }
     }
 
@@ -172,59 +324,6 @@ class TerminalWindow: NSWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             self.markHierarchyForLayout(accessoryView)
         }
-    }
-
-    override func update() {
-        super.update()
-
-        titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
-
-        // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
-        // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
-        // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
-        // color as the background of unselected tabs.
-        if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self), titlebarTabs {
-            windowButtonsBackdrop?.isHighlighted = index == 0
-        }
-
-        // Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,
-        // just as it does in the stock tab bar.
-        updateNewTabButtonOpacity()
-
-        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        }) else { return }
-        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
-        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
-            $0 as? NSImageView != nil
-        }) as? NSImageView else { return }
-        guard let newTabButtonImage = newTabButtonImageView.image else { return }
-
-        let isLightTheme = backgroundColor.isLightColor
-
-        if newTabButtonImageLayer == nil {
-            let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
-            let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
-                newTabButtonImage.draw(in: rect)
-                fillColor.setFill()
-                rect.fill(using: .sourceAtop)
-                return true
-            }
-            let imageLayer = VibrantLayer(forAppearance: isLightTheme ? .light : .dark)!
-            imageLayer.frame = NSRect(origin: NSPoint(x: newTabButton.bounds.midX - newTabButtonImage.size.width/2, y: newTabButton.bounds.midY - newTabButtonImage.size.height/2), size: newTabButtonImage.size)
-            imageLayer.contentsGravity = .resizeAspect
-            imageLayer.contents = newImage
-            imageLayer.opacity = 0.5
-
-            newTabButtonImageLayer = imageLayer
-        }
-
-        newTabButtonImageView.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
-        newTabButtonImageView.layer?.addSublayer(newTabButtonImageLayer!)
-        newTabButtonImageView.image = nil
-        // When we nil out the original image, the image view's frame resizes and repositions
-        // slightly, so we need to reset it to make sure our new image doesn't shift quickly.
-        newTabButtonImageView.frame = newTabButton.bounds
     }
 
     // Since we are coloring the new tab button's image, it doesn't respond to the

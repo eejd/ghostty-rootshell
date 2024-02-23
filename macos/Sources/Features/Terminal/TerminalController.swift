@@ -55,8 +55,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
 
-    private var surfaceIsZoomed: Bool = false
-
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
@@ -123,8 +121,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Reset this to false. It'll be set back to true later.
         tabListenForFrame = false
 
-        guard let windows = self.window?.tabbedWindows else { return }
-        
+        guard let windows = self.window?.tabbedWindows as? [TerminalWindow] else { return }
+
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
@@ -134,25 +132,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             guard let equiv = ghostty.config.keyEquivalent(for: action) else {
                 continue
             }
-            
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.labelFont(ofSize: 0),
-                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ]
-            let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
-            let text = NSTextField(labelWithAttributedString: attributedString)
-            text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
-            text.postsFrameChangedNotifications = true
 
-            window.tab.accessoryView = NSStackView(views: [text])
-        }
-
-        if surfaceIsZoomed {
-            guard let stackView = window?.tabGroup?.selectedWindow?.tab.accessoryView as? NSStackView,
-                  let buttonView = window?.toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view
-            else { return }
-
-            stackView.addArrangedSubview(buttonView)
+            window.keyEquivalent = "\(equiv)"
         }
     }
 
@@ -210,12 +191,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 leaf.surface == focusedSurface!
             leaf.surface.focusDidChange(focused)
         }
-    }
-
-    private func updateToolbarUnZoomButton() {
-        guard let buttonView = window?.toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view else { return }
-
-        buttonView.isHidden = !surfaceIsZoomed
     }
 
     //MARK: - NSWindowController
@@ -290,13 +265,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         }
         
-        // Set a toolbar that is used with toolbar tabs
-        let toolbar = TerminalToolbar(identifier: "Toolbar")
-        toolbar.hasTitle = ghostty.config.macosTitlebarTabs
-
-        window.toolbar = toolbar
-        window.toolbarStyle = .unifiedCompact
-
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
@@ -410,10 +378,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 ghostty_surface_set_occlusion(surface, visible)
             }
         }
-    }
-
-    func windowDidUpdate(_ notification: Notification) {
-        updateToolbarUnZoomButton()
     }
 
     // Called when the window will be encoded. We handle the data encoding here in the
@@ -618,9 +582,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
 
     func zoomStateDidChange(to: Bool) {
-        self.surfaceIsZoomed = to
-        updateToolbarUnZoomButton()
-        relabelTabs()
+        guard let window = window as? TerminalWindow else { return }
+        window.surfaceIsZoomed = to
     }
 
     //MARK: - Clipboard Confirmation
