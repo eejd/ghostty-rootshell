@@ -3,31 +3,6 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
-fileprivate class ZoomButtonView: NSView {
-    let target: Any
-    let action: Selector
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    init(frame frameRect: NSRect, target: Any, selector: Selector) {
-        self.target = target
-        self.action = selector
-
-        super.init(frame: frameRect)
-
-        let zoomButton = NSButton(image: NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!, target: target, action: selector)
-
-        zoomButton.frame = bounds
-        zoomButton.isBordered = false
-        zoomButton.contentTintColor = .systemBlue
-        zoomButton.state = .on
-        zoomButton.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(zoomButton)
-    }
-}
-
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
 class TerminalController: NSWindowController, NSWindowDelegate, 
                           TerminalViewDelegate, TerminalViewModel,
@@ -169,21 +144,15 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
             text.postsFrameChangedNotifications = true
 
-            let stackView = NSStackView(views: [text])
-//            stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
-
-            window.tab.accessoryView = stackView
+            window.tab.accessoryView = NSStackView(views: [text])
         }
 
         if surfaceIsZoomed {
-            guard let stackView = window?.tabGroup?.selectedWindow?.tab.accessoryView as? NSStackView else { return }
-            
-            let zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
-            
-            zoomButton.translatesAutoresizingMaskIntoConstraints = false
-            zoomButton.widthAnchor.constraint(equalToConstant: 20).isActive = true
-            zoomButton.heightAnchor.constraint(equalToConstant: 20).isActive = true
-            stackView.addArrangedSubview(zoomButton)
+            guard let stackView = window?.tabGroup?.selectedWindow?.tab.accessoryView as? NSStackView,
+                  let buttonView = window?.toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view
+            else { return }
+
+            stackView.addArrangedSubview(buttonView)
         }
     }
 
@@ -243,14 +212,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
     }
 
-    func windowDidUpdate(_ notification: Notification) {
-        updateToolbarZoomButton()
-    }
+    private func updateToolbarUnZoomButton() {
+        guard let buttonView = window?.toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view else { return }
 
-    private func updateToolbarZoomButton() {
-        guard let itemView = window?.toolbar?.items.last?.view as? ZoomButtonView else { return }
-
-        itemView.isHidden = !surfaceIsZoomed
+        buttonView.isHidden = !surfaceIsZoomed
     }
 
     //MARK: - NSWindowController
@@ -307,6 +272,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // when cascading.
         window.center()
 
+        // Set the background color of the window
+        window.backgroundColor = NSColor(ghostty.config.backgroundColor)
+
+        // This makes sure our titlebar renders correctly when there is a transparent background
+        window.titlebarOpacity = ghostty.config.backgroundOpacity
+
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
@@ -317,19 +288,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }
-            
-            // Set the background color of the window
-            window.backgroundColor = NSColor(ghostty.config.backgroundColor)
-
-            // Set a custom background on the titlebar - this is required for when
-            // titlebar tabs are used in conjunction with a transparent background.
-            window.setTitlebarBackground(
-                window
-                    .backgroundColor
-                    .withAlphaComponent(ghostty.config.backgroundOpacity)
-                    .cgColor
-            )
         }
+        
+        // Set a toolbar that is used with toolbar tabs
+        let toolbar = TerminalToolbar(identifier: "Toolbar")
+        toolbar.hasTitle = ghostty.config.macosTitlebarTabs
+
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
 
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
@@ -357,11 +323,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 window.tabGroup?.removeWindow(window)
             }
         }
-
-        guard let toolbarZoomItem = window.toolbar?.items.last else { return }
-        var zoomButton: ZoomButtonView = ZoomButtonView(frame: NSRect(x: 0, y: 0, width: 20, height: 20), target: self, selector: #selector(splitZoom(_:)))
-
-        toolbarZoomItem.view = zoomButton
     }
     
     // Shows the "+" button in the tab bar, responds to that click.
@@ -370,7 +331,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let surface = self.focusedSurface?.surface else { return }
         ghostty.newTab(surface: surface)
     }
-    
+
     //MARK: - NSWindowDelegate
     
     // This is called when performClose is called on a window (NOT when close()
@@ -450,7 +411,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         }
     }
-    
+
+    func windowDidUpdate(_ notification: Notification) {
+        updateToolbarUnZoomButton()
+    }
+
     // Called when the window will be encoded. We handle the data encoding here in the
     // window controller.
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
@@ -654,7 +619,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
     func zoomStateDidChange(to: Bool) {
         self.surfaceIsZoomed = to
-        updateToolbarZoomButton()
+        updateToolbarUnZoomButton()
         relabelTabs()
     }
 

@@ -1,6 +1,17 @@
 import Cocoa
 
 class TerminalWindow: NSWindow {
+    var titlebarOpacity: CGFloat = 1 {
+        didSet {
+            guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+                $0.className == "NSTitlebarContainerView"
+            }) else { return }
+
+            titlebarContainer.wantsLayer = true
+            titlebarContainer.layer?.backgroundColor = backgroundColor.withAlphaComponent(titlebarOpacity).cgColor
+        }
+    }
+
     // Both of these must be true for windows without decorations to be able to
     // still become key/main and receive events.
     override var canBecomeKey: Bool { return true }
@@ -35,13 +46,12 @@ class TerminalWindow: NSWindow {
     // Used by the window controller to enable/disable titlebar tabs.
     var titlebarTabs = false {
         didSet {
-            changedTitlebarTabs(to: titlebarTabs)
+            self.titleVisibility = titlebarTabs ? .hidden : .visible
         }
     }
     
     private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     private var windowDragHandle: WindowDragView? = nil
-    private var storedTitlebarBackgroundColor: CGColor? = nil
     private var newTabButtonImageLayer: VibrantLayer? = nil
 
     // The tab bar controller ID from macOS
@@ -66,72 +76,22 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    /// This is called by titlebarTabs changing so that we can setup the rest of our window
-    private func changedTitlebarTabs(to newValue: Bool) {
-        if (newValue) {
-            // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
-            // background color to show through. If we were to set `titlebarAppearsTransparent` to true
-            // the selected tab would look fine, but the unselected ones and new tab button backgrounds
-            // would be an opaque color. When the titlebar isn't transparent, however, the system applies
-            // a compositing effect to the unselected tab backgrounds, which makes them blend with the
-            // titlebar's/window's background.
-            if let titlebarContainer = contentView?.superview?.subviews.first(where: {
-                $0.className == "NSTitlebarContainerView"
-            }), let effectView = titlebarContainer.descendants(withClassName: "NSVisualEffectView").first {
-                effectView.isHidden = true
-            }
+    override func awakeFromNib() {
+        super.awakeFromNib()
 
-            self.titlebarSeparatorStyle = .none
-
-            // We use the toolbar to anchor our tab bar positions in the titlebar,
-            // so we make sure it's the right size/position, and exists.
-            self.toolbarStyle = .unifiedCompact
-            if (self.toolbar == nil) {
-                self.toolbar = TerminalToolbar(identifier: "Toolbar")
-            }
-            
-            // Set a custom background on the titlebar - this is required for when
-            // titlebar tabs is used in conjunction with a transparent background.
-            self.restoreTitlebarBackground()
-
-            // Reset the new tab button image so that we are sure to generate a fresh
-            // one, tinted appropriately for the given theme.
-            self.newTabButtonImageLayer = nil
-
-            // We have to wait before setting the titleVisibility or else it prevents
-            // the window from hiding the tab bar when we get down to a single tab.
-            DispatchQueue.main.async {
-                self.titleVisibility = .hidden
-            }
-        } else {
-            // "expanded" places the toolbar below the titlebar, so setting this style and
-            // removing the toolbar ensures that the titlebar will be the default height.
-            self.toolbarStyle = .expanded
-            self.toolbar = nil
-            
-            // Reset the appearance to whatever our app global value is
-            self.appearance = nil
+        // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
+        // background color to show through. If we were to set `titlebarAppearsTransparent` to true
+        // the selected tab would look fine, but the unselected ones and new tab button backgrounds
+        // would be an opaque color. When the titlebar isn't transparent, however, the system applies
+        // a compositing effect to the unselected tab backgrounds, which makes them blend with the
+        // titlebar's/window's background.
+        if let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }), let effectView = titlebarContainer.descendants(withClassName: "NSVisualEffectView").first {
+            effectView.isHidden = true
         }
     }
-    
-    // Assign a background color to the titlebar area.
-    func setTitlebarBackground(_ color: CGColor) {
-        storedTitlebarBackgroundColor = color
-        
-        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        }) else { return }
 
-        titlebarContainer.wantsLayer = true
-        titlebarContainer.layer?.backgroundColor = color
-    }
-    
-    // Make sure the titlebar has the assigned background color.
-    private func restoreTitlebarBackground() {
-        guard let color = storedTitlebarBackgroundColor else { return }
-        setTitlebarBackground(color)
-    }
-    
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
@@ -217,13 +177,13 @@ class TerminalWindow: NSWindow {
     override func update() {
         super.update()
 
-        guard titlebarTabs else { return }
+        titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
         // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
         // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
         // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
         // color as the background of unselected tabs.
-        if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
+        if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self), titlebarTabs {
             windowButtonsBackdrop?.isHighlighted = index == 0
         }
 
@@ -239,7 +199,8 @@ class TerminalWindow: NSWindow {
             $0 as? NSImageView != nil
         }) as? NSImageView else { return }
         guard let newTabButtonImage = newTabButtonImageView.image else { return }
-        guard let storedTitlebarBackgroundColor, let isLightTheme = NSColor(cgColor: storedTitlebarBackgroundColor)?.isLightColor else { return }
+
+        let isLightTheme = backgroundColor.isLightColor
 
         if newTabButtonImageLayer == nil {
             let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
@@ -294,7 +255,9 @@ class TerminalWindow: NSWindow {
             return
         }
         
-        let view = WindowButtonsBackdropView(backgroundColor: storedTitlebarBackgroundColor ?? NSColor.windowBackgroundColor.cgColor)
+        let backdropColor = backgroundColor.withAlphaComponent(titlebarOpacity).usingColorSpace(colorSpace!)!.cgColor
+
+        let view = WindowButtonsBackdropView(backgroundColor: backdropColor)
         view.identifier = NSUserInterfaceItemIdentifier("_windowButtonsBackdrop")
         titlebarView.addSubview(view)
         

@@ -1,13 +1,8 @@
 import Cocoa
 
-fileprivate extension NSToolbarItem.Identifier {
-    static let zoom = NSToolbarItem.Identifier("zoom")
-}
-
 // Custom NSToolbar subclass that displays a centered window title,
 // in order to accommodate the titlebar tabs feature.
 class TerminalToolbar: NSToolbar, NSToolbarDelegate {
-    static private let identifier = NSToolbarItem.Identifier("TitleText")
     private let titleTextField = CenteredDynamicLabel(labelWithString: "👻 Ghostty")
     
     var titleText: String {
@@ -19,16 +14,18 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             titleTextField.stringValue = newValue
         }
     }
-    
+
+    var hasTitle: Bool = false
+
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
         
         delegate = self
         
         if #available(macOS 13.0, *) {
-            centeredItemIdentifiers.insert(Self.identifier)
+            centeredItemIdentifiers.insert(.titleText)
         } else {
-            centeredItemIdentifier = Self.identifier
+            centeredItemIdentifier = .titleText
         }
     }
     
@@ -38,8 +35,8 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         var item: NSToolbarItem
 
         switch itemIdentifier {
-        case Self.identifier:
-            item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        case .titleText:
+            item = NSToolbarItem(itemIdentifier: .titleText)
             item.view = self.titleTextField
             item.visibilityPriority = .user
 
@@ -55,8 +52,24 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             item.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
 
             item.isEnabled = true
-        case .zoom:
-            item = NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier("zoom"))
+        case .unZoom:
+            item = NSToolbarItem(itemIdentifier: .unZoom)
+
+            let view = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+            view.translatesAutoresizingMaskIntoConstraints = false
+            view.widthAnchor.constraint(equalToConstant: 20).isActive = true
+            view.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            
+            let button = NSButton(image: NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!, target: nil, action: #selector(TerminalController.splitZoom(_:)))
+
+            button.frame = view.bounds
+            button.isBordered = false
+            button.contentTintColor = .systemBlue
+            button.state = .on
+            button.imageScaling = .scaleProportionallyUpOrDown
+            view.addSubview(button)
+
+            item.view = view
         default:
             item = NSToolbarItem(itemIdentifier: itemIdentifier)
         }
@@ -65,15 +78,19 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     }
     
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [Self.identifier, .space, .zoom]
+        return [.titleText, .flexibleSpace, .space, .unZoom]
     }
     
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // These space items are here to ensure that the title remains centered when it starts
-        // getting smaller than the max size so starts clipping. Lucky for us, three of the
-        // built-in spacers seems to exactly match the space on the left that's reserved for
-        // the window buttons.
-        return [Self.identifier, .space, .space, .zoom]
+        // getting smaller than the max size so starts clipping. Lucky for us, two of the
+        // built-in spacers plus the un-zoom button item seems to exactly match the space
+        // on the left that's reserved for the window buttons.
+        if hasTitle {
+            return [.titleText, .flexibleSpace, .space, .space, .unZoom]
+        } else {
+            return [.flexibleSpace, .unZoom]
+        }
     }
 }
 
@@ -91,4 +108,9 @@ fileprivate class CenteredDynamicLabel: NSTextField {
         // We've changed some alignment settings, make sure the layout is updated immediately.
         needsLayout = true
     }
+}
+
+extension NSToolbarItem.Identifier {
+    static let unZoom = NSToolbarItem.Identifier("UnZoom")
+    static let titleText = NSToolbarItem.Identifier("TitleText")
 }
