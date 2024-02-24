@@ -80,13 +80,14 @@ const Draw = struct {
         // Ensure we never overflow out of bounds on the canvas
         const y_max = self.height -| 1;
         const bottom = @min(self.pos + self.thickness, y_max);
-        const y = @as(i32, @intCast(bottom -| self.thickness));
+        const y = bottom -| self.thickness;
+        const max_height = self.height - y;
 
         canvas.rect(.{
             .x = 0,
-            .y = y,
+            .y = @intCast(y),
             .width = self.width,
-            .height = self.thickness,
+            .height = @min(self.thickness, max_height),
         }, .on);
     }
 

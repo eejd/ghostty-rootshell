@@ -424,9 +424,6 @@ const PixmanImpl = struct {
     /// Draw and fill a rectangle. This is the main primitive for drawing
     /// lines as well (which are just generally skinny rectangles...)
     pub fn rect(self: *Canvas, v: Rect, color: Color) void {
-        assert(v.x >= 0);
-        assert(v.y >= 0);
-
         const boxes = &[_]pixman.Box32{
             .{
                 .x1 = @intCast(v.x),
@@ -436,6 +433,10 @@ const PixmanImpl = struct {
             },
         };
 
+        assert(boxes[0].x1 >= 0);
+        assert(boxes[0].y1 >= 0);
+        assert(boxes[0].x2 <= @as(i32, @intCast(self.image.getWidth())));
+        assert(boxes[0].y2 <= @as(i32, @intCast(self.image.getHeight())));
         self.image.fillBoxes(.src, color.pixmanColor(), boxes) catch {};
     }
 
