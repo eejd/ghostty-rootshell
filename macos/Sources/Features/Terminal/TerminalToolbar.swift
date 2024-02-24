@@ -64,7 +64,7 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 
             button.frame = view.bounds
             button.isBordered = false
-            button.contentTintColor = .systemBlue
+            button.contentTintColor = .controlAccentColor
             button.state = .on
             button.imageScaling = .scaleProportionallyUpOrDown
             view.addSubview(button)

@@ -129,11 +129,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         for (index, window) in windows.enumerated().prefix(9) {
             let action = "goto_tab:\(index + 1)"
-            guard let equiv = ghostty.config.keyEquivalent(for: action) else {
-                continue
-            }
 
-            window.keyEquivalent = "\(equiv)"
+            if let equiv = ghostty.config.keyEquivalent(for: action) {
+                window.keyEquivalent = "\(equiv)"
+            }
         }
     }
 
