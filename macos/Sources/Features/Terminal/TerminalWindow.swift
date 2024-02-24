@@ -185,6 +185,23 @@ class TerminalWindow: NSWindow {
 
     // MARK: -
 
+    private var newTabButtonImageLayer: VibrantLayer? = nil
+
+    // Since we are coloring the new tab button's image, it doesn't respond to the
+    // window's key status changes in terms of becoming less prominent visually,
+    // so we need to do it manually.
+    private func updateNewTabButtonOpacity() {
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
+            $0.className == "NSTitlebarContainerView"
+        }) else { return }
+        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
+        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
+            $0 as? NSImageView != nil
+        }) as? NSImageView else { return }
+
+        newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
+    }
+
     private func updateUnZoomToolbarButtonVisibility() {
         guard let unZoomToolbarButton = unZoomToolbarButton, let tabGroup else { return }
 
@@ -220,7 +237,6 @@ class TerminalWindow: NSWindow {
     
     private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     private var windowDragHandle: WindowDragView? = nil
-    private var newTabButtonImageLayer: VibrantLayer? = nil
 
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
@@ -324,21 +340,6 @@ class TerminalWindow: NSWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             self.markHierarchyForLayout(accessoryView)
         }
-    }
-
-    // Since we are coloring the new tab button's image, it doesn't respond to the
-    // window's key status changes in terms of becoming less prominent visually,
-    // so we need to do it manually.
-    private func updateNewTabButtonOpacity() {
-        guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
-            $0.className == "NSTitlebarContainerView"
-        }) else { return }
-        guard let newTabButton: NSButton = titlebarContainer.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
-        guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
-            $0 as? NSImageView != nil
-        }) as? NSImageView else { return }
-
-        newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
