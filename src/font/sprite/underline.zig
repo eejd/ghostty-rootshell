@@ -80,13 +80,14 @@ const Draw = struct {
         // Ensure we never overflow out of bounds on the canvas
         const y_max = self.height -| 1;
         const bottom = @min(self.pos + self.thickness, y_max);
-        const y = @as(i32, @intCast(bottom - self.thickness));
+        const y = bottom -| self.thickness;
+        const max_height = self.height - y;
 
         canvas.rect(.{
             .x = 0,
-            .y = y,
+            .y = @intCast(y),
             .width = self.width,
-            .height = self.thickness,
+            .height = @min(self.thickness, max_height),
         }, .on);
     }
 
@@ -221,6 +222,26 @@ test "single" {
         18,
         9,
         2,
+    );
+}
+
+test "single large thickness" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    // unrealistic thickness but used to cause a crash
+    // https://github.com/mitchellh/ghostty/pull/1548
+    _ = try renderGlyph(
+        alloc,
+        &atlas_greyscale,
+        .underline,
+        36,
+        18,
+        9,
+        200,
     );
 }
 

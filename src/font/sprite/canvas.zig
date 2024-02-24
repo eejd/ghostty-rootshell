@@ -433,6 +433,10 @@ const PixmanImpl = struct {
             },
         };
 
+        assert(boxes[0].x1 >= 0);
+        assert(boxes[0].y1 >= 0);
+        assert(boxes[0].x2 <= @as(i32, @intCast(self.image.getWidth())));
+        assert(boxes[0].y2 <= @as(i32, @intCast(self.image.getHeight())));
         self.image.fillBoxes(.src, color.pixmanColor(), boxes) catch {};
     }
 
