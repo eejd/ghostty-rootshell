@@ -52,8 +52,8 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             item.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
 
             item.isEnabled = true
-        case .unZoom:
-            item = NSToolbarItem(itemIdentifier: .unZoom)
+        case .resetZoom:
+            item = NSToolbarItem(itemIdentifier: .resetZoom)
 
             let view = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -67,6 +67,8 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             button.contentTintColor = .controlAccentColor
             button.state = .on
             button.imageScaling = .scaleProportionallyUpOrDown
+			button.allowsExpansionToolTips = true
+			button.toolTip = "Reset Zoom"
             view.addSubview(button)
 
             item.view = view
@@ -78,7 +80,7 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     }
     
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [.titleText, .flexibleSpace, .space, .unZoom]
+        return [.titleText, .flexibleSpace, .space, .resetZoom]
     }
     
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -87,9 +89,9 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         // built-in spacers plus the un-zoom button item seems to exactly match the space
         // on the left that's reserved for the window buttons.
         if hasTitle {
-            return [.titleText, .flexibleSpace, .space, .space, .unZoom]
+            return [.titleText, .flexibleSpace, .space, .space, .resetZoom]
         } else {
-            return [.flexibleSpace, .unZoom]
+            return [.flexibleSpace, .resetZoom]
         }
     }
 }
@@ -111,6 +113,6 @@ fileprivate class CenteredDynamicLabel: NSTextField {
 }
 
 extension NSToolbarItem.Identifier {
-    static let unZoom = NSToolbarItem.Identifier("UnZoom")
+    static let resetZoom = NSToolbarItem.Identifier("ResetZoom")
     static let titleText = NSToolbarItem.Identifier("TitleText")
 }

@@ -15,14 +15,14 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    private var unZoomToolbarButton: NSButton? {
-        guard let button = toolbar?.items.first(where: { $0.itemIdentifier == .unZoom })?.view?.subviews.first as? NSButton
+    private var resetZoomToolbarButton: NSButton? {
+        guard let button = toolbar?.items.first(where: { $0.itemIdentifier == .resetZoom })?.view?.subviews.first as? NSButton
         else { return nil }
 
         return button
     }
 
-    private let unZoomTabButton: NSButton = {
+    private let resetZoomTabButton: NSButton = {
         let button = NSButton()
         button.target = nil
         button.action = #selector(TerminalController.splitZoom(_:))
@@ -30,6 +30,8 @@ class TerminalWindow: NSWindow {
         button.widthAnchor.constraint(equalToConstant: 20).isActive = true
         button.heightAnchor.constraint(equalToConstant: 20).isActive = true
         button.isBordered = false
+		button.allowsExpansionToolTips = true
+		button.toolTip = "Reset Zoom"
         button.contentTintColor = .controlAccentColor
         button.state = .on
         button.image = NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!
@@ -48,10 +50,10 @@ class TerminalWindow: NSWindow {
 
     private lazy var bindings = [
         observe(\.surfaceIsZoomed, options: [.initial, .new]) { [weak self] window, _ in
-            guard let unZoomToolbarButton = self?.unZoomToolbarButton, let tabGroup = self?.tabGroup else { return }
+            guard let resetZoomToolbarButton = self?.resetZoomToolbarButton, let tabGroup = self?.tabGroup else { return }
 
-            self?.unZoomTabButton.isHidden = !window.surfaceIsZoomed
-            self?.updateUnZoomToolbarButtonVisibility()
+            self?.resetZoomTabButton.isHidden = !window.surfaceIsZoomed
+            self?.updateResetZoomToolbarButtonVisibility()
         },
 
         observe(\.keyEquivalent, options: [.initial, .new]) { [weak self] window, _ in
@@ -88,7 +90,7 @@ class TerminalWindow: NSWindow {
         }
 
         // Create the tab accessory view that houses the key-equivalent label and optional un-zoom button
-        let stackView = NSStackView(views: [keyEquivalentLabel, unZoomTabButton])
+        let stackView = NSStackView(views: [keyEquivalentLabel, resetZoomTabButton])
         stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
         stackView.spacing = 3
         tab.accessoryView = stackView
@@ -114,24 +116,24 @@ class TerminalWindow: NSWindow {
         super.becomeKey()
 
         updateNewTabButtonOpacity()
-        unZoomTabButton.isEnabled = true
-        unZoomTabButton.contentTintColor = .controlAccentColor
-        unZoomToolbarButton?.contentTintColor = .controlAccentColor
+        resetZoomTabButton.isEnabled = true
+        resetZoomTabButton.contentTintColor = .controlAccentColor
+        resetZoomToolbarButton?.contentTintColor = .controlAccentColor
     }
 
     override func resignKey() {
         super.resignKey()
 
         updateNewTabButtonOpacity()
-        unZoomTabButton.isEnabled = false
-        unZoomTabButton.contentTintColor = .labelColor
-        unZoomToolbarButton?.contentTintColor = .tertiaryLabelColor
+        resetZoomTabButton.isEnabled = false
+        resetZoomTabButton.contentTintColor = .labelColor
+        resetZoomToolbarButton?.contentTintColor = .tertiaryLabelColor
     }
 
     override func update() {
         super.update()
 
-        updateUnZoomToolbarButtonVisibility()
+        updateResetZoomToolbarButtonVisibility()
 
         titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
@@ -202,13 +204,13 @@ class TerminalWindow: NSWindow {
         newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
-    private func updateUnZoomToolbarButtonVisibility() {
-        guard let unZoomToolbarButton = unZoomToolbarButton, let tabGroup else { return }
+    private func updateResetZoomToolbarButtonVisibility() {
+        guard let resetZoomToolbarButton = resetZoomToolbarButton, let tabGroup else { return }
 
         if tabGroup.isTabBarVisible {
-            unZoomToolbarButton.isHidden = true
+            resetZoomToolbarButton.isHidden = true
         } else {
-            unZoomToolbarButton.isHidden = !surfaceIsZoomed
+            resetZoomToolbarButton.isHidden = !surfaceIsZoomed
         }
     }
 
@@ -222,7 +224,7 @@ class TerminalWindow: NSWindow {
 
         toolbar = terminalToolbar
         toolbarStyle = .unifiedCompact
-        updateUnZoomToolbarButtonVisibility()
+        updateResetZoomToolbarButtonVisibility()
     }
 
     // MARK: - Titlebar Tabs
