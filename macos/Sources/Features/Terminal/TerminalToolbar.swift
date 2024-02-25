@@ -15,8 +15,6 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         }
     }
 
-    var hasTitle: Bool = false
-
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
         
@@ -54,24 +52,6 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             item.isEnabled = true
         case .resetZoom:
             item = NSToolbarItem(itemIdentifier: .resetZoom)
-
-            let view = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
-            view.translatesAutoresizingMaskIntoConstraints = false
-            view.widthAnchor.constraint(equalToConstant: 20).isActive = true
-            view.heightAnchor.constraint(equalToConstant: 20).isActive = true
-            
-            let button = NSButton(image: NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!, target: nil, action: #selector(TerminalController.splitZoom(_:)))
-
-            button.frame = view.bounds
-            button.isBordered = false
-            button.contentTintColor = .controlAccentColor
-            button.state = .on
-            button.imageScaling = .scaleProportionallyUpOrDown
-			button.allowsExpansionToolTips = true
-			button.toolTip = "Reset Zoom"
-            view.addSubview(button)
-
-            item.view = view
         default:
             item = NSToolbarItem(itemIdentifier: itemIdentifier)
         }
@@ -88,11 +68,7 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         // getting smaller than the max size so starts clipping. Lucky for us, two of the
         // built-in spacers plus the un-zoom button item seems to exactly match the space
         // on the left that's reserved for the window buttons.
-        if hasTitle {
-            return [.titleText, .flexibleSpace, .space, .space, .resetZoom]
-        } else {
-            return [.flexibleSpace, .resetZoom]
-        }
+		return [.titleText, .flexibleSpace, .space, .space, .resetZoom]
     }
 }
 

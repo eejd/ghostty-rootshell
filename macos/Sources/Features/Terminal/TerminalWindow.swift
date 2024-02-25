@@ -15,30 +15,27 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    private var resetZoomToolbarButton: NSButton? {
-        guard let button = toolbar?.items.first(where: { $0.itemIdentifier == .resetZoom })?.view?.subviews.first as? NSButton
-        else { return nil }
+    private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
 
-        return button
-    }
+    private lazy var resetZoomTabButton: NSButton = generateResetZoomButton()
 
-    private let resetZoomTabButton: NSButton = {
-        let button = NSButton()
-        button.target = nil
-        button.action = #selector(TerminalController.splitZoom(_:))
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        button.isBordered = false
-		button.allowsExpansionToolTips = true
-		button.toolTip = "Reset Zoom"
-        button.contentTintColor = .controlAccentColor
-        button.state = .on
-        button.image = NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left.square.fill", accessibilityDescription: nil)!
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(scale: .large))
+	private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
+		guard let titlebarContainer = contentView?.superview?.subviews.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
 
-        return button
-    }()
+		let size = NSSize(width: titlebarContainer.bounds.height, height: titlebarContainer.bounds.height)
+		let view = NSView(frame: NSRect(origin: .zero, size: size))
+
+		let button = generateResetZoomButton()
+		button.frame.origin.x = size.width/2 - button.bounds.width/2
+		button.frame.origin.y = size.height/2 - button.bounds.height/2
+		view.addSubview(button)
+
+		let titlebarAccessoryViewController = NSTitlebarAccessoryViewController()
+		titlebarAccessoryViewController.view = view
+		titlebarAccessoryViewController.layoutAttribute = .right
+
+		return titlebarAccessoryViewController
+	}()
 
     private lazy var keyEquivalentLabel: NSTextField = {
         let label = NSTextField(labelWithAttributedString: NSAttributedString())
@@ -50,10 +47,10 @@ class TerminalWindow: NSWindow {
 
     private lazy var bindings = [
         observe(\.surfaceIsZoomed, options: [.initial, .new]) { [weak self] window, _ in
-            guard let resetZoomToolbarButton = self?.resetZoomToolbarButton, let tabGroup = self?.tabGroup else { return }
+            guard let tabGroup = self?.tabGroup else { return }
 
             self?.resetZoomTabButton.isHidden = !window.surfaceIsZoomed
-            self?.updateResetZoomToolbarButtonVisibility()
+            self?.updateResetZoomTitlebarButtonVisibility()
         },
 
         observe(\.keyEquivalent, options: [.initial, .new]) { [weak self] window, _ in
@@ -77,6 +74,8 @@ class TerminalWindow: NSWindow {
     override func awakeFromNib() {
         super.awakeFromNib()
 
+		_ = bindings
+
         // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
         // background color to show through. If we were to set `titlebarAppearsTransparent` to true
         // the selected tab would look fine, but the unselected ones and new tab button backgrounds
@@ -95,9 +94,9 @@ class TerminalWindow: NSWindow {
         stackView.spacing = 3
         tab.accessoryView = stackView
 
-        generateToolbar()
-
-        _ = bindings
+		if titlebarTabs {
+			generateToolbar()
+		}
     }
 
     deinit {
@@ -118,7 +117,7 @@ class TerminalWindow: NSWindow {
         updateNewTabButtonOpacity()
         resetZoomTabButton.isEnabled = true
         resetZoomTabButton.contentTintColor = .controlAccentColor
-        resetZoomToolbarButton?.contentTintColor = .controlAccentColor
+        resetZoomToolbarButton.contentTintColor = .controlAccentColor
     }
 
     override func resignKey() {
@@ -127,13 +126,13 @@ class TerminalWindow: NSWindow {
         updateNewTabButtonOpacity()
         resetZoomTabButton.isEnabled = false
         resetZoomTabButton.contentTintColor = .labelColor
-        resetZoomToolbarButton?.contentTintColor = .tertiaryLabelColor
+        resetZoomToolbarButton.contentTintColor = .tertiaryLabelColor
     }
 
     override func update() {
         super.update()
 
-        updateResetZoomToolbarButtonVisibility()
+        updateResetZoomTitlebarButtonVisibility()
 
         titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
@@ -204,14 +203,24 @@ class TerminalWindow: NSWindow {
         newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
-    private func updateResetZoomToolbarButtonVisibility() {
-        guard let resetZoomToolbarButton = resetZoomToolbarButton, let tabGroup else { return }
+    private func updateResetZoomTitlebarButtonVisibility() {
+        guard let tabGroup, let resetZoomTitlebarAccessoryViewController else { return }
 
-        if tabGroup.isTabBarVisible {
-            resetZoomToolbarButton.isHidden = true
-        } else {
-            resetZoomToolbarButton.isHidden = !surfaceIsZoomed
-        }
+		let isHidden = tabGroup.isTabBarVisible ? true : !surfaceIsZoomed
+
+		if titlebarTabs {
+			resetZoomToolbarButton.isHidden = isHidden
+
+			for (index, vc) in titlebarAccessoryViewControllers.enumerated() {
+				guard vc == resetZoomTitlebarAccessoryViewController else { return }
+				removeTitlebarAccessoryViewController(at: index)
+			}
+		} else {
+			if !titlebarAccessoryViewControllers.contains(resetZoomTitlebarAccessoryViewController) {
+				addTitlebarAccessoryViewController(resetZoomTitlebarAccessoryViewController)
+			}
+			resetZoomTitlebarAccessoryViewController.view.isHidden = isHidden
+		}
     }
 
     // We have to regenerate a toolbar when the titlebar tabs setting changes since our
@@ -220,12 +229,35 @@ class TerminalWindow: NSWindow {
     // isn't possible.
     private func generateToolbar() {
         let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
-        terminalToolbar.hasTitle = titlebarTabs
 
         toolbar = terminalToolbar
         toolbarStyle = .unifiedCompact
-        updateResetZoomToolbarButtonVisibility()
+		if let resetZoomItem = terminalToolbar.items.first(where: { $0.itemIdentifier == .resetZoom }) {
+			resetZoomItem.view = resetZoomToolbarButton
+			resetZoomItem.view?.translatesAutoresizingMaskIntoConstraints = false
+			resetZoomItem.view?.widthAnchor.constraint(equalToConstant: 22).isActive = true
+			resetZoomItem.view?.heightAnchor.constraint(equalToConstant: 20).isActive = true
+		}
+        updateResetZoomTitlebarButtonVisibility()
     }
+
+	private func generateResetZoomButton() -> NSButton {
+		let button = NSButton()
+		button.target = nil
+		button.action = #selector(TerminalController.splitZoom(_:))
+		button.isBordered = false
+		button.allowsExpansionToolTips = true
+		button.toolTip = "Reset Zoom"
+		button.contentTintColor = .controlAccentColor
+		button.state = .on
+		button.image = NSImage(named:"ResetZoom")
+		button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
+		button.translatesAutoresizingMaskIntoConstraints = false
+		button.widthAnchor.constraint(equalToConstant: 20).isActive = true
+		button.heightAnchor.constraint(equalToConstant: 20).isActive = true
+
+		return button
+	}
 
     // MARK: - Titlebar Tabs
     
@@ -233,7 +265,9 @@ class TerminalWindow: NSWindow {
     var titlebarTabs = false {
         didSet {
             self.titleVisibility = titlebarTabs ? .hidden : .visible
-            generateToolbar()
+			if titlebarTabs {
+				generateToolbar()
+			}
         }
     }
     
