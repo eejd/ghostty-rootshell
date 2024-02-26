@@ -17,7 +17,11 @@ class TerminalWindow: NSWindow {
 
     private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
 
-    private lazy var resetZoomTabButton: NSButton = generateResetZoomButton()
+	private lazy var resetZoomTabButton: NSButton = {
+		let button = generateResetZoomButton()
+		button.action = #selector(selectTabAndZoom(_:))
+		return button
+	}()
 
 	private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
 		guard let titlebarContainer = contentView?.superview?.subviews.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
@@ -115,7 +119,6 @@ class TerminalWindow: NSWindow {
         super.becomeKey()
 
         updateNewTabButtonOpacity()
-        resetZoomTabButton.isEnabled = true
         resetZoomTabButton.contentTintColor = .controlAccentColor
         resetZoomToolbarButton.contentTintColor = .controlAccentColor
     }
@@ -124,8 +127,7 @@ class TerminalWindow: NSWindow {
         super.resignKey()
 
         updateNewTabButtonOpacity()
-        resetZoomTabButton.isEnabled = false
-        resetZoomTabButton.contentTintColor = .labelColor
+        resetZoomTabButton.contentTintColor = .secondaryLabelColor
         resetZoomToolbarButton.contentTintColor = .tertiaryLabelColor
     }
 
@@ -257,6 +259,20 @@ class TerminalWindow: NSWindow {
 		button.heightAnchor.constraint(equalToConstant: 20).isActive = true
 
 		return button
+	}
+
+	@objc private func selectTabAndZoom(_ sender: NSButton) {
+		guard let tabGroup else { return }
+
+		guard let associatedWindow = tabGroup.windows.first(where: {
+			guard let accessoryView = $0.tab.accessoryView else { return false }
+			return accessoryView.subviews.contains(sender)
+		}),
+			  let windowController = associatedWindow.windowController as? TerminalController
+		else { return }
+
+		tabGroup.selectedWindow = associatedWindow
+		windowController.splitZoom(self)
 	}
 
     // MARK: - Titlebar Tabs
