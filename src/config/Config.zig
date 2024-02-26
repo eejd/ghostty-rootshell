@@ -949,6 +949,10 @@ keybind: Keybinds = .{},
 /// so you can test single instance without conflicting with release builds.
 @"gtk-single-instance": GtkSingleInstance = .desktop,
 
+/// Determines the side of the screen that the GTK tab bar will stick to.
+/// Top, bottom, left, and right are supported. The default is top.
+@"gtk-tabs-location": GtkTabsLocation = .top,
+
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
 /// If you set this to `false` then tabs will only take up space they need,
@@ -3376,6 +3380,14 @@ pub const GtkSingleInstance = enum {
     desktop,
     false,
     true,
+};
+
+/// See gtk-tabs-location
+pub const GtkTabsLocation = enum {
+    top,
+    bottom,
+    left,
+    right,
 };
 
 /// See mouse-shift-capture
