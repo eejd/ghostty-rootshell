@@ -88,7 +88,7 @@ fn homeWindows(buf: []u8) !?[]u8 {
         const fba = fba_instance.allocator();
         const drive = std.process.getEnvVarOwned(fba, "HOMEDRIVE") catch |err| switch (err) {
             error.OutOfMemory => return Error.BufferTooSmall,
-            error.InvalidUtf8, error.EnvironmentVariableNotFound => return null,
+            error.InvalidWtf8, error.EnvironmentVariableNotFound => return null,
         };
         // could shift the contents if this ever happens
         if (drive.ptr != buf.ptr) @panic("codebug");
@@ -101,7 +101,7 @@ fn homeWindows(buf: []u8) !?[]u8 {
         const fba = fba_instance.allocator();
         const homepath = std.process.getEnvVarOwned(fba, "HOMEPATH") catch |err| switch (err) {
             error.OutOfMemory => return Error.BufferTooSmall,
-            error.InvalidUtf8, error.EnvironmentVariableNotFound => return null,
+            error.InvalidWtf8, error.EnvironmentVariableNotFound => return null,
         };
         // could shift the contents if this ever happens
         if (homepath.ptr != path_buf.ptr) @panic("codebug");
