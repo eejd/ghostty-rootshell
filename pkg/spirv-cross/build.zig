@@ -58,7 +58,7 @@ fn buildSpirvCross(
     });
 
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
             // Core

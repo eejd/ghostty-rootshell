@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .files = srcs,
         .flags = flags.items,
     });

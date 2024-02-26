@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) !void {
     if (libpng_enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
 
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .files = srcs,
         .flags = flags.items,
     });

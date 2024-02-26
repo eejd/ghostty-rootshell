@@ -71,7 +71,7 @@ fn buildOniguruma(
     defer flags.deinit();
     try flags.appendSlice(&.{});
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
             "src/regerror.c",

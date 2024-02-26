@@ -73,7 +73,7 @@ pub fn build(b: *std.Build) !void {
 
     lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"bridge.cpp"} });
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
             "hwy/aligned_allocator.cc",
