@@ -24,7 +24,7 @@ const Command = @import("src/Command.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.2818+97290e0bf";
+    const required_zig = "0.12.0-dev.3033+031f23117";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
