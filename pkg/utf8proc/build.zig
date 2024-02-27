@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
     try flags.append("-DUTF8PROC_EXPORTS");
     defer flags.deinit();
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .files = &.{"utf8proc.c"},
         .flags = flags.items,
     });

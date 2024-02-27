@@ -66,7 +66,7 @@ fn buildGlslang(
     });
 
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
             // GenericCodeGen
@@ -125,7 +125,7 @@ fn buildGlslang(
 
     if (target.result.os.tag != .windows) {
         lib.addCSourceFiles(.{
-            .dependency = upstream,
+            .root = upstream.path(""),
             .flags = flags.items,
             .files = &.{
                 "glslang/OSDependent/Unix/ossource.cpp",
@@ -133,7 +133,7 @@ fn buildGlslang(
         });
     } else {
         lib.addCSourceFiles(.{
-            .dependency = upstream,
+            .root = upstream.path(""),
             .flags = flags.items,
             .files = &.{
                 "glslang/OSDependent/Windows/ossource.cpp",

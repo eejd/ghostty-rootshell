@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) !void {
         "-DZ_HAVE_UNISTD_H",
     });
     lib.addCSourceFiles(.{
-        .dependency = upstream,
+        .root = upstream.path(""),
         .files = srcs,
         .flags = flags.items,
     });
