@@ -973,9 +973,9 @@ pub fn rebuildCells(
     try self.cells.ensureTotalCapacity(
         self.alloc,
 
-        // * 3 for background modes and cursor and underlines
+        // * 3 for glyph + underline + strikethrough for each cell
         // + 1 for cursor
-        (screen.rows * screen.cols * 2) + 1,
+        (screen.rows * screen.cols * 3) + 1,
     );
 
     // Create an arena for all our temporary allocations while rebuilding
