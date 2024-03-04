@@ -1739,7 +1739,26 @@ pub fn selectWordBetween(
 /// this happens is if the point pt is outside of the written screen space.
 pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Boundary characters for selection purposes
-    const boundary = &[_]u32{ 0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ',', '(', ')', '[', ']', '{', '}', '<', '>' };
+    const boundary = &[_]u32{
+        0,
+        ' ',
+        '\t',
+        '\'',
+        '"',
+        '│',
+        '`',
+        '|',
+        ':',
+        ',',
+        '(',
+        ')',
+        '[',
+        ']',
+        '{',
+        '}',
+        '<',
+        '>',
+    };
 
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
@@ -4770,9 +4789,6 @@ test "Screen: selectWord with character boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 10, 20, 0);
-    defer s.deinit();
-
     const cases = [_][]const u8{
         " 'abc' \n123",
         " \"abc\" \n123",
@@ -4783,16 +4799,17 @@ test "Screen: selectWord with character boundary" {
         " ,abc, \n123",
         " (abc( \n123",
         " )abc) \n123",
-        // " [abc[ \n123",
-        // " ]abc] \n123",
-        // " {abc{ \n123",
-        // " }abc} \n123",
-        // " <abc< \n123",
-        // " >abc> \n123",
+        " [abc[ \n123",
+        " ]abc] \n123",
+        " {abc{ \n123",
+        " }abc} \n123",
+        " <abc< \n123",
+        " >abc> \n123",
     };
 
     for (cases) |case| {
-        try s.clear(.history);
+        var s = try init(alloc, 10, 20, 0);
+        defer s.deinit();
         try s.testWriteString(case);
 
         // Inside character forward
