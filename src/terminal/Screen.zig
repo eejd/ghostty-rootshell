@@ -1739,7 +1739,26 @@ pub fn selectWordBetween(
 /// this happens is if the point pt is outside of the written screen space.
 pub fn selectWord(self: *Screen, pt: point.ScreenPoint) ?Selection {
     // Boundary characters for selection purposes
-    const boundary = &[_]u32{ 0, ' ', '\t', '\'', '"' };
+    const boundary = &[_]u32{
+        0,
+        ' ',
+        '\t',
+        '\'',
+        '"',
+        '│',
+        '`',
+        '|',
+        ':',
+        ',',
+        '(',
+        ')',
+        '[',
+        ']',
+        '{',
+        '}',
+        '<',
+        '>',
+    };
 
     // Impossible to select anything outside of the area we've written.
     const y_max = self.rowsWritten() - 1;
@@ -4766,50 +4785,70 @@ test "Screen: selectWord whitespace across soft-wrap" {
     }
 }
 
-test "Screen: selectWord with single quote boundary" {
+test "Screen: selectWord with character boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 10, 20, 0);
-    defer s.deinit();
-    try s.testWriteString(" 'abc' \n123");
+    const cases = [_][]const u8{
+        " 'abc' \n123",
+        " \"abc\" \n123",
+        " │abc│ \n123",
+        " `abc` \n123",
+        " |abc| \n123",
+        " :abc: \n123",
+        " ,abc, \n123",
+        " (abc( \n123",
+        " )abc) \n123",
+        " [abc[ \n123",
+        " ]abc] \n123",
+        " {abc{ \n123",
+        " }abc} \n123",
+        " <abc< \n123",
+        " >abc> \n123",
+    };
 
-    // Inside quotes forward
-    {
-        const sel = s.selectWord(.{ .x = 2, .y = 0 }).?;
-        try testing.expectEqual(@as(usize, 2), sel.start.x);
-        try testing.expectEqual(@as(usize, 0), sel.start.y);
-        try testing.expectEqual(@as(usize, 4), sel.end.x);
-        try testing.expectEqual(@as(usize, 0), sel.end.y);
-    }
+    for (cases) |case| {
+        var s = try init(alloc, 10, 20, 0);
+        defer s.deinit();
+        try s.testWriteString(case);
 
-    // Inside quotes backward
-    {
-        const sel = s.selectWord(.{ .x = 4, .y = 0 }).?;
-        try testing.expectEqual(@as(usize, 2), sel.start.x);
-        try testing.expectEqual(@as(usize, 0), sel.start.y);
-        try testing.expectEqual(@as(usize, 4), sel.end.x);
-        try testing.expectEqual(@as(usize, 0), sel.end.y);
-    }
+        // Inside character forward
+        {
+            const sel = s.selectWord(.{ .x = 2, .y = 0 }).?;
+            try testing.expectEqual(@as(usize, 2), sel.start.x);
+            try testing.expectEqual(@as(usize, 0), sel.start.y);
+            try testing.expectEqual(@as(usize, 4), sel.end.x);
+            try testing.expectEqual(@as(usize, 0), sel.end.y);
+        }
 
-    // Inside quotes bidirectional
-    {
-        const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
-        try testing.expectEqual(@as(usize, 2), sel.start.x);
-        try testing.expectEqual(@as(usize, 0), sel.start.y);
-        try testing.expectEqual(@as(usize, 4), sel.end.x);
-        try testing.expectEqual(@as(usize, 0), sel.end.y);
-    }
+        // Inside character backward
+        {
+            const sel = s.selectWord(.{ .x = 4, .y = 0 }).?;
+            try testing.expectEqual(@as(usize, 2), sel.start.x);
+            try testing.expectEqual(@as(usize, 0), sel.start.y);
+            try testing.expectEqual(@as(usize, 4), sel.end.x);
+            try testing.expectEqual(@as(usize, 0), sel.end.y);
+        }
 
-    // On quote
-    // NOTE: this behavior is not ideal, so we can change this one day,
-    // but I think its also not that important compared to the above.
-    {
-        const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
-        try testing.expectEqual(@as(usize, 0), sel.start.x);
-        try testing.expectEqual(@as(usize, 0), sel.start.y);
-        try testing.expectEqual(@as(usize, 1), sel.end.x);
-        try testing.expectEqual(@as(usize, 0), sel.end.y);
+        // Inside character bidirectional
+        {
+            const sel = s.selectWord(.{ .x = 3, .y = 0 }).?;
+            try testing.expectEqual(@as(usize, 2), sel.start.x);
+            try testing.expectEqual(@as(usize, 0), sel.start.y);
+            try testing.expectEqual(@as(usize, 4), sel.end.x);
+            try testing.expectEqual(@as(usize, 0), sel.end.y);
+        }
+
+        // On quote
+        // NOTE: this behavior is not ideal, so we can change this one day,
+        // but I think its also not that important compared to the above.
+        {
+            const sel = s.selectWord(.{ .x = 1, .y = 0 }).?;
+            try testing.expectEqual(@as(usize, 0), sel.start.x);
+            try testing.expectEqual(@as(usize, 0), sel.start.y);
+            try testing.expectEqual(@as(usize, 1), sel.end.x);
+            try testing.expectEqual(@as(usize, 0), sel.end.y);
+        }
     }
 }
 
