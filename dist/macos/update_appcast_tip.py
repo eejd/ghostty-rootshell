@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 now = datetime.now(timezone.utc)
 build = os.environ["GHOSTTY_BUILD"]
 commit = os.environ["GHOSTTY_COMMIT"]
+repo = "https://github.com/mitchellh/ghostty"
 
 # Read our sign_update output
 with open("sign_update.txt", "r") as f:
@@ -81,12 +82,14 @@ elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "12.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<p>Automated build from commit <code>{commit}</code> on {now.strftime('%Y-%m-%d')}.</p>
+<p>
+Automated build from commit <code><a href="{repo}/commits/{commit}">{commit}</a></code>
+on {now.strftime('%Y-%m-%d')}.
+</p>
 <p>
 These are automatic per-commit builds generated from the main Git branch.
 We do not generate any release notes for these builds. You can view the full
-commit history
-<a href="https://github.com/mitchellh/ghostty">on GitHub</a> for all changes.
+commit history <a href="{repo}">on GitHub</a> for all changes.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
