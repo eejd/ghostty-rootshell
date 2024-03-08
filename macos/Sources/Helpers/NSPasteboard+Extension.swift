@@ -7,8 +7,7 @@ extension NSPasteboard {
     /// - Tries to get any string from the pasteboard.
     /// If all of the above fail, returns None.
     func getOpinionatedStringContents() -> String? {
-        let file = self.string(forType: .fileURL)
-        if let file = file {
+        if let file = self.string(forType: .fileURL) {
             if let path = NSURL(string: file)?.path {
                 return path
             }
