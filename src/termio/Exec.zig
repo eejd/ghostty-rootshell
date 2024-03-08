@@ -78,7 +78,7 @@ pub const DerivedConfig = struct {
 
     palette: terminal.color.Palette,
     image_storage_limit: usize,
-    cursor_style: terminal.Cursor.Style,
+    cursor_style: terminal.CursorStyle,
     cursor_blink: ?bool,
     cursor_color: ?configpkg.Config.Color,
     foreground: configpkg.Config.Color,
@@ -155,7 +155,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     );
 
     // Set our default cursor style
-    term.screen.cursor.style = opts.config.cursor_style;
+    term.screen.cursor.cursor_style = opts.config.cursor_style;
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -1666,7 +1666,7 @@ const StreamHandler = struct {
     /// The default cursor state. This is used with CSI q. This is
     /// set to true when we're currently in the default cursor state.
     default_cursor: bool = true,
-    default_cursor_style: terminal.Cursor.Style,
+    default_cursor_style: terminal.CursorStyle,
     default_cursor_blink: ?bool,
     default_cursor_color: ?terminal.color.RGB,
 
@@ -1843,7 +1843,7 @@ const StreamHandler = struct {
 
                     .decscusr => {
                         const blink = self.terminal.modes.get(.cursor_blinking);
-                        const style: u8 = switch (self.terminal.screen.cursor.style) {
+                        const style: u8 = switch (self.terminal.screen.cursor.cursor_style) {
                             .block => if (blink) 1 else 2,
                             .underline => if (blink) 3 else 4,
                             .bar => if (blink) 5 else 6,
@@ -2358,7 +2358,7 @@ const StreamHandler = struct {
         switch (style) {
             .default => {
                 self.default_cursor = true;
-                self.terminal.screen.cursor.style = self.default_cursor_style;
+                self.terminal.screen.cursor.cursor_style = self.default_cursor_style;
                 self.terminal.modes.set(
                     .cursor_blinking,
                     self.default_cursor_blink orelse true,
@@ -2366,32 +2366,32 @@ const StreamHandler = struct {
             },
 
             .blinking_block => {
-                self.terminal.screen.cursor.style = .block;
+                self.terminal.screen.cursor.cursor_style = .block;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_block => {
-                self.terminal.screen.cursor.style = .block;
+                self.terminal.screen.cursor.cursor_style = .block;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
             .blinking_underline => {
-                self.terminal.screen.cursor.style = .underline;
+                self.terminal.screen.cursor.cursor_style = .underline;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_underline => {
-                self.terminal.screen.cursor.style = .underline;
+                self.terminal.screen.cursor.cursor_style = .underline;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
             .blinking_bar => {
-                self.terminal.screen.cursor.style = .bar;
+                self.terminal.screen.cursor.cursor_style = .bar;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_bar => {
-                self.terminal.screen.cursor.style = .bar;
+                self.terminal.screen.cursor.cursor_style = .bar;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
