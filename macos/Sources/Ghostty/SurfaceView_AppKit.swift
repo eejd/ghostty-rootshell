@@ -1041,7 +1041,8 @@ extension Ghostty.SurfaceView: NSServicesMenuRequestor {
     }
     
     func readSelection(from pboard: NSPasteboard) -> Bool {
-        guard let str = pboard.string(forType: .string) else { return false }
+        guard let str = pboard.getOpinionatedStringContents()
+        else { return false }
         
         let len = str.utf8CString.count
         if (len == 0) { return true }

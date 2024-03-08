@@ -382,7 +382,7 @@ extension Ghostty {
             }
             
             // Get our string
-            let str = NSPasteboard.general.string(forType: .string) ?? ""
+            let str = NSPasteboard.general.getOpinionatedStringContents() ?? ""
             completeClipboardRequest(surface, data: str, state: state)
         }
         
