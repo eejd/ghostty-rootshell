@@ -2799,35 +2799,34 @@ fn dragLeftClickSingle(
 // Resets the selection if we switched directions, depending on the select
 // mode. See dragLeftClickSingle for more details.
 fn checkResetSelSwitch(self: *Surface, screen_point: terminal.point.ScreenPoint) void {
-    var reset: bool = undefined;
-    if (self.io.terminal.screen.selection) |sel| {
-        if (sel.rectangle) {
-            // When we're in rectangle mode, we reset the selection relative to
-            // the click point depending on the selection mode we're in, with
-            // the exception of single-column selections, which we always reset
-            // on if we drift.
-            if (sel.start.x == sel.end.x) {
-                reset = screen_point.x != sel.start.x;
-            } else {
-                reset = switch (sel.order()) {
-                    .forward => screen_point.x < sel.start.x or screen_point.y < sel.start.y,
-                    .reverse => screen_point.x > sel.start.x or screen_point.y > sel.start.y,
-                    .mirrored_forward => screen_point.x > sel.start.x or screen_point.y < sel.start.y,
-                    .mirrored_reverse => screen_point.x < sel.start.x or screen_point.y > sel.start.y,
-                };
-            }
+    const sel = self.io.terminal.screen.selection orelse return;
+
+    var reset: bool = false;
+    if (sel.rectangle) {
+        // When we're in rectangle mode, we reset the selection relative to
+        // the click point depending on the selection mode we're in, with
+        // the exception of single-column selections, which we always reset
+        // on if we drift.
+        if (sel.start.x == sel.end.x) {
+            reset = screen_point.x != sel.start.x;
         } else {
-            // Normal select uses simpler logic that is just based on the
-            // selection start/end.
-            reset = if (sel.end.before(sel.start))
-                sel.start.before(screen_point)
-            else
-                screen_point.before(sel.start);
+            reset = switch (sel.order()) {
+                .forward => screen_point.x < sel.start.x or screen_point.y < sel.start.y,
+                .reverse => screen_point.x > sel.start.x or screen_point.y > sel.start.y,
+                .mirrored_forward => screen_point.x > sel.start.x or screen_point.y < sel.start.y,
+                .mirrored_reverse => screen_point.x < sel.start.x or screen_point.y > sel.start.y,
+            };
         }
+    } else {
+        // Normal select uses simpler logic that is just based on the
+        // selection start/end.
+        reset = if (sel.end.before(sel.start))
+            sel.start.before(screen_point)
+        else
+            screen_point.before(sel.start);
     }
 
-    if (reset)
-        self.setSelection(null);
+    if (reset) self.setSelection(null);
 }
 
 // Handles how whether or not the drag screen point is before the click point.
