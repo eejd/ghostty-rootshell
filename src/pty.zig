@@ -183,7 +183,7 @@ const WindowsPty = struct {
             "\\\\.\\pipe\\LOCAL\\ghostty-pty-{d}-{d}",
             .{
                 windows.kernel32.GetCurrentProcessId(),
-                pipe_name_counter.fetchAdd(1, .Monotonic),
+                pipe_name_counter.fetchAdd(1, .monotonic),
             },
         ) catch unreachable;
 
