@@ -98,7 +98,7 @@ pub fn formatEntry(
             return;
         } else switch (info.layout) {
             // Packed structs we special case.
-            .Packed => {
+            .@"packed" => {
                 try writer.print("{s} = ", .{name});
                 inline for (info.fields, 0..) |field, i| {
                     if (i > 0) try writer.print(",", .{});

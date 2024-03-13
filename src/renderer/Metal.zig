@@ -956,8 +956,8 @@ fn bufferCompleted(
 
     // If our health value hasn't changed, then we do nothing. We don't
     // do a cmpxchg here because strict atomicity isn't important.
-    if (self.health.load(.SeqCst) != health) {
-        self.health.store(health, .SeqCst);
+    if (self.health.load(.seq_cst) != health) {
+        self.health.store(health, .seq_cst);
 
         // Our health value changed, so we notify the surface so that it
         // can do something about it.

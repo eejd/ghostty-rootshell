@@ -281,7 +281,7 @@ fn parseIntoField(
 
 fn parsePackedStruct(comptime T: type, v: []const u8) !T {
     const info = @typeInfo(T).Struct;
-    assert(info.layout == .Packed);
+    assert(info.layout == .@"packed");
 
     var result: T = .{};
 
