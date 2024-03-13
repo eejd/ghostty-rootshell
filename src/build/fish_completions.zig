@@ -68,7 +68,7 @@ fn writeFishCompletions(writer: anytype) !void {
                     try writer.writeAll("\"");
                 },
                 .Struct => |info| {
-                    if (!@hasDecl(field.type, "parseCLI") and info.layout == .Packed) {
+                    if (!@hasDecl(field.type, "parseCLI") and info.layout == .@"packed") {
                         try writer.writeAll(" -a \"");
                         for (info.fields, 0..) |f, i| {
                             if (i > 0) try writer.writeAll(" ");

@@ -63,7 +63,7 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
                 // Packed structs that are less than or equal to the
                 // size of a C int can be passed directly as their
                 // bit representation.
-                if (info.layout != .Packed) return false;
+                if (info.layout != .@"packed") return false;
                 const Backing = info.backing_integer orelse return false;
                 if (@bitSizeOf(Backing) > @bitSizeOf(c_uint)) return false;
 

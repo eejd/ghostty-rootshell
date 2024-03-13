@@ -1982,7 +1982,7 @@ fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
 
         .Struct => |info| {
             // Packed structs we can return directly as copies.
-            assert(info.layout == .Packed);
+            assert(info.layout == .@"packed");
             return src;
         },
 
