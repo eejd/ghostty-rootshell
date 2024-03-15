@@ -702,6 +702,13 @@ extension Ghostty {
             if (event.type != .keyDown) {
                 return false
             }
+            
+            // Only process events if we're focused. Some key events like C-/ macOS
+            // appears to send to the first view in the hierarchy rather than the
+            // the first responder (I don't know why). This prevents us from handling it.
+            if (!focused) {
+                return false
+            }
 
             let equivalent: String
             switch (event.charactersIgnoringModifiers) {
