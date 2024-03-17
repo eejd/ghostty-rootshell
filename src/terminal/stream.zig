@@ -149,7 +149,7 @@ pub fn Stream(comptime Handler: type) type {
         /// try to get multiple bytes at once.
         pub fn next(self: *Self, c: u8) !void {
             // The scalar path can be responsible for decoding UTF-8.
-            if (self.parser.state == .ground and c != 0x1B) {
+            if (self.parser.state == .ground) {
                 try self.nextUtf8(c);
                 return;
             }
@@ -162,16 +162,12 @@ pub fn Stream(comptime Handler: type) type {
         /// This assumes we're in the UTF-8 decoding state. If we may not
         /// be in the UTF-8 decoding state call nextSlice or next.
         fn nextUtf8(self: *Self, c: u8) !void {
-            assert(self.parser.state == .ground and c != 0x1B);
+            assert(self.parser.state == .ground);
 
             const res = self.utf8decoder.next(c);
             const consumed = res[1];
             if (res[0]) |codepoint| {
-                if (codepoint <= 0xF) {
-                    try self.execute(@intCast(codepoint));
-                } else {
-                    try self.print(@intCast(codepoint));
-                }
+                try self.handleCodepoint(codepoint);
             }
             if (!consumed) {
                 const retry = self.utf8decoder.next(c);
@@ -179,13 +175,25 @@ pub fn Stream(comptime Handler: type) type {
                 // to not consume the byte twice in a row.
                 assert(retry[1] == true);
                 if (retry[0]) |codepoint| {
-                    if (codepoint <= 0xF) {
-                        try self.execute(@intCast(codepoint));
-                    } else {
-                        try self.print(@intCast(codepoint));
-                    }
+                    try self.handleCodepoint(codepoint);
                 }
             }
+        }
+
+        /// To be called whenever the utf-8 decoder produces a codepoint.
+        ///
+        /// This function is abstracted this way to handle the case where
+        /// the decoder emits a 0x1B after rejecting an ill-formed sequence.
+        inline fn handleCodepoint(self: *Self, c: u21) !void {
+            if (c <= 0xF) {
+                try self.execute(@intCast(c));
+                return;
+            }
+            if (c == 0x1B) {
+                try self.nextNonUtf8(@intCast(c));
+                return;
+            }
+            try self.print(@intCast(c));
         }
 
         /// Process the next character and call any callbacks if necessary.
