@@ -251,6 +251,10 @@ pub const GlobalState = struct {
 
         // Output some debug information right away
         std.log.info("ghostty version={s}", .{build_config.version_string});
+        std.log.info("ghostty built with{s} -Doptimize={s}", .{
+            if (build_config.baseline) " -Dcpu=baseline" else "",
+            build_config.mode_string,
+        });
         std.log.info("runtime={}", .{build_config.app_runtime});
         std.log.info("font_backend={}", .{build_config.font_backend});
         std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
