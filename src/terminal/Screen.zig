@@ -527,12 +527,14 @@ pub fn cursorDownScroll(self: *Screen) !void {
     }
 
     if (self.cursor.style_id != style.default_id) {
-        // We need to ensure our new page has our style.
-        self.manualStyleUpdate() catch |err| {
+        // We need to ensure our new page has our style. This is a somewhat
+        // expensive operation so we only do it if our page pin y is on zero,
+        // which signals we're at the top of a page.
+        if (self.cursor.page_pin.y == 0) {
             // This should never happen because if we're in a new
             // page then we should have space for one style.
-            log.warn("error updating style on scroll err={}", .{err});
-        };
+            try self.manualStyleUpdate();
+        }
 
         // The newly created line needs to be styled according to
         // the bg color if it is set.
