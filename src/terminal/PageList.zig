@@ -2164,7 +2164,13 @@ pub const RowIterator = struct {
                     self.chunk = self.page_it.next();
                     if (self.chunk) |c| self.offset = c.end - 1;
                 } else {
-                    self.offset -= 1;
+                    // If we're at the start of the chunk and its a non-zero
+                    // offset then we've reached a limit.
+                    if (self.offset == chunk.start) {
+                        self.chunk = null;
+                    } else {
+                        self.offset -= 1;
+                    }
                 }
             },
         }
