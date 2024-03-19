@@ -1255,25 +1255,25 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     // top is just the cursor position. insertLines starts at the cursor
     // so this is our top. We want to shift lines down, down to the bottom
     // of the scroll region.
-    const top: [*]Row = @ptrCast(self.screen.cursor.page_row);
+    const top = self.screen.cursor.page_pin.*;
 
     // This is the amount of space at the bottom of the scroll region
     // that will NOT be blank, so we need to shift the correct lines down.
     // "scroll_amount" is the number of such lines.
     const scroll_amount = rem - adjusted_count;
     if (scroll_amount > 0) {
-        var y: [*]Row = top + (scroll_amount - 1);
-
-        // TODO: detect active area split across multiple pages
-
         // If we have left/right scroll margins we have a slower path.
         const left_right = self.scrolling_region.left > 0 or
             self.scrolling_region.right < self.cols - 1;
 
-        // We work backwards so we don't overwrite data.
-        while (@intFromPtr(y) >= @intFromPtr(top)) : (y -= 1) {
-            const src: *Row = @ptrCast(y);
-            const dst: *Row = @ptrCast(y + adjusted_count);
+        const bot = top.down(scroll_amount - 1).?;
+        var it = bot.rowIterator(.left_up, top);
+        while (it.next()) |p| {
+            const dst_p = p.down(adjusted_count).?;
+            assert(dst_p.page == p.page); // TODO: handle different pages
+
+            const src: *Row = p.rowAndCell().row;
+            const dst: *Row = dst_p.rowAndCell().row;
 
             if (!left_right) {
                 // Swap the src/dst cells. This ensures that our dst gets the proper
@@ -1297,8 +1297,10 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     }
 
     // Inserted lines should keep our bg color
-    for (0..adjusted_count) |i| {
-        const row: *Row = @ptrCast(top + i);
+    const bot = top.down(adjusted_count - 1).?;
+    var it = top.rowIterator(.right_down, bot);
+    while (it.next()) |p| {
+        const row: *Row = p.rowAndCell().row;
 
         // Clear the src row.
         var page = &self.screen.cursor.page_pin.page.data;
