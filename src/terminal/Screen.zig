@@ -20,6 +20,8 @@ const Row = pagepkg.Row;
 const Cell = pagepkg.Cell;
 const Pin = PageList.Pin;
 
+const log = std.log.scoped(.screen);
+
 /// The general purpose allocator to use for all memory allocations.
 /// Unfortunately some screen operations do require allocation.
 alloc: Allocator,
@@ -524,9 +526,16 @@ pub fn cursorDownScroll(self: *Screen) !void {
         }
     }
 
-    // The newly created line needs to be styled according to the bg color
-    // if it is set.
     if (self.cursor.style_id != style.default_id) {
+        // We need to ensure our new page has our style.
+        self.manualStyleUpdate() catch |err| {
+            // This should never happen because if we're in a new
+            // page then we should have space for one style.
+            log.warn("error updating style on scroll err={}", .{err});
+        };
+
+        // The newly created line needs to be styled according to
+        // the bg color if it is set.
         if (self.cursor.style.bgCell()) |blank_cell| {
             const cell_current: [*]pagepkg.Cell = @ptrCast(self.cursor.page_cell);
             const cells = cell_current - self.cursor.x;
@@ -2503,6 +2512,33 @@ test "Screen: scrolling" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
     }
+}
+
+test "Screen: scrolling across pages preserves style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 3, 1);
+    defer s.deinit();
+    try s.setAttribute(.{ .bold = {} });
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
+    const start_page = &s.pages.pages.last.?.data;
+
+    // Scroll down enough to go to another page
+    const rem = start_page.capacity.rows - start_page.size.rows + 1;
+    for (0..rem) |_| try s.cursorDownScroll();
+
+    // We need our page to change for this test o make sense. If this
+    // assertion fails then the bug is in the test: we should be scrolling
+    // above enough for a new page to show up.
+    const page = &s.pages.pages.last.?.data;
+    try testing.expect(start_page != page);
+
+    const styleval = page.styles.lookupId(
+        page.memory,
+        s.cursor.style_id,
+    ).?;
+    try testing.expect(styleval.flags.bold);
 }
 
 test "Screen: scroll down from 0" {

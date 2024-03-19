@@ -559,6 +559,24 @@ fn printCell(
         .protected = self.screen.cursor.protected,
     };
 
+    if (comptime std.debug.runtime_safety) {
+        // We've had bugs around this, so let's add an assertion: every
+        // style we use should be present in the style table.
+        if (self.screen.cursor.style_id != style.default_id) {
+            const page = &self.screen.cursor.page_pin.page.data;
+            if (page.styles.lookupId(
+                page.memory,
+                self.screen.cursor.style_id,
+            ) == null) {
+                log.err("can't find style page={X} id={}", .{
+                    @intFromPtr(&self.screen.cursor.page_pin.page.data),
+                    self.screen.cursor.style_id,
+                });
+                @panic("style not found");
+            }
+        }
+    }
+
     // Handle the style ref count handling
     style_ref: {
         if (prev_style_id != style.default_id) {
