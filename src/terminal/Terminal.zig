@@ -1353,6 +1353,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 ///
 /// Moves the cursor to the left margin.
 pub fn deleteLines(self: *Terminal, count_req: usize) void {
+    // Rare, but happens
+    if (count_req == 0) return;
+
     // If the cursor is outside the scroll region we do nothing.
     if (self.screen.cursor.y < self.scrolling_region.top or
         self.screen.cursor.y > self.scrolling_region.bottom or
@@ -5717,6 +5720,16 @@ test "Terminal: deleteLines left/right scroll region high count" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABC123\nD   56\nG   89", str);
     }
+}
+
+test "Terminal: deleteLines zero" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 2, .rows = 5 });
+    defer t.deinit(alloc);
+
+    // This should do nothing
+    t.setCursorPos(1, 1);
+    t.deleteLines(0);
 }
 
 test "Terminal: default style is empty" {
