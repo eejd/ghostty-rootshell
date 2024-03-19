@@ -1270,12 +1270,24 @@ pub fn insertLines(self: *Terminal, count: usize) void {
         var it = bot.rowIterator(.left_up, top);
         while (it.next()) |p| {
             const dst_p = p.down(adjusted_count).?;
-            assert(dst_p.page == p.page); // TODO: handle different pages
-
             const src: *Row = p.rowAndCell().row;
             const dst: *Row = dst_p.rowAndCell().row;
 
             if (!left_right) {
+                // If the pages are not the same, we need to do a slow copy.
+                if (dst_p.page != p.page) {
+                    dst_p.page.data.cloneRowFrom(
+                        &p.page.data,
+                        dst,
+                        src,
+                    ) catch |err| {
+                        std.log.warn("TODO: insertLines handle clone error err={}", .{err});
+                        unreachable;
+                    };
+
+                    continue;
+                }
+
                 // Swap the src/dst cells. This ensures that our dst gets the proper
                 // shifted rows and src gets non-garbage cell data that we can clear.
                 const dst_row = dst.*;
@@ -1283,6 +1295,8 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 src.* = dst_row;
                 continue;
             }
+
+            assert(dst_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
             var page = &self.screen.cursor.page_pin.page.data;
@@ -1369,12 +1383,24 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         var it = top.rowIterator(.right_down, bot);
         while (it.next()) |p| {
             const src_p = p.down(count).?;
-            assert(src_p.page == p.page); // TODO: handle different pages
-
             const src: *Row = src_p.rowAndCell().row;
             const dst: *Row = p.rowAndCell().row;
 
             if (!left_right) {
+                // If the pages are not the same, we need to do a slow copy.
+                if (src_p.page != p.page) {
+                    p.page.data.cloneRowFrom(
+                        &src_p.page.data,
+                        dst,
+                        src,
+                    ) catch |err| {
+                        std.log.warn("TODO: deleteLines handle clone error err={}", .{err});
+                        unreachable;
+                    };
+
+                    continue;
+                }
+
                 // Swap the src/dst cells. This ensures that our dst gets the proper
                 // shifted rows and src gets non-garbage cell data that we can clear.
                 const dst_row = dst.*;
@@ -1382,6 +1408,8 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 src.* = dst_row;
                 continue;
             }
+
+            assert(src_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
             var page = &self.screen.cursor.page_pin.page.data;

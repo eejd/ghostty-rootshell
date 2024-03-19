@@ -240,37 +240,49 @@ pub const Page = struct {
 
         const other_rows = other.rows.ptr(other.memory)[y_start..y_end];
         const rows = self.rows.ptr(self.memory)[0 .. y_end - y_start];
-        for (rows, other_rows) |*dst_row, *src_row| {
-            // Copy all the row metadata but keep our cells offset
-            const cells_offset = dst_row.cells;
-            dst_row.* = src_row.*;
-            dst_row.cells = cells_offset;
+        for (rows, other_rows) |*dst_row, *src_row| try self.cloneRowFrom(
+            other,
+            dst_row,
+            src_row,
+        );
+    }
 
-            const cell_len = @min(self.size.cols, other.size.cols);
-            const other_cells = src_row.cells.ptr(other.memory)[0..cell_len];
-            const cells = dst_row.cells.ptr(self.memory)[0..cell_len];
+    /// Clone a single row from another page into this page.
+    pub fn cloneRowFrom(
+        self: *Page,
+        other: *const Page,
+        dst_row: *Row,
+        src_row: *const Row,
+    ) !void {
+        // Copy all the row metadata but keep our cells offset
+        const cells_offset = dst_row.cells;
+        dst_row.* = src_row.*;
+        dst_row.cells = cells_offset;
 
-            // If we have no managed memory in the row, we can just copy.
-            if (!dst_row.grapheme and !dst_row.styled) {
-                fastmem.copy(Cell, cells, other_cells);
-                continue;
+        const cell_len = @min(self.size.cols, other.size.cols);
+        const other_cells = src_row.cells.ptr(other.memory)[0..cell_len];
+        const cells = dst_row.cells.ptr(self.memory)[0..cell_len];
+
+        // If we have no managed memory in the row, we can just copy.
+        if (!dst_row.grapheme and !dst_row.styled) {
+            fastmem.copy(Cell, cells, other_cells);
+            return;
+        }
+
+        // We have managed memory, so we have to do a slower copy to
+        // get all of that right.
+        for (cells, other_cells) |*dst_cell, *src_cell| {
+            dst_cell.* = src_cell.*;
+            if (src_cell.hasGrapheme()) {
+                dst_cell.content_tag = .codepoint; // required for appendGrapheme
+                const cps = other.lookupGrapheme(src_cell).?;
+                for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
             }
-
-            // We have managed memory, so we have to do a slower copy to
-            // get all of that right.
-            for (cells, other_cells) |*dst_cell, *src_cell| {
-                dst_cell.* = src_cell.*;
-                if (src_cell.hasGrapheme()) {
-                    dst_cell.content_tag = .codepoint; // required for appendGrapheme
-                    const cps = other.lookupGrapheme(src_cell).?;
-                    for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
-                }
-                if (src_cell.style_id != style.default_id) {
-                    const other_style = other.styles.lookupId(other.memory, src_cell.style_id).?.*;
-                    const md = try self.styles.upsert(self.memory, other_style);
-                    md.ref += 1;
-                    dst_cell.style_id = md.id;
-                }
+            if (src_cell.style_id != style.default_id) {
+                const other_style = other.styles.lookupId(other.memory, src_cell.style_id).?.*;
+                const md = try self.styles.upsert(self.memory, other_style);
+                md.ref += 1;
+                dst_cell.style_id = md.id;
             }
         }
     }
@@ -602,21 +614,9 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const grapheme_map_start = alignBackward(
-                usize,
-                layout.total_size - layout.grapheme_map_layout.total_size,
-                GraphemeMap.base_align
-            );
-            const grapheme_alloc_start = alignBackward(
-                usize,
-                grapheme_map_start - layout.grapheme_alloc_layout.total_size,
-                GraphemeAlloc.base_align
-            );
-            const styles_start = alignBackward(
-                usize,
-                grapheme_alloc_start - layout.styles_layout.total_size,
-                style.Set.base_align
-            );
+            const grapheme_map_start = alignBackward(usize, layout.total_size - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
+            const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
+            const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
 
             const available_size = styles_start;
             const size_per_row = @sizeOf(Row) + (@sizeOf(Cell) * @as(usize, @intCast(cols)));
@@ -914,7 +914,7 @@ test "Page capacity adjust cols sweep" {
     var cap = std_capacity;
     const original_cols = cap.cols;
     const original_size = Page.layout(cap).total_size;
-    for (1..original_cols*2) |c| {
+    for (1..original_cols * 2) |c| {
         cap = try cap.adjust(.{ .cols = @as(u16, @intCast(c)) });
         const adjusted_size = Page.layout(cap).total_size;
         try testing.expectEqual(original_size, adjusted_size);
