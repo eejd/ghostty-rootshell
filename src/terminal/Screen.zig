@@ -845,6 +845,11 @@ fn resizeInternal(
     // No matter what we mark our image state as dirty
     self.kitty_images.dirty = true;
 
+    // We store our style so that we can update it later.
+    const old_style = self.cursor.style;
+    self.cursor.style = .{};
+    try self.manualStyleUpdate();
+
     // Perform the resize operation. This will update cursor by reference.
     try self.pages.resize(.{
         .rows = rows,
@@ -863,6 +868,11 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
+
+    // Restore our previous pen. Since the page may have changed we
+    // reset this here so we can setup our ref.
+    self.cursor.style = old_style;
+    try self.manualStyleUpdate();
 }
 
 /// Set a style attribute for the current cursor.
