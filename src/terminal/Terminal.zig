@@ -1299,7 +1299,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
             assert(dst_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
-            var page = &self.screen.cursor.page_pin.page.data;
+            const page = &p.page.data;
             page.moveCells(
                 src,
                 self.scrolling_region.left,
@@ -1317,7 +1317,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
         const row: *Row = p.rowAndCell().row;
 
         // Clear the src row.
-        var page = &self.screen.cursor.page_pin.page.data;
+        const page = &p.page.data;
         const cells = page.getCells(row);
         const cells_write = cells[self.scrolling_region.left .. self.scrolling_region.right + 1];
         self.screen.clearCells(page, row, cells_write);
@@ -1412,7 +1412,7 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
             assert(src_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
-            var page = &self.screen.cursor.page_pin.page.data;
+            const page = &p.page.data;
             page.moveCells(
                 src,
                 self.scrolling_region.left,
@@ -1430,7 +1430,7 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         const row: *Row = p.rowAndCell().row;
 
         // Clear the src row.
-        var page = &self.screen.cursor.page_pin.page.data;
+        const page = &p.page.data;
         const cells = page.getCells(row);
         const cells_write = cells[self.scrolling_region.left .. self.scrolling_region.right + 1];
         self.screen.clearCells(page, row, cells_write);
