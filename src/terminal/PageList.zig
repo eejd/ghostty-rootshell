@@ -1871,12 +1871,10 @@ pub fn eraseRows(
             const old_dst = dst.*;
             dst.* = src.*;
             src.* = old_dst;
-        }
 
-        // We don't even bother deleting the data in the swapped rows
-        // because erasing in this way yields a page that likely will never
-        // be written to again (its in the past) or it will grow and the
-        // terminal erase will automatically erase the data.
+            // Clear the old data in case we reuse these cells.
+            chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
+        }
 
         // Update any tracked pins to shift their y. If it was in the erased
         // row then we move it to the top of this page.

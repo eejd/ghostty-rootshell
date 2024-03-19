@@ -2395,6 +2395,35 @@ test "Screen eraseRows history with more lines" {
     }
 }
 
+test "Screen eraseRows active partial" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    try s.testWriteString("1\n2\n3");
+
+    {
+        const str = try s.dumpStringAlloc(alloc, .{ .active = .{} });
+        defer alloc.free(str);
+        try testing.expectEqualStrings("1\n2\n3", str);
+    }
+
+    s.eraseRows(.{ .active = .{} }, .{ .active = .{ .y = 1 } });
+
+    {
+        const str = try s.dumpStringAlloc(alloc, .{ .active = .{} });
+        defer alloc.free(str);
+        try testing.expectEqualStrings("3", str);
+    }
+    {
+        const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer alloc.free(str);
+        try testing.expectEqualStrings("3", str);
+    }
+}
+
 test "Screen: clearPrompt" {
     const testing = std.testing;
     const alloc = testing.allocator;

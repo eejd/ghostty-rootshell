@@ -479,10 +479,9 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
         // If we're not at a prompt, we just delete above the cursor.
         if (!self.terminal.cursorIsAtPrompt()) {
             if (self.terminal.screen.cursor.y > 0) {
-                self.terminal.screen.clearRows(
+                self.terminal.screen.eraseRows(
                     .{ .active = .{ .y = 0 } },
                     .{ .active = .{ .y = self.terminal.screen.cursor.y - 1 } },
-                    false,
                 );
             }
 
