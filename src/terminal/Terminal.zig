@@ -2236,12 +2236,22 @@ pub fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
 
 /// Full reset
 pub fn fullReset(self: *Terminal) void {
-    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = true });
+    // Switch back to primary screen and clear it. We do not restore cursor
+    // because see the next step...
+    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = false });
+
+    // We set the saved cursor to null and then restore. This will force
+    // our cursor to go back to the default which will also move the cursor
+    // to the top-left.
+    self.screen.saved_cursor = null;
+    self.restoreCursor() catch |err| {
+        log.warn("restore cursor on primary screen failed err={}", .{err});
+    };
+
     self.screen.charset = .{};
     self.modes = .{};
     self.flags = .{};
     self.tabstops.reset(TABSTOP_INTERVAL);
-    self.screen.saved_cursor = null;
     self.screen.clearSelection();
     self.screen.kitty_keyboard = .{};
     self.screen.protected_mode = .off;
@@ -7663,6 +7673,29 @@ test "Terminal: fullReset with a non-empty pen" {
         const cell = list_cell.cell;
         try testing.expect(cell.style_id == 0);
     }
+
+    try testing.expectEqual(@as(style.Id, 0), t.screen.cursor.style_id);
+}
+
+test "Terminal: fullReset with a non-empty saved cursor" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    try t.setAttribute(.{ .direct_color_fg = .{ .r = 0xFF, .g = 0, .b = 0x7F } });
+    try t.setAttribute(.{ .direct_color_bg = .{ .r = 0xFF, .g = 0, .b = 0x7F } });
+    t.saveCursor();
+    t.fullReset();
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = t.screen.cursor.x,
+            .y = t.screen.cursor.y,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.style_id == 0);
+    }
+
+    try testing.expectEqual(@as(style.Id, 0), t.screen.cursor.style_id);
 }
 
 test "Terminal: fullReset origin mode" {
