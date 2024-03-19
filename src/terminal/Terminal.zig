@@ -1348,8 +1348,7 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
     // top is just the cursor position. insertLines starts at the cursor
     // so this is our top. We want to shift lines down, down to the bottom
     // of the scroll region.
-    const top: [*]Row = @ptrCast(self.screen.cursor.page_row);
-    var y: [*]Row = top;
+    const top = self.screen.cursor.page_pin.*;
 
     // Remaining rows from our cursor to the bottom of the scroll region.
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
@@ -1366,10 +1365,14 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         const left_right = self.scrolling_region.left > 0 or
             self.scrolling_region.right < self.cols - 1;
 
-        const bottom: [*]Row = top + (scroll_amount - 1);
-        while (@intFromPtr(y) <= @intFromPtr(bottom)) : (y += 1) {
-            const src: *Row = @ptrCast(y + count);
-            const dst: *Row = @ptrCast(y);
+        const bot = top.down(scroll_amount - 1).?;
+        var it = top.rowIterator(.right_down, bot);
+        while (it.next()) |p| {
+            const src_p = p.down(count).?;
+            assert(src_p.page == p.page); // TODO: handle different pages
+
+            const src: *Row = src_p.rowAndCell().row;
+            const dst: *Row = p.rowAndCell().row;
 
             if (!left_right) {
                 // Swap the src/dst cells. This ensures that our dst gets the proper
@@ -1392,9 +1395,11 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         }
     }
 
-    const bottom: [*]Row = top + (rem - 1);
-    while (@intFromPtr(y) <= @intFromPtr(bottom)) : (y += 1) {
-        const row: *Row = @ptrCast(y);
+    const clear_top = top.down(scroll_amount).?;
+    const bot = top.down(rem - 1).?;
+    var it = clear_top.rowIterator(.right_down, bot);
+    while (it.next()) |p| {
+        const row: *Row = p.rowAndCell().row;
 
         // Clear the src row.
         var page = &self.screen.cursor.page_pin.page.data;
