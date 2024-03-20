@@ -3,10 +3,6 @@
 //! on that grid. This also maintains the scrollback buffer.
 const Terminal = @This();
 
-// TODO on new terminal branch:
-// - page splitting
-// - resize tests when multiple pages are required
-
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
