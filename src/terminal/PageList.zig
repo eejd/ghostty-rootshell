@@ -1986,7 +1986,7 @@ pub fn pin(self: *const PageList, pt: point.Point) ?Pin {
 /// pin points to is removed completely, the tracked pin will be updated
 /// to the top-left of the screen.
 pub fn trackPin(self: *PageList, p: Pin) !*Pin {
-    // TODO: assert pin is valid
+    if (comptime std.debug.runtime_safety) assert(self.pinIsValid(p));
 
     // Create our tracked pin
     const tracked = try self.pool.pins.create();
@@ -2010,6 +2010,20 @@ pub fn untrackPin(self: *PageList, p: *Pin) void {
 
 pub fn countTrackedPins(self: *const PageList) usize {
     return self.tracked_pins.count();
+}
+
+/// Checks if a pin is valid for this pagelist. This is a very slow and
+/// expensive operation since we traverse the entire linked list in the
+/// worst case. Only for runtime safety/debug.
+fn pinIsValid(self: *const PageList, p: Pin) bool {
+    var it = self.pages.first;
+    while (it) |page| : (it = page.next) {
+        if (page != p.page) continue;
+        return p.y < page.data.size.rows and
+            p.x < page.data.size.cols;
+    }
+
+    return false;
 }
 
 /// Returns the viewport for the given pin, prefering to pin to
