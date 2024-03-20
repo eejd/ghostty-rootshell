@@ -524,6 +524,13 @@ pub const Resize = struct {
 /// Resize
 /// TODO: docs
 pub fn resize(self: *PageList, opts: Resize) !void {
+    if (comptime std.debug.runtime_safety) {
+        // Resize does not work with 0 values, this should be protected
+        // upstream
+        if (opts.cols) |v| assert(v > 0);
+        if (opts.rows) |v| assert(v > 0);
+    }
+
     if (!opts.reflow) return try self.resizeWithoutReflow(opts);
 
     // Recalculate our minimum max size. This allows grow to work properly
@@ -1853,7 +1860,15 @@ pub fn eraseRows(
     while (it.next()) |chunk| {
         // If the chunk is a full page, deinit thit page and remove it from
         // the linked list.
-        if (chunk.fullPage()) {
+        if (chunk.fullPage()) full_page: {
+            // A rare special case is that we're deleting everything
+            // in our linked list. erasePage requires at least one other
+            // page so to handle this we break out of this handling and
+            // do a normal row by row erase.
+            if (chunk.page.next == null and chunk.page.prev == null) {
+                break :full_page;
+            }
+
             self.erasePage(chunk.page);
             erased += chunk.page.data.size.rows;
             continue;
@@ -1874,6 +1889,17 @@ pub fn eraseRows(
 
             // Clear the old data in case we reuse these cells.
             chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
+        }
+
+        // Clear our remaining cells that we didn't shift or swapped
+        // in case we grow back into them.
+        for (scroll_amount..chunk.page.data.size.rows) |i| {
+            const row: *Row = &rows[i];
+            chunk.page.data.clearCells(
+                row,
+                0,
+                chunk.page.data.size.cols,
+            );
         }
 
         // Update any tracked pins to shift their y. If it was in the erased
@@ -3972,6 +3998,34 @@ test "PageList erase active regrows automatically" {
     try testing.expect(s.totalRows() == s.rows);
 }
 
+test "PageList erase a one-row active" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 1, null);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
+
+    // Write our letter
+    const page = &s.pages.first.?.data;
+    for (0..s.rows) |y| {
+        const rac = page.getRowAndCell(0, y);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'A' },
+        };
+    }
+
+    s.eraseRows(.{ .active = .{} }, .{ .active = .{} });
+    try testing.expectEqual(s.rows, s.totalRows());
+
+    // The row should be empty
+    {
+        const get = s.getCell(.{ .active = .{ .x = 0, .y = 0 } }).?;
+        try testing.expectEqual(@as(u21, 0), get.cell.content.codepoint);
+    }
+}
+
 test "PageList clone" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -4213,6 +4267,40 @@ test "PageList resize (no reflow) less rows" {
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
             .y = 5,
+        } }, pt);
+    }
+}
+
+test "PageList resize (no reflow) one rows" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 0);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 10), s.totalRows());
+
+    // This is required for our writing below to work
+    try testing.expect(s.pages.first == s.pages.last);
+    const page = &s.pages.first.?.data;
+
+    // Write into all rows so we don't get trim behavior
+    for (0..s.rows) |y| {
+        const rac = page.getRowAndCell(0, y);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'A' },
+        };
+    }
+
+    // Resize
+    try s.resize(.{ .rows = 1, .reflow = false });
+    try testing.expectEqual(@as(usize, 1), s.rows);
+    try testing.expectEqual(@as(usize, 10), s.totalRows());
+    {
+        const pt = s.getCell(.{ .active = .{} }).?.screenPoint();
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 9,
         } }, pt);
     }
 }
