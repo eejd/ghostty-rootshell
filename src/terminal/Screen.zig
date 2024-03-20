@@ -484,24 +484,29 @@ pub fn cursorDownScroll(self: *Screen) !void {
 
     // If we have no scrollback, then we shift all our rows instead.
     if (self.no_scrollback) {
-        // Erase rows will shift our rows up
-        self.pages.eraseRows(.{ .active = .{} }, .{ .active = .{} });
+        // If we have a single-row screen, we have no rows to shift
+        // so our cursor is in the correct place we just have to clear
+        // the cells.
+        if (self.pages.rows > 1) {
+            // Erase rows will shift our rows up
+            self.pages.eraseRows(.{ .active = .{} }, .{ .active = .{} });
 
-        // We need to move our cursor down one because eraseRows will
-        // preserve our pin directly and we're erasing one row.
-        const page_pin = self.cursor.page_pin.down(1).?;
-        self.cursorChangePin(page_pin);
-        const page_rac = page_pin.rowAndCell();
-        self.cursor.page_row = page_rac.row;
-        self.cursor.page_cell = page_rac.cell;
+            // We need to move our cursor down one because eraseRows will
+            // preserve our pin directly and we're erasing one row.
+            const page_pin = self.cursor.page_pin.down(1).?;
+            self.cursorChangePin(page_pin);
+            const page_rac = page_pin.rowAndCell();
+            self.cursor.page_row = page_rac.row;
+            self.cursor.page_cell = page_rac.cell;
+        }
 
         // Erase rows does NOT clear the cells because in all other cases
         // we never write those rows again. Active erasing is a bit
         // different so we manually clear our one row.
         self.clearCells(
-            &page_pin.page.data,
+            &self.cursor.page_pin.page.data,
             self.cursor.page_row,
-            page_pin.page.data.getCells(self.cursor.page_row),
+            self.cursor.page_pin.page.data.getCells(self.cursor.page_row),
         );
     } else {
         const old_pin = self.cursor.page_pin.*;
@@ -2706,6 +2711,47 @@ test "Screen: scrolling" {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
         defer alloc.free(contents);
         try testing.expectEqualStrings("2EFGH\n3IJKL", contents);
+    }
+}
+
+test "Screen: scrolling with a single-row screen no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 1, 0);
+    defer s.deinit();
+    try s.testWriteString("1ABCD");
+
+    // Scroll down, should still be bottom
+    try s.cursorDownScroll();
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+}
+
+test "Screen: scrolling with a single-row screen with scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 1, 1);
+    defer s.deinit();
+    try s.testWriteString("1ABCD");
+
+    // Scroll down, should still be bottom
+    try s.cursorDownScroll();
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("", contents);
+    }
+
+    s.scroll(.{ .delta_row = -1 });
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD", contents);
     }
 }
 
