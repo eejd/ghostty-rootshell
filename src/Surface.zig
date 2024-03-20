@@ -2580,8 +2580,10 @@ pub fn cursorPosCallback(
         // Convert to points
         const screen_point = pos_vp.toScreen(&self.io.terminal.screen);
 
+        assert(self.mouse.left_click_count <= 3);
         // Handle dragging depending on click count
         switch (self.mouse.left_click_count) {
+            0 => {}, // 0 is a valid state but we don't do anything
             1 => self.dragLeftClickSingle(screen_point, pos.x),
             2 => self.dragLeftClickDouble(screen_point),
             3 => self.dragLeftClickTriple(screen_point),
