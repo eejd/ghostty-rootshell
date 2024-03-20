@@ -452,6 +452,29 @@ pub fn cursorReload(self: *Screen) void {
     const page_rac = self.cursor.page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
+
+    // If we have a style, we need to ensure it is in the page because this
+    // method may also be called after a page change.
+    if (self.cursor.style_id != style.default_id) {
+        // We set our ref to null because manualStyleUpdate will refresh it.
+        // If we had a valid ref and it was zero before, then manualStyleUpdate
+        // will reload the same ref.
+        //
+        // We want to avoid the scenario this was non-null but the pointer
+        // is now invalid because it pointed to a page that no longer exists.
+        self.cursor.style_ref = null;
+
+        self.manualStyleUpdate() catch |err| {
+            // This failure should not happen because manualStyleUpdate
+            // handles page splitting, overflow, and more. This should only
+            // happen if we're out of RAM. In this case, we'll just degrade
+            // gracefully back to the default style.
+            log.err("failed to update style on cursor reload err={}", .{err});
+            self.cursor.style = .{};
+            self.cursor.style_id = 0;
+            self.cursor.style_ref = null;
+        };
+    }
 }
 
 /// Scroll the active area and keep the cursor at the bottom of the screen.
@@ -872,11 +895,6 @@ fn resizeInternal(
     // No matter what we mark our image state as dirty
     self.kitty_images.dirty = true;
 
-    // We store our style so that we can update it later.
-    const old_style = self.cursor.style;
-    self.cursor.style = .{};
-    try self.manualStyleUpdate();
-
     // Perform the resize operation. This will update cursor by reference.
     try self.pages.resize(.{
         .rows = rows,
@@ -895,11 +913,6 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
-
-    // Restore our previous pen. Since the page may have changed we
-    // reset this here so we can setup our ref.
-    self.cursor.style = old_style;
-    try self.manualStyleUpdate();
 }
 
 /// Set a style attribute for the current cursor.
@@ -1055,6 +1068,10 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         if (ref.* == 0) {
             page.styles.remove(page.memory, self.cursor.style_id);
         }
+
+        // Reset our ID and ref to null since the ref is now invalid.
+        self.cursor.style_id = 0;
+        self.cursor.style_ref = null;
     }
 
     // If our new style is the default, just reset to that
