@@ -367,8 +367,8 @@ pub fn cursorUp(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.y >= n);
 
     const page_pin = self.cursor.page_pin.up(n).?;
+    self.cursorChangePin(page_pin);
     const page_rac = page_pin.rowAndCell();
-    self.cursor.page_pin.* = page_pin;
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
     self.cursor.y -= n;
@@ -391,8 +391,8 @@ pub fn cursorDown(self: *Screen, n: size.CellCountInt) void {
     // We move the offset into our page list to the next row and then
     // get the pointers to the row/cell and set all the cursor state up.
     const page_pin = self.cursor.page_pin.down(n).?;
+    self.cursorChangePin(page_pin);
     const page_rac = page_pin.rowAndCell();
-    self.cursor.page_pin.* = page_pin;
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
 
@@ -422,8 +422,8 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     else
         self.cursor.page_pin.*;
     page_pin.x = x;
+    self.cursorChangePin(page_pin);
     const page_rac = page_pin.rowAndCell();
-    self.cursor.page_pin.* = page_pin;
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
     self.cursor.x = x;
@@ -467,8 +467,8 @@ pub fn cursorDownScroll(self: *Screen) !void {
         // We need to move our cursor down one because eraseRows will
         // preserve our pin directly and we're erasing one row.
         const page_pin = self.cursor.page_pin.down(1).?;
+        self.cursorChangePin(page_pin);
         const page_rac = page_pin.rowAndCell();
-        self.cursor.page_pin.* = page_pin;
         self.cursor.page_row = page_rac.row;
         self.cursor.page_cell = page_rac.cell;
 
@@ -510,8 +510,8 @@ pub fn cursorDownScroll(self: *Screen) !void {
             assert(active.y == self.cursor.y);
         }
 
+        self.cursorChangePin(page_pin);
         const page_rac = page_pin.rowAndCell();
-        self.cursor.page_pin.* = page_pin;
         self.cursor.page_row = page_rac.row;
         self.cursor.page_cell = page_rac.cell;
 
@@ -527,15 +527,6 @@ pub fn cursorDownScroll(self: *Screen) !void {
     }
 
     if (self.cursor.style_id != style.default_id) {
-        // We need to ensure our new page has our style. This is a somewhat
-        // expensive operation so we only do it if our page pin y is on zero,
-        // which signals we're at the top of a page.
-        if (self.cursor.page_pin.y == 0) {
-            // This should never happen because if we're in a new
-            // page then we should have space for one style.
-            try self.manualStyleUpdate();
-        }
-
         // The newly created line needs to be styled according to
         // the bg color if it is set.
         if (self.cursor.style.bgCell()) |blank_cell| {
@@ -580,6 +571,42 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     self.cursor.style_id = old.style_id;
     self.cursor.style_ref = old.style_ref;
     try self.manualStyleUpdate();
+}
+
+/// Always use this to write to cursor.page_pin.*.
+///
+/// This specifically handles the case when the new pin is on a different
+/// page than the old AND we have a style set. In that case, we must release
+/// our old style and upsert our new style since styles are stored per-page.
+fn cursorChangePin(self: *Screen, new: Pin) void {
+    // If we have a style set, then we need to migrate it over to the
+    // new page. This is expensive so we do everything we can with cheap
+    // ops to avoid it.
+    if (self.cursor.style_id == style.default_id or
+        self.cursor.page_pin.page == new.page)
+    {
+        self.cursor.page_pin.* = new;
+        return;
+    }
+
+    // Store our old full style so we can reapply it in the new page.
+    const old_style = self.cursor.style;
+
+    // Clear our old style in the current pin
+    self.cursor.style = .{};
+    self.manualStyleUpdate() catch unreachable; // Removing a style should never fail
+
+    // Update our pin to the new page
+    self.cursor.page_pin.* = new;
+    self.cursor.style = old_style;
+    self.manualStyleUpdate() catch |err| {
+        // This failure should not happen because manualStyleUpdate
+        // handles page splitting, overflow, and more. This should only
+        // happen if we're out of RAM. In this case, we'll just degrade
+        // gracefully back to the default style.
+        log.err("failed to update style on cursor change err={}", .{err});
+        self.cursor.style = .{};
+    };
 }
 
 /// Options for scrolling the viewport of the terminal grid. The reason
@@ -2489,6 +2516,145 @@ test "Screen: clearPrompt no prompt" {
     }
 }
 
+test "Screen: cursorDown across pages preserves style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 3, 1);
+    defer s.deinit();
+
+    // Scroll down enough to go to another page
+    const start_page = &s.pages.pages.last.?.data;
+    const rem = start_page.capacity.rows;
+    for (0..rem) |_| try s.cursorDownOrScroll();
+
+    // We need our page to change for this test o make sense. If this
+    // assertion fails then the bug is in the test: we should be scrolling
+    // above enough for a new page to show up.
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page != page);
+    }
+
+    // Scroll back to the previous page
+    s.cursorUp(1);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page == page);
+    }
+
+    // Go back up, set a style
+    try s.setAttribute(.{ .bold = {} });
+    {
+        const page = &s.cursor.page_pin.page.data;
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+
+    // Go back down into the next page and we should have that style
+    s.cursorDown(1);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+}
+
+test "Screen: cursorUp across pages preserves style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 3, 1);
+    defer s.deinit();
+
+    // Scroll down enough to go to another page
+    const start_page = &s.pages.pages.last.?.data;
+    const rem = start_page.capacity.rows;
+    for (0..rem) |_| try s.cursorDownOrScroll();
+
+    // We need our page to change for this test o make sense. If this
+    // assertion fails then the bug is in the test: we should be scrolling
+    // above enough for a new page to show up.
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page != page);
+    }
+
+    // Go back up, set a style
+    try s.setAttribute(.{ .bold = {} });
+    {
+        const page = &s.cursor.page_pin.page.data;
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+
+    // Go back down into the prev page and we should have that style
+    s.cursorUp(1);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page == page);
+
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+}
+
+test "Screen: cursorAbsolute across pages preserves style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 3, 1);
+    defer s.deinit();
+
+    // Scroll down enough to go to another page
+    const start_page = &s.pages.pages.last.?.data;
+    const rem = start_page.capacity.rows;
+    for (0..rem) |_| try s.cursorDownOrScroll();
+
+    // We need our page to change for this test o make sense. If this
+    // assertion fails then the bug is in the test: we should be scrolling
+    // above enough for a new page to show up.
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page != page);
+    }
+
+    // Go back up, set a style
+    try s.setAttribute(.{ .bold = {} });
+    {
+        const page = &s.cursor.page_pin.page.data;
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+
+    // Go back down into the prev page and we should have that style
+    s.cursorAbsolute(1, 1);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expect(start_page == page);
+
+        const styleval = page.styles.lookupId(
+            page.memory,
+            s.cursor.style_id,
+        ).?;
+        try testing.expect(styleval.flags.bold);
+    }
+}
 test "Screen: scrolling" {
     const testing = std.testing;
     const alloc = testing.allocator;
