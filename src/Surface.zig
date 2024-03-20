@@ -2219,6 +2219,11 @@ pub fn mouseButtonCallback(
             // that in any way (i.e. "scrolling").
             self.setSelection(null);
 
+            // We also set the left click count to 0 so that if mouse reporting
+            // is disabled in the middle of press (before release) we don't
+            // suddenly start selecting text.
+            self.mouse.left_click_count = 0;
+
             const pos = try self.rt_surface.getCursorPos();
 
             const report_action: MouseReportAction = switch (action) {
@@ -2559,7 +2564,13 @@ pub fn cursorPosCallback(
     }
 
     // Handle cursor position for text selection
-    if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press) {
+    if (self.mouse.click_state[@intFromEnum(input.MouseButton.left)] == .press) select: {
+        // Left click pressed but count zero can happen if mouse reporting is on.
+        // In this scenario, we mark the click state because we need that to
+        // properly make some mouse reports, but we don't keep track of the
+        // count because we don't want to handle selection.
+        if (self.mouse.left_click_count == 0) break :select;
+
         // All roads lead to requiring a re-render at this point.
         try self.queueRender();
 
@@ -2580,13 +2591,12 @@ pub fn cursorPosCallback(
         // Convert to points
         const screen_point = pos_vp.toScreen(&self.io.terminal.screen);
 
-        assert(self.mouse.left_click_count <= 3);
         // Handle dragging depending on click count
         switch (self.mouse.left_click_count) {
-            0 => {}, // 0 is a valid state but we don't do anything
             1 => self.dragLeftClickSingle(screen_point, pos.x),
             2 => self.dragLeftClickDouble(screen_point),
             3 => self.dragLeftClickTriple(screen_point),
+            0 => unreachable, // handled above
             else => unreachable,
         }
 
