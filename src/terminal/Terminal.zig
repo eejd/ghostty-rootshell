@@ -1903,8 +1903,6 @@ pub fn decaln(self: *Terminal) !void {
     self.screen.cursor.style = .{
         .bg_color = self.screen.cursor.style.bg_color,
         .fg_color = self.screen.cursor.style.fg_color,
-        // TODO: protected attribute
-        // .protected = self.screen.cursor.pen.attrs.protected,
     };
     errdefer self.screen.cursor.style = old_style;
     try self.screen.manualStyleUpdate();
