@@ -525,7 +525,11 @@ fn printCell(
                 assert(self.screen.cursor.x > 0);
 
                 const wide_cell = self.screen.cursorCellLeft(1);
-                wide_cell.* = .{ .style_id = self.screen.cursor.style_id };
+                self.screen.clearCells(
+                    &self.screen.cursor.page_pin.page.data,
+                    self.screen.cursor.page_row,
+                    wide_cell[0..1],
+                );
                 if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
                     const head_cell = self.screen.cursorCellEndOfPrev();
                     head_cell.wide = .narrow;
@@ -2837,6 +2841,82 @@ test "Terminal: overwrite grapheme should clear grapheme data" {
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+}
+
+test "Terminal: overwrite multicodepoint grapheme clears grapheme data" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try t.print(0x200D);
+    try t.print(0x1F469);
+    try t.print(0x200D);
+    try t.print(0x1F467);
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // We should have one cell with graphemes
+    const page = t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.graphemeCount());
+
+    // Move back and overwrite wide
+    t.setCursorPos(1, 1);
+    try t.print('X');
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), page.graphemeCount());
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X", str);
+    }
+}
+
+test "Terminal: overwrite multicodepoint grapheme tail clears grapheme data" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try t.print(0x200D);
+    try t.print(0x1F469);
+    try t.print(0x200D);
+    try t.print(0x1F467);
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // We should have one cell with graphemes
+    const page = t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.graphemeCount());
+
+    // Move back and overwrite wide
+    t.setCursorPos(1, 2);
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(" X", str);
+    }
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+    try testing.expectEqual(@as(usize, 0), page.graphemeCount());
 }
 
 test "Terminal: print writes to bottom if scrolled" {
