@@ -175,7 +175,7 @@ fn findFreeChunks(bitmaps: []u64, n: usize) ?usize {
     // but unsure. Contributor friendly: let's benchmark and improve this!
 
     // TODO: handle large chunks
-    assert(n < @bitSizeOf(u64));
+    assert(n <= @bitSizeOf(u64));
 
     for (bitmaps, 0..) |*bitmap, idx| {
         // Shift the bitmap to find `n` sequential free chunks.
@@ -236,6 +236,35 @@ test "findFreeChunks multiple found" {
         bitmaps[1],
     );
 }
+
+test "findFreeChunks exactly 64 chunks" {
+    const testing = std.testing;
+
+    var bitmaps = [_]u64{
+        0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
+    };
+    const idx = findFreeChunks(&bitmaps, 64).?;
+    try testing.expectEqual(
+        0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+        bitmaps[0],
+    );
+    try testing.expectEqual(@as(usize, 0), idx);
+}
+
+// test "findFreeChunks larger than 64 chunks" {
+//     const testing = std.testing;
+//
+//     var bitmaps = [_]u64{
+//         0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
+//         0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
+//     };
+//     const idx = findFreeChunks(&bitmaps, 65).?;
+//     try testing.expectEqual(
+//         0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+//         bitmaps[0],
+//     );
+//     try testing.expectEqual(@as(usize, 0), idx);
+// }
 
 test "BitmapAllocator layout" {
     const Alloc = BitmapAllocator(4);
@@ -322,3 +351,18 @@ test "BitmapAllocator alloc non-byte multi-chunk" {
     const ptr3 = try bm.alloc(u21, buf, 1);
     try testing.expectEqual(@intFromPtr(ptr.ptr), @intFromPtr(ptr3.ptr));
 }
+//
+// test "BitmapAllocator alloc large" {
+//     const Alloc = BitmapAllocator(2);
+//     const cap = 256;
+//
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//     const layout = Alloc.layout(cap);
+//     const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+//     defer alloc.free(buf);
+//
+//     var bm = Alloc.init(OffsetBuf.init(buf), layout);
+//     const ptr = try bm.alloc(u8, buf, 128);
+//     ptr[0] = 'A';
+// }
