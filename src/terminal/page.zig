@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
 const testing = std.testing;
 const fastmem = @import("../fastmem.zig");
@@ -16,6 +17,8 @@ const hash_map = @import("hash_map.zig");
 const AutoOffsetHashMap = hash_map.AutoOffsetHashMap;
 const alignForward = std.mem.alignForward;
 const alignBackward = std.mem.alignBackward;
+
+const log = std.log.scoped(.page);
 
 /// The allocator to use for multi-codepoint grapheme data. We use
 /// a chunk size of 4 codepoints. It'd be best to set this empirically
@@ -169,6 +172,138 @@ pub const Page = struct {
     pub fn deinit(self: *Page) void {
         std.os.munmap(self.memory);
         self.* = undefined;
+    }
+
+    pub const IntegrityError = error{
+        UnmarkedGraphemeRow,
+        MarkedGraphemeRow,
+        MissingGraphemeData,
+        InvalidGraphemeCount,
+        MissingStyle,
+        UnmarkedStyleRow,
+        MismatchedStyleRef,
+        InvalidStyleCount,
+    };
+
+    /// Verifies the integrity of the page data. This is not fast,
+    /// but it is useful for assertions, deserialization, etc. The
+    /// allocator is only used for temporary allocations -- all memory
+    /// is freed before this function returns.
+    ///
+    /// Integrity errors are also logged as warnings.
+    pub fn verifyIntegrity(self: *Page, alloc_gpa: Allocator) !void {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var graphemes_seen: usize = 0;
+        var styles_seen = std.AutoHashMap(style.Id, usize).init(alloc);
+        defer styles_seen.deinit();
+
+        const rows = self.rows.ptr(self.memory)[0..self.size.rows];
+        for (rows, 0..) |*row, y| {
+            const graphemes_start = graphemes_seen;
+            const cells = row.cells.ptr(self.memory)[0..self.size.cols];
+            for (cells, 0..) |*cell, x| {
+                if (cell.hasGrapheme()) {
+                    // If a cell has grapheme data, it must be present in
+                    // the grapheme map.
+                    _ = self.lookupGrapheme(cell) orelse {
+                        log.warn(
+                            "page integrity violation y={} x={} grapheme data missing",
+                            .{ y, x },
+                        );
+                        return IntegrityError.MissingGraphemeData;
+                    };
+
+                    graphemes_seen += 1;
+                }
+
+                if (cell.style_id != style.default_id) {
+                    // If a cell has a style, it must be present in the styles
+                    // set.
+                    _ = self.styles.lookupId(
+                        self.memory,
+                        cell.style_id,
+                    ) orelse {
+                        log.warn(
+                            "page integrity violation y={} x={} style missing id={}",
+                            .{ y, x, cell.style_id },
+                        );
+                        return IntegrityError.MissingStyle;
+                    };
+
+                    if (!row.styled) {
+                        log.warn(
+                            "page integrity violation y={} x={} row not marked as styled",
+                            .{ y, x },
+                        );
+                        return IntegrityError.UnmarkedStyleRow;
+                    }
+
+                    const gop = try styles_seen.getOrPut(cell.style_id);
+                    if (!gop.found_existing) gop.value_ptr.* = 0;
+                    gop.value_ptr.* += 1;
+                }
+            }
+
+            // Check row grapheme data
+            if (graphemes_seen > graphemes_start) {
+                // If a cell in a row has grapheme data, the row must
+                // be marked as having grapheme data.
+                if (!row.grapheme) {
+                    log.warn(
+                        "page integrity violation y={} grapheme data but row not marked",
+                        .{y},
+                    );
+                    return IntegrityError.UnmarkedGraphemeRow;
+                }
+            } else {
+                // If no cells in a row have grapheme data, the row must
+                // not be marked as having grapheme data.
+                if (row.grapheme) {
+                    log.warn(
+                        "page integrity violation y={} row marked but no grapheme data",
+                        .{y},
+                    );
+                    return IntegrityError.MarkedGraphemeRow;
+                }
+            }
+        }
+
+        // Our graphemes seen should exactly match the grapheme count
+        if (graphemes_seen != self.graphemeCount()) {
+            log.warn(
+                "page integrity violation grapheme count mismatch expected={} actual={}",
+                .{ graphemes_seen, self.graphemeCount() },
+            );
+            return IntegrityError.InvalidGraphemeCount;
+        }
+
+        // Our unique styles seen should exactly match the style count.
+        if (styles_seen.count() != self.styles.count(self.memory)) {
+            log.warn(
+                "page integrity violation style count mismatch expected={} actual={}",
+                .{ styles_seen.count(), self.styles.count(self.memory) },
+            );
+            return IntegrityError.InvalidStyleCount;
+        }
+
+        // Verify all our styles have the correct ref count.
+        {
+            var it = styles_seen.iterator();
+            while (it.next()) |entry| {
+                const style_val = self.styles.lookupId(self.memory, entry.key_ptr.*).?.*;
+                const md = self.styles.upsert(self.memory, style_val) catch unreachable;
+                if (md.ref != entry.value_ptr.*) {
+                    log.warn(
+                        "page integrity violation style ref count mismatch id={} expected={} actual={}",
+                        .{ entry.key_ptr.*, entry.value_ptr.*, md.ref },
+                    );
+                    return IntegrityError.MismatchedStyleRef;
+                }
+            }
+        }
     }
 
     /// Clone the contents of this page. This will allocate new memory
@@ -1443,4 +1578,175 @@ test "Page moveCells graphemes" {
             rac.cell.content.codepoint,
         );
     }
+}
+
+test "Page verifyIntegrity graphemes good" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+        };
+        try page.appendGrapheme(rac.row, rac.cell, 0x0A);
+    }
+
+    try page.verifyIntegrity(testing.allocator);
+}
+
+test "Page verifyIntegrity grapheme row not marked" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+        };
+        try page.appendGrapheme(rac.row, rac.cell, 0x0A);
+    }
+
+    // Make invalid by unmarking the row
+    page.getRow(0).grapheme = false;
+
+    try testing.expectError(
+        Page.IntegrityError.UnmarkedGraphemeRow,
+        page.verifyIntegrity(testing.allocator),
+    );
+}
+
+test "Page verifyIntegrity text row marked as grapheme" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+        };
+    }
+
+    // Make invalid by unmarking the row
+    page.getRow(0).grapheme = true;
+
+    try testing.expectError(
+        Page.IntegrityError.MarkedGraphemeRow,
+        page.verifyIntegrity(testing.allocator),
+    );
+}
+
+test "Page verifyIntegrity styles good" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Upsert a style we'll use
+    const md = try page.styles.upsert(page.memory, .{ .flags = .{
+        .bold = true,
+    } });
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.row.styled = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+            .style_id = md.id,
+        };
+        md.ref += 1;
+    }
+
+    try page.verifyIntegrity(testing.allocator);
+}
+
+test "Page verifyIntegrity styles ref count mismatch" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Upsert a style we'll use
+    const md = try page.styles.upsert(page.memory, .{ .flags = .{
+        .bold = true,
+    } });
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.row.styled = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+            .style_id = md.id,
+        };
+        md.ref += 1;
+    }
+
+    // Miss a ref
+    md.ref -= 1;
+
+    try testing.expectError(
+        Page.IntegrityError.MismatchedStyleRef,
+        page.verifyIntegrity(testing.allocator),
+    );
+}
+
+test "Page verifyIntegrity styles extra" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Upsert a style we'll use
+    const md = try page.styles.upsert(page.memory, .{ .flags = .{
+        .bold = true,
+    } });
+
+    _ = try page.styles.upsert(page.memory, .{ .flags = .{
+        .italic = true,
+    } });
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.row.styled = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+            .style_id = md.id,
+        };
+        md.ref += 1;
+    }
+
+    try testing.expectError(
+        Page.IntegrityError.InvalidStyleCount,
+        page.verifyIntegrity(testing.allocator),
+    );
 }
