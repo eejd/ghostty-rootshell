@@ -510,7 +510,11 @@ fn printCell(
                 if (self.screen.cursor.x >= self.cols - 1) break :wide;
 
                 const spacer_cell = self.screen.cursorCellRight(1);
-                spacer_cell.* = .{ .style_id = self.screen.cursor.style_id };
+                self.screen.clearCells(
+                    &self.screen.cursor.page_pin.page.data,
+                    self.screen.cursor.page_row,
+                    spacer_cell[0..1],
+                );
                 if (self.screen.cursor.y > 0 and self.screen.cursor.x <= 1) {
                     const head_cell = self.screen.cursorCellEndOfPrev();
                     head_cell.wide = .narrow;
@@ -2497,6 +2501,58 @@ test "Terminal: print over wide spacer tail" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings(" X", str);
+    }
+}
+
+test "Terminal: print over wide char with bold" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    try t.setAttribute(.{ .bold = {} });
+    try t.print(0x1F600); // Smiley face
+    // verify we have styles in our style map
+    {
+        const page = t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    }
+
+    // Go back and overwrite with no style
+    t.setCursorPos(0, 0);
+    try t.setAttribute(.{ .unset = {} });
+    try t.print('A'); // Smiley face
+
+    // verify our style is gone
+    {
+        const page = t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    }
+}
+
+test "Terminal: print over wide char with bg color" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    try t.setAttribute(.{ .direct_color_bg = .{
+        .r = 0xFF,
+        .g = 0,
+        .b = 0,
+    } });
+    try t.print(0x1F600); // Smiley face
+    // verify we have styles in our style map
+    {
+        const page = t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    }
+
+    // Go back and overwrite with no style
+    t.setCursorPos(0, 0);
+    try t.setAttribute(.{ .unset = {} });
+    try t.print('A'); // Smiley face
+
+    // verify our style is gone
+    {
+        const page = t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
     }
 }
 
