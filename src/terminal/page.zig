@@ -185,6 +185,15 @@ pub const Page = struct {
         InvalidStyleCount,
     };
 
+    /// A helper that can be used to assert the integrity of the page
+    /// when runtime safety is enabled. This is a no-op when runtime
+    /// safety is disabled. This uses the libc allocator.
+    pub fn assertIntegrity(self: *Page) void {
+        if (comptime std.debug.runtime_safety) {
+            self.verifyIntegrity(std.heap.c_allocator) catch unreachable;
+        }
+    }
+
     /// Verifies the integrity of the page data. This is not fast,
     /// but it is useful for assertions, deserialization, etc. The
     /// allocator is only used for temporary allocations -- all memory
@@ -278,6 +287,31 @@ pub const Page = struct {
                 .{ graphemes_seen, self.graphemeCount() },
             );
             return IntegrityError.InvalidGraphemeCount;
+        }
+
+        // There is allowed to be exactly one zero ref count style for
+        // the active style. If we see this, we should add it to our seen
+        // styles so the math is correct.
+        {
+            const id_map = self.styles.id_map.map(self.memory);
+            var it = id_map.iterator();
+            while (it.next()) |entry| {
+                const style_val = self.styles.lookupId(self.memory, entry.key_ptr.*).?.*;
+                const md = self.styles.upsert(self.memory, style_val) catch unreachable;
+                if (md.ref == 0) {
+                    const gop = try styles_seen.getOrPut(entry.key_ptr.*);
+                    if (gop.found_existing) {
+                        log.warn(
+                            "page integrity violation zero ref style seen multiple times id={}",
+                            .{entry.key_ptr.*},
+                        );
+                        return IntegrityError.MismatchedStyleRef;
+                    }
+
+                    gop.value_ptr.* = 0;
+                    break;
+                }
+            }
         }
 
         // Our unique styles seen should exactly match the style count.
@@ -1729,9 +1763,10 @@ test "Page verifyIntegrity styles extra" {
         .bold = true,
     } });
 
-    _ = try page.styles.upsert(page.memory, .{ .flags = .{
+    const md2 = try page.styles.upsert(page.memory, .{ .flags = .{
         .italic = true,
     } });
+    md2.ref += 1;
 
     // Write
     for (0..page.capacity.cols) |x| {

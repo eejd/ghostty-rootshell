@@ -848,6 +848,7 @@ pub fn clearPrompt(self: *Screen) void {
         while (clear_it.next()) |p| {
             const row = p.rowAndCell().row;
             p.page.data.clearCells(row, 0, p.page.data.size.cols);
+            p.page.data.assertIntegrity();
         }
     }
 }
@@ -1133,6 +1134,7 @@ pub fn manualStyleUpdate(self: *Screen) !void {
 
 /// Append a grapheme to the given cell within the current cursor row.
 pub fn appendGrapheme(self: *Screen, cell: *Cell, cp: u21) !void {
+    defer self.cursor.page_pin.page.data.assertIntegrity();
     self.cursor.page_pin.page.data.appendGrapheme(
         self.cursor.page_row,
         cell,
