@@ -335,17 +335,33 @@ pub const Page = struct {
         const src_cells = src_row.cells.ptr(self.memory)[src_left .. src_left + len];
         const dst_cells = dst_row.cells.ptr(self.memory)[dst_left .. dst_left + len];
 
-        // If src has no graphemes, this is very fast.
+        // Clear our destination now matter what
+        self.clearCells(dst_row, dst_left, dst_left + len);
+
+        // If src has no graphemes, this is very fast because we can
+        // just copy the cells directly because every other attribute
+        // is position-independent.
         const src_grapheme = src_row.grapheme or grapheme: {
             for (src_cells) |c| if (c.hasGrapheme()) break :grapheme true;
             break :grapheme false;
         };
         if (!src_grapheme) {
             fastmem.copy(Cell, dst_cells, src_cells);
-            return;
+        } else {
+            // Source has graphemes, meaning we have to do a slower
+            // cell by cell copy.
+            for (src_cells, dst_cells) |*src, *dst| {
+                dst.* = src.*;
+                if (!src.hasGrapheme()) continue;
+
+                // Required for moveGrapheme assertions
+                dst.content_tag = .codepoint;
+                self.moveGrapheme(src, dst);
+            }
         }
 
-        @panic("TODO: grapheme move");
+        // Clear our source row now that the copy is complete
+        self.clearCells(src_row, src_left, src_left + len);
     }
 
     /// Clear the cells in the given row. This will reclaim memory used
@@ -451,6 +467,24 @@ pub const Page = struct {
         const map = self.grapheme_map.map(self.memory);
         const slice = map.get(cell_offset) orelse return null;
         return slice.offset.ptr(self.memory)[0..slice.len];
+    }
+
+    /// Move the graphemes from one cell to another. This can't fail
+    /// because we avoid any allocations since we're just moving data.
+    pub fn moveGrapheme(self: *const Page, src: *Cell, dst: *Cell) void {
+        if (comptime std.debug.runtime_safety) {
+            assert(src.hasGrapheme());
+            assert(!dst.hasGrapheme());
+        }
+
+        const src_offset = getOffset(Cell, self.memory, src);
+        const dst_offset = getOffset(Cell, self.memory, dst);
+        var map = self.grapheme_map.map(self.memory);
+        const entry = map.getEntry(src_offset).?;
+        const value = entry.value_ptr.*;
+        map.removeByPtr(entry.key_ptr);
+        map.putAssumeCapacity(dst_offset, value);
+        src.content_tag = .codepoint;
     }
 
     /// Clear the graphemes for a given cell.
@@ -1321,4 +1355,92 @@ test "Page cloneFrom frees dst graphemes" {
         try testing.expect(!rac.cell.hasGrapheme());
     }
     try testing.expectEqual(@as(usize, 0), page2.graphemeCount());
+}
+
+test "Page moveCells text-only" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+        };
+    }
+
+    const src = page.getRow(0);
+    const dst = page.getRow(1);
+    page.moveCells(src, 0, dst, 0, page.capacity.cols);
+
+    // New rows should have text
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 1);
+        try testing.expectEqual(
+            @as(u21, @intCast(x + 1)),
+            rac.cell.content.codepoint,
+        );
+    }
+
+    // Old row should be blank
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        try testing.expectEqual(
+            @as(u21, 0),
+            rac.cell.content.codepoint,
+        );
+    }
+}
+
+test "Page moveCells graphemes" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = @intCast(x + 1) },
+        };
+        try page.appendGrapheme(rac.row, rac.cell, 0x0A);
+    }
+    const original_count = page.graphemeCount();
+
+    const src = page.getRow(0);
+    const dst = page.getRow(1);
+    page.moveCells(src, 0, dst, 0, page.capacity.cols);
+    try testing.expectEqual(original_count, page.graphemeCount());
+
+    // New rows should have text
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 1);
+        try testing.expectEqual(
+            @as(u21, @intCast(x + 1)),
+            rac.cell.content.codepoint,
+        );
+        try testing.expectEqualSlices(
+            u21,
+            &.{0x0A},
+            page.lookupGrapheme(rac.cell).?,
+        );
+    }
+
+    // Old row should be blank
+    for (0..page.capacity.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        try testing.expectEqual(
+            @as(u21, 0),
+            rac.cell.content.codepoint,
+        );
+    }
 }
