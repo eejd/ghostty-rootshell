@@ -634,6 +634,8 @@ fn cursorChangePin(self: *Screen, new: Pin) void {
         // gracefully back to the default style.
         log.err("failed to update style on cursor change err={}", .{err});
         self.cursor.style = .{};
+        self.cursor.style_id = 0;
+        self.cursor.style_ref = null;
     };
 }
 
