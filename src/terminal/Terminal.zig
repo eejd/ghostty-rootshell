@@ -1604,6 +1604,16 @@ pub fn deleteChars(self: *Terminal, count: usize) void {
             self.screen.clearCells(page, self.screen.cursor.page_row, wide[0..2]);
         }
 
+        // If our first cell is a wide char then we need to also clear
+        // the spacer tail following it.
+        if (x[0].wide == .wide) {
+            self.screen.clearCells(
+                page,
+                self.screen.cursor.page_row,
+                x[0..2],
+            );
+        }
+
         while (@intFromPtr(x) <= @intFromPtr(right)) : (x += 1) {
             const src: *Cell = @ptrCast(x + count);
             const dst: *Cell = @ptrCast(x);
@@ -6539,7 +6549,7 @@ test "Terminal: deleteChars inside scroll region" {
     }
 }
 
-test "Terminal: deleteChars split wide character" {
+test "Terminal: deleteChars split wide character from spacer tail" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 6, .rows = 10 });
     defer t.deinit(alloc);
@@ -6552,6 +6562,29 @@ test "Terminal: deleteChars split wide character" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A 123", str);
+    }
+}
+
+test "Terminal: deleteChars split wide character from wide" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 6, .rows = 10 });
+    defer t.deinit(alloc);
+
+    try t.printString("橋123");
+    t.setCursorPos(1, 1);
+    t.deleteChars(1);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, '1'), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
 }
 
