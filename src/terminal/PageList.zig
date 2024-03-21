@@ -825,8 +825,18 @@ fn reflowPage(
         while (src_cursor.page_row.wrap_continuation) {
             // If this entire page was continuations then we can remove it.
             if (src_cursor.y == src_cursor.page.size.rows - 1) {
-                self.pages.remove(initial_node);
-                self.destroyPage(initial_node);
+                // If this is the last page, then we need to insert an empty
+                // page so that erasePage works. This is a rare scenario that
+                // can happen in no-scrollback pages where EVERY line is
+                // a continuation.
+                if (initial_node.prev == null and initial_node.next == null) {
+                    const cap = try std_capacity.adjust(.{ .cols = cols });
+                    const node = try self.createPage(cap);
+                    self.pages.insertAfter(initial_node, node);
+                }
+
+                self.erasePage(initial_node);
+                assert(self.page_size <= self.maxSize());
                 return;
             }
 
