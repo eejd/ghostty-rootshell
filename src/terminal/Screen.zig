@@ -821,7 +821,9 @@ pub fn clearCells(
             // Fast-path, the style ID matches, in this case we just update
             // our own ref and continue. We never delete because our style
             // is still active.
-            if (cell.style_id == self.cursor.style_id) {
+            if (page == &self.cursor.page_pin.page.data and
+                cell.style_id == self.cursor.style_id)
+            {
                 self.cursor.style_ref.?.* -= 1;
                 continue;
             }
