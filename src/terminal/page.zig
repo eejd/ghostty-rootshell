@@ -200,6 +200,15 @@ pub const Page = struct {
     ///
     /// Integrity errors are also logged as warnings.
     pub fn verifyIntegrity(self: *Page, alloc_gpa: Allocator) !void {
+        // Some things that seem like we should check but do not:
+        //
+        // - We do not check that the style ref count is exact, only that
+        //   it is at least what we see. We do this because some fast paths
+        //   trim rows without clearing data.
+        // - We do not check that styles seen is exactly the same as the
+        //   styles count in the page for the same reason as above.
+        //
+
         var arena = ArenaAllocator.init(alloc_gpa);
         defer arena.deinit();
         const alloc = arena.allocator();
@@ -278,47 +287,13 @@ pub const Page = struct {
             return IntegrityError.InvalidGraphemeCount;
         }
 
-        // There is allowed to be exactly one zero ref count style for
-        // the active style. If we see this, we should add it to our seen
-        // styles so the math is correct.
-        {
-            const id_map = self.styles.id_map.map(self.memory);
-            var it = id_map.iterator();
-            while (it.next()) |entry| {
-                const style_val = self.styles.lookupId(self.memory, entry.key_ptr.*).?.*;
-                const md = self.styles.upsert(self.memory, style_val) catch unreachable;
-                if (md.ref == 0) {
-                    const gop = try styles_seen.getOrPut(entry.key_ptr.*);
-                    if (gop.found_existing) {
-                        log.warn(
-                            "page integrity violation zero ref style seen multiple times id={}",
-                            .{entry.key_ptr.*},
-                        );
-                        return IntegrityError.MismatchedStyleRef;
-                    }
-
-                    gop.value_ptr.* = 0;
-                    break;
-                }
-            }
-        }
-
-        // Our unique styles seen should exactly match the style count.
-        if (styles_seen.count() != self.styles.count(self.memory)) {
-            log.warn(
-                "page integrity violation style count mismatch expected={} actual={}",
-                .{ styles_seen.count(), self.styles.count(self.memory) },
-            );
-            return IntegrityError.InvalidStyleCount;
-        }
-
         // Verify all our styles have the correct ref count.
         {
             var it = styles_seen.iterator();
             while (it.next()) |entry| {
                 const style_val = self.styles.lookupId(self.memory, entry.key_ptr.*).?.*;
                 const md = self.styles.upsert(self.memory, style_val) catch unreachable;
-                if (md.ref != entry.value_ptr.*) {
+                if (md.ref < entry.value_ptr.*) {
                     log.warn(
                         "page integrity violation style ref count mismatch id={} expected={} actual={}",
                         .{ entry.key_ptr.*, entry.value_ptr.*, md.ref },
@@ -529,8 +504,19 @@ pub const Page = struct {
             dst_row.grapheme = true;
         }
 
-        // Clear our source row now that the copy is complete
-        self.clearCells(src_row, src_left, src_left + len);
+        // The destination row has styles if any of the cells are styled
+        if (!dst_row.styled) dst_row.styled = styled: for (dst_cells) |c| {
+            if (c.style_id != style.default_id) break :styled true;
+        } else false;
+
+        // Clear our source row now that the copy is complete. We can NOT
+        // use clearCells here because clearCells will garbage collect our
+        // styles and graphames but we moved them above.
+        @memset(src_cells, .{});
+        if (src_cells.len == self.size.cols) {
+            src_row.grapheme = false;
+            src_row.styled = false;
+        }
     }
 
     /// Clear the cells in the given row. This will reclaim memory used
