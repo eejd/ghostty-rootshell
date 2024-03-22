@@ -1345,6 +1345,15 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
         }
+
+        // The operations above can prune our cursor style so we need to
+        // update. This should never fail because the above can only FREE
+        // memory.
+        self.screen.manualStyleUpdate() catch |err| {
+            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
+            self.screen.cursor.style = .{};
+            self.screen.manualStyleUpdate() catch unreachable;
+        };
     }
 
     // Inserted lines should keep our bg color
@@ -1446,6 +1455,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
+
+                // Ensure what we did didn't corrupt the page
+                p.page.data.assertIntegrity();
                 continue;
             }
 
@@ -1461,6 +1473,15 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
         }
+
+        // The operations above can prune our cursor style so we need to
+        // update. This should never fail because the above can only FREE
+        // memory.
+        self.screen.manualStyleUpdate() catch |err| {
+            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
+            self.screen.cursor.style = .{};
+            self.screen.manualStyleUpdate() catch unreachable;
+        };
     }
 
     const clear_top = top.down(scroll_amount).?;
