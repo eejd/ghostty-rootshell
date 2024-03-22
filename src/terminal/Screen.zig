@@ -173,6 +173,42 @@ pub fn deinit(self: *Screen) void {
     self.pages.deinit();
 }
 
+/// Assert that the screen is in a consistent state. This doesn't check
+/// all pages in the page list because that is SO SLOW even just for
+/// tests. This only asserts the screen specific data so callers should
+/// ensure they're also calling page integrity checks if necessary.
+pub fn assertIntegrity(self: *const Screen) void {
+    if (comptime std.debug.runtime_safety) {
+        assert(self.cursor.x < self.pages.cols);
+        assert(self.cursor.y < self.pages.rows);
+
+        if (self.cursor.style_id == style.default_id) {
+            // If our style is default, we should have no refs.
+            assert(self.cursor.style.default());
+            assert(self.cursor.style_ref == null);
+        } else {
+            // If our style is not default, we should have a ref.
+            assert(!self.cursor.style.default());
+            assert(self.cursor.style_ref != null);
+
+            // Further, the ref should be valid within the current page.
+            const page = &self.cursor.page_pin.page.data;
+            const page_style = page.styles.lookupId(
+                page.memory,
+                self.cursor.style_id,
+            ).?.*;
+            assert(self.cursor.style.eql(page_style));
+
+            // The metadata pointer should be equal to the ref.
+            const md = page.styles.upsert(
+                page.memory,
+                page_style,
+            ) catch unreachable;
+            assert(&md.ref == self.cursor.style_ref.?);
+        }
+    }
+}
+
 /// Clone the screen.
 ///
 /// This will copy:
@@ -309,13 +345,15 @@ pub fn clonePool(
         };
     } else null;
 
-    return .{
+    const result: Screen = .{
         .alloc = alloc,
         .pages = pages,
         .no_scrollback = self.no_scrollback,
         .cursor = cursor,
         .selection = sel,
     };
+    result.assertIntegrity();
+    return result;
 }
 
 pub fn cursorCellRight(self: *Screen, n: size.CellCountInt) *pagepkg.Cell {
@@ -343,6 +381,7 @@ pub fn cursorCellEndOfPrev(self: *Screen) *pagepkg.Cell {
 /// if the caller can guarantee we have space to move right (no wrapping).
 pub fn cursorRight(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.x + n < self.pages.cols);
+    defer self.assertIntegrity();
 
     const cell: [*]pagepkg.Cell = @ptrCast(self.cursor.page_cell);
     self.cursor.page_cell = @ptrCast(cell + n);
@@ -353,6 +392,7 @@ pub fn cursorRight(self: *Screen, n: size.CellCountInt) void {
 /// Move the cursor left.
 pub fn cursorLeft(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.x >= n);
+    defer self.assertIntegrity();
 
     const cell: [*]pagepkg.Cell = @ptrCast(self.cursor.page_cell);
     self.cursor.page_cell = @ptrCast(cell - n);
@@ -365,6 +405,7 @@ pub fn cursorLeft(self: *Screen, n: size.CellCountInt) void {
 /// Precondition: The cursor is not at the top of the screen.
 pub fn cursorUp(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.y >= n);
+    defer self.assertIntegrity();
 
     const page_pin = self.cursor.page_pin.up(n).?;
     self.cursorChangePin(page_pin);
@@ -376,6 +417,7 @@ pub fn cursorUp(self: *Screen, n: size.CellCountInt) void {
 
 pub fn cursorRowUp(self: *Screen, n: size.CellCountInt) *pagepkg.Row {
     assert(self.cursor.y >= n);
+    defer self.assertIntegrity();
 
     const page_pin = self.cursor.page_pin.up(n).?;
     const page_rac = page_pin.rowAndCell();
@@ -387,6 +429,7 @@ pub fn cursorRowUp(self: *Screen, n: size.CellCountInt) *pagepkg.Row {
 /// Precondition: The cursor is not at the bottom of the screen.
 pub fn cursorDown(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.y + n < self.pages.rows);
+    defer self.assertIntegrity();
 
     // We move the offset into our page list to the next row and then
     // get the pointers to the row/cell and set all the cursor state up.
@@ -403,6 +446,7 @@ pub fn cursorDown(self: *Screen, n: size.CellCountInt) void {
 /// Move the cursor to some absolute horizontal position.
 pub fn cursorHorizontalAbsolute(self: *Screen, x: size.CellCountInt) void {
     assert(x < self.pages.cols);
+    defer self.assertIntegrity();
 
     self.cursor.page_pin.x = x;
     const page_rac = self.cursor.page_pin.rowAndCell();
@@ -414,6 +458,7 @@ pub fn cursorHorizontalAbsolute(self: *Screen, x: size.CellCountInt) void {
 pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt) void {
     assert(x < self.pages.cols);
     assert(y < self.pages.rows);
+    defer self.assertIntegrity();
 
     var page_pin = if (y < self.cursor.y)
         self.cursor.page_pin.up(self.cursor.y - y).?
@@ -434,6 +479,8 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
 /// so it should only be done in cases where the pointers are invalidated
 /// in such a way that its difficult to recover otherwise.
 pub fn cursorReload(self: *Screen) void {
+    defer self.assertIntegrity();
+
     // Our tracked pin is ALWAYS accurate, so we derive the active
     // point from the pin. If this returns null it means our pin
     // points outside the active area. In that case, we update the
@@ -481,6 +528,7 @@ pub fn cursorReload(self: *Screen) void {
 /// This is a very specialized function but it keeps it fast.
 pub fn cursorDownScroll(self: *Screen) !void {
     assert(self.cursor.y == self.pages.rows - 1);
+    defer self.assertIntegrity();
 
     // If we have no scrollback, then we shift all our rows instead.
     if (self.no_scrollback) {
@@ -585,6 +633,13 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     self.cursor = other;
     errdefer self.cursor = old;
 
+    // Clear our style information initially so runtime safety integrity
+    // checks pass since there is a period below where the cursor is
+    // invalid.
+    self.cursor.style = .{};
+    self.cursor.style_id = 0;
+    self.cursor.style_ref = null;
+
     // We need to keep our old x/y because that is our cursorAbsolute
     // will fix up our pointers.
     //
@@ -596,6 +651,7 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     self.cursorAbsolute(other.x, other.y);
 
     // We keep the old style ref so manualStyleUpdate can clean our old style up.
+    self.cursor.style = other.style;
     self.cursor.style_id = old.style_id;
     self.cursor.style_ref = old.style_ref;
     try self.manualStyleUpdate();
@@ -1089,6 +1145,11 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         return;
     }
 
+    // From here on out, we may need to reload the cursor if we adjust
+    // the pages to account for space errors below... flag this to true
+    // in that case.
+    var cursor_reload = false;
+
     // After setting the style, we need to update our style map.
     // Note that we COULD lazily do this in print. We should look into
     // if that makes a meaningful difference. Our priority is to keep print
@@ -1121,7 +1182,7 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         }
 
         // Since this modifies our cursor page, we need to reload
-        self.cursorReload();
+        cursor_reload = true;
 
         break :md try page.styles.upsert(
             page.memory,
@@ -1130,6 +1191,7 @@ pub fn manualStyleUpdate(self: *Screen) !void {
     };
     self.cursor.style_id = md.id;
     self.cursor.style_ref = &md.ref;
+    if (cursor_reload) self.cursorReload();
 }
 
 /// Append a grapheme to the given cell within the current cursor row.

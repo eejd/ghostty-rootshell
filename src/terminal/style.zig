@@ -51,6 +51,15 @@ pub const Style = struct {
         return std.mem.eql(u8, std.mem.asBytes(&self), def);
     }
 
+    /// True if the style is equal to another style.
+    pub fn eql(self: Style, other: Style) bool {
+        return std.mem.eql(
+            u8,
+            std.mem.asBytes(&self),
+            std.mem.asBytes(&other),
+        );
+    }
+
     /// Returns the bg color for a cell with this style given the cell
     /// that has this style and the palette to use.
     ///
