@@ -412,6 +412,9 @@ pub const Page = struct {
         for (cells, other_cells) |*dst_cell, *src_cell| {
             dst_cell.* = src_cell.*;
             if (src_cell.hasGrapheme()) {
+                // To prevent integrity checks flipping
+                if (comptime std.debug.runtime_safety) dst_cell.style_id = style.default_id;
+
                 dst_cell.content_tag = .codepoint; // required for appendGrapheme
                 const cps = other.lookupGrapheme(src_cell).?;
                 for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
