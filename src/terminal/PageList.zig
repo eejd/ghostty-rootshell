@@ -1162,9 +1162,9 @@ fn reflowPage(
             // If we're still in a wrapped line at the end of our page,
             // we traverse forward and continue reflowing until we complete
             // this entire line.
-            if (src_cursor.page_row.wrap) {
+            if (src_cursor.page_row.wrap) wrap: {
                 src_completing_wrap = true;
-                src_node = src_node.next.?;
+                src_node = src_node.next orelse break :wrap;
                 src_cursor = ReflowCursor.init(&src_node.data);
                 continue :src_loop;
             }
