@@ -203,22 +203,30 @@ fn findFreeChunks(bitmaps: []u64, n: usize) ?usize {
             // then add one and continue, we're still accumulating blanks.
             if (seq != div) {
                 seq += 1;
-                continue;
+                if (seq != div or mod > 0) continue;
             }
 
             // We've reached the seq count see if this has mod starting empty
             // blanks.
-            const final = @as(u64, std.math.maxInt(u64)) >> @intCast(64 - mod);
-            if (bitmap.* & final == 0) {
-                // No blanks, reset.
-                seq = 0;
-                continue;
+            if (mod > 0) {
+                const final = @as(u64, std.math.maxInt(u64)) >> @intCast(64 - mod);
+                if (bitmap.* & final == 0) {
+                    // No blanks, reset.
+                    seq = 0;
+                    continue;
+                }
+
+                bitmap.* ^= final;
             }
 
             // Found! Set all in our sequence to full and mask our final.
-            const start_idx = idx - seq;
-            for (start_idx..idx) |i| bitmaps[i] = 0;
-            bitmap.* ^= final;
+            // The "zero_mod" modifier below handles the case where we have
+            // a perfectly divisible number of chunks so we don't have to
+            // mark the trailing bitmap.
+            const zero_mod = @intFromBool(mod == 0);
+            const start_idx = idx - (seq - zero_mod);
+            const end_idx = idx + zero_mod;
+            for (start_idx..end_idx) |i| bitmaps[i] = 0;
 
             return (start_idx * 64);
         }
@@ -342,6 +350,25 @@ test "findFreeChunks larger than 64 chunks not at beginning" {
         bitmaps[2],
     );
     try testing.expectEqual(@as(usize, 64), idx);
+}
+
+test "findFreeChunks larger than 64 chunks exact" {
+    const testing = std.testing;
+
+    var bitmaps = [_]u64{
+        0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
+        0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
+    };
+    const idx = findFreeChunks(&bitmaps, 128).?;
+    try testing.expectEqual(
+        0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+        bitmaps[0],
+    );
+    try testing.expectEqual(
+        0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+        bitmaps[1],
+    );
+    try testing.expectEqual(@as(usize, 0), idx);
 }
 
 test "BitmapAllocator layout" {
