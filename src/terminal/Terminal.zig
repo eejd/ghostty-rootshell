@@ -223,6 +223,10 @@ pub fn print(self: *Terminal, c: u21) !void {
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
 
+    // After doing any printing, wrapping, scrolling, etc. we want to ensure
+    // that our screen remains in a consistent state.
+    defer self.screen.assertIntegrity();
+
     // Our right margin depends where our cursor is now.
     const right_limit = if (self.screen.cursor.x > self.scrolling_region.right)
         self.cols
@@ -470,6 +474,8 @@ fn printCell(
     unmapped_c: u21,
     wide: Cell.Wide,
 ) void {
+    defer self.screen.assertIntegrity();
+
     // TODO: spacers should use a bgcolor only cell
 
     const c: u21 = c: {
@@ -627,6 +633,9 @@ fn printWrap(self: *Terminal) !void {
     // New line must inherit semantic prompt of the old line
     self.screen.cursor.page_row.semantic_prompt = old_prompt;
     self.screen.cursor.page_row.wrap_continuation = true;
+
+    // Assure that our screen is consistent
+    self.screen.assertIntegrity();
 }
 
 /// Set the charset into the given slot.
@@ -876,6 +885,9 @@ pub fn restoreCursor(self: *Terminal) !void {
         @min(saved.x, self.cols - 1),
         @min(saved.y, self.rows - 1),
     );
+
+    // Ensure our screen is consistent
+    self.screen.assertIntegrity();
 }
 
 /// Set the character protection mode for the terminal.
@@ -1315,6 +1327,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
+
+                // Ensure what we did didn't corrupt the page
+                p.page.data.assertIntegrity();
                 continue;
             }
 

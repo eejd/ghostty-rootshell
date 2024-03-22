@@ -709,6 +709,8 @@ pub const Scroll = union(enum) {
 
 /// Scroll the viewport of the terminal grid.
 pub fn scroll(self: *Screen, behavior: Scroll) void {
+    defer self.assertIntegrity();
+
     // No matter what, scrolling marks our image state as dirty since
     // it could move placements. If there are no placements or no images
     // this is still a very cheap operation.
@@ -726,6 +728,8 @@ pub fn scroll(self: *Screen, behavior: Scroll) void {
 /// See PageList.scrollClear. In addition to that, we reset the cursor
 /// to be on top.
 pub fn scrollClear(self: *Screen) !void {
+    defer self.assertIntegrity();
+
     try self.pages.scrollClear();
     self.cursorReload();
 
@@ -748,6 +752,8 @@ pub fn eraseRows(
     tl: point.Point,
     bl: ?point.Point,
 ) void {
+    defer self.assertIntegrity();
+
     // Erase the rows
     self.pages.eraseRows(tl, bl);
 
@@ -769,6 +775,8 @@ pub fn clearRows(
     bl: ?point.Point,
     protected: bool,
 ) void {
+    defer self.assertIntegrity();
+
     var it = self.pages.pageIterator(.right_down, tl, bl);
     while (it.next()) |chunk| {
         for (chunk.rows()) |*row| {
@@ -842,6 +850,8 @@ pub fn clearCells(
     }
 
     @memset(cells, self.blankCell());
+    page.assertIntegrity();
+    self.assertIntegrity();
 }
 
 /// Clear cells but only if they are not protected.
@@ -856,6 +866,9 @@ pub fn clearUnprotectedCells(
         const cell_multi: [*]Cell = @ptrCast(cell);
         self.clearCells(page, row, cell_multi[0..1]);
     }
+
+    page.assertIntegrity();
+    self.assertIntegrity();
 }
 
 /// Clears the prompt lines if the cursor is currently at a prompt. This
@@ -977,6 +990,7 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
+    self.assertIntegrity();
 }
 
 /// Set a style attribute for the current cursor.
@@ -1192,6 +1206,7 @@ pub fn manualStyleUpdate(self: *Screen) !void {
     self.cursor.style_id = md.id;
     self.cursor.style_ref = &md.ref;
     if (cursor_reload) self.cursorReload();
+    self.assertIntegrity();
 }
 
 /// Append a grapheme to the given cell within the current cursor row.

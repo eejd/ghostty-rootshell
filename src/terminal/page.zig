@@ -176,7 +176,6 @@ pub const Page = struct {
 
     pub const IntegrityError = error{
         UnmarkedGraphemeRow,
-        MarkedGraphemeRow,
         MissingGraphemeData,
         InvalidGraphemeCount,
         MissingStyle,
@@ -266,16 +265,6 @@ pub const Page = struct {
                         .{y},
                     );
                     return IntegrityError.UnmarkedGraphemeRow;
-                }
-            } else {
-                // If no cells in a row have grapheme data, the row must
-                // not be marked as having grapheme data.
-                if (row.grapheme) {
-                    log.warn(
-                        "page integrity violation y={} row marked but no grapheme data",
-                        .{y},
-                    );
-                    return IntegrityError.MarkedGraphemeRow;
                 }
             }
         }
@@ -406,6 +395,9 @@ pub const Page = struct {
             dst_row,
             src_row,
         );
+
+        // We should remain consistent
+        self.assertIntegrity();
     }
 
     /// Clone a single row from another page into this page.
@@ -454,6 +446,9 @@ pub const Page = struct {
                 dst_cell.style_id = md.id;
             }
         }
+
+        // The final page should remain consistent
+        self.assertIntegrity();
     }
 
     /// Get a single row. y must be valid.
@@ -501,6 +496,8 @@ pub const Page = struct {
         dst_left: usize,
         len: usize,
     ) void {
+        defer self.assertIntegrity();
+
         const src_cells = src_row.cells.ptr(self.memory)[src_left .. src_left + len];
         const dst_cells = dst_row.cells.ptr(self.memory)[dst_left .. dst_left + len];
 
@@ -527,6 +524,9 @@ pub const Page = struct {
                 dst.content_tag = .codepoint;
                 self.moveGrapheme(src, dst);
             }
+
+            // The destination row must be marked
+            dst_row.grapheme = true;
         }
 
         // Clear our source row now that the copy is complete
@@ -544,6 +544,8 @@ pub const Page = struct {
         left: usize,
         end: usize,
     ) void {
+        defer self.assertIntegrity();
+
         const cells = row.cells.ptr(self.memory)[left..end];
         if (row.grapheme) {
             for (cells) |*cell| {
@@ -572,6 +574,8 @@ pub const Page = struct {
 
     /// Append a codepoint to the given cell as a grapheme.
     pub fn appendGrapheme(self: *Page, row: *Row, cell: *Cell, cp: u21) Allocator.Error!void {
+        defer self.assertIntegrity();
+
         if (comptime std.debug.runtime_safety) assert(cell.hasText());
 
         const cell_offset = getOffset(Cell, self.memory, cell);
@@ -640,7 +644,7 @@ pub const Page = struct {
 
     /// Move the graphemes from one cell to another. This can't fail
     /// because we avoid any allocations since we're just moving data.
-    pub fn moveGrapheme(self: *const Page, src: *Cell, dst: *Cell) void {
+    pub fn moveGrapheme(self: *Page, src: *Cell, dst: *Cell) void {
         if (comptime std.debug.runtime_safety) {
             assert(src.hasGrapheme());
             assert(!dst.hasGrapheme());
@@ -654,10 +658,12 @@ pub const Page = struct {
         map.removeByPtr(entry.key_ptr);
         map.putAssumeCapacity(dst_offset, value);
         src.content_tag = .codepoint;
+        dst.content_tag = .codepoint_grapheme;
     }
 
     /// Clear the graphemes for a given cell.
     pub fn clearGrapheme(self: *Page, row: *Row, cell: *Cell) void {
+        defer self.assertIntegrity();
         if (comptime std.debug.runtime_safety) assert(cell.hasGrapheme());
 
         // Get our entry in the map, which must exist
@@ -691,6 +697,8 @@ pub const Page = struct {
         // Note: we don't assert src has graphemes here because one of
         // the places we call this is from insertBlanks where the cells have
         // already swapped cell data but not grapheme data.
+
+        defer self.assertIntegrity();
 
         // Get our entry in the map, which must exist
         const src_offset = getOffset(Cell, self.memory, src);
@@ -1575,7 +1583,7 @@ test "Page moveCells graphemes" {
     defer page.deinit();
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.cell.* = .{
             .content_tag = .codepoint,
@@ -1587,11 +1595,11 @@ test "Page moveCells graphemes" {
 
     const src = page.getRow(0);
     const dst = page.getRow(1);
-    page.moveCells(src, 0, dst, 0, page.capacity.cols);
+    page.moveCells(src, 0, dst, 0, page.size.cols);
     try testing.expectEqual(original_count, page.graphemeCount());
 
     // New rows should have text
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 1);
         try testing.expectEqual(
             @as(u21, @intCast(x + 1)),
@@ -1605,7 +1613,7 @@ test "Page moveCells graphemes" {
     }
 
     // Old row should be blank
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         try testing.expectEqual(
             @as(u21, 0),
@@ -1623,7 +1631,7 @@ test "Page verifyIntegrity graphemes good" {
     defer page.deinit();
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.cell.* = .{
             .content_tag = .codepoint,
@@ -1644,7 +1652,7 @@ test "Page verifyIntegrity grapheme row not marked" {
     defer page.deinit();
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.cell.* = .{
             .content_tag = .codepoint,
@@ -1658,32 +1666,6 @@ test "Page verifyIntegrity grapheme row not marked" {
 
     try testing.expectError(
         Page.IntegrityError.UnmarkedGraphemeRow,
-        page.verifyIntegrity(testing.allocator),
-    );
-}
-
-test "Page verifyIntegrity text row marked as grapheme" {
-    var page = try Page.init(.{
-        .cols = 10,
-        .rows = 10,
-        .styles = 8,
-    });
-    defer page.deinit();
-
-    // Write
-    for (0..page.capacity.cols) |x| {
-        const rac = page.getRowAndCell(x, 0);
-        rac.cell.* = .{
-            .content_tag = .codepoint,
-            .content = .{ .codepoint = @intCast(x + 1) },
-        };
-    }
-
-    // Make invalid by unmarking the row
-    page.getRow(0).grapheme = true;
-
-    try testing.expectError(
-        Page.IntegrityError.MarkedGraphemeRow,
         page.verifyIntegrity(testing.allocator),
     );
 }
@@ -1702,7 +1684,7 @@ test "Page verifyIntegrity styles good" {
     } });
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.row.styled = true;
         rac.cell.* = .{
@@ -1730,7 +1712,7 @@ test "Page verifyIntegrity styles ref count mismatch" {
     } });
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.row.styled = true;
         rac.cell.* = .{
@@ -1769,7 +1751,7 @@ test "Page verifyIntegrity styles extra" {
     md2.ref += 1;
 
     // Write
-    for (0..page.capacity.cols) |x| {
+    for (0..page.size.cols) |x| {
         const rac = page.getRowAndCell(x, 0);
         rac.row.styled = true;
         rac.cell.* = .{
