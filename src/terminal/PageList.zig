@@ -376,6 +376,7 @@ pub fn clone(
             &page_size,
         );
         assert(page.data.capacity.rows >= chunk.page.data.capacity.rows);
+        defer page.data.assertIntegrity();
         page.data.size.rows = chunk.page.data.size.rows;
         try page.data.cloneFrom(
             &chunk.page.data,
@@ -867,6 +868,7 @@ fn reflowPage(
         // The new page always starts with a size of 1 because we know we have
         // at least one row to copy from the src.
         const dst_node = try self.createPage(cap);
+        defer dst_node.data.assertIntegrity();
         dst_node.data.size.rows = 1;
         var dst_cursor = ReflowCursor.init(&dst_node.data);
         dst_cursor.copyRowMetadata(src_cursor.page_row);
@@ -1223,6 +1225,7 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
                 var it = self.pageIterator(.right_down, .{ .screen = .{} }, null);
                 while (it.next()) |chunk| {
                     const page = &chunk.page.data;
+                    defer page.assertIntegrity();
                     const rows = page.rows.ptr(page.memory);
                     for (0..page.size.rows) |i| {
                         const row = &rows[i];
@@ -1373,6 +1376,7 @@ fn resizeWithoutReflowGrowCols(
     var copied: usize = 0;
     while (copied < page.size.rows) {
         const new_page = try self.createPage(cap);
+        defer new_page.data.assertIntegrity();
 
         // The length we can copy into the new page is at most the number
         // of rows in our cap. But if we can finish our source page we use that.
@@ -1467,6 +1471,7 @@ fn trimTrailingBlankRows(
         // no text we can also be sure it has no styling
         // so we don't need to worry about memory.
         row_pin.page.data.size.rows -= 1;
+        row_pin.page.data.assertIntegrity();
         trimmed += 1;
         if (trimmed >= max) return trimmed;
     }
@@ -1635,6 +1640,7 @@ pub fn grow(self: *PageList) !?*List.Node {
     if (last.data.capacity.rows > last.data.size.rows) {
         // Fast path: we have capacity in the last page.
         last.data.size.rows += 1;
+        last.data.assertIntegrity();
         return null;
     }
 
@@ -1671,6 +1677,7 @@ pub fn grow(self: *PageList) !?*List.Node {
         // In this case we do NOT need to update page_size because
         // we're reusing an existing page so nothing has changed.
 
+        first.data.assertIntegrity();
         return first;
     }
 
@@ -1684,6 +1691,7 @@ pub fn grow(self: *PageList) !?*List.Node {
     // We should never be more than our max size here because we've
     // verified the case above.
     assert(self.page_size <= self.maxSize());
+    next_page.data.assertIntegrity();
 
     return next_page;
 }
@@ -1755,6 +1763,7 @@ pub fn adjustCapacity(
     self.pages.remove(page);
     self.destroyPage(page);
 
+    new_page.data.assertIntegrity();
     return new_page;
 }
 
@@ -1883,6 +1892,9 @@ pub fn eraseRows(
             erased += chunk.page.data.size.rows;
             continue;
         }
+
+        // We are modifying our chunk so make sure it is in a good state.
+        defer chunk.page.data.assertIntegrity();
 
         // The chunk is not a full page so we need to move the rows.
         // This is a cheap operation because we're just moving cell offsets,
