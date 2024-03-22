@@ -1544,25 +1544,7 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
         while (@intFromPtr(x) >= @intFromPtr(left)) : (x -= 1) {
             const src: *Cell = @ptrCast(x);
             const dst: *Cell = @ptrCast(x + adjusted_count);
-
-            // If the destination has graphemes we need to delete them.
-            // Graphemes are stored by cell offset so we have to do this
-            // now before we move.
-            if (dst.hasGrapheme()) {
-                page.clearGrapheme(self.screen.cursor.page_row, dst);
-            }
-
-            // Copy our src to our dst
-            const old_dst = dst.*;
-            dst.* = src.*;
-            src.* = old_dst;
-
-            // If the original source (now copied to dst) had graphemes,
-            // we have to move them since they're stored by cell offset.
-            if (dst.hasGrapheme()) {
-                assert(!src.hasGrapheme());
-                page.moveGraphemeWithinRow(src, dst);
-            }
+            page.swapCells(src, dst);
         }
     }
 
@@ -1636,25 +1618,7 @@ pub fn deleteChars(self: *Terminal, count: usize) void {
         while (@intFromPtr(x) <= @intFromPtr(right)) : (x += 1) {
             const src: *Cell = @ptrCast(x + count);
             const dst: *Cell = @ptrCast(x);
-
-            // If the destination has graphemes we need to delete them.
-            // Graphemes are stored by cell offset so we have to do this
-            // now before we move.
-            if (dst.hasGrapheme()) {
-                page.clearGrapheme(self.screen.cursor.page_row, dst);
-            }
-
-            // Copy our src to our dst
-            const old_dst = dst.*;
-            dst.* = src.*;
-            src.* = old_dst;
-
-            // If the original source (now copied to dst) had graphemes,
-            // we have to move them since they're stored by cell offset.
-            if (dst.hasGrapheme()) {
-                assert(!src.hasGrapheme());
-                page.moveGraphemeWithinRow(src, dst);
-            }
+            page.swapCells(src, dst);
         }
     }
 

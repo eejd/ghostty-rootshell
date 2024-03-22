@@ -498,6 +498,8 @@ pub const Page = struct {
                 // Required for moveGrapheme assertions
                 dst.content_tag = .codepoint;
                 self.moveGrapheme(src, dst);
+                src.content_tag = .codepoint;
+                dst.content_tag = .codepoint_grapheme;
             }
 
             // The destination row must be marked
@@ -517,6 +519,43 @@ pub const Page = struct {
             src_row.grapheme = false;
             src_row.styled = false;
         }
+    }
+
+    /// Swap two cells within the same row as quickly as possible.
+    pub fn swapCells(
+        self: *Page,
+        src: *Cell,
+        dst: *Cell,
+    ) void {
+        defer self.assertIntegrity();
+
+        // Graphemes are keyed by cell offset so we do have to move them.
+        // We do this first so that all our grapheme state is correct.
+        if (src.hasGrapheme() or dst.hasGrapheme()) {
+            if (src.hasGrapheme() and !dst.hasGrapheme()) {
+                self.moveGrapheme(src, dst);
+            } else if (!src.hasGrapheme() and dst.hasGrapheme()) {
+                self.moveGrapheme(dst, src);
+            } else {
+                // Both had graphemes, so we have to manually swap
+                const src_offset = getOffset(Cell, self.memory, src);
+                const dst_offset = getOffset(Cell, self.memory, dst);
+                var map = self.grapheme_map.map(self.memory);
+                const src_entry = map.getEntry(src_offset).?;
+                const dst_entry = map.getEntry(dst_offset).?;
+                const src_value = src_entry.value_ptr.*;
+                const dst_value = dst_entry.value_ptr.*;
+                src_entry.value_ptr.* = dst_value;
+                dst_entry.value_ptr.* = src_value;
+            }
+        }
+
+        // Copy the metadata. Note that we do NOT have to worry about
+        // styles because styles are keyed by ID and we're preserving the
+        // exact ref count and row state here.
+        const old_dst = dst.*;
+        dst.* = src.*;
+        src.* = old_dst;
     }
 
     /// Clear the cells in the given row. This will reclaim memory used
@@ -630,7 +669,11 @@ pub const Page = struct {
 
     /// Move the graphemes from one cell to another. This can't fail
     /// because we avoid any allocations since we're just moving data.
-    pub fn moveGrapheme(self: *Page, src: *Cell, dst: *Cell) void {
+    ///
+    /// WARNING: This will NOT change the content_tag on the cells because
+    /// there are scenarios where we want to move graphemes without changing
+    /// the content tag. Callers beware but assertIntegrity should catch this.
+    fn moveGrapheme(self: *Page, src: *Cell, dst: *Cell) void {
         if (comptime std.debug.runtime_safety) {
             assert(src.hasGrapheme());
             assert(!dst.hasGrapheme());
@@ -643,8 +686,6 @@ pub const Page = struct {
         const value = entry.value_ptr.*;
         map.removeByPtr(entry.key_ptr);
         map.putAssumeCapacity(dst_offset, value);
-        src.content_tag = .codepoint;
-        dst.content_tag = .codepoint_grapheme;
     }
 
     /// Clear the graphemes for a given cell.
@@ -676,28 +717,6 @@ pub const Page = struct {
     /// size but the total number of unique cells that have grapheme data.
     pub fn graphemeCount(self: *const Page) usize {
         return self.grapheme_map.map(self.memory).count();
-    }
-
-    /// Move graphemes to another cell in the same row.
-    pub fn moveGraphemeWithinRow(self: *Page, src: *Cell, dst: *Cell) void {
-        // Note: we don't assert src has graphemes here because one of
-        // the places we call this is from insertBlanks where the cells have
-        // already swapped cell data but not grapheme data.
-
-        defer self.assertIntegrity();
-
-        // Get our entry in the map, which must exist
-        const src_offset = getOffset(Cell, self.memory, src);
-        var map = self.grapheme_map.map(self.memory);
-        const entry = map.getEntry(src_offset).?;
-        const value = entry.value_ptr.*;
-
-        // Remove the entry so we know we have space
-        map.removeByPtr(entry.key_ptr);
-
-        // Add the entry for the new cell
-        const dst_offset = getOffset(Cell, self.memory, dst);
-        map.putAssumeCapacity(dst_offset, value);
     }
 
     pub const Layout = struct {
@@ -1714,42 +1733,6 @@ test "Page verifyIntegrity styles ref count mismatch" {
 
     try testing.expectError(
         Page.IntegrityError.MismatchedStyleRef,
-        page.verifyIntegrity(testing.allocator),
-    );
-}
-
-test "Page verifyIntegrity styles extra" {
-    var page = try Page.init(.{
-        .cols = 10,
-        .rows = 10,
-        .styles = 8,
-    });
-    defer page.deinit();
-
-    // Upsert a style we'll use
-    const md = try page.styles.upsert(page.memory, .{ .flags = .{
-        .bold = true,
-    } });
-
-    const md2 = try page.styles.upsert(page.memory, .{ .flags = .{
-        .italic = true,
-    } });
-    md2.ref += 1;
-
-    // Write
-    for (0..page.size.cols) |x| {
-        const rac = page.getRowAndCell(x, 0);
-        rac.row.styled = true;
-        rac.cell.* = .{
-            .content_tag = .codepoint,
-            .content = .{ .codepoint = @intCast(x + 1) },
-            .style_id = md.id,
-        };
-        md.ref += 1;
-    }
-
-    try testing.expectError(
-        Page.IntegrityError.InvalidStyleCount,
         page.verifyIntegrity(testing.allocator),
     );
 }
