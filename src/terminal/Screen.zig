@@ -539,6 +539,20 @@ pub fn cursorDownScroll(self: *Screen) !void {
             // Erase rows will shift our rows up
             self.pages.eraseRows(.{ .active = .{} }, .{ .active = .{} });
 
+            // The above may clear our cursor so we need to update that
+            // again. If this fails (highly unlikely) we just reset
+            // the cursor.
+            self.manualStyleUpdate() catch |err| {
+                // This failure should not happen because manualStyleUpdate
+                // handles page splitting, overflow, and more. This should only
+                // happen if we're out of RAM. In this case, we'll just degrade
+                // gracefully back to the default style.
+                log.err("failed to update style on cursor scroll err={}", .{err});
+                self.cursor.style = .{};
+                self.cursor.style_id = 0;
+                self.cursor.style_ref = null;
+            };
+
             // We need to move our cursor down one because eraseRows will
             // preserve our pin directly and we're erasing one row.
             const page_pin = self.cursor.page_pin.down(1).?;
