@@ -207,6 +207,8 @@ pub const Page = struct {
         //   trim rows without clearing data.
         // - We do not check that styles seen is exactly the same as the
         //   styles count in the page for the same reason as above.
+        // - We only check that we saw less graphemes than the total memory
+        //   used for the same reason as styles above.
         //
 
         var arena = ArenaAllocator.init(alloc_gpa);
@@ -279,7 +281,7 @@ pub const Page = struct {
         }
 
         // Our graphemes seen should exactly match the grapheme count
-        if (graphemes_seen != self.graphemeCount()) {
+        if (graphemes_seen > self.graphemeCount()) {
             log.warn(
                 "page integrity violation grapheme count mismatch expected={} actual={}",
                 .{ graphemes_seen, self.graphemeCount() },

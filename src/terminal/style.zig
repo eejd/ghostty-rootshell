@@ -232,7 +232,6 @@ pub const Set = struct {
 
         /// No more available IDs. Perform a garbage collection
         /// operation to compact ID space.
-        /// TODO: implement gc operation
         Overflow,
     };
 

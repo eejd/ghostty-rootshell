@@ -56,7 +56,7 @@ pub const Attribute = sgr.Attribute;
 test {
     @import("std").testing.refAllDecls(@This());
 
-    // todo: make top-level imports
+    // Internals
     _ = @import("bitmap_allocator.zig");
     _ = @import("hash_map.zig");
     _ = @import("size.zig");
