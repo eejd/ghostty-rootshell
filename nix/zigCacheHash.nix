@@ -1,3 +1,3 @@
 # This file is auto-generated! check build-support/check-zig-cache-hash.sh for
 # more details.
-"sha256-OtN7vtORoH2758nYqnahV/0yAUG51rlEdzl8PWUGVgw="
+"sha256-nr8utAh2oMwnN6nyWzJo8VubFO5cCrHK+QNYuT2WBi0="
