@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const posix = std.posix;
 const homedir = @import("homedir.zig");
 
 pub const Options = struct {
@@ -24,7 +25,7 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
     // both whether we have the env var and whether we own it.
     // on Windows we treat `LOCALAPPDATA` as a fallback for `XDG_CONFIG_HOME`
     const env_, const owned = switch (builtin.os.tag) {
-        else => .{ std.os.getenv("XDG_CONFIG_HOME"), false },
+        else => .{ posix.getenv("XDG_CONFIG_HOME"), false },
         .windows => windows: {
             if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
                 break :windows .{ env, true };

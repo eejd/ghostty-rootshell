@@ -1,11 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const windows = @import("windows.zig");
+const posix = std.posix;
 
 /// pipe() that works on Windows and POSIX.
-pub fn pipe() ![2]std.os.fd_t {
+pub fn pipe() ![2]posix.fd_t {
     switch (builtin.os.tag) {
-        else => return try std.os.pipe(),
+        else => return try posix.pipe(),
         .windows => {
             var read: windows.HANDLE = undefined;
             var write: windows.HANDLE = undefined;

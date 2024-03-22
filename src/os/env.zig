@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
+const posix = std.posix;
 
 /// The separator used in environment variables such as PATH.
 pub const PATH_SEP = switch (builtin.os.tag) {
@@ -46,7 +47,7 @@ pub const GetEnvResult = struct {
 pub fn getenv(alloc: Allocator, key: []const u8) !?GetEnvResult {
     return switch (builtin.os.tag) {
         // Non-Windows doesn't need to allocate
-        else => if (std.os.getenv(key)) |v| .{ .value = v } else null,
+        else => if (posix.getenv(key)) |v| .{ .value = v } else null,
 
         // Windows needs to allocate
         .windows => if (std.process.getEnvVarOwned(alloc, key)) |v| .{

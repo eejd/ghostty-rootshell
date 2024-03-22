@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
+const posix = std.posix;
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const Pty = @import("../pty.zig").Pty;
@@ -206,7 +207,7 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
         // (Linux) which are usually guaranteed to exist. Still, we
         // want to handle this scenario.
         self.execFailedInChild() catch {};
-        std.os.exit(1);
+        posix.exit(1);
     };
     errdefer self.subprocess.stop();
     const pid = pid: {
@@ -221,8 +222,8 @@ pub fn threadEnter(self: *Exec, thread: *termio.Thread) !ThreadData {
     // Create our pipe that we'll use to kill our read thread.
     // pipe[0] is the read end, pipe[1] is the write end.
     const pipe = try internal_os.pipe();
-    errdefer std.os.close(pipe[0]);
-    errdefer std.os.close(pipe[1]);
+    errdefer posix.close(pipe[0]);
+    errdefer posix.close(pipe[1]);
 
     // Setup our data that is used for callbacks
     var ev_data_ptr = try alloc.create(EventData);
@@ -335,7 +336,7 @@ pub fn threadExit(self: *Exec, data: ThreadData) void {
     // Quit our read thread after exiting the subprocess so that
     // we don't get stuck waiting for data to stop flowing if it is
     // a particularly noisy process.
-    _ = std.os.write(data.read_thread_pipe, "x") catch |err|
+    _ = posix.write(data.read_thread_pipe, "x") catch |err|
         log.warn("error writing to read thread quit pipe err={}", .{err});
 
     if (comptime builtin.os.tag == .windows) {
@@ -658,11 +659,11 @@ const ThreadData = struct {
 
     /// Our read thread
     read_thread: std.Thread,
-    read_thread_pipe: std.os.fd_t,
-    read_thread_fd: if (builtin.os.tag == .windows) std.os.fd_t else void,
+    read_thread_pipe: posix.fd_t,
+    read_thread_fd: if (builtin.os.tag == .windows) posix.fd_t else void,
 
     pub fn deinit(self: *ThreadData) void {
-        std.os.close(self.read_thread_pipe);
+        posix.close(self.read_thread_pipe);
         self.ev.deinit(self.alloc);
         self.alloc.destroy(self.ev);
         self.* = undefined;
@@ -1251,7 +1252,7 @@ const Subprocess = struct {
             // Once started, we can close the pty child side. We do this after
             // wait right now but that is fine too. This lets us read the
             // parent and detect EOF.
-            _ = std.os.close(pty.slave);
+            _ = posix.close(pty.slave);
 
             return .{
                 .read = pty.master,
@@ -1393,7 +1394,7 @@ const Subprocess = struct {
                         // The gist is that it lets us detect when children
                         // are still alive without blocking so that we can
                         // kill them again.
-                        const res = std.os.waitpid(pid, std.c.W.NOHANG);
+                        const res = posix.waitpid(pid, std.c.W.NOHANG);
                         if (res.pid != 0) break;
                         std.time.sleep(10 * std.time.ns_per_ms);
                     }
@@ -1462,18 +1463,18 @@ const Subprocess = struct {
 /// fds and this is still much faster and lower overhead than any async
 /// mechanism.
 const ReadThread = struct {
-    fn threadMainPosix(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
+    fn threadMainPosix(fd: posix.fd_t, ev: *EventData, quit: posix.fd_t) void {
         // Always close our end of the pipe when we exit.
-        defer std.os.close(quit);
+        defer posix.close(quit);
 
         // First thing, we want to set the fd to non-blocking. We do this
         // so that we can try to read from the fd in a tight loop and only
         // check the quit fd occasionally.
-        if (std.os.fcntl(fd, std.os.F.GETFL, 0)) |flags| {
-            _ = std.os.fcntl(
+        if (posix.fcntl(fd, posix.F.GETFL, 0)) |flags| {
+            _ = posix.fcntl(
                 fd,
-                std.os.F.SETFL,
-                flags | @as(u32, @bitCast(std.os.O{ .NONBLOCK = true })),
+                posix.F.SETFL,
+                flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })),
             ) catch |err| {
                 log.warn("read thread failed to set flags err={}", .{err});
                 log.warn("this isn't a fatal error, but may cause performance issues", .{});
@@ -1485,9 +1486,9 @@ const ReadThread = struct {
 
         // Build up the list of fds we're going to poll. We are looking
         // for data on the pty and our quit notification.
-        var pollfds: [2]std.os.pollfd = .{
-            .{ .fd = fd, .events = std.os.POLL.IN, .revents = undefined },
-            .{ .fd = quit, .events = std.os.POLL.IN, .revents = undefined },
+        var pollfds: [2]posix.pollfd = .{
+            .{ .fd = fd, .events = posix.POLL.IN, .revents = undefined },
+            .{ .fd = quit, .events = posix.POLL.IN, .revents = undefined },
         };
 
         var buf: [1024]u8 = undefined;
@@ -1498,7 +1499,7 @@ const ReadThread = struct {
             // the data will eventually stop while we're trying to quit. This
             // is always true because we kill the process.
             while (true) {
-                const n = std.os.read(fd, &buf) catch |err| {
+                const n = posix.read(fd, &buf) catch |err| {
                     switch (err) {
                         // This means our pty is closed. We're probably
                         // gracefully shutting down.
@@ -1530,22 +1531,22 @@ const ReadThread = struct {
             }
 
             // Wait for data.
-            _ = std.os.poll(&pollfds, -1) catch |err| {
+            _ = posix.poll(&pollfds, -1) catch |err| {
                 log.warn("poll failed on read thread, exiting early err={}", .{err});
                 return;
             };
 
             // If our quit fd is set, we're done.
-            if (pollfds[1].revents & std.os.POLL.IN != 0) {
+            if (pollfds[1].revents & posix.POLL.IN != 0) {
                 log.info("read thread got quit signal", .{});
                 return;
             }
         }
     }
 
-    fn threadMainWindows(fd: std.os.fd_t, ev: *EventData, quit: std.os.fd_t) void {
+    fn threadMainWindows(fd: posix.fd_t, ev: *EventData, quit: posix.fd_t) void {
         // Always close our end of the pipe when we exit.
-        defer std.os.close(quit);
+        defer posix.close(quit);
 
         var buf: [1024]u8 = undefined;
         while (true) {
@@ -2641,8 +2642,8 @@ const StreamHandler = struct {
             }
 
             // Otherwise, it must match our hostname.
-            var buf: [std.os.HOST_NAME_MAX]u8 = undefined;
-            const hostname = std.os.gethostname(&buf) catch |err| {
+            var buf: [posix.HOST_NAME_MAX]u8 = undefined;
+            const hostname = posix.gethostname(&buf) catch |err| {
                 log.warn("failed to get hostname for OSC 7 validation: {}", .{err});
                 break :host_valid false;
             };

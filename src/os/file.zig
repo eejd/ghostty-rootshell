@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const posix = std.posix;
 
 const log = std.log.scoped(.os);
 
@@ -7,8 +8,7 @@ const log = std.log.scoped(.os);
 /// need to do this because each window consumes at least a handful of fds.
 /// This is extracted from the Zig compiler source code.
 pub fn fixMaxFiles() void {
-    if (!@hasDecl(std.os.system, "rlimit")) return;
-    const posix = std.os;
+    if (!@hasDecl(posix.system, "rlimit")) return;
 
     var lim = posix.getrlimit(.NOFILE) catch {
         log.warn("failed to query file handle limit, may limit max windows", .{});
@@ -49,14 +49,14 @@ pub fn fixMaxFiles() void {
 pub fn allocTmpDir(allocator: std.mem.Allocator) ?[]const u8 {
     if (builtin.os.tag == .windows) {
         // TODO: what is a good fallback path on windows?
-        const v = std.os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
+        const v = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
         return std.unicode.utf16leToUtf8Alloc(allocator, v) catch |e| {
             log.warn("failed to convert temp dir path from windows string: {}", .{e});
             return null;
         };
     }
-    if (std.os.getenv("TMPDIR")) |v| return v;
-    if (std.os.getenv("TMP")) |v| return v;
+    if (posix.getenv("TMPDIR")) |v| return v;
+    if (posix.getenv("TMP")) |v| return v;
     return "/tmp";
 }
 

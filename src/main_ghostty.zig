@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
+const posix = std.posix;
 const build_config = @import("build_config.zig");
 const options = @import("build_options");
 const glfw = @import("glfw");
@@ -42,7 +43,7 @@ pub fn main() !MainReturn {
     // no other Zig code should EVER access the global state.
     state.init() catch |err| {
         const stderr = std.io.getStdErr().writer();
-        defer std.os.exit(1);
+        defer posix.exit(1);
         const ErrSet = @TypeOf(err) || error{Unknown};
         switch (@as(ErrSet, @errorCast(err))) {
             error.MultipleActions => try stderr.print(
@@ -72,7 +73,7 @@ pub fn main() !MainReturn {
     // Execute our action if we have one
     if (state.action) |action| {
         std.log.info("executing CLI action={}", .{action});
-        std.os.exit(action.run(alloc) catch |err| err: {
+        posix.exit(action.run(alloc) catch |err| err: {
             std.log.err("CLI action failed error={}", .{err});
             break :err 1;
         });
@@ -94,7 +95,7 @@ pub fn main() !MainReturn {
             .{},
         );
 
-        std.os.exit(0);
+        posix.exit(0);
     }
 
     // Create our app state
