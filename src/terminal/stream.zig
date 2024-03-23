@@ -262,9 +262,9 @@ pub fn Stream(comptime Handler: type) type {
             for (actions) |action_opt| {
                 const action = action_opt orelse continue;
 
-                if (action != .print) {
-                    log.info("action: {}", .{action});
-                }
+                // if (action != .print) {
+                //     log.info("action: {}", .{action});
+                // }
 
                 // If this handler handles everything manually then we do nothing
                 // if it can be processed.
