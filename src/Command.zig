@@ -22,7 +22,8 @@ const internal_os = @import("os/main.zig");
 const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
 const mem = std.mem;
-const os = std.os;
+const linux = std.os.linux;
+const posix = std.posix;
 const debug = std.debug;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
@@ -70,7 +71,7 @@ pseudo_console: if (builtin.os.tag == .windows) ?windows.exp.HPCON else void =
 data: ?*anyopaque = null,
 
 /// Process ID is set after start is called.
-pid: ?os.pid_t = null,
+pid: ?posix.pid_t = null,
 
 /// The various methods a process may exit.
 pub const Exit = if (builtin.os.tag == .windows) union(enum) {
@@ -89,12 +90,12 @@ pub const Exit = if (builtin.os.tag == .windows) union(enum) {
     Unknown: u32,
 
     pub fn init(status: u32) Exit {
-        return if (os.W.IFEXITED(status))
-            Exit{ .Exited = os.W.EXITSTATUS(status) }
-        else if (os.W.IFSIGNALED(status))
-            Exit{ .Signal = os.W.TERMSIG(status) }
-        else if (os.W.IFSTOPPED(status))
-            Exit{ .Stopped = os.W.STOPSIG(status) }
+        return if (posix.W.IFEXITED(status))
+            Exit{ .Exited = posix.W.EXITSTATUS(status) }
+        else if (posix.W.IFSIGNALED(status))
+            Exit{ .Signal = posix.W.TERMSIG(status) }
+        else if (posix.W.IFSTOPPED(status))
+            Exit{ .Stopped = posix.W.STOPSIG(status) }
         else
             Exit{ .Unknown = status };
     }
@@ -133,7 +134,7 @@ fn startPosix(self: *Command, arena: Allocator) !void {
         @compileError("missing env vars");
 
     // Fork
-    const pid = try std.os.fork();
+    const pid = try posix.fork();
     if (pid != 0) {
         // Parent, return immediately.
         self.pid = @intCast(pid);
@@ -143,18 +144,18 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     // We are the child.
 
     // Setup our file descriptors for std streams.
-    if (self.stdin) |f| try setupFd(f.handle, os.STDIN_FILENO);
-    if (self.stdout) |f| try setupFd(f.handle, os.STDOUT_FILENO);
-    if (self.stderr) |f| try setupFd(f.handle, os.STDERR_FILENO);
+    if (self.stdin) |f| try setupFd(f.handle, posix.STDIN_FILENO);
+    if (self.stdout) |f| try setupFd(f.handle, posix.STDOUT_FILENO);
+    if (self.stderr) |f| try setupFd(f.handle, posix.STDERR_FILENO);
 
     // Setup our working directory
-    if (self.cwd) |cwd| try os.chdir(cwd);
+    if (self.cwd) |cwd| try posix.chdir(cwd);
 
     // If the user requested a pre exec callback, call it now.
     if (self.pre_exec) |f| f(self);
 
     // Finally, replace our process.
-    _ = std.os.execveZ(pathZ, argsZ, envp) catch null;
+    _ = posix.execveZ(pathZ, argsZ, envp) catch null;
 
     // If we are executing this code, the exec failed. In that scenario,
     // we return a very specific error that can be detected to determine
@@ -180,7 +181,7 @@ fn startWindows(self: *Command, arena: Allocator) !void {
             .creation = windows.OPEN_EXISTING,
         },
     ) else null;
-    defer if (null_fd) |fd| std.os.close(fd);
+    defer if (null_fd) |fd| posix.close(fd);
 
     // TODO: In the case of having FDs instead of pty, need to set up
     // attributes such that the child process only inherits these handles,
@@ -272,8 +273,8 @@ fn setupFd(src: File.Handle, target: i32) !void {
             // file descriptor to be closed on exec since we're exactly exec-ing after
             // this.
             while (true) {
-                const rc = os.linux.dup3(src, target, 0);
-                switch (os.errno(rc)) {
+                const rc = linux.dup3(src, target, 0);
+                switch (posix.errno(rc)) {
                     .SUCCESS => break,
                     .INTR => continue,
                     .AGAIN, .ACCES => return error.Locked,
@@ -285,19 +286,19 @@ fn setupFd(src: File.Handle, target: i32) !void {
                     .NOTDIR => unreachable, // invalid parameter
                     .DEADLK => return error.DeadLock,
                     .NOLCK => return error.LockedRegionLimitExceeded,
-                    else => |err| return os.unexpectedErrno(err),
+                    else => |err| return posix.unexpectedErrno(err),
                 }
             }
         },
         .ios, .macos => {
             // Mac doesn't support dup3 so we use dup2. We purposely clear
             // CLO_ON_EXEC for this fd.
-            const flags = try os.fcntl(src, os.F.GETFD, 0);
-            if (flags & os.FD_CLOEXEC != 0) {
-                _ = try os.fcntl(src, os.F.SETFD, flags & ~@as(u32, os.FD_CLOEXEC));
+            const flags = try posix.fcntl(src, posix.F.GETFD, 0);
+            if (flags & posix.FD_CLOEXEC != 0) {
+                _ = try posix.fcntl(src, posix.F.SETFD, flags & ~@as(u32, posix.FD_CLOEXEC));
             }
 
-            try os.dup2(src, target);
+            try posix.dup2(src, target);
         },
         else => @compileError("unsupported platform"),
     }
@@ -322,7 +323,7 @@ pub fn wait(self: Command, block: bool) !Exit {
         return .{ .Exited = exit_code };
     }
 
-    const res = if (block) std.os.waitpid(self.pid.?, 0) else res: {
+    const res = if (block) posix.waitpid(self.pid.?, 0) else res: {
         // We specify NOHANG because its not our fault if the process we launch
         // for the tty doesn't properly waitpid its children. We don't want
         // to hang the terminal over it.
@@ -331,7 +332,7 @@ pub fn wait(self: Command, block: bool) !Exit {
         // wait call has not been performed, so we need to keep trying until we get
         // a non-zero pid back, otherwise we end up with zombie processes.
         while (true) {
-            const res = std.os.waitpid(self.pid.?, std.c.W.NOHANG);
+            const res = posix.waitpid(self.pid.?, std.c.W.NOHANG);
             if (res.pid != 0) break :res res;
         }
     };
@@ -361,11 +362,11 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
 
     const PATH = switch (builtin.os.tag) {
         .windows => blk: {
-            const win_path = os.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("PATH")) orelse return null;
+            const win_path = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("PATH")) orelse return null;
             const path = try std.unicode.utf16leToUtf8Alloc(alloc, win_path);
             break :blk path;
         },
-        else => os.getenvZ("PATH") orelse return null,
+        else => std.posix.getenvZ("PATH") orelse return null,
     };
     defer if (builtin.os.tag == .windows) alloc.free(PATH);
 
@@ -568,7 +569,7 @@ test "Command: pre exec" {
             fn do(_: *Command) void {
                 // This runs in the child, so we can exit and it won't
                 // kill the test runner.
-                os.exit(42);
+                posix.exit(42);
             }
         }).do,
     };

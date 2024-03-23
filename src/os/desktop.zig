@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
+const posix = std.posix;
 
 const c = @cImport({
     @cInclude("unistd.h");
@@ -24,7 +25,7 @@ pub fn launchedFromDesktop() bool {
             // app bundle (i.e. via open) then we still treat it as if it
             // was launched from the desktop.
             if (build_config.artifact == .lib and
-                std.os.getenv("GHOSTTY_MAC_APP") != null) break :macos true;
+                posix.getenv("GHOSTTY_MAC_APP") != null) break :macos true;
 
             break :macos c.getppid() == 1;
         },
@@ -36,7 +37,7 @@ pub fn launchedFromDesktop() bool {
         // another terminal was launched from a desktop file and then launches
         // Ghostty and Ghostty inherits the env.
         .linux => linux: {
-            const gio_pid_str = std.os.getenv("GIO_LAUNCHED_DESKTOP_FILE_PID") orelse
+            const gio_pid_str = posix.getenv("GIO_LAUNCHED_DESKTOP_FILE_PID") orelse
                 break :linux false;
 
             const pid = c.getpid();

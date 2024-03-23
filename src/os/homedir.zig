@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const passwd = @import("passwd.zig");
+const posix = std.posix;
 
 const Error = error{
     /// The buffer used for output is not large enough to store the value.
@@ -24,7 +25,7 @@ pub inline fn home(buf: []u8) !?[]u8 {
 
 fn homeUnix(buf: []u8) !?[]u8 {
     // First: if we have a HOME env var, then we use that.
-    if (std.os.getenv("HOME")) |result| {
+    if (posix.getenv("HOME")) |result| {
         if (buf.len < result.len) return Error.BufferTooSmall;
         @memcpy(buf[0..result.len], result);
         return buf[0..result.len];

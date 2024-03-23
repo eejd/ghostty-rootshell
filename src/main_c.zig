@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
+const posix = std.posix;
 const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 const main = @import("main.zig");
@@ -65,7 +66,7 @@ export fn ghostty_cli_main(argc: usize, argv: [*][*:0]u8) noreturn {
     std.os.argv = argv[0..argc];
     main.main() catch |err| {
         std.log.err("failed to run ghostty error={}", .{err});
-        std.os.exit(1);
+        posix.exit(1);
     };
 }
 

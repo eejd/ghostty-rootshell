@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const windows = @import("os/main.zig").windows;
+const posix = std.posix;
 
 const log = std.log.scoped(.pty);
 
@@ -26,7 +27,7 @@ pub const Pty = switch (builtin.os.tag) {
 // a termio that doesn't use a pty. This isn't used in any user-facing
 // artifacts, this is just a stopgap to get compilation to work on iOS.
 const NullPty = struct {
-    pub const Fd = std.os.fd_t;
+    pub const Fd = posix.fd_t;
 
     master: Fd,
     slave: Fd,
@@ -54,7 +55,7 @@ const NullPty = struct {
 /// of Linux syscalls. The caller is responsible for detail-oriented handling
 /// of the returned file handles.
 const PosixPty = struct {
-    pub const Fd = std.os.fd_t;
+    pub const Fd = posix.fd_t;
 
     // https://github.com/ziglang/zig/issues/13277
     // Once above is fixed, use `c.TIOCSCTTY`
@@ -95,8 +96,8 @@ const PosixPty = struct {
         ) < 0)
             return error.OpenptyFailed;
         errdefer {
-            _ = std.os.system.close(master_fd);
-            _ = std.os.system.close(slave_fd);
+            _ = posix.system.close(master_fd);
+            _ = posix.system.close(slave_fd);
         }
 
         // Enable UTF-8 mode. I think this is on by default on Linux but it
@@ -115,8 +116,8 @@ const PosixPty = struct {
     }
 
     pub fn deinit(self: *Pty) void {
-        _ = std.os.system.close(self.master);
-        _ = std.os.system.close(self.slave);
+        _ = posix.system.close(self.master);
+        _ = posix.system.close(self.slave);
         self.* = undefined;
     }
 
@@ -142,7 +143,7 @@ const PosixPty = struct {
         if (setsid() < 0) return error.ProcessGroupFailed;
 
         // Set controlling terminal
-        switch (std.os.system.getErrno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
+        switch (posix.errno(c.ioctl(self.slave, TIOCSCTTY, @as(c_ulong, 0)))) {
             .SUCCESS => {},
             else => |err| {
                 log.err("error setting controlling terminal errno={}", .{err});
@@ -151,8 +152,8 @@ const PosixPty = struct {
         }
 
         // Can close master/slave pair now
-        std.os.close(self.slave);
-        std.os.close(self.master);
+        posix.close(self.slave);
+        posix.close(self.master);
 
         // TODO: reset signals
     }
