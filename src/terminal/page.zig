@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
 const testing = std.testing;
+const posix = std.posix;
 const fastmem = @import("../fastmem.zig");
 const color = @import("color.zig");
 const sgr = @import("sgr.zig");
@@ -113,15 +114,15 @@ pub const Page = struct {
         // anonymous mmap is guaranteed on Linux and macOS to be zeroed,
         // which is a critical property for us.
         assert(l.total_size % std.mem.page_size == 0);
-        const backing = try std.os.mmap(
+        const backing = try posix.mmap(
             null,
             l.total_size,
-            std.os.PROT.READ | std.os.PROT.WRITE,
+            posix.PROT.READ | posix.PROT.WRITE,
             .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
             -1,
             0,
         );
-        errdefer std.os.munmap(backing);
+        errdefer posix.munmap(backing);
 
         const buf = OffsetBuf.init(backing);
         return initBuf(buf, l);
@@ -170,7 +171,7 @@ pub const Page = struct {
     /// this if you allocated the backing memory yourself (i.e. you used
     /// initBuf).
     pub fn deinit(self: *Page) void {
-        std.os.munmap(self.memory);
+        posix.munmap(self.memory);
         self.* = undefined;
     }
 
@@ -310,15 +311,15 @@ pub const Page = struct {
     /// using the page allocator. If you want to manage memory manually,
     /// use cloneBuf.
     pub fn clone(self: *const Page) !Page {
-        const backing = try std.os.mmap(
+        const backing = try posix.mmap(
             null,
             self.memory.len,
-            std.os.PROT.READ | std.os.PROT.WRITE,
+            posix.PROT.READ | posix.PROT.WRITE,
             .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
             -1,
             0,
         );
-        errdefer std.os.munmap(backing);
+        errdefer posix.munmap(backing);
         return self.cloneBuf(backing);
     }
 

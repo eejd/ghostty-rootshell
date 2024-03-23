@@ -78,7 +78,7 @@ pub const LoadingImage = struct {
 
         if (comptime builtin.os.tag != .windows) {
             if (std.mem.indexOfScalar(u8, buf[0..size], 0) != null) {
-                // std.os.realpath *asserts* that the path does not have
+                // std.posix.realpath *asserts* that the path does not have
                 // internal nulls instead of erroring.
                 log.warn("failed to get absolute path: BadPathName", .{});
                 return error.InvalidData;
@@ -86,7 +86,7 @@ pub const LoadingImage = struct {
         }
 
         var abs_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        const path = std.os.realpath(buf[0..size], &abs_buf) catch |err| {
+        const path = std.posix.realpath(buf[0..size], &abs_buf) catch |err| {
             log.warn("failed to get absolute path: {}", .{err});
             return error.InvalidData;
         };
@@ -151,7 +151,7 @@ pub const LoadingImage = struct {
             if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
         }
         defer if (medium == .temporary_file) {
-            std.os.unlink(path) catch |err| {
+            std.posix.unlink(path) catch |err| {
                 log.warn("failed to delete temporary file: {}", .{err});
             };
         };
@@ -209,7 +209,7 @@ pub const LoadingImage = struct {
             // The temporary dir is sometimes a symlink. On macOS for
             // example /tmp is /private/var/...
             var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            if (std.os.realpath(dir, &buf)) |real_dir| {
+            if (std.posix.realpath(dir, &buf)) |real_dir| {
                 if (std.mem.startsWith(u8, path, real_dir)) return true;
             } else |_| {}
         }
