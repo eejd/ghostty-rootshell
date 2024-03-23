@@ -47,17 +47,12 @@ pub const Style = struct {
 
     /// True if the style is the default style.
     pub fn default(self: Style) bool {
-        const def: []const u8 = comptime std.mem.asBytes(&Style{});
-        return std.mem.eql(u8, std.mem.asBytes(&self), def);
+        return std.meta.eql(self, .{});
     }
 
     /// True if the style is equal to another style.
     pub fn eql(self: Style, other: Style) bool {
-        return std.mem.eql(
-            u8,
-            std.mem.asBytes(&self),
-            std.mem.asBytes(&other),
-        );
+        return std.meta.eql(self, other);
     }
 
     /// Returns the bg color for a cell with this style given the cell
