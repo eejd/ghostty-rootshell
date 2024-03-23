@@ -218,7 +218,7 @@ pub fn printRepeat(self: *Terminal, count_req: usize) !void {
 }
 
 pub fn print(self: *Terminal, c: u21) !void {
-    // log.debug("print={x} y={} x={}", .{ c, self.screen.cursor.y, self.screen.cursor.x });
+    log.debug("print={x} y={} x={}", .{ c, self.screen.cursor.y, self.screen.cursor.x });
 
     // If we're not on the main display, do nothing for now
     if (self.status_display != .main) return;
@@ -316,7 +316,10 @@ pub fn print(self: *Terminal, c: u21) !void {
                         // char as normal.
                         if (self.screen.cursor.x == right_limit - 1) {
                             if (!self.modes.get(.wraparound)) return;
-                            self.printCell(' ', .spacer_head);
+                            self.printCell(
+                                ' ',
+                                if (right_limit == self.cols) .spacer_head else .narrow,
+                            );
                             try self.printWrap();
                         }
 
@@ -442,7 +445,10 @@ pub fn print(self: *Terminal, c: u21) !void {
                 // how xterm behaves.
                 if (!self.modes.get(.wraparound)) return;
 
-                self.printCell(' ', .spacer_head);
+                // We only create a spacer head if we're at the real edge
+                // of the screen. Otherwise, we clear the space with a narrow.
+                // This allows soft wrapping to work correctly.
+                self.printCell(' ', if (right_limit == self.cols) .spacer_head else .narrow);
                 try self.printWrap();
             }
 
@@ -619,7 +625,11 @@ fn printCell(
 }
 
 fn printWrap(self: *Terminal) !void {
-    self.screen.cursor.page_row.wrap = true;
+    // We only mark that we soft-wrapped if we're at the edge of our
+    // full screen. We don't mark the row as wrapped if we're in the
+    // middle due to a right margin.
+    const mark_wrap = self.screen.cursor.x == self.cols - 1;
+    if (mark_wrap) self.screen.cursor.page_row.wrap = true;
 
     // Get the old semantic prompt so we can extend it to the next
     // line. We need to do this before we index() because we may
@@ -630,9 +640,11 @@ fn printWrap(self: *Terminal) !void {
     try self.index();
     self.screen.cursorHorizontalAbsolute(self.scrolling_region.left);
 
-    // New line must inherit semantic prompt of the old line
-    self.screen.cursor.page_row.semantic_prompt = old_prompt;
-    self.screen.cursor.page_row.wrap_continuation = true;
+    if (mark_wrap) {
+        // New line must inherit semantic prompt of the old line
+        self.screen.cursor.page_row.semantic_prompt = old_prompt;
+        self.screen.cursor.page_row.wrap_continuation = true;
+    }
 
     // Assure that our screen is consistent
     self.screen.assertIntegrity();
@@ -2426,6 +2438,33 @@ test "Terminal: print wide char" {
     }
 }
 
+test "Terminal: print wide char at edge creates spacer head" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    t.setCursorPos(1, 10);
+    try t.print(0x1F600); // Smiley face
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 9, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(Cell.Wide.spacer_head, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x1F600), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.wide, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
+    }
+}
+
 test "Terminal: print wide char with 1-column width" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 1, .rows = 2 });
@@ -3232,6 +3271,12 @@ test "Terminal: print right margin wrap" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("1234X6789\n  Y", str);
     }
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = 0 } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.wrap);
+    }
 }
 
 test "Terminal: print right margin outside" {
@@ -3265,6 +3310,39 @@ test "Terminal: print right margin outside wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("123456789X\n  Y", str);
+    }
+}
+
+test "Terminal: print wide char at right margin does not create spacer head" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 5);
+    try t.print(0x1F600); // Smiley face
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 4, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
+
+        const row = list_cell.row;
+        try testing.expect(!row.wrap);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 2, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x1F600), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.wide, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 3, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
 }
 
