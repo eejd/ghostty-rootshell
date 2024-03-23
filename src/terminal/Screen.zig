@@ -801,13 +801,13 @@ pub fn clearRows(
             // Clear all cells
             if (protected) {
                 self.clearUnprotectedCells(&chunk.page.data, row, cells);
+                // We need to preserve other row attributes since we only
+                // cleared unprotected cells.
+                row.cells = cells_offset;
             } else {
                 self.clearCells(&chunk.page.data, row, cells);
+                row.* = .{ .cells = cells_offset };
             }
-
-            // Reset our row to point to the proper memory but everything
-            // else is zeroed.
-            row.* = .{ .cells = cells_offset };
         }
     }
 }
