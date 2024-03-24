@@ -175,7 +175,15 @@ pub const Page = struct {
         self.* = undefined;
     }
 
+    /// Reinitialize the page with the same capacity.
+    pub fn reinit(self: *Page) void {
+        @memset(self.memory, 0);
+        self.* = initBuf(OffsetBuf.init(self.memory), layout(self.capacity));
+    }
+
     pub const IntegrityError = error{
+        ZeroRowCount,
+        ZeroColCount,
         UnmarkedGraphemeRow,
         MissingGraphemeData,
         InvalidGraphemeCount,
@@ -211,6 +219,15 @@ pub const Page = struct {
         // - We only check that we saw less graphemes than the total memory
         //   used for the same reason as styles above.
         //
+
+        if (self.size.rows == 0) {
+            log.warn("page integrity violation zero row count", .{});
+            return IntegrityError.ZeroRowCount;
+        }
+        if (self.size.cols == 0) {
+            log.warn("page integrity violation zero col count", .{});
+            return IntegrityError.ZeroColCount;
+        }
 
         var arena = ArenaAllocator.init(alloc_gpa);
         defer arena.deinit();
@@ -1739,6 +1756,34 @@ test "Page verifyIntegrity styles ref count mismatch" {
 
     try testing.expectError(
         Page.IntegrityError.MismatchedStyleRef,
+        page.verifyIntegrity(testing.allocator),
+    );
+}
+
+test "Page verifyIntegrity zero rows" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+    page.size.rows = 0;
+    try testing.expectError(
+        Page.IntegrityError.ZeroRowCount,
+        page.verifyIntegrity(testing.allocator),
+    );
+}
+
+test "Page verifyIntegrity zero cols" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+    page.size.cols = 0;
+    try testing.expectError(
+        Page.IntegrityError.ZeroColCount,
         page.verifyIntegrity(testing.allocator),
     );
 }

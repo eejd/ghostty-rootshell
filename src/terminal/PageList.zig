@@ -1976,13 +1976,17 @@ pub fn eraseRows(
     while (it.next()) |chunk| {
         // If the chunk is a full page, deinit thit page and remove it from
         // the linked list.
-        if (chunk.fullPage()) full_page: {
+        if (chunk.fullPage()) {
             // A rare special case is that we're deleting everything
             // in our linked list. erasePage requires at least one other
-            // page so to handle this we break out of this handling and
-            // do a normal row by row erase.
+            // page so to handle this we reinit this page, set it to zero
+            // size which will let us grow our active area back.
             if (chunk.page.next == null and chunk.page.prev == null) {
-                break :full_page;
+                const page = &chunk.page.data;
+                erased += page.size.rows;
+                page.reinit();
+                page.size.rows = 0;
+                break;
             }
 
             self.erasePage(chunk.page);
