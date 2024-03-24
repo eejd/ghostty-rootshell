@@ -1112,6 +1112,12 @@ fn reflowPage(
                                 dst_cursor.page_cell.* = src_cursor.page_cell.*;
                                 dst_cursor.page_cell.content_tag = .codepoint;
 
+                                // Unset the style ID so our integrity checks don't fire.
+                                // We handle style fixups after this switch block.
+                                if (comptime std.debug.runtime_safety) {
+                                    dst_cursor.page_cell.style_id = stylepkg.default_id;
+                                }
+
                                 // Copy the graphemes
                                 const src_cps = src_cursor.page.lookupGrapheme(src_cursor.page_cell).?;
                                 for (src_cps) |cp| {
