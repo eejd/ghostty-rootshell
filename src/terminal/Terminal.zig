@@ -1950,26 +1950,31 @@ pub fn decaln(self: *Terminal) !void {
     // Erase the display which will deallocate graphames, styles, etc.
     self.eraseDisplay(.complete, false);
 
-    // Fill with Es, does not move cursor.
-    var it = self.screen.pages.pageIterator(.right_down, .{ .active = .{} }, null);
-    while (it.next()) |chunk| {
-        for (chunk.rows()) |*row| {
-            const cells_multi: [*]Cell = row.cells.ptr(chunk.page.data.memory);
-            const cells = cells_multi[0..self.cols];
-            @memset(cells, .{
-                .content_tag = .codepoint,
-                .content = .{ .codepoint = 'E' },
-                .style_id = self.screen.cursor.style_id,
-                .protected = self.screen.cursor.protected,
-            });
+    // Fill with Es by moving the cursor but reset it after.
+    while (true) {
+        const page = &self.screen.cursor.page_pin.page.data;
+        const row = self.screen.cursor.page_row;
+        const cells_multi: [*]Cell = row.cells.ptr(page.memory);
+        const cells = cells_multi[0..page.size.cols];
+        @memset(cells, .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'E' },
+            .style_id = self.screen.cursor.style_id,
+            .protected = self.screen.cursor.protected,
+        });
 
-            // If we have a ref-counted style, increase
-            if (self.screen.cursor.style_ref) |ref| {
-                ref.* += @intCast(cells.len);
-                row.styled = true;
-            }
+        // If we have a ref-counted style, increase
+        if (self.screen.cursor.style_ref) |ref| {
+            ref.* += @intCast(cells.len);
+            row.styled = true;
         }
+
+        if (self.screen.cursor.y == self.rows - 1) break;
+        self.screen.cursorDown(1);
     }
+
+    // Reset the cursor to the top-left
+    self.setCursorPos(1, 1);
 }
 
 /// Execute a kitty graphics command. The buf is used to populate with
@@ -7884,6 +7889,23 @@ test "Terminal: eraseDisplay protected above" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\n     X  9", str);
     }
+}
+
+test "Terminal: eraseDisplay complete preserves cursor" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    // Set our cursur
+    try t.setAttribute(.{ .bold = {} });
+    try t.printString("AAAA");
+    try testing.expect(t.screen.cursor.style_id != style.default_id);
+
+    // Erasing the display may detect that our style is no longer in use
+    // and prune our style, which we don't want because its still our
+    // active cursor.
+    t.eraseDisplay(.complete, false);
+    try testing.expect(t.screen.cursor.style_id != style.default_id);
 }
 
 test "Terminal: cursorIsAtPrompt" {
