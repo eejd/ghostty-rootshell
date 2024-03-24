@@ -4837,24 +4837,6 @@ test "PageList resize (no reflow) more cols forces less rows per page" {
     }
 }
 
-// This is a crash case we found with no scrollback scenarios. This is
-// also covered in the test above where we verify growing cols doesn't
-// fragment memory.
-test "PageList resize (no reflow) to large cols and rows with no scrollback" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s = try init(alloc, 5, 5, 0);
-    defer s.deinit();
-
-    for (1..6) |i| {
-        const amount: size.CellCountInt = @intCast(500 * i);
-        try s.resize(.{ .cols = amount, .rows = amount, .reflow = false });
-        try testing.expectEqual(@as(usize, amount), s.cols);
-        try testing.expectEqual(@as(usize, amount), s.totalRows());
-    }
-}
-
 test "PageList resize (no reflow) less cols then more cols" {
     const testing = std.testing;
     const alloc = testing.allocator;
