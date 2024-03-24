@@ -165,16 +165,29 @@ fn minMaxSize(cols: size.CellCountInt, rows: size.CellCountInt) !usize {
     const cap = try std_capacity.adjust(.{ .cols = cols });
 
     // Calculate the number of standard sized pages we need to represent
-    // an active area. We always need at least two pages so if we can fit
-    // all our rows in one cap then we say 2, otherwise we do the math.
-    const pages = if (cap.rows >= rows) 2 else try std.math.divCeil(
+    // an active area.
+    const pages_exact = if (cap.rows >= rows) 1 else try std.math.divCeil(
         usize,
         rows,
         cap.rows,
     );
+
+    // We always need at least one page extra so that we
+    // can fit partial pages to spread our active area across two pages.
+    // Even for caps that can't fit all rows in a single page, we add one
+    // because the most extra space we need at any given time is only
+    // the partial amount of one page.
+    const pages = pages_exact + 1;
     assert(pages >= 2);
 
-    return std_size * pages;
+    // log.debug("minMaxSize cols={} rows={} cap={} pages={}", .{
+    //     cols,
+    //     rows,
+    //     cap,
+    //     pages,
+    // });
+
+    return PagePool.item_size * pages;
 }
 
 /// Initialize the page. The top of the first page in the list is always the
@@ -1371,9 +1384,59 @@ fn resizeWithoutReflowGrowCols(
         }
     }
 
+    // Keeps track of all our copied rows. Assertions at the end is that
+    // we copied exactly our page size.
+    var copied: usize = 0;
+
+    // This function has an unfortunate side effect in that it causes memory
+    // fragmentation on rows if the columns are increasing in a way that
+    // shrinks capacity rows. If we have pages that don't divide evenly then
+    // we end up creating a final page that is not using its full capacity.
+    // If this chunk isn't the last chunk in the page list, then we've created
+    // a page where we'll never reclaim that capacity. This makes our max size
+    // calculation incorrect since we'll throw away data even though we have
+    // excess capacity. To avoid this, we try to fill our previous page
+    // first if it has capacity.
+    //
+    // This can fail for many reasons (can't fit styles/graphemes, etc.) so
+    // if it fails then we give up and drop back into creating new pages.
+    if (prev) |prev_node| prev: {
+        const prev_page = &prev_node.data;
+
+        // We only want scenarios where we have excess capacity.
+        if (prev_page.size.rows >= prev_page.capacity.rows) break :prev;
+
+        // We can copy as much as we can to fill the capacity or our
+        // current page size.
+        const len = @min(
+            prev_page.capacity.rows - prev_page.size.rows,
+            page.size.rows,
+        );
+
+        const src_rows = page.rows.ptr(page.memory)[0..len];
+        const dst_rows = prev_page.rows.ptr(prev_page.memory)[prev_page.size.rows..];
+        for (dst_rows, src_rows) |*dst_row, *src_row| {
+            prev_page.size.rows += 1;
+            copied += 1;
+            prev_page.cloneRowFrom(
+                page,
+                dst_row,
+                src_row,
+            ) catch {
+                // If an error happens, we undo our row copy and break out
+                // into creating a new page.
+                prev_page.size.rows -= 1;
+                copied -= 1;
+                break :prev;
+            };
+        }
+
+        assert(copied == len);
+        assert(prev_page.size.rows <= prev_page.capacity.rows);
+    }
+
     // We need to loop because our col growth may force us
     // to split pages.
-    var copied: usize = 0;
     while (copied < page.size.rows) {
         const new_page = try self.createPage(cap);
         defer new_page.data.assertIntegrity();
@@ -1381,13 +1444,22 @@ fn resizeWithoutReflowGrowCols(
         // The length we can copy into the new page is at most the number
         // of rows in our cap. But if we can finish our source page we use that.
         const len = @min(cap.rows, page.size.rows - copied);
-        new_page.data.size.rows = len;
 
-        // The range of rows we're copying from the old page.
+        // Perform the copy
         const y_start = copied;
         const y_end = copied + len;
-        try new_page.data.cloneFrom(page, y_start, y_end);
-        copied += len;
+        const src_rows = page.rows.ptr(page.memory)[y_start..y_end];
+        const dst_rows = new_page.data.rows.ptr(new_page.data.memory)[0..len];
+        for (dst_rows, src_rows) |*dst_row, *src_row| {
+            new_page.data.size.rows += 1;
+            errdefer new_page.data.size.rows -= 1;
+            try new_page.data.cloneRowFrom(
+                page,
+                dst_row,
+                src_row,
+            );
+        }
+        copied = y_end;
 
         // Insert our new page
         self.pages.insertBefore(chunk.page, new_page);
@@ -4685,6 +4757,101 @@ test "PageList resize (no reflow) more cols" {
         const rac = offset.rowAndCell();
         const cells = offset.page.data.getCells(rac.row);
         try testing.expectEqual(@as(usize, 10), cells.len);
+    }
+}
+
+// This test is a bit convoluted so I want to explain: what we are trying
+// to verify here is that when we increase cols such that our rows per page
+// shrinks, we don't fragment our rows across many pages because this ends
+// up wasting a lot of memory.
+//
+// This is particularly important for alternate screen buffers where we
+// don't have scrollback so our max size is very small. If we don't do this,
+// we end up pruning our pages and that causes resizes to fail!
+test "PageList resize (no reflow) more cols forces less rows per page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // This test requires initially that our rows fit into one page.
+    const cols: size.CellCountInt = 5;
+    const rows: size.CellCountInt = 150;
+    try testing.expect((try std_capacity.adjust(.{ .cols = cols })).rows >= rows);
+    var s = try init(alloc, cols, rows, 0);
+    defer s.deinit();
+
+    // Then we need to resize our cols so that our rows per page shrinks.
+    // This will force our resize to split our rows across two pages.
+    {
+        const new_cols = new_cols: {
+            var new_cols: size.CellCountInt = 50;
+            var cap = try std_capacity.adjust(.{ .cols = new_cols });
+            while (cap.rows >= rows) {
+                new_cols += 50;
+                cap = try std_capacity.adjust(.{ .cols = new_cols });
+            }
+
+            break :new_cols new_cols;
+        };
+        try s.resize(.{ .cols = new_cols, .reflow = false });
+        try testing.expectEqual(@as(usize, new_cols), s.cols);
+        try testing.expectEqual(@as(usize, rows), s.totalRows());
+    }
+
+    // Every page except the last should be full
+    {
+        var it = s.pages.first;
+        while (it) |page| : (it = page.next) {
+            if (page == s.pages.last.?) break;
+            try testing.expectEqual(page.data.capacity.rows, page.data.size.rows);
+        }
+    }
+
+    // Now we need to resize again to a col size that further shrinks
+    // our last capacity.
+    {
+        const page = &s.pages.first.?.data;
+        try testing.expect(page.size.rows == page.capacity.rows);
+        const new_cols = new_cols: {
+            var new_cols = page.size.cols + 50;
+            var cap = try std_capacity.adjust(.{ .cols = new_cols });
+            while (cap.rows >= page.size.rows) {
+                new_cols += 50;
+                cap = try std_capacity.adjust(.{ .cols = new_cols });
+            }
+
+            break :new_cols new_cols;
+        };
+
+        try s.resize(.{ .cols = new_cols, .reflow = false });
+        try testing.expectEqual(@as(usize, new_cols), s.cols);
+        try testing.expectEqual(@as(usize, rows), s.totalRows());
+    }
+
+    // Every page except the last should be full
+    {
+        var it = s.pages.first;
+        while (it) |page| : (it = page.next) {
+            if (page == s.pages.last.?) break;
+            try testing.expectEqual(page.data.capacity.rows, page.data.size.rows);
+        }
+    }
+}
+
+// This is a crash case we found with no scrollback scenarios. This is
+// also covered in the test above where we verify growing cols doesn't
+// fragment memory.
+test "PageList resize (no reflow) to large cols and rows with no scrollback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    for (1..6) |i| {
+        const amount: size.CellCountInt = @intCast(500 * i);
+        try s.resize(.{ .cols = amount, .rows = amount, .reflow = false });
+        try testing.expectEqual(@as(usize, amount), s.cols);
+        try testing.expectEqual(@as(usize, amount), s.totalRows());
     }
 }
 
