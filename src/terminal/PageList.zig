@@ -158,6 +158,12 @@ pub const Viewport = union(enum) {
 /// such that we can fit the active area AND at least two pages. Note we
 /// need the two pages for algorithms to work properly (such as grow) but
 /// we don't need to fit double the active area.
+///
+/// This min size may not be totally correct in the case that a large
+/// number of other dimensions makes our row size in a page very small.
+/// But this gives us a nice fast heuristic for determining min/max size.
+/// Therefore, if the page size is violated you should always also verify
+/// that we have enough space for the active area.
 fn minMaxSize(cols: size.CellCountInt, rows: size.CellCountInt) !usize {
     // Get our capacity to fit our rows. If the cols are too big, it may
     // force less rows than we want meaning we need more than one page to
@@ -850,7 +856,6 @@ fn reflowPage(
                 }
 
                 self.erasePage(initial_node);
-                assert(self.page_size <= self.maxSize());
                 return;
             }
 
@@ -1696,8 +1701,25 @@ pub fn scrollClear(self: *PageList) !void {
 
 /// Returns the actual max size. This may be greater than the explicit
 /// value if the explicit value is less than the min_max_size.
+///
+/// This value is a HEURISTIC. You cannot assert on this value. We may
+/// exceed this value if required to fit the active area. This may be
+/// required in some cases if the active area has a large number of
+/// graphemes, styles, etc.
 pub fn maxSize(self: *const PageList) usize {
     return @max(self.explicit_max_size, self.min_max_size);
+}
+
+/// Returns true if we need to grow into our active area.
+fn growRequiredForActive(self: *const PageList) bool {
+    var rows: usize = 0;
+    var page = self.pages.last;
+    while (page) |p| : (page = p.prev) {
+        rows += p.data.size.rows;
+        if (rows >= self.rows) return false;
+    }
+
+    return true;
 }
 
 /// Grow the active area by exactly one row.
@@ -1721,7 +1743,11 @@ pub fn grow(self: *PageList) !?*List.Node {
     // If allocation would exceed our max size, we prune the first page.
     // We don't need to reallocate because we can simply reuse that first
     // page.
-    if (self.page_size + PagePool.item_size > self.maxSize()) {
+    if (self.page_size + PagePool.item_size > self.maxSize()) prune: {
+        // If we need to add more memory to ensure our active area is
+        // satisfied then we do not prune.
+        if (self.growRequiredForActive()) break :prune;
+
         const layout = Page.layout(try std_capacity.adjust(.{ .cols = self.cols }));
 
         // Get our first page and reset it to prepare for reuse.
@@ -1762,7 +1788,6 @@ pub fn grow(self: *PageList) !?*List.Node {
 
     // We should never be more than our max size here because we've
     // verified the case above.
-    assert(self.page_size <= self.maxSize());
     next_page.data.assertIntegrity();
 
     return next_page;
@@ -3157,6 +3182,37 @@ test "PageList active after grow" {
             .y = 10,
         } }, pt);
     }
+}
+
+test "PageList grow allows exceeding max size for active area" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Setup our initial page so that we fully take up one page.
+    const cap = try std_capacity.adjust(.{ .cols = 5 });
+    var s = try init(alloc, 5, cap.rows, 0);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s.totalRows());
+
+    // Grow once because we guarantee at least two pages of
+    // capacity so we want to get to that.
+    _ = try s.grow();
+    const start_pages = s.totalPages();
+    try testing.expect(start_pages >= 2);
+
+    // Surgically modify our pages so that they have a smaller size.
+    {
+        var it = s.pages.first;
+        while (it) |page| : (it = page.next) {
+            page.data.size.rows = 1;
+            page.data.capacity.rows = 1;
+        }
+    }
+
+    // Grow our row and ensure we don't prune pages because we need
+    // enough for the active area.
+    _ = try s.grow();
+    try testing.expectEqual(start_pages + 1, s.totalPages());
 }
 
 test "PageList scroll top" {
