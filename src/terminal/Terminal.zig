@@ -1337,6 +1337,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                         unreachable;
                     };
 
+                    // Row never is wrapped
+                    dst.wrap = false;
+
                     continue;
                 }
 
@@ -1345,6 +1348,10 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
+
+                // Row never is wrapped
+                dst.wrap = false;
+                src.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1362,6 +1369,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
+
+            // Row never is wrapped
+            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
@@ -4237,7 +4247,7 @@ test "Terminal: insertLines more than remaining" {
     }
 }
 
-test "Terminal: insertLines resets wrap" {
+test "Terminal: insertLines resets pending wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .rows = 5, .cols = 5 });
     defer t.deinit(alloc);
@@ -4252,6 +4262,32 @@ test "Terminal: insertLines resets wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("B\nABCDE", str);
+    }
+}
+
+test "Terminal: insertLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+
+    try t.print('1');
+    t.carriageReturn();
+    try t.linefeed();
+    for ("ABCDEF") |c| try t.print(c);
+    t.setCursorPos(1, 1);
+    t.insertLines(1);
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("X\n1\nABC", str);
+    }
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = 2 } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.wrap);
     }
 }
 
