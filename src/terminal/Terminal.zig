@@ -1623,6 +1623,9 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
     if (self.screen.cursor.x < self.scrolling_region.left or
         self.screen.cursor.x > self.scrolling_region.right) return;
 
+    // This resets the soft-wrap of this line
+    self.screen.cursor.page_row.wrap = false;
+
     // This resets the pending wrap state
     self.screen.cursor.pending_wrap = false;
 
@@ -6638,7 +6641,7 @@ test "Terminal: deleteChars should shift left" {
     }
 }
 
-test "Terminal: deleteChars resets wrap" {
+test "Terminal: deleteChars resets pending wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .rows = 5, .cols = 5 });
     defer t.deinit(alloc);
@@ -6653,6 +6656,35 @@ test "Terminal: deleteChars resets wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABCDX", str);
+    }
+}
+
+test "Terminal: deleteChars resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    for ("ABCDE123") |c| try t.print(c);
+    {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = 0 } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.wrap);
+    }
+    t.setCursorPos(1, 1);
+    t.deleteChars(1);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = 0 } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.wrap);
+    }
+
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XCDE\n123", str);
     }
 }
 
