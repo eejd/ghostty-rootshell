@@ -1890,35 +1890,39 @@ pub fn eraseDisplay(
             // at a prompt scrolls the screen contents prior to clearing.
             // Most shells send `ESC [ H ESC [ 2 J` so we can't just check
             // our current cursor position. See #905
-            // if (self.active_screen == .primary) at_prompt: {
-            //     // Go from the bottom of the viewport up and see if we're
-            //     // at a prompt.
-            //     const viewport_max = Screen.RowIndexTag.viewport.maxLen(&self.screen);
-            //     for (0..viewport_max) |y| {
-            //         const bottom_y = viewport_max - y - 1;
-            //         const row = self.screen.getRow(.{ .viewport = bottom_y });
-            //         if (row.isEmpty()) continue;
-            //         switch (row.getSemanticPrompt()) {
-            //             // If we're at a prompt or input area, then we are at a prompt.
-            //             .prompt,
-            //             .prompt_continuation,
-            //             .input,
-            //             => break,
-            //
-            //             // If we have command output, then we're most certainly not
-            //             // at a prompt.
-            //             .command => break :at_prompt,
-            //
-            //             // If we don't know, we keep searching.
-            //             .unknown => {},
-            //         }
-            //     } else break :at_prompt;
-            //
-            //     self.screen.scroll(.{ .clear = {} }) catch {
-            //         // If we fail, we just fall back to doing a normal clear
-            //         // so we don't worry about the error.
-            //     };
-            // }
+            if (self.active_screen == .primary) at_prompt: {
+                // Go from the bottom of the active up and see if we're
+                // at a prompt.
+                const active_br = self.screen.pages.getBottomRight(
+                    .active,
+                ) orelse break :at_prompt;
+                var it = active_br.rowIterator(
+                    .left_up,
+                    self.screen.pages.getTopLeft(.active),
+                );
+                while (it.next()) |p| {
+                    const row = p.rowAndCell().row;
+                    switch (row.semantic_prompt) {
+                        // If we're at a prompt or input area, then we are at a prompt.
+                        .prompt,
+                        .prompt_continuation,
+                        .input,
+                        => break,
+
+                        // If we have command output, then we're most certainly not
+                        // at a prompt.
+                        .command => break :at_prompt,
+
+                        // If we don't know, we keep searching.
+                        .unknown => {},
+                    }
+                } else break :at_prompt;
+
+                self.screen.scrollClear() catch {
+                    // If we fail, we just fall back to doing a normal clear
+                    // so we don't worry about the error.
+                };
+            }
 
             // All active area
             self.screen.clearRows(
