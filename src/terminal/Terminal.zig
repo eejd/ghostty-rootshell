@@ -1559,6 +1559,13 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     const left: [*]Cell = @ptrCast(self.screen.cursor.page_cell);
     var page = &self.screen.cursor.page_pin.page.data;
 
+    // If our X is a wide spacer tail then we need to erase the
+    // previous cell too so we don't split a multi-cell character.
+    if (self.screen.cursor.page_cell.wide == .spacer_tail) {
+        assert(self.screen.cursor.x > 0);
+        self.screen.clearCells(page, self.screen.cursor.page_row, (left - 1)[0..2]);
+    }
+
     // Remaining cols from our cursor to the right margin.
     const rem = self.scrolling_region.right - self.screen.cursor.x + 1;
 
@@ -6432,6 +6439,22 @@ test "Terminal: insertBlanks shift graphemes" {
 
     // We should have no graphemes
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
+}
+
+test "Terminal: insertBlanks split multi-cell character from tail" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 10 });
+    defer t.deinit(alloc);
+
+    try t.printString("橋123");
+    t.setCursorPos(1, 2);
+    t.insertBlanks(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("   12", str);
+    }
 }
 
 test "Terminal: insert mode with space" {
