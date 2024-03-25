@@ -1554,7 +1554,12 @@ fn trimTrailingBlankRows(
         // no text we can also be sure it has no styling
         // so we don't need to worry about memory.
         row_pin.page.data.size.rows -= 1;
-        row_pin.page.data.assertIntegrity();
+        if (row_pin.page.data.size.rows == 0) {
+            self.erasePage(row_pin.page);
+        } else {
+            row_pin.page.data.assertIntegrity();
+        }
+
         trimmed += 1;
         if (trimmed >= max) return trimmed;
     }
@@ -4685,6 +4690,39 @@ test "PageList resize (no reflow) less rows trims blank lines cursor in blank li
         .x = 0,
         .y = 1,
     } }, s.pointFromPin(.active, p.*).?);
+}
+
+test "PageList resize (no reflow) less rows trims blank lines erases pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 100, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.pages.first == s.pages.last);
+    const page = &s.pages.first.?.data;
+
+    // Resize to take up two pages
+    {
+        const rows = page.capacity.rows + 10;
+        try s.resize(.{ .rows = rows, .reflow = false });
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+    }
+
+    // Write codepoint into first line
+    {
+        const rac = page.getRowAndCell(0, 0);
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'A' },
+        };
+    }
+
+    // Resize down. Every row except the first is blank so we
+    // should erase the second page.
+    try s.resize(.{ .rows = 5, .reflow = false });
+    try testing.expectEqual(@as(usize, 5), s.rows);
+    try testing.expectEqual(@as(usize, 5), s.totalRows());
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
 }
 
 test "PageList resize (no reflow) more rows extends blank lines" {
