@@ -200,27 +200,20 @@ fn kitty(
         }
 
         if (self.kitty_flags.report_associated and seq.event != .release) associated: {
-            if (comptime builtin.target.isDarwin()) {
-                // macOS has special logic because alt+key can produce unicode
-                // characters. If we are treating option as alt, then we do NOT
-                // report associated text. If we are not treating alt as alt,
-                // we do.
-                if (switch (self.macos_option_as_alt) {
+            // Determine if the Alt modifier should be treated as an actual
+            // modifier (in which case it prevents associated text) or as
+            // the macOS Option key, which does not prevent associated text.
+            const alt_prevents_text = if (comptime builtin.target.isDarwin())
+                switch (self.macos_option_as_alt) {
                     .left => all_mods.sides.alt == .left,
                     .right => all_mods.sides.alt == .right,
                     .true => true,
+                    .false => false,
+                }
+            else
+                true;
 
-                    // This is the main weird one. If we are NOT treating
-                    // option as alt, we still want to prevent text if we
-                    // have modifiers set WITHOUT alt. If alt is present,
-                    // macOS will handle generating the unicode character.
-                    // If alt is not present, we want to suppress.
-                    .false => !seq.mods.alt and seq.mods.preventsText(),
-                }) break :associated;
-            } else {
-                // If any modifiers are present, we don't report associated text.
-                if (seq.mods.preventsText()) break :associated;
-            }
+            if (seq.mods.preventsText(alt_prevents_text)) break :associated;
 
             seq.text = self.event.utf8;
         }
@@ -736,10 +729,11 @@ const KittyMods = packed struct(u8) {
 
     /// Returns true if the modifiers prevent printable text.
     ///
-    /// Note on macOS: this logic alone is not enough, since you must
-    /// consider macos_option_as_alt. See the Kitty encoder for more details.
-    pub fn preventsText(self: KittyMods) bool {
-        return self.alt or
+    /// The alt_prevents_text parameter determines whether or not the Alt
+    /// modifier prevents printable text. On Linux, this is always true. On
+    /// macOS, this is only true if macos-option-as-alt is set.
+    pub fn preventsText(self: KittyMods, alt_prevents_text: bool) bool {
+        return (self.alt and alt_prevents_text) or
             self.ctrl or
             self.super or
             self.hyper or
@@ -1475,25 +1469,51 @@ test "kitty: report associated with alt text on macOS with option" {
 test "kitty: report associated with alt text on macOS with alt" {
     if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
 
-    var buf: [128]u8 = undefined;
-    var enc: KeyEncoder = .{
-        .event = .{
-            .key = .w,
-            .mods = .{ .alt = true },
-            .utf8 = "∑",
-            .unshifted_codepoint = 119,
-        },
-        .kitty_flags = .{
-            .disambiguate = true,
-            .report_all = true,
-            .report_alternates = true,
-            .report_associated = true,
-        },
-        .macos_option_as_alt = .true,
-    };
+    {
+        // With Alt modifier
+        var buf: [128]u8 = undefined;
+        var enc: KeyEncoder = .{
+            .event = .{
+                .key = .w,
+                .mods = .{ .alt = true },
+                .utf8 = "∑",
+                .unshifted_codepoint = 119,
+            },
+            .kitty_flags = .{
+                .disambiguate = true,
+                .report_all = true,
+                .report_alternates = true,
+                .report_associated = true,
+            },
+            .macos_option_as_alt = .true,
+        };
 
-    const actual = try enc.kitty(&buf);
-    try testing.expectEqualStrings("\x1b[119;3u", actual);
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[119;3u", actual);
+    }
+
+    {
+        // Without Alt modifier
+        var buf: [128]u8 = undefined;
+        var enc: KeyEncoder = .{
+            .event = .{
+                .key = .w,
+                .mods = .{},
+                .utf8 = "∑",
+                .unshifted_codepoint = 119,
+            },
+            .kitty_flags = .{
+                .disambiguate = true,
+                .report_all = true,
+                .report_alternates = true,
+                .report_associated = true,
+            },
+            .macos_option_as_alt = .true,
+        };
+
+        const actual = try enc.kitty(&buf);
+        try testing.expectEqualStrings("\x1b[119;;8721u", actual);
+    }
 }
 
 test "kitty: report associated with modifiers" {
