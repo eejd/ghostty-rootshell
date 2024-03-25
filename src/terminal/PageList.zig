@@ -1998,8 +1998,13 @@ pub fn eraseRow(
     var page = pn.page;
     var rows = page.data.rows.ptr(page.data.memory.ptr);
 
+    // In order to move the following rows up we rotate the rows array by 1.
+    // The rotate operation turns e.g. [ 0 1 2 3 ] in to [ 1 2 3 0 ], which
+    // works perfectly to move all of our elements where they belong.
     std.mem.rotate(Row, rows[pn.y..page.data.size.rows], 1);
 
+    // We adjust the tracked pins in this page, moving up any that were below
+    // the removed row.
     {
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
@@ -2008,8 +2013,26 @@ pub fn eraseRow(
         }
     }
 
+    // We iterate through all of the following pages in order to move their
+    // rows up by 1 as well.
     while (page.next) |next| {
         const next_rows = next.data.rows.ptr(next.data.memory.ptr);
+
+        // We take the top row of the page and clone it in to the bottom
+        // row of the previous page, which gets rid of the top row that was
+        // rotated down in the previous page, and accounts for the row in
+        // this page that will be rotated down as well.
+        //
+        //  rotate -> clone --> rotate -> result
+        //    0 -.      1         1         1
+        //    1  |      2         2         2
+        //    2  |      3         3         3
+        //    3 <'      0 <.      4         4
+        //   ---       --- |     ---       ---
+        //    4         4 -'      4 -.      5
+        //    5         5         5  |      6
+        //    6         6         6  |      7
+        //    7         7         7 <'      4
         try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
 
         page = next;
@@ -2017,6 +2040,9 @@ pub fn eraseRow(
 
         std.mem.rotate(Row, rows[0..page.data.size.rows], 1);
 
+        // Our tracked pins for this page need to be updated.
+        // If the pin is in row 0 that means the corresponding row has
+        // been moved to the previous page. Otherwise, move it up by 1.
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
             const p = p_ptr.*;
