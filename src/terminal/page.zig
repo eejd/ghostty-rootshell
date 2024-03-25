@@ -103,7 +103,7 @@ pub const Page = struct {
     /// If this is true then verifyIntegrity will do nothing. This is
     /// only present with runtime safety enabled.
     pause_integrity_checks: if (std.debug.runtime_safety) usize else void =
-        if (std.debug.runtime_safety) 0 else void,
+        if (std.debug.runtime_safety) 0 else {},
 
     /// Initialize a new page, allocating the required backing memory.
     /// The size of the initialized page defaults to the full capacity.
