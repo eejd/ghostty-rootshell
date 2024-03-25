@@ -2093,21 +2093,18 @@ pub fn eraseRows(
             const old_dst = dst.*;
             dst.* = src.*;
             src.* = old_dst;
-
-            // // Clear the old data in case we reuse these cells.
-            // chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
         }
 
-        // // Clear our remaining cells that we didn't shift or swapped
-        // // in case we grow back into them.
-        // for (scroll_amount..chunk.page.data.size.rows) |i| {
-        //     const row: *Row = &rows[i];
-        //     chunk.page.data.clearCells(
-        //         row,
-        //         0,
-        //         chunk.page.data.size.cols,
-        //     );
-        // }
+        // Clear our remaining cells that we didn't shift or swapped
+        // in case we grow back into them.
+        for (scroll_amount..chunk.page.data.size.rows) |i| {
+            const row: *Row = &rows[i];
+            chunk.page.data.clearCells(
+                row,
+                0,
+                chunk.page.data.size.cols,
+            );
+        }
 
         // Update any tracked pins to shift their y. If it was in the erased
         // row then we move it to the top of this page.
