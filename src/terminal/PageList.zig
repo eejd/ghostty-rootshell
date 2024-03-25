@@ -223,30 +223,7 @@ pub fn init(
     // necessary.
     var pool = try MemoryPool.init(alloc, std.heap.page_allocator, page_preheat);
     errdefer pool.deinit();
-
-    var page = try pool.nodes.create();
-    const page_buf = try pool.pages.create();
-    // no errdefer because the pool deinit will clean these up
-
-    // In runtime safety modes we have to memset because the Zig allocator
-    // interface will always memset to 0xAA for undefined. In non-safe modes
-    // we use a page allocator and the OS guarantees zeroed memory.
-    if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
-
-    // Initialize the first set of pages to contain our viewport so that
-    // the top of the first page is always the active area.
-    page.* = .{
-        .data = Page.initBuf(
-            OffsetBuf.init(page_buf),
-            Page.layout(try std_capacity.adjust(.{ .cols = cols })),
-        ),
-    };
-    assert(page.data.capacity.rows >= rows); // todo: handle this
-    page.data.size.rows = rows;
-
-    var page_list: List = .{};
-    page_list.prepend(page);
-    const page_size = page_buf.len;
+    const page_list, const page_size = try initPages(&pool, cols, rows);
 
     // Get our minimum max size, see doc comments for more details.
     const min_max_size = try minMaxSize(cols, rows);
@@ -270,6 +247,48 @@ pub fn init(
         .viewport = .{ .active = {} },
         .viewport_pin = viewport_pin,
     };
+}
+
+fn initPages(
+    pool: *MemoryPool,
+    cols: size.CellCountInt,
+    rows: size.CellCountInt,
+) !struct { List, usize } {
+    var page_list: List = .{};
+    var page_size: usize = 0;
+
+    // Add pages as needed to create our initial viewport.
+    const cap = try std_capacity.adjust(.{ .cols = cols });
+    var rem = rows;
+    while (rem > 0) {
+        const page = try pool.nodes.create();
+        const page_buf = try pool.pages.create();
+        // no errdefer because the pool deinit will clean these up
+
+        // In runtime safety modes we have to memset because the Zig allocator
+        // interface will always memset to 0xAA for undefined. In non-safe modes
+        // we use a page allocator and the OS guarantees zeroed memory.
+        if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
+
+        // Initialize the first set of pages to contain our viewport so that
+        // the top of the first page is always the active area.
+        page.* = .{
+            .data = Page.initBuf(
+                OffsetBuf.init(page_buf),
+                Page.layout(cap),
+            ),
+        };
+        page.data.size.rows = @min(rem, page.data.capacity.rows);
+        rem -= page.data.size.rows;
+
+        // Add the page to the list
+        page_list.append(page);
+        page_size += page_buf.len;
+    }
+
+    assert(page_list.first != null);
+
+    return .{ page_list, page_size };
 }
 
 /// Deinit the pagelist. If you own the memory pool (used clonePool) then
@@ -3027,6 +3046,29 @@ test "PageList" {
         .y = 0,
         .x = 0,
     }, s.getTopLeft(.active));
+}
+
+test "PageList init rows across two pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Find a cap that makes it so that rows don't fit on one page.
+    const rows = 100;
+    const cap = cap: {
+        var cap = try std_capacity.adjust(.{ .cols = 50 });
+        while (cap.rows >= rows) cap = try std_capacity.adjust(.{
+            .cols = cap.cols + 50,
+        });
+
+        break :cap cap;
+    };
+
+    // Init
+    var s = try init(alloc, cap.cols, rows, null);
+    defer s.deinit();
+    try testing.expect(s.viewport == .active);
+    try testing.expect(s.pages.first != null);
+    try testing.expectEqual(@as(usize, s.rows), s.totalRows());
 }
 
 test "PageList pointFromPin active no history" {
