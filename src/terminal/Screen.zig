@@ -820,6 +820,15 @@ pub fn clearCells(
     row: *Row,
     cells: []Cell,
 ) void {
+    // This whole operation does unsafe things, so we just want to assert
+    // the end state.
+    page.pauseIntegrityChecks(true);
+    defer {
+        page.pauseIntegrityChecks(false);
+        page.assertIntegrity();
+        self.assertIntegrity();
+    }
+
     // If this row has graphemes, then we need go through a slow path
     // and delete the cell graphemes.
     if (row.grapheme) {
@@ -866,8 +875,6 @@ pub fn clearCells(
     }
 
     @memset(cells, self.blankCell());
-    page.assertIntegrity();
-    self.assertIntegrity();
 }
 
 /// Clear cells but only if they are not protected.

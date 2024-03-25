@@ -100,6 +100,11 @@ pub const Page = struct {
     /// memory and is fixed at page creation time.
     capacity: Capacity,
 
+    /// If this is true then verifyIntegrity will do nothing. This is
+    /// only present with runtime safety enabled.
+    pause_integrity_checks: if (std.debug.runtime_safety) bool else void =
+        if (std.debug.runtime_safety) false else void,
+
     /// Initialize a new page, allocating the required backing memory.
     /// The size of the initialized page defaults to the full capacity.
     ///
@@ -191,7 +196,17 @@ pub const Page = struct {
         UnmarkedStyleRow,
         MismatchedStyleRef,
         InvalidStyleCount,
+        InvalidSpacerTailLocation,
+        InvalidSpacerHeadLocation,
+        UnwrappedSpacerHead,
     };
+
+    /// Temporarily pause integrity checks. This is useful when you are
+    /// doing a lot of operations that would trigger integrity check
+    /// violations but you know the page will end up in a consistent state.
+    pub fn pauseIntegrityChecks(self: *Page, v: bool) void {
+        if (comptime std.debug.runtime_safety) self.pause_integrity_checks = v;
+    }
 
     /// A helper that can be used to assert the integrity of the page
     /// when runtime safety is enabled. This is a no-op when runtime
@@ -219,6 +234,10 @@ pub const Page = struct {
         // - We only check that we saw less graphemes than the total memory
         //   used for the same reason as styles above.
         //
+
+        if (comptime std.debug.runtime_safety) {
+            if (self.pause_integrity_checks) return;
+        }
 
         if (self.size.rows == 0) {
             log.warn("page integrity violation zero row count", .{});
@@ -281,6 +300,53 @@ pub const Page = struct {
                     const gop = try styles_seen.getOrPut(cell.style_id);
                     if (!gop.found_existing) gop.value_ptr.* = 0;
                     gop.value_ptr.* += 1;
+                }
+
+                switch (cell.wide) {
+                    .narrow => {},
+                    .wide => {},
+
+                    .spacer_tail => {
+                        // Spacer tails can't be at the start because they follow
+                        // a wide char.
+                        if (x == 0) {
+                            log.warn(
+                                "page integrity violation y={} x={} spacer tail at start",
+                                .{ y, x },
+                            );
+                            return IntegrityError.InvalidSpacerTailLocation;
+                        }
+
+                        // Spacer tails must follow a wide char
+                        const prev = cells[x - 1];
+                        if (prev.wide != .wide) {
+                            log.warn(
+                                "page integrity violation y={} x={} spacer tail not following wide",
+                                .{ y, x },
+                            );
+                            return IntegrityError.InvalidSpacerTailLocation;
+                        }
+                    },
+
+                    .spacer_head => {
+                        // Spacer heads must be at the end
+                        if (x != self.size.cols - 1) {
+                            log.warn(
+                                "page integrity violation y={} x={} spacer head not at end",
+                                .{ y, x },
+                            );
+                            return IntegrityError.InvalidSpacerHeadLocation;
+                        }
+
+                        // The row must be wrapped
+                        if (!row.wrap) {
+                            log.warn(
+                                "page integrity violation y={} spacer head not wrapped",
+                                .{y},
+                            );
+                            return IntegrityError.UnwrappedSpacerHead;
+                        }
+                    },
                 }
             }
 

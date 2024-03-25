@@ -536,6 +536,12 @@ fn printCell(
             .spacer_tail => {
                 assert(self.screen.cursor.x > 0);
 
+                // So integrity checks pass. We fix this up later so we don't
+                // need to do this without safety checks.
+                if (comptime std.debug.runtime_safety) {
+                    cell.wide = .narrow;
+                }
+
                 const wide_cell = self.screen.cursorCellLeft(1);
                 self.screen.clearCells(
                     &self.screen.cursor.page_pin.page.data,
@@ -1564,13 +1570,22 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // "scroll_amount" is the number of such cols.
     const scroll_amount = rem - adjusted_count;
     if (scroll_amount > 0) {
+        page.pauseIntegrityChecks(true);
+        defer page.pauseIntegrityChecks(false);
+
         var x: [*]Cell = left + (scroll_amount - 1);
 
         // If our last cell we're shifting is wide, then we need to clear
         // it to be empty so we don't split the multi-cell char.
         const end: *Cell = @ptrCast(x);
         if (end.wide == .wide) {
-            self.screen.clearCells(page, self.screen.cursor.page_row, end[0..1]);
+            const end_multi: [*]Cell = @ptrCast(end);
+            assert(end_multi[1].wide == .spacer_tail);
+            self.screen.clearCells(
+                page,
+                self.screen.cursor.page_row,
+                end_multi[0..2],
+            );
         }
 
         // We work backwards so we don't overwrite data.
