@@ -1475,6 +1475,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                         unreachable;
                     };
 
+                    // Row never is wrapped
+                    dst.wrap = false;
+
                     continue;
                 }
 
@@ -1483,6 +1486,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
+
+                // Row never is wrapped
+                dst.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1500,6 +1506,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
+
+            // Row never is wrapped
+            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
@@ -5950,7 +5959,7 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
     }
 }
 
-test "Terminal: deleteLines resets wrap" {
+test "Terminal: deleteLines resets pending wrap" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .rows = 5, .cols = 5 });
     defer t.deinit(alloc);
@@ -5965,6 +5974,34 @@ test "Terminal: deleteLines resets wrap" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("B", str);
+    }
+}
+
+test "Terminal: deleteLines resets wrap" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+
+    try t.print('1');
+    t.carriageReturn();
+    try t.linefeed();
+    for ("ABCDEF") |c| try t.print(c);
+
+    t.setTopAndBottomMargin(1, 2);
+    t.setCursorPos(1, 1);
+    t.deleteLines(1);
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XBC\n\nDEF", str);
+    }
+
+    for (0..t.rows) |y| {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = y } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.wrap);
     }
 }
 
