@@ -1986,6 +1986,60 @@ fn destroyPageExt(
     pool.nodes.destroy(page);
 }
 
+/// Fast-path function to erase exactly 1 row. Erasing means that the row
+/// is completely removed, not just cleared. All rows below the removed row
+/// will be moved up by 1 to account for this.
+pub fn eraseRow(
+    self: *PageList,
+    pt: point.Point,
+) !void {
+    const pn = self.pin(pt).?;
+
+    var page = pn.page;
+    var rows = page.data.rows.ptr(page.data.memory.ptr);
+
+    std.mem.rotate(Row, rows[pn.y..page.data.size.rows], 1);
+
+    {
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y) p.y -= 1;
+        }
+    }
+
+    while (page.next) |next| {
+        const next_rows = next.data.rows.ptr(next.data.memory.ptr);
+        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+
+        page = next;
+        rows = next_rows;
+
+        std.mem.rotate(Row, rows[0..page.data.size.rows], 1);
+
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page != page) continue;
+            if (p.y == 0) {
+                p.page = page.prev.?;
+                p.y = p.page.data.size.rows - 1;
+                continue;
+            }
+            p.y -= 1;
+        }
+    }
+
+    // The final row needs to be cleared in case we re-use it.
+    page.data.clearCells(&rows[page.data.size.rows - 1], 0, page.data.size.cols);
+
+    // We don't trim off the final row if we erased active, since one of
+    // our invariants is that we always have full active space.
+    if (pt != .active) {
+        page.data.size.rows -= 1;
+    }
+}
+
 /// Erase the rows from the given top to bottom (inclusive). Erasing
 /// the rows doesn't clear them but actually physically REMOVES the rows.
 /// If the top or bottom point is in the middle of a page, the other
@@ -2040,20 +2094,20 @@ pub fn eraseRows(
             dst.* = src.*;
             src.* = old_dst;
 
-            // Clear the old data in case we reuse these cells.
-            chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
+            // // Clear the old data in case we reuse these cells.
+            // chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
         }
 
-        // Clear our remaining cells that we didn't shift or swapped
-        // in case we grow back into them.
-        for (scroll_amount..chunk.page.data.size.rows) |i| {
-            const row: *Row = &rows[i];
-            chunk.page.data.clearCells(
-                row,
-                0,
-                chunk.page.data.size.cols,
-            );
-        }
+        // // Clear our remaining cells that we didn't shift or swapped
+        // // in case we grow back into them.
+        // for (scroll_amount..chunk.page.data.size.rows) |i| {
+        //     const row: *Row = &rows[i];
+        //     chunk.page.data.clearCells(
+        //         row,
+        //         0,
+        //         chunk.page.data.size.cols,
+        //     );
+        // }
 
         // Update any tracked pins to shift their y. If it was in the erased
         // row then we move it to the top of this page.
