@@ -102,8 +102,8 @@ pub const Page = struct {
 
     /// If this is true then verifyIntegrity will do nothing. This is
     /// only present with runtime safety enabled.
-    pause_integrity_checks: if (std.debug.runtime_safety) bool else void =
-        if (std.debug.runtime_safety) false else void,
+    pause_integrity_checks: if (std.debug.runtime_safety) usize else void =
+        if (std.debug.runtime_safety) 0 else void,
 
     /// Initialize a new page, allocating the required backing memory.
     /// The size of the initialized page defaults to the full capacity.
@@ -205,7 +205,13 @@ pub const Page = struct {
     /// doing a lot of operations that would trigger integrity check
     /// violations but you know the page will end up in a consistent state.
     pub fn pauseIntegrityChecks(self: *Page, v: bool) void {
-        if (comptime std.debug.runtime_safety) self.pause_integrity_checks = v;
+        if (comptime std.debug.runtime_safety) {
+            if (v) {
+                self.pause_integrity_checks += 1;
+            } else {
+                self.pause_integrity_checks -= 1;
+            }
+        }
     }
 
     /// A helper that can be used to assert the integrity of the page
@@ -236,7 +242,7 @@ pub const Page = struct {
         //
 
         if (comptime std.debug.runtime_safety) {
-            if (self.pause_integrity_checks) return;
+            if (self.pause_integrity_checks > 0) return;
         }
 
         if (self.size.rows == 0) {
