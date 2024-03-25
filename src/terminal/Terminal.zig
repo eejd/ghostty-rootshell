@@ -1608,8 +1608,8 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 /// scrolling region, it is adjusted down.
 ///
 /// Does not change the cursor position.
-pub fn deleteChars(self: *Terminal, count: usize) void {
-    if (count == 0) return;
+pub fn deleteChars(self: *Terminal, count_req: usize) void {
+    if (count_req == 0) return;
 
     // If our cursor is outside the margins then do nothing. We DO reset
     // wrap state still so this must remain below the above logic.
@@ -1634,23 +1634,36 @@ pub fn deleteChars(self: *Terminal, count: usize) void {
     const rem = self.scrolling_region.right - self.screen.cursor.x + 1;
 
     // We can only insert blanks up to our remaining cols
-    const adjusted_count = @min(count, rem);
+    const count = @min(count_req, rem);
 
     // This is the amount of space at the right of the scroll region
     // that will NOT be blank, so we need to shift the correct cols right.
     // "scroll_amount" is the number of such cols.
-    const scroll_amount = rem - adjusted_count;
+    const scroll_amount = rem - count;
     var x: [*]Cell = left;
     if (scroll_amount > 0) {
+        page.pauseIntegrityChecks(true);
+        defer page.pauseIntegrityChecks(false);
+
         const right: [*]Cell = left + (scroll_amount - 1);
 
-        // If our last cell we're shifting is wide, then we need to clear
-        // it to be empty so we don't split the multi-cell char.
         const end: *Cell = @ptrCast(right + count);
-        if (end.wide == .spacer_tail) {
-            const wide: [*]Cell = right + count - 1;
-            assert(wide[0].wide == .wide);
-            self.screen.clearCells(page, self.screen.cursor.page_row, wide[0..2]);
+        switch (end.wide) {
+            .narrow, .wide => {},
+
+            // If our end is a spacer head then we need to clear it since
+            // spacer heads must be at the end.
+            .spacer_head => {
+                self.screen.clearCells(page, self.screen.cursor.page_row, end[0..1]);
+            },
+
+            // If our last cell we're shifting is wide, then we need to clear
+            // it to be empty so we don't split the multi-cell char.
+            .spacer_tail => {
+                const wide: [*]Cell = right + count - 1;
+                assert(wide[0].wide == .wide);
+                self.screen.clearCells(page, self.screen.cursor.page_row, wide[0..2]);
+            },
         }
 
         // If our first cell is a wide char then we need to also clear
@@ -6738,6 +6751,54 @@ test "Terminal: deleteChars split wide character from wide" {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
         const cell = list_cell.cell;
         try testing.expectEqual(@as(u21, '1'), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
+    }
+}
+
+test "Terminal: deleteChars split wide character from end" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 6, .rows = 10 });
+    defer t.deinit(alloc);
+
+    try t.printString("A橋123");
+    t.setCursorPos(1, 1);
+    t.deleteChars(1);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x6A4B), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.wide, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
+    }
+}
+
+test "Terminal: deleteChars with a spacer head at the end" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 10 });
+    defer t.deinit(alloc);
+
+    try t.printString("0123橋123");
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 4, .y = 0 } }).?;
+        const row = list_cell.row;
+        const cell = list_cell.cell;
+        try testing.expectEqual(Cell.Wide.spacer_head, cell.wide);
+        try testing.expect(row.wrap);
+    }
+
+    t.setCursorPos(1, 1);
+    t.deleteChars(1);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 3, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
 }
