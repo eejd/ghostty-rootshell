@@ -494,26 +494,34 @@ pub const Page = struct {
         // If we have no managed memory in the row, we can just copy.
         if (!dst_row.grapheme and !dst_row.styled) {
             fastmem.copy(Cell, cells, other_cells);
-            return;
+        } else {
+            // We have managed memory, so we have to do a slower copy to
+            // get all of that right.
+            for (cells, other_cells) |*dst_cell, *src_cell| {
+                dst_cell.* = src_cell.*;
+                if (src_cell.hasGrapheme()) {
+                    // To prevent integrity checks flipping
+                    if (comptime std.debug.runtime_safety) dst_cell.style_id = style.default_id;
+
+                    dst_cell.content_tag = .codepoint; // required for appendGrapheme
+                    const cps = other.lookupGrapheme(src_cell).?;
+                    for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
+                }
+                if (src_cell.style_id != style.default_id) {
+                    const other_style = other.styles.lookupId(other.memory, src_cell.style_id).?.*;
+                    const md = try self.styles.upsert(self.memory, other_style);
+                    md.ref += 1;
+                    dst_cell.style_id = md.id;
+                }
+            }
         }
 
-        // We have managed memory, so we have to do a slower copy to
-        // get all of that right.
-        for (cells, other_cells) |*dst_cell, *src_cell| {
-            dst_cell.* = src_cell.*;
-            if (src_cell.hasGrapheme()) {
-                // To prevent integrity checks flipping
-                if (comptime std.debug.runtime_safety) dst_cell.style_id = style.default_id;
-
-                dst_cell.content_tag = .codepoint; // required for appendGrapheme
-                const cps = other.lookupGrapheme(src_cell).?;
-                for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
-            }
-            if (src_cell.style_id != style.default_id) {
-                const other_style = other.styles.lookupId(other.memory, src_cell.style_id).?.*;
-                const md = try self.styles.upsert(self.memory, other_style);
-                md.ref += 1;
-                dst_cell.style_id = md.id;
+        // If we are growing columns, then we need to ensure spacer heads
+        // are cleared.
+        if (self.size.cols > other.size.cols) {
+            const last = &cells[other.size.cols - 1];
+            if (last.wide == .spacer_head) {
+                last.wide = .narrow;
             }
         }
 

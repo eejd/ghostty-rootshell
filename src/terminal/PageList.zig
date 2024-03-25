@@ -4826,6 +4826,78 @@ test "PageList resize (no reflow) more cols" {
     }
 }
 
+test "PageList resize (no reflow) more cols with spacer head" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 3, 0);
+    defer s.deinit();
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        {
+            const rac = page.getRowAndCell(0, 0);
+            rac.row.wrap = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 'x' },
+            };
+        }
+        {
+            const rac = page.getRowAndCell(1, 0);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = ' ' },
+                .wide = .spacer_head,
+            };
+        }
+        {
+            const rac = page.getRowAndCell(0, 1);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = '😀' },
+                .wide = .wide,
+            };
+        }
+        {
+            const rac = page.getRowAndCell(1, 1);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = ' ' },
+                .wide = .spacer_tail,
+            };
+        }
+    }
+
+    // Resize
+    try s.resize(.{ .cols = 3, .reflow = false });
+    try testing.expectEqual(@as(usize, 3), s.cols);
+    try testing.expectEqual(@as(usize, 3), s.totalRows());
+
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        {
+            const rac = page.getRowAndCell(0, 0);
+            try testing.expectEqual(@as(u21, 'x'), rac.cell.content.codepoint);
+            try testing.expectEqual(pagepkg.Cell.Wide.narrow, rac.cell.wide);
+            // try testing.expect(!rac.row.wrap);
+        }
+        {
+            const rac = page.getRowAndCell(1, 0);
+            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(pagepkg.Cell.Wide.narrow, rac.cell.wide);
+        }
+        {
+            const rac = page.getRowAndCell(2, 0);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
+            try testing.expectEqual(pagepkg.Cell.Wide.narrow, rac.cell.wide);
+        }
+    }
+}
+
 // This test is a bit convoluted so I want to explain: what we are trying
 // to verify here is that when we increase cols such that our rows per page
 // shrinks, we don't fragment our rows across many pages because this ends
