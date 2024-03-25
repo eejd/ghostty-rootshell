@@ -5280,6 +5280,198 @@ test "PageList resize reflow more cols wrap across page boundary" {
     }
 }
 
+test "PageList resize reflow more cols wrap across page boundary cursor in second page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 10, 0);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
+
+    // Grow to the capacity of the first page.
+    {
+        const page = &s.pages.first.?.data;
+        for (page.size.rows..page.capacity.rows) |_| {
+            _ = try s.grow();
+        }
+        try testing.expectEqual(@as(usize, 1), s.totalPages());
+        try s.growRows(1);
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+    }
+
+    // At this point, we have some rows on the first page, and some on the second.
+    // We can now wrap across the boundary condition.
+    {
+        const page = &s.pages.first.?.data;
+        const y = page.size.rows - 1;
+        {
+            const rac = page.getRowAndCell(0, y);
+            rac.row.wrap = true;
+        }
+        for (0..s.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x) },
+            };
+        }
+    }
+    {
+        const page2 = &s.pages.last.?.data;
+        const y = 0;
+        {
+            const rac = page2.getRowAndCell(0, y);
+            rac.row.wrap_continuation = true;
+        }
+        for (0..s.cols) |x| {
+            const rac = page2.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x) },
+            };
+        }
+    }
+
+    // Put a tracked pin in wrapped row on the last page
+    const p = try s.trackPin(s.pin(.{ .active = .{ .x = 1, .y = 9 } }).?);
+    defer s.untrackPin(p);
+    try testing.expect(p.page == s.pages.last.?);
+
+    // We expect one extra row since we unwrapped a row we need to resize
+    // to make our active area.
+    const end_rows = s.totalRows();
+
+    // Resize
+    try s.resize(.{ .cols = 4, .reflow = true });
+    try testing.expectEqual(@as(usize, 4), s.cols);
+    try testing.expectEqual(@as(usize, end_rows), s.totalRows());
+
+    // Our cursor should move to the first row
+    try testing.expectEqual(point.Point{ .active = .{
+        .x = 3,
+        .y = 9,
+    } }, s.pointFromPin(.active, p.*).?);
+
+    {
+        const p2 = s.pin(.{ .active = .{ .y = 9 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(!row.wrap);
+
+        const cells = p2.cells(.all);
+        try testing.expectEqual(@as(u21, 0), cells[0].content.codepoint);
+        try testing.expectEqual(@as(u21, 1), cells[1].content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cells[2].content.codepoint);
+        try testing.expectEqual(@as(u21, 1), cells[3].content.codepoint);
+    }
+}
+
+test "PageList resize reflow less cols wrap across page boundary cursor in second page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 10, null);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
+
+    // Grow to the capacity of the first page.
+    {
+        const page = &s.pages.first.?.data;
+        for (page.size.rows..page.capacity.rows) |_| {
+            _ = try s.grow();
+        }
+        try testing.expectEqual(@as(usize, 1), s.totalPages());
+        try s.growRows(5);
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+    }
+
+    // At this point, we have some rows on the first page, and some on the second.
+    // We can now wrap across the boundary condition.
+    {
+        const page = &s.pages.first.?.data;
+        const y = page.size.rows - 1;
+        {
+            const rac = page.getRowAndCell(0, y);
+            rac.row.wrap = true;
+        }
+        for (0..s.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x) },
+            };
+        }
+    }
+    {
+        const page2 = &s.pages.last.?.data;
+        const y = 0;
+        {
+            const rac = page2.getRowAndCell(0, y);
+            rac.row.wrap_continuation = true;
+        }
+        for (0..s.cols) |x| {
+            const rac = page2.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x) },
+            };
+        }
+    }
+
+    // Put a tracked pin in wrapped row on the last page
+    const p = try s.trackPin(s.pin(.{ .active = .{ .x = 2, .y = 5 } }).?);
+    defer s.untrackPin(p);
+    try testing.expect(p.page == s.pages.last.?);
+    try testing.expect(p.y == 0);
+
+    // Resize
+    try s.resize(.{
+        .cols = 4,
+        .reflow = true,
+        .cursor = .{ .x = 2, .y = 5 },
+    });
+    try testing.expectEqual(@as(usize, 4), s.cols);
+
+    // Our cursor should remain on the same cell
+    try testing.expectEqual(point.Point{ .active = .{
+        .x = 3,
+        .y = 6,
+    } }, s.pointFromPin(.active, p.*).?);
+
+    {
+        const p2 = s.pin(.{ .active = .{ .y = 5 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(row.wrap);
+        try testing.expect(!row.wrap_continuation);
+
+        const cells = p2.cells(.all);
+        try testing.expectEqual(@as(u21, 0), cells[0].content.codepoint);
+        try testing.expectEqual(@as(u21, 1), cells[1].content.codepoint);
+        try testing.expectEqual(@as(u21, 2), cells[2].content.codepoint);
+        try testing.expectEqual(@as(u21, 3), cells[3].content.codepoint);
+    }
+    {
+        const p2 = s.pin(.{ .active = .{ .y = 6 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(row.wrap);
+        try testing.expect(row.wrap_continuation);
+
+        const cells = p2.cells(.all);
+        try testing.expectEqual(@as(u21, 4), cells[0].content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cells[1].content.codepoint);
+        try testing.expectEqual(@as(u21, 1), cells[2].content.codepoint);
+        try testing.expectEqual(@as(u21, 2), cells[3].content.codepoint);
+    }
+    {
+        const p2 = s.pin(.{ .active = .{ .y = 7 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(!row.wrap);
+        try testing.expect(row.wrap_continuation);
+
+        const cells = p2.cells(.all);
+        try testing.expectEqual(@as(u21, 3), cells[0].content.codepoint);
+        try testing.expectEqual(@as(u21, 4), cells[1].content.codepoint);
+    }
+}
 test "PageList resize reflow more cols cursor in wrapped row" {
     const testing = std.testing;
     const alloc = testing.allocator;
