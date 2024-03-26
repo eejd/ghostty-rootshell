@@ -1325,24 +1325,27 @@ pub fn insertLines(self: *Terminal, count: usize) void {
             const src: *Row = p.rowAndCell().row;
             const dst: *Row = dst_p.rowAndCell().row;
 
+            // If our page doesn't match, then we need to do a copy from
+            // one page to another. This is the slow path.
+            if (dst_p.page != p.page) {
+                dst_p.page.data.clonePartialRowFrom(
+                    &p.page.data,
+                    dst,
+                    src,
+                    self.scrolling_region.left,
+                    self.scrolling_region.right + 1,
+                ) catch |err| {
+                    std.log.warn("TODO: insertLines handle clone error err={}", .{err});
+                    unreachable;
+                };
+
+                // Row never is wrapped if we're full width.
+                if (!left_right) dst.wrap = false;
+
+                continue;
+            }
+
             if (!left_right) {
-                // If the pages are not the same, we need to do a slow copy.
-                if (dst_p.page != p.page) {
-                    dst_p.page.data.cloneRowFrom(
-                        &p.page.data,
-                        dst,
-                        src,
-                    ) catch |err| {
-                        std.log.warn("TODO: insertLines handle clone error err={}", .{err});
-                        unreachable;
-                    };
-
-                    // Row never is wrapped
-                    dst.wrap = false;
-
-                    continue;
-                }
-
                 // Swap the src/dst cells. This ensures that our dst gets the proper
                 // shifted rows and src gets non-garbage cell data that we can clear.
                 const dst_row = dst.*;
@@ -1357,8 +1360,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 p.page.data.assertIntegrity();
                 continue;
             }
-
-            assert(dst_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
             const page = &p.page.data;
@@ -1463,24 +1464,25 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
             const src: *Row = src_p.rowAndCell().row;
             const dst: *Row = p.rowAndCell().row;
 
+            if (src_p.page != p.page) {
+                p.page.data.clonePartialRowFrom(
+                    &src_p.page.data,
+                    dst,
+                    src,
+                    self.scrolling_region.left,
+                    self.scrolling_region.right + 1,
+                ) catch |err| {
+                    std.log.warn("TODO: deleteLines handle clone error err={}", .{err});
+                    unreachable;
+                };
+
+                // Row never is wrapped if we're full width.
+                if (!left_right) dst.wrap = false;
+
+                continue;
+            }
+
             if (!left_right) {
-                // If the pages are not the same, we need to do a slow copy.
-                if (src_p.page != p.page) {
-                    p.page.data.cloneRowFrom(
-                        &src_p.page.data,
-                        dst,
-                        src,
-                    ) catch |err| {
-                        std.log.warn("TODO: deleteLines handle clone error err={}", .{err});
-                        unreachable;
-                    };
-
-                    // Row never is wrapped
-                    dst.wrap = false;
-
-                    continue;
-                }
-
                 // Swap the src/dst cells. This ensures that our dst gets the proper
                 // shifted rows and src gets non-garbage cell data that we can clear.
                 const dst_row = dst.*;
@@ -1494,8 +1496,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 p.page.data.assertIntegrity();
                 continue;
             }
-
-            assert(src_p.page == p.page); // TODO: handle different pages for left/right
 
             // Left/right scroll margins we have to copy cells, which is much slower...
             const page = &p.page.data;
