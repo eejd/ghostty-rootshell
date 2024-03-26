@@ -474,25 +474,59 @@ pub const Page = struct {
         dst_row: *Row,
         src_row: *const Row,
     ) !void {
+        try self.clonePartialRowFrom(
+            other,
+            dst_row,
+            src_row,
+            0,
+            self.size.cols,
+        );
+    }
+
+    /// Clone a single row from another page into this page, supporting
+    /// partial copy. cloneRowFrom calls this.
+    pub fn clonePartialRowFrom(
+        self: *Page,
+        other: *const Page,
+        dst_row: *Row,
+        src_row: *const Row,
+        x_start: usize,
+        x_end_req: usize,
+    ) !void {
         const cell_len = @min(self.size.cols, other.size.cols);
-        const other_cells = src_row.cells.ptr(other.memory)[0..cell_len];
-        const cells = dst_row.cells.ptr(self.memory)[0..cell_len];
+        const x_end = @min(x_end_req, cell_len);
+        assert(x_start <= x_end);
+        const other_cells = src_row.cells.ptr(other.memory)[x_start..x_end];
+        const cells = dst_row.cells.ptr(self.memory)[x_start..x_end];
 
         // If our destination has styles or graphemes then we need to
         // clear some state.
         if (dst_row.grapheme or dst_row.styled) {
-            self.clearCells(dst_row, 0, cells.len);
-            assert(!dst_row.grapheme);
-            assert(!dst_row.styled);
+            self.clearCells(dst_row, x_start, x_end);
         }
 
         // Copy all the row metadata but keep our cells offset
-        const cells_offset = dst_row.cells;
-        dst_row.* = src_row.*;
-        dst_row.cells = cells_offset;
+        dst_row.* = copy: {
+            var copy = src_row.*;
 
-        // If we have no managed memory in the row, we can just copy.
-        if (!dst_row.grapheme and !dst_row.styled) {
+            // If we're not copying the full row then we want to preserve
+            // some original state from our dst row.
+            if ((x_end - x_start) < self.size.cols) {
+                copy.wrap = dst_row.wrap;
+                copy.wrap_continuation = dst_row.wrap_continuation;
+                copy.grapheme = dst_row.grapheme;
+                copy.styled = dst_row.styled;
+            }
+
+            // Our cell offset remains the same
+            copy.cells = dst_row.cells;
+
+            break :copy copy;
+        };
+
+        // If we have no managed memory in the source, then we can just
+        // copy it directly.
+        if (!src_row.grapheme and !src_row.styled) {
             fastmem.copy(Cell, cells, other_cells);
         } else {
             // We have managed memory, so we have to do a slower copy to
@@ -512,6 +546,7 @@ pub const Page = struct {
                     const md = try self.styles.upsert(self.memory, other_style);
                     md.ref += 1;
                     dst_cell.style_id = md.id;
+                    dst_row.styled = true;
                 }
             }
         }
@@ -1640,6 +1675,183 @@ test "Page cloneFrom frees dst graphemes" {
         try testing.expect(!rac.cell.hasGrapheme());
     }
     try testing.expectEqual(@as(usize, 0), page2.graphemeCount());
+}
+
+test "Page cloneRowFrom partial" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+    }
+
+    // Clone
+    var page2 = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page2.deinit();
+    try page2.clonePartialRowFrom(
+        &page,
+        page2.getRow(0),
+        page.getRow(0),
+        2,
+        8,
+    );
+
+    // Read it again
+    {
+        const y = 0;
+        for (0..page2.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 8) @intCast(x + 1) else 0;
+            const rac = page2.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+    }
+}
+
+test "Page cloneRowFrom partial grapheme in non-copied source region" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+        {
+            const rac = page.getRowAndCell(0, y);
+            try page.appendGrapheme(rac.row, rac.cell, 0x0A);
+        }
+        {
+            const rac = page.getRowAndCell(9, y);
+            try page.appendGrapheme(rac.row, rac.cell, 0x0A);
+        }
+    }
+    try testing.expectEqual(@as(usize, 2), page.graphemeCount());
+
+    // Clone
+    var page2 = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page2.deinit();
+    try page2.clonePartialRowFrom(
+        &page,
+        page2.getRow(0),
+        page.getRow(0),
+        2,
+        8,
+    );
+
+    // Read it again
+    {
+        const y = 0;
+        for (0..page2.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 8) @intCast(x + 1) else 0;
+            const rac = page2.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+            try testing.expect(!rac.cell.hasGrapheme());
+        }
+        {
+            const rac = page2.getRowAndCell(9, y);
+            try testing.expect(!rac.row.grapheme);
+        }
+    }
+    try testing.expectEqual(@as(usize, 0), page2.graphemeCount());
+}
+
+test "Page cloneRowFrom partial grapheme in non-copied dest region" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+    }
+    try testing.expectEqual(@as(usize, 0), page.graphemeCount());
+
+    // Clone
+    var page2 = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page2.deinit();
+    {
+        const y = 0;
+        for (0..page2.size.cols) |x| {
+            const rac = page2.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 0xBB },
+            };
+        }
+        {
+            const rac = page2.getRowAndCell(0, y);
+            try page2.appendGrapheme(rac.row, rac.cell, 0x0A);
+        }
+        {
+            const rac = page2.getRowAndCell(9, y);
+            try page2.appendGrapheme(rac.row, rac.cell, 0x0A);
+        }
+    }
+    try page2.clonePartialRowFrom(
+        &page,
+        page2.getRow(0),
+        page.getRow(0),
+        2,
+        8,
+    );
+
+    // Read it again
+    {
+        const y = 0;
+        for (0..page2.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 8) @intCast(x + 1) else 0xBB;
+            const rac = page2.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+        {
+            const rac = page2.getRowAndCell(9, y);
+            try testing.expect(rac.row.grapheme);
+        }
+    }
+    try testing.expectEqual(@as(usize, 2), page2.graphemeCount());
 }
 
 test "Page moveCells text-only" {
