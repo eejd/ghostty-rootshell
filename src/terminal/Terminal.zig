@@ -1084,7 +1084,48 @@ pub fn index(self: *Terminal) !void {
         {
             try self.screen.cursorDownScroll();
         } else {
-            self.scrollUp(1);
+            // Slow path for left and right scrolling region margins.
+            if (self.scrolling_region.left != 0 and
+                self.scrolling_region.right != self.cols - 1)
+            {
+                self.scrollUp(1);
+                return;
+            }
+
+            // Otherwise use a fast path function from PageList to efficiently
+            // scroll the contents of the scrolling region.
+            if (self.scrolling_region.bottom < self.rows) {
+                try self.screen.pages.eraseRowBounded(
+                    .{ .active = .{ .y = self.scrolling_region.top } },
+                    self.scrolling_region.bottom - self.scrolling_region.top
+                );
+            } else {
+                // If we have no bottom margin we don't need to worry about
+                // potentially damaging rows below the scrolling region,
+                // and eraseRow is cheaper than eraseRowBounded.
+                try self.screen.pages.eraseRow(
+                    .{ .active = .{ .y = self.scrolling_region.top } },
+                );
+            }
+
+            // The operations above can prune our cursor style so we need to
+            // update. This should never fail because the above can only FREE
+            // memory.
+            self.screen.manualStyleUpdate() catch |err| {
+                std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
+                self.screen.cursor.style = .{};
+                self.screen.manualStyleUpdate() catch unreachable;
+            };
+
+            // We scrolled with the cursor on the bottom row of the scrolling
+            // region, so we should move the cursor to the bottom left.
+            self.screen.cursorAbsolute(
+                self.scrolling_region.left,
+                self.scrolling_region.bottom,
+            );
+
+            // Always unset pending wrap
+            self.screen.cursor.pending_wrap = false;
         }
 
         return;

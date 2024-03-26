@@ -2067,6 +2067,109 @@ pub fn eraseRow(
     }
 }
 
+/// A special-case of eraseRow that shifts only a bounded number of following
+/// rows up, filling the space they leave behind with blank rows.
+///
+/// `limit` is exclusive of the erased row. A limit of 1 will erase the target
+/// row and shift the row below in to its position, leaving a blank row below.
+///
+/// This function has a lot of repeated code in it because it is a hot path.
+pub fn eraseRowBounded(
+    self: *PageList,
+    pt: point.Point,
+    limit: usize,
+) !void {
+    const pn = self.pin(pt).?;
+
+    var page = pn.page;
+    var rows = page.data.rows.ptr(page.data.memory.ptr);
+
+    // Special case where we'll reach the limit in the same page as the erased
+    // row, so we don't have to handle cloning rows between pages.
+    if (page.data.size.rows - pn.y > limit) {
+        page.data.clearCells(&rows[pn.y], 0, page.data.size.cols);
+        fastmem.rotateOnce(Row, rows[pn.y..][0..limit + 1]);
+
+        // Update pins in the shifted region.
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y and p.y < pn.y + limit) p.y -= 1;
+        }
+
+        return;
+    }
+
+    var shifted: usize = 0;
+
+    fastmem.rotateOnce(Row, rows[pn.y..page.data.size.rows]);
+
+    shifted += page.data.size.rows - pn.y;
+
+    // We adjust the tracked pins in this page, moving up any that were below
+    // the removed row.
+    {
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y) p.y -= 1;
+        }
+    }
+
+    while (page.next) |next| {
+        const next_rows = next.data.rows.ptr(next.data.memory.ptr);
+
+        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+
+        page = next;
+        rows = next_rows;
+
+        const shifted_limit = limit - shifted;
+        if (page.data.size.rows > shifted_limit) {
+            page.data.clearCells(&rows[0], 0, page.data.size.cols);
+            fastmem.rotateOnce(Row, rows[0..shifted_limit + 1]);
+
+            // Update pins in the shifted region.
+            var pin_it = self.tracked_pins.keyIterator();
+            while (pin_it.next()) |p_ptr| {
+                const p = p_ptr.*;
+                if (p.page != page or p.y > shifted_limit) continue;
+                if (p.y == 0) {
+                    p.page = page.prev.?;
+                    p.y = p.page.data.size.rows - 1;
+                    continue;
+                }
+                p.y -= 1;
+            }
+
+            return;
+        }
+
+        fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        shifted += page.data.size.rows;
+
+        // Our tracked pins for this page need to be updated.
+        // If the pin is in row 0 that means the corresponding row has
+        // been moved to the previous page. Otherwise, move it up by 1.
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page != page) continue;
+            if (p.y == 0) {
+                p.page = page.prev.?;
+                p.y = p.page.data.size.rows - 1;
+                continue;
+            }
+            p.y -= 1;
+        }
+    }
+
+    // We reached the end of the page list before the limit, so we clear
+    // the final row since it was rotated down from the top of this page.
+    page.data.clearCells(&rows[page.data.size.rows - 1], 0, page.data.size.cols);
+}
+
 /// Erase the rows from the given top to bottom (inclusive). Erasing
 /// the rows doesn't clear them but actually physically REMOVES the rows.
 /// If the top or bottom point is in the middle of a page, the other
