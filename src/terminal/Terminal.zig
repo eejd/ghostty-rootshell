@@ -1085,7 +1085,7 @@ pub fn index(self: *Terminal) !void {
             try self.screen.cursorDownScroll();
         } else {
             // Slow path for left and right scrolling region margins.
-            if (self.scrolling_region.left != 0 and
+            if (self.scrolling_region.left != 0 or
                 self.scrolling_region.right != self.cols - 1)
             {
                 self.scrollUp(1);
