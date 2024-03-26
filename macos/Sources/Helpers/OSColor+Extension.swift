@@ -12,7 +12,11 @@ extension OSColor {
         var a: CGFloat = 0
         
         // getRed:green:blue:alpha requires sRGB space
+        #if canImport(AppKit)
         guard let rgb = self.usingColorSpace(.sRGB) else { return 0 }
+        #else
+        let rgb = self
+        #endif
         rgb.getRed(&r, green: &g, blue: &b, alpha: &a)
         return (0.299 * r) + (0.587 * g) + (0.114 * b)
     }
