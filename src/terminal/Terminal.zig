@@ -1084,7 +1084,38 @@ pub fn index(self: *Terminal) !void {
         {
             try self.screen.cursorDownScroll();
         } else {
-            self.scrollUp(1);
+            // Slow path for left and right scrolling region margins.
+            if (self.scrolling_region.left != 0 or
+                self.scrolling_region.right != self.cols - 1)
+            {
+                self.scrollUp(1);
+                return;
+            }
+
+            // Otherwise use a fast path function from PageList to efficiently
+            // scroll the contents of the scrolling region.
+
+            // eraseRow and eraseRowBounded will end up moving the cursor pin
+            // up by 1, so we save its current position and restore it after.
+            const cursor_x = self.screen.cursor.x;
+            const cursor_y = self.screen.cursor.y;
+            defer {
+                self.screen.cursorAbsolute(cursor_x, cursor_y);
+            }
+
+            try self.screen.pages.eraseRowBounded(
+                .{ .active = .{ .y = self.scrolling_region.top } },
+                self.scrolling_region.bottom - self.scrolling_region.top
+            );
+
+            // The operations above can prune our cursor style so we need to
+            // update. This should never fail because the above can only FREE
+            // memory.
+            self.screen.manualStyleUpdate() catch |err| {
+                std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
+                self.screen.cursor.style = .{};
+                self.screen.manualStyleUpdate() catch unreachable;
+            };
         }
 
         return;

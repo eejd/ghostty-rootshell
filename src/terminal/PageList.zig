@@ -6,6 +6,7 @@ const PageList = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const fastmem = @import("../fastmem.zig");
 const point = @import("point.zig");
 const pagepkg = @import("page.zig");
 const stylepkg = @import("style.zig");
@@ -1986,6 +1987,196 @@ fn destroyPageExt(
     pool.nodes.destroy(page);
 }
 
+/// Fast-path function to erase exactly 1 row. Erasing means that the row
+/// is completely REMOVED, not just cleared. All rows following the removed
+/// row will be shifted up by 1 to fill the empty space.
+///
+/// Unlike eraseRows, eraseRow does not change the size of any pages. The
+/// caller is responsible for adjusting the row count of the final page if
+/// that behavior is required.
+pub fn eraseRow(
+    self: *PageList,
+    pt: point.Point,
+) !void {
+    const pn = self.pin(pt).?;
+
+    var page = pn.page;
+    var rows = page.data.rows.ptr(page.data.memory.ptr);
+
+    // In order to move the following rows up we rotate the rows array by 1.
+    // The rotate operation turns e.g. [ 0 1 2 3 ] in to [ 1 2 3 0 ], which
+    // works perfectly to move all of our elements where they belong.
+    fastmem.rotateOnce(Row, rows[pn.y..page.data.size.rows]);
+
+    // We adjust the tracked pins in this page, moving up any that were below
+    // the removed row.
+    {
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y) p.y -= 1;
+        }
+    }
+
+    // We iterate through all of the following pages in order to move their
+    // rows up by 1 as well.
+    while (page.next) |next| {
+        const next_rows = next.data.rows.ptr(next.data.memory.ptr);
+
+        // We take the top row of the page and clone it in to the bottom
+        // row of the previous page, which gets rid of the top row that was
+        // rotated down in the previous page, and accounts for the row in
+        // this page that will be rotated down as well.
+        //
+        //  rotate -> clone --> rotate -> result
+        //    0 -.      1         1         1
+        //    1  |      2         2         2
+        //    2  |      3         3         3
+        //    3 <'      0 <.      4         4
+        //   ---       --- |     ---       ---  <- page boundary
+        //    4         4 -'      4 -.      5
+        //    5         5         5  |      6
+        //    6         6         6  |      7
+        //    7         7         7 <'      4
+        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+
+        page = next;
+        rows = next_rows;
+
+        fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        // Our tracked pins for this page need to be updated.
+        // If the pin is in row 0 that means the corresponding row has
+        // been moved to the previous page. Otherwise, move it up by 1.
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page != page) continue;
+            if (p.y == 0) {
+                p.page = page.prev.?;
+                p.y = p.page.data.size.rows - 1;
+                continue;
+            }
+            p.y -= 1;
+        }
+    }
+
+    // Clear the final row which was rotated from the top of the page.
+    page.data.clearCells(&rows[page.data.size.rows - 1], 0, page.data.size.cols);
+}
+
+/// A variant of eraseRow that shifts only a bounded number of following
+/// rows up, filling the space they leave behind with blank rows.
+///
+/// `limit` is exclusive of the erased row. A limit of 1 will erase the target
+/// row and shift the row below in to its position, leaving a blank row below.
+pub fn eraseRowBounded(
+    self: *PageList,
+    pt: point.Point,
+    limit: usize,
+) !void {
+    // This function has a lot of repeated code in it because it is a hot path.
+    //
+    // To get a better idea of what's happening, read eraseRow first for more
+    // in-depth explanatory comments. To avoid repetition, the only comments for
+    // this function are for where it differs from eraseRow.
+
+    const pn = self.pin(pt).?;
+
+    var page = pn.page;
+    var rows = page.data.rows.ptr(page.data.memory.ptr);
+
+    // If the row limit is less than the remaining rows before the end of the
+    // page, then we clear the row, rotate it to the end of the boundary limit
+    // and update our pins.
+    if (page.data.size.rows - pn.y > limit) {
+        page.data.clearCells(&rows[pn.y], 0, page.data.size.cols);
+        fastmem.rotateOnce(Row, rows[pn.y..][0..limit + 1]);
+
+        // Update pins in the shifted region.
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y and p.y < pn.y + limit) p.y -= 1;
+        }
+
+        return;
+    }
+
+    fastmem.rotateOnce(Row, rows[pn.y..page.data.size.rows]);
+
+    // We need to keep track of how many rows we've shifted so that we can
+    // determine at what point we need to do a partial shift on subsequent
+    // pages.
+    var shifted: usize = page.data.size.rows - pn.y;
+
+    // Update tracked pins.
+    {
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page == page and p.y > pn.y) p.y -= 1;
+        }
+    }
+
+    while (page.next) |next| {
+        const next_rows = next.data.rows.ptr(next.data.memory.ptr);
+
+        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+
+        page = next;
+        rows = next_rows;
+
+        // We check to see if this page contains enough rows to satisfy the
+        // specified limit, accounting for rows we've already shifted in prior
+        // pages.
+        //
+        // The logic here is very similar to the one before the loop.
+        const shifted_limit = limit - shifted;
+        if (page.data.size.rows > shifted_limit) {
+            page.data.clearCells(&rows[0], 0, page.data.size.cols);
+            fastmem.rotateOnce(Row, rows[0..shifted_limit + 1]);
+
+            // Update pins in the shifted region.
+            var pin_it = self.tracked_pins.keyIterator();
+            while (pin_it.next()) |p_ptr| {
+                const p = p_ptr.*;
+                if (p.page != page or p.y > shifted_limit) continue;
+                if (p.y == 0) {
+                    p.page = page.prev.?;
+                    p.y = p.page.data.size.rows - 1;
+                    continue;
+                }
+                p.y -= 1;
+            }
+
+            return;
+        }
+
+        fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        // Account for the rows shifted in this page.
+        shifted += page.data.size.rows;
+
+        // Update tracked pins.
+        var pin_it = self.tracked_pins.keyIterator();
+        while (pin_it.next()) |p_ptr| {
+            const p = p_ptr.*;
+            if (p.page != page) continue;
+            if (p.y == 0) {
+                p.page = page.prev.?;
+                p.y = p.page.data.size.rows - 1;
+                continue;
+            }
+            p.y -= 1;
+        }
+    }
+
+    // We reached the end of the page list before the limit, so we clear
+    // the final row since it was rotated down from the top of this page.
+    page.data.clearCells(&rows[page.data.size.rows - 1], 0, page.data.size.cols);
+}
+
 /// Erase the rows from the given top to bottom (inclusive). Erasing
 /// the rows doesn't clear them but actually physically REMOVES the rows.
 /// If the top or bottom point is in the middle of a page, the other
@@ -2039,9 +2230,6 @@ pub fn eraseRows(
             const old_dst = dst.*;
             dst.* = src.*;
             src.* = old_dst;
-
-            // Clear the old data in case we reuse these cells.
-            chunk.page.data.clearCells(src, 0, chunk.page.data.size.cols);
         }
 
         // Clear our remaining cells that we didn't shift or swapped

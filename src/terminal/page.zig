@@ -182,7 +182,9 @@ pub const Page = struct {
 
     /// Reinitialize the page with the same capacity.
     pub fn reinit(self: *Page) void {
-        @memset(self.memory, 0);
+        // We zero the page memory as u64 instead of u8 because
+        // we can and it's empirically quite a bit faster.
+        @memset(@as([*]u64, @ptrCast(self.memory))[0..self.memory.len / 8], 0);
         self.* = initBuf(OffsetBuf.init(self.memory), layout(self.capacity));
     }
 
@@ -654,7 +656,10 @@ pub const Page = struct {
         // Clear our source row now that the copy is complete. We can NOT
         // use clearCells here because clearCells will garbage collect our
         // styles and graphames but we moved them above.
-        @memset(src_cells, .{});
+        //
+        // Zero the cells as u64s since empirically this seems
+        // to be a bit faster than using @memset(src_cells, .{})
+        @memset(@as([]u64, @ptrCast(src_cells)), 0);
         if (src_cells.len == self.size.cols) {
             src_row.grapheme = false;
             src_row.styled = false;
@@ -734,7 +739,9 @@ pub const Page = struct {
             if (cells.len == self.size.cols) row.styled = false;
         }
 
-        @memset(cells, .{});
+        // Zero the cells as u64s since empirically this seems
+        // to be a bit faster than using @memset(cells, .{})
+        @memset(@as([]u64, @ptrCast(cells)), 0);
     }
 
     /// Append a codepoint to the given cell as a grapheme.
