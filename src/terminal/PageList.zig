@@ -6,6 +6,7 @@ const PageList = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const fastmem = @import("../fastmem.zig");
 const point = @import("point.zig");
 const pagepkg = @import("page.zig");
 const stylepkg = @import("style.zig");
@@ -2001,7 +2002,7 @@ pub fn eraseRow(
     // In order to move the following rows up we rotate the rows array by 1.
     // The rotate operation turns e.g. [ 0 1 2 3 ] in to [ 1 2 3 0 ], which
     // works perfectly to move all of our elements where they belong.
-    std.mem.rotate(Row, rows[pn.y..page.data.size.rows], 1);
+    fastmem.rotateOnce(Row, rows[pn.y..page.data.size.rows]);
 
     // We adjust the tracked pins in this page, moving up any that were below
     // the removed row.
@@ -2038,7 +2039,7 @@ pub fn eraseRow(
         page = next;
         rows = next_rows;
 
-        std.mem.rotate(Row, rows[0..page.data.size.rows], 1);
+        fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
 
         // Our tracked pins for this page need to be updated.
         // If the pin is in row 0 that means the corresponding row has

@@ -22,5 +22,13 @@ pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
     }
 }
 
+/// Same as std.mem.rotate(T, items, 1) but more efficient by using memmove
+/// and a tmp var for the single rotated item instead of 3 calls to reverse.
+pub inline fn rotateOnce(comptime T: type, items: []T) void {
+    const tmp = items[0];
+    move(T, items[0..items.len - 1], items[1..items.len]);
+    items[items.len - 1] = tmp;
+}
+
 extern "c" fn memcpy(*anyopaque, *const anyopaque, usize) *anyopaque;
 extern "c" fn memmove(*anyopaque, *const anyopaque, usize) *anyopaque;
