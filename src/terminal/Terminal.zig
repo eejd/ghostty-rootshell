@@ -1336,7 +1336,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                     self.scrolling_region.right + 1,
                 ) catch |err| {
                     std.log.warn("TODO: insertLines handle clone error err={}", .{err});
-                    unreachable;
+                    @panic("TODO");
                 };
 
                 // Row never is wrapped if we're full width.
@@ -1473,7 +1473,7 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                     self.scrolling_region.right + 1,
                 ) catch |err| {
                     std.log.warn("TODO: deleteLines handle clone error err={}", .{err});
-                    unreachable;
+                    @panic("TODO");
                 };
 
                 // Row never is wrapped if we're full width.
