@@ -1094,6 +1094,15 @@ pub fn index(self: *Terminal) !void {
 
             // Otherwise use a fast path function from PageList to efficiently
             // scroll the contents of the scrolling region.
+
+            // eraseRow and eraseRowBounded will end up moving the cursor pin
+            // up by 1, so we save its current position and restore it after.
+            const cursor_x = self.screen.cursor.x;
+            const cursor_y = self.screen.cursor.y;
+            defer {
+                self.screen.cursorAbsolute(cursor_x, cursor_y);
+            }
+
             if (self.scrolling_region.bottom < self.rows) {
                 try self.screen.pages.eraseRowBounded(
                     .{ .active = .{ .y = self.scrolling_region.top } },
@@ -1116,16 +1125,6 @@ pub fn index(self: *Terminal) !void {
                 self.screen.cursor.style = .{};
                 self.screen.manualStyleUpdate() catch unreachable;
             };
-
-            // We scrolled with the cursor on the bottom row of the scrolling
-            // region, so we should move the cursor to the bottom left.
-            self.screen.cursorAbsolute(
-                self.scrolling_region.left,
-                self.scrolling_region.bottom,
-            );
-
-            // Always unset pending wrap
-            self.screen.cursor.pending_wrap = false;
         }
 
         return;
