@@ -1103,19 +1103,10 @@ pub fn index(self: *Terminal) !void {
                 self.screen.cursorAbsolute(cursor_x, cursor_y);
             }
 
-            if (self.scrolling_region.bottom < self.rows) {
-                try self.screen.pages.eraseRowBounded(
-                    .{ .active = .{ .y = self.scrolling_region.top } },
-                    self.scrolling_region.bottom - self.scrolling_region.top
-                );
-            } else {
-                // If we have no bottom margin we don't need to worry about
-                // potentially damaging rows below the scrolling region,
-                // and eraseRow is cheaper than eraseRowBounded.
-                try self.screen.pages.eraseRow(
-                    .{ .active = .{ .y = self.scrolling_region.top } },
-                );
-            }
+            try self.screen.pages.eraseRowBounded(
+                .{ .active = .{ .y = self.scrolling_region.top } },
+                self.scrolling_region.bottom - self.scrolling_region.top
+            );
 
             // The operations above can prune our cursor style so we need to
             // update. This should never fail because the above can only FREE
