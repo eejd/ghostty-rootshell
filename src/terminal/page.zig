@@ -433,6 +433,8 @@ pub const Page = struct {
         return result;
     }
 
+    pub const CloneFromError = Allocator.Error || style.Set.UpsertError;
+
     /// Clone the contents of another page into this page. The capacities
     /// can be different, but the size of the other page must fit into
     /// this page.
@@ -450,7 +452,7 @@ pub const Page = struct {
         other: *const Page,
         y_start: usize,
         y_end: usize,
-    ) !void {
+    ) CloneFromError!void {
         assert(y_start <= y_end);
         assert(y_end <= other.size.rows);
         assert(y_end - y_start <= self.size.rows);
@@ -473,7 +475,7 @@ pub const Page = struct {
         other: *const Page,
         dst_row: *Row,
         src_row: *const Row,
-    ) !void {
+    ) CloneFromError!void {
         try self.clonePartialRowFrom(
             other,
             dst_row,
@@ -492,7 +494,7 @@ pub const Page = struct {
         src_row: *const Row,
         x_start: usize,
         x_end_req: usize,
-    ) !void {
+    ) CloneFromError!void {
         const cell_len = @min(self.size.cols, other.size.cols);
         const x_end = @min(x_end_req, cell_len);
         assert(x_start <= x_end);
