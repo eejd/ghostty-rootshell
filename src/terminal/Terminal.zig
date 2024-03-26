@@ -2368,6 +2368,7 @@ pub fn fullReset(self: *Terminal) void {
     self.tabstops.reset(TABSTOP_INTERVAL);
     self.screen.clearSelection();
     self.screen.kitty_keyboard = .{};
+    self.secondary_screen.kitty_keyboard = .{};
     self.screen.protected_mode = .off;
     self.scrolling_region = .{
         .top = 0,
@@ -8224,6 +8225,25 @@ test "Terminal: fullReset status display" {
     t.status_display = .status_line;
     t.fullReset();
     try testing.expect(t.status_display == .main);
+}
+
+// https://github.com/mitchellh/ghostty/issues/1607
+test "Terminal: fullReset clears alt screen kitty keyboard state" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    t.alternateScreen(.{});
+    t.screen.kitty_keyboard.push(.{
+        .disambiguate = true,
+        .report_events = false,
+        .report_alternates = true,
+        .report_all = true,
+        .report_associated = true,
+    });
+    t.primaryScreen(.{});
+
+    t.fullReset();
+    try testing.expectEqual(0, t.secondary_screen.kitty_keyboard.current().int());
 }
 
 // https://github.com/mitchellh/ghostty/issues/272
