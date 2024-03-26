@@ -309,7 +309,6 @@ test {
     _ = @import("segmented_pool.zig");
     _ = @import("inspector/main.zig");
     _ = @import("terminal/main.zig");
-    _ = @import("terminal-old/main.zig");
     _ = @import("terminfo/main.zig");
     _ = @import("simd/main.zig");
     _ = @import("unicode/main.zig");

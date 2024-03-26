@@ -14,8 +14,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
-const terminal = @import("../terminal-old/main.zig");
-const terminalnew = @import("../terminal/main.zig");
+const terminal = @import("../terminal/main.zig");
 
 const Args = struct {
     mode: Mode = .noop,
@@ -44,7 +43,7 @@ const Args = struct {
         self.* = undefined;
     }
 
-    const Terminal = enum { none, old, new };
+    const Terminal = enum { none, new };
 };
 
 const Mode = enum {
@@ -94,21 +93,6 @@ pub fn main() !void {
     const writer = std.io.getStdOut().writer();
     const buf = try alloc.alloc(u8, args.@"buffer-size");
 
-    if (false) {
-        const f = try std.fs.cwd().openFile("/tmp/ghostty_bench_data", .{});
-        defer f.close();
-        const r = f.reader();
-        const TerminalStream = terminal.Stream(*NewTerminalHandler);
-        var t = try terminalnew.Terminal.init(alloc, .{
-            .cols = @intCast(args.@"terminal-cols"),
-            .rows = @intCast(args.@"terminal-rows"),
-        });
-        var handler: NewTerminalHandler = .{ .t = &t };
-        var stream: TerminalStream = .{ .handler = &handler };
-        try benchSimd(r, &stream, buf);
-        return;
-    }
-
     const seed: u64 = if (args.seed >= 0) @bitCast(args.seed) else @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
 
     // Handle the modes that do not depend on terminal state first.
@@ -122,29 +106,13 @@ pub fn main() !void {
         inline .scalar,
         .simd,
         => |tag| switch (args.terminal) {
-            .old => {
-                const TerminalStream = terminal.Stream(*TerminalHandler);
-                var t = try terminal.Terminal.init(
-                    alloc,
-                    args.@"terminal-cols",
-                    args.@"terminal-rows",
-                );
-                var handler: TerminalHandler = .{ .t = &t };
-                var stream: TerminalStream = .{ .handler = &handler };
-                switch (tag) {
-                    .scalar => try benchScalar(reader, &stream, buf),
-                    .simd => try benchSimd(reader, &stream, buf),
-                    else => @compileError("missing case"),
-                }
-            },
-
             .new => {
-                const TerminalStream = terminal.Stream(*NewTerminalHandler);
-                var t = try terminalnew.Terminal.init(alloc, .{
+                const TerminalStream = terminal.Stream(*TerminalHandler);
+                var t = try terminal.Terminal.init(alloc, .{
                     .cols = @intCast(args.@"terminal-cols"),
                     .rows = @intCast(args.@"terminal-rows"),
                 });
-                var handler: NewTerminalHandler = .{ .t = &t };
+                var handler: TerminalHandler = .{ .t = &t };
                 var stream: TerminalStream = .{ .handler = &handler };
                 switch (tag) {
                     .scalar => try benchScalar(reader, &stream, buf),
@@ -275,14 +243,6 @@ const TerminalHandler = struct {
     t: *terminal.Terminal,
 
     pub fn print(self: *TerminalHandler, cp: u21) !void {
-        try self.t.print(cp);
-    }
-};
-
-const NewTerminalHandler = struct {
-    t: *terminalnew.Terminal,
-
-    pub fn print(self: *NewTerminalHandler, cp: u21) !void {
         try self.t.print(cp);
     }
 };

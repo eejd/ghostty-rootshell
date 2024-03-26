@@ -8,7 +8,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const cli = @import("../cli.zig");
-const terminal = @import("../terminal-old/main.zig");
 const terminal_new = @import("../terminal/main.zig");
 
 const Args = struct {
