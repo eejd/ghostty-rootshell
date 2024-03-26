@@ -83,6 +83,13 @@ pub const BuildConfig = struct {
 pub const version = options.app_version;
 pub const version_string = options.app_version_string;
 
+/// The optimization mode as a string.
+pub const mode_string = mode: {
+    const m = @tagName(builtin.mode);
+    if (std.mem.lastIndexOfScalar(u8, m, '.')) |i| break :mode m[i..];
+    break :mode m;
+};
+
 /// The artifact we're producing. This can be used to determine if we're
 /// building a standalone exe, an embedded lib, etc.
 pub const artifact = Artifact.detect();
