@@ -12,7 +12,7 @@ pub inline fn move(comptime T: type, dest: []T, source: []const T) void {
     }
 }
 
-/// Same as std.mem.copyForwards but prefers libc memcpy if it is available
+/// Same as @memcpy but prefers libc memcpy if it is available
 /// because it is generally much faster.
 pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
     if (builtin.link_libc) {
