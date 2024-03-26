@@ -250,7 +250,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // over 0.1 to prevent: https://github.com/mitchellh/ghostty/issues/1549
         let bgColor = NSColor(ghostty.config.backgroundColor)
         if (bgColor.luminance > 0.1) {
-            window.backgroundColor = NSColor(ghostty.config.backgroundColor)
+            window.backgroundColor = bgColor
         }
 
         // This makes sure our titlebar renders correctly when there is a transparent background
