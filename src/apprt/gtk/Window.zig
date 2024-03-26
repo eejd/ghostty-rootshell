@@ -112,7 +112,13 @@ pub fn init(self: *Window, app: *App) !void {
     const notebook_widget = c.gtk_notebook_new();
     const notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
     self.notebook = notebook;
-    c.gtk_notebook_set_tab_pos(notebook, c.GTK_POS_TOP);
+    const notebook_tab_pos: c_uint = switch (app.config.@"gtk-tabs-location") {
+        .top => c.GTK_POS_TOP,
+        .bottom => c.GTK_POS_BOTTOM,
+        .left => c.GTK_POS_LEFT,
+        .right => c.GTK_POS_RIGHT,
+    };
+    c.gtk_notebook_set_tab_pos(notebook, notebook_tab_pos);
     c.gtk_notebook_set_scrollable(notebook, 1);
     c.gtk_notebook_set_show_tabs(notebook, 0);
     c.gtk_notebook_set_show_border(notebook, 0);
