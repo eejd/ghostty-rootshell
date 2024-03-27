@@ -64,7 +64,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     self.label_text = label_text;
 
     // Build the close button for the tab
-    const label_close_widget = c.gtk_button_new_from_icon_name("window-close");
+    const label_close_widget = c.gtk_button_new_from_icon_name("window-close-symbolic");
     const label_close: *c.GtkButton = @ptrCast(label_close_widget);
     c.gtk_button_set_has_frame(label_close, 0);
     c.gtk_box_append(label_box, label_close_widget);
