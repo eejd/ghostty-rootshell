@@ -84,13 +84,15 @@ pub const Shaper = struct {
     pub fn runIterator(
         self: *Shaper,
         group: *GroupCache,
-        row: terminal.Screen.Row,
+        screen: *const terminal.Screen,
+        row: terminal.Pin,
         selection: ?terminal.Selection,
         cursor_x: ?usize,
     ) font.shape.RunIterator {
         return .{
             .hooks = .{ .shaper = self },
             .group = group,
+            .screen = screen,
             .row = row,
             .selection = selection,
             .cursor_x = cursor_x,
@@ -242,13 +244,19 @@ test "run iterator" {
 
     {
         // Make a screen with some data
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("ABCD");
 
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
         try testing.expectEqual(@as(usize, 1), count);
@@ -256,12 +264,18 @@ test "run iterator" {
 
     // Spaces should be part of a run
     {
-        var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+        var screen = try terminal.Screen.init(alloc, 10, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("ABCD   EFG");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |_| count += 1;
         try testing.expectEqual(@as(usize, 1), count);
@@ -269,13 +283,19 @@ test "run iterator" {
 
     {
         // Make a screen with some data
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("A😃D");
 
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |_| {
             count += 1;
@@ -296,30 +316,51 @@ test "run iterator: empty cells with background set" {
 
     {
         // Make a screen with some data
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
-        screen.cursor.pen.bg = .{ .rgb = try terminal.color.Name.cyan.default() };
+        try screen.setAttribute(.{ .direct_color_bg = .{ .r = 0xFF, .g = 0, .b = 0 } });
         try screen.testWriteString("A");
 
         // Get our first row
-        const row = screen.getRow(.{ .active = 0 });
-        row.getCellPtr(1).* = screen.cursor.pen;
-        row.getCellPtr(2).* = screen.cursor.pen;
+        {
+            const list_cell = screen.pages.getCell(.{ .active = .{ .x = 1 } }).?;
+            const cell = list_cell.cell;
+            cell.* = .{
+                .content_tag = .bg_color_rgb,
+                .content = .{ .color_rgb = .{ .r = 0xFF, .g = 0, .b = 0 } },
+            };
+        }
+        {
+            const list_cell = screen.pages.getCell(.{ .active = .{ .x = 2 } }).?;
+            const cell = list_cell.cell;
+            cell.* = .{
+                .content_tag = .bg_color_rgb,
+                .content = .{ .color_rgb = .{ .r = 0xFF, .g = 0, .b = 0 } },
+            };
+        }
 
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
-        var count: usize = 0;
-        while (try it.next(alloc)) |run| {
-            count += 1;
-
-            // The run should have length 3 because of the two background
-            // cells.
-            try testing.expectEqual(@as(u32, 3), shaper.hb_buf.getLength());
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
+        {
+            const run = (try it.next(alloc)).?;
+            try testing.expectEqual(@as(u32, 1), shaper.hb_buf.getLength());
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
-        try testing.expectEqual(@as(usize, 1), count);
+        {
+            const run = (try it.next(alloc)).?;
+            try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 2), cells.len);
+        }
+        try testing.expect(try it.next(alloc) == null);
     }
 }
 
@@ -337,13 +378,19 @@ test "shape" {
     buf_idx += try std.unicode.utf8Encode(0x1F3FD, buf[buf_idx..]); // Medium skin tone
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -361,12 +408,18 @@ test "shape inconsolata ligs" {
     defer testdata.deinit();
 
     {
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString(">=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -380,12 +433,18 @@ test "shape inconsolata ligs" {
     }
 
     {
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("===");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -408,12 +467,18 @@ test "shape monaspace ligs" {
     defer testdata.deinit();
 
     {
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("===");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -436,12 +501,18 @@ test "shape emoji width" {
     defer testdata.deinit();
 
     {
-        var screen = try terminal.Screen.init(alloc, 3, 5, 0);
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
         defer screen.deinit();
         try screen.testWriteString("👍");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -469,13 +540,19 @@ test "shape emoji width long" {
     buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // emoji representation
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    var screen = try terminal.Screen.init(alloc, 30, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -502,13 +579,19 @@ test "shape variation selector VS15" {
     buf_idx += try std.unicode.utf8Encode(0xFE0E, buf[buf_idx..]); // ZWJ to force text
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -533,13 +616,19 @@ test "shape variation selector VS16" {
     buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // ZWJ to force color
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -559,23 +648,29 @@ test "shape with empty cells in between" {
     defer testdata.deinit();
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    var screen = try terminal.Screen.init(alloc, 30, 3, 0);
     defer screen.deinit();
     try screen.testWriteString("A");
-    screen.cursor.x += 5;
+    screen.cursorRight(5);
     try screen.testWriteString("B");
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
 
         const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 1), count);
         try testing.expectEqual(@as(usize, 7), cells.len);
     }
-    try testing.expectEqual(@as(usize, 1), count);
 }
 
 test "shape Chinese characters" {
@@ -593,13 +688,19 @@ test "shape Chinese characters" {
     buf_idx += try std.unicode.utf8Encode('a', buf[buf_idx..]);
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 30, 0);
+    var screen = try terminal.Screen.init(alloc, 30, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -634,13 +735,19 @@ test "shape box glyphs" {
     buf_idx += try std.unicode.utf8Encode(0x2501, buf[buf_idx..]); //
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString(buf[0..buf_idx]);
 
     // Get our run iterator
     var shaper = &testdata.shaper;
-    var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
@@ -663,7 +770,7 @@ test "shape selection boundary" {
     defer testdata.deinit();
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString("a1b2c3d4e5");
 
@@ -671,10 +778,17 @@ test "shape selection boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
-            .start = .{ .x = 0, .y = 0 },
-            .end = .{ .x = screen.cols - 1, .y = 0 },
-        }, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            terminal.Selection.init(
+                screen.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
+                screen.pages.pin(.{ .active = .{ .x = screen.pages.cols - 1, .y = 0 } }).?,
+                false,
+            ),
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -687,10 +801,17 @@ test "shape selection boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
-            .start = .{ .x = 2, .y = 0 },
-            .end = .{ .x = screen.cols - 1, .y = 0 },
-        }, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            terminal.Selection.init(
+                screen.pages.pin(.{ .active = .{ .x = 2, .y = 0 } }).?,
+                screen.pages.pin(.{ .active = .{ .x = screen.pages.cols - 1, .y = 0 } }).?,
+                false,
+            ),
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -703,10 +824,17 @@ test "shape selection boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
-            .start = .{ .x = 0, .y = 0 },
-            .end = .{ .x = 3, .y = 0 },
-        }, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            terminal.Selection.init(
+                screen.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
+                screen.pages.pin(.{ .active = .{ .x = 3, .y = 0 } }).?,
+                false,
+            ),
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -719,10 +847,17 @@ test "shape selection boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
-            .start = .{ .x = 1, .y = 0 },
-            .end = .{ .x = 3, .y = 0 },
-        }, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            terminal.Selection.init(
+                screen.pages.pin(.{ .active = .{ .x = 1, .y = 0 } }).?,
+                screen.pages.pin(.{ .active = .{ .x = 3, .y = 0 } }).?,
+                false,
+            ),
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -735,10 +870,17 @@ test "shape selection boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), .{
-            .start = .{ .x = 1, .y = 0 },
-            .end = .{ .x = 1, .y = 0 },
-        }, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            terminal.Selection.init(
+                screen.pages.pin(.{ .active = .{ .x = 1, .y = 0 } }).?,
+                screen.pages.pin(.{ .active = .{ .x = 1, .y = 0 } }).?,
+                false,
+            ),
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -756,7 +898,7 @@ test "shape cursor boundary" {
     defer testdata.deinit();
 
     // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
     defer screen.deinit();
     try screen.testWriteString("a1b2c3d4e5");
 
@@ -764,7 +906,13 @@ test "shape cursor boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -777,7 +925,13 @@ test "shape cursor boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 0);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            0,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -790,7 +944,13 @@ test "shape cursor boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 1);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            1,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -803,7 +963,13 @@ test "shape cursor boundary" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 9);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            9,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -829,7 +995,13 @@ test "shape cursor boundary and colored emoji" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -842,7 +1014,13 @@ test "shape cursor boundary and colored emoji" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 0);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            0,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -853,7 +1031,13 @@ test "shape cursor boundary and colored emoji" {
     {
         // Get our run iterator
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, 1);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            1,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -872,12 +1056,18 @@ test "shape cell attribute change" {
 
     // Plain >= should shape into 1 run
     {
-        var screen = try terminal.Screen.init(alloc, 3, 10, 0);
+        var screen = try terminal.Screen.init(alloc, 10, 3, 0);
         defer screen.deinit();
         try screen.testWriteString(">=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -891,11 +1081,17 @@ test "shape cell attribute change" {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
         try screen.testWriteString(">");
-        screen.cursor.pen.attrs.bold = true;
+        try screen.setAttribute(.{ .bold = {} });
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -908,13 +1104,19 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.fg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
+        try screen.setAttribute(.{ .direct_color_fg = .{ .r = 1, .g = 2, .b = 3 } });
         try screen.testWriteString(">");
-        screen.cursor.pen.fg = .{ .rgb = .{ .r = 3, .g = 2, .b = 1 } };
+        try screen.setAttribute(.{ .direct_color_fg = .{ .r = 3, .g = 2, .b = 1 } });
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -927,13 +1129,19 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.bg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
+        try screen.setAttribute(.{ .direct_color_bg = .{ .r = 1, .g = 2, .b = 3 } });
         try screen.testWriteString(">");
-        screen.cursor.pen.bg = .{ .rgb = .{ .r = 3, .g = 2, .b = 1 } };
+        try screen.setAttribute(.{ .direct_color_bg = .{ .r = 3, .g = 2, .b = 1 } });
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
@@ -946,12 +1154,18 @@ test "shape cell attribute change" {
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
-        screen.cursor.pen.bg = .{ .rgb = .{ .r = 1, .g = 2, .b = 3 } };
+        try screen.setAttribute(.{ .direct_color_bg = .{ .r = 1, .g = 2, .b = 3 } });
         try screen.testWriteString(">");
         try screen.testWriteString("=");
 
         var shaper = &testdata.shaper;
-        var it = shaper.runIterator(testdata.cache, screen.getRow(.{ .screen = 0 }), null, null);
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;

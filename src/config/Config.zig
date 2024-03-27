@@ -291,7 +291,7 @@ palette: Palette = .{},
 /// a prompt, regardless of this configuration. You can disable that behavior
 /// by specifying `shell-integration-features = no-cursor` or disabling shell
 /// integration entirely.
-@"cursor-style": terminal.Cursor.Style = .block,
+@"cursor-style": terminal.CursorStyle = .block,
 
 /// Sets the default blinking state of the cursor. This is just the default
 /// state; running programs may override the cursor style using `DECSCUSR` (`CSI
@@ -426,6 +426,27 @@ command: ?[]const u8 = null,
 /// any exit code because of the way shell processes are launched via the login
 /// command.
 @"abnormal-command-exit-runtime": u32 = 250,
+
+/// The size of the scrollback buffer in bytes. This also includes the active
+/// screen. No matter what this is set to, enough memory will always be
+/// allocated for the visible screen and anything leftover is the limit for
+/// the scrollback.
+///
+/// When this limit is reached, the oldest lines are removed from the
+/// scrollback.
+///
+/// Scrollback currently exists completely in memory. This means that the
+/// larger this value, the larger potential memory usage. Scrollback is
+/// allocated lazily up to this limit, so if you set this to a very large
+/// value, it will not immediately consume a lot of memory.
+///
+/// This size is per terminal surface, not for the entire application.
+///
+/// It is not currently possible to set an unlimited scrollback buffer.
+/// This is a future planned feature.
+///
+/// This can be changed at runtime but will only affect new terminal surfaces.
+@"scrollback-limit": u32 = 10_000_000, // 10MB
 
 /// Match a regular expression against the terminal text and associate clicking
 /// it with an action. This can be used to match URLs, file paths, etc. Actions

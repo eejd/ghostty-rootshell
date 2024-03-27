@@ -12,7 +12,7 @@ pub inline fn move(comptime T: type, dest: []T, source: []const T) void {
     }
 }
 
-/// Same as std.mem.copyForwards but prefers libc memcpy if it is available
+/// Same as @memcpy but prefers libc memcpy if it is available
 /// because it is generally much faster.
 pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
     if (builtin.link_libc) {
@@ -20,6 +20,14 @@ pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
     } else {
         @memcpy(dest[0..source.len], source);
     }
+}
+
+/// Same as std.mem.rotate(T, items, 1) but more efficient by using memmove
+/// and a tmp var for the single rotated item instead of 3 calls to reverse.
+pub inline fn rotateOnce(comptime T: type, items: []T) void {
+    const tmp = items[0];
+    move(T, items[0..items.len - 1], items[1..items.len]);
+    items[items.len - 1] = tmp;
 }
 
 extern "c" fn memcpy(*anyopaque, *const anyopaque, usize) *anyopaque;

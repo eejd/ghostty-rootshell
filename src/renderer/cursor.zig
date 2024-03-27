@@ -12,7 +12,7 @@ pub const CursorStyle = enum {
     underline,
 
     /// Create a cursor style from the terminal style request.
-    pub fn fromTerminal(style: terminal.Cursor.Style) ?CursorStyle {
+    pub fn fromTerminal(style: terminal.CursorStyle) ?CursorStyle {
         return switch (style) {
             .bar => .bar,
             .block => .block,
@@ -57,16 +57,16 @@ pub fn cursorStyle(
     }
 
     // Otherwise, we use whatever style the terminal wants.
-    return CursorStyle.fromTerminal(state.terminal.screen.cursor.style);
+    return CursorStyle.fromTerminal(state.terminal.screen.cursor.cursor_style);
 }
 
 test "cursor: default uses configured style" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var term = try terminal.Terminal.init(alloc, 10, 10);
+    var term = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
     defer term.deinit(alloc);
 
-    term.screen.cursor.style = .bar;
+    term.screen.cursor.cursor_style = .bar;
     term.modes.set(.cursor_blinking, true);
 
     var state: State = .{
@@ -84,10 +84,10 @@ test "cursor: default uses configured style" {
 test "cursor: blinking disabled" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var term = try terminal.Terminal.init(alloc, 10, 10);
+    var term = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
     defer term.deinit(alloc);
 
-    term.screen.cursor.style = .bar;
+    term.screen.cursor.cursor_style = .bar;
     term.modes.set(.cursor_blinking, false);
 
     var state: State = .{
@@ -105,10 +105,10 @@ test "cursor: blinking disabled" {
 test "cursor: explictly not visible" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var term = try terminal.Terminal.init(alloc, 10, 10);
+    var term = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
     defer term.deinit(alloc);
 
-    term.screen.cursor.style = .bar;
+    term.screen.cursor.cursor_style = .bar;
     term.modes.set(.cursor_visible, false);
     term.modes.set(.cursor_blinking, false);
 
@@ -127,7 +127,7 @@ test "cursor: explictly not visible" {
 test "cursor: always block with preedit" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var term = try terminal.Terminal.init(alloc, 10, 10);
+    var term = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
     defer term.deinit(alloc);
 
     var state: State = .{

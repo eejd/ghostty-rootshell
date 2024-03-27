@@ -78,7 +78,7 @@ pub const DerivedConfig = struct {
 
     palette: terminal.color.Palette,
     image_storage_limit: usize,
-    cursor_style: terminal.Cursor.Style,
+    cursor_style: terminal.CursorStyle,
     cursor_blink: ?bool,
     cursor_color: ?configpkg.Config.Color,
     foreground: configpkg.Config.Color,
@@ -128,11 +128,11 @@ pub const DerivedConfig = struct {
 /// process.
 pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     // Create our terminal
-    var term = try terminal.Terminal.init(
-        alloc,
-        opts.grid_size.columns,
-        opts.grid_size.rows,
-    );
+    var term = try terminal.Terminal.init(alloc, .{
+        .cols = opts.grid_size.columns,
+        .rows = opts.grid_size.rows,
+        .max_scrollback = opts.full_config.@"scrollback-limit",
+    });
     errdefer term.deinit(alloc);
     term.default_palette = opts.config.palette;
     term.color_palette.colors = opts.config.palette;
@@ -145,8 +145,16 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     }
 
     // Set the image size limits
-    try term.screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
-    try term.secondary_screen.kitty_images.setLimit(alloc, opts.config.image_storage_limit);
+    try term.screen.kitty_images.setLimit(
+        alloc,
+        &term.screen,
+        opts.config.image_storage_limit,
+    );
+    try term.secondary_screen.kitty_images.setLimit(
+        alloc,
+        &term.secondary_screen,
+        opts.config.image_storage_limit,
+    );
 
     // Set default cursor blink settings
     term.modes.set(
@@ -155,7 +163,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     );
 
     // Set our default cursor style
-    term.screen.cursor.style = opts.config.cursor_style;
+    term.screen.cursor.cursor_style = opts.config.cursor_style;
 
     var subprocess = try Subprocess.init(alloc, opts);
     errdefer subprocess.deinit();
@@ -395,10 +403,12 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     // Set the image size limits
     try self.terminal.screen.kitty_images.setLimit(
         self.alloc,
+        &self.terminal.screen,
         config.image_storage_limit,
     );
     try self.terminal.secondary_screen.kitty_images.setLimit(
         self.alloc,
+        &self.terminal.secondary_screen,
         config.image_storage_limit,
     );
 }
@@ -464,11 +474,17 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
         if (self.terminal.active_screen == .alternate) return;
 
         // Clear our scrollback
-        if (history) self.terminal.eraseDisplay(self.alloc, .scrollback, false);
+        if (history) self.terminal.eraseDisplay(.scrollback, false);
 
         // If we're not at a prompt, we just delete above the cursor.
         if (!self.terminal.cursorIsAtPrompt()) {
-            try self.terminal.screen.clear(.above_cursor);
+            if (self.terminal.screen.cursor.y > 0) {
+                self.terminal.screen.eraseRows(
+                    .{ .active = .{ .y = 0 } },
+                    .{ .active = .{ .y = self.terminal.screen.cursor.y - 1 } },
+                );
+            }
+
             return;
         }
 
@@ -478,7 +494,7 @@ pub fn clearScreen(self: *Exec, history: bool) !void {
         // clear the full screen in the next eraseDisplay call.
         self.terminal.markSemanticPrompt(.command);
         assert(!self.terminal.cursorIsAtPrompt());
-        self.terminal.eraseDisplay(self.alloc, .complete, false);
+        self.terminal.eraseDisplay(.complete, false);
     }
 
     // If we reached here it means we're at a prompt, so we send a form-feed.
@@ -494,17 +510,13 @@ pub fn scrollViewport(self: *Exec, scroll: terminal.Terminal.ScrollViewport) !vo
 
 /// Jump the viewport to the prompt.
 pub fn jumpToPrompt(self: *Exec, delta: isize) !void {
-    const wakeup: bool = wakeup: {
+    {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        break :wakeup self.terminal.screen.jump(.{
-            .prompt_delta = delta,
-        });
-    };
-
-    if (wakeup) {
-        try self.renderer_wakeup.notify();
+        self.terminal.screen.scroll(.{ .delta_prompt = delta });
     }
+
+    try self.renderer_wakeup.notify();
 }
 
 /// Called when the child process exited abnormally but before
@@ -1666,7 +1678,7 @@ const StreamHandler = struct {
     /// The default cursor state. This is used with CSI q. This is
     /// set to true when we're currently in the default cursor state.
     default_cursor: bool = true,
-    default_cursor_style: terminal.Cursor.Style,
+    default_cursor_style: terminal.CursorStyle,
     default_cursor_blink: ?bool,
     default_cursor_color: ?terminal.color.RGB,
 
@@ -1843,7 +1855,7 @@ const StreamHandler = struct {
 
                     .decscusr => {
                         const blink = self.terminal.modes.get(.cursor_blinking);
-                        const style: u8 = switch (self.terminal.screen.cursor.style) {
+                        const style: u8 = switch (self.terminal.screen.cursor.cursor_style) {
                             .block => if (blink) 1 else 2,
                             .underline => if (blink) 3 else 4,
                             .bar => if (blink) 5 else 6,
@@ -2007,7 +2019,7 @@ const StreamHandler = struct {
             try self.queueRender();
         }
 
-        self.terminal.eraseDisplay(self.alloc, mode, protected);
+        self.terminal.eraseDisplay(mode, protected);
     }
 
     pub fn eraseLine(self: *StreamHandler, mode: terminal.EraseLine, protected: bool) !void {
@@ -2015,7 +2027,7 @@ const StreamHandler = struct {
     }
 
     pub fn deleteChars(self: *StreamHandler, count: usize) !void {
-        try self.terminal.deleteChars(count);
+        self.terminal.deleteChars(count);
     }
 
     pub fn eraseChars(self: *StreamHandler, count: usize) !void {
@@ -2023,7 +2035,7 @@ const StreamHandler = struct {
     }
 
     pub fn insertLines(self: *StreamHandler, count: usize) !void {
-        try self.terminal.insertLines(count);
+        self.terminal.insertLines(count);
     }
 
     pub fn insertBlanks(self: *StreamHandler, count: usize) !void {
@@ -2031,11 +2043,11 @@ const StreamHandler = struct {
     }
 
     pub fn deleteLines(self: *StreamHandler, count: usize) !void {
-        try self.terminal.deleteLines(count);
+        self.terminal.deleteLines(count);
     }
 
     pub fn reverseIndex(self: *StreamHandler) !void {
-        try self.terminal.reverseIndex();
+        self.terminal.reverseIndex();
     }
 
     pub fn index(self: *StreamHandler) !void {
@@ -2183,9 +2195,9 @@ const StreamHandler = struct {
                 };
 
                 if (enabled)
-                    self.terminal.alternateScreen(self.alloc, opts)
+                    self.terminal.alternateScreen(opts)
                 else
-                    self.terminal.primaryScreen(self.alloc, opts);
+                    self.terminal.primaryScreen(opts);
 
                 // Schedule a render since we changed screens
                 try self.queueRender();
@@ -2198,9 +2210,9 @@ const StreamHandler = struct {
                 };
 
                 if (enabled)
-                    self.terminal.alternateScreen(self.alloc, opts)
+                    self.terminal.alternateScreen(opts)
                 else
-                    self.terminal.primaryScreen(self.alloc, opts);
+                    self.terminal.primaryScreen(opts);
 
                 // Schedule a render since we changed screens
                 try self.queueRender();
@@ -2358,7 +2370,7 @@ const StreamHandler = struct {
         switch (style) {
             .default => {
                 self.default_cursor = true;
-                self.terminal.screen.cursor.style = self.default_cursor_style;
+                self.terminal.screen.cursor.cursor_style = self.default_cursor_style;
                 self.terminal.modes.set(
                     .cursor_blinking,
                     self.default_cursor_blink orelse true,
@@ -2366,32 +2378,32 @@ const StreamHandler = struct {
             },
 
             .blinking_block => {
-                self.terminal.screen.cursor.style = .block;
+                self.terminal.screen.cursor.cursor_style = .block;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_block => {
-                self.terminal.screen.cursor.style = .block;
+                self.terminal.screen.cursor.cursor_style = .block;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
             .blinking_underline => {
-                self.terminal.screen.cursor.style = .underline;
+                self.terminal.screen.cursor.cursor_style = .underline;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_underline => {
-                self.terminal.screen.cursor.style = .underline;
+                self.terminal.screen.cursor.cursor_style = .underline;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
             .blinking_bar => {
-                self.terminal.screen.cursor.style = .bar;
+                self.terminal.screen.cursor.cursor_style = .bar;
                 self.terminal.modes.set(.cursor_blinking, true);
             },
 
             .steady_bar => {
-                self.terminal.screen.cursor.style = .bar;
+                self.terminal.screen.cursor.cursor_style = .bar;
                 self.terminal.modes.set(.cursor_blinking, false);
             },
 
@@ -2424,7 +2436,7 @@ const StreamHandler = struct {
     }
 
     pub fn restoreCursor(self: *StreamHandler) !void {
-        self.terminal.restoreCursor();
+        try self.terminal.restoreCursor();
     }
 
     pub fn enquiry(self: *StreamHandler) !void {
@@ -2433,11 +2445,11 @@ const StreamHandler = struct {
     }
 
     pub fn scrollDown(self: *StreamHandler, count: usize) !void {
-        try self.terminal.scrollDown(count);
+        self.terminal.scrollDown(count);
     }
 
     pub fn scrollUp(self: *StreamHandler, count: usize) !void {
-        try self.terminal.scrollUp(count);
+        self.terminal.scrollUp(count);
     }
 
     pub fn setActiveStatusDisplay(
@@ -2467,7 +2479,7 @@ const StreamHandler = struct {
     pub fn fullReset(
         self: *StreamHandler,
     ) !void {
-        self.terminal.fullReset(self.alloc);
+        self.terminal.fullReset();
         try self.setMouseShape(.text);
     }
 

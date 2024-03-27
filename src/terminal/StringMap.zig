@@ -7,10 +7,11 @@ const oni = @import("oniguruma");
 const point = @import("point.zig");
 const Selection = @import("Selection.zig");
 const Screen = @import("Screen.zig");
+const Pin = @import("PageList.zig").Pin;
 const Allocator = std.mem.Allocator;
 
 string: [:0]const u8,
-map: []point.ScreenPoint,
+map: []Pin,
 
 pub fn deinit(self: StringMap, alloc: Allocator) void {
     alloc.free(self.string);
@@ -79,11 +80,11 @@ pub const Match = struct {
         const end_idx: usize = @intCast(self.region.ends()[0] - 1);
         const start_pt = self.map.map[self.offset + start_idx];
         const end_pt = self.map.map[self.offset + end_idx];
-        return .{ .start = start_pt, .end = end_pt };
+        return Selection.init(start_pt, end_pt, false);
     }
 };
 
-test "searchIterator" {
+test "StringMap searchIterator" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -103,8 +104,19 @@ test "searchIterator" {
     defer s.deinit();
     const str = "1ABCD2EFGH\n3IJKL";
     try s.testWriteString(str);
-    const line = s.getLine(.{ .x = 2, .y = 1 }).?;
-    const map = try line.stringMap(alloc);
+    const line = s.selectLine(.{
+        .pin = s.pages.pin(.{ .active = .{
+            .x = 2,
+            .y = 1,
+        } }).?,
+    }).?;
+    var map: StringMap = undefined;
+    const sel_str = try s.selectionString(alloc, .{
+        .sel = line,
+        .trim = false,
+        .map = &map,
+    });
+    alloc.free(sel_str);
     defer map.deinit(alloc);
 
     // Get our iterator
@@ -114,10 +126,14 @@ test "searchIterator" {
         defer match.deinit();
 
         const sel = match.selection();
-        try testing.expectEqual(Selection{
-            .start = .{ .x = 1, .y = 0 },
-            .end = .{ .x = 2, .y = 0 },
-        }, sel);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 2,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
     }
 
     try testing.expect(try it.next() == null);

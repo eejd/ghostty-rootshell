@@ -4,6 +4,7 @@
 const Inspector = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const cimgui = @import("cimgui");
@@ -35,8 +36,8 @@ mouse: struct {
     last_xpos: f64 = 0,
     last_ypos: f64 = 0,
 
-    /// Last hovered screen point
-    last_point: terminal.point.ScreenPoint = .{},
+    // Last hovered screen point
+    last_point: ?terminal.Pin = null,
 } = .{},
 
 /// A selected cell.
@@ -61,16 +62,46 @@ const CellInspect = union(enum) {
     selected: Selected,
 
     const Selected = struct {
+        alloc: Allocator,
         row: usize,
         col: usize,
-        cell: terminal.Screen.Cell,
+        cell: inspector.Cell,
     };
+
+    pub fn deinit(self: *CellInspect) void {
+        switch (self.*) {
+            .idle, .requested => {},
+            .selected => |*v| v.cell.deinit(v.alloc),
+        }
+    }
 
     pub fn request(self: *CellInspect) void {
         switch (self.*) {
-            .idle, .selected => self.* = .requested,
+            .idle => self.* = .requested,
+            .selected => |*v| {
+                v.cell.deinit(v.alloc);
+                self.* = .requested;
+            },
             .requested => {},
         }
+    }
+
+    pub fn select(
+        self: *CellInspect,
+        alloc: Allocator,
+        pin: terminal.Pin,
+        x: usize,
+        y: usize,
+    ) !void {
+        assert(self.* == .requested);
+        const cell = try inspector.Cell.init(alloc, pin);
+        errdefer cell.deinit(alloc);
+        self.* = .{ .selected = .{
+            .alloc = alloc,
+            .row = y,
+            .col = x,
+            .cell = cell,
+        } };
     }
 };
 
@@ -134,6 +165,8 @@ pub fn init(surface: *Surface) !Inspector {
 }
 
 pub fn deinit(self: *Inspector) void {
+    self.cell.deinit();
+
     {
         var it = self.key_events.iterator(.forward);
         while (it.next()) |v| v.deinit(self.surface.alloc);
@@ -298,9 +331,10 @@ fn renderScreenWindow(self: *Inspector) void {
                 0,
             );
             defer cimgui.c.igEndTable();
-
-            const palette = self.surface.io.terminal.color_palette.colors;
-            inspector.cursor.renderInTable(&screen.cursor, &palette);
+            inspector.cursor.renderInTable(
+                self.surface.renderer_state.terminal,
+                &screen.cursor,
+            );
         } // table
 
         cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
@@ -457,6 +491,67 @@ fn renderScreenWindow(self: *Inspector) void {
             }
         } // table
     } // kitty graphics
+
+    if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
+        "Internal Terminal State",
+        cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
+    )) {
+        const pages = &screen.pages;
+
+        {
+            _ = cimgui.c.igBeginTable(
+                "##terminal_state",
+                2,
+                cimgui.c.ImGuiTableFlags_None,
+                .{ .x = 0, .y = 0 },
+                0,
+            );
+            defer cimgui.c.igEndTable();
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Memory Usage");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d bytes", pages.page_size);
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Memory Limit");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%d bytes", pages.maxSize());
+                }
+            }
+
+            {
+                cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(0);
+                    cimgui.c.igText("Viewport Location");
+                }
+                {
+                    _ = cimgui.c.igTableSetColumnIndex(1);
+                    cimgui.c.igText("%s", @tagName(pages.viewport).ptr);
+                }
+            }
+        } // table
+        //
+        if (cimgui.c.igCollapsingHeader_TreeNodeFlags(
+            "Active Page",
+            cimgui.c.ImGuiTreeNodeFlags_DefaultOpen,
+        )) {
+            inspector.page.render(&pages.pages.last.?.data);
+        }
+    } // terminal state
 }
 
 /// The modes window shows the currently active terminal modes and allows
@@ -664,7 +759,15 @@ fn renderSizeWindow(self: *Inspector) void {
         const t = self.surface.renderer_state.terminal;
 
         {
-            const hover_point = self.mouse.last_point.toViewport(&t.screen);
+            const hover_point: terminal.point.Coordinate = pt: {
+                const p = self.mouse.last_point orelse break :pt .{};
+                const pt = t.screen.pages.pointFromPin(
+                    .active,
+                    p,
+                ) orelse break :pt .{};
+                break :pt pt.coord();
+            };
+
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             {
                 _ = cimgui.c.igTableSetColumnIndex(0);
@@ -736,7 +839,15 @@ fn renderSizeWindow(self: *Inspector) void {
         }
 
         {
-            const left_click_point = mouse.left_click_point.toViewport(&t.screen);
+            const left_click_point: terminal.point.Coordinate = pt: {
+                const p = mouse.left_click_pin orelse break :pt .{};
+                const pt = t.screen.pages.pointFromPin(
+                    .active,
+                    p.*,
+                ) orelse break :pt .{};
+                break :pt pt.coord();
+            };
+
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             {
                 _ = cimgui.c.igTableSetColumnIndex(0);
@@ -825,136 +936,11 @@ fn renderCellWindow(self: *Inspector) void {
     }
 
     const selected = self.cell.selected;
-
-    {
-        // We have a selected cell, show information about it.
-        _ = cimgui.c.igBeginTable(
-            "table_cursor",
-            2,
-            cimgui.c.ImGuiTableFlags_None,
-            .{ .x = 0, .y = 0 },
-            0,
-        );
-        defer cimgui.c.igEndTable();
-
-        {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            {
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Grid Position");
-            }
-            {
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("row=%d col=%d", selected.row, selected.col);
-            }
-        }
-
-        // NOTE: we don't currently write the character itself because
-        // we haven't hooked up imgui to our font system. That's hard! We
-        // can/should instead hook up our renderer to imgui and just render
-        // the single glyph in an image view so it looks _identical_ to the
-        // terminal.
-        codepoint: {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            {
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Codepoint");
-            }
-            {
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                if (selected.cell.char == 0) {
-                    cimgui.c.igTextDisabled("(empty)");
-                    break :codepoint;
-                }
-
-                cimgui.c.igText("U+%X", selected.cell.char);
-            }
-        }
-
-        // If we have a color then we show the color
-        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-        _ = cimgui.c.igTableSetColumnIndex(0);
-        cimgui.c.igText("Foreground Color");
-        _ = cimgui.c.igTableSetColumnIndex(1);
-        switch (selected.cell.fg) {
-            .none => cimgui.c.igText("default"),
-            else => {
-                const rgb = switch (selected.cell.fg) {
-                    .none => unreachable,
-                    .indexed => |idx| self.surface.io.terminal.color_palette.colors[idx],
-                    .rgb => |rgb| rgb,
-                };
-
-                if (selected.cell.fg == .indexed) {
-                    cimgui.c.igValue_Int("Palette", selected.cell.fg.indexed);
-                }
-
-                var color: [3]f32 = .{
-                    @as(f32, @floatFromInt(rgb.r)) / 255,
-                    @as(f32, @floatFromInt(rgb.g)) / 255,
-                    @as(f32, @floatFromInt(rgb.b)) / 255,
-                };
-                _ = cimgui.c.igColorEdit3(
-                    "color_fg",
-                    &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
-                        cimgui.c.ImGuiColorEditFlags_NoLabel,
-                );
-            },
-        }
-
-        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-        _ = cimgui.c.igTableSetColumnIndex(0);
-        cimgui.c.igText("Background Color");
-        _ = cimgui.c.igTableSetColumnIndex(1);
-        switch (selected.cell.bg) {
-            .none => cimgui.c.igText("default"),
-            else => {
-                const rgb = switch (selected.cell.bg) {
-                    .none => unreachable,
-                    .indexed => |idx| self.surface.io.terminal.color_palette.colors[idx],
-                    .rgb => |rgb| rgb,
-                };
-
-                if (selected.cell.bg == .indexed) {
-                    cimgui.c.igValue_Int("Palette", selected.cell.bg.indexed);
-                }
-
-                var color: [3]f32 = .{
-                    @as(f32, @floatFromInt(rgb.r)) / 255,
-                    @as(f32, @floatFromInt(rgb.g)) / 255,
-                    @as(f32, @floatFromInt(rgb.b)) / 255,
-                };
-                _ = cimgui.c.igColorEdit3(
-                    "color_bg",
-                    &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
-                        cimgui.c.ImGuiColorEditFlags_NoLabel,
-                );
-            },
-        }
-
-        // Boolean styles
-        const styles = .{
-            "bold",    "italic",    "faint",     "blink",
-            "inverse", "invisible", "protected", "strikethrough",
-        };
-        inline for (styles) |style| style: {
-            if (!@field(selected.cell.attrs, style)) break :style;
-
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            {
-                _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText(style.ptr);
-            }
-            {
-                _ = cimgui.c.igTableSetColumnIndex(1);
-                cimgui.c.igText("true");
-            }
-        }
-    } // table
-
-    cimgui.c.igTextDisabled("(Any styles not shown are not currently set)");
+    selected.cell.renderTable(
+        self.surface.renderer_state.terminal,
+        selected.col,
+        selected.row,
+    );
 }
 
 fn renderKeyboardWindow(self: *Inspector) void {
@@ -1127,8 +1113,10 @@ fn renderTermioWindow(self: *Inspector) void {
                         0,
                     );
                     defer cimgui.c.igEndTable();
-                    const palette = self.surface.io.terminal.color_palette.colors;
-                    inspector.cursor.renderInTable(&ev.cursor, &palette);
+                    inspector.cursor.renderInTable(
+                        self.surface.renderer_state.terminal,
+                        &ev.cursor,
+                    );
 
                     {
                         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
