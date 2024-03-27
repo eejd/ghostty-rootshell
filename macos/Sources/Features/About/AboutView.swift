@@ -22,6 +22,12 @@ struct AboutView: View {
                     .font(.body)
                     .textSelection(.enabled)
             }
+            
+            if let build = self.build {
+                Text("Build: \(build)")
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
         }
         .frame(minWidth: 300)
         .padding()
