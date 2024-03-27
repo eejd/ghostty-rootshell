@@ -182,6 +182,17 @@ pub fn assertIntegrity(self: *const Screen) void {
         assert(self.cursor.x < self.pages.cols);
         assert(self.cursor.y < self.pages.rows);
 
+        // Our cursor x/y should always match the pin. If this doesn't
+        // match then it indicates that the tracked pin moved and we didn't
+        // account for it by either calling cursorReload or manually
+        // adjusting.
+        const pt: point.Point = self.pages.pointFromPin(
+            .active,
+            self.cursor.page_pin.*,
+        ) orelse unreachable;
+        assert(self.cursor.x == pt.active.x);
+        assert(self.cursor.y == pt.active.y);
+
         if (self.cursor.style_id == style.default_id) {
             // If our style is default, we should have no refs.
             assert(self.cursor.style.default());
@@ -407,12 +418,12 @@ pub fn cursorUp(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.y >= n);
     defer self.assertIntegrity();
 
+    self.cursor.y -= n; // Must be set before cursorChangePin
     const page_pin = self.cursor.page_pin.up(n).?;
     self.cursorChangePin(page_pin);
     const page_rac = page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
-    self.cursor.y -= n;
 }
 
 pub fn cursorRowUp(self: *Screen, n: size.CellCountInt) *pagepkg.Row {
@@ -431,6 +442,8 @@ pub fn cursorDown(self: *Screen, n: size.CellCountInt) void {
     assert(self.cursor.y + n < self.pages.rows);
     defer self.assertIntegrity();
 
+    self.cursor.y += n; // Must be set before cursorChangePin
+
     // We move the offset into our page list to the next row and then
     // get the pointers to the row/cell and set all the cursor state up.
     const page_pin = self.cursor.page_pin.down(n).?;
@@ -438,9 +451,6 @@ pub fn cursorDown(self: *Screen, n: size.CellCountInt) void {
     const page_rac = page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
-
-    // Y of course increases
-    self.cursor.y += n;
 }
 
 /// Move the cursor to some absolute horizontal position.
@@ -460,6 +470,12 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     assert(y < self.pages.rows);
     defer self.assertIntegrity();
 
+    const pt: point.Point = self.pages.pointFromPin(
+        .active,
+        self.cursor.page_pin.*,
+    ) orelse unreachable;
+    std.log.warn("pt={} cur_y={} y={}", .{ pt, self.cursor.y, y });
+
     var page_pin = if (y < self.cursor.y)
         self.cursor.page_pin.up(self.cursor.y - y).?
     else if (y > self.cursor.y)
@@ -467,12 +483,12 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     else
         self.cursor.page_pin.*;
     page_pin.x = x;
+    self.cursor.x = x; // Must be set before cursorChangePin
+    self.cursor.y = y;
     self.cursorChangePin(page_pin);
     const page_rac = page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
-    self.cursor.x = x;
-    self.cursor.y = y;
 }
 
 /// Reloads the cursor pointer information into the screen. This is expensive
@@ -545,6 +561,14 @@ pub fn cursorDownScroll(self: *Screen) !void {
             // eraseRow will shift everything below it up.
             try self.pages.eraseRow(.{ .active = .{} });
 
+            // We need to move our cursor down one because eraseRows will
+            // preserve our pin directly and we're erasing one row.
+            const page_pin = self.cursor.page_pin.down(1).?;
+            self.cursorChangePin(page_pin);
+            const page_rac = page_pin.rowAndCell();
+            self.cursor.page_row = page_rac.row;
+            self.cursor.page_cell = page_rac.cell;
+
             // The above may clear our cursor so we need to update that
             // again. If this fails (highly unlikely) we just reset
             // the cursor.
@@ -558,14 +582,6 @@ pub fn cursorDownScroll(self: *Screen) !void {
                 self.cursor.style_id = 0;
                 self.cursor.style_ref = null;
             };
-
-            // We need to move our cursor down one because eraseRows will
-            // preserve our pin directly and we're erasing one row.
-            const page_pin = self.cursor.page_pin.down(1).?;
-            self.cursorChangePin(page_pin);
-            const page_rac = page_pin.rowAndCell();
-            self.cursor.page_row = page_rac.row;
-            self.cursor.page_cell = page_rac.cell;
         }
     } else {
         const old_pin = self.cursor.page_pin.*;
