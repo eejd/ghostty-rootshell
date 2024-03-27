@@ -1347,10 +1347,16 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
                     // Cursor is not at the bottom, so we just grow our
                     // rows and we're done. Cursor does NOT change for this
                     // since we're not pulling down scrollback.
-                    for (0..rows - self.rows) |_| _ = try self.grow();
+                    const delta = rows - self.rows;
                     self.rows = rows;
+                    for (0..delta) |_| _ = try self.grow();
                     break :gt;
                 }
+
+                // This must be set BEFORE any calls to grow() so that
+                // grow() doesn't prune pages that we need for the active
+                // area.
+                self.rows = rows;
 
                 // Cursor is at the bottom or we don't care about cursors.
                 // In this case, if we have enough rows in our pages, we
@@ -1368,8 +1374,6 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
                     assert(count < rows);
                     for (count..rows) |_| _ = try self.grow();
                 }
-
-                self.rows = rows;
             },
         }
 
@@ -2091,7 +2095,7 @@ pub fn eraseRowBounded(
     // and update our pins.
     if (page.data.size.rows - pn.y > limit) {
         page.data.clearCells(&rows[pn.y], 0, page.data.size.cols);
-        fastmem.rotateOnce(Row, rows[pn.y..][0..limit + 1]);
+        fastmem.rotateOnce(Row, rows[pn.y..][0 .. limit + 1]);
 
         // Update pins in the shifted region.
         var pin_it = self.tracked_pins.keyIterator();
@@ -2135,7 +2139,7 @@ pub fn eraseRowBounded(
         const shifted_limit = limit - shifted;
         if (page.data.size.rows > shifted_limit) {
             page.data.clearCells(&rows[0], 0, page.data.size.cols);
-            fastmem.rotateOnce(Row, rows[0..shifted_limit + 1]);
+            fastmem.rotateOnce(Row, rows[0 .. shifted_limit + 1]);
 
             // Update pins in the shifted region.
             var pin_it = self.tracked_pins.keyIterator();
