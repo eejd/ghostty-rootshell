@@ -151,16 +151,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
 
         break :app @ptrCast(adw_app);
     };
-
     errdefer c.g_object_unref(app);
-
     const gapp = @as(*c.GApplication, @ptrCast(app));
 
     // force the resource path to a known value so that it doesn't depend on
-    // the app id
+    // the app id and load in compiled resources
     c.g_application_set_resource_base_path(gapp, "/com/mitchellh/ghostty");
-
-    // load compiled-in resources
     c.g_resources_register(c.ghostty_get_resource());
 
     // The `activate` signal is used when Ghostty is first launched and when a

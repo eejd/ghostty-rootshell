@@ -1172,7 +1172,10 @@ fn addDeps(
                     const wf = b.addWriteFiles();
                     const gresource_xml = wf.add(
                         "gresource.xml",
-                        if (config.libadwaita) gresource.gresource_xml_libadwaita else gresource.gresource_xml_gtk,
+                        if (config.libadwaita)
+                            gresource.gresource_xml_libadwaita
+                        else
+                            gresource.gresource_xml_gtk,
                     );
 
                     const generate_resources_c = b.addSystemCommand(&.{
@@ -1182,17 +1185,10 @@ fn addDeps(
                         "--generate-source",
                         "--target",
                     });
-
                     const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
-
                     generate_resources_c.addFileArg(gresource_xml);
-
                     generate_resources_c.extra_file_dependencies = if (config.libadwaita) &gresource.dependencies_libadwaita else &gresource.dependencies_gtk;
-
-                    step.addCSourceFile(.{
-                        .file = ghostty_resources_c,
-                        .flags = &.{},
-                    });
+                    step.addCSourceFile(.{ .file = ghostty_resources_c, .flags = &.{} });
 
                     const generate_resources_h = b.addSystemCommand(&.{
                         "glib-compile-resources",
@@ -1201,13 +1197,9 @@ fn addDeps(
                         "--generate-header",
                         "--target",
                     });
-
                     const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
-
                     generate_resources_h.addFileArg(gresource_xml);
-
                     generate_resources_h.extra_file_dependencies = if (config.libadwaita) &gresource.dependencies_libadwaita else &gresource.dependencies_gtk;
-
                     step.addIncludePath(ghostty_resources_h.dirname());
                 }
             },
