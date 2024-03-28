@@ -31,7 +31,7 @@ pub const Options = struct {
 /// The desired size for loading a font.
 pub const DesiredSize = struct {
     // Desired size in points
-    points: u16,
+    points: u8,
 
     // The DPI of the screen so we can convert points to pixels.
     xdpi: u16 = default_dpi,

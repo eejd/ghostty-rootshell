@@ -158,8 +158,8 @@ pub const Action = union(enum) {
     paste_from_selection: void,
 
     /// Increase/decrease the font size by a certain amount.
-    increase_font_size: u16,
-    decrease_font_size: u16,
+    increase_font_size: u8,
+    decrease_font_size: u8,
 
     /// Reset the font size to the original configured size.
     reset_font_size: void,
