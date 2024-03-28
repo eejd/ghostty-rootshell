@@ -246,12 +246,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // when cascading.
         window.center()
 
-        // Set the background color of the window. We only do this if the lum is
-        // over 0.1 to prevent: https://github.com/mitchellh/ghostty/issues/1549
-        let bgColor = NSColor(ghostty.config.backgroundColor)
-        if (bgColor.luminance > 0.1) {
-            window.backgroundColor = bgColor
-        }
+        // Set the background color of the window
+        window.backgroundColor = NSColor(ghostty.config.backgroundColor)
 
         // This makes sure our titlebar renders correctly when there is a transparent background
         window.titlebarOpacity = ghostty.config.backgroundOpacity
