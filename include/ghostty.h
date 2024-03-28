@@ -379,7 +379,7 @@ typedef struct {
   ghostty_platform_u platform;
   void* userdata;
   double scale_factor;
-  uint16_t font_size;
+  uint8_t font_size;
   const char* working_directory;
   const char* command;
 } ghostty_surface_config_s;
