@@ -470,12 +470,6 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     assert(y < self.pages.rows);
     defer self.assertIntegrity();
 
-    const pt: point.Point = self.pages.pointFromPin(
-        .active,
-        self.cursor.page_pin.*,
-    ) orelse unreachable;
-    std.log.warn("pt={} cur_y={} y={}", .{ pt, self.cursor.y, y });
-
     var page_pin = if (y < self.cursor.y)
         self.cursor.page_pin.up(self.cursor.y - y).?
     else if (y > self.cursor.y)
