@@ -91,7 +91,8 @@ pub const Property = enum {
                     var name: [replaced.len:0]u8 = undefined;
                     @memcpy(&name, replaced);
                     name[replaced.len] = 0;
-                    break :name &name;
+                    const final = name;
+                    break :name &final;
                 };
             }
         }
