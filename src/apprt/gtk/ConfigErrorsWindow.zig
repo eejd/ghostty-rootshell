@@ -53,6 +53,7 @@ fn init(self: *ConfigErrors, app: *App) !void {
     c.gtk_window_set_title(gtk_window, "Configuration Errors");
     c.gtk_window_set_default_size(gtk_window, 600, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
+    c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
     // Set some state
