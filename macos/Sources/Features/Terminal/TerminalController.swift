@@ -184,6 +184,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
             window.appearance = appearance
         }
+
+        // Set the font for the window and tab titles.
+        if let titleFontName = ghostty.config.windowTitleFontFamily {
+            window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
+        } else {
+            window.titlebarFont = nil
+        }
     }
     
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
@@ -261,7 +268,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         if (ghostty.config.macosTitlebarTabs) {
             window.tabbingMode = .preferred
             window.titlebarTabs = true
-            syncAppearance()
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }
@@ -305,6 +311,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 window.tabGroup?.removeWindow(window)
             }
         }
+
+        // Apply any additional appearance-related properties to the new window.
+        syncAppearance()
     }
     
     // Shows the "+" button in the tab bar, responds to that click.
