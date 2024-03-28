@@ -966,6 +966,8 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     c.gtk_gl_area_make_current(area);
     if (c.gtk_gl_area_get_error(area)) |err| {
         log.err("surface failed to realize: {s}", .{err.*.message});
+        log.warn("this error is usually due to a driver or gtk bug", .{});
+        log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
         return;
     }
 
@@ -1606,6 +1608,7 @@ fn gtkInputCommit(
 
 fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
+    if (!self.realized) return;
 
     // Notify our IM context
     c.gtk_im_context_focus_in(self.im_context);
@@ -1619,6 +1622,7 @@ fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
 
 fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) void {
     const self = userdataSelf(ud.?);
+    if (!self.realized) return;
 
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
