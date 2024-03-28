@@ -40,7 +40,8 @@ pub const DesiredSize = struct {
     // Converts points to pixels
     pub fn pixels(self: DesiredSize) u16 {
         // 1 point = 1/72 inch
-        return (self.points * self.ydpi) / 72;
+        const points_u16: u16 = @intCast(self.points);
+        return (points_u16 * self.ydpi) / 72;
     }
 };
 
