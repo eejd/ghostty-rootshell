@@ -2042,7 +2042,11 @@ pub fn eraseRow(
         //    5         5         5  |      6
         //    6         6         6  |      7
         //    7         7         7 <'      4
-        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+        try page.data.cloneRowFrom(
+            &next.data,
+            &rows[page.data.size.rows - 1],
+            &next_rows[0],
+        );
 
         page = next;
         rows = next_rows;
@@ -2101,7 +2105,9 @@ pub fn eraseRowBounded(
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
             const p = p_ptr.*;
-            if (p.page == page and p.y > pn.y and p.y < pn.y + limit) p.y -= 1;
+            if (p.page == page and
+                p.y >= pn.y and
+                p.y <= pn.y + limit) p.y -= 1;
         }
 
         return;
@@ -2119,14 +2125,18 @@ pub fn eraseRowBounded(
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
             const p = p_ptr.*;
-            if (p.page == page and p.y > pn.y) p.y -= 1;
+            if (p.page == page and p.y >= pn.y) p.y -= 1;
         }
     }
 
     while (page.next) |next| {
         const next_rows = next.data.rows.ptr(next.data.memory.ptr);
 
-        try page.data.cloneRowFrom(&next.data, &rows[page.data.size.rows - 1], &next_rows[0]);
+        try page.data.cloneRowFrom(
+            &next.data,
+            &rows[page.data.size.rows - 1],
+            &next_rows[0],
+        );
 
         page = next;
         rows = next_rows;
@@ -4437,6 +4447,133 @@ test "PageList erase a one-row active" {
         const get = s.getCell(.{ .active = .{ .x = 0, .y = 0 } }).?;
         try testing.expectEqual(@as(u21, 0), get.cell.content.codepoint);
     }
+}
+
+test "PageList eraseRowBounded less than full row" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 10, null);
+    defer s.deinit();
+
+    // Pins
+    const p_top = try s.trackPin(s.pin(.{ .active = .{ .y = 5, .x = 0 } }).?);
+    defer s.untrackPin(p_top);
+    const p_bot = try s.trackPin(s.pin(.{ .active = .{ .y = 8, .x = 0 } }).?);
+    defer s.untrackPin(p_bot);
+    const p_out = try s.trackPin(s.pin(.{ .active = .{ .y = 9, .x = 0 } }).?);
+    defer s.untrackPin(p_out);
+
+    // Erase only a few rows in our active
+    try s.eraseRowBounded(.{ .active = .{ .y = 5 } }, 3);
+    try testing.expectEqual(s.rows, s.totalRows());
+
+    try testing.expectEqual(s.pages.first.?, p_top.page);
+    try testing.expectEqual(@as(usize, 4), p_top.y);
+    try testing.expectEqual(@as(usize, 0), p_top.x);
+
+    try testing.expectEqual(s.pages.first.?, p_bot.page);
+    try testing.expectEqual(@as(usize, 7), p_bot.y);
+    try testing.expectEqual(@as(usize, 0), p_bot.x);
+
+    try testing.expectEqual(s.pages.first.?, p_out.page);
+    try testing.expectEqual(@as(usize, 9), p_out.y);
+    try testing.expectEqual(@as(usize, 0), p_out.x);
+}
+
+test "PageList eraseRowBounded full rows single page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 10, null);
+    defer s.deinit();
+
+    // Pins
+    const p_in = try s.trackPin(s.pin(.{ .active = .{ .y = 7, .x = 0 } }).?);
+    defer s.untrackPin(p_in);
+    const p_out = try s.trackPin(s.pin(.{ .active = .{ .y = 9, .x = 0 } }).?);
+    defer s.untrackPin(p_out);
+
+    // Erase only a few rows in our active
+    try s.eraseRowBounded(.{ .active = .{ .y = 5 } }, 10);
+    try testing.expectEqual(s.rows, s.totalRows());
+
+    // Our pin should move to the first page
+    try testing.expectEqual(s.pages.first.?, p_in.page);
+    try testing.expectEqual(@as(usize, 6), p_in.y);
+    try testing.expectEqual(@as(usize, 0), p_in.x);
+
+    try testing.expectEqual(s.pages.first.?, p_out.page);
+    try testing.expectEqual(@as(usize, 8), p_out.y);
+    try testing.expectEqual(@as(usize, 0), p_out.x);
+}
+
+test "PageList eraseRowBounded full rows two pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 10, null);
+    defer s.deinit();
+
+    // Grow to two pages so our active area straddles
+    {
+        const page = &s.pages.last.?.data;
+        for (0..page.capacity.rows - page.size.rows) |_| _ = try s.grow();
+        try s.growRows(5);
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+        try testing.expectEqual(@as(usize, 5), s.pages.last.?.data.size.rows);
+    }
+
+    // Pins
+    const p_first = try s.trackPin(s.pin(.{ .active = .{ .y = 4, .x = 0 } }).?);
+    defer s.untrackPin(p_first);
+    const p_first_out = try s.trackPin(s.pin(.{ .active = .{ .y = 3, .x = 0 } }).?);
+    defer s.untrackPin(p_first_out);
+    const p_in = try s.trackPin(s.pin(.{ .active = .{ .y = 8, .x = 0 } }).?);
+    defer s.untrackPin(p_in);
+    const p_out = try s.trackPin(s.pin(.{ .active = .{ .y = 9, .x = 0 } }).?);
+    defer s.untrackPin(p_out);
+
+    {
+        try testing.expectEqual(s.pages.last.?.prev.?, p_first.page);
+        try testing.expectEqual(@as(usize, p_first.page.data.size.rows - 1), p_first.y);
+        try testing.expectEqual(@as(usize, 0), p_first.x);
+
+        try testing.expectEqual(s.pages.last.?.prev.?, p_first_out.page);
+        try testing.expectEqual(@as(usize, p_first_out.page.data.size.rows - 2), p_first_out.y);
+        try testing.expectEqual(@as(usize, 0), p_first_out.x);
+
+        try testing.expectEqual(s.pages.last.?, p_in.page);
+        try testing.expectEqual(@as(usize, 3), p_in.y);
+        try testing.expectEqual(@as(usize, 0), p_in.x);
+
+        try testing.expectEqual(s.pages.last.?, p_out.page);
+        try testing.expectEqual(@as(usize, 4), p_out.y);
+        try testing.expectEqual(@as(usize, 0), p_out.x);
+    }
+
+    // Erase only a few rows in our active
+    try s.eraseRowBounded(.{ .active = .{ .y = 4 } }, 4);
+
+    // In page in first page is shifted
+    try testing.expectEqual(s.pages.last.?.prev.?, p_first.page);
+    try testing.expectEqual(@as(usize, p_first.page.data.size.rows - 2), p_first.y);
+    try testing.expectEqual(@as(usize, 0), p_first.x);
+
+    // Out page in first page should not be shifted
+    try testing.expectEqual(s.pages.last.?.prev.?, p_first_out.page);
+    try testing.expectEqual(@as(usize, p_first_out.page.data.size.rows - 2), p_first_out.y);
+    try testing.expectEqual(@as(usize, 0), p_first_out.x);
+
+    // In page is shifted
+    try testing.expectEqual(s.pages.last.?, p_in.page);
+    try testing.expectEqual(@as(usize, 2), p_in.y);
+    try testing.expectEqual(@as(usize, 0), p_in.x);
+
+    // Out page is not shifted
+    try testing.expectEqual(s.pages.last.?, p_out.page);
+    try testing.expectEqual(@as(usize, 4), p_out.y);
+    try testing.expectEqual(@as(usize, 0), p_out.x);
 }
 
 test "PageList clone" {

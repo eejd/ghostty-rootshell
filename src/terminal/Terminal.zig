@@ -1095,18 +1095,24 @@ pub fn index(self: *Terminal) !void {
             // Otherwise use a fast path function from PageList to efficiently
             // scroll the contents of the scrolling region.
 
-            // eraseRow and eraseRowBounded will end up moving the cursor pin
-            // up by 1, so we save its current position and restore it after.
-            const cursor_x = self.screen.cursor.x;
-            const cursor_y = self.screen.cursor.y;
-            defer {
-                self.screen.cursorAbsolute(cursor_x, cursor_y);
-            }
+            // Preserve old cursor just for assertions
+            const old_cursor = self.screen.cursor;
 
             try self.screen.pages.eraseRowBounded(
                 .{ .active = .{ .y = self.scrolling_region.top } },
-                self.scrolling_region.bottom - self.scrolling_region.top
+                self.scrolling_region.bottom - self.scrolling_region.top,
             );
+
+            // eraseRow and eraseRowBounded will end up moving the cursor pin
+            // up by 1, so we need to move it back down. A `cursorReload`
+            // would be better option but this is more efficient and this is
+            // a super hot path so we do this instead.
+            if (comptime std.debug.runtime_safety) {
+                assert(self.screen.cursor.x == old_cursor.x);
+                assert(self.screen.cursor.y == old_cursor.y);
+            }
+            self.screen.cursor.y -= 1;
+            self.screen.cursorDown(1);
 
             // The operations above can prune our cursor style so we need to
             // update. This should never fail because the above can only FREE
