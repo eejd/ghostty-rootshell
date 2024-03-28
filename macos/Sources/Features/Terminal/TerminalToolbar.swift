@@ -3,7 +3,6 @@ import Cocoa
 // Custom NSToolbar subclass that displays a centered window title,
 // in order to accommodate the titlebar tabs feature.
 class TerminalToolbar: NSToolbar, NSToolbarDelegate {
-    static private let identifier = NSToolbarItem.Identifier("TitleText")
     private let titleTextField = CenteredDynamicLabel(labelWithString: "👻 Ghostty")
     
     var titleText: String {
@@ -15,56 +14,61 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             titleTextField.stringValue = newValue
         }
     }
-    
+
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
         
         delegate = self
         
         if #available(macOS 13.0, *) {
-            centeredItemIdentifiers.insert(Self.identifier)
+            centeredItemIdentifiers.insert(.titleText)
         } else {
-            centeredItemIdentifier = Self.identifier
+            centeredItemIdentifier = .titleText
         }
     }
     
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        guard itemIdentifier == Self.identifier else {
-            return NSToolbarItem(itemIdentifier: itemIdentifier)
+        var item: NSToolbarItem
+
+        switch itemIdentifier {
+        case .titleText:
+            item = NSToolbarItem(itemIdentifier: .titleText)
+            item.view = self.titleTextField
+            item.visibilityPriority = .user
+
+            // NSToolbarItem.minSize and NSToolbarItem.maxSize are deprecated, and make big ugly
+            // warnings in Xcode when you use them, but I cannot for the life of me figure out
+            // how to get this to work with constraints. The behavior isn't the same, instead of
+            // shrinking the item and clipping the subview, it hides the item as soon as the
+            // intrinsic size of the subview gets too big for the toolbar width, regardless of
+            // whether I have constraints set on its width, height, or both :/
+            //
+            // If someone can fix this so we don't have to use deprecated properties: Please do.
+            item.minSize = NSSize(width: 32, height: 1)
+            item.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
+
+            item.isEnabled = true
+        case .resetZoom:
+            item = NSToolbarItem(itemIdentifier: .resetZoom)
+        default:
+            item = NSToolbarItem(itemIdentifier: itemIdentifier)
         }
-        
-        let toolbarItem = NSToolbarItem(itemIdentifier: itemIdentifier)
-        toolbarItem.view = self.titleTextField
-        toolbarItem.visibilityPriority = .user
-        
-        // NSToolbarItem.minSize and NSToolbarItem.maxSize are deprecated, and make big ugly
-        // warnings in Xcode when you use them, but I cannot for the life of me figure out
-        // how to get this to work with constraints. The behavior isn't the same, instead of
-        // shrinking the item and clipping the subview, it hides the item as soon as the
-        // intrinsic size of the subview gets too big for the toolbar width, regardless of
-        // whether I have constraints set on its width, height, or both :/
-        //
-        // If someone can fix this so we don't have to use deprecated properties: Please do.
-        toolbarItem.minSize = NSSize(width: 32, height: 1)
-        toolbarItem.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
-        
-        toolbarItem.isEnabled = true
-        
-        return toolbarItem
+
+        return item
     }
     
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [Self.identifier, .space]
+        return [.titleText, .flexibleSpace, .space, .resetZoom]
     }
     
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // These space items are here to ensure that the title remains centered when it starts
-        // getting smaller than the max size so starts clipping. Lucky for us, three of the
-        // built-in spacers seems to exactly match the space on the left that's reserved for
-        // the window buttons.
-        return [Self.identifier, .space, .space, .space]
+        // getting smaller than the max size so starts clipping. Lucky for us, two of the
+        // built-in spacers plus the un-zoom button item seems to exactly match the space
+        // on the left that's reserved for the window buttons.
+		return [.titleText, .flexibleSpace, .space, .space, .resetZoom]
     }
 }
 
@@ -82,4 +86,9 @@ fileprivate class CenteredDynamicLabel: NSTextField {
         // We've changed some alignment settings, make sure the layout is updated immediately.
         needsLayout = true
     }
+}
+
+extension NSToolbarItem.Identifier {
+    static let resetZoom = NSToolbarItem.Identifier("ResetZoom")
+    static let titleText = NSToolbarItem.Identifier("TitleText")
 }
