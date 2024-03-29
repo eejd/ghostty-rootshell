@@ -891,10 +891,20 @@ pub fn clearUnprotectedCells(
     row: *Row,
     cells: []Cell,
 ) void {
-    for (cells) |*cell| {
-        if (cell.protected) continue;
-        const cell_multi: [*]Cell = @ptrCast(cell);
-        self.clearCells(page, row, cell_multi[0..1]);
+    var x0: usize = 0;
+    var x1: usize = 0;
+
+    while (x0 < cells.len) clear: {
+        while (cells[x0].protected) {
+            x0 += 1;
+            if (x0 >= cells.len) break :clear;
+        }
+        x1 = x0 + 1;
+        while (x1 < cells.len and !cells[x1].protected) {
+            x1 += 1;
+        }
+        self.clearCells(page, row, cells[x0..x1]);
+        x0 = x1;
     }
 
     page.assertIntegrity();
@@ -2137,6 +2147,25 @@ pub fn dumpStringAlloc(
     return try builder.toOwnedSlice();
 }
 
+/// You should use dumpString, this is a restricted version mostly for
+/// legacy and convenience reasons for unit tests.
+pub fn dumpStringAllocUnwrapped(
+    self: *const Screen,
+    alloc: Allocator,
+    tl: point.Point,
+) ![]const u8 {
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+
+    try self.dumpString(builder.writer(), .{
+        .tl = self.pages.getTopLeft(tl),
+        .br = self.pages.getBottomRight(tl) orelse return error.UnknownPoint,
+        .unwrap = true,
+    });
+
+    return try builder.toOwnedSlice();
+}
+
 /// This is basically a really jank version of Terminal.printString. We
 /// have to reimplement it here because we want a way to print to the screen
 /// to test it but don't want all the features of Terminal.
@@ -2190,6 +2219,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content_tag = .codepoint,
                     .content = .{ .codepoint = c },
                     .style_id = self.cursor.style_id,
+                    .protected = self.cursor.protected,
                 };
 
                 // If we have a ref-counted style, increase.
@@ -2206,6 +2236,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                         .content_tag = .codepoint,
                         .content = .{ .codepoint = 0 },
                         .wide = .spacer_head,
+                        .protected = self.cursor.protected,
                     };
 
                     self.cursor.page_row.wrap = true;
@@ -2220,6 +2251,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content = .{ .codepoint = c },
                     .style_id = self.cursor.style_id,
                     .wide = .wide,
+                    .protected = self.cursor.protected,
                 };
 
                 // Write our tail
@@ -2228,6 +2260,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content_tag = .codepoint,
                     .content = .{ .codepoint = 0 },
                     .wide = .spacer_tail,
+                    .protected = self.cursor.protected,
                 };
             },
 
@@ -2506,6 +2539,34 @@ test "Screen clearRows active styled line" {
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);
+}
+
+test "Screen clearRows protected" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    try s.testWriteString("UNPROTECTED");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+    try s.testWriteString("UNPROTECTED");
+    try s.testWriteString("\n");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+    try s.testWriteString("UNPROTECTED");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+
+    s.clearRows(.{ .active = .{} }, null, true);
+
+    const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("           PROTECTED\nPROTECTED           PROTECTED", str);
 }
 
 test "Screen eraseRows history" {

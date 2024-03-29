@@ -1306,6 +1306,63 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) !void {
     });
 }
 
+/// To be called before shifting a row (as in insertLines and deleteLines)
+///
+/// Takes care of boundary conditions such as potentially split wide chars
+/// across scrolling region boundaries and orphaned spacer heads at line
+/// ends.
+fn rowWillBeShifted(
+    self: *Terminal,
+    page: *Page,
+    row: *Row,
+) void {
+    const cells = row.cells.ptr(page.memory.ptr);
+
+    // If our scrolling region includes the rightmost column then we
+    // need to turn any spacer heads in to normal empty cells, since
+    // once we move them they no longer correspond with soft-wrapped
+    // wide characters.
+    //
+    // If it contains either of the 2 leftmost columns, then the wide
+    // characters in the first column which may be associated with a
+    // spacer head will be either moved or cleared, so we also need
+    // to turn the spacer heads in to empty cells in that case.
+    if (self.scrolling_region.right == self.cols - 1 or
+        self.scrolling_region.left < 2
+    ) {
+        const end_cell: *Cell = &cells[page.size.cols - 1];
+        if (end_cell.wide == .spacer_head) {
+            end_cell.wide = .narrow;
+        }
+    }
+
+    // If the leftmost or rightmost cells of our scrolling region
+    // are parts of wide chars, we need to clear the cells' contents
+    // since they'd be split by the move.
+    const left_cell: *Cell = &cells[self.scrolling_region.left];
+    const right_cell: *Cell = &cells[self.scrolling_region.right];
+
+    if (left_cell.wide == .spacer_tail) {
+        const wide_cell: *Cell = &cells[self.scrolling_region.left - 1];
+        if (wide_cell.hasGrapheme()) {
+            page.clearGrapheme(row, wide_cell);
+        }
+        wide_cell.content.codepoint = 0;
+        wide_cell.wide = .narrow;
+        left_cell.wide = .narrow;
+    }
+
+    if (right_cell.wide == .wide) {
+        const tail_cell: *Cell = &cells[self.scrolling_region.right + 1];
+        if (right_cell.hasGrapheme()) {
+            page.clearGrapheme(row, right_cell);
+        }
+        right_cell.content.codepoint = 0;
+        right_cell.wide = .narrow;
+        tail_cell.wide = .narrow;
+    }
+}
+
 /// Insert amount lines at the current cursor row. The contents of the line
 /// at the current cursor row and below (to the bottom-most line in the
 /// scrolling region) are shifted down by amount lines. The contents of the
@@ -1359,8 +1416,21 @@ pub fn insertLines(self: *Terminal, count: usize) void {
         var it = bot.rowIterator(.left_up, top);
         while (it.next()) |p| {
             const dst_p = p.down(adjusted_count).?;
-            const src: *Row = p.rowAndCell().row;
-            const dst: *Row = dst_p.rowAndCell().row;
+            const src_rac = p.rowAndCell();
+            const dst_rac = dst_p.rowAndCell();
+            const src: *Row = src_rac.row;
+            const dst: *Row = dst_rac.row;
+
+            self.rowWillBeShifted(&p.page.data, src);
+            self.rowWillBeShifted(&dst_p.page.data, dst);
+
+            // If our scrolling region is full width, then we unset wrap.
+            if (!left_right) {
+                dst.wrap = false;
+                src.wrap = false;
+                dst.wrap_continuation = false;
+                src.wrap_continuation = false;
+            }
 
             // If our page doesn't match, then we need to do a copy from
             // one page to another. This is the slow path.
@@ -1376,9 +1446,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                     @panic("TODO");
                 };
 
-                // Row never is wrapped if we're full width.
-                if (!left_right) dst.wrap = false;
-
                 continue;
             }
 
@@ -1388,10 +1455,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
-
-                // Row never is wrapped
-                dst.wrap = false;
-                src.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1407,9 +1470,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
-
-            // Row never is wrapped
-            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
@@ -1498,8 +1558,21 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         var it = top.rowIterator(.right_down, bot);
         while (it.next()) |p| {
             const src_p = p.down(count).?;
-            const src: *Row = src_p.rowAndCell().row;
-            const dst: *Row = p.rowAndCell().row;
+            const src_rac = src_p.rowAndCell();
+            const dst_rac = p.rowAndCell();
+            const src: *Row = src_rac.row;
+            const dst: *Row = dst_rac.row;
+
+            self.rowWillBeShifted(&src_p.page.data, src);
+            self.rowWillBeShifted(&p.page.data, dst);
+
+            // If our scrolling region is full width, then we unset wrap.
+            if (!left_right) {
+                dst.wrap = false;
+                src.wrap = false;
+                dst.wrap_continuation = false;
+                src.wrap_continuation = false;
+            }
 
             if (src_p.page != p.page) {
                 p.page.data.clonePartialRowFrom(
@@ -1513,9 +1586,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                     @panic("TODO");
                 };
 
-                // Row never is wrapped if we're full width.
-                if (!left_right) dst.wrap = false;
-
                 continue;
             }
 
@@ -1525,9 +1595,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
-
-                // Row never is wrapped
-                dst.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1543,9 +1610,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
-
-            // Row never is wrapped
-            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
@@ -1793,19 +1857,11 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
         return;
     }
 
-    // SLOW PATH
-    // We had a protection mode at some point. We must go through each
-    // cell and check its protection attribute.
-    for (0..end) |x| {
-        const cell_multi: [*]Cell = @ptrCast(cells + x);
-        const cell: *Cell = @ptrCast(&cell_multi[0]);
-        if (cell.protected) continue;
-        self.screen.clearCells(
-            &self.screen.cursor.page_pin.page.data,
-            self.screen.cursor.page_row,
-            cell_multi[0..1],
-        );
-    }
+    self.screen.clearUnprotectedCells(
+        &self.screen.cursor.page_pin.page.data,
+        self.screen.cursor.page_row,
+        cells[0..end],
+    );
 }
 
 /// Erase the line.
@@ -1878,16 +1934,11 @@ pub fn eraseLine(
         return;
     }
 
-    for (start..end) |x| {
-        const cell_multi: [*]Cell = @ptrCast(cells + x);
-        const cell: *Cell = @ptrCast(&cell_multi[0]);
-        if (cell.protected) continue;
-        self.screen.clearCells(
-            &self.screen.cursor.page_pin.page.data,
-            self.screen.cursor.page_row,
-            cell_multi[0..1],
-        );
-    }
+    self.screen.clearUnprotectedCells(
+        &self.screen.cursor.page_pin.page.data,
+        self.screen.cursor.page_row,
+        cells[start..end],
+    );
 }
 
 /// Erase the display.
@@ -2383,6 +2434,11 @@ pub fn primaryScreen(
 /// The caller must free the string.
 pub fn plainString(self: *Terminal, alloc: Allocator) ![]const u8 {
     return try self.screen.dumpStringAlloc(alloc, .{ .viewport = .{} });
+}
+
+/// Same as plainString, but respects row wrap state when building the string.
+pub fn plainStringUnwrapped(self: *Terminal, alloc: Allocator) ![]const u8 {
+    return try self.screen.dumpStringAllocUnwrapped(alloc, .{ .viewport = .{} });
 }
 
 /// Full reset
@@ -6116,6 +6172,243 @@ test "Terminal: deleteLines left/right scroll region high count" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABC123\nD   56\nG   89", str);
+    }
+}
+
+test "Terminal: deleteLines wide character spacer head" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA| < Wrapped
+    // |BBBB*| < Wrapped     (continued)
+    // |WWCCC| < Non-wrapped (continued)
+    // +-----+
+    // where * represents a spacer head cell
+    // and WW is the wide character.
+    try t.printString("AAAAABBBB\u{1F600}CCC");
+
+    // Delete the top line
+    // +-----+
+    // |BBBB | < Non-wrapped
+    // |WWCCC| < Non-wrapped
+    // |     | < Non-wrapped
+    // +-----+
+    // This should convert the spacer head to
+    // a regular empty cell, and un-set wrap.
+    t.setCursorPos(1, 1);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
+        defer testing.allocator.free(unwrapped_str);
+        try testing.expectEqualStrings("BBBB \n\u{1F600}CCC", str);
+        try testing.expectEqualStrings("BBBB \n\u{1F600}CCC", unwrapped_str);
+    }
+}
+
+test "Terminal: deleteLines wide character spacer head left scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA| < Wrapped
+    // |BBBB*| < Wrapped     (continued)
+    // |WWCCC| < Non-wrapped (continued)
+    // +-----+
+    // where * represents a spacer head cell
+    // and WW is the wide character.
+    try t.printString("AAAAABBBB\u{1F600}CCC");
+
+    t.scrolling_region.left = 2;
+
+    // Delete the top line
+    //    ###  <- scrolling region
+    // +-----+
+    // |AABB | < Wrapped
+    // |BBCCC| < Wrapped     (continued)
+    // |WW   | < Non-wrapped (continued)
+    // +-----+
+    // This should convert the spacer head to
+    // a regular empty cell, but due to the
+    // left scrolling margin, wrap state should
+    // remain.
+    t.setCursorPos(1, 3);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
+        defer testing.allocator.free(unwrapped_str);
+        try testing.expectEqualStrings("AABB \nBBCCC\n\u{1F600}", str);
+        try testing.expectEqualStrings("AABB BBCCC\u{1F600}", unwrapped_str);
+    }
+}
+
+test "Terminal: deleteLines wide character spacer head right scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA| < Wrapped
+    // |BBBB*| < Wrapped     (continued)
+    // |WWCCC| < Non-wrapped (continued)
+    // +-----+
+    // where * represents a spacer head cell
+    // and WW is the wide character.
+    try t.printString("AAAAABBBB\u{1F600}CCC");
+
+    t.scrolling_region.right = 3;
+
+    // Delete the top line
+    //  ####   <- scrolling region
+    // +-----+
+    // |BBBBA| < Wrapped
+    // |WWCC | < Wrapped     (continued)
+    // |    C| < Non-wrapped (continued)
+    // +-----+
+    // This should convert the spacer head to
+    // a regular empty cell, but due to the
+    // right scrolling margin, wrap state should
+    // remain.
+    t.setCursorPos(1, 1);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
+        defer testing.allocator.free(unwrapped_str);
+        try testing.expectEqualStrings("BBBBA\n\u{1F600}CC \n    C", str);
+        try testing.expectEqualStrings("BBBBA\u{1F600}CC     C", unwrapped_str);
+    }
+}
+
+test "Terminal: deleteLines wide character spacer head left and right scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA| < Wrapped
+    // |BBBB*| < Wrapped     (continued)
+    // |WWCCC| < Non-wrapped (continued)
+    // +-----+
+    // where * represents a spacer head cell
+    // and WW is the wide character.
+    try t.printString("AAAAABBBB\u{1F600}CCC");
+
+    t.scrolling_region.right = 3;
+    t.scrolling_region.left  = 2;
+
+    // Delete the top line
+    //    ##   <- scrolling region
+    // +-----+
+    // |AABBA| < Wrapped
+    // |BBCC*| < Wrapped     (continued)
+    // |WW  C| < Non-wrapped (continued)
+    // +-----+
+    // Because there is both a left scrolling
+    // margin > 1 and a right scrolling margin
+    // the spacer head should remain, and the
+    // wrap state should be untouched.
+    t.setCursorPos(1, 3);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
+        defer testing.allocator.free(unwrapped_str);
+        try testing.expectEqualStrings("AABBA\nBBCC\n\u{1F600}  C", str);
+        try testing.expectEqualStrings("AABBABBCC\u{1F600}  C", unwrapped_str);
+    }
+}
+
+test "Terminal: deleteLines wide character spacer head left (< 2) and right scroll margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA| < Wrapped
+    // |BBBB*| < Wrapped     (continued)
+    // |WWCCC| < Non-wrapped (continued)
+    // +-----+
+    // where * represents a spacer head cell
+    // and WW is the wide character.
+    try t.printString("AAAAABBBB\u{1F600}CCC");
+
+    t.scrolling_region.right = 3;
+    t.scrolling_region.left  = 1;
+
+    // Delete the top line
+    //   ###   <- scrolling region
+    // +-----+
+    // |ABBBA| < Wrapped
+    // |B CC | < Wrapped     (continued)
+    // |    C| < Non-wrapped (continued)
+    // +-----+
+    // Because the left margin is 1, the wide
+    // char is split, and therefore removed,
+    // along with the spacer head - however,
+    // wrap state should be untouched.
+    t.setCursorPos(1, 2);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
+        defer testing.allocator.free(unwrapped_str);
+        try testing.expectEqualStrings("ABBBA\nB CC \n    C", str);
+        try testing.expectEqualStrings("ABBBAB CC     C", unwrapped_str);
+    }
+}
+
+test "Terminal: deleteLines wide characters split by left/right scroll region boundaries" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 2 });
+    defer t.deinit(alloc);
+
+    // Initial value
+    // +-----+
+    // |AAAAA|
+    // |WWBWW|
+    // +-----+
+    // where WW represents a wide character
+    try t.printString("AAAAA\n\u{1F600}B\u{1F600}");
+
+    t.scrolling_region.right = 3;
+    t.scrolling_region.left  = 1;
+
+    // Delete the top line
+    //   ###   <- scrolling region
+    // +-----+
+    // |A B A|
+    // |     |
+    // +-----+
+    // The two wide chars, because they're
+    // split by the edge of the scrolling
+    // region, get removed.
+    t.setCursorPos(1, 2);
+    t.deleteLines(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("A B A\n     ", str);
     }
 }
 
