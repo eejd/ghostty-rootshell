@@ -2219,6 +2219,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content_tag = .codepoint,
                     .content = .{ .codepoint = c },
                     .style_id = self.cursor.style_id,
+                    .protected = self.cursor.protected,
                 };
 
                 // If we have a ref-counted style, increase.
@@ -2235,6 +2236,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                         .content_tag = .codepoint,
                         .content = .{ .codepoint = 0 },
                         .wide = .spacer_head,
+                        .protected = self.cursor.protected,
                     };
 
                     self.cursor.page_row.wrap = true;
@@ -2249,6 +2251,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content = .{ .codepoint = c },
                     .style_id = self.cursor.style_id,
                     .wide = .wide,
+                    .protected = self.cursor.protected,
                 };
 
                 // Write our tail
@@ -2257,6 +2260,7 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .content_tag = .codepoint,
                     .content = .{ .codepoint = 0 },
                     .wide = .spacer_tail,
+                    .protected = self.cursor.protected,
                 };
             },
 
@@ -2535,6 +2539,34 @@ test "Screen clearRows active styled line" {
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);
+}
+
+test "Screen clearRows protected" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    try s.testWriteString("UNPROTECTED");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+    try s.testWriteString("UNPROTECTED");
+    try s.testWriteString("\n");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+    try s.testWriteString("UNPROTECTED");
+    s.cursor.protected = true;
+    try s.testWriteString("PROTECTED");
+    s.cursor.protected = false;
+
+    s.clearRows(.{ .active = .{} }, null, true);
+
+    const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("           PROTECTED\nPROTECTED           PROTECTED", str);
 }
 
 test "Screen eraseRows history" {
