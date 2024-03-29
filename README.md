@@ -434,7 +434,8 @@ To build Ghostty, you need [Zig](https://ziglang.org/) installed.
 
 On Linux, you may need to install additional dependencies. See
 [Linux Installation Tips](#linux-installation-tips). On macOS, you
-need Xcode installed with the macOS and iOS SDKs enabled.
+need Xcode installed with the macOS and iOS SDKs enabled. See
+[Mac `.app`](#mac-app).
 
 The official development environment is defined by Nix. You do not need
 to use Nix to develop Ghostty, but the Nix environment is the environment
@@ -565,7 +566,22 @@ all features of Ghostty work.
 ### Mac `.app`
 
 To build the official, fully featured macOS application, you must
-build on a macOS machine with XCode installed:
+build on a macOS machine with Xcode installed, and the active developer
+directory pointing to it. If you're not sure that's the case, check the
+output of `xcode-select --print-path`:
+
+```shell-session
+$ xcode-select --print-path
+/Library/Developer/CommandLineTools        # <-- BAD
+$ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+$ xcode-select --print-path
+/Applications/Xcode.app/Contents/Developer # <-- GOOD
+```
+
+The above can happen if you install the Xcode Command Line Tools _after_ Xcode
+is installed. With that out of the way, make sure you have both the macOS and
+iOS SDKs installed (from inside Xcode → Settings → Platforms), and let's move
+on to building Ghostty:
 
 ```shell-session
 $ zig build -Doptimize=ReleaseFast
