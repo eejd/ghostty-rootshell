@@ -1793,19 +1793,11 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
         return;
     }
 
-    // SLOW PATH
-    // We had a protection mode at some point. We must go through each
-    // cell and check its protection attribute.
-    for (0..end) |x| {
-        const cell_multi: [*]Cell = @ptrCast(cells + x);
-        const cell: *Cell = @ptrCast(&cell_multi[0]);
-        if (cell.protected) continue;
-        self.screen.clearCells(
-            &self.screen.cursor.page_pin.page.data,
-            self.screen.cursor.page_row,
-            cell_multi[0..1],
-        );
-    }
+    self.screen.clearUnprotectedCells(
+        &self.screen.cursor.page_pin.page.data,
+        self.screen.cursor.page_row,
+        cells[0..end],
+    );
 }
 
 /// Erase the line.
@@ -1878,16 +1870,11 @@ pub fn eraseLine(
         return;
     }
 
-    for (start..end) |x| {
-        const cell_multi: [*]Cell = @ptrCast(cells + x);
-        const cell: *Cell = @ptrCast(&cell_multi[0]);
-        if (cell.protected) continue;
-        self.screen.clearCells(
-            &self.screen.cursor.page_pin.page.data,
-            self.screen.cursor.page_row,
-            cell_multi[0..1],
-        );
-    }
+    self.screen.clearUnprotectedCells(
+        &self.screen.cursor.page_pin.page.data,
+        self.screen.cursor.page_row,
+        cells[start..end],
+    );
 }
 
 /// Erase the display.

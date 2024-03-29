@@ -891,10 +891,20 @@ pub fn clearUnprotectedCells(
     row: *Row,
     cells: []Cell,
 ) void {
-    for (cells) |*cell| {
-        if (cell.protected) continue;
-        const cell_multi: [*]Cell = @ptrCast(cell);
-        self.clearCells(page, row, cell_multi[0..1]);
+    var x0: usize = 0;
+    var x1: usize = 0;
+
+    while (x0 < cells.len) clear: {
+        while (cells[x0].protected) {
+            x0 += 1;
+            if (x0 >= cells.len) break :clear;
+        }
+        x1 = x0 + 1;
+        while (x1 < cells.len and !cells[x1].protected) {
+            x1 += 1;
+        }
+        self.clearCells(page, row, cells[x0..x1]);
+        x0 = x1;
     }
 
     page.assertIntegrity();
