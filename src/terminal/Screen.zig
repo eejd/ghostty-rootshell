@@ -2147,6 +2147,25 @@ pub fn dumpStringAlloc(
     return try builder.toOwnedSlice();
 }
 
+/// You should use dumpString, this is a restricted version mostly for
+/// legacy and convenience reasons for unit tests.
+pub fn dumpStringAllocUnwrapped(
+    self: *const Screen,
+    alloc: Allocator,
+    tl: point.Point,
+) ![]const u8 {
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+
+    try self.dumpString(builder.writer(), .{
+        .tl = self.pages.getTopLeft(tl),
+        .br = self.pages.getBottomRight(tl) orelse return error.UnknownPoint,
+        .unwrap = true,
+    });
+
+    return try builder.toOwnedSlice();
+}
+
 /// This is basically a really jank version of Terminal.printString. We
 /// have to reimplement it here because we want a way to print to the screen
 /// to test it but don't want all the features of Terminal.
