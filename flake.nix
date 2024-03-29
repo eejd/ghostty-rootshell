@@ -52,23 +52,19 @@
         wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
       };
 
-      packages.${system} = rec {
-        ghostty-debug = pkgs-stable.callPackage ./nix/package.nix {
+      packages.${system} = let
+        mkArgs = optimize: {
           inherit (pkgs-zig-0-12) zig_0_12;
+          inherit optimize;
+
           revision = self.shortRev or self.dirtyShortRev or "dirty";
-          optimize = "Debug";
         };
-        ghostty-releasesafe = pkgs-stable.callPackage ./nix/package.nix {
-          inherit (pkgs-zig-0-12) zig_0_12;
-          revision = self.shortRev or self.dirtyShortRev or "dirty";
-          optimize = "ReleaseSafe";
-        };
-        ghostty-releasefast = pkgs-stable.callPackage ./nix/package.nix {
-          inherit (pkgs-zig-0-12) zig_0_12;
-          revision = self.shortRev or self.dirtyShortRev or "dirty";
-          optimize = "ReleaseFast";
-        };
-        ghostty = ghostty-releasesafe;
+      in rec {
+        ghostty-debug = pkgs-stable.callPackage ./nix/package.nix (mkArgs "Debug");
+        ghostty-releasesafe = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseSafe");
+        ghostty-releasefast = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseFast");
+
+        ghostty = ghostty-releasefast;
         default = ghostty;
       };
 
