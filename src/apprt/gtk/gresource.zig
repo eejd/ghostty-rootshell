@@ -93,7 +93,7 @@ fn writeGResourceXML(libadwaita: bool, writer: anytype) !void {
     );
     for (icons) |icon| {
         try writer.print(
-            "    <file preprocess=\"to-pixdata\" alias=\"{s}/apps/com.mitchellh.ghostty.png\">images/icons/icon_{s}.png</file>\n",
+            "    <file alias=\"{s}/apps/com.mitchellh.ghostty.png\">images/icons/icon_{s}.png</file>\n",
             .{ icon.alias, icon.source },
         );
     }
