@@ -1359,8 +1359,31 @@ pub fn insertLines(self: *Terminal, count: usize) void {
         var it = bot.rowIterator(.left_up, top);
         while (it.next()) |p| {
             const dst_p = p.down(adjusted_count).?;
-            const src: *Row = p.rowAndCell().row;
-            const dst: *Row = dst_p.rowAndCell().row;
+            const src_rac = p.rowAndCell();
+            const dst_rac = dst_p.rowAndCell();
+            const src: *Row = src_rac.row;
+            const dst: *Row = dst_rac.row;
+
+            // If our scrolling region includes the rightmost column then we
+            // need to turn any spacer heads in to normal empty cells, since
+            // once we move them they no longer correspond with soft-wrapped
+            // wide characters.
+            if (self.scrolling_region.right == self.cols - 1) {
+                const src_end_cell: *Cell = @ptrCast(@as([*]Cell, @ptrCast(src_rac.cell)) + p.page.data.size.cols - 1);
+                const dst_end_cell: *Cell = @ptrCast(@as([*]Cell, @ptrCast(dst_rac.cell)) + dst_p.page.data.size.cols - 1);
+                if (dst_end_cell.wide == .spacer_head) {
+                    dst_end_cell.wide = .narrow;
+                }
+                if (src_end_cell.wide == .spacer_head) {
+                    src_end_cell.wide = .narrow;
+                }
+
+                // If our scrolling region is full width, then we unset wrap.
+                if (self.scrolling_region.left == 0) {
+                    dst.wrap = false;
+                    src.wrap = false;
+                }
+            }
 
             // If our page doesn't match, then we need to do a copy from
             // one page to another. This is the slow path.
@@ -1376,9 +1399,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                     @panic("TODO");
                 };
 
-                // Row never is wrapped if we're full width.
-                if (!left_right) dst.wrap = false;
-
                 continue;
             }
 
@@ -1388,10 +1408,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
-
-                // Row never is wrapped
-                dst.wrap = false;
-                src.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1407,9 +1423,6 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
-
-            // Row never is wrapped
-            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
@@ -1498,8 +1511,31 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         var it = top.rowIterator(.right_down, bot);
         while (it.next()) |p| {
             const src_p = p.down(count).?;
-            const src: *Row = src_p.rowAndCell().row;
-            const dst: *Row = p.rowAndCell().row;
+            const src_rac = src_p.rowAndCell();
+            const dst_rac = p.rowAndCell();
+            const src: *Row = src_rac.row;
+            const dst: *Row = dst_rac.row;
+
+            // If our scrolling region includes the rightmost column then we
+            // need to turn any spacer heads in to normal empty cells, since
+            // once we move them they no longer correspond with soft-wrapped
+            // wide characters.
+            if (self.scrolling_region.right == self.cols - 1) {
+                const src_end_cell: *Cell = @ptrCast(@as([*]Cell, @ptrCast(src_rac.cell)) + src_p.page.data.size.cols - 1);
+                const dst_end_cell: *Cell = @ptrCast(@as([*]Cell, @ptrCast(dst_rac.cell)) + p.page.data.size.cols - 1);
+                if (dst_end_cell.wide == .spacer_head) {
+                    dst_end_cell.wide = .narrow;
+                }
+                if (src_end_cell.wide == .spacer_head) {
+                    src_end_cell.wide = .narrow;
+                }
+
+                // If our scrolling region is full width, then we unset wrap.
+                if (self.scrolling_region.left == 0) {
+                    dst.wrap = false;
+                    src.wrap = false;
+                }
+            }
 
             if (src_p.page != p.page) {
                 p.page.data.clonePartialRowFrom(
@@ -1513,9 +1549,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                     @panic("TODO");
                 };
 
-                // Row never is wrapped if we're full width.
-                if (!left_right) dst.wrap = false;
-
                 continue;
             }
 
@@ -1525,9 +1558,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 const dst_row = dst.*;
                 dst.* = src.*;
                 src.* = dst_row;
-
-                // Row never is wrapped
-                dst.wrap = false;
 
                 // Ensure what we did didn't corrupt the page
                 p.page.data.assertIntegrity();
@@ -1543,9 +1573,6 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
                 self.scrolling_region.left,
                 (self.scrolling_region.right - self.scrolling_region.left) + 1,
             );
-
-            // Row never is wrapped
-            dst.wrap = false;
         }
 
         // The operations above can prune our cursor style so we need to
