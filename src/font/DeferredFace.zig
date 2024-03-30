@@ -19,17 +19,6 @@ const Presentation = @import("main.zig").Presentation;
 
 const log = std.log.scoped(.deferred_face);
 
-/// The struct used for deferred face state.
-///
-/// TODO: Change the "fc", "ct", "wc" fields in @This to just use one field
-/// with the state since there should be no world in which multiple are used.
-const FaceState = switch (options.backend) {
-    .freetype => void,
-    .fontconfig_freetype => Fontconfig,
-    .coretext_freetype, .coretext => CoreText,
-    .web_canvas => WebCanvas,
-};
-
 /// Fontconfig
 fc: if (options.backend == .fontconfig_freetype) ?Fontconfig else void =
     if (options.backend == .fontconfig_freetype) null else {},
