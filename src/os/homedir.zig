@@ -52,7 +52,6 @@ fn homeUnix(buf: []u8) !?[]u8 {
     var fba = std.heap.FixedBufferAllocator.init(&tempBuf);
 
     // We try passwd. This doesn't work on multi-user mac but we try it anyways.
-    fba.reset();
     const pw = try passwd.get(fba.allocator());
     if (pw.home) |result| {
         if (buf.len < result.len) return Error.BufferTooSmall;
