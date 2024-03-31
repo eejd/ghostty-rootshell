@@ -27,8 +27,11 @@ pub const CommandParser = struct {
     kv_temp_len: u4 = 0,
     kv_current: u8 = 0, // Current kv key
 
-    /// This is the list of bytes that contains both KV data and final
-    /// data. You shouldn't access this directly.
+    /// This is the list we use to collect the bytes from the data payload.
+    /// The Kitty Graphics protocol specification seems to imply that the
+    /// payload content of a single command should never exceed 4096 bytes,
+    /// but Kitty itself supports larger payloads, so we use an ArrayList
+    /// here instead of a fixed buffer so that we can too.
     data: std.ArrayList(u8),
 
     /// Internal state for parsing.
@@ -42,7 +45,7 @@ pub const CommandParser = struct {
         control_value,
         control_value_ignore,
 
-        /// We're parsing the data blob.
+        /// Collecting the data payload blob.
         data,
     };
 
@@ -106,9 +109,6 @@ pub const CommandParser = struct {
 
             .data => try self.data.append(c),
         }
-
-        // We always add to our data list because this is our stable
-        // array of bytes that we'll reference everywhere else.
     }
 
     /// Complete the parsing. This must be called after all the
