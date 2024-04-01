@@ -427,23 +427,6 @@ pub const Rect = struct {
     bottom_right: PageList.Pin,
 };
 
-/// Easy base64 encoding function.
-fn testB64(alloc: Allocator, data: []const u8) ![]const u8 {
-    const B64Encoder = std.base64.standard.Encoder;
-    const b64 = try alloc.alloc(u8, B64Encoder.calcSize(data.len));
-    errdefer alloc.free(b64);
-    return B64Encoder.encode(b64, data);
-}
-
-/// Easy base64 decoding function.
-fn testB64Decode(alloc: Allocator, data: []const u8) ![]const u8 {
-    const B64Decoder = std.base64.standard.Decoder;
-    const result = try alloc.alloc(u8, try B64Decoder.calcSizeForSlice(data));
-    errdefer alloc.free(result);
-    try B64Decoder.decode(result, data);
-    return result;
-}
-
 // This specifically tests we ALLOW invalid RGB data because Kitty
 // documents that this should work.
 test "image load with invalid RGB data" {
@@ -518,7 +501,7 @@ test "image load: rgb, zlib compressed, direct" {
         } },
         .data = try alloc.dupe(
             u8,
-            @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data"),
+            @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647-raw.data"),
         ),
     };
     defer cmd.deinit(alloc);
@@ -546,7 +529,7 @@ test "image load: rgb, not compressed, direct" {
         } },
         .data = try alloc.dupe(
             u8,
-            @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
+            @embedFile("testdata/image-rgb-none-20x15-2147483647-raw.data"),
         ),
     };
     defer cmd.deinit(alloc);
@@ -563,7 +546,7 @@ test "image load: rgb, zlib compressed, direct, chunked" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data");
+    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647-raw.data");
 
     // Setup our initial chunk
     var cmd: command.Command = .{
@@ -600,7 +583,7 @@ test "image load: rgb, zlib compressed, direct, chunked with zero initial chunk"
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647.data");
+    const data = @embedFile("testdata/image-rgb-zlib_deflate-128x96-2147483647-raw.data");
 
     // Setup our initial chunk
     var cmd: command.Command = .{
@@ -638,11 +621,7 @@ test "image load: rgb, not compressed, temporary file" {
 
     var tmp_dir = try internal_os.TempDir.init();
     defer tmp_dir.deinit();
-    const data = try testB64Decode(
-        alloc,
-        @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
-    );
-    defer alloc.free(data);
+    const data = @embedFile("testdata/image-rgb-none-20x15-2147483647-raw.data");
     try tmp_dir.dir.writeFile("image.data", data);
 
     var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
@@ -657,7 +636,7 @@ test "image load: rgb, not compressed, temporary file" {
             .height = 15,
             .image_id = 31,
         } },
-        .data = try testB64(alloc, path),
+        .data = try alloc.dupe(u8, path),
     };
     defer cmd.deinit(alloc);
     var loading = try LoadingImage.init(alloc, &cmd);
@@ -676,11 +655,7 @@ test "image load: rgb, not compressed, regular file" {
 
     var tmp_dir = try internal_os.TempDir.init();
     defer tmp_dir.deinit();
-    const data = try testB64Decode(
-        alloc,
-        @embedFile("testdata/image-rgb-none-20x15-2147483647.data"),
-    );
-    defer alloc.free(data);
+    const data = @embedFile("testdata/image-rgb-none-20x15-2147483647-raw.data");
     try tmp_dir.dir.writeFile("image.data", data);
 
     var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
@@ -695,7 +670,7 @@ test "image load: rgb, not compressed, regular file" {
             .height = 15,
             .image_id = 31,
         } },
-        .data = try testB64(alloc, path),
+        .data = try alloc.dupe(u8, path),
     };
     defer cmd.deinit(alloc);
     var loading = try LoadingImage.init(alloc, &cmd);
@@ -727,7 +702,7 @@ test "image load: png, not compressed, regular file" {
             .height = 0,
             .image_id = 31,
         } },
-        .data = try testB64(alloc, path),
+        .data = try alloc.dupe(u8, path),
     };
     defer cmd.deinit(alloc);
     var loading = try LoadingImage.init(alloc, &cmd);

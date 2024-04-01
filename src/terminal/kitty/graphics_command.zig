@@ -890,7 +890,7 @@ test "query command" {
     var p = CommandParser.init(alloc);
     defer p.deinit();
 
-    const input = "i=31,s=1,v=1,a=q,t=d,f=24;AAAA";
+    const input = "i=31,s=1,v=1,a=q,t=d,f=24;QUFBQQ";
     for (input) |c| try p.feed(c);
     const command = try p.complete();
     defer command.deinit(alloc);
