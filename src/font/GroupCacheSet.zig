@@ -90,6 +90,8 @@ pub fn groupRef(
 
     const gop = try self.map.getOrPut(self.alloc, key);
     if (gop.found_existing) {
+        log.debug("found cached GroupCache for font config", .{});
+
         // We can deinit the key because we found a cached value.
         key.deinit();
 
@@ -98,6 +100,8 @@ pub fn groupRef(
         return .{ gop.key_ptr.*, gop.value_ptr.cache };
     }
     errdefer self.map.removeByPtr(gop.key_ptr);
+
+    log.debug("initializing new GroupCache for font config", .{});
 
     // A new font config, initialize the cache.
     const cache = try self.alloc.create(GroupCache);
