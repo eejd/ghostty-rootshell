@@ -17,7 +17,9 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const Style = @import("main.zig").Style;
+const fontpkg = @import("main.zig");
+const Style = fontpkg.Style;
+const CodepointMap = fontpkg.CodepointMap;
 const discovery = @import("discovery.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
@@ -37,6 +39,9 @@ pub const Key = struct {
     /// offsets[@intFromEnum(.bold) - 1] to
     /// offsets[@intFromEnum(.bold)].
     style_offsets: StyleOffsets = .{0} ** style_offsets_len,
+
+    /// The codepoint map configuration.
+    codepoint_map: CodepointMap,
 
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;
@@ -109,6 +114,14 @@ pub const Key = struct {
             });
         }
 
+        // Setup the codepoint map
+        const codepoint_map: CodepointMap = map: {
+            const map = config.@"font-codepoint-map";
+            if (map.map.list.len == 0) break :map .{};
+            const clone = try config.@"font-codepoint-map".clone(alloc);
+            break :map clone.map;
+        };
+
         return .{
             .arena = arena,
             .descriptors = try descriptors.toOwnedSlice(),
@@ -118,6 +131,7 @@ pub const Key = struct {
                 config.@"font-family-italic".list.items.len,
                 config.@"font-family-bold-italic".list.items.len,
             },
+            .codepoint_map = codepoint_map,
         };
     }
 
@@ -142,6 +156,7 @@ pub const Key = struct {
         const autoHash = std.hash.autoHash;
         autoHash(hasher, self.descriptors.len);
         for (self.descriptors) |d| d.hash(hasher);
+        autoHash(hasher, self.codepoint_map);
     }
 
     /// Returns a hash code that can be used to uniquely identify this

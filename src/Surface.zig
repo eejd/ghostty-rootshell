@@ -354,8 +354,8 @@ pub fn init(
         };
 
         // If we have codepoint mappings, set those.
-        if (config.@"font-codepoint-map".map.list.len > 0) {
-            group.codepoint_map = config.@"font-codepoint-map".map;
+        if (font_group_key.codepoint_map.list.len > 0) {
+            group.codepoint_map = font_group_key.codepoint_map;
         }
 
         // Set our styles

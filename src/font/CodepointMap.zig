@@ -53,6 +53,26 @@ pub fn get(self: *const CodepointMap, cp: u21) ?discovery.Descriptor {
     return null;
 }
 
+/// Hash with the given hasher.
+pub fn hash(self: *const CodepointMap, hasher: anytype) void {
+    const autoHash = std.hash.autoHash;
+    autoHash(hasher, self.list.len);
+    const slice = self.list.slice();
+    for (0..slice.len) |i| {
+        const entry = slice.get(i);
+        autoHash(hasher, entry.range);
+        entry.descriptor.hash(hasher);
+    }
+}
+
+/// Returns a hash code that can be used to uniquely identify this
+/// action.
+pub fn hashcode(self: *const CodepointMap) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    self.hash(&hasher);
+    return hasher.final();
+}
+
 test "codepointmap" {
     const testing = std.testing;
     const alloc = testing.allocator;
