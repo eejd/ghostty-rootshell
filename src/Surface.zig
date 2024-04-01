@@ -54,6 +54,7 @@ rt_app: *apprt.runtime.App,
 rt_surface: *apprt.runtime.Surface,
 
 /// The font structures
+font_group_key: font.GroupCacheSet.Key,
 font_size: font.face.DesiredSize,
 
 /// The renderer for this surface.
@@ -320,7 +321,10 @@ pub fn init(
 
     // Setup our font group. This will reuse an existing font group if
     // it was already loaded.
-    const font_group = try app.font_group_set.groupInit(config, font_size);
+    const font_group_key, const font_group = try app.font_group_set.groupRef(
+        config,
+        font_size,
+    );
 
     // Pre-calculate our initial cell size ourselves.
     const cell_size = try renderer.CellSize.init(alloc, font_group);
@@ -406,6 +410,7 @@ pub fn init(
         .app = app,
         .rt_app = rt_app,
         .rt_surface = rt_surface,
+        .font_group_key = font_group_key,
         .font_size = font_size,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
@@ -524,6 +529,9 @@ pub fn deinit(self: *Surface) void {
         v.deinit();
         self.alloc.destroy(v);
     }
+
+    // Clean up our font group
+    self.app.font_group_set.groupDeref(self.font_group_key);
 
     // Clean up our render state
     if (self.renderer_state.preedit) |p| self.alloc.free(p.codepoints);

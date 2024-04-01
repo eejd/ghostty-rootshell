@@ -61,6 +61,7 @@ pub fn init(alloc: Allocator) !GroupCacheSet {
 pub fn deinit(self: *GroupCacheSet) void {
     var it = self.map.iterator();
     while (it.next()) |entry| {
+        entry.key_ptr.deinit();
         const ref = entry.value_ptr.*;
         ref.cache.deinit(self.alloc);
         self.alloc.destroy(ref.cache);
@@ -79,11 +80,11 @@ pub fn deinit(self: *GroupCacheSet) void {
 /// 1. If it is present, the ref count will be incremented.
 ///
 /// This is NOT thread-safe.
-pub fn groupInit(
+pub fn groupRef(
     self: *GroupCacheSet,
     config: *const Config,
     font_size: DesiredSize,
-) !*GroupCache {
+) !struct { Key, *GroupCache } {
     var key = try Key.init(self.alloc, config);
     errdefer key.deinit();
 
@@ -94,7 +95,7 @@ pub fn groupInit(
 
         // Increment our ref count and return the cache
         gop.value_ptr.ref += 1;
-        return gop.value_ptr.cache;
+        return .{ gop.key_ptr.*, gop.value_ptr.cache };
     }
     errdefer self.map.removeByPtr(gop.key_ptr);
 
@@ -210,7 +211,26 @@ pub fn groupInit(
     });
     errdefer cache.deinit(self.alloc);
 
-    return gop.value_ptr.cache;
+    return .{ gop.key_ptr.*, gop.value_ptr.cache };
+}
+
+/// Decrement the ref count for the given key. If the ref count is zero,
+/// the GroupCache will be deinitialized and removed from the map.j:w
+pub fn groupDeref(self: *GroupCacheSet, key: Key) void {
+    const entry = self.map.getEntry(key) orelse return;
+    assert(entry.value_ptr.ref >= 1);
+
+    // If we have more than one reference, decrement and return.
+    if (entry.value_ptr.ref > 1) {
+        entry.value_ptr.ref -= 1;
+        return;
+    }
+
+    // We are at a zero ref count so deinit the group and remove.
+    entry.key_ptr.deinit();
+    entry.value_ptr.cache.deinit(self.alloc);
+    self.alloc.destroy(entry.value_ptr.cache);
+    self.map.removeByPtr(entry.key_ptr);
 }
 
 /// Map of font configurations to GroupCache instances. The GroupCache
