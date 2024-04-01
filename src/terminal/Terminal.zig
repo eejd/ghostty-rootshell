@@ -1075,6 +1075,9 @@ pub fn index(self: *Terminal) !void {
         self.screen.cursor.x >= self.scrolling_region.left and
         self.screen.cursor.x <= self.scrolling_region.right)
     {
+        // Scrolling dirties the images because it updates their placements pins.
+        self.screen.kitty_images.dirty = true;
+
         // If our scrolling region is the full screen, we create scrollback.
         // Otherwise, we simply scroll the region.
         if (self.scrolling_region.top == 0 and
@@ -1391,6 +1394,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
         self.screen.cursor.x < self.scrolling_region.left or
         self.screen.cursor.x > self.scrolling_region.right) return;
 
+    // Scrolling dirties the images because it updates their placements pins.
+    self.screen.kitty_images.dirty = true;
+
     // Remaining rows from our cursor to the bottom of the scroll region.
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
@@ -1533,6 +1539,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
         self.screen.cursor.y > self.scrolling_region.bottom or
         self.screen.cursor.x < self.scrolling_region.left or
         self.screen.cursor.x > self.scrolling_region.right) return;
+
+    // Scrolling dirties the images because it updates their placements pins.
+    self.screen.kitty_images.dirty = true;
 
     // top is just the cursor position. insertLines starts at the cursor
     // so this is our top. We want to shift lines down, down to the bottom

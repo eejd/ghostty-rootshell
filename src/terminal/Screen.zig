@@ -540,6 +540,9 @@ pub fn cursorDownScroll(self: *Screen) !void {
     assert(self.cursor.y == self.pages.rows - 1);
     defer self.assertIntegrity();
 
+    // Scrolling dirties the images because it updates their placements pins.
+    self.kitty_images.dirty = true;
+
     // If we have no scrollback, then we shift all our rows instead.
     if (self.no_scrollback) {
         // If we have a single-row screen, we have no rows to shift
