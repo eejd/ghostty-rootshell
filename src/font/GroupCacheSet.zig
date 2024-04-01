@@ -19,6 +19,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const fontpkg = @import("main.zig");
 const Style = fontpkg.Style;
+const Metrics = fontpkg.face.Metrics;
 const CodepointMap = fontpkg.CodepointMap;
 const discovery = @import("discovery.zig");
 const configpkg = @import("../config.zig");
@@ -42,6 +43,9 @@ pub const Key = struct {
 
     /// The codepoint map configuration.
     codepoint_map: CodepointMap,
+
+    /// The metric modifier set configuration.
+    metric_modifiers: Metrics.ModifierSet,
 
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;
@@ -122,6 +126,19 @@ pub const Key = struct {
             break :map clone.map;
         };
 
+        // Metric modifiers
+        const metric_modifiers: Metrics.ModifierSet = set: {
+            var set: Metrics.ModifierSet = .{};
+            if (config.@"adjust-cell-width") |m| try set.put(alloc, .cell_width, m);
+            if (config.@"adjust-cell-height") |m| try set.put(alloc, .cell_height, m);
+            if (config.@"adjust-font-baseline") |m| try set.put(alloc, .cell_baseline, m);
+            if (config.@"adjust-underline-position") |m| try set.put(alloc, .underline_position, m);
+            if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
+            if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
+            if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
+            break :set set;
+        };
+
         return .{
             .arena = arena,
             .descriptors = try descriptors.toOwnedSlice(),
@@ -132,6 +149,7 @@ pub const Key = struct {
                 config.@"font-family-bold-italic".list.items.len,
             },
             .codepoint_map = codepoint_map,
+            .metric_modifiers = metric_modifiers,
         };
     }
 
@@ -157,6 +175,16 @@ pub const Key = struct {
         autoHash(hasher, self.descriptors.len);
         for (self.descriptors) |d| d.hash(hasher);
         autoHash(hasher, self.codepoint_map);
+        autoHash(hasher, self.metric_modifiers.count());
+        if (self.metric_modifiers.count() > 0) {
+            inline for (@typeInfo(Metrics.Key).Enum.fields) |field| {
+                const key = @field(Metrics.Key, field.name);
+                if (self.metric_modifiers.get(key)) |value| {
+                    autoHash(hasher, key);
+                    value.hash(hasher);
+                }
+            }
+        }
     }
 
     /// Returns a hash code that can be used to uniquely identify this
@@ -176,4 +204,6 @@ test "Key" {
 
     var k = try Key.init(alloc, &cfg);
     defer k.deinit();
+
+    try testing.expect(k.hashcode() > 0);
 }

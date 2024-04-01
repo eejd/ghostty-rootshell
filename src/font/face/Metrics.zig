@@ -169,6 +169,21 @@ pub const Modifier = union(enum) {
         };
     }
 
+    /// Hash using the hasher.
+    pub fn hash(self: Modifier, hasher: anytype) void {
+        const autoHash = std.hash.autoHash;
+        autoHash(hasher, std.meta.activeTag(self));
+        switch (self) {
+            // floats can't be hashed directly so we round it to the
+            // nearest int and then hash that. This is not perfect but
+            // hash collisions due to the modifier being wrong are really
+            // rare so we should fix this up later.
+            // TODO(fontmem): make better
+            .percent => |v| autoHash(hasher, @as(i64, @intFromFloat(v))),
+            .absolute => |v| autoHash(hasher, v),
+        }
+    }
+
     test "formatConfig percent" {
         const configpkg = @import("../../config.zig");
         const testing = std.testing;
