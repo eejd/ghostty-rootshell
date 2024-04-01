@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const posix = std.posix;
 
+const fastmem = @import("../../fastmem.zig");
 const command = @import("graphics_command.zig");
 const point = @import("../point.zig");
 const PageList = @import("../PageList.zig");
@@ -56,30 +57,16 @@ pub const LoadingImage = struct {
             .display = cmd.display(),
         };
 
-        // Special case for the direct medium, we just add it directly
-        // which will handle copying the data, base64 decoding, etc.
+        // Special case for the direct medium, we just add the chunk directly.
         if (t.medium == .direct) {
             try result.addData(alloc, cmd.data);
             return result;
         }
 
-        // For every other medium, we'll need to at least base64 decode
-        // the data to make it useful so let's do that. Also, all the data
-        // has to be path data so we can put it in a stack-allocated buffer.
-        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        const Base64Decoder = std.base64.standard.Decoder;
-        const size = Base64Decoder.calcSizeForSlice(cmd.data) catch |err| {
-            log.warn("failed to calculate base64 size for file path: {}", .{err});
-            return error.InvalidData;
-        };
-        if (size > buf.len) return error.FilePathTooLong;
-        Base64Decoder.decode(&buf, cmd.data) catch |err| {
-            log.warn("failed to decode base64 data: {}", .{err});
-            return error.InvalidData;
-        };
+        // Otherwise, the payload data is guaranteed to be a path.
 
         if (comptime builtin.os.tag != .windows) {
-            if (std.mem.indexOfScalar(u8, buf[0..size], 0) != null) {
+            if (std.mem.indexOfScalar(u8, cmd.data, 0) != null) {
                 // posix.realpath *asserts* that the path does not have
                 // internal nulls instead of erroring.
                 log.warn("failed to get absolute path: BadPathName", .{});
@@ -88,7 +75,7 @@ pub const LoadingImage = struct {
         }
 
         var abs_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        const path = posix.realpath(buf[0..size], &abs_buf) catch |err| {
+        const path = posix.realpath(cmd.data, &abs_buf) catch |err| {
             log.warn("failed to get absolute path: {}", .{err});
             return error.InvalidData;
         };
@@ -229,42 +216,25 @@ pub const LoadingImage = struct {
         alloc.destroy(self);
     }
 
-    /// Adds a chunk of base64-encoded data to the image. Use this if the
-    /// image is coming in chunks (the "m" parameter in the protocol).
+    /// Adds a chunk of data to the image. Use this if the image
+    /// is coming in chunks (the "m" parameter in the protocol).
     pub fn addData(self: *LoadingImage, alloc: Allocator, data: []const u8) !void {
         // If no data, skip
         if (data.len == 0) return;
 
-        // Grow our array list by size capacity if it needs it
-        const Base64Decoder = std.base64.standard.Decoder;
-        const size = Base64Decoder.calcSizeForSlice(data) catch |err| {
-            log.warn("failed to calculate size for base64 data: {}", .{err});
-            return error.InvalidData;
-        };
-
         // If our data would get too big, return an error
-        if (self.data.items.len + size > max_size) {
+        if (self.data.items.len + data.len > max_size) {
             log.warn("image data too large max_size={}", .{max_size});
             return error.InvalidData;
         }
 
-        try self.data.ensureUnusedCapacity(alloc, size);
+        // Ensure we have enough room to add the data
+        // to the end of the ArrayList before doing so.
+        try self.data.ensureUnusedCapacity(alloc, data.len);
 
-        // We decode directly into the arraylist
         const start_i = self.data.items.len;
-        self.data.items.len = start_i + size;
-        const buf = self.data.items[start_i..];
-        Base64Decoder.decode(buf, data) catch |err| switch (err) {
-            // We have to ignore invalid padding because lots of encoders
-            // add the wrong padding. Since we validate image data later
-            // (PNG decode or simple dimensions check), we can ignore this.
-            error.InvalidPadding => {},
-
-            else => {
-                log.warn("failed to decode base64 data: {}", .{err});
-                return error.InvalidData;
-            },
-        };
+        self.data.items.len = start_i + data.len;
+        fastmem.copy(u8, self.data.items[start_i..], data);
     }
 
     /// Complete the chunked image, returning a completed image.
