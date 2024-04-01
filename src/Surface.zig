@@ -320,6 +320,12 @@ pub fn init(
         .ydpi = @intFromFloat(y_dpi),
     };
 
+    // Create our font group key. This is used to determine if we have
+    // a cached font group we can use already. Otherwise, this can be
+    // used to build the group.
+    var font_group_key = try font.GroupCacheSet.Key.init(alloc, config);
+    defer font_group_key.deinit();
+
     // Find all the fonts for this surface
     //
     // Future: we can share the font group amongst all surfaces to save
@@ -368,84 +374,41 @@ pub fn init(
             // A buffer we use to store the font names for logging.
             var name_buf: [256]u8 = undefined;
 
-            for (config.@"font-family".list.items) |family| {
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = config.@"font-style".nameValue(),
-                    .size = font_size.points,
-                    .variations = config.@"font-variation".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font regular: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.regular, .{ .deferred = face });
-                } else log.warn("font-family not found: {s}", .{family});
-            }
-
-            // In all the styled cases below, we prefer to specify an exact
-            // style via the `font-style` configuration. If a style is not
-            // specified, we use the discovery mechanism to search for a
-            // style category such as bold, italic, etc. We can't specify both
-            // because the latter will restrict the search to only that. If
-            // a user says `font-style = italic` for the bold face for example,
-            // no results would be found if we restrict to ALSO searching for
-            // italic.
-            for (config.@"font-family-bold".list.items) |family| {
-                const style = config.@"font-style-bold".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .bold = style == null,
-                    .variations = config.@"font-variation-bold".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font bold: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.bold, .{ .deferred = face });
-                } else log.warn("font-family-bold not found: {s}", .{family});
-            }
-            for (config.@"font-family-italic".list.items) |family| {
-                const style = config.@"font-style-italic".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .italic = style == null,
-                    .variations = config.@"font-variation-italic".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font italic: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.italic, .{ .deferred = face });
-                } else log.warn("font-family-italic not found: {s}", .{family});
-            }
-            for (config.@"font-family-bold-italic".list.items) |family| {
-                const style = config.@"font-style-bold-italic".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .bold = style == null,
-                    .italic = style == null,
-                    .variations = config.@"font-variation-bold-italic".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font bold+italic: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.bold_italic, .{ .deferred = face });
-                } else log.warn("font-family-bold-italic not found: {s}", .{family});
+            inline for (@typeInfo(font.Style).Enum.fields) |field| {
+                const style = @field(font.Style, field.name);
+                for (font_group_key.descriptorsForStyle(style)) |desc| {
+                    var disco_it = try disco.discover(alloc, desc);
+                    defer disco_it.deinit();
+                    if (try disco_it.next()) |face| {
+                        log.info("font {s}: {s}", .{
+                            field.name,
+                            try face.name(&name_buf),
+                        });
+                        _ = try group.addFace(style, .{ .deferred = face });
+                    } else log.warn("font-family {s} not found: {s}", .{
+                        field.name,
+                        desc.family.?,
+                    });
+                }
             }
         }
 
         // Our built-in font will be used as a backup
         _ = try group.addFace(
             .regular,
-            .{ .fallback_loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
+            .{ .fallback_loaded = try font.Face.init(
+                font_lib,
+                face_ttf,
+                group.faceOptions(),
+            ) },
         );
         _ = try group.addFace(
             .bold,
-            .{ .fallback_loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
+            .{ .fallback_loaded = try font.Face.init(
+                font_lib,
+                face_bold_ttf,
+                group.faceOptions(),
+            ) },
         );
 
         // Auto-italicize if we have to.

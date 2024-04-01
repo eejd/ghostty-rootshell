@@ -10,6 +10,7 @@ pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
 pub const Group = @import("Group.zig");
 pub const GroupCache = @import("GroupCache.zig");
+pub const GroupCacheSet = @import("GroupCacheSet.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
