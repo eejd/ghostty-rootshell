@@ -54,8 +54,6 @@ rt_app: *apprt.runtime.App,
 rt_surface: *apprt.runtime.Surface,
 
 /// The font structures
-font_lib: font.Library,
-font_group: *font.GroupCache,
 font_size: font.face.DesiredSize,
 
 /// The renderer for this surface.
@@ -320,117 +318,9 @@ pub fn init(
         .ydpi = @intFromFloat(y_dpi),
     };
 
-    // Create our font group key. This is used to determine if we have
-    // a cached font group we can use already. Otherwise, this can be
-    // used to build the group.
-    var font_group_key = try font.GroupCacheSet.Key.init(alloc, config);
-    defer font_group_key.deinit();
-
-    // Find all the fonts for this surface
-    //
-    // Future: we can share the font group amongst all surfaces to save
-    // some new surface init time and some memory. This will require making
-    // thread-safe changes to font structs.
-    var font_lib = try font.Library.init();
-    errdefer font_lib.deinit();
-    var font_group = try alloc.create(font.GroupCache);
-    errdefer alloc.destroy(font_group);
-    font_group.* = try font.GroupCache.init(alloc, group: {
-        var group = try font.Group.init(alloc, font_lib, font_size);
-        errdefer group.deinit();
-        group.metric_modifiers = font_group_key.metric_modifiers;
-        group.codepoint_map = font_group_key.codepoint_map;
-
-        // Set our styles
-        group.styles.set(.bold, config.@"font-style-bold" != .false);
-        group.styles.set(.italic, config.@"font-style-italic" != .false);
-        group.styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
-
-        // Search for fonts
-        if (font.Discover != void) discover: {
-            const disco = try app.fontDiscover() orelse {
-                log.warn("font discovery not available, cannot search for fonts", .{});
-                break :discover;
-            };
-            group.discover = disco;
-
-            // A buffer we use to store the font names for logging.
-            var name_buf: [256]u8 = undefined;
-
-            inline for (@typeInfo(font.Style).Enum.fields) |field| {
-                const style = @field(font.Style, field.name);
-                for (font_group_key.descriptorsForStyle(style)) |desc| {
-                    var disco_it = try disco.discover(alloc, desc);
-                    defer disco_it.deinit();
-                    if (try disco_it.next()) |face| {
-                        log.info("font {s}: {s}", .{
-                            field.name,
-                            try face.name(&name_buf),
-                        });
-                        _ = try group.addFace(style, .{ .deferred = face });
-                    } else log.warn("font-family {s} not found: {s}", .{
-                        field.name,
-                        desc.family.?,
-                    });
-                }
-            }
-        }
-
-        // Our built-in font will be used as a backup
-        _ = try group.addFace(
-            .regular,
-            .{ .fallback_loaded = try font.Face.init(
-                font_lib,
-                face_ttf,
-                group.faceOptions(),
-            ) },
-        );
-        _ = try group.addFace(
-            .bold,
-            .{ .fallback_loaded = try font.Face.init(
-                font_lib,
-                face_bold_ttf,
-                group.faceOptions(),
-            ) },
-        );
-
-        // Auto-italicize if we have to.
-        try group.italicize();
-
-        // On macOS, always search for and add the Apple Emoji font
-        // as our preferred emoji font for fallback. We do this in case
-        // people add other emoji fonts to their system, we always want to
-        // prefer the official one. Users can override this by explicitly
-        // specifying a font-family for emoji.
-        if (comptime builtin.target.isDarwin()) apple_emoji: {
-            const disco = group.discover orelse break :apple_emoji;
-            var disco_it = try disco.discover(alloc, .{
-                .family = "Apple Color Emoji",
-            });
-            defer disco_it.deinit();
-            if (try disco_it.next()) |face| {
-                _ = try group.addFace(.regular, .{ .fallback_deferred = face });
-            }
-        }
-
-        // Emoji fallback. We don't include this on Mac since Mac is expected
-        // to always have the Apple Emoji available on the system.
-        if (comptime !builtin.target.isDarwin() or font.Discover == void) {
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
-            );
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
-            );
-        }
-
-        break :group group;
-    });
-    errdefer font_group.deinit(alloc);
-
-    log.info("font loading complete, any non-logged faces are using the built-in font", .{});
+    // Setup our font group. This will reuse an existing font group if
+    // it was already loaded.
+    const font_group = try app.font_group_set.groupInit(config, font_size);
 
     // Pre-calculate our initial cell size ourselves.
     const cell_size = try renderer.CellSize.init(alloc, font_group);
@@ -516,8 +406,6 @@ pub fn init(
         .app = app,
         .rt_app = rt_app,
         .rt_surface = rt_surface,
-        .font_lib = font_lib,
-        .font_group = font_group,
         .font_size = font_size,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
@@ -631,10 +519,6 @@ pub fn deinit(self: *Surface) void {
     self.renderer.deinit();
     self.io_thread.deinit();
     self.io.deinit();
-
-    self.font_group.deinit(self.alloc);
-    self.font_lib.deinit();
-    self.alloc.destroy(self.font_group);
 
     if (self.inspector) |v| {
         v.deinit();

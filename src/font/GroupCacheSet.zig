@@ -87,7 +87,7 @@ pub fn groupInit(
     var key = try Key.init(self.alloc, config);
     errdefer key.deinit();
 
-    const gop = try self.map.getOrPut(key);
+    const gop = try self.map.getOrPut(self.alloc, key);
     if (gop.found_existing) {
         // We can deinit the key because we found a cached value.
         key.deinit();
@@ -205,6 +205,7 @@ pub fn groupInit(
             );
         }
 
+        log.info("font loading complete, any non-logged faces are using the built-in font", .{});
         break :group group;
     });
     errdefer cache.deinit(self.alloc);
