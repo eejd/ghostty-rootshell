@@ -2425,145 +2425,153 @@ fn draw_light_arc(
 fn draw_dash_horizontal(
     self: Box,
     canvas: *font.sprite.Canvas,
-    count: u8,
+    comptime count: u8,
     thick_px: u32,
     desired_gap: u32,
 ) void {
     assert(count >= 2 and count <= 4);
 
-    // The number of gaps we have is one less than the number of dashes.
-    // "- - -" => 2 gaps
-    const gap_count = count - 1;
+    // +------------+
+    // |            |
+    // |            |
+    // |            |
+    // |            |
+    // | --  --  -- |
+    // |            |
+    // |            |
+    // |            |
+    // |            |
+    // +------------+
+    // Our dashed line should be made such that when tiled horizontally
+    // it creates one consistent line with no uneven gap or segment sizes.
+    // In order to make sure this is the case, we should have half-sized
+    // gaps on the left and right so that it is centered properly.
 
-    // Determine the width of each dash and the gap between them. We try
-    // to have gap match desired_gap but if our cell is too small then we
-    // have to bring it down.
-    const adjusted: struct {
-        dash_width: u32,
-        gap: u32,
-    } = adjusted: {
-        for (0..desired_gap) |i| {
-            const gap_width: u32 = desired_gap - @as(u32, @intCast(i));
-            const total_gap_width: u32 = gap_count * gap_width;
+    // For N dashes, there are N - 1 gaps between them, but we also have
+    // half-sized gaps on either side, adding up to N total gaps.
+    const gap_count = count;
 
-            // This would make a negative and overflow our u32. A negative
-            // dash width is not allowed so we keep trying to fit it.
-            if (total_gap_width >= self.width) continue;
-
-            break :adjusted .{
-                .dash_width = (self.width - total_gap_width) / count,
-                .gap = gap_width,
-            };
-        }
-
-        // In this case, there is no combination of gap width and dash
-        // width that would fit our desired number of dashes, so we just
-        // draw a horizontal line.
+    // We need at least 1 pixel for each gap and each dash, if we don't
+    // have that then we can't draw our dashed line correctly so we just
+    // draw a solid line and return.
+    if (self.width < count + gap_count) {
         self.hline_middle(canvas, .light);
         return;
-    };
-    const dash_width = adjusted.dash_width;
-    const gap = adjusted.gap;
-
-    // Our total width should be less than our real width
-    assert(count * dash_width + gap_count * gap <= self.width);
-    const remaining = self.width - count * dash_width - gap_count * gap;
-
-    var x: [4]u32 = .{0} ** 4;
-    var w: [4]u32 = .{dash_width} ** 4;
-    x[1] = x[0] + w[0] + gap;
-    if (count == 2)
-        w[1] = self.width - x[1]
-    else if (count == 3)
-        w[1] += remaining
-    else
-        w[1] += remaining / 2;
-
-    if (count >= 3) {
-        x[2] = x[1] + w[1] + gap;
-        if (count == 3)
-            w[2] = self.width - x[2]
-        else
-            w[2] += remaining - remaining / 2;
     }
 
-    if (count >= 4) {
-        x[3] = x[2] + w[2] + gap;
-        w[3] = self.width - x[3];
-    }
+    // We never want the gaps to take up more than 50% of the space,
+    // because if they do the dashes are too small and look wrong.
+    const gap_width        = @min(desired_gap, self.width / (2 * count));
+    const total_gap_width  = gap_count * gap_width;
+    const total_dash_width = self.width - total_gap_width;
+    const dash_width       = total_dash_width / count;
+    const remaining        = total_dash_width % count;
 
-    self.hline(canvas, x[0], x[0] + w[0], (self.height -| thick_px) / 2, thick_px);
-    self.hline(canvas, x[1], x[1] + w[1], (self.height -| thick_px) / 2, thick_px);
-    if (count >= 3)
-        self.hline(canvas, x[2], x[2] + w[2], (self.height -| thick_px) / 2, thick_px);
-    if (count >= 4)
-        self.hline(canvas, x[3], x[3] + w[3], (self.height -| thick_px) / 2, thick_px);
+    assert(dash_width * count + gap_width * gap_count + remaining == self.width);
+
+    // Our dashes should be centered vertically.
+    const y: u32 = (self.height -| thick_px) / 2;
+
+    // We start at half a gap from the left edge, in order to center
+    // our dashes properly.
+    var x: u32 = gap_width / 2;
+
+    // We'll distribute the extra space in to dash widths, 1px at a
+    // time. We prefer this to making gaps larger since that is much
+    // more visually obvious.
+    var extra: u32 = remaining;
+
+    inline for (0..count) |_| {
+        var x1 = x + dash_width;
+        // We distribute left-over size in to dash widths,
+        // since it's less obvious there than in the gaps.
+        if (extra > 0) {
+            extra -= 1;
+            x1 += 1;
+        }
+        self.hline(canvas, x, x1, y, thick_px);
+        // Advance by the width of the dash we drew and the width
+        // of a gap to get the the start of the next dash.
+        x = x1 + gap_width;
+    }
 }
 
 fn draw_dash_vertical(
     self: Box,
     canvas: *font.sprite.Canvas,
-    count: u8,
+    comptime count: u8,
     thick_px: u32,
-    gap: u32,
+    desired_gap: u32,
 ) void {
     assert(count >= 2 and count <= 4);
 
-    // The number of gaps we have is one less than the number of dashes.
-    // "- - -" => 2 gaps
-    const gap_count = count - 1;
+    // +-----------+
+    // |     |     |
+    // |     |     |
+    // |           |
+    // |     |     |
+    // |     |     |
+    // |           |
+    // |     |     |
+    // |     |     |
+    // |           |
+    // +-----------+
+    // Our dashed line should be made such that when tiled verically it
+    // it creates one consistent line with no uneven gap or segment sizes.
+    // In order to make sure this is the case, we should have an extra gap
+    // gap at the bottom.
+    //
+    // A single full-sized extra gap is preferred to two half-sized ones for
+    // vertical to allow better joining to solid characters without creating
+    // visible half-sized gaps. Unlike horizontal, centering is a lot less
+    // important, visually.
 
-    // Determine the height of our dashes
-    const dash_height = dash_height: {
-        var gap_i = gap;
-        var dash_height = (self.height - (gap_count * gap_i)) / count;
-        while (dash_height <= 0 and gap_i > 1) {
-            gap_i -= 1;
-            dash_height = (self.height - (gap_count * gap_i)) / count;
-        }
+    // Because of the extra gap at the bottom, there are as many gaps as
+    // there are dashes.
+    const gap_count = count;
 
-        // If we can't fit any dashes then we just render a horizontal line.
-        if (dash_height <= 0) {
-            self.vline_middle(canvas, .light);
-            return;
-        }
-
-        break :dash_height dash_height;
-    };
-
-    // Our total height should be less than our real height
-    assert(count * dash_height + gap_count * gap <= self.height);
-    const remaining = self.height - count * dash_height - gap_count * gap;
-
-    var y: [4]u32 = .{0} ** 4;
-    var h: [4]u32 = .{dash_height} ** 4;
-    y[1] = y[0] + h[0] + gap;
-    if (count == 2)
-        h[1] = self.height - y[1]
-    else if (count == 3)
-        h[1] += remaining
-    else
-        h[1] += remaining / 2;
-
-    if (count >= 3) {
-        y[2] = y[1] + h[1] + gap;
-        if (count == 3)
-            h[2] = self.height - y[2]
-        else
-            h[2] += remaining - remaining / 2;
+    // We need at least 1 pixel for each gap and each dash, if we don't
+    // have that then we can't draw our dashed line correctly so we just
+    // draw a solid line and return.
+    if (self.height < count + gap_count) {
+        self.vline_middle(canvas, .light);
+        return;
     }
 
-    if (count >= 4) {
-        y[3] = y[2] + h[2] + gap;
-        h[3] = self.height - y[3];
-    }
+    // We never want the gaps to take up more than 50% of the space,
+    // because if they do the dashes are too small and look wrong.
+    const gap_height        = @min(desired_gap, self.height / (2 * count));
+    const total_gap_height  = gap_count * gap_height;
+    const total_dash_height = self.height - total_gap_height;
+    const dash_height       = total_dash_height / count;
+    const remaining         = total_dash_height % count;
 
-    self.vline(canvas, y[0], y[0] + h[0], (self.width -| thick_px) / 2, thick_px);
-    self.vline(canvas, y[1], y[1] + h[1], (self.width -| thick_px) / 2, thick_px);
-    if (count >= 3)
-        self.vline(canvas, y[2], y[2] + h[2], (self.width -| thick_px) / 2, thick_px);
-    if (count >= 4)
-        self.vline(canvas, y[3], y[3] + h[3], (self.width -| thick_px) / 2, thick_px);
+    assert(dash_height * count + gap_height * gap_count + remaining == self.height);
+
+    // Our dashes should be centered horizontally.
+    const x: u32 = (self.width -| thick_px) / 2;
+
+    // We start at the top of the cell.
+    var y: u32 = 0;
+
+    // We'll distribute the extra space in to dash heights, 1px at a
+    // time. We prefer this to making gaps larger since that is much
+    // more visually obvious.
+    var extra: u32 = remaining;
+
+    inline for (0..count) |_| {
+        var y1 = y + dash_height;
+        // We distribute left-over size in to dash widths,
+        // since it's less obvious there than in the gaps.
+        if (extra > 0) {
+            extra -= 1;
+            y1 += 1;
+        }
+        self.vline(canvas, y, y1, x, thick_px);
+        // Advance by the height of the dash we drew and the height
+        // of a gap to get the the start of the next dash.
+        y = y1 + gap_height;
+    }
 }
 
 fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
