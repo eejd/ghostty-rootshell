@@ -53,7 +53,7 @@ const DescriptorCache = std.HashMapUnmanaged(
 
         pub fn hash(ctx: @This(), k: KeyType) u64 {
             _ = ctx;
-            return k.hash();
+            return k.hashcode();
         }
 
         pub fn eql(ctx: @This(), a: KeyType, b: KeyType) bool {
