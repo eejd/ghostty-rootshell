@@ -14,16 +14,244 @@
 const GroupCacheSet = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const fontpkg = @import("main.zig");
+const Discover = fontpkg.Discover;
 const Style = fontpkg.Style;
+const Library = fontpkg.Library;
 const Metrics = fontpkg.face.Metrics;
 const CodepointMap = fontpkg.CodepointMap;
+const DesiredSize = fontpkg.face.DesiredSize;
+const Face = fontpkg.Face;
+const Group = fontpkg.Group;
+const GroupCache = fontpkg.GroupCache;
 const discovery = @import("discovery.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
+
+const log = std.log.scoped(.font_group_cache_set);
+
+/// The allocator to use for all heap allocations.
+alloc: Allocator,
+
+/// The map of font configurations to GroupCache instances.
+map: Map = .{},
+
+/// The font library that is used for all font groups.
+font_lib: Library,
+
+/// Font discovery mechanism.
+font_discover: ?Discover = null,
+
+/// Initialize a new GroupCacheSet.
+pub fn init(alloc: Allocator) !GroupCacheSet {
+    var font_lib = try Library.init();
+    errdefer font_lib.deinit();
+
+    return .{
+        .alloc = alloc,
+        .map = .{},
+        .font_lib = font_lib,
+    };
+}
+
+pub fn deinit(self: *GroupCacheSet) void {
+    var it = self.map.iterator();
+    while (it.next()) |entry| {
+        const ref = entry.value_ptr.*;
+        ref.cache.deinit(self.alloc);
+        self.alloc.destroy(ref.cache);
+    }
+    self.map.deinit(self.alloc);
+
+    if (comptime Discover != void) {
+        if (self.font_discover) |*v| v.deinit();
+    }
+
+    self.font_lib.deinit();
+}
+
+/// Initialize a GroupCache for the given font configuration. If the
+/// GroupCache is not present it will be initialized with a ref count of
+/// 1. If it is present, the ref count will be incremented.
+///
+/// This is NOT thread-safe.
+pub fn groupInit(
+    self: *GroupCacheSet,
+    config: *const Config,
+    font_size: DesiredSize,
+) !*GroupCache {
+    var key = try Key.init(self.alloc, config);
+    errdefer key.deinit();
+
+    const gop = try self.map.getOrPut(key);
+    if (gop.found_existing) {
+        // We can deinit the key because we found a cached value.
+        key.deinit();
+
+        // Increment our ref count and return the cache
+        gop.value_ptr.ref += 1;
+        return gop.value_ptr.cache;
+    }
+    errdefer self.map.removeByPtr(gop.key_ptr);
+
+    // A new font config, initialize the cache.
+    const cache = try self.alloc.create(GroupCache);
+    errdefer self.alloc.destroy(cache);
+    gop.value_ptr.* = .{
+        .cache = cache,
+        .ref = 1,
+    };
+
+    cache.* = try GroupCache.init(self.alloc, group: {
+        var group = try Group.init(self.alloc, self.font_lib, font_size);
+        errdefer group.deinit();
+        group.metric_modifiers = key.metric_modifiers;
+        group.codepoint_map = key.codepoint_map;
+
+        // Set our styles
+        group.styles.set(.bold, config.@"font-style-bold" != .false);
+        group.styles.set(.italic, config.@"font-style-italic" != .false);
+        group.styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
+
+        // Search for fonts
+        if (Discover != void) discover: {
+            const disco = try self.discover() orelse {
+                log.warn("font discovery not available, cannot search for fonts", .{});
+                break :discover;
+            };
+            group.discover = disco;
+
+            // A buffer we use to store the font names for logging.
+            var name_buf: [256]u8 = undefined;
+
+            inline for (@typeInfo(Style).Enum.fields) |field| {
+                const style = @field(Style, field.name);
+                for (key.descriptorsForStyle(style)) |desc| {
+                    var disco_it = try disco.discover(self.alloc, desc);
+                    defer disco_it.deinit();
+                    if (try disco_it.next()) |face| {
+                        log.info("font {s}: {s}", .{
+                            field.name,
+                            try face.name(&name_buf),
+                        });
+                        _ = try group.addFace(style, .{ .deferred = face });
+                    } else log.warn("font-family {s} not found: {s}", .{
+                        field.name,
+                        desc.family.?,
+                    });
+                }
+            }
+        }
+
+        // Our built-in font will be used as a backup
+        _ = try group.addFace(
+            .regular,
+            .{ .fallback_loaded = try Face.init(
+                self.font_lib,
+                face_ttf,
+                group.faceOptions(),
+            ) },
+        );
+        _ = try group.addFace(
+            .bold,
+            .{ .fallback_loaded = try Face.init(
+                self.font_lib,
+                face_bold_ttf,
+                group.faceOptions(),
+            ) },
+        );
+
+        // Auto-italicize if we have to.
+        try group.italicize();
+
+        // On macOS, always search for and add the Apple Emoji font
+        // as our preferred emoji font for fallback. We do this in case
+        // people add other emoji fonts to their system, we always want to
+        // prefer the official one. Users can override this by explicitly
+        // specifying a font-family for emoji.
+        if (comptime builtin.target.isDarwin()) apple_emoji: {
+            const disco = group.discover orelse break :apple_emoji;
+            var disco_it = try disco.discover(self.alloc, .{
+                .family = "Apple Color Emoji",
+            });
+            defer disco_it.deinit();
+            if (try disco_it.next()) |face| {
+                _ = try group.addFace(.regular, .{ .fallback_deferred = face });
+            }
+        }
+
+        // Emoji fallback. We don't include this on Mac since Mac is expected
+        // to always have the Apple Emoji available on the system.
+        if (comptime !builtin.target.isDarwin() or Discover == void) {
+            _ = try group.addFace(
+                .regular,
+                .{ .fallback_loaded = try Face.init(
+                    self.font_lib,
+                    face_emoji_ttf,
+                    group.faceOptions(),
+                ) },
+            );
+            _ = try group.addFace(
+                .regular,
+                .{ .fallback_loaded = try Face.init(
+                    self.font_lib,
+                    face_emoji_text_ttf,
+                    group.faceOptions(),
+                ) },
+            );
+        }
+
+        break :group group;
+    });
+    errdefer cache.deinit(self.alloc);
+
+    return gop.value_ptr.cache;
+}
+
+/// Map of font configurations to GroupCache instances. The GroupCache
+/// instances are pointers that are heap allocated so that they're
+/// stable pointers across hash map resizes.
+pub const Map = std.HashMapUnmanaged(
+    Key,
+    RefGroupCache,
+    struct {
+        const KeyType = Key;
+
+        pub fn hash(ctx: @This(), k: KeyType) u64 {
+            _ = ctx;
+            return k.hashcode();
+        }
+
+        pub fn eql(ctx: @This(), a: KeyType, b: KeyType) bool {
+            return ctx.hash(a) == ctx.hash(b);
+        }
+    },
+    std.hash_map.default_max_load_percentage,
+);
+
+/// Initialize once and return the font discovery mechanism. This remains
+/// initialized throughout the lifetime of the application because some
+/// font discovery mechanisms (i.e. fontconfig) are unsafe to reinit.
+fn discover(self: *GroupCacheSet) !?*Discover {
+    // If we're built without a font discovery mechanism, return null
+    if (comptime Discover == void) return null;
+
+    // If we initialized, use it
+    if (self.font_discover) |*v| return v;
+
+    self.font_discover = Discover.init();
+    return &self.font_discover.?;
+}
+
+/// Ref-counted GroupCache.
+const RefGroupCache = struct {
+    cache: *GroupCache,
+    ref: u32 = 0,
+};
 
 /// The key used to uniquely identify a font configuration.
 pub const Key = struct {
@@ -196,6 +424,11 @@ pub const Key = struct {
     }
 };
 
+const face_ttf = @embedFile("res/JetBrainsMono-Regular.ttf");
+const face_bold_ttf = @embedFile("res/JetBrainsMono-Bold.ttf");
+const face_emoji_ttf = @embedFile("res/NotoColorEmoji.ttf");
+const face_emoji_text_ttf = @embedFile("res/NotoEmoji-Regular.ttf");
+
 test "Key" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -206,4 +439,12 @@ test "Key" {
     defer k.deinit();
 
     try testing.expect(k.hashcode() > 0);
+}
+
+test "basics" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var set = try GroupCacheSet.init(alloc);
+    defer set.deinit();
 }
