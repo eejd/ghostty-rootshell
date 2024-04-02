@@ -8,8 +8,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const font = @import("main.zig");
 const DeferredFace = font.DeferredFace;
+const DesiredSize = font.face.DesiredSize;
 const Face = font.Face;
 const Library = font.Library;
+const Metrics = font.face.Metrics;
 const Presentation = font.Presentation;
 const Style = font.Style;
 
@@ -17,12 +19,19 @@ const Style = font.Style;
 /// Instead, use the functions available on Collection.
 faces: StyleArray,
 
+/// The load options for deferred faces in the face list. If this
+/// is not set, then deferred faces will not be loaded. Attempting to
+/// add a deferred face will result in an error.
+load_options: ?LoadOptions = null,
+
 /// Initialize an empty collection.
-pub fn init(alloc: Allocator) !Collection {
+pub fn init(
+    alloc: Allocator,
+) !Collection {
     // Initialize our styles array, preallocating some space that is
     // likely to be used.
     var faces = StyleArray.initFill(.{});
-    for (&faces.values) |*list| try list.ensureTotalCapacityPrecise(alloc, 2);
+    for (&faces.values) |*v| try v.ensureTotalCapacityPrecise(alloc, 2);
     return .{ .faces = faces };
 }
 
@@ -32,10 +41,13 @@ pub fn deinit(self: *Collection, alloc: Allocator) void {
         for (entry.value.items) |*item| item.deinit();
         entry.value.deinit(alloc);
     }
+
+    //self.load_options.deinit(alloc);
 }
 
 pub const AddError = Allocator.Error || error{
     CollectionFull,
+    DeferredLoadingUnavailable,
 };
 
 /// Add a face to the collection for the given style. This face will be added
@@ -61,9 +73,45 @@ pub fn add(
     if (list.items.len >= Index.Special.start - 1)
         return error.CollectionFull;
 
+    // If this is deferred and we don't have load options, we can't.
+    if (face.isDeferred() and self.load_options == null)
+        return error.DeferredLoadingUnavailable;
+
     const idx = list.items.len;
     try list.append(alloc, face);
     return .{ .style = style, .idx = @intCast(idx) };
+}
+
+/// Return the Face represented by a given Index. The returned pointer
+/// is only valid as long as this collection is not modified.
+///
+/// This will initialize the face if it is deferred and not yet loaded,
+/// which can fail.
+pub fn getFace(self: *Collection, index: Index) !*Face {
+    if (index.special() != null) return error.SpecialHasNoFace;
+    const list = self.faces.getPtr(index.style);
+    const item = &list.items[index.idx];
+    return switch (item.*) {
+        inline .deferred, .fallback_deferred => |*d, tag| deferred: {
+            const opts = self.load_options orelse
+                return error.DeferredLoadingUnavailable;
+            const face = try d.load(opts.library, opts.faceOptions());
+            d.deinit();
+            item.* = switch (tag) {
+                .deferred => .{ .loaded = face },
+                .fallback_deferred => .{ .fallback_loaded = face },
+                else => unreachable,
+            };
+
+            break :deferred switch (tag) {
+                .deferred => &item.loaded,
+                .fallback_deferred => &item.fallback_loaded,
+                else => unreachable,
+            };
+        },
+
+        .loaded, .fallback_loaded => |*f| f,
+    };
 }
 
 /// Packed array of all Style enum cases mapped to a growable list of faces.
@@ -73,6 +121,32 @@ pub fn add(
 /// style even if it is not used or barely used is minimal given the
 /// small style count.
 const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(Entry));
+
+/// Load options are used to configure all the details a Collection
+/// needs to load deferred faces.
+pub const LoadOptions = struct {
+    /// The library to use for loading faces. This is not owned by
+    /// the collection and can be used by multiple collections. When
+    /// deinitializing the collection, the library is not deinitialized.
+    library: Library,
+
+    /// The desired font size for all loaded faces.
+    size: DesiredSize = .{ .points = 12 },
+
+    /// The metric modifiers to use for all loaded faces. If this is
+    /// set then the memory is owned by the collection and will be
+    /// freed when the collection is deinitialized. The modifier set
+    /// must use the same allocator as the collection.
+    metric_modifiers: Metrics.ModifierSet = .{},
+
+    /// The options to use for loading faces.
+    fn faceOptions(self: *const LoadOptions) font.face.Options {
+        return .{
+            .size = self.size,
+            .metric_modifiers = &self.metric_modifiers,
+        };
+    }
+};
 
 /// A entry in a collection can be deferred or loaded. A deferred face
 /// is not yet fully loaded and only represents the font descriptor
@@ -112,6 +186,14 @@ pub const Entry = union(enum) {
             .fallback_loaded,
             => |*v| v.deinit(),
         }
+    }
+
+    /// True if the entry is deferred.
+    fn isDeferred(self: Entry) bool {
+        return switch (self) {
+            .deferred, .fallback_deferred => true,
+            .loaded, .fallback_loaded => false,
+        };
     }
 
     /// True if this face satisfies the given codepoint and presentation.
@@ -261,4 +343,44 @@ test "add full" {
             .{ .size = .{ .points = 12 } },
         ) },
     ));
+}
+
+test "add deferred without loading options" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+
+    try testing.expectError(error.DeferredLoadingUnavailable, c.add(
+        alloc,
+        .regular,
+
+        // This can be undefined because it should never be accessed.
+        .{ .deferred = undefined },
+    ));
+}
+
+test getFace {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+
+    const idx = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    {
+        const face1 = try c.getFace(idx);
+        const face2 = try c.getFace(idx);
+        try testing.expectEqual(@intFromPtr(face1), @intFromPtr(face2));
+    }
 }
