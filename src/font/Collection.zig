@@ -2,6 +2,17 @@
 //! ordered by priority (per style). All fonts in a collection share the same
 //! size so they can be used interchangeably in cases a glyph is missing in one
 //! and present in another.
+//!
+//! The purpose of a collection is to store a list of fonts by style
+//! and priority order. A collection does not handle searching for font
+//! callbacks, rasterization, etc.
+//!
+//! The collection can contain both loaded and deferred faces. Deferred faces
+//! typically use less memory while still providing some necessary information
+//! such as codepoint support, presentation, etc. This is useful for looking
+//! for fallback fonts as efficiently as possible. For example, when the glyph
+//! "X" is not found, we can quickly search through deferred fonts rather
+//! than loading the font completely.
 const Collection = @This();
 
 const std = @import("std");
@@ -14,6 +25,8 @@ const Library = font.Library;
 const Metrics = font.face.Metrics;
 const Presentation = font.Presentation;
 const Style = font.Style;
+
+const log = std.log.scoped(.font_collection);
 
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Collection.
@@ -137,6 +150,57 @@ pub fn getIndex(
 
     // Not found
     return null;
+}
+
+/// Automatically create an italicized font from the regular
+/// font face if we don't have one already. If we already have
+/// an italicized font face, this does nothing.
+pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
+    // If we have an italic font, do nothing.
+    const italic_list = self.faces.getPtr(.italic);
+    if (italic_list.items.len > 0) return;
+
+    // Not all font backends support auto-italicization.
+    if (comptime !@hasDecl(Face, "italicize")) {
+        log.warn(
+            "no italic font face available, italics will not render",
+            .{},
+        );
+        return;
+    }
+
+    // Our regular font. If we have no regular font we also do nothing.
+    const regular = regular: {
+        const list = self.faces.get(.regular);
+        if (list.items.len == 0) return;
+
+        // Find our first font that is text. This will force
+        // loading any deferred faces but we only load them until
+        // we find a text face. A text face is almost always the
+        // first face in the list.
+        for (0..list.items.len) |i| {
+            const face = try self.getFace(.{
+                .style = .regular,
+                .idx = @intCast(i),
+            });
+            if (face.presentation == .text) break :regular face;
+        }
+
+        // No regular text face found.
+        return;
+    };
+
+    // We require loading options to auto-italicize.
+    const opts = self.load_options orelse return error.DeferredLoadingUnavailable;
+
+    // Try to italicize it.
+    const face = try regular.italicize(opts.faceOptions());
+    try italic_list.append(alloc, .{ .loaded = face });
+
+    var buf: [256]u8 = undefined;
+    if (face.name(&buf)) |name| {
+        log.info("font auto-italicized: {s}", .{name});
+    } else |_| {}
 }
 
 /// Packed array of all Style enum cases mapped to a growable list of faces.
@@ -443,4 +507,27 @@ test getIndex {
         const idx = c.getIndex('🥸', .regular, .{ .any = {} });
         try testing.expect(idx == null);
     }
+}
+
+test autoItalicize {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+    c.load_options = .{ .library = lib };
+
+    _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) == null);
+    try c.autoItalicize(alloc);
+    try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) != null);
 }
