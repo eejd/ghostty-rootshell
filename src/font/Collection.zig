@@ -203,6 +203,31 @@ pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
     } else |_| {}
 }
 
+/// Update the size of all faces in the collection. This will
+/// also update the size in the load options for future deferred
+/// face loading.
+///
+/// This requires load options to be set.
+pub fn setSize(self: *Collection, size: DesiredSize) !void {
+    // Get a pointer to our options so we can modify the size.
+    const opts = if (self.load_options) |*v|
+        v
+    else
+        return error.DeferredLoadingUnavailable;
+    opts.size = size;
+
+    // Resize all our faces that are loaded
+    var it = self.faces.iterator();
+    while (it.next()) |entry| {
+        for (entry.value.items) |*elem| switch (elem.*) {
+            .deferred, .fallback_deferred => continue,
+            .loaded, .fallback_loaded => |*f| try f.setSize(
+                opts.faceOptions(),
+            ),
+        };
+    }
+}
+
 /// Packed array of all Style enum cases mapped to a growable list of faces.
 ///
 /// We use this data structure because there aren't many styles and all
@@ -530,4 +555,27 @@ test autoItalicize {
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) == null);
     try c.autoItalicize(alloc);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) != null);
+}
+
+test setSize {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+    c.load_options = .{ .library = lib };
+
+    _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    try testing.expectEqual(@as(u32, 12), c.load_options.?.size.points);
+    try c.setSize(.{ .points = 24 });
+    try testing.expectEqual(@as(u32, 24), c.load_options.?.size.points);
 }
