@@ -5,7 +5,7 @@
 //!
 //! The purpose of a collection is to store a list of fonts by style
 //! and priority order. A collection does not handle searching for font
-//! callbacks, rasterization, etc.
+//! callbacks, rasterization, etc. For this, see CodepointResolver.
 //!
 //! The collection can contain both loaded and deferred faces. Deferred faces
 //! typically use less memory while still providing some necessary information
@@ -150,6 +150,24 @@ pub fn getIndex(
 
     // Not found
     return null;
+}
+
+/// Check if a specific font index has a specific codepoint. This does not
+/// necessarily force the font to load. The presentation value "p" will
+/// verify the Emoji representation matches if it is non-null. If "p" is
+/// null then any presentation will be accepted.
+pub fn hasCodepoint(
+    self: *const Collection,
+    index: Index,
+    cp: u32,
+    p: ?Presentation,
+) bool {
+    const list = self.faces.get(index.style);
+    if (index.idx >= list.items.len) return false;
+    return list.items[index.idx].hasCodepoint(
+        cp,
+        if (p) |v| .{ .explicit = v } else .{ .any = {} },
+    );
 }
 
 /// Automatically create an italicized font from the regular
@@ -315,7 +333,11 @@ pub const Entry = union(enum) {
     }
 
     /// True if this face satisfies the given codepoint and presentation.
-    fn hasCodepoint(self: Entry, cp: u32, p_mode: PresentationMode) bool {
+    pub fn hasCodepoint(
+        self: Entry,
+        cp: u32,
+        p_mode: PresentationMode,
+    ) bool {
         return switch (self) {
             // Non-fallback fonts require explicit presentation matching but
             // otherwise don't care about presentation
