@@ -19,6 +19,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const fontpkg = @import("main.zig");
+const Collection = fontpkg.Collection;
 const Discover = fontpkg.Discover;
 const Style = fontpkg.Style;
 const Library = fontpkg.Library;
@@ -111,104 +112,28 @@ pub fn groupRef(
         .ref = 1,
     };
 
+    // Build our font face collection that we'll use to initialize
+    // the Group.
+
     cache.* = try GroupCache.init(self.alloc, group: {
-        var group = try Group.init(self.alloc, self.font_lib, font_size);
+        var group = try Group.init(
+            self.alloc,
+            self.font_lib,
+            font_size,
+            try self.collection(&key, font_size),
+        );
         errdefer group.deinit();
         group.metric_modifiers = key.metric_modifiers;
         group.codepoint_map = key.codepoint_map;
+        group.discover = try self.discover();
 
         // Set our styles
         group.styles.set(.bold, config.@"font-style-bold" != .false);
         group.styles.set(.italic, config.@"font-style-italic" != .false);
         group.styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
 
-        // Search for fonts
-        if (Discover != void) discover: {
-            const disco = try self.discover() orelse {
-                log.warn("font discovery not available, cannot search for fonts", .{});
-                break :discover;
-            };
-            group.discover = disco;
-
-            // A buffer we use to store the font names for logging.
-            var name_buf: [256]u8 = undefined;
-
-            inline for (@typeInfo(Style).Enum.fields) |field| {
-                const style = @field(Style, field.name);
-                for (key.descriptorsForStyle(style)) |desc| {
-                    var disco_it = try disco.discover(self.alloc, desc);
-                    defer disco_it.deinit();
-                    if (try disco_it.next()) |face| {
-                        log.info("font {s}: {s}", .{
-                            field.name,
-                            try face.name(&name_buf),
-                        });
-                        _ = try group.addFace(style, .{ .deferred = face });
-                    } else log.warn("font-family {s} not found: {s}", .{
-                        field.name,
-                        desc.family.?,
-                    });
-                }
-            }
-        }
-
-        // Our built-in font will be used as a backup
-        _ = try group.addFace(
-            .regular,
-            .{ .fallback_loaded = try Face.init(
-                self.font_lib,
-                face_ttf,
-                group.faceOptions(),
-            ) },
-        );
-        _ = try group.addFace(
-            .bold,
-            .{ .fallback_loaded = try Face.init(
-                self.font_lib,
-                face_bold_ttf,
-                group.faceOptions(),
-            ) },
-        );
-
         // Auto-italicize if we have to.
         try group.italicize();
-
-        // On macOS, always search for and add the Apple Emoji font
-        // as our preferred emoji font for fallback. We do this in case
-        // people add other emoji fonts to their system, we always want to
-        // prefer the official one. Users can override this by explicitly
-        // specifying a font-family for emoji.
-        if (comptime builtin.target.isDarwin()) apple_emoji: {
-            const disco = group.discover orelse break :apple_emoji;
-            var disco_it = try disco.discover(self.alloc, .{
-                .family = "Apple Color Emoji",
-            });
-            defer disco_it.deinit();
-            if (try disco_it.next()) |face| {
-                _ = try group.addFace(.regular, .{ .fallback_deferred = face });
-            }
-        }
-
-        // Emoji fallback. We don't include this on Mac since Mac is expected
-        // to always have the Apple Emoji available on the system.
-        if (comptime !builtin.target.isDarwin() or Discover == void) {
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try Face.init(
-                    self.font_lib,
-                    face_emoji_ttf,
-                    group.faceOptions(),
-                ) },
-            );
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try Face.init(
-                    self.font_lib,
-                    face_emoji_text_ttf,
-                    group.faceOptions(),
-                ) },
-            );
-        }
 
         log.info("font loading complete, any non-logged faces are using the built-in font", .{});
         break :group group;
@@ -216,6 +141,124 @@ pub fn groupRef(
     errdefer cache.deinit(self.alloc);
 
     return .{ gop.key_ptr.*, gop.value_ptr.cache };
+}
+
+/// Builds the Collection for the given configuration key and
+/// initial font size.
+fn collection(
+    self: *GroupCacheSet,
+    key: *const Key,
+    size: DesiredSize,
+) !Collection {
+    var c = try Collection.init(self.alloc);
+    errdefer c.deinit(self.alloc);
+
+    const opts: fontpkg.face.Options = .{
+        .size = size,
+        .metric_modifiers = &key.metric_modifiers,
+    };
+
+    // Search for fonts
+    if (Discover != void) discover: {
+        const disco = try self.discover() orelse {
+            log.warn(
+                "font discovery not available, cannot search for fonts",
+                .{},
+            );
+            break :discover;
+        };
+
+        // A buffer we use to store the font names for logging.
+        var name_buf: [256]u8 = undefined;
+
+        inline for (@typeInfo(Style).Enum.fields) |field| {
+            const style = @field(Style, field.name);
+            for (key.descriptorsForStyle(style)) |desc| {
+                var disco_it = try disco.discover(self.alloc, desc);
+                defer disco_it.deinit();
+                if (try disco_it.next()) |face| {
+                    log.info("font {s}: {s}", .{
+                        field.name,
+                        try face.name(&name_buf),
+                    });
+
+                    _ = try c.add(
+                        self.alloc,
+                        style,
+                        .{ .deferred = face },
+                    );
+                } else log.warn("font-family {s} not found: {s}", .{
+                    field.name,
+                    desc.family.?,
+                });
+            }
+        }
+    }
+
+    // Our built-in font will be used as a backup
+    _ = try c.add(
+        self.alloc,
+        .regular,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            face_ttf,
+            opts,
+        ) },
+    );
+    _ = try c.add(
+        self.alloc,
+        .bold,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            face_bold_ttf,
+            opts,
+        ) },
+    );
+
+    // On macOS, always search for and add the Apple Emoji font
+    // as our preferred emoji font for fallback. We do this in case
+    // people add other emoji fonts to their system, we always want to
+    // prefer the official one. Users can override this by explicitly
+    // specifying a font-family for emoji.
+    if (comptime builtin.target.isDarwin()) apple_emoji: {
+        const disco = try self.discover() orelse break :apple_emoji;
+        var disco_it = try disco.discover(self.alloc, .{
+            .family = "Apple Color Emoji",
+        });
+        defer disco_it.deinit();
+        if (try disco_it.next()) |face| {
+            _ = try c.add(
+                self.alloc,
+                .regular,
+                .{ .fallback_deferred = face },
+            );
+        }
+    }
+
+    // Emoji fallback. We don't include this on Mac since Mac is expected
+    // to always have the Apple Emoji available on the system.
+    if (comptime !builtin.target.isDarwin() or Discover == void) {
+        _ = try c.add(
+            self.alloc,
+            .regular,
+            .{ .fallback_loaded = try Face.init(
+                self.font_lib,
+                face_emoji_ttf,
+                opts,
+            ) },
+        );
+        _ = try c.add(
+            self.alloc,
+            .regular,
+            .{ .fallback_loaded = try Face.init(
+                self.font_lib,
+                face_emoji_text_ttf,
+                opts,
+            ) },
+        );
+    }
+
+    return c;
 }
 
 /// Decrement the ref count for the given key. If the ref count is zero,

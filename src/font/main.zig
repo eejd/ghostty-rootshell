@@ -6,6 +6,7 @@ pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
 pub const CodepointMap = @import("CodepointMap.zig");
+pub const Collection = @import("Collection.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
 pub const Group = @import("Group.zig");

@@ -16,6 +16,7 @@ const Allocator = std.mem.Allocator;
 const ziglyph = @import("ziglyph");
 
 const font = @import("main.zig");
+const Collection = @import("main.zig").Collection;
 const DeferredFace = @import("main.zig").DeferredFace;
 const Face = @import("main.zig").Face;
 const Library = @import("main.zig").Library;
@@ -26,13 +27,6 @@ const options = @import("main.zig").options;
 const quirks = @import("../quirks.zig");
 
 const log = std.log.scoped(.font_group);
-
-/// Packed array to map our styles to a set of faces.
-// Note: this is not the most efficient way to store these, but there is
-// usually only one font group for the entire process so this isn't the
-// most important memory efficiency we can look for. This is totally opaque
-// to the user so we can change this later.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(GroupFace));
 
 /// Packed array of booleans to indicate if a style is enabled or not.
 pub const StyleStatus = std.EnumArray(Style, bool);
@@ -92,7 +86,7 @@ metric_modifiers: ?font.face.Metrics.ModifierSet = null,
 
 /// The available faces we have. This shouldn't be modified manually.
 /// Instead, use the functions available on Group.
-faces: StyleArray,
+faces: Collection,
 
 /// The set of statuses and whether they're enabled or not. This defaults
 /// to true. This can be changed at runtime with no ill effect. If you
@@ -119,105 +113,25 @@ descriptor_cache: DescriptorCache = .{},
 /// terminal rendering will look wrong.
 sprite: ?font.sprite.Face = null,
 
-/// A face in a group can be deferred or loaded. A deferred face
-/// is not yet fully loaded and only represents the font descriptor
-/// and usually uses less resources. A loaded face is fully parsed,
-/// ready to rasterize, and usually uses more resources than a
-/// deferred version.
-///
-/// A face can also be a "fallback" variant that is still either
-/// deferred or loaded. Today, there is only one different between
-/// fallback and non-fallback (or "explicit") faces: the handling
-/// of emoji presentation.
-///
-/// For explicit faces, when an explicit emoji presentation is
-/// not requested, we will use any glyph for that codepoint found
-/// even if the font presentation does not match the UCD
-/// (Unicode Character Database) value. When an explicit presentation
-/// is requested (via either VS15/V16), that is always honored.
-/// The reason we do this is because we assume that if a user
-/// explicitly chosen a font face (hence it is "explicit" and
-/// not "fallback"), they want to use any glyphs possible within that
-/// font face. Fallback fonts on the other hand are picked as a
-/// last resort, so we should prefer exactness if possible.
-pub const GroupFace = union(enum) {
-    deferred: DeferredFace, // Not loaded
-    loaded: Face, // Loaded, explicit use
-
-    // The same as deferred/loaded but fallback font semantics (see large
-    // comment above GroupFace).
-    fallback_deferred: DeferredFace,
-    fallback_loaded: Face,
-
-    pub fn deinit(self: *GroupFace) void {
-        switch (self.*) {
-            inline .deferred,
-            .loaded,
-            .fallback_deferred,
-            .fallback_loaded,
-            => |*v| v.deinit(),
-        }
-    }
-
-    /// True if this face satisfies the given codepoint and presentation.
-    fn hasCodepoint(self: GroupFace, cp: u32, p_mode: PresentationMode) bool {
-        return switch (self) {
-            // Non-fallback fonts require explicit presentation matching but
-            // otherwise don't care about presentation
-            .deferred => |v| switch (p_mode) {
-                .explicit => |p| v.hasCodepoint(cp, p),
-                .default, .any => v.hasCodepoint(cp, null),
-            },
-
-            .loaded => |face| switch (p_mode) {
-                .explicit => |p| face.presentation == p and face.glyphIndex(cp) != null,
-                .default, .any => face.glyphIndex(cp) != null,
-            },
-
-            // Fallback fonts require exact presentation matching.
-            .fallback_deferred => |v| switch (p_mode) {
-                .explicit, .default => |p| v.hasCodepoint(cp, p),
-                .any => v.hasCodepoint(cp, null),
-            },
-
-            .fallback_loaded => |face| switch (p_mode) {
-                .explicit,
-                .default,
-                => |p| face.presentation == p and face.glyphIndex(cp) != null,
-                .any => face.glyphIndex(cp) != null,
-            },
-        };
-    }
-};
-
+/// Initializes an empty group. This is not useful until faces are added
+/// and finalizeInit is called.
 pub fn init(
     alloc: Allocator,
     lib: Library,
     size: font.face.DesiredSize,
+    collection: Collection,
 ) !Group {
-    var result = Group{ .alloc = alloc, .lib = lib, .size = size, .faces = undefined };
-
-    // Initialize all our styles to initially sized lists.
-    var i: usize = 0;
-    while (i < StyleArray.len) : (i += 1) {
-        result.faces.values[i] = .{};
-        try result.faces.values[i].ensureTotalCapacityPrecise(alloc, 2);
-    }
-
-    return result;
+    return .{
+        .alloc = alloc,
+        .lib = lib,
+        .size = size,
+        .faces = collection,
+    };
 }
 
 pub fn deinit(self: *Group) void {
-    {
-        var it = self.faces.iterator();
-        while (it.next()) |entry| {
-            for (entry.value.items) |*item| item.deinit();
-            entry.value.deinit(self.alloc);
-        }
-    }
-
+    self.faces.deinit(self.alloc);
     if (self.metric_modifiers) |*v| v.deinit(self.alloc);
-
     self.descriptor_cache.deinit(self.alloc);
 }
 
@@ -228,23 +142,6 @@ pub fn faceOptions(self: *const Group) font.face.Options {
         .size = self.size,
         .metric_modifiers = if (self.metric_modifiers) |*v| v else null,
     };
-}
-
-/// Add a face to the list for the given style. This face will be added as
-/// next in priority if others exist already, i.e. it'll be the _last_ to be
-/// searched for a glyph in that list.
-///
-/// The group takes ownership of the face. The face will be deallocated when
-/// the group is deallocated.
-pub fn addFace(self: *Group, style: Style, face: GroupFace) !FontIndex {
-    const list = self.faces.getPtr(style);
-
-    // We have some special indexes so we must never pass those.
-    if (list.items.len >= FontIndex.Special.start - 1) return error.GroupFull;
-
-    const idx = list.items.len;
-    try list.append(self.alloc, face);
-    return .{ .style = style, .idx = @intCast(idx) };
 }
 
 /// This will automatically create an italicized font from the regular
@@ -472,7 +369,9 @@ pub fn indexForCodepoint(
                 // Discovery is supposed to only return faces that have our
                 // codepoint but we can't search presentation in discovery so
                 // we have to check it here.
-                const face: GroupFace = .{ .fallback_deferred = deferred_face };
+                const face: Collection.Entry = .{
+                    .fallback_deferred = deferred_face,
+                };
                 if (!face.hasCodepoint(cp, p_mode)) {
                     deferred_face.deinit();
                     continue;
@@ -894,9 +793,6 @@ test "face count limit" {
     const testing = std.testing;
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
-
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
 
     var lib = try Library.init();
     defer lib.deinit();
