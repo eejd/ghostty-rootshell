@@ -2425,7 +2425,7 @@ fn draw_light_arc(
 fn draw_dash_horizontal(
     self: Box,
     canvas: *font.sprite.Canvas,
-    comptime count: u8,
+    count: u8,
     thick_px: u32,
     desired_gap: u32,
 ) void {
@@ -2461,11 +2461,11 @@ fn draw_dash_horizontal(
 
     // We never want the gaps to take up more than 50% of the space,
     // because if they do the dashes are too small and look wrong.
-    const gap_width        = @min(desired_gap, self.width / (2 * count));
-    const total_gap_width  = gap_count * gap_width;
+    const gap_width = @min(desired_gap, self.width / (2 * count));
+    const total_gap_width = gap_count * gap_width;
     const total_dash_width = self.width - total_gap_width;
-    const dash_width       = total_dash_width / count;
-    const remaining        = total_dash_width % count;
+    const dash_width = total_dash_width / count;
+    const remaining = total_dash_width % count;
 
     assert(dash_width * count + gap_width * gap_count + remaining == self.width);
 
@@ -2481,7 +2481,7 @@ fn draw_dash_horizontal(
     // more visually obvious.
     var extra: u32 = remaining;
 
-    inline for (0..count) |_| {
+    for (0..count) |_| {
         var x1 = x + dash_width;
         // We distribute left-over size in to dash widths,
         // since it's less obvious there than in the gaps.
@@ -2540,11 +2540,11 @@ fn draw_dash_vertical(
 
     // We never want the gaps to take up more than 50% of the space,
     // because if they do the dashes are too small and look wrong.
-    const gap_height        = @min(desired_gap, self.height / (2 * count));
-    const total_gap_height  = gap_count * gap_height;
+    const gap_height = @min(desired_gap, self.height / (2 * count));
+    const total_gap_height = gap_count * gap_height;
     const total_dash_height = self.height - total_gap_height;
-    const dash_height       = total_dash_height / count;
-    const remaining         = total_dash_height % count;
+    const dash_height = total_dash_height / count;
+    const remaining = total_dash_height % count;
 
     assert(dash_height * count + gap_height * gap_count + remaining == self.height);
 
