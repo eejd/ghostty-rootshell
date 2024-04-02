@@ -26,7 +26,7 @@ pub inline fn copy(comptime T: type, dest: []T, source: []const T) void {
 /// and a tmp var for the single rotated item instead of 3 calls to reverse.
 pub inline fn rotateOnce(comptime T: type, items: []T) void {
     const tmp = items[0];
-    move(T, items[0..items.len - 1], items[1..items.len]);
+    move(T, items[0 .. items.len - 1], items[1..items.len]);
     items[items.len - 1] = tmp;
 }
 

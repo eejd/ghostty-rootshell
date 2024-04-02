@@ -1331,8 +1331,8 @@ fn rowWillBeShifted(
     // spacer head will be either moved or cleared, so we also need
     // to turn the spacer heads in to empty cells in that case.
     if (self.scrolling_region.right == self.cols - 1 or
-        self.scrolling_region.left < 2
-    ) {
+        self.scrolling_region.left < 2)
+    {
         const end_cell: *Cell = &cells[page.size.cols - 1];
         if (end_cell.wide == .spacer_head) {
             end_cell.wide = .narrow;
@@ -6318,7 +6318,7 @@ test "Terminal: deleteLines wide character spacer head left and right scroll mar
     try t.printString("AAAAABBBB\u{1F600}CCC");
 
     t.scrolling_region.right = 3;
-    t.scrolling_region.left  = 2;
+    t.scrolling_region.left = 2;
 
     // Delete the top line
     //    ##   <- scrolling region
@@ -6360,7 +6360,7 @@ test "Terminal: deleteLines wide character spacer head left (< 2) and right scro
     try t.printString("AAAAABBBB\u{1F600}CCC");
 
     t.scrolling_region.right = 3;
-    t.scrolling_region.left  = 1;
+    t.scrolling_region.left = 1;
 
     // Delete the top line
     //   ###   <- scrolling region
@@ -6400,7 +6400,7 @@ test "Terminal: deleteLines wide characters split by left/right scroll region bo
     try t.printString("AAAAA\n\u{1F600}B\u{1F600}");
 
     t.scrolling_region.right = 3;
-    t.scrolling_region.left  = 1;
+    t.scrolling_region.left = 1;
 
     // Delete the top line
     //   ###   <- scrolling region
