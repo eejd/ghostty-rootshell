@@ -114,6 +114,31 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
     };
 }
 
+/// Return the index of the font in this collection that contains
+/// the given codepoint, style, and presentation. If no font is found,
+/// null is returned.
+///
+/// This does not trigger font loading; deferred fonts can be
+/// searched for codepoints.
+pub fn getIndex(
+    self: *const Collection,
+    cp: u32,
+    style: Style,
+    p_mode: PresentationMode,
+) ?Index {
+    for (self.faces.get(style).items, 0..) |elem, i| {
+        if (elem.hasCodepoint(cp, p_mode)) {
+            return .{
+                .style = style,
+                .idx = @intCast(i),
+            };
+        }
+    }
+
+    // Not found
+    return null;
+}
+
 /// Packed array of all Style enum cases mapped to a growable list of faces.
 ///
 /// We use this data structure because there aren't many styles and all
@@ -382,5 +407,36 @@ test getFace {
         const face1 = try c.getFace(idx);
         const face2 = try c.getFace(idx);
         try testing.expectEqual(@intFromPtr(face1), @intFromPtr(face2));
+    }
+}
+
+test getIndex {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+
+    _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    // Should find all visible ASCII
+    var i: u32 = 32;
+    while (i < 127) : (i += 1) {
+        const idx = c.getIndex(i, .regular, .{ .any = {} });
+        try testing.expect(idx != null);
+    }
+
+    // Should not find emoji
+    {
+        const idx = c.getIndex('🥸', .regular, .{ .any = {} });
+        try testing.expect(idx == null);
     }
 }
