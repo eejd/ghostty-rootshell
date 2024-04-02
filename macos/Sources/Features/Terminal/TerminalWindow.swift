@@ -285,9 +285,9 @@ class TerminalWindow: NSWindow {
         toolbarStyle = .unifiedCompact
 		if let resetZoomItem = terminalToolbar.items.first(where: { $0.itemIdentifier == .resetZoom }) {
 			resetZoomItem.view = resetZoomToolbarButton
-			resetZoomItem.view?.translatesAutoresizingMaskIntoConstraints = false
-			resetZoomItem.view?.widthAnchor.constraint(equalToConstant: 22).isActive = true
-			resetZoomItem.view?.heightAnchor.constraint(equalToConstant: 20).isActive = true
+			resetZoomItem.view!.removeConstraints(resetZoomItem.view!.constraints)
+			resetZoomItem.view!.widthAnchor.constraint(equalToConstant: 22).isActive = true
+			resetZoomItem.view!.heightAnchor.constraint(equalToConstant: 20).isActive = true
 		}
         updateResetZoomTitlebarButtonVisibility()
     }
