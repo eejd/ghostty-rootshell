@@ -42,7 +42,7 @@ pub fn deinit(self: *Collection, alloc: Allocator) void {
         entry.value.deinit(alloc);
     }
 
-    //self.load_options.deinit(alloc);
+    if (self.load_options) |*v| v.deinit(alloc);
 }
 
 pub const AddError = Allocator.Error || error{
@@ -163,6 +163,10 @@ pub const LoadOptions = struct {
     /// freed when the collection is deinitialized. The modifier set
     /// must use the same allocator as the collection.
     metric_modifiers: Metrics.ModifierSet = .{},
+
+    pub fn deinit(self: *LoadOptions, alloc: Allocator) void {
+        self.metric_modifiers.deinit(alloc);
+    }
 
     /// The options to use for loading faces.
     fn faceOptions(self: *const LoadOptions) font.face.Options {
