@@ -111,13 +111,15 @@ pub const Shaper = struct {
     pub fn runIterator(
         self: *Shaper,
         group: *GroupCache,
-        row: terminal.Screen.Row,
+        screen: *const terminal.Screen,
+        row: terminal.Pin,
         selection: ?terminal.Selection,
         cursor_x: ?usize,
     ) font.shape.RunIterator {
         return .{
             .hooks = .{ .shaper = self },
             .group = group,
+            .screen = screen,
             .row = row,
             .selection = selection,
             .cursor_x = cursor_x,
