@@ -72,6 +72,15 @@ pub fn deinit(self: *CodepointResolver, alloc: Allocator) void {
 /// presentation for the codepoint.
 /// a code point.
 ///
+/// An allocator is required because certain functionality (codepoint
+/// mapping, fallback fonts, etc.) may require memory allocation. Curiously,
+/// this function cannot error! If an error occurs for any reason, including
+/// memory allocation, the associated functionality is ignored and the
+/// resolver attempts to use a different method to satisfy the codepoint.
+/// This behavior is intentional to make the resolver apply best-effort
+/// logic to satisfy the codepoint since its better to render something
+/// than nothing.
+///
 /// This logic is relatively complex so the exact algorithm is documented
 /// here. If this gets out of sync with the code, ask questions.
 ///
@@ -118,7 +127,7 @@ pub fn getIndex(
     }
 
     // Codepoint overrides.
-    if (self.indexForCodepointOverride(alloc, cp)) |idx_| {
+    if (self.getIndexCodepointOverride(alloc, cp)) |idx_| {
         if (idx_) |idx| return idx;
     } else |err| {
         log.warn("codepoint override failed codepoint={} err={}", .{ cp, err });
@@ -208,7 +217,7 @@ pub fn getIndex(
 
 /// Checks if the codepoint is in the map of codepoint overrides,
 /// finds the override font, and returns it.
-fn indexForCodepointOverride(
+fn getIndexCodepointOverride(
     self: *CodepointResolver,
     alloc: Allocator,
     cp: u32,
@@ -265,7 +274,7 @@ fn indexForCodepointOverride(
     const idx = idx_ orelse return null;
 
     // We need to verify that this index has the codepoint we want.
-    if (self.collection.hasCodepoint(idx, cp, null)) {
+    if (self.collection.hasCodepoint(idx, cp, .{ .any = {} })) {
         log.debug("codepoint override based on config codepoint={} family={s}", .{
             cp,
             desc.family orelse "",
@@ -383,5 +392,61 @@ test getIndex {
     // Box glyph should be null since we didn't set a box font
     {
         try testing.expect(r.getIndex(alloc, 0x1FB00, .regular, null) == null);
+    }
+}
+
+test "getIndex disabled font style" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try Collection.init(alloc);
+    c.load_options = .{ .library = lib };
+
+    _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+    _ = try c.add(alloc, .bold, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+    _ = try c.add(alloc, .italic, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    var r: CodepointResolver = .{ .collection = c };
+    defer r.deinit(alloc);
+    r.styles.set(.bold, false); // Disable bold
+
+    // Regular should work fine
+    {
+        const idx = r.getIndex(alloc, 'A', .regular, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
+    }
+
+    // Bold should go to regular
+    {
+        const idx = r.getIndex(alloc, 'A', .bold, null).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
+    }
+
+    // Italic should still work
+    {
+        const idx = r.getIndex(alloc, 'A', .italic, null).?;
+        try testing.expectEqual(Style.italic, idx.style);
+        try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
     }
 }

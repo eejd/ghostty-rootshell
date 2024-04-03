@@ -18,6 +18,7 @@ const Collection = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const font = @import("main.zig");
+const options = font.options;
 const DeferredFace = font.DeferredFace;
 const DesiredSize = font.face.DesiredSize;
 const Face = font.Face;
@@ -160,14 +161,11 @@ pub fn hasCodepoint(
     self: *const Collection,
     index: Index,
     cp: u32,
-    p: ?Presentation,
+    p_mode: PresentationMode,
 ) bool {
     const list = self.faces.get(index.style);
     if (index.idx >= list.items.len) return false;
-    return list.items[index.idx].hasCodepoint(
-        cp,
-        if (p) |v| .{ .explicit = v } else .{ .any = {} },
-    );
+    return list.items[index.idx].hasCodepoint(cp, p_mode);
 }
 
 /// Automatically create an italicized font from the regular
@@ -600,4 +598,51 @@ test setSize {
     try testing.expectEqual(@as(u32, 12), c.load_options.?.size.points);
     try c.setSize(.{ .points = 24 });
     try testing.expectEqual(@as(u32, 24), c.load_options.?.size.points);
+}
+
+test hasCodepoint {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("test.zig").fontRegular;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+    c.load_options = .{ .library = lib };
+
+    const idx = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    try testing.expect(c.hasCodepoint(idx, 'A', .{ .any = {} }));
+    try testing.expect(!c.hasCodepoint(idx, '🥸', .{ .any = {} }));
+}
+
+test "hasCodepoint emoji default graphical" {
+    if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testEmoji = @import("test.zig").fontEmoji;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    var c = try init(alloc);
+    defer c.deinit(alloc);
+    c.load_options = .{ .library = lib };
+
+    const idx = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+        lib,
+        testEmoji,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    ) });
+
+    try testing.expect(!c.hasCodepoint(idx, 'A', .{ .any = {} }));
+    try testing.expect(c.hasCodepoint(idx, '🥸', .{ .any = {} }));
+    // TODO(fontmem): test explicit/implicit
 }
