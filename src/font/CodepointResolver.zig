@@ -450,3 +450,24 @@ test "getIndex disabled font style" {
         try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
     }
 }
+
+test "getIndex box glyph" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var lib = try Library.init();
+    defer lib.deinit();
+
+    const c = try Collection.init(alloc);
+
+    var r: CodepointResolver = .{
+        .collection = c,
+        .sprite = .{ .width = 18, .height = 36, .thickness = 2 },
+    };
+    defer r.deinit(alloc);
+
+    // Should find a box glyph
+    const idx = r.getIndex(alloc, 0x2500, .regular, null).?;
+    try testing.expectEqual(Style.regular, idx.style);
+    try testing.expectEqual(@intFromEnum(Collection.Index.Special.sprite), idx.idx);
+}

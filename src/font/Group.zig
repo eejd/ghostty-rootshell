@@ -769,6 +769,7 @@ pub const Wasm = struct {
     }
 };
 
+// X
 test {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -847,6 +848,7 @@ test {
     }
 }
 
+// X
 test "disabled font style" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -892,6 +894,7 @@ test "disabled font style" {
     }
 }
 
+// X
 test "face count limit" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -917,6 +920,7 @@ test "face count limit" {
     ));
 }
 
+// X
 test "box glyph" {
     const testing = std.testing;
     const alloc = testing.allocator;
