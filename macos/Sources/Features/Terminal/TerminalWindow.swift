@@ -96,6 +96,12 @@ class TerminalWindow: NSWindow {
     }
 
     // MARK: - NSWindow
+
+    override var title: String {
+        didSet {
+            tab.attributedTitle = attributedTitle
+        }
+    }
     
     override func becomeKey() {
         // This is required because the removeTitlebarAccessoryViewController hook does not
@@ -109,6 +115,7 @@ class TerminalWindow: NSWindow {
         updateNewTabButtonOpacity()
         resetZoomTabButton.contentTintColor = .controlAccentColor
         resetZoomToolbarButton.contentTintColor = .controlAccentColor
+        tab.attributedTitle = attributedTitle
     }
 
     override func resignKey() {
@@ -117,6 +124,7 @@ class TerminalWindow: NSWindow {
         updateNewTabButtonOpacity()
         resetZoomTabButton.contentTintColor = .secondaryLabelColor
         resetZoomToolbarButton.contentTintColor = .tertiaryLabelColor
+        tab.attributedTitle = attributedTitle
     }
 
 	override func layoutIfNeeded() {
@@ -170,6 +178,38 @@ class TerminalWindow: NSWindow {
         updateNewTabButtonOpacity()
 		updateNewTabButtonImage()
 		updateResetZoomTitlebarButtonVisibility()
+    }
+    
+    // Used to set the titlebar font.
+    var titlebarFont: NSFont? {
+        didSet {
+            titlebarTextField?.font = titlebarFont
+            tab.attributedTitle = attributedTitle
+
+            if let toolbar = toolbar as? TerminalToolbar {
+                toolbar.titleFont = titlebarFont
+            }
+        }
+    }
+
+    // Find the NSTextField responsible for displaying the titlebar's title.
+    private var titlebarTextField: NSTextField? {
+        guard let titlebarContainer = contentView?.superview?.subviews
+            .first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
+        guard let titlebarView = titlebarContainer.subviews
+            .first(where: { $0.className == "NSTitlebarView" }) else { return nil }
+        return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
+    }
+
+    // Return a styled representation of our title property.
+    private var attributedTitle: NSAttributedString? {
+        guard let titlebarFont else { return nil }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: titlebarFont,
+            .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+        ]
+        return NSAttributedString(string: title, attributes: attributes)
     }
 
     // MARK: -

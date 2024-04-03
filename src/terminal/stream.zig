@@ -1465,6 +1465,16 @@ pub fn Stream(comptime Handler: type) type {
                     },
                 } else log.warn("unimplemented invokeCharset: {}", .{action}),
 
+                // SPA - Start of Guarded Area
+                'V' => if (@hasDecl(T, "setProtectedMode")) {
+                    try self.handler.setProtectedMode(ansi.ProtectedMode.iso);
+                } else log.warn("unimplemented ESC callback: {}", .{action}),
+
+                // EPA - End of Guarded Area
+                'W' => if (@hasDecl(T, "setProtectedMode")) {
+                    try self.handler.setProtectedMode(ansi.ProtectedMode.off);
+                } else log.warn("unimplemented ESC callback: {}", .{action}),
+
                 // DECID
                 'Z' => if (@hasDecl(T, "deviceAttributes")) {
                     try self.handler.deviceAttributes(.primary, &.{});

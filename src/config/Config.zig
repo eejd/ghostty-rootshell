@@ -624,6 +624,11 @@ keybind: Keybinds = .{},
 /// borders.
 @"window-decoration": bool = true,
 
+/// The font that will be used for the application's window and tab titles.
+///
+/// This is currently only supported on macOS.
+@"window-title-font-family": ?[:0]const u8 = null,
+
 /// The theme to use for the windows. Valid values:
 ///
 ///   * `auto` - Determine the theme based on the configured terminal

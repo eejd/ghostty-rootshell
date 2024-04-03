@@ -1993,7 +1993,7 @@ const StreamHandler = struct {
     pub fn setCursorColRelative(self: *StreamHandler, offset: u16) !void {
         self.terminal.setCursorPos(
             self.terminal.screen.cursor.y + 1,
-            self.terminal.screen.cursor.x + 1 + offset,
+            self.terminal.screen.cursor.x + 1 +| offset,
         );
     }
 
@@ -2003,7 +2003,7 @@ const StreamHandler = struct {
 
     pub fn setCursorRowRelative(self: *StreamHandler, offset: u16) !void {
         self.terminal.setCursorPos(
-            self.terminal.screen.cursor.y + 1 + offset,
+            self.terminal.screen.cursor.y + 1 +| offset,
             self.terminal.screen.cursor.x + 1,
         );
     }

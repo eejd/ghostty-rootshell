@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const fs = std.fs;
 const CompileStep = std.Build.Step.Compile;
 const RunStep = std.Build.Step.Run;
+const ResolvedTarget = std.Build.ResolvedTarget;
 
 const apprt = @import("src/apprt.zig");
 const font = @import("src/font/main.zig");
@@ -706,10 +707,15 @@ pub fn build(b: *std.Build) !void {
         const test_step = b.step("test", "Run all tests");
         const test_filter = b.option([]const u8, "test-filter", "Filter for test");
 
+        // Force all Mac builds to use a `generic` CPU. This avoids
+        // potential issues with `highway` compile errors due to missing
+        // `arm_neon` features (see for example https://github.com/mitchellh/ghostty/issues/1640).
+        const test_target = if (target.result.os.tag == .macos and builtin.target.isDarwin()) genericMacOSTarget(b) else target;
+
         const main_test = b.addTest(.{
             .name = "ghostty-test",
             .root_source_file = .{ .path = "src/main.zig" },
-            .target = target,
+            .target = test_target,
             .filter = test_filter,
         });
 
@@ -754,6 +760,16 @@ fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
     };
 }
 
+// Returns a ResolvedTarget for a mac with a `target.result.cpu.model.name` of `generic`.
+// `b.standardTargetOptions()` returns a more specific cpu like `apple_a15`.
+fn genericMacOSTarget(b: *std.Build) ResolvedTarget {
+    return b.resolveTargetQuery(.{
+        .cpu_arch = .aarch64,
+        .os_tag = .macos,
+        .os_version_min = osVersionMin(.macos),
+    });
+}
+
 /// Creates a universal macOS libghostty library and returns the path
 /// to the final library.
 ///
@@ -781,11 +797,7 @@ fn createMacOSLib(
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
             .root_source_file = .{ .path = "src/main_c.zig" },
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .aarch64,
-                .os_tag = .macos,
-                .os_version_min = osVersionMin(.macos),
-            }),
+            .target = genericMacOSTarget(b),
             .optimize = optimize,
         });
         lib.bundle_compiler_rt = true;
@@ -1165,6 +1177,43 @@ fn addDeps(
             .gtk => {
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
                 if (config.libadwaita) step.linkSystemLibrary2("adwaita-1", dynamic_link_opts);
+
+                {
+                    const gresource = @import("src/apprt/gtk/gresource.zig");
+
+                    const wf = b.addWriteFiles();
+                    const gresource_xml = wf.add(
+                        "gresource.xml",
+                        if (config.libadwaita)
+                            gresource.gresource_xml_libadwaita
+                        else
+                            gresource.gresource_xml_gtk,
+                    );
+
+                    const generate_resources_c = b.addSystemCommand(&.{
+                        "glib-compile-resources",
+                        "--c-name",
+                        "ghostty",
+                        "--generate-source",
+                        "--target",
+                    });
+                    const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
+                    generate_resources_c.addFileArg(gresource_xml);
+                    generate_resources_c.extra_file_dependencies = if (config.libadwaita) &gresource.dependencies_libadwaita else &gresource.dependencies_gtk;
+                    step.addCSourceFile(.{ .file = ghostty_resources_c, .flags = &.{} });
+
+                    const generate_resources_h = b.addSystemCommand(&.{
+                        "glib-compile-resources",
+                        "--c-name",
+                        "ghostty",
+                        "--generate-header",
+                        "--target",
+                    });
+                    const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
+                    generate_resources_h.addFileArg(gresource_xml);
+                    generate_resources_h.extra_file_dependencies = if (config.libadwaita) &gresource.dependencies_libadwaita else &gresource.dependencies_gtk;
+                    step.addIncludePath(ghostty_resources_h.dirname());
+                }
             },
         }
     }

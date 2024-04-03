@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const passwd = @import("passwd.zig");
 const posix = std.posix;
+const objc = @import("objc");
 
 const Error = error{
     /// The buffer used for output is not large enough to store the value.
@@ -31,33 +32,26 @@ fn homeUnix(buf: []u8) !?[]u8 {
         return buf[0..result.len];
     }
 
+    // On macOS: [NSFileManager defaultManager].homeDirectoryForCurrentUser.path
+    if (builtin.os.tag == .macos) {
+        const NSFileManager = objc.getClass("NSFileManager").?;
+        const manager = NSFileManager.msgSend(objc.Object, objc.sel("defaultManager"), .{});
+        const homeURL = manager.getProperty(objc.Object, "homeDirectoryForCurrentUser");
+        const homePath = homeURL.getProperty(objc.Object, "path");
+
+        const c_str = homePath.getProperty([*:0]const u8, "UTF8String");
+        const result = std.mem.sliceTo(c_str, 0);
+
+        if (buf.len < result.len) return Error.BufferTooSmall;
+        @memcpy(buf[0..result.len], result);
+        return buf[0..result.len];
+    }
+
     // Everything below here will require some allocation
     var tempBuf: [1024]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&tempBuf);
 
-    // If we're on darwin, we try the directory service. I'm not sure if there
-    // is a Mac API to do this but if so we can link to that...
-    if (builtin.os.tag == .macos) {
-        const run = try std.ChildProcess.run(.{
-            .allocator = fba.allocator(),
-            .argv = &[_][]const u8{
-                "/bin/sh",
-                "-c",
-                "dscl -q . -read /Users/\"$(whoami)\" NFSHomeDirectory | sed 's/^[^ ]*: //'",
-            },
-            .max_output_bytes = fba.buffer.len / 2,
-        });
-
-        if (run.term == .Exited and run.term.Exited == 0) {
-            const result = trimSpace(run.stdout);
-            if (buf.len < result.len) return Error.BufferTooSmall;
-            @memcpy(buf[0..result.len], result);
-            return buf[0..result.len];
-        }
-    }
-
     // We try passwd. This doesn't work on multi-user mac but we try it anyways.
-    fba.reset();
     const pw = try passwd.get(fba.allocator());
     if (pw.home) |result| {
         if (buf.len < result.len) return Error.BufferTooSmall;

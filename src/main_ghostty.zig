@@ -91,7 +91,7 @@ pub fn main() !MainReturn {
             \\
             \\We don't have proper help output yet, sorry! Please refer to the
             \\source code or Discord community for help for now. We'll fix this in time.
-	    \\
+            \\
         ,
             .{},
         );

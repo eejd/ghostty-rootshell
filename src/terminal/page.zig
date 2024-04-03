@@ -184,7 +184,7 @@ pub const Page = struct {
     pub fn reinit(self: *Page) void {
         // We zero the page memory as u64 instead of u8 because
         // we can and it's empirically quite a bit faster.
-        @memset(@as([*]u64, @ptrCast(self.memory))[0..self.memory.len / 8], 0);
+        @memset(@as([*]u64, @ptrCast(self.memory))[0 .. self.memory.len / 8], 0);
         self.* = initBuf(OffsetBuf.init(self.memory), layout(self.capacity));
     }
 

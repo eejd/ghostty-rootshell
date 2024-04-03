@@ -78,7 +78,7 @@ in
   mkShell {
     name = "ghostty";
 
-    nativeBuildInputs =
+    packages =
       [
         # For builds
         llvmPackages_latest.llvm
@@ -120,13 +120,7 @@ in
         gdb
         valgrind
         wraptest
-      ];
 
-    buildInputs =
-      [
-        # TODO: non-linux
-      ]
-      ++ lib.optionals stdenv.isLinux [
         bzip2
         expat
         fontconfig

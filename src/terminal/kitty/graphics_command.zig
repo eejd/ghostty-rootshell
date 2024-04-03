@@ -3,6 +3,8 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
+const log = std.log.scoped(.kitty_gfx);
+
 /// The key-value pairs for the control information for a command. The
 /// keys are always single characters and the values are either single
 /// characters or 32-bit unsigned integers.
@@ -27,8 +29,11 @@ pub const CommandParser = struct {
     kv_temp_len: u4 = 0,
     kv_current: u8 = 0, // Current kv key
 
-    /// This is the list of bytes that contains both KV data and final
-    /// data. You shouldn't access this directly.
+    /// This is the list we use to collect the bytes from the data payload.
+    /// The Kitty Graphics protocol specification seems to imply that the
+    /// payload content of a single command should never exceed 4096 bytes,
+    /// but Kitty itself supports larger payloads, so we use an ArrayList
+    /// here instead of a fixed buffer so that we can too.
     data: std.ArrayList(u8),
 
     /// Internal state for parsing.
@@ -42,7 +47,7 @@ pub const CommandParser = struct {
         control_value,
         control_value_ignore,
 
-        /// We're parsing the data blob.
+        /// Collecting the data payload blob.
         data,
     };
 
@@ -106,9 +111,6 @@ pub const CommandParser = struct {
 
             .data => try self.data.append(c),
         }
-
-        // We always add to our data list because this is our stable
-        // array of bytes that we'll reference everywhere else.
     }
 
     /// Complete the parsing. This must be called after all the
@@ -165,10 +167,43 @@ pub const CommandParser = struct {
         return .{
             .control = control,
             .quiet = quiet,
-            .data = if (self.data.items.len == 0) "" else data: {
-                break :data try self.data.toOwnedSlice();
-            },
+            .data = try self.decodeData(),
         };
+    }
+
+    /// Decodes the payload data from base64 and returns it as a slice.
+    /// This function will destroy the contents of self.data, it should
+    /// only be used once we are done collecting payload bytes.
+    fn decodeData(self: *CommandParser) ![]const u8 {
+        if (self.data.items.len == 0) {
+            return "";
+        }
+
+        const Base64Decoder = std.base64.standard_no_pad.Decoder;
+
+        // We remove any padding, since it's optional, and decode without it.
+        while (self.data.items[self.data.items.len - 1] == '=') {
+            self.data.items.len -= 1;
+        }
+
+        const size = Base64Decoder.calcSizeForSlice(self.data.items) catch |err| {
+            log.warn("failed to calculate base64 size for payload: {}", .{err});
+            return error.InvalidData;
+        };
+
+        // This is kinda cursed, but we can decode the base64 on top of
+        // itself, since it's guaranteed that the encoded size is larger,
+        // and any bytes in areas that are written to will have already
+        // been used (assuming scalar decoding).
+        Base64Decoder.decode(self.data.items[0..size], self.data.items) catch |err| {
+            log.warn("failed to decode base64 payload data: {}", .{err});
+            return error.InvalidData;
+        };
+
+        // Remove the extra bytes.
+        self.data.items.len = size;
+
+        return try self.data.toOwnedSlice();
     }
 
     fn accumulateValue(self: *CommandParser, c: u8, overflow_state: State) !void {
@@ -855,7 +890,7 @@ test "query command" {
     var p = CommandParser.init(alloc);
     defer p.deinit();
 
-    const input = "i=31,s=1,v=1,a=q,t=d,f=24;AAAA";
+    const input = "i=31,s=1,v=1,a=q,t=d,f=24;QUFBQQ";
     for (input) |c| try p.feed(c);
     const command = try p.complete();
     defer command.deinit(alloc);

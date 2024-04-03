@@ -197,7 +197,16 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
-        
+
+        var windowTitleFontFamily: String? {
+            guard let config = self.config else { return nil }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "window-title-font-family"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard let ptr = v else { return nil }
+            return String(cString: ptr)
+        }
+
         var macosTitlebarTabs: Bool {
             guard let config = self.config else { return false }
             var v = false;
