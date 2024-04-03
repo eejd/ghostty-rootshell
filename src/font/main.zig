@@ -16,6 +16,7 @@ pub const GroupCacheSet = @import("GroupCacheSet.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
+pub const SharedGrid = @import("SharedGrid.zig");
 pub const sprite = @import("sprite.zig");
 pub const Sprite = sprite.Sprite;
 pub const SpriteFace = sprite.Face;
