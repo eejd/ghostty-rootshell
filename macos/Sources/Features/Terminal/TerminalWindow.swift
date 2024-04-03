@@ -180,38 +180,6 @@ class TerminalWindow: NSWindow {
 		updateResetZoomTitlebarButtonVisibility()
     }
     
-    // Used to set the titlebar font.
-    var titlebarFont: NSFont? {
-        didSet {
-            titlebarTextField?.font = titlebarFont
-            tab.attributedTitle = attributedTitle
-
-            if let toolbar = toolbar as? TerminalToolbar {
-                toolbar.titleFont = titlebarFont
-            }
-        }
-    }
-
-    // Find the NSTextField responsible for displaying the titlebar's title.
-    private var titlebarTextField: NSTextField? {
-        guard let titlebarContainer = contentView?.superview?.subviews
-            .first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
-        guard let titlebarView = titlebarContainer.subviews
-            .first(where: { $0.className == "NSTitlebarView" }) else { return nil }
-        return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
-    }
-
-    // Return a styled representation of our title property.
-    private var attributedTitle: NSAttributedString? {
-        guard let titlebarFont else { return nil }
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: titlebarFont,
-            .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-        ]
-        return NSAttributedString(string: title, attributes: attributes)
-    }
-
     // MARK: -
 
     private var newTabButtonImageLayer: VibrantLayer? = nil
@@ -375,7 +343,39 @@ class TerminalWindow: NSWindow {
 			}
         }
     }
-    
+
+	// Used to set the titlebar font.
+	var titlebarFont: NSFont? {
+		didSet {
+			titlebarTextField?.font = titlebarFont
+			tab.attributedTitle = attributedTitle
+
+			if let toolbar = toolbar as? TerminalToolbar {
+				toolbar.titleFont = titlebarFont
+			}
+		}
+	}
+
+	// Find the NSTextField responsible for displaying the titlebar's title.
+	private var titlebarTextField: NSTextField? {
+		guard let titlebarContainer = contentView?.superview?.subviews
+			.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
+		guard let titlebarView = titlebarContainer.subviews
+			.first(where: { $0.className == "NSTitlebarView" }) else { return nil }
+		return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
+	}
+
+	// Return a styled representation of our title property.
+	private var attributedTitle: NSAttributedString? {
+		guard let titlebarFont else { return nil }
+
+		let attributes: [NSAttributedString.Key: Any] = [
+			.font: titlebarFont,
+			.foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+		]
+		return NSAttributedString(string: title, attributes: attributes)
+	}
+
     private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     private var windowDragHandle: WindowDragView? = nil
 
