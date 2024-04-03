@@ -7073,6 +7073,37 @@ test "Screen: selectionString, rectangle, more complex w/breaks" {
     try testing.expectEqualStrings(expected, contents);
 }
 
+test "Screen: selectionString multi-page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 130, 40, 512);
+    defer s.deinit();
+    // 512 * "y\n"
+    var str: [1024]u8 = undefined;
+    var i: usize = 0;
+    while (i < str.len) : (i += 2) {
+        str[i] = 'y';
+        str[i + 1] = '\n';
+    }
+    try s.testWriteString(&str);
+
+    {
+        const sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 0, .y = 0 } }).?,
+            s.pages.pin(.{ .active = .{ .x = 1, .y = 39 } }).?,
+            false,
+        );
+        const contents = try s.selectionString(alloc, .{
+            .sel = sel,
+            .trim = true,
+        });
+        defer alloc.free(contents);
+        const expected = str[0..1023];
+        try testing.expectEqualStrings(expected, contents);
+    }
+}
+
 test "Screen: lineIterator" {
     const testing = std.testing;
     const alloc = testing.allocator;
