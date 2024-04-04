@@ -10,12 +10,12 @@ pub const Shaper = switch (options.backend) {
     .freetype,
     .fontconfig_freetype,
     .coretext_freetype,
-    .coretext,
     => harfbuzz.Shaper,
 
-    // Has missing features, can't be used yet. See the comments in
-    // the coretext.zig file for more details.
-    //.coretext => coretext.Shaper,
+    // Note that coretext_freetype cannot use the coretext
+    // shaper because the coretext shaper request CoreText
+    // font faces.
+    .coretext => coretext.Shaper,
 
     .web_canvas => web_canvas.Shaper,
 };
