@@ -1355,14 +1355,14 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
     defer if (mapbuilder) |*b| b.deinit();
 
     const sel_ordered = opts.sel.ordered(self, .forward);
-    const sel_start = start: {
-        var start = sel_ordered.start();
+    const sel_start: Pin = start: {
+        var start: Pin = sel_ordered.start();
         const cell = start.rowAndCell().cell;
         if (cell.wide == .spacer_tail) start.x -= 1;
         break :start start;
     };
-    const sel_end = end: {
-        var end = sel_ordered.end();
+    const sel_end: Pin = end: {
+        var end: Pin = sel_ordered.end();
         const cell = end.rowAndCell().cell;
         switch (cell.wide) {
             .narrow, .wide => {},
@@ -1433,7 +1433,9 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                 }
             }
 
-            if (row_count < rows.len - 1 and
+            const is_final_row = sel_end.page == chunk.page and sel_end.y == chunk.start + row_count;
+
+            if (!is_final_row and
                 (!row.wrap or sel_ordered.rectangle))
             {
                 try strbuilder.append('\n');
