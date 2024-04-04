@@ -34,7 +34,7 @@ pub const Shaper = struct {
 
     /// The font features we want to use. The hardcoded features are always
     /// set first.
-    features: FeatureList = .{},
+    features: FeatureList,
 
     /// The shared memory used for shaping results.
     cell_buf: CellBuf,
@@ -46,26 +46,70 @@ pub const Shaper = struct {
         cluster: u32,
     };
 
-    const FeatureList = std.ArrayListUnmanaged(Feature);
-    const Feature = struct {
-        key: *macos.foundation.String,
-        value: *macos.foundation.Number,
+    /// List of font features, parsed into the data structures used by
+    /// the CoreText API. The CoreText API requires a pretty annoying wrapping
+    /// to setup font features:
+    ///
+    ///   - The key parsed into a CFString
+    ///   - The value parsed into a CFNumber
+    ///   - The key and value are then put into a CFDictionary
+    ///   - The CFDictionary is then put into a CFArray
+    ///   - The CFArray is then put into another CFDictionary
+    ///   - The CFDictionary is then passed to the CoreText API to create
+    ///     a new font with the features set.
+    ///
+    /// This structure handles up to the point that we have a CFArray of
+    /// CFDictionary objects representing the font features and provides
+    /// functions for creating the dictionary to init the font.
+    const FeatureList = struct {
+        list: *macos.foundation.MutableArray,
 
-        pub fn init(name_raw: []const u8) !Feature {
+        pub fn init() !FeatureList {
+            var list = try macos.foundation.MutableArray.create();
+            errdefer list.release();
+            return .{ .list = list };
+        }
+
+        pub fn deinit(self: FeatureList) void {
+            self.list.release();
+        }
+
+        pub fn append(self: *FeatureList, name_raw: []const u8) !void {
+            // If the name is `-name` then we are disabling the feature,
+            // otherwise we are enabling it, so we need to parse this out.
             const name = if (name_raw[0] == '-') name_raw[1..] else name_raw;
             const value_num: c_int = if (name_raw[0] == '-') 0 else 1;
 
-            var key = try macos.foundation.String.createWithBytes(name, .utf8, false);
-            errdefer key.release();
+            // Keys can only be ASCII.
+            var key = try macos.foundation.String.createWithBytes(name, .ascii, false);
+            defer key.release();
             var value = try macos.foundation.Number.create(.int, &value_num);
             defer value.release();
 
-            return .{ .key = key, .value = value };
+            const dict = try macos.foundation.Dictionary.create(
+                &[_]?*const anyopaque{
+                    macos.text.c.kCTFontOpenTypeFeatureTag,
+                    macos.text.c.kCTFontOpenTypeFeatureValue,
+                },
+                &[_]?*const anyopaque{
+                    key,
+                    value,
+                },
+            );
+            defer dict.release();
+
+            self.list.appendValue(macos.foundation.Dictionary, dict);
         }
 
-        pub fn deinit(self: Feature) void {
-            self.key.release();
-            self.value.release();
+        /// Returns the dictionary to use with the font API to set the
+        /// features. This should be released by the caller.
+        pub fn attrsDict(self: FeatureList) !*macos.foundation.Dictionary {
+            var dict = try macos.foundation.Dictionary.create(
+                &[_]?*const anyopaque{macos.text.c.kCTFontFeatureSettingsAttribute},
+                &[_]?*const anyopaque{self.list},
+            );
+            errdefer dict.release();
+            return dict;
         }
     };
 
@@ -76,23 +120,10 @@ pub const Shaper = struct {
     /// The cell_buf argument is the buffer to use for storing shaped results.
     /// This should be at least the number of columns in the terminal.
     pub fn init(alloc: Allocator, opts: font.shape.Options) !Shaper {
-        var feats: FeatureList = .{};
-        errdefer {
-            for (feats.items) |feature| feature.deinit();
-            feats.deinit(alloc);
-        }
-
-        for (hardcoded_features) |name| {
-            const feat = try Feature.init(name);
-            errdefer feat.deinit();
-            try feats.append(alloc, feat);
-        }
-
-        for (opts.features) |name| {
-            const feat = try Feature.init(name);
-            errdefer feat.deinit();
-            try feats.append(alloc, feat);
-        }
+        var feats = try FeatureList.init();
+        errdefer feats.deinit();
+        for (hardcoded_features) |name| try feats.append(name);
+        for (opts.features) |name| try feats.append(name);
 
         return Shaper{
             .alloc = alloc,
@@ -104,8 +135,7 @@ pub const Shaper = struct {
     pub fn deinit(self: *Shaper) void {
         self.cell_buf.deinit(self.alloc);
         self.codepoints.deinit(self.alloc);
-        for (self.features.items) |feature| feature.deinit();
-        self.features.deinit(self.alloc);
+        self.features.deinit();
     }
 
     pub fn runIterator(
@@ -150,6 +180,23 @@ pub const Shaper = struct {
         defer arena.deinit();
         const alloc = arena.allocator();
 
+        // Get our font
+        const run_font: *macos.text.Font = font: {
+            const face = try run.group.group.faceFromIndex(run.font_index);
+            const original = face.font;
+
+            const attrs = try self.features.attrsDict();
+            defer attrs.release();
+
+            const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);
+            defer desc.release();
+
+            const copied = try original.copyWithAttributes(0, null, desc);
+            errdefer copied.release();
+            break :font copied;
+        };
+        defer run_font.release();
+
         // Build up our string contents
         const str = str: {
             const str = try macos.foundation.MutableString.create(0);
@@ -173,9 +220,8 @@ pub const Shaper = struct {
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
         const attr_dict = dict: {
-            const face = try run.group.group.faceFromIndex(run.font_index);
             var keys = [_]?*const anyopaque{macos.text.StringAttribute.font.key()};
-            var values = [_]?*const anyopaque{face.font};
+            var values = [_]?*const anyopaque{run_font};
             break :dict try macos.foundation.Dictionary.create(&keys, &values);
         };
         defer attr_dict.release();
