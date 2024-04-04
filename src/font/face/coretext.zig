@@ -28,7 +28,7 @@ pub const Face = struct {
 
     /// True if our build is using Harfbuzz. If we're not, we can avoid
     /// some Harfbuzz-specific code paths.
-    const harfbuzz_shaper = font.Shaper == font.shape.harfbuzz.Shaper;
+    const harfbuzz_shaper = font.options.backend.hasHarfbuzz();
 
     /// The matrix applied to a regular font to auto-italicize it.
     pub const italic_skew = macos.graphics.AffineTransform{

@@ -115,6 +115,19 @@ pub const Backend = enum {
             => false,
         };
     }
+
+    pub fn hasHarfbuzz(self: Backend) bool {
+        return switch (self) {
+            .freetype,
+            .fontconfig_freetype,
+            .coretext_freetype,
+            => true,
+
+            .coretext,
+            .web_canvas,
+            => false,
+        };
+    }
 };
 
 /// The styles that a family can take.
