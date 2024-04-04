@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const base = @import("base.zig");
+const c = @import("c.zig");
 const cftype = @import("type.zig");
 const ComparisonResult = base.ComparisonResult;
 const Range = base.Range;
@@ -42,6 +43,14 @@ pub const Array = opaque {
 };
 
 pub const MutableArray = opaque {
+    pub fn create() Allocator.Error!*MutableArray {
+        return CFArrayCreateMutable(
+            null,
+            0,
+            &c.kCFTypeArrayCallBacks,
+        ) orelse error.OutOfMemory;
+    }
+
     pub fn createCopy(array: *Array) Allocator.Error!*MutableArray {
         return CFArrayCreateMutableCopy(
             null,
@@ -52,6 +61,14 @@ pub const MutableArray = opaque {
 
     pub fn release(self: *MutableArray) void {
         cftype.CFRelease(self);
+    }
+
+    pub fn appendValue(
+        self: *MutableArray,
+        comptime Elem: type,
+        value: *const Elem,
+    ) void {
+        CFArrayAppendValue(self, @constCast(@ptrCast(value)));
     }
 
     pub fn sortValues(
@@ -73,12 +90,20 @@ pub const MutableArray = opaque {
         );
     }
 
+    extern "c" fn CFArrayCreateMutable(
+        allocator: ?*anyopaque,
+        capacity: usize,
+        callbacks: ?*const anyopaque,
+    ) ?*MutableArray;
     extern "c" fn CFArrayCreateMutableCopy(
         allocator: ?*anyopaque,
         capacity: usize,
         array: *Array,
     ) ?*MutableArray;
-
+    extern "c" fn CFArrayAppendValue(
+        *MutableArray,
+        *anyopaque,
+    ) void;
     extern "c" fn CFArraySortValues(
         array: *MutableArray,
         range: Range,
