@@ -158,7 +158,6 @@ pub const Shaper = struct {
 
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
         // TODO: quirks fonts
-        // TODO: font features
 
         // Special fonts aren't shaped and their codepoint == glyph so we
         // can just return the codepoints as-is.
