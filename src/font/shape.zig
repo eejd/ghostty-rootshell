@@ -13,7 +13,7 @@ pub const Shaper = switch (options.backend) {
     => harfbuzz.Shaper,
 
     // Note that coretext_freetype cannot use the coretext
-    // shaper because the coretext shaper request CoreText
+    // shaper because the coretext shaper requests CoreText
     // font faces.
     .coretext => coretext.Shaper,
 
