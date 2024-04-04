@@ -18,13 +18,17 @@ const log = std.log.scoped(.font_shaper);
 
 /// Shaper that uses CoreText.
 ///
-/// WARNING: This is not ready for production usage. This is why this shaper
-/// can't be configured at build-time without modifying the source. There are
-/// a couple major missing features (quirks mode, font features) and I haven't
-/// very carefully audited all my memory management.
+/// CoreText shaping differs in subtle ways from HarfBuzz so it may result
+/// in inconsistent rendering across platforms. But it also fixes many
+/// issues (some macOS specific):
 ///
-/// The purpose of this shaper is to keep us honest with our other shapers
-/// and to help us find bugs in our other shapers.
+///   - Theta hat offset is incorrect in HarfBuzz but correct by default
+///     on macOS applications using CoreText. (See:
+///     https://github.com/harfbuzz/harfbuzz/discussions/4525)
+///
+///   - Hyphens (U+2010) can be synthesized by CoreText but not by HarfBuzz.
+///     See: https://github.com/mitchellh/ghostty/issues/1643
+///
 pub const Shaper = struct {
     /// The allocated used for the feature list and cell buf.
     alloc: Allocator,
@@ -197,7 +201,8 @@ pub const Shaper = struct {
         defer arena.deinit();
         const alloc = arena.allocator();
 
-        // Get our font
+        // Get our font. We have to apply the font features we want for
+        // the font here.
         const run_font: *macos.text.Font = font: {
             const face = try run.group.group.faceFromIndex(run.font_index);
             const original = face.font;
