@@ -74,11 +74,20 @@ pub const Shaper = struct {
             self.list.release();
         }
 
+        /// Append the given feature to the list. The feature syntax is
+        /// the same as Harfbuzz: "feat" enables it and "-feat" disables it.
         pub fn append(self: *FeatureList, name_raw: []const u8) !void {
             // If the name is `-name` then we are disabling the feature,
             // otherwise we are enabling it, so we need to parse this out.
             const name = if (name_raw[0] == '-') name_raw[1..] else name_raw;
-            const value_num: c_int = if (name_raw[0] == '-') 0 else 1;
+            const dict = try featureDict(name, name_raw[0] != '-');
+            defer dict.release();
+            self.list.appendValue(macos.foundation.Dictionary, dict);
+        }
+
+        /// Create the dictionary for the given feature and value.
+        fn featureDict(name: []const u8, v: bool) !*macos.foundation.Dictionary {
+            const value_num: c_int = @intFromBool(v);
 
             // Keys can only be ASCII.
             var key = try macos.foundation.String.createWithBytes(name, .ascii, false);
@@ -96,17 +105,28 @@ pub const Shaper = struct {
                     value,
                 },
             );
-            defer dict.release();
-
-            self.list.appendValue(macos.foundation.Dictionary, dict);
+            errdefer dict.release();
+            return dict;
         }
 
         /// Returns the dictionary to use with the font API to set the
         /// features. This should be released by the caller.
-        pub fn attrsDict(self: FeatureList) !*macos.foundation.Dictionary {
+        pub fn attrsDict(
+            self: FeatureList,
+            omit_defaults: bool,
+        ) !*macos.foundation.Dictionary {
+            // Get our feature list. If we're omitting defaults then we
+            // slice off the hardcoded features.
+            const list = if (!omit_defaults) self.list else list: {
+                const list = try macos.foundation.MutableArray.createCopy(@ptrCast(self.list));
+                for (hardcoded_features) |_| list.removeValue(0);
+                break :list list;
+            };
+            defer if (omit_defaults) list.release();
+
             var dict = try macos.foundation.Dictionary.create(
                 &[_]?*const anyopaque{macos.text.c.kCTFontFeatureSettingsAttribute},
-                &[_]?*const anyopaque{self.list},
+                &[_]?*const anyopaque{list},
             );
             errdefer dict.release();
             return dict;
@@ -157,8 +177,6 @@ pub const Shaper = struct {
     }
 
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
-        // TODO: quirks fonts
-
         // Special fonts aren't shaped and their codepoint == glyph so we
         // can just return the codepoints as-is.
         if (run.font_index.special() != null) {
@@ -184,7 +202,7 @@ pub const Shaper = struct {
             const face = try run.group.group.faceFromIndex(run.font_index);
             const original = face.font;
 
-            const attrs = try self.features.attrsDict();
+            const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
             defer attrs.release();
 
             const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);

@@ -71,6 +71,10 @@ pub const MutableArray = opaque {
         CFArrayAppendValue(self, @constCast(@ptrCast(value)));
     }
 
+    pub fn removeValue(self: *MutableArray, idx: usize) void {
+        CFArrayRemoveValueAtIndex(self, idx);
+    }
+
     pub fn sortValues(
         self: *MutableArray,
         comptime Elem: type,
@@ -103,6 +107,10 @@ pub const MutableArray = opaque {
     extern "c" fn CFArrayAppendValue(
         *MutableArray,
         *anyopaque,
+    ) void;
+    extern "c" fn CFArrayRemoveValueAtIndex(
+        *MutableArray,
+        usize,
     ) void;
     extern "c" fn CFArraySortValues(
         array: *MutableArray,
