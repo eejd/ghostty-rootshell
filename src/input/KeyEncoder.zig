@@ -254,10 +254,10 @@ fn legacy(
         self.ignore_keypad_with_numlock,
         self.modify_other_keys_state_2,
     )) |sequence| pc_style: {
-        // If we're pressing enter and have UTF-8 text, we probably are
+        // If we're pressing enter or escape and have UTF-8 text, we probably are
         // clearing a dead key state. This happens specifically on macOS.
         // We have a unit test for this.
-        if (self.event.key == .enter and self.event.utf8.len > 0) {
+        if (self.event.key == .enter or self.event.key == .escape and self.event.utf8.len > 0) {
             break :pc_style;
         }
 
