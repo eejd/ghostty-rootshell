@@ -1433,7 +1433,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                 }
             }
 
-            const is_final_row = sel_end.page == chunk.page and sel_end.y == chunk.start + row_count;
+            const is_final_row = chunk.page == sel_end.page and y == sel_end.y;
 
             if (!is_final_row and
                 (!row.wrap or sel_ordered.rectangle))
