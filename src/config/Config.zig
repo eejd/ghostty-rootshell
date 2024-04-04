@@ -839,7 +839,9 @@ keybind: Keybinds = .{},
 ///
 ///   * `sudo` - Set sudo wrapper to preserve terminfo.
 ///
-/// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`
+///   * `title` - Set the window title via shell integration.
+///
+/// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
 @"shell-integration-features": ShellIntegrationFeatures = .{},
 
 /// Sets the reporting format for OSC sequences that request color information.
@@ -3378,6 +3380,7 @@ pub const ShellIntegration = enum {
 pub const ShellIntegrationFeatures = packed struct {
     cursor: bool = true,
     sudo: bool = false,
+    title: bool = true,
 };
 
 /// OSC 4, 10, 11, and 12 default color reporting format.
