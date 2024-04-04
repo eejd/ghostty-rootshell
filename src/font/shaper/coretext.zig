@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const harfbuzz = @import("harfbuzz");
 const macos = @import("macos");
 const trace = @import("tracy").trace;
 const font = @import("../main.zig");

@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
-const harfbuzz = @import("shaper/harfbuzz.zig");
-const coretext = @import("shaper/coretext.zig");
+pub const harfbuzz = @import("shaper/harfbuzz.zig");
+pub const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
 pub usingnamespace @import("shaper/run.zig");
 
