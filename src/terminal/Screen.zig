@@ -1433,7 +1433,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                 }
             }
 
-            const is_final_row = sel_end.page == chunk.page and sel_end.y == chunk.start + row_count;
+            const is_final_row = chunk.page == sel_end.page and y == sel_end.y;
 
             if (!is_final_row and
                 (!row.wrap or sel_ordered.rectangle))
@@ -7079,29 +7079,30 @@ test "Screen: selectionString multi-page" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 130, 40, 512);
+    var s = try init(alloc, 1, 3, 2048);
     defer s.deinit();
-    // 512 * "y\n"
-    var str: [1024]u8 = undefined;
-    var i: usize = 0;
-    while (i < str.len) : (i += 2) {
-        str[i] = 'y';
-        str[i + 1] = '\n';
+
+    const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+
+    // Lazy way to seek to the first page boundary.
+    for (0..first_page_size - 1) |_| {
+        try s.testWriteString("\n");
     }
-    try s.testWriteString(&str);
+
+    try s.testWriteString("y\ny\ny");
 
     {
         const sel = Selection.init(
-            s.pages.pin(.{ .screen = .{ .x = 0, .y = 0 } }).?,
-            s.pages.pin(.{ .active = .{ .x = 1, .y = 39 } }).?,
+            s.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
+            s.pages.pin(.{ .active = .{ .x = 0, .y = 2 } }).?,
             false,
         );
         const contents = try s.selectionString(alloc, .{
             .sel = sel,
-            .trim = true,
+            .trim = false,
         });
         defer alloc.free(contents);
-        const expected = str[0..1023];
+        const expected = "y\ny\ny";
         try testing.expectEqualStrings(expected, contents);
     }
 }
