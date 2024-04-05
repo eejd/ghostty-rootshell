@@ -245,6 +245,10 @@ fn legacy(
     // If we're in a dead key state then we never emit a sequence.
     if (self.event.composing) return "";
 
+    // When pressed backspace and have UTF-8 text, do not emit sequence.
+    // This prevents backspace emitted twice on macOS with korean input method.
+    if (self.event.key == .backspace and self.event.utf8.len > 0) return "";
+
     // If we match a PC style function key then that is our result.
     if (pcStyleFunctionKey(
         self.event.key,
