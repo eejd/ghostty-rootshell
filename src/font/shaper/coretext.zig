@@ -33,7 +33,7 @@ pub const Shaper = struct {
     alloc: Allocator,
 
     /// The string used for shaping the current run.
-    codepoints: CodepointList = .{},
+    run_state: RunState,
 
     /// The font features we want to use. The hardcoded features are always
     /// set first.
@@ -47,6 +47,28 @@ pub const Shaper = struct {
     const Codepoint = struct {
         codepoint: u32,
         cluster: u32,
+    };
+
+    const RunState = struct {
+        str: *macos.foundation.MutableString,
+        codepoints: CodepointList,
+
+        fn init() !RunState {
+            var str = try macos.foundation.MutableString.create(0);
+            errdefer str.release();
+            return .{ .str = str, .codepoints = .{} };
+        }
+
+        fn deinit(self: *RunState, alloc: Allocator) void {
+            self.codepoints.deinit(alloc);
+            self.str.release();
+        }
+
+        fn reset(self: *RunState) !void {
+            self.codepoints.clearRetainingCapacity();
+            self.str.release();
+            self.str = try macos.foundation.MutableString.create(0);
+        }
     };
 
     /// List of font features, parsed into the data structures used by
@@ -148,16 +170,20 @@ pub const Shaper = struct {
         for (hardcoded_features) |name| try feats.append(name);
         for (opts.features) |name| try feats.append(name);
 
+        const run_state = try RunState.init();
+        errdefer run_state.deinit();
+
         return Shaper{
             .alloc = alloc,
             .cell_buf = .{},
+            .run_state = run_state,
             .features = feats,
         };
     }
 
     pub fn deinit(self: *Shaper) void {
         self.cell_buf.deinit(self.alloc);
-        self.codepoints.deinit(self.alloc);
+        self.run_state.deinit(self.alloc);
         self.features.deinit();
     }
 
@@ -180,12 +206,14 @@ pub const Shaper = struct {
     }
 
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
+        const state = &self.run_state;
+
         // Special fonts aren't shaped and their codepoint == glyph so we
         // can just return the codepoints as-is.
         if (run.font_index.special() != null) {
             self.cell_buf.clearRetainingCapacity();
-            try self.cell_buf.ensureTotalCapacity(self.alloc, self.codepoints.items.len);
-            for (self.codepoints.items) |entry| {
+            try self.cell_buf.ensureTotalCapacity(self.alloc, state.codepoints.items.len);
+            for (state.codepoints.items) |entry| {
                 self.cell_buf.appendAssumeCapacity(.{
                     .x = @intCast(entry.cluster),
                     .glyph_index = @intCast(entry.codepoint),
@@ -218,26 +246,6 @@ pub const Shaper = struct {
         };
         defer run_font.release();
 
-        // Build up our string contents
-        const str = str: {
-            const str = try macos.foundation.MutableString.create(0);
-            errdefer str.release();
-
-            for (self.codepoints.items) |entry| {
-                var unichars: [2]u16 = undefined;
-                const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
-                    entry.codepoint,
-                    &unichars,
-                );
-                const len: usize = if (pair) 2 else 1;
-                str.appendCharacters(unichars[0..len]);
-                // log.warn("append codepoint={} unichar_len={}", .{ cp, len });
-            }
-
-            break :str str;
-        };
-        defer str.release();
-
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
         const attr_dict = dict: {
@@ -249,7 +257,7 @@ pub const Shaper = struct {
 
         // Create an attributed string from our string
         const attr_str = try macos.foundation.AttributedString.create(
-            str.string(),
+            state.str.string(),
             attr_dict,
         );
         defer attr_str.release();
@@ -282,7 +290,7 @@ pub const Shaper = struct {
         for (glyphs, positions, advances, indices) |glyph, pos, advance, index| {
             // Our cluster is also our cell X position. If the cluster changes
             // then we need to reset our current cell offsets.
-            const cluster = self.codepoints.items[index].cluster;
+            const cluster = state.codepoints.items[index].cluster;
             if (cell_offset.cluster != cluster) cell_offset = .{
                 .cluster = cluster,
             };
@@ -320,12 +328,31 @@ pub const Shaper = struct {
         shaper: *Shaper,
 
         pub fn prepare(self: *RunIteratorHook) !void {
-            self.shaper.codepoints.clearRetainingCapacity();
+            try self.shaper.run_state.reset();
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
-            try self.shaper.codepoints.append(self.shaper.alloc, .{
+            // Build our UTF-16 string for CoreText
+            var unichars: [2]u16 = undefined;
+            const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
+                cp,
+                &unichars,
+            );
+            const len: usize = if (pair) 2 else 1;
+            const state = &self.shaper.run_state;
+            state.str.appendCharacters(unichars[0..len]);
+
+            // Build our reverse lookup table for codepoints to clusters
+            try state.codepoints.append(self.shaper.alloc, .{
                 .codepoint = cp,
+                .cluster = cluster,
+            });
+
+            // If the UTF-16 codepoint is a pair then we need to insert
+            // a dummy entry so that the CTRunGetStringIndices() function
+            // maps correctly.
+            if (pair) try state.codepoints.append(self.shaper.alloc, .{
+                .codepoint = 0,
                 .cluster = cluster,
             });
         }
@@ -493,7 +520,41 @@ test "shape" {
     try testing.expectEqual(@as(usize, 1), count);
 }
 
-// TODO(coretext)
+test "shape nerd fonts" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaperWithFont(alloc, .nerd_font);
+    defer testdata.deinit();
+
+    var buf: [32]u8 = undefined;
+    var buf_idx: usize = 0;
+    buf_idx += try std.unicode.utf8Encode(' ', buf[buf_idx..]); // space
+    buf_idx += try std.unicode.utf8Encode(0xF024B, buf[buf_idx..]); // nf-md-folder
+    buf_idx += try std.unicode.utf8Encode(' ', buf[buf_idx..]); // space
+
+    // Make a screen with some data
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
+    defer screen.deinit();
+    try screen.testWriteString(buf[0..buf_idx]);
+
+    // Get our run iterator
+    var shaper = &testdata.shaper;
+    var it = shaper.runIterator(
+        testdata.cache,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
+    var count: usize = 0;
+    while (try it.next(alloc)) |run| {
+        count += 1;
+        _ = try shaper.shape(run);
+    }
+    try testing.expectEqual(@as(usize, 1), count);
+}
+
 test "shape inconsolata ligs" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1274,6 +1335,7 @@ const TestShaper = struct {
 const TestFont = enum {
     inconsolata,
     monaspace_neon,
+    nerd_font,
 };
 
 /// Helper to return a fully initialized shaper.
@@ -1287,6 +1349,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
     const testFont = switch (font_req) {
         .inconsolata => @import("../test.zig").fontRegular,
         .monaspace_neon => @import("../test.zig").fontMonaspaceNeon,
+        .nerd_font => @import("../test.zig").fontNerdFont,
     };
 
     var lib = try Library.init();
