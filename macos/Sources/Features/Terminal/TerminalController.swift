@@ -166,15 +166,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     private func syncAppearance() {
         guard let window = self.window as? TerminalWindow else { return }
         
-        // We match the appearance depending on the lightness/darkness of the
-        // background color. We have to do this because our titlebars in tabs inherit
-        // our background color for the focused tab but use the macOS theme for the
-        // rest of the titlebar.
-        if (window.titlebarTabs) {
-            let color = OSColor(ghostty.config.backgroundColor)
-            let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
-            window.appearance = appearance
-        }
+        let backgroundColor = OSColor(ghostty.config.backgroundColor)
+        let appearance = NSAppearance(named: backgroundColor.isLightColor ? .aqua : .darkAqua)
+        window.appearance = appearance
 
         // Set the font for the window and tab titles.
         if let titleFontName = ghostty.config.windowTitleFontFamily {
@@ -182,6 +176,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         } else {
             window.titlebarFont = nil
         }
+
+        window.backgroundColor = backgroundColor
+        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+        window.updateToolbar()
     }
     
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
@@ -254,10 +252,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         window.center()
 
         // Set the background color of the window
-        window.backgroundColor = NSColor(ghostty.config.backgroundColor)
+        let backgroundColor = NSColor(ghostty.config.backgroundColor)
+        window.backgroundColor = backgroundColor
 
         // This makes sure our titlebar renders correctly when there is a transparent background
-        window.titlebarOpacity = ghostty.config.backgroundOpacity
+        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
 
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode

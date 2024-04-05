@@ -4,14 +4,14 @@ class TerminalWindow: NSWindow {
     @objc dynamic var surfaceIsZoomed: Bool = false
     @objc dynamic var keyEquivalent: String = ""
 
-    var titlebarOpacity: CGFloat = 1 {
+    lazy var titlebarColor: NSColor = backgroundColor {
         didSet {
             guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
                 $0.className == "NSTitlebarContainerView"
             }) else { return }
 
             titlebarContainer.wantsLayer = true
-            titlebarContainer.layer?.backgroundColor = backgroundColor.withAlphaComponent(titlebarOpacity).cgColor
+            titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
         }
     }
 
@@ -182,6 +182,12 @@ class TerminalWindow: NSWindow {
     
     // MARK: -
 
+    func updateToolbar() {
+        newTabButtonImageLayer = nil
+        effectViewIsHidden = false
+    }
+
+    private var newTabButtonImage: NSImage? = nil
     private var newTabButtonImageLayer: VibrantLayer? = nil
 
     // Since we are coloring the new tab button's image, it doesn't respond to the
@@ -209,7 +215,12 @@ class TerminalWindow: NSWindow {
 		guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
 			$0 as? NSImageView != nil
 		}) as? NSImageView else { return }
-		guard let newTabButtonImage = newTabButtonImageView.image else { return }
+
+        if newTabButtonImage == nil {
+            newTabButtonImage = newTabButtonImageView.image
+        }
+
+		guard let newTabButtonImage else { return }
 
 		let isLightTheme = backgroundColor.isLightColor
 
@@ -242,8 +253,6 @@ class TerminalWindow: NSWindow {
 		backgroundColor.luminance < 0.05
 	}
 
-	lazy var backgroundColorWithOpacity: NSColor = backgroundColor.withAlphaComponent(titlebarOpacity)
-
 	private func updateTabsForVeryDarkBackgrounds() {
 		guard hasVeryDarkBackground else { return }
 
@@ -255,12 +264,14 @@ class TerminalWindow: NSWindow {
 			guard let activeTabBackgroundView = titlebarContainer.firstDescendant(withClassName: "NSTabButton")?.superview?.subviews.last?.firstDescendant(withID: "_backgroundView")
 			else { return }
 
-			activeTabBackgroundView.layer?.backgroundColor = backgroundColorWithOpacity.cgColor
-			titlebarContainer.layer?.backgroundColor = backgroundColorWithOpacity.highlight(withLevel: 0.14)?.cgColor
+			activeTabBackgroundView.layer?.backgroundColor = titlebarColor.cgColor
+			titlebarContainer.layer?.backgroundColor = titlebarColor.highlight(withLevel: 0.14)?.cgColor
 		} else {
-			titlebarContainer.layer?.backgroundColor = backgroundColorWithOpacity.cgColor
+			titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
 		}
 	}
+
+    // MARK: - Split zooming
 
     private func updateResetZoomTitlebarButtonVisibility() {
         guard let tabGroup, let resetZoomTitlebarAccessoryViewController else { return }
@@ -280,24 +291,6 @@ class TerminalWindow: NSWindow {
 			}
 			resetZoomTitlebarAccessoryViewController.view.isHidden = isHidden
 		}
-    }
-
-    // We have to regenerate a toolbar when the titlebar tabs setting changes since our
-    // custom toolbar conditionally generates the items based on this setting. I tried to
-    // invalidate the toolbar items and force a refresh, but as far as I can tell that
-    // isn't possible.
-    private func generateToolbar() {
-        let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
-
-        toolbar = terminalToolbar
-        toolbarStyle = .unifiedCompact
-		if let resetZoomItem = terminalToolbar.items.first(where: { $0.itemIdentifier == .resetZoom }) {
-			resetZoomItem.view = resetZoomToolbarButton
-			resetZoomItem.view!.removeConstraints(resetZoomItem.view!.constraints)
-			resetZoomItem.view!.widthAnchor.constraint(equalToConstant: 22).isActive = true
-			resetZoomItem.view!.heightAnchor.constraint(equalToConstant: 20).isActive = true
-		}
-        updateResetZoomTitlebarButtonVisibility()
     }
 
 	private func generateResetZoomButton() -> NSButton {
@@ -356,6 +349,24 @@ class TerminalWindow: NSWindow {
 		}
 	}
 
+    // We have to regenerate a toolbar when the titlebar tabs setting changes since our
+    // custom toolbar conditionally generates the items based on this setting. I tried to
+    // invalidate the toolbar items and force a refresh, but as far as I can tell that
+    // isn't possible.
+    func generateToolbar() {
+        let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
+
+        toolbar = terminalToolbar
+        toolbarStyle = .unifiedCompact
+        if let resetZoomItem = terminalToolbar.items.first(where: { $0.itemIdentifier == .resetZoom }) {
+            resetZoomItem.view = resetZoomToolbarButton
+            resetZoomItem.view!.removeConstraints(resetZoomItem.view!.constraints)
+            resetZoomItem.view!.widthAnchor.constraint(equalToConstant: 22).isActive = true
+            resetZoomItem.view!.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        }
+        updateResetZoomTitlebarButtonVisibility()
+    }
+
 	// Find the NSTextField responsible for displaying the titlebar's title.
 	private var titlebarTextField: NSTextField? {
 		guard let titlebarContainer = contentView?.superview?.subviews
@@ -382,14 +393,15 @@ class TerminalWindow: NSWindow {
     // The tab bar controller ID from macOS
     static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
 
-    // Look through the titlebar's view hierarchy and hide any of the internal
-    // views used to create a separator between the title/toolbar and unselected
-    // tabs in the tab bar.
     override func updateConstraintsIfNeeded() {
         super.updateConstraintsIfNeeded()
 
-        // For titlebar tabs, we want to hide the separator view so that we get rid
-        // of an aesthetically unpleasing shadow.
+        hideTitleBarSeparators()
+    }
+
+    // For titlebar tabs, we want to hide the separator view so that we get rid
+    // of an aesthetically unpleasing shadow.
+    private func hideTitleBarSeparators() {
         guard titlebarTabs else { return }
 
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
@@ -589,7 +601,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
                 layer?.backgroundColor = .clear
             } else {
 				let systemOverlayColor = NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45))!
-				let titlebarBackgroundColor = terminalWindow.backgroundColorWithOpacity.blended(withFraction: 1, of: systemOverlayColor)
+				let titlebarBackgroundColor = terminalWindow.titlebarColor.blended(withFraction: 1, of: systemOverlayColor)
 
 				let highlightedColor = terminalWindow.hasVeryDarkBackground ? terminalWindow.backgroundColor : .clear
 				let backgroundColor = terminalWindow.hasVeryDarkBackground ? titlebarBackgroundColor : systemOverlayColor
