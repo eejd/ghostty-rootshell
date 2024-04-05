@@ -563,6 +563,11 @@ on the search path for a lot of software (such as Gnome and KDE) and
 installing into a prefix with `-p` sets up a directory structure to ensure
 all features of Ghostty work.
 
+#### GTK 4.14 on Wayland's GL
+
+After upgrading to 4.14, many users got crashed. There is [open issue](https://gitlab.gnome.org/GNOME/gtk/-/issues/6589/note_2072039).
+Workaround is running ghostty with `GDK_DEBUG=gl-disable-gles ghostty`
+
 ### Mac `.app`
 
 To build the official, fully featured macOS application, you must
