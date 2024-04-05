@@ -73,11 +73,19 @@ pub fn deinit(self: *SharedGridSet) void {
     self.font_lib.deinit();
 }
 
+/// Returns the number of cached grids.
+pub fn count(self: *const SharedGridSet) usize {
+    return self.map.count();
+}
+
 /// Initialize a SharedGrid for the given font configuration. If the
 /// SharedGrid is not present it will be initialized with a ref count of
 /// 1. If it is present, the ref count will be incremented.
 ///
 /// This is NOT thread-safe.
+///
+/// The returned data (key and grid) should never be freed. The memory is
+/// owned by the set and will be freed when the ref count reaches zero.
 pub fn ref(
     self: *SharedGridSet,
     config: *const Config,
@@ -142,18 +150,19 @@ fn collection(
     key: *const Key,
     size: DesiredSize,
 ) !Collection {
-    var c = try Collection.init(self.alloc);
-    errdefer c.deinit(self.alloc);
-    c.load_options = .{
+    // A quick note on memory management:
+    // - font_lib is owned by the SharedGridSet
+    // - metric_modifiers is owned by the key which is freed only when
+    //   the ref count for this grid reaches zero.
+    const load_options: Collection.LoadOptions = .{
         .library = self.font_lib,
         .size = size,
         .metric_modifiers = key.metric_modifiers,
     };
 
-    const opts: font.face.Options = .{
-        .size = size,
-        .metric_modifiers = &key.metric_modifiers,
-    };
+    var c = try Collection.init(self.alloc);
+    errdefer c.deinit(self.alloc);
+    c.load_options = load_options;
 
     // Search for fonts
     if (Discover != void) discover: {
@@ -199,7 +208,7 @@ fn collection(
         .{ .fallback_loaded = try Face.init(
             self.font_lib,
             face_ttf,
-            opts,
+            load_options.faceOptions(),
         ) },
     );
     _ = try c.add(
@@ -208,7 +217,7 @@ fn collection(
         .{ .fallback_loaded = try Face.init(
             self.font_lib,
             face_bold_ttf,
-            opts,
+            load_options.faceOptions(),
         ) },
     );
 
@@ -241,7 +250,7 @@ fn collection(
             .{ .fallback_loaded = try Face.init(
                 self.font_lib,
                 face_emoji_ttf,
-                opts,
+                load_options.faceOptions(),
             ) },
         );
         _ = try c.add(
@@ -250,7 +259,7 @@ fn collection(
             .{ .fallback_loaded = try Face.init(
                 self.font_lib,
                 face_emoji_text_ttf,
-                opts,
+                load_options.faceOptions(),
             ) },
         );
     }
@@ -520,11 +529,21 @@ test SharedGridSet {
     defer config.deinit();
 
     // Get a grid for the given config
-    _, const grid1 = try set.ref(&config, .{ .points = 12 });
+    const key1, const grid1 = try set.ref(&config, .{ .points = 12 });
+    try testing.expectEqual(@as(usize, 1), set.count());
 
     // Get another
-    _, const grid2 = try set.ref(&config, .{ .points = 12 });
+    const key2, const grid2 = try set.ref(&config, .{ .points = 12 });
+    try testing.expectEqual(@as(usize, 1), set.count());
 
     // They should be pointer equivalent
     try testing.expectEqual(@intFromPtr(grid1), @intFromPtr(grid2));
+
+    // If I deref grid2 then we should still have a count of 1
+    set.deref(key2);
+    try testing.expectEqual(@as(usize, 1), set.count());
+
+    // If I deref grid1 then we should have a count of 0
+    set.deref(key1);
+    try testing.expectEqual(@as(usize, 0), set.count());
 }

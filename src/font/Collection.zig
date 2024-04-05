@@ -263,18 +263,17 @@ pub const LoadOptions = struct {
     /// The desired font size for all loaded faces.
     size: DesiredSize = .{ .points = 12 },
 
-    /// The metric modifiers to use for all loaded faces. If this is
-    /// set then the memory is owned by the collection and will be
-    /// freed when the collection is deinitialized. The modifier set
-    /// must use the same allocator as the collection.
+    /// The metric modifiers to use for all loaded faces. The memory
+    /// for this is owned by the user and is not freed by the collection.
     metric_modifiers: Metrics.ModifierSet = .{},
 
     pub fn deinit(self: *LoadOptions, alloc: Allocator) void {
-        self.metric_modifiers.deinit(alloc);
+        _ = self;
+        _ = alloc;
     }
 
     /// The options to use for loading faces.
-    fn faceOptions(self: *const LoadOptions) font.face.Options {
+    pub fn faceOptions(self: *const LoadOptions) font.face.Options {
         return .{
             .size = self.size,
             .metric_modifiers = &self.metric_modifiers,
