@@ -97,7 +97,7 @@ cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
 uniforms: mtl_shaders.Uniforms,
 
 /// The font structures.
-font_group: *font.GroupCache,
+font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
 
 /// The images that we may render.
@@ -343,25 +343,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // to blurry rendering.
     layer.setProperty("contentsScale", info.scaleFactor);
 
-    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
-    // Doesn't matter, any normal ASCII will do we're just trying to make
-    // sure we use the regular font.
-    const metrics = metrics: {
-        const index = (try options.font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-        const face = try options.font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
-    };
-    log.debug("cell dimensions={}", .{metrics});
-
-    // Set the sprite font up
-    options.font_group.group.sprite = font.sprite.Face{
-        .width = metrics.cell_width,
-        .height = metrics.cell_height,
-        .thickness = metrics.underline_thickness *
-            @as(u32, if (options.config.font_thicken) 2 else 1),
-        .underline_position = metrics.underline_position,
-    };
-
     // Create the font shaper. We initially create a shaper that can support
     // a width of 160 which is a common width for modern screens to help
     // avoid allocations later.
@@ -427,15 +408,34 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     var shaders = try Shaders.init(alloc, device, custom_shaders);
     errdefer shaders.deinit(alloc);
 
-    // Font atlas textures
-    const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
-    const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
+    // Initialize all the data that requires a critical font section.
+    const font_critical: struct {
+        metrics: font.Metrics,
+        texture_greyscale: objc.Object,
+        texture_color: objc.Object,
+    } = font_critical: {
+        const grid = options.font_grid;
+        grid.lock.lockShared();
+        defer grid.lock.unlockShared();
+
+        // Font atlas textures
+        const greyscale = try initAtlasTexture(device, &grid.atlas_greyscale);
+        errdefer deinitMTLResource(greyscale);
+        const color = try initAtlasTexture(device, &grid.atlas_color);
+        errdefer deinitMTLResource(color);
+
+        break :font_critical .{
+            .metrics = grid.metrics,
+            .texture_greyscale = greyscale,
+            .texture_color = color,
+        };
+    };
 
     return Metal{
         .alloc = alloc,
         .config = options.config,
         .surface_mailbox = options.surface_mailbox,
-        .grid_metrics = metrics,
+        .grid_metrics = font_critical.metrics,
         .screen_size = null,
         .padding = options.padding,
         .focused = true,
@@ -450,13 +450,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
-            .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
-            .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+            .strikethrough_position = @floatFromInt(font_critical.metrics.strikethrough_position),
+            .strikethrough_thickness = @floatFromInt(font_critical.metrics.strikethrough_thickness),
             .min_contrast = options.config.min_contrast,
         },
 
         // Fonts
-        .font_group = options.font_group,
+        .font_grid = options.font_grid,
         .font_shaper = font_shaper,
 
         // Shaders
@@ -469,8 +469,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .device = device,
         .queue = queue,
         .layer = layer,
-        .texture_greyscale = texture_greyscale,
-        .texture_color = texture_color,
+        .texture_greyscale = font_critical.texture_greyscale,
+        .texture_color = font_critical.texture_color,
         .custom_shader_state = custom_shader_state,
     };
 }
@@ -566,6 +566,7 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 /// Must be called on the render thread.
 pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     log.info("set font size={}", .{size});
+    if (true) @panic("TODO"); // TODO(fontmem)
 
     // Set our new size, this will also reset our font atlas.
     try self.font_group.setSize(size);
@@ -1381,10 +1382,15 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
     // so to be safe we just always reset it. This has a performance hit
     // when its not necessary but config reloading shouldn't be so
     // common to cause a problem.
-    self.font_group.reset();
-    self.font_group.group.styles = config.font_styles;
-    self.font_group.atlas_greyscale.clear();
-    self.font_group.atlas_color.clear();
+    //
+    // TODO(fontmem): we no longer do this. the surface should handle
+    // font changes, create a new grid for us, and send it via message
+    // passing or something.
+    //
+    // self.font_group.reset();
+    // self.font_group.group.styles = config.font_styles;
+    // self.font_group.atlas_greyscale.clear();
+    // self.font_group.atlas_color.clear();
 
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
