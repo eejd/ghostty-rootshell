@@ -179,7 +179,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         window.backgroundColor = backgroundColor
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
-        window.updateToolbar()
+        window.updateTabBar()
     }
     
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about

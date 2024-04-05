@@ -1,7 +1,6 @@
 import Cocoa
 
 class TerminalWindow: NSWindow {
-    @objc dynamic var surfaceIsZoomed: Bool = false
     @objc dynamic var keyEquivalent: String = ""
 
     lazy var titlebarColor: NSColor = backgroundColor {
@@ -14,32 +13,6 @@ class TerminalWindow: NSWindow {
             titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
         }
     }
-
-    private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
-
-	private lazy var resetZoomTabButton: NSButton = {
-		let button = generateResetZoomButton()
-		button.action = #selector(selectTabAndZoom(_:))
-		return button
-	}()
-
-	private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
-		guard let titlebarContainer = contentView?.superview?.subviews.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
-
-		let size = NSSize(width: titlebarContainer.bounds.height, height: titlebarContainer.bounds.height)
-		let view = NSView(frame: NSRect(origin: .zero, size: size))
-
-		let button = generateResetZoomButton()
-		button.frame.origin.x = size.width/2 - button.bounds.width/2
-		button.frame.origin.y = size.height/2 - button.bounds.height/2
-		view.addSubview(button)
-
-		let titlebarAccessoryViewController = NSTitlebarAccessoryViewController()
-		titlebarAccessoryViewController.view = view
-		titlebarAccessoryViewController.layoutAttribute = .right
-
-		return titlebarAccessoryViewController
-	}()
 
     private lazy var keyEquivalentLabel: NSTextField = {
         let label = NSTextField(labelWithAttributedString: NSAttributedString())
@@ -102,7 +75,13 @@ class TerminalWindow: NSWindow {
             tab.attributedTitle = attributedTitle
         }
     }
-    
+
+    // We only need to set this once, but need to do it after the window has been created in order
+    // to determine if the theme is using a very dark background, in which case we don't want to
+    // remove the effect view if the default tab bar is being used since the effect created in
+    // `updateTabsForVeryDarkBackgrounds`.
+    private var effectViewIsHidden = false
+
     override func becomeKey() {
         // This is required because the removeTitlebarAccessoryViewController hook does not
         // catch the creation of a new window by "tearing off" a tab from a tabbed window.
@@ -136,12 +115,6 @@ class TerminalWindow: NSWindow {
 		// otherwise things can get out of sync and flickering can occur.
 		updateTabsForVeryDarkBackgrounds()
 	}
-
-	// We only need to set this once, but need to do it after the window has been created in order
-	// to determine if the theme is using a very dark background, in which case we don't want to
-	// remove the effect view if the default tab bar is being used since the effect created in
-	// `updateTabsForVeryDarkBackgrounds`.
-	private var effectViewIsHidden = false
 
     override func update() {
         super.update()
@@ -179,16 +152,36 @@ class TerminalWindow: NSWindow {
 		updateNewTabButtonImage()
 		updateResetZoomTitlebarButtonVisibility()
     }
-    
-    // MARK: -
 
-    func updateToolbar() {
-        newTabButtonImageLayer = nil
-        effectViewIsHidden = false
+    override func updateConstraintsIfNeeded() {
+        super.updateConstraintsIfNeeded()
+
+        if titlebarTabs {
+            hideTitleBarSeparators()
+        }
+    }
+
+    // MARK: - Tab Bar Styling
+
+    var hasVeryDarkBackground: Bool {
+        backgroundColor.luminance < 0.05
     }
 
     private var newTabButtonImage: NSImage? = nil
+
     private var newTabButtonImageLayer: VibrantLayer? = nil
+
+    func updateTabBar() {
+        newTabButtonImageLayer = nil
+        effectViewIsHidden = false
+
+        if titlebarTabs {
+            guard let tabBarAccessoryViewController = titlebarAccessoryViewControllers.first(where: { $0.identifier == Self.TabBarController}) else { return }
+
+            tabBarAccessoryViewController.layoutAttribute = .right
+            pushTabsToTitlebar(tabBarAccessoryViewController)
+        }
+    }
 
     // Since we are coloring the new tab button's image, it doesn't respond to the
     // window's key status changes in terms of becoming less prominent visually,
@@ -249,10 +242,6 @@ class TerminalWindow: NSWindow {
 		newTabButtonImageView.frame = newTabButton.bounds
 	}
 
-	var hasVeryDarkBackground: Bool {
-		backgroundColor.luminance < 0.05
-	}
-
 	private func updateTabsForVeryDarkBackgrounds() {
 		guard hasVeryDarkBackground else { return }
 
@@ -271,7 +260,35 @@ class TerminalWindow: NSWindow {
 		}
 	}
 
-    // MARK: - Split zooming
+    // MARK: - Split Zoom Button
+
+    @objc dynamic var surfaceIsZoomed: Bool = false
+
+    private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
+
+    private lazy var resetZoomTabButton: NSButton = {
+        let button = generateResetZoomButton()
+        button.action = #selector(selectTabAndZoom(_:))
+        return button
+    }()
+
+    private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
+        guard let titlebarContainer = contentView?.superview?.subviews.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
+
+        let size = NSSize(width: titlebarContainer.bounds.height, height: titlebarContainer.bounds.height)
+        let view = NSView(frame: NSRect(origin: .zero, size: size))
+
+        let button = generateResetZoomButton()
+        button.frame.origin.x = size.width/2 - button.bounds.width/2
+        button.frame.origin.y = size.height/2 - button.bounds.height/2
+        view.addSubview(button)
+
+        let titlebarAccessoryViewController = NSTitlebarAccessoryViewController()
+        titlebarAccessoryViewController.view = view
+        titlebarAccessoryViewController.layoutAttribute = .right
+
+        return titlebarAccessoryViewController
+    }()
 
     private func updateResetZoomTitlebarButtonVisibility() {
         guard let tabGroup, let resetZoomTitlebarAccessoryViewController else { return }
@@ -325,8 +342,49 @@ class TerminalWindow: NSWindow {
 		windowController.splitZoom(self)
 	}
 
+    // MARK: - Titlebar Font
+
+    // Used to set the titlebar font.
+    var titlebarFont: NSFont? {
+        didSet {
+            titlebarTextField?.font = titlebarFont
+            tab.attributedTitle = attributedTitle
+
+            if let toolbar = toolbar as? TerminalToolbar {
+                toolbar.titleFont = titlebarFont
+            }
+        }
+    }
+
+    // Find the NSTextField responsible for displaying the titlebar's title.
+    private var titlebarTextField: NSTextField? {
+        guard let titlebarContainer = contentView?.superview?.subviews
+            .first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
+        guard let titlebarView = titlebarContainer.subviews
+            .first(where: { $0.className == "NSTitlebarView" }) else { return nil }
+        return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
+    }
+
+    // Return a styled representation of our title property.
+    private var attributedTitle: NSAttributedString? {
+        guard let titlebarFont else { return nil }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: titlebarFont,
+            .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+        ]
+        return NSAttributedString(string: title, attributes: attributes)
+    }
+
     // MARK: - Titlebar Tabs
+
+    private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
     
+    private var windowDragHandle: WindowDragView? = nil
+
+    // The tab bar controller ID from macOS
+    static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
+
     // Used by the window controller to enable/disable titlebar tabs.
     var titlebarTabs = false {
         didSet {
@@ -336,18 +394,6 @@ class TerminalWindow: NSWindow {
 			}
         }
     }
-
-	// Used to set the titlebar font.
-	var titlebarFont: NSFont? {
-		didSet {
-			titlebarTextField?.font = titlebarFont
-			tab.attributedTitle = attributedTitle
-
-			if let toolbar = toolbar as? TerminalToolbar {
-				toolbar.titleFont = titlebarFont
-			}
-		}
-	}
 
     // We have to regenerate a toolbar when the titlebar tabs setting changes since our
     // custom toolbar conditionally generates the items based on this setting. I tried to
@@ -367,43 +413,9 @@ class TerminalWindow: NSWindow {
         updateResetZoomTitlebarButtonVisibility()
     }
 
-	// Find the NSTextField responsible for displaying the titlebar's title.
-	private var titlebarTextField: NSTextField? {
-		guard let titlebarContainer = contentView?.superview?.subviews
-			.first(where: { $0.className == "NSTitlebarContainerView" }) else { return nil }
-		guard let titlebarView = titlebarContainer.subviews
-			.first(where: { $0.className == "NSTitlebarView" }) else { return nil }
-		return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
-	}
-
-	// Return a styled representation of our title property.
-	private var attributedTitle: NSAttributedString? {
-		guard let titlebarFont else { return nil }
-
-		let attributes: [NSAttributedString.Key: Any] = [
-			.font: titlebarFont,
-			.foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-		]
-		return NSAttributedString(string: title, attributes: attributes)
-	}
-
-    private var windowButtonsBackdrop: WindowButtonsBackdropView? = nil
-    private var windowDragHandle: WindowDragView? = nil
-
-    // The tab bar controller ID from macOS
-    static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
-
-    override func updateConstraintsIfNeeded() {
-        super.updateConstraintsIfNeeded()
-
-        hideTitleBarSeparators()
-    }
-
     // For titlebar tabs, we want to hide the separator view so that we get rid
     // of an aesthetically unpleasing shadow.
     private func hideTitleBarSeparators() {
-        guard titlebarTabs else { return }
-
         guard let titlebarContainer = contentView?.superview?.subviews.first(where: {
             $0.className == "NSTitlebarContainerView"
         }) else { return }
@@ -490,24 +502,15 @@ class TerminalWindow: NSWindow {
         // new tabs or expand existing tabs to fill the empty space after one is closed, the centering
         // of the tab titles can't be properly calculated, so we wait for 0.2 seconds and then mark
         // the entire view hierarchy for the tab bar as dirty to fix the positioning...
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.markHierarchyForLayout(accessoryView)
-        }
+//        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+//            self.markHierarchyForLayout(accessoryView)
+//        }
     }
 
     private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
-        // If we already made the view, just make sure it's unhidden and correctly placed as a subview.
-        if let view = windowButtonsBackdrop {
-            view.removeFromSuperview()
-            view.isHidden = false
-            titlebarView.addSubview(view)
-            view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
-            view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: 78).isActive = true
-            view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
-            view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
-            return
-        }
-        
+        windowButtonsBackdrop?.removeFromSuperview()
+        windowButtonsBackdrop = nil
+
         let view = WindowButtonsBackdropView(window: self)
         view.identifier = NSUserInterfaceItemIdentifier("_windowButtonsBackdrop")
         titlebarView.addSubview(view)
