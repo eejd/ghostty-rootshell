@@ -12,6 +12,9 @@ pub const fontEmoji = @embedFile("res/NotoColorEmoji.ttf");
 pub const fontEmojiText = @embedFile("res/NotoEmoji-Regular.ttf");
 pub const fontVariable = @embedFile("res/Lilex-VF.ttf");
 
+/// Font with nerd fonts embedded.
+pub const fontNerdFont = @embedFile("res/JetBrainsMonoNerdFont-Regular.ttf");
+
 /// Cozette is a unique font because it embeds some emoji characters
 /// but has a text presentation.
 pub const fontCozette = @embedFile("res/CozetteVector.ttf");

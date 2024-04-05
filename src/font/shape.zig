@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
-const harfbuzz = @import("shaper/harfbuzz.zig");
-const coretext = @import("shaper/coretext.zig");
+pub const harfbuzz = @import("shaper/harfbuzz.zig");
+pub const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
 pub usingnamespace @import("shaper/run.zig");
 
@@ -10,12 +10,12 @@ pub const Shaper = switch (options.backend) {
     .freetype,
     .fontconfig_freetype,
     .coretext_freetype,
-    .coretext,
     => harfbuzz.Shaper,
 
-    // Has missing features, can't be used yet. See the comments in
-    // the coretext.zig file for more details.
-    //.coretext => coretext.Shaper,
+    // Note that coretext_freetype cannot use the coretext
+    // shaper because the coretext shaper requests CoreText
+    // font faces.
+    .coretext => coretext.Shaper,
 
     .web_canvas => web_canvas.Shaper,
 };

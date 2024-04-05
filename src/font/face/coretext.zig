@@ -13,8 +13,9 @@ pub const Face = struct {
     /// Our font face
     font: *macos.text.Font,
 
-    /// Harfbuzz font corresponding to this face.
-    hb_font: harfbuzz.Font,
+    /// Harfbuzz font corresponding to this face. We only use this
+    /// if we're using Harfbuzz.
+    hb_font: if (harfbuzz_shaper) harfbuzz.Font else void,
 
     /// The presentation for this font.
     presentation: font.Presentation,
@@ -24,6 +25,10 @@ pub const Face = struct {
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
+
+    /// True if our build is using Harfbuzz. If we're not, we can avoid
+    /// some Harfbuzz-specific code paths.
+    const harfbuzz_shaper = font.options.backend.hasHarfbuzz();
 
     /// The matrix applied to a regular font to auto-italicize it.
     pub const italic_skew = macos.graphics.AffineTransform{
@@ -75,16 +80,19 @@ pub const Face = struct {
     /// Initialize a face with a CTFont. This will take ownership over
     /// the CTFont. This does NOT copy or retain the CTFont.
     pub fn initFont(ct_font: *macos.text.Font, opts: font.face.Options) !Face {
-        var hb_font = try harfbuzz.coretext.createFont(ct_font);
-        errdefer hb_font.destroy();
-        hb_font.setScale(opts.size.pixels(), opts.size.pixels());
-
         const traits = ct_font.getSymbolicTraits();
         const metrics = metrics: {
             var metrics = try calcMetrics(ct_font);
             if (opts.metric_modifiers) |v| metrics.apply(v.*);
             break :metrics metrics;
         };
+
+        var hb_font = if (comptime harfbuzz_shaper) font: {
+            var hb_font = try harfbuzz.coretext.createFont(ct_font);
+            hb_font.setScale(opts.size.pixels(), opts.size.pixels());
+            break :font hb_font;
+        } else {};
+        errdefer if (comptime harfbuzz_shaper) hb_font.destroy();
 
         var result: Face = .{
             .font = ct_font,
@@ -144,7 +152,7 @@ pub const Face = struct {
 
     pub fn deinit(self: *Face) void {
         self.font.release();
-        self.hb_font.destroy();
+        if (comptime harfbuzz_shaper) self.hb_font.destroy();
         self.* = undefined;
     }
 

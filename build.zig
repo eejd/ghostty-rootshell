@@ -1055,11 +1055,14 @@ fn addDeps(
         "fontconfig",
         fontconfig_dep.module("fontconfig"),
     );
+    if (config.font_backend.hasHarfbuzz()) step.root_module.addImport(
+        "harfbuzz",
+        harfbuzz_dep.module("harfbuzz"),
+    );
     step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
     step.root_module.addImport("freetype", freetype_dep.module("freetype"));
     step.root_module.addImport("glslang", glslang_dep.module("glslang"));
     step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
-    step.root_module.addImport("harfbuzz", harfbuzz_dep.module("harfbuzz"));
     step.root_module.addImport("xev", libxev_dep.module("xev"));
     step.root_module.addImport("opengl", opengl_dep.module("opengl"));
     step.root_module.addImport("pixman", pixman_dep.module("pixman"));
@@ -1110,7 +1113,6 @@ fn addDeps(
         step.addIncludePath(freetype_dep.path(""));
         step.linkSystemLibrary2("bzip2", dynamic_link_opts);
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
-        step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
         step.linkSystemLibrary2("libpng", dynamic_link_opts);
         step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
         step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
@@ -1118,6 +1120,9 @@ fn addDeps(
 
         if (config.font_backend.hasFontconfig()) {
             step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
+        }
+        if (config.font_backend.hasHarfbuzz()) {
+            step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
         }
     }
 
@@ -1136,13 +1141,15 @@ fn addDeps(
         step.linkLibrary(freetype_dep.artifact("freetype"));
         try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
 
-        // Harfbuzz
-        step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
-        try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
-
         // Pixman
         step.linkLibrary(pixman_dep.artifact("pixman"));
         try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
+
+        // Harfbuzz
+        if (config.font_backend.hasHarfbuzz()) {
+            step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+            try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
+        }
 
         // Only Linux gets fontconfig
         if (config.font_backend.hasFontconfig()) {
