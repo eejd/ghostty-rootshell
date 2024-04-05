@@ -374,8 +374,10 @@ class AppDelegate: NSObject,
         syncMenuShortcuts()
         terminalManager.relabelAllTabs()
         
-        // Config could change window appearance
-        syncAppearance()
+        // Config could change window appearance. We wrap this in an async queue because when
+        // this is called as part of application launch it can deadlock with an internal
+        // AppKit mutex on the appearance.
+        DispatchQueue.main.async { self.syncAppearance() }
         
         // Update all of our windows
         terminalManager.windows.forEach { window in
