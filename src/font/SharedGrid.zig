@@ -57,7 +57,8 @@ resolver: CodepointResolver,
 /// This is calculated based on the resolver and current fonts.
 metrics: Metrics,
 
-/// The RwLock used to protect the shared grid.
+/// The RwLock used to protect the shared grid. Callers are expected to use
+/// this directly if they need to i.e. access the atlas directly.
 lock: std.Thread.RwLock,
 
 /// Initialize the grid.
