@@ -245,10 +245,6 @@ fn legacy(
     // If we're in a dead key state then we never emit a sequence.
     if (self.event.composing) return "";
 
-    // When pressed backspace and have UTF-8 text, do not emit sequence.
-    // This prevents backspace emitted twice on macOS with korean input method.
-    if (self.event.key == .backspace and self.event.utf8.len > 0) return "";
-
     // If we match a PC style function key then that is our result.
     if (pcStyleFunctionKey(
         self.event.key,
@@ -258,20 +254,23 @@ fn legacy(
         self.ignore_keypad_with_numlock,
         self.modify_other_keys_state_2,
     )) |sequence| pc_style: {
-        // If we're pressing enter or escape and have UTF-8 text, we probably
-        // are clearing a dead key state. This happens specifically on macOS.
-        // "Clearing" a dead key state may or may not commit the dead key
-        // state; this differs by language:
+        // If we have UTF-8 text, then we never emit PC style function
+        // keys. Many function keys (escape, enter, backspace) have
+        // a specific meaning when dead keys are active and so we don't
+        // want to send that to the terminal. Examples:
         //
-        //   - Japanese clears and does not write the characters.
-        //   - Korean clears and writes the characters.
+        //   - Japanese: escape clears the dead key state
+        //   - Korean: escape commits the dead key state
+        //   - Korean: backspace should delete a single preedit char
         //
-        // We have a unit test for this.
-        if ((self.event.key == .enter or
-            self.event.key == .escape) and
-            self.event.utf8.len > 0)
-        {
-            break :pc_style;
+        if (self.event.utf8.len > 0) {
+            switch (self.event.key) {
+                else => {},
+                .enter,
+                .escape,
+                .backspace,
+                => break :pc_style,
+            }
         }
 
         return copyToBuf(buf, sequence);
@@ -1646,6 +1645,20 @@ test "kitty: keypad number" {
     };
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("[57400;;49u", actual[1..]);
+}
+
+test "legacy: backspace with utf8 (dead key state)" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .backspace,
+            .utf8 = "A",
+            .unshifted_codepoint = 0x0D,
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("A", actual);
 }
 
 test "legacy: enter with utf8 (dead key state)" {
