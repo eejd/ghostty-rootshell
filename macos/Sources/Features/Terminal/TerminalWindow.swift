@@ -167,8 +167,6 @@ class TerminalWindow: NSWindow {
         backgroundColor.luminance < 0.05
     }
 
-    private var newTabButtonImage: NSImage? = nil
-
     private var newTabButtonImageLayer: VibrantLayer? = nil
 
     func updateTabBar() {
@@ -208,16 +206,11 @@ class TerminalWindow: NSWindow {
 		guard let newTabButtonImageView: NSImageView = newTabButton.subviews.first(where: {
 			$0 as? NSImageView != nil
 		}) as? NSImageView else { return }
+        guard let newTabButtonImage = newTabButtonImageView.image else { return }
 
-        if newTabButtonImage == nil {
-            newTabButtonImage = newTabButtonImageView.image
-        }
 
-		guard let newTabButtonImage else { return }
-
-		let isLightTheme = backgroundColor.isLightColor
-
-		if newTabButtonImageLayer == nil {
+        if newTabButtonImageLayer == nil {
+            let isLightTheme = backgroundColor.isLightColor
 			let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
 			let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
 				newTabButtonImage.draw(in: rect)
@@ -234,12 +227,9 @@ class TerminalWindow: NSWindow {
 			newTabButtonImageLayer = imageLayer
 		}
 
-		newTabButtonImageView.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
-		newTabButtonImageView.layer?.addSublayer(newTabButtonImageLayer!)
-		newTabButtonImageView.image = nil
-		// When we nil out the original image, the image view's frame resizes and repositions
-		// slightly, so we need to reset it to make sure our new image doesn't shift quickly.
-		newTabButtonImageView.frame = newTabButton.bounds
+        newTabButtonImageView.isHidden = true
+        newTabButton.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
+        newTabButton.layer?.addSublayer(newTabButtonImageLayer!)
 	}
 
 	private func updateTabsForVeryDarkBackgrounds() {
