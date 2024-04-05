@@ -9,7 +9,7 @@ const Config = @import("../config.zig").Config;
 config: renderer.Renderer.DerivedConfig,
 
 /// The font group that should be used.
-font_group: *font.GroupCache,
+font_grid: *font.SharedGrid,
 
 /// Padding options for the viewport.
 padding: Padding,

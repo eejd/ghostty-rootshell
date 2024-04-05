@@ -24,6 +24,7 @@ const SharedGrid = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const renderer = @import("../renderer.zig");
 const font = @import("main.zig");
 const Atlas = font.Atlas;
 const CodepointResolver = font.CodepointResolver;
@@ -129,6 +130,16 @@ fn reloadMetrics(self: *SharedGrid, thicken: bool) !void {
         .thickness = self.metrics.underline_thickness *
             @as(u32, if (thicken) 2 else 1),
         .underline_position = self.metrics.underline_position,
+    };
+}
+
+/// Returns the grid cell size.
+///
+/// This is not thread safe.
+pub fn cellSize(self: *SharedGrid) renderer.CellSize {
+    return .{
+        .width = self.metrics.cell_width,
+        .height = self.metrics.cell_height,
     };
 }
 

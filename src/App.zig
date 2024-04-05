@@ -43,7 +43,7 @@ quit: bool,
 
 /// The set of font GroupCache instances shared by surfaces with the
 /// same font configuration.
-font_group_set: font.GroupCacheSet,
+font_grid_set: font.SharedGridSet,
 
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
@@ -54,15 +54,15 @@ pub fn create(
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
 
-    var font_group_set = try font.GroupCacheSet.init(alloc);
-    errdefer font_group_set.deinit();
+    var font_grid_set = try font.SharedGridSet.init(alloc);
+    errdefer font_grid_set.deinit();
 
     app.* = .{
         .alloc = alloc,
         .surfaces = .{},
         .mailbox = .{},
         .quit = false,
-        .font_group_set = font_group_set,
+        .font_grid_set = font_grid_set,
     };
     errdefer app.surfaces.deinit(alloc);
 
@@ -76,7 +76,7 @@ pub fn destroy(self: *App) void {
 
     // Clean up our font group cache
     // TODO(fontmem): assert all ref counts are zero
-    self.font_group_set.deinit();
+    self.font_grid_set.deinit();
 
     self.alloc.destroy(self);
 }
