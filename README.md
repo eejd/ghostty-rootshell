@@ -529,6 +529,13 @@ $ sudo apt install libgtk-4-dev libadwaita-1-dev git
 > Ubuntu 23.10 is 6.5.0 which has a bug which
 > [causes zig to fail its hash check for packages](https://github.com/ziglang/zig/issues/17282).
 
+> [!WARNING]
+>
+> GTK 4.14 on Wayland has a bug which may cause an immediate crash.
+> There is an [open issue](https://gitlab.gnome.org/GNOME/gtk/-/issues/6589/note_2072039)
+> to track this GTK bug. You can workaround this issue by running ghostty with
+> `GDK_DEBUG=gl-disable-gles ghostty`
+
 On Arch Linux, use
 
 ```
