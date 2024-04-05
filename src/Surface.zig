@@ -2146,7 +2146,7 @@ pub fn mouseButtonCallback(
             const pos = try self.rt_surface.getCursorPos();
             const point = self.posToViewport(pos.x, pos.y);
             const screen = &self.renderer_state.terminal.screen;
-            const p = screen.pages.pin(.{ .active = point }) orelse {
+            const p = screen.pages.pin(.{ .viewport = point }) orelse {
                 log.warn("failed to get pin for clicked point", .{});
                 return;
             };
