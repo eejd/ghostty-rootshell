@@ -256,7 +256,9 @@ pub const GlobalState = struct {
         std.log.info("ghostty build optimize={s}", .{build_config.mode_string});
         std.log.info("runtime={}", .{build_config.app_runtime});
         std.log.info("font_backend={}", .{build_config.font_backend});
-        std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
+        if (comptime build_config.font_backend.hasHarfbuzz()) {
+            std.log.info("dependency harfbuzz={s}", .{harfbuzz.versionString()});
+        }
         if (comptime build_config.font_backend.hasFontconfig()) {
             std.log.info("dependency fontconfig={d}", .{fontconfig.version()});
         }

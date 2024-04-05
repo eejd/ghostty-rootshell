@@ -6,8 +6,8 @@ const c = @import("c.zig");
 
 pub const Dictionary = opaque {
     pub fn create(
-        keys: ?[]?*const anyopaque,
-        values: ?[]?*const anyopaque,
+        keys: ?[]const ?*const anyopaque,
+        values: ?[]const ?*const anyopaque,
     ) Allocator.Error!*Dictionary {
         if (keys != null or values != null) {
             assert(keys != null);
@@ -17,8 +17,8 @@ pub const Dictionary = opaque {
 
         return @as(?*Dictionary, @ptrFromInt(@intFromPtr(c.CFDictionaryCreate(
             null,
-            @ptrCast(if (keys) |slice| slice.ptr else null),
-            @ptrCast(if (values) |slice| slice.ptr else null),
+            @constCast(@ptrCast(if (keys) |slice| slice.ptr else null)),
+            @constCast(@ptrCast(if (values) |slice| slice.ptr else null)),
             @intCast(if (keys) |slice| slice.len else 0),
             &c.kCFTypeDictionaryKeyCallBacks,
             &c.kCFTypeDictionaryValueCallBacks,

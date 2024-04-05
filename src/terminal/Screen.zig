@@ -1355,14 +1355,14 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
     defer if (mapbuilder) |*b| b.deinit();
 
     const sel_ordered = opts.sel.ordered(self, .forward);
-    const sel_start = start: {
-        var start = sel_ordered.start();
+    const sel_start: Pin = start: {
+        var start: Pin = sel_ordered.start();
         const cell = start.rowAndCell().cell;
         if (cell.wide == .spacer_tail) start.x -= 1;
         break :start start;
     };
-    const sel_end = end: {
-        var end = sel_ordered.end();
+    const sel_end: Pin = end: {
+        var end: Pin = sel_ordered.end();
         const cell = end.rowAndCell().cell;
         switch (cell.wide) {
             .narrow, .wide => {},
@@ -1433,7 +1433,9 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                 }
             }
 
-            if (row_count < rows.len - 1 and
+            const is_final_row = chunk.page == sel_end.page and y == sel_end.y;
+
+            if (!is_final_row and
                 (!row.wrap or sel_ordered.rectangle))
             {
                 try strbuilder.append('\n');
@@ -7071,6 +7073,38 @@ test "Screen: selectionString, rectangle, more complex w/breaks" {
     });
     defer alloc.free(contents);
     try testing.expectEqualStrings(expected, contents);
+}
+
+test "Screen: selectionString multi-page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 1, 3, 2048);
+    defer s.deinit();
+
+    const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+
+    // Lazy way to seek to the first page boundary.
+    for (0..first_page_size - 1) |_| {
+        try s.testWriteString("\n");
+    }
+
+    try s.testWriteString("y\ny\ny");
+
+    {
+        const sel = Selection.init(
+            s.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
+            s.pages.pin(.{ .active = .{ .x = 0, .y = 2 } }).?,
+            false,
+        );
+        const contents = try s.selectionString(alloc, .{
+            .sel = sel,
+            .trim = false,
+        });
+        defer alloc.free(contents);
+        const expected = "y\ny\ny";
+        try testing.expectEqualStrings(expected, contents);
+    }
 }
 
 test "Screen: lineIterator" {

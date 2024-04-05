@@ -70,9 +70,11 @@ function __ghostty_precmd() {
         }
       fi
 
-      # Command
-      PS0=$PS0'$(__ghostty_get_current_command)'
-      PS1=$PS1'\[\e]2;$PWD\a\]'
+      if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
+        # Command
+        PS0=$PS0'$(__ghostty_get_current_command)'
+        PS1=$PS1'\[\e]2;$PWD\a\]'
+      fi
     fi
 
     if test "$_ghostty_executing" != "0"; then
