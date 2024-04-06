@@ -970,10 +970,25 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
     // Update our font size so future changes work
     self.font_size = size;
 
-    // Notify our render thread of the font size. This triggers everything else.
+    // We need to build up a new font stack for this font size.
+    const font_grid_key, const font_grid = self.app.font_grid_set.ref(
+        &self.config.font,
+        self.font_size,
+    ) catch unreachable;
+    errdefer self.app.font_grid_set.deref(font_grid_key);
+
+    // Notify our render thread of the new font stack
     _ = self.renderer_thread.mailbox.push(.{
-        .font_size = size,
+        .font_grid = .{
+            .grid = font_grid,
+            .set = &self.app.font_grid_set,
+            .old_key = self.font_grid_key,
+            .new_key = font_grid_key,
+        },
     }, .{ .forever = {} });
+
+    // Once we've sent the key we can replace our key
+    self.font_grid_key = font_grid_key;
 
     // Schedule render which also drains our mailbox
     self.queueRender() catch unreachable;

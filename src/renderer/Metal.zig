@@ -566,18 +566,17 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
-pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
-    log.info("set font size={}", .{size});
-    if (true) @panic("TODO"); // TODO(fontmem)
-
-    // Set our new size, this will also reset our font atlas.
-    try self.font_group.setSize(size);
+pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) !void {
+    // Update our grid
+    self.font_grid = grid;
+    self.texture_greyscale_modified = 0;
+    self.texture_color_modified = 0;
 
     // Recalculate our metrics
     const metrics = metrics: {
-        const index = (try self.font_group.indexForCodepoint(self.alloc, 'M', .regular, .text)).?;
-        const face = try self.font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
+        grid.lock.lockShared();
+        defer grid.lock.unlockShared();
+        break :metrics grid.metrics;
     };
 
     // Update our uniforms
@@ -596,14 +595,6 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
     // nothing since the grid size couldn't have possibly changed.
     if (std.meta.eql(self.grid_metrics, metrics)) return;
     self.grid_metrics = metrics;
-
-    // Set the sprite font up
-    self.font_group.group.sprite = font.sprite.Face{
-        .width = metrics.cell_width,
-        .height = metrics.cell_height,
-        .thickness = metrics.underline_thickness * @as(u32, if (self.config.font_thicken) 2 else 1),
-        .underline_position = metrics.underline_position,
-    };
 
     // Notify the window that the cell size changed.
     _ = self.surface_mailbox.push(.{

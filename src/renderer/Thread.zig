@@ -321,8 +321,13 @@ fn drainMailbox(self: *Thread) !void {
                 }
             },
 
-            .font_size => |size| {
-                try self.renderer.setFontSize(size);
+            .font_grid => |grid| if (self.renderer.setFontGrid(grid.grid)) {
+                // Success, deref our old grid
+                grid.set.deref(grid.old_key);
+            } else |err| {
+                // Error, deref our new grid since we didn't use it.
+                grid.set.deref(grid.new_key);
+                return err;
             },
 
             .foreground_color => |color| {
