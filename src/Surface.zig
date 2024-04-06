@@ -205,6 +205,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     cursor_click_to_move: bool,
     desktop_notifications: bool,
+    font: font.SharedGridSet.DerivedConfig,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
     mouse_scroll_multiplier: f64,
@@ -262,6 +263,7 @@ const DerivedConfig = struct {
             .confirm_close_surface = config.@"confirm-close-surface",
             .cursor_click_to_move = config.@"cursor-click-to-move",
             .desktop_notifications = config.@"desktop-notifications",
+            .font = try font.SharedGridSet.DerivedConfig.init(alloc, config),
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
             .mouse_scroll_multiplier = config.@"mouse-scroll-multiplier",
@@ -297,6 +299,10 @@ pub fn init(
     rt_app: *apprt.runtime.App,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
+    // Get our configuration
+    var derived_config = try DerivedConfig.init(alloc, config);
+    errdefer derived_config.deinit();
+
     // Initialize our renderer with our initialized surface.
     try Renderer.surfaceInit(rt_surface);
 
@@ -322,7 +328,7 @@ pub fn init(
     // Setup our font group. This will reuse an existing font group if
     // it was already loaded.
     const font_grid_key, const font_grid = try app.font_grid_set.ref(
-        config,
+        &derived_config.font,
         font_size,
     );
 
@@ -427,7 +433,7 @@ pub fn init(
         .grid_size = .{},
         .cell_size = cell_size,
         .padding = padding,
-        .config = try DerivedConfig.init(alloc, config),
+        .config = derived_config,
     };
 
     // Report initial cell size on surface creation

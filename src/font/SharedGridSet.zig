@@ -92,7 +92,7 @@ pub fn count(self: *SharedGridSet) usize {
 /// owned by the set and will be freed when the ref count reaches zero.
 pub fn ref(
     self: *SharedGridSet,
-    config: *const Config,
+    config: *const DerivedConfig,
     font_size: DesiredSize,
 ) !struct { Key, *SharedGrid } {
     var key = try Key.init(self.alloc, config);
@@ -340,6 +340,74 @@ const ReffedGrid = struct {
     ref: u32 = 0,
 };
 
+/// This is the configuration required to create a key without having
+/// to keep the full Ghostty configuration around.
+pub const DerivedConfig = struct {
+    arena: ArenaAllocator,
+
+    @"font-family": configpkg.RepeatableString,
+    @"font-family-bold": configpkg.RepeatableString,
+    @"font-family-italic": configpkg.RepeatableString,
+    @"font-family-bold-italic": configpkg.RepeatableString,
+    @"font-style": configpkg.FontStyle,
+    @"font-style-bold": configpkg.FontStyle,
+    @"font-style-italic": configpkg.FontStyle,
+    @"font-style-bold-italic": configpkg.FontStyle,
+    @"font-size": u8,
+    @"font-variation": configpkg.RepeatableFontVariation,
+    @"font-variation-bold": configpkg.RepeatableFontVariation,
+    @"font-variation-italic": configpkg.RepeatableFontVariation,
+    @"font-variation-bold-italic": configpkg.RepeatableFontVariation,
+    @"font-codepoint-map": configpkg.RepeatableCodepointMap,
+    @"font-thicken": bool,
+    @"adjust-cell-width": ?Metrics.Modifier,
+    @"adjust-cell-height": ?Metrics.Modifier,
+    @"adjust-font-baseline": ?Metrics.Modifier,
+    @"adjust-underline-position": ?Metrics.Modifier,
+    @"adjust-underline-thickness": ?Metrics.Modifier,
+    @"adjust-strikethrough-position": ?Metrics.Modifier,
+    @"adjust-strikethrough-thickness": ?Metrics.Modifier,
+
+    pub fn init(alloc_gpa: Allocator, config: *const Config) !DerivedConfig {
+        var arena = ArenaAllocator.init(alloc_gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        return .{
+            .@"font-family" = try config.@"font-family".clone(alloc),
+            .@"font-family-bold" = try config.@"font-family-bold".clone(alloc),
+            .@"font-family-italic" = try config.@"font-family-italic".clone(alloc),
+            .@"font-family-bold-italic" = try config.@"font-family-bold-italic".clone(alloc),
+            .@"font-style" = try config.@"font-style".clone(alloc),
+            .@"font-style-bold" = try config.@"font-style-bold".clone(alloc),
+            .@"font-style-italic" = try config.@"font-style-italic".clone(alloc),
+            .@"font-style-bold-italic" = try config.@"font-style-bold-italic".clone(alloc),
+            .@"font-size" = config.@"font-size",
+            .@"font-variation" = try config.@"font-variation".clone(alloc),
+            .@"font-variation-bold" = try config.@"font-variation-bold".clone(alloc),
+            .@"font-variation-italic" = try config.@"font-variation-italic".clone(alloc),
+            .@"font-variation-bold-italic" = try config.@"font-variation-bold-italic".clone(alloc),
+            .@"font-codepoint-map" = try config.@"font-codepoint-map".clone(alloc),
+            .@"font-thicken" = config.@"font-thicken",
+            .@"adjust-cell-width" = config.@"adjust-cell-width",
+            .@"adjust-cell-height" = config.@"adjust-cell-height",
+            .@"adjust-font-baseline" = config.@"adjust-font-baseline",
+            .@"adjust-underline-position" = config.@"adjust-underline-position",
+            .@"adjust-underline-thickness" = config.@"adjust-underline-thickness",
+            .@"adjust-strikethrough-position" = config.@"adjust-strikethrough-position",
+            .@"adjust-strikethrough-thickness" = config.@"adjust-strikethrough-thickness",
+
+            // This must be last so the arena contains all our allocations
+            // from above since Zig does assignment in order.
+            .arena = arena,
+        };
+    }
+
+    pub fn deinit(self: *DerivedConfig) void {
+        self.arena.deinit();
+    }
+};
+
 /// The key used to uniquely identify a font configuration.
 pub const Key = struct {
     arena: ArenaAllocator,
@@ -376,7 +444,7 @@ pub const Key = struct {
 
     pub fn init(
         alloc_gpa: Allocator,
-        config: *const Config,
+        config: *const DerivedConfig,
     ) !Key {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
@@ -522,7 +590,10 @@ test "Key" {
     var cfg = try Config.default(alloc);
     defer cfg.deinit();
 
-    var k = try Key.init(alloc, &cfg);
+    var keycfg = try DerivedConfig.init(alloc, &cfg);
+    defer keycfg.deinit();
+
+    var k = try Key.init(alloc, &keycfg);
     defer k.deinit();
 
     try testing.expect(k.hashcode() > 0);
@@ -535,15 +606,21 @@ test SharedGridSet {
     var set = try SharedGridSet.init(alloc);
     defer set.deinit();
 
-    var config = try Config.default(alloc);
-    defer config.deinit();
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    var keycfg = try DerivedConfig.init(alloc, &cfg);
+    defer keycfg.deinit();
+
+    var k = try Key.init(alloc, &keycfg);
+    defer k.deinit();
 
     // Get a grid for the given config
-    const key1, const grid1 = try set.ref(&config, .{ .points = 12 });
+    const key1, const grid1 = try set.ref(&keycfg, .{ .points = 12 });
     try testing.expectEqual(@as(usize, 1), set.count());
 
     // Get another
-    const key2, const grid2 = try set.ref(&config, .{ .points = 12 });
+    const key2, const grid2 = try set.ref(&keycfg, .{ .points = 12 });
     try testing.expectEqual(@as(usize, 1), set.count());
 
     // They should be pointer equivalent

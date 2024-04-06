@@ -8,14 +8,18 @@ pub const edit = @import("config/edit.zig");
 pub const url = @import("config/url.zig");
 
 // Field types
+pub const ClipboardAccess = Config.ClipboardAccess;
 pub const CopyOnSelect = Config.CopyOnSelect;
+pub const CustomShaderAnimation = Config.CustomShaderAnimation;
+pub const FontStyle = Config.FontStyle;
 pub const Keybinds = Config.Keybinds;
 pub const MouseShiftCapture = Config.MouseShiftCapture;
-pub const CustomShaderAnimation = Config.CustomShaderAnimation;
 pub const NonNativeFullscreen = Config.NonNativeFullscreen;
 pub const OptionAsAlt = Config.OptionAsAlt;
+pub const RepeatableCodepointMap = Config.RepeatableCodepointMap;
+pub const RepeatableFontVariation = Config.RepeatableFontVariation;
+pub const RepeatableString = Config.RepeatableString;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
-pub const ClipboardAccess = Config.ClipboardAccess;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");
