@@ -2498,9 +2498,14 @@ pub const RepeatableString = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) !Self {
-        return .{
-            .list = try self.list.clone(alloc),
-        };
+        // Copy the list and all the strings in the list.
+        const list = try self.list.clone(alloc);
+        for (list.items) |*item| {
+            const copy = try alloc.dupeZ(u8, item.*);
+            item.* = copy;
+        }
+
+        return .{ .list = list };
     }
 
     /// The number of itemsin the list
