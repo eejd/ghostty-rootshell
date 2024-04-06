@@ -2033,37 +2033,23 @@ fn addPreeditCell(
     x: usize,
     y: usize,
 ) !void {
-    if (true) @panic("TODO"); // TODO(fontmem)
-
     // Preedit is rendered inverted
     const bg = self.foreground_color;
     const fg = self.background_color;
 
-    // Get the font for this codepoint.
-    const font_index = if (self.font_group.indexForCodepoint(
+    // Render the glyph for our preedit text
+    const render_ = self.font_grid.renderCodepoint(
         self.alloc,
         @intCast(cp.codepoint),
         .regular,
         .text,
-    )) |index| index orelse return else |_| return;
-
-    // Get the font face so we can get the glyph
-    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
-        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
-        return;
-    };
-
-    // Use the face to now get the glyph index
-    const glyph_index = face.glyphIndex(@intCast(cp.codepoint)) orelse return;
-
-    // Render the glyph for our preedit text
-    const glyph = self.font_group.renderGlyph(
-        self.alloc,
-        font_index,
-        glyph_index,
         .{ .grid_metrics = self.grid_metrics },
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
+        return;
+    };
+    const render = render_ orelse {
+        log.warn("failed to find font for preedit codepoint={X}", .{cp.codepoint});
         return;
     };
 
@@ -2083,9 +2069,9 @@ fn addPreeditCell(
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
         .bg_color = .{ bg.r, bg.g, bg.b, 255 },
-        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-        .glyph_size = .{ glyph.width, glyph.height },
-        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
 }
 

@@ -199,7 +199,38 @@ pub const Render = struct {
     presentation: Presentation,
 };
 
-/// Render a glyph. This automatically determines the correct texture
+/// Render a codepoint. This uses the first font index that has the codepoint
+/// and matches the presentation requested. If the codepoint cannot be found
+/// in any font, an null render is returned.
+pub fn renderCodepoint(
+    self: *SharedGrid,
+    alloc: Allocator,
+    cp: u32,
+    style: Style,
+    p: ?Presentation,
+    opts: RenderOptions,
+) !?Render {
+    // Note: we could optimize the below to use way less locking, but
+    // at the time of writing this codepath is only called for preedit
+    // text which is relatively rare and almost non-existent in multiple
+    // surfaces at the same time.
+
+    // Get the font that has the codepoint
+    const index = try self.getIndex(alloc, cp, style, p) orelse return null;
+
+    // Get the glyph for the font
+    const glyph_index = glyph_index: {
+        self.lock.lockShared();
+        defer self.lock.unlockShared();
+        const face = try self.resolver.collection.getFace(index);
+        break :glyph_index face.glyphIndex(cp) orelse return null;
+    };
+
+    // Render
+    return try self.renderGlyph(alloc, index, glyph_index, opts);
+}
+
+/// Render a glyph index. This automatically determines the correct texture
 /// atlas to use and caches the result.
 pub fn renderGlyph(
     self: *SharedGrid,
