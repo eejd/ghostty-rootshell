@@ -118,6 +118,8 @@ queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
 texture_greyscale: objc.Object, // MTLTexture
 texture_color: objc.Object, // MTLTexture
+texture_greyscale_modified: usize = 0,
+texture_color_modified: usize = 0,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -774,13 +776,21 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     };
 
     // If our font atlas changed, sync the texture data
-    if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
-        self.font_group.atlas_greyscale.modified = false;
+    texture: {
+        const modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        if (modified <= self.texture_greyscale_modified) break :texture;
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+        self.texture_greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &self.texture_greyscale);
     }
-    if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
-        self.font_group.atlas_color.modified = false;
+    texture: {
+        const modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        if (modified <= self.texture_color_modified) break :texture;
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+        self.texture_color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &self.texture_color);
     }
 
     // Command buffer (MTLCommandBuffer)
