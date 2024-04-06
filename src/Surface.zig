@@ -988,6 +988,7 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
     }, .{ .forever = {} });
 
     // Once we've sent the key we can replace our key
+    // TODO(fontmem): we should not store this anymore
     self.font_grid_key = font_grid_key;
 
     // Schedule render which also drains our mailbox
