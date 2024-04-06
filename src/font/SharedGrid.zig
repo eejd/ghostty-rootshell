@@ -176,6 +176,22 @@ pub fn getIndex(
     return value;
 }
 
+/// Returns true if the given font index has the codepoint and presentation.
+pub fn hasCodepoint(
+    self: *SharedGrid,
+    idx: Collection.Index,
+    cp: u32,
+    p: ?Presentation,
+) bool {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
+    return self.resolver.collection.hasCodepoint(
+        idx,
+        cp,
+        if (p) |v| .{ .explicit = v } else .{ .any = {} },
+    );
+}
+
 const CodepointKey = struct {
     style: Style,
     codepoint: u32,
@@ -228,6 +244,7 @@ test getIndex {
         const idx = (try grid.getIndex(alloc, @intCast(i), .regular, null)).?;
         try testing.expectEqual(Style.regular, idx.style);
         try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
+        try testing.expect(grid.hasCodepoint(idx, @intCast(i), null));
     }
 
     // Do it again without a resolver set to ensure we only hit the cache
