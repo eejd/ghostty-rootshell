@@ -1627,88 +1627,78 @@ pub fn setScreenSize(
 /// Updates the font texture atlas if it is dirty.
 fn flushAtlas(self: *OpenGL) !void {
     const gl_state = self.gl_state orelse return;
+    try flushAtlasSingle(
+        &self.font_grid.lock,
+        gl_state.texture,
+        &self.font_grid.atlas_greyscale,
+        &self.texture_greyscale_modified,
+        &self.texture_greyscale_resized,
+        .red,
+        .red,
+    );
+    try flushAtlasSingle(
+        &self.font_grid.lock,
+        gl_state.texture_color,
+        &self.font_grid.atlas_color,
+        &self.texture_color_modified,
+        &self.texture_color_resized,
+        .rgba,
+        .bgra,
+    );
+}
 
-    texture: {
-        // If the texture isn't modified we do nothing
-        const atlas = &self.font_grid.atlas_greyscale;
-        const modified = atlas.modified.load(.monotonic);
-        if (modified <= self.texture_greyscale_modified) break :texture;
-        self.texture_greyscale_modified = modified;
+/// Flush a single atlas, grabbing all necessary locks, checking for
+/// changes, etc.
+fn flushAtlasSingle(
+    lock: *std.Thread.RwLock,
+    texture: gl.Texture,
+    atlas: *font.Atlas,
+    modified: *usize,
+    resized: *usize,
+    interal_format: gl.Texture.InternalFormat,
+    format: gl.Texture.Format,
+) !void {
+    // If the texture isn't modified we do nothing
+    const new_modified = atlas.modified.load(.monotonic);
+    if (new_modified <= modified.*) return;
 
-        // If it is modified we need to grab a read-lock
-        self.font_grid.lock.lockShared();
-        defer self.font_grid.lock.unlockShared();
+    // If it is modified we need to grab a read-lock
+    lock.lockShared();
+    defer lock.unlockShared();
 
-        var texbind = try gl_state.texture.bind(.@"2D");
-        defer texbind.unbind();
+    var texbind = try texture.bind(.@"2D");
+    defer texbind.unbind();
 
-        const resized = atlas.resized.load(.monotonic);
-        if (resized > self.texture_greyscale_resized) {
-            self.texture_greyscale_resized = resized;
-            try texbind.image2D(
-                0,
-                .red,
-                @intCast(atlas.size),
-                @intCast(atlas.size),
-                0,
-                .red,
-                .UnsignedByte,
-                atlas.data.ptr,
-            );
-        } else {
-            try texbind.subImage2D(
-                0,
-                0,
-                0,
-                @intCast(atlas.size),
-                @intCast(atlas.size),
-                .red,
-                .UnsignedByte,
-                atlas.data.ptr,
-            );
-        }
+    const new_resized = atlas.resized.load(.monotonic);
+    if (new_resized > resized.*) {
+        try texbind.image2D(
+            0,
+            interal_format,
+            @intCast(atlas.size),
+            @intCast(atlas.size),
+            0,
+            format,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
+
+        // Only update the resized number after successful resize
+        resized.* = new_resized;
+    } else {
+        try texbind.subImage2D(
+            0,
+            0,
+            0,
+            @intCast(atlas.size),
+            @intCast(atlas.size),
+            format,
+            .UnsignedByte,
+            atlas.data.ptr,
+        );
     }
 
-    texture: {
-        // If the texture isn't modified we do nothing
-        const atlas = &self.font_grid.atlas_color;
-        const modified = atlas.modified.load(.monotonic);
-        if (modified <= self.texture_color_modified) break :texture;
-        self.texture_color_modified = modified;
-
-        // If it is modified we need to grab a read-lock
-        self.font_grid.lock.lockShared();
-        defer self.font_grid.lock.unlockShared();
-
-        var texbind = try gl_state.texture_color.bind(.@"2D");
-        defer texbind.unbind();
-
-        const resized = atlas.resized.load(.monotonic);
-        if (resized > self.texture_color_resized) {
-            self.texture_color_resized = resized;
-            try texbind.image2D(
-                0,
-                .rgba,
-                @intCast(atlas.size),
-                @intCast(atlas.size),
-                0,
-                .bgra,
-                .UnsignedByte,
-                atlas.data.ptr,
-            );
-        } else {
-            try texbind.subImage2D(
-                0,
-                0,
-                0,
-                @intCast(atlas.size),
-                @intCast(atlas.size),
-                .bgra,
-                .UnsignedByte,
-                atlas.data.ptr,
-            );
-        }
-    }
+    // Update our modified tracker after successful update
+    modified.* = atlas.modified.load(.monotonic);
 }
 
 /// Render renders the current cell state. This will not modify any of
