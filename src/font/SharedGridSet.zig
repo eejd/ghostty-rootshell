@@ -95,7 +95,7 @@ pub fn ref(
     config: *const DerivedConfig,
     font_size: DesiredSize,
 ) !struct { Key, *SharedGrid } {
-    var key = try Key.init(self.alloc, config);
+    var key = try Key.init(self.alloc, config, font_size);
     errdefer key.deinit();
 
     self.lock.lock();
@@ -353,7 +353,6 @@ pub const DerivedConfig = struct {
     @"font-style-bold": configpkg.FontStyle,
     @"font-style-italic": configpkg.FontStyle,
     @"font-style-bold-italic": configpkg.FontStyle,
-    @"font-size": u8,
     @"font-variation": configpkg.RepeatableFontVariation,
     @"font-variation-bold": configpkg.RepeatableFontVariation,
     @"font-variation-italic": configpkg.RepeatableFontVariation,
@@ -382,7 +381,6 @@ pub const DerivedConfig = struct {
             .@"font-style-bold" = try config.@"font-style-bold".clone(alloc),
             .@"font-style-italic" = try config.@"font-style-italic".clone(alloc),
             .@"font-style-bold-italic" = try config.@"font-style-bold-italic".clone(alloc),
-            .@"font-size" = config.@"font-size",
             .@"font-variation" = try config.@"font-variation".clone(alloc),
             .@"font-variation-bold" = try config.@"font-variation-bold".clone(alloc),
             .@"font-variation-italic" = try config.@"font-variation-italic".clone(alloc),
@@ -445,6 +443,7 @@ pub const Key = struct {
     pub fn init(
         alloc_gpa: Allocator,
         config: *const DerivedConfig,
+        font_size: DesiredSize,
     ) !Key {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
@@ -456,7 +455,7 @@ pub const Key = struct {
             try descriptors.append(.{
                 .family = family,
                 .style = config.@"font-style".nameValue(),
-                .size = config.@"font-size",
+                .size = font_size.points,
                 .variations = config.@"font-variation".list.items,
             });
         }
@@ -474,7 +473,7 @@ pub const Key = struct {
             try descriptors.append(.{
                 .family = family,
                 .style = style,
-                .size = config.@"font-size",
+                .size = font_size.points,
                 .bold = style == null,
                 .variations = config.@"font-variation".list.items,
             });
@@ -484,7 +483,7 @@ pub const Key = struct {
             try descriptors.append(.{
                 .family = family,
                 .style = style,
-                .size = config.@"font-size",
+                .size = font_size.points,
                 .italic = style == null,
                 .variations = config.@"font-variation".list.items,
             });
@@ -494,7 +493,7 @@ pub const Key = struct {
             try descriptors.append(.{
                 .family = family,
                 .style = style,
-                .size = config.@"font-size",
+                .size = font_size.points,
                 .bold = style == null,
                 .italic = style == null,
                 .variations = config.@"font-variation".list.items,
@@ -593,7 +592,7 @@ test "Key" {
     var keycfg = try DerivedConfig.init(alloc, &cfg);
     defer keycfg.deinit();
 
-    var k = try Key.init(alloc, &keycfg);
+    var k = try Key.init(alloc, &keycfg, .{ .points = 12 });
     defer k.deinit();
 
     try testing.expect(k.hashcode() > 0);
@@ -611,9 +610,6 @@ test SharedGridSet {
 
     var keycfg = try DerivedConfig.init(alloc, &cfg);
     defer keycfg.deinit();
-
-    var k = try Key.init(alloc, &keycfg);
-    defer k.deinit();
 
     // Get a grid for the given config
     const key1, const grid1 = try set.ref(&keycfg, .{ .points = 12 });
