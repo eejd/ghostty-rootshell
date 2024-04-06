@@ -3248,6 +3248,14 @@ pub const FontStyle = union(enum) {
         };
     }
 
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Self, alloc: Allocator) !Self {
+        return switch (self) {
+            .default, .false => self,
+            .name => |v| .{ .name = try alloc.dupeZ(u8, v) },
+        };
+    }
+
     /// Used by Formatter
     pub fn formatEntry(self: Self, formatter: anytype) !void {
         switch (self) {
