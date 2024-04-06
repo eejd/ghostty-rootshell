@@ -174,7 +174,7 @@ pub const RunIterator = struct {
 
                 // Otherwise we need a fallback character. Prefer the
                 // official replacement character.
-                if (try self.group.indexForCodepoint(
+                if (try self.grid.getIndex(
                     alloc,
                     0xFFFD, // replacement char
                     font_style,
@@ -182,7 +182,7 @@ pub const RunIterator = struct {
                 )) |idx| break :font_info .{ .idx = idx, .fallback = 0xFFFD };
 
                 // Fallback to space
-                if (try self.group.indexForCodepoint(
+                if (try self.grid.getIndex(
                     alloc,
                     ' ',
                     font_style,
@@ -251,7 +251,7 @@ pub const RunIterator = struct {
     ) !?font.Collection.Index {
         // Get the font index for the primary codepoint.
         const primary_cp: u32 = if (cell.isEmpty() or cell.codepoint() == 0) ' ' else cell.codepoint();
-        const primary = try self.group.indexForCodepoint(
+        const primary = try self.grid.getIndex(
             alloc,
             primary_cp,
             style,
@@ -275,7 +275,7 @@ pub const RunIterator = struct {
 
             // Find a font that supports this codepoint. If none support this
             // then the whole grapheme can't be rendered so we return null.
-            const idx = try self.group.indexForCodepoint(
+            const idx = try self.grid.getIndex(
                 alloc,
                 cp,
                 style,
@@ -286,11 +286,11 @@ pub const RunIterator = struct {
 
         // We need to find a candidate that has ALL of our codepoints
         for (candidates.items) |idx| {
-            if (!self.group.group.hasCodepoint(idx, primary_cp, presentation)) continue;
+            if (!self.grid.hasCodepoint(idx, primary_cp, presentation)) continue;
             for (cps) |cp| {
                 // Ignore Emoji ZWJs
                 if (cp == 0xFE0E or cp == 0xFE0F or cp == 0x200D) continue;
-                if (!self.group.group.hasCodepoint(idx, cp, presentation)) break;
+                if (!self.grid.hasCodepoint(idx, cp, presentation)) break;
             } else {
                 // If the while completed, then we have a candidate that
                 // supports all of our codepoints.

@@ -232,7 +232,24 @@ pub const Shaper = struct {
         // Get our font. We have to apply the font features we want for
         // the font here.
         const run_font: *macos.text.Font = font: {
-            const face = try run.group.group.faceFromIndex(run.font_index);
+            // The CoreText shaper relies on CoreText and CoreText claims
+            // that CTFonts are threadsafe. See:
+            // https://developer.apple.com/documentation/coretext/
+            //
+            // Quote:
+            // All individual functions in Core Text are thread-safe. Font
+            // objects (CTFont, CTFontDescriptor, and associated objects) can
+            // be used simultaneously by multiple operations, work queues, or
+            // threads. However, the layout objects (CTTypesetter,
+            // CTFramesetter, CTRun, CTLine, CTFrame, and associated objects)
+            // should be used in a single operation, work queue, or thread.
+            //
+            // Because of this, we only acquire the read lock to grab the
+            // face and set it up, then release it.
+            run.grid.lock.lockShared();
+            defer run.grid.lock.unlockShared();
+
+            const face = try run.grid.resolver.collection.getFace(run.font_index);
             const original = face.font;
 
             const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
