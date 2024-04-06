@@ -554,6 +554,8 @@ test getIndex {
 }
 
 test autoItalicize {
+    if (comptime !@hasDecl(Face, "italicize")) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
