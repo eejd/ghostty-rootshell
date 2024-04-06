@@ -75,7 +75,10 @@ pub fn destroy(self: *App) void {
     self.surfaces.deinit(self.alloc);
 
     // Clean up our font group cache
-    // TODO(fontmem): assert all ref counts are zero
+    // We should have zero items in the grid set at this point because
+    // destroy only gets called when the app is shutting down and this
+    // should gracefully close all surfaces.
+    assert(self.font_grid_set.count() == 0);
     self.font_grid_set.deinit();
 
     self.alloc.destroy(self);
