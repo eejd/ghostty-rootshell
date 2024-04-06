@@ -72,8 +72,12 @@ gl_cells_written: usize = 0,
 gl_state: ?GLState = null,
 
 /// The font structures.
-font_group: *font.GroupCache,
+font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
+texture_greyscale_modified: usize = 0,
+texture_greyscale_resized: usize = 0,
+texture_color_modified: usize = 0,
+texture_color_resized: usize = 0,
 
 /// True if the window is focused
 focused: bool,
@@ -333,14 +337,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
     });
     errdefer shaper.deinit();
 
-    // Setup our font metrics uniform
-    const metrics = try resetFontMetrics(
-        alloc,
-        options.font_group,
-        options.config.font_thicken,
-    );
+    // For the remainder of the setup we lock our font grid data because
+    // we're reading it.
+    const grid = options.font_grid;
+    grid.lock.lockShared();
+    defer grid.lock.unlockShared();
 
-    var gl_state = try GLState.init(alloc, options.config, options.font_group);
+    var gl_state = try GLState.init(alloc, options.config, grid);
     errdefer gl_state.deinit();
 
     return OpenGL{
@@ -348,10 +351,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .config = options.config,
         .cells_bg = .{},
         .cells = .{},
-        .grid_metrics = metrics,
+        .grid_metrics = grid.metrics,
         .screen_size = null,
         .gl_state = gl_state,
-        .font_group = options.font_group,
+        .font_grid = grid,
         .font_shaper = shaper,
         .draw_background = options.config.background,
         .focused = true,
@@ -360,7 +363,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cursor_color = options.config.cursor_color,
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
-        .deferred_font_size = .{ .metrics = metrics },
+        .deferred_font_size = .{ .metrics = grid.metrics },
         .deferred_config = .{},
     };
 }
@@ -470,15 +473,16 @@ pub fn displayRealize(self: *OpenGL) !void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
 
-    // Reset our GPU uniforms
-    const metrics = try resetFontMetrics(
-        self.alloc,
-        self.font_group,
-        self.config.font_thicken,
-    );
-
     // Make our new state
-    var gl_state = try GLState.init(self.alloc, self.config, self.font_group);
+    var gl_state = gl_state: {
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+        break :gl_state try GLState.init(
+            self.alloc,
+            self.config,
+            self.font_grid,
+        );
+    };
     errdefer gl_state.deinit();
 
     // Unrealize if we have to
@@ -491,14 +495,16 @@ pub fn displayRealize(self: *OpenGL) !void {
     // reflush everything
     self.gl_cells_size = 0;
     self.gl_cells_written = 0;
-    self.font_group.atlas_greyscale.modified = true;
-    self.font_group.atlas_color.modified = true;
+    self.texture_greyscale_modified = 0;
+    self.texture_color_modified = 0;
+    self.texture_greyscale_resized = 0;
+    self.texture_color_resized = 0;
 
     // We need to reset our uniforms
     if (self.screen_size) |size| {
         self.deferred_screen_size = .{ .size = size };
     }
-    self.deferred_font_size = .{ .metrics = metrics };
+    self.deferred_font_size = .{ .metrics = self.grid_metrics };
     self.deferred_config = .{};
 }
 
@@ -585,64 +591,40 @@ pub fn setFocus(self: *OpenGL, focus: bool) !void {
 ///
 /// Must be called on the render thread.
 pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
-    if (single_threaded_draw) self.draw_mutex.lock();
-    defer if (single_threaded_draw) self.draw_mutex.unlock();
-
-    log.info("set font size={}", .{size});
-
-    // Set our new size, this will also reset our font atlas.
-    try self.font_group.setSize(size);
-
-    // Reset our GPU uniforms
-    const metrics = try resetFontMetrics(
-        self.alloc,
-        self.font_group,
-        self.config.font_thicken,
-    );
-
-    // Defer our GPU updates
-    self.deferred_font_size = .{ .metrics = metrics };
-
-    // Recalculate our cell size. If it is the same as before, then we do
-    // nothing since the grid size couldn't have possibly changed.
-    if (std.meta.eql(self.grid_metrics, metrics)) return;
-    self.grid_metrics = metrics;
-
-    // Notify the window that the cell size changed.
-    _ = self.surface_mailbox.push(.{
-        .cell_size = .{
-            .width = metrics.cell_width,
-            .height = metrics.cell_height,
-        },
-    }, .{ .forever = {} });
-}
-
-/// Reload the font metrics, recalculate cell size, and send that all
-/// down to the GPU.
-fn resetFontMetrics(
-    alloc: Allocator,
-    font_group: *font.GroupCache,
-    font_thicken: bool,
-) !font.face.Metrics {
-    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
-    // Doesn't matter, any normal ASCII will do we're just trying to make
-    // sure we use the regular font.
-    const metrics = metrics: {
-        const index = (try font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-        const face = try font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
-    };
-    log.debug("cell dimensions={}", .{metrics});
-
-    // Set details for our sprite font
-    font_group.group.sprite = font.sprite.Face{
-        .width = metrics.cell_width,
-        .height = metrics.cell_height,
-        .thickness = metrics.underline_thickness * @as(u32, if (font_thicken) 2 else 1),
-        .underline_position = metrics.underline_position,
-    };
-
-    return metrics;
+    _ = self;
+    _ = size;
+    if (true) @panic("TODO"); // TODO(fontmem)
+    //
+    // if (single_threaded_draw) self.draw_mutex.lock();
+    // defer if (single_threaded_draw) self.draw_mutex.unlock();
+    //
+    // log.info("set font size={}", .{size});
+    //
+    // // Set our new size, this will also reset our font atlas.
+    // try self.font_group.setSize(size);
+    //
+    // // Reset our GPU uniforms
+    // const metrics = try resetFontMetrics(
+    //     self.alloc,
+    //     self.font_group,
+    //     self.config.font_thicken,
+    // );
+    //
+    // // Defer our GPU updates
+    // self.deferred_font_size = .{ .metrics = metrics };
+    //
+    // // Recalculate our cell size. If it is the same as before, then we do
+    // // nothing since the grid size couldn't have possibly changed.
+    // if (std.meta.eql(self.grid_metrics, metrics)) return;
+    // self.grid_metrics = metrics;
+    //
+    // // Notify the window that the cell size changed.
+    // _ = self.surface_mailbox.push(.{
+    //     .cell_size = .{
+    //         .width = metrics.cell_width,
+    //         .height = metrics.cell_height,
+    //     },
+    // }, .{ .forever = {} });
 }
 
 /// The primary render callback that is completely thread-safe.
@@ -1056,7 +1038,7 @@ pub fn rebuildCells(
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
-            self.font_group,
+            self.font_grid,
             screen,
             row,
             selection,
@@ -1170,31 +1152,19 @@ fn addPreeditCell(
     const bg = self.foreground_color;
     const fg = self.background_color;
 
-    // Get the font for this codepoint.
-    const font_index = if (self.font_group.indexForCodepoint(
+    // Render the glyph for our preedit text
+    const render_ = self.font_grid.renderCodepoint(
         self.alloc,
         @intCast(cp.codepoint),
         .regular,
         .text,
-    )) |index| index orelse return else |_| return;
-
-    // Get the font face so we can get the glyph
-    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
-        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
-        return;
-    };
-
-    // Use the face to now get the glyph index
-    const glyph_index = face.glyphIndex(@intCast(cp.codepoint)) orelse return;
-
-    // Render the glyph for our preedit text
-    const glyph = self.font_group.renderGlyph(
-        self.alloc,
-        font_index,
-        glyph_index,
         .{ .grid_metrics = self.grid_metrics },
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
+        return;
+    };
+    const render = render_ orelse {
+        log.warn("failed to find font for preedit codepoint={X}", .{cp.codepoint});
         return;
     };
 
@@ -1226,12 +1196,12 @@ fn addPreeditCell(
         .grid_col = @intCast(x),
         .grid_row = @intCast(y),
         .grid_width = if (cp.wide) 2 else 1,
-        .glyph_x = glyph.atlas_x,
-        .glyph_y = glyph.atlas_y,
-        .glyph_width = glyph.width,
-        .glyph_height = glyph.height,
-        .glyph_offset_x = glyph.offset_x,
-        .glyph_offset_y = glyph.offset_y,
+        .glyph_x = render.glyph.atlas_x,
+        .glyph_y = render.glyph.atlas_y,
+        .glyph_width = render.glyph.width,
+        .glyph_height = render.glyph.height,
+        .glyph_offset_x = render.glyph.offset_x,
+        .glyph_offset_y = render.glyph.offset_y,
         .r = fg.r,
         .g = fg.g,
         .b = fg.b,
@@ -1275,13 +1245,13 @@ fn addCursor(
         .underline => .underline,
     };
 
-    const glyph = self.font_group.renderGlyph(
+    const render = self.font_grid.renderGlyph(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
         .{
-            .grid_metrics = self.grid_metrics,
             .cell_width = if (wide) 2 else 1,
+            .grid_metrics = self.grid_metrics,
         },
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
@@ -1301,12 +1271,12 @@ fn addCursor(
         .bg_g = 0,
         .bg_b = 0,
         .bg_a = 0,
-        .glyph_x = glyph.atlas_x,
-        .glyph_y = glyph.atlas_y,
-        .glyph_width = glyph.width,
-        .glyph_height = glyph.height,
-        .glyph_offset_x = glyph.offset_x,
-        .glyph_offset_y = glyph.offset_y,
+        .glyph_x = render.glyph.atlas_x,
+        .glyph_y = render.glyph.atlas_y,
+        .glyph_width = render.glyph.width,
+        .glyph_height = render.glyph.height,
+        .glyph_offset_x = render.glyph.offset_x,
+        .glyph_offset_y = render.glyph.offset_y,
     });
 
     return &self.cells.items[self.cells.items.len - 1];
@@ -1455,7 +1425,7 @@ fn updateCell(
     // If the cell has a character, draw it
     if (cell.hasText()) fg: {
         // Render
-        const glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index orelse break :fg,
@@ -1467,9 +1437,8 @@ fn updateCell(
 
         // If we're rendering a color font, we use the color atlas
         const mode: CellProgram.CellMode = switch (try fgMode(
-            &self.font_group.group,
+            render.presentation,
             cell_pin,
-            shaper_run,
         )) {
             .normal => .fg,
             .color => .fg_color,
@@ -1481,12 +1450,12 @@ fn updateCell(
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
             .grid_width = cell.gridWidth(),
-            .glyph_x = glyph.atlas_x,
-            .glyph_y = glyph.atlas_y,
-            .glyph_width = glyph.width,
-            .glyph_height = glyph.height,
-            .glyph_offset_x = glyph.offset_x + shaper_cell.x_offset,
-            .glyph_offset_y = glyph.offset_y + shaper_cell.y_offset,
+            .glyph_x = render.glyph.atlas_x,
+            .glyph_y = render.glyph.atlas_y,
+            .glyph_width = render.glyph.width,
+            .glyph_height = render.glyph.height,
+            .glyph_offset_x = render.glyph.offset_x + shaper_cell.x_offset,
+            .glyph_offset_y = render.glyph.offset_y + shaper_cell.y_offset,
             .r = colors.fg.r,
             .g = colors.fg.g,
             .b = colors.fg.b,
@@ -1508,13 +1477,13 @@ fn updateCell(
             .curly => .underline_curly,
         };
 
-        const underline_glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
             .{
-                .grid_metrics = self.grid_metrics,
                 .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
             },
         );
 
@@ -1525,12 +1494,12 @@ fn updateCell(
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
             .grid_width = cell.gridWidth(),
-            .glyph_x = underline_glyph.atlas_x,
-            .glyph_y = underline_glyph.atlas_y,
-            .glyph_width = underline_glyph.width,
-            .glyph_height = underline_glyph.height,
-            .glyph_offset_x = underline_glyph.offset_x,
-            .glyph_offset_y = underline_glyph.offset_y,
+            .glyph_x = render.glyph.atlas_x,
+            .glyph_y = render.glyph.atlas_y,
+            .glyph_width = render.glyph.width,
+            .glyph_height = render.glyph.height,
+            .glyph_offset_x = render.glyph.offset_x,
+            .glyph_offset_y = render.glyph.offset_y,
             .r = color.r,
             .g = color.g,
             .b = color.b,
@@ -1587,10 +1556,12 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
     // so to be safe we just always reset it. This has a performance hit
     // when its not necessary but config reloading shouldn't be so
     // common to cause a problem.
-    self.font_group.reset();
-    self.font_group.group.styles = config.font_styles;
-    self.font_group.atlas_greyscale.clear();
-    self.font_group.atlas_color.clear();
+    //
+    // TODO(fontmem): see Metal
+    // self.font_group.reset();
+    // self.font_group.group.styles = config.font_styles;
+    // self.font_group.atlas_greyscale.clear();
+    // self.font_group.atlas_color.clear();
 
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
@@ -1657,71 +1628,85 @@ pub fn setScreenSize(
 fn flushAtlas(self: *OpenGL) !void {
     const gl_state = self.gl_state orelse return;
 
-    {
-        const atlas = &self.font_group.atlas_greyscale;
-        if (atlas.modified) {
-            atlas.modified = false;
-            var texbind = try gl_state.texture.bind(.@"2D");
-            defer texbind.unbind();
+    texture: {
+        // If the texture isn't modified we do nothing
+        const atlas = &self.font_grid.atlas_greyscale;
+        const modified = atlas.modified.load(.monotonic);
+        if (modified <= self.texture_greyscale_modified) break :texture;
+        self.texture_greyscale_modified = modified;
 
-            if (atlas.resized) {
-                atlas.resized = false;
-                try texbind.image2D(
-                    0,
-                    .red,
-                    @intCast(atlas.size),
-                    @intCast(atlas.size),
-                    0,
-                    .red,
-                    .UnsignedByte,
-                    atlas.data.ptr,
-                );
-            } else {
-                try texbind.subImage2D(
-                    0,
-                    0,
-                    0,
-                    @intCast(atlas.size),
-                    @intCast(atlas.size),
-                    .red,
-                    .UnsignedByte,
-                    atlas.data.ptr,
-                );
-            }
+        // If it is modified we need to grab a read-lock
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+
+        var texbind = try gl_state.texture.bind(.@"2D");
+        defer texbind.unbind();
+
+        const resized = atlas.resized.load(.monotonic);
+        if (resized > self.texture_greyscale_resized) {
+            self.texture_greyscale_resized = resized;
+            try texbind.image2D(
+                0,
+                .red,
+                @intCast(atlas.size),
+                @intCast(atlas.size),
+                0,
+                .red,
+                .UnsignedByte,
+                atlas.data.ptr,
+            );
+        } else {
+            try texbind.subImage2D(
+                0,
+                0,
+                0,
+                @intCast(atlas.size),
+                @intCast(atlas.size),
+                .red,
+                .UnsignedByte,
+                atlas.data.ptr,
+            );
         }
     }
 
-    {
-        const atlas = &self.font_group.atlas_color;
-        if (atlas.modified) {
-            atlas.modified = false;
-            var texbind = try gl_state.texture_color.bind(.@"2D");
-            defer texbind.unbind();
+    texture: {
+        // If the texture isn't modified we do nothing
+        const atlas = &self.font_grid.atlas_color;
+        const modified = atlas.modified.load(.monotonic);
+        if (modified <= self.texture_color_modified) break :texture;
+        self.texture_color_modified = modified;
 
-            if (atlas.resized) {
-                atlas.resized = false;
-                try texbind.image2D(
-                    0,
-                    .rgba,
-                    @intCast(atlas.size),
-                    @intCast(atlas.size),
-                    0,
-                    .bgra,
-                    .UnsignedByte,
-                    atlas.data.ptr,
-                );
-            } else {
-                try texbind.subImage2D(
-                    0,
-                    0,
-                    0,
-                    @intCast(atlas.size),
-                    @intCast(atlas.size),
-                    .bgra,
-                    .UnsignedByte,
-                    atlas.data.ptr,
-                );
-            }
+        // If it is modified we need to grab a read-lock
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+
+        var texbind = try gl_state.texture_color.bind(.@"2D");
+        defer texbind.unbind();
+
+        const resized = atlas.resized.load(.monotonic);
+        if (resized > self.texture_color_resized) {
+            self.texture_color_resized = resized;
+            try texbind.image2D(
+                0,
+                .rgba,
+                @intCast(atlas.size),
+                @intCast(atlas.size),
+                0,
+                .bgra,
+                .UnsignedByte,
+                atlas.data.ptr,
+            );
+        } else {
+            try texbind.subImage2D(
+                0,
+                0,
+                0,
+                @intCast(atlas.size),
+                @intCast(atlas.size),
+                .bgra,
+                .UnsignedByte,
+                atlas.data.ptr,
+            );
         }
     }
 }
@@ -1999,7 +1984,7 @@ const GLState = struct {
     pub fn init(
         alloc: Allocator,
         config: DerivedConfig,
-        font_group: *font.GroupCache,
+        font_grid: *font.SharedGrid,
     ) !GLState {
         var arena = ArenaAllocator.init(alloc);
         defer arena.deinit();
@@ -2045,12 +2030,12 @@ const GLState = struct {
             try texbind.image2D(
                 0,
                 .red,
-                @intCast(font_group.atlas_greyscale.size),
-                @intCast(font_group.atlas_greyscale.size),
+                @intCast(font_grid.atlas_greyscale.size),
+                @intCast(font_grid.atlas_greyscale.size),
                 0,
                 .red,
                 .UnsignedByte,
-                font_group.atlas_greyscale.data.ptr,
+                font_grid.atlas_greyscale.data.ptr,
             );
         }
 
@@ -2066,12 +2051,12 @@ const GLState = struct {
             try texbind.image2D(
                 0,
                 .rgba,
-                @intCast(font_group.atlas_color.size),
-                @intCast(font_group.atlas_color.size),
+                @intCast(font_grid.atlas_color.size),
+                @intCast(font_grid.atlas_color.size),
                 0,
                 .bgra,
                 .UnsignedByte,
-                font_group.atlas_color.data.ptr,
+                font_grid.atlas_color.data.ptr,
             );
         }
 
