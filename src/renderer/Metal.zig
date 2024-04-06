@@ -1874,7 +1874,7 @@ fn updateCell(
     // If the cell has a character, draw it
     if (cell.hasText()) fg: {
         // Render
-        const glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index orelse break :fg,
@@ -1885,9 +1885,8 @@ fn updateCell(
         );
 
         const mode: mtl_shaders.Cell.Mode = switch (try fgMode(
-            &self.font_group.group,
+            render.presentation,
             cell_pin,
-            shaper_run,
         )) {
             .normal => .fg,
             .color => .fg_color,
@@ -1900,11 +1899,11 @@ fn updateCell(
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
-            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-            .glyph_size = .{ glyph.width, glyph.height },
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
             .glyph_offset = .{
-                glyph.offset_x + shaper_cell.x_offset,
-                glyph.offset_y + shaper_cell.y_offset,
+                render.glyph.offset_x + shaper_cell.x_offset,
+                render.glyph.offset_y + shaper_cell.y_offset,
             },
         });
     }
@@ -1919,7 +1918,7 @@ fn updateCell(
             .curly => .underline_curly,
         };
 
-        const glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
@@ -1937,9 +1936,9 @@ fn updateCell(
             .cell_width = cell.gridWidth(),
             .color = .{ color.r, color.g, color.b, alpha },
             .bg_color = bg,
-            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-            .glyph_size = .{ glyph.width, glyph.height },
-            .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
         });
     }
 
@@ -1988,7 +1987,7 @@ fn addCursor(
         .underline => .underline,
     };
 
-    const glyph = self.font_group.renderGlyph(
+    const render = self.font_grid.renderGlyph(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
@@ -2010,9 +2009,9 @@ fn addCursor(
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
         .bg_color = .{ 0, 0, 0, 0 },
-        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-        .glyph_size = .{ glyph.width, glyph.height },
-        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
 
     return &self.cells.items[self.cells.items.len - 1];
@@ -2024,6 +2023,8 @@ fn addPreeditCell(
     x: usize,
     y: usize,
 ) !void {
+    if (true) @panic("TODO"); // TODO(fontmem)
+
     // Preedit is rendered inverted
     const bg = self.foreground_color;
     const fg = self.background_color;

@@ -20,11 +20,9 @@ pub const FgMode = enum {
 /// meant to be called from the typical updateCell function within a
 /// renderer.
 pub fn fgMode(
-    group: *font.Group,
+    presentation: font.Presentation,
     cell_pin: terminal.Pin,
-    shaper_run: font.shape.TextRun,
 ) !FgMode {
-    const presentation = try group.presentationFromIndex(shaper_run.font_index);
     return switch (presentation) {
         // Emoji is always full size and color.
         .emoji => .color,

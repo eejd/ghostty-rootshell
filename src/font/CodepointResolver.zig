@@ -15,13 +15,16 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ziglyph = @import("ziglyph");
 const font = @import("main.zig");
+const Atlas = font.Atlas;
 const CodepointMap = font.CodepointMap;
 const Collection = font.Collection;
 const Discover = font.Discover;
 const DiscoveryDescriptor = font.discovery.Descriptor;
 const Face = font.Face;
+const Glyph = font.Glyph;
 const Library = font.Library;
 const Presentation = font.Presentation;
+const RenderOptions = font.face.RenderOptions;
 const SpriteFace = font.SpriteFace;
 const Style = font.Style;
 
@@ -284,6 +287,52 @@ fn getIndexCodepointOverride(
     }
 
     return null;
+}
+
+/// Returns the presentation for a specific font index. This is useful for
+/// determining what atlas is needed.
+pub fn getPresentation(self: *CodepointResolver, index: Collection.Index) !Presentation {
+    if (index.special()) |sp| return switch (sp) {
+        .sprite => .text,
+    };
+
+    const face = try self.collection.getFace(index);
+    return face.presentation;
+}
+
+/// Render a glyph by glyph index into the given font atlas and return
+/// metadata about it.
+///
+/// This performs no caching, it is up to the caller to cache calls to this
+/// if they want. This will also not resize the atlas if it is full.
+///
+/// IMPORTANT: this renders by /glyph index/ and not by /codepoint/. The caller
+/// is expected to translate codepoints to glyph indexes in some way. The most
+/// trivial way to do this is to get the Face and call glyphIndex. If you're
+/// doing text shaping, the text shaping library (i.e. HarfBuzz) will automatically
+/// determine glyph indexes for a text run.
+pub fn renderGlyph(
+    self: *CodepointResolver,
+    alloc: Allocator,
+    atlas: *Atlas,
+    index: Collection.Index,
+    glyph_index: u32,
+    opts: RenderOptions,
+) !Glyph {
+    // Special-case fonts are rendered directly.
+    if (index.special()) |sp| switch (sp) {
+        .sprite => return try self.sprite.?.renderGlyph(
+            alloc,
+            atlas,
+            glyph_index,
+            opts,
+        ),
+    };
+
+    const face = try self.collection.getFace(index);
+    const glyph = try face.renderGlyph(alloc, atlas, glyph_index, opts);
+    // log.warn("GLYPH={}", .{glyph});
+    return glyph;
 }
 
 /// Packed array of booleans to indicate if a style is enabled or not.

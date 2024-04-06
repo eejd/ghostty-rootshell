@@ -152,7 +152,7 @@ pub const Presentation = enum(u1) {
 };
 
 /// A FontIndex that can be used to use the sprite font directly.
-pub const sprite_index = Group.FontIndex.initSpecial(.sprite);
+pub const sprite_index = Collection.Index.initSpecial(.sprite);
 
 test {
     // For non-wasm we want to test everything we can

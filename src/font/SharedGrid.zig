@@ -43,7 +43,7 @@ const log = std.log.scoped(.font_shared_grid);
 codepoints: std.AutoHashMapUnmanaged(CodepointKey, ?Collection.Index) = .{},
 
 /// Cache for glyph renders into the atlas.
-glyphs: std.AutoHashMapUnmanaged(GlyphKey, Glyph) = .{},
+glyphs: std.AutoHashMapUnmanaged(GlyphKey, Render) = .{},
 
 /// The texture atlas to store renders in. The Glyph data in the glyphs
 /// cache is dependent on the atlas matching.
@@ -59,7 +59,9 @@ resolver: CodepointResolver,
 metrics: Metrics,
 
 /// The RwLock used to protect the shared grid. Callers are expected to use
-/// this directly if they need to i.e. access the atlas directly.
+/// this directly if they need to i.e. access the atlas directly. Because
+/// callers can use this lock directly, maintainers need to be extra careful
+/// to review call sites to ensure they are using the lock correctly.
 lock: std.Thread.RwLock,
 
 /// Initialize the grid.
@@ -190,6 +192,76 @@ pub fn hasCodepoint(
         cp,
         if (p) |v| .{ .explicit = v } else .{ .any = {} },
     );
+}
+
+pub const Render = struct {
+    glyph: Glyph,
+    presentation: Presentation,
+};
+
+/// Render a glyph. This automatically determines the correct texture
+/// atlas to use and caches the result.
+pub fn renderGlyph(
+    self: *SharedGrid,
+    alloc: Allocator,
+    index: Collection.Index,
+    glyph_index: u32,
+    opts: RenderOptions,
+) !Render {
+    const key: GlyphKey = .{ .index = index, .glyph = glyph_index, .opts = opts };
+
+    // Fast path: the cache has the value. This is almost always true and
+    // only requires a read lock.
+    {
+        self.lock.lockShared();
+        defer self.lock.unlockShared();
+        if (self.glyphs.get(key)) |v| return v;
+    }
+
+    // Slow path: we need to search this codepoint
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    const gop = try self.glyphs.getOrPut(alloc, key);
+    if (gop.found_existing) return gop.value_ptr.*;
+
+    // Get the presentation to determine what atlas to use
+    const p = try self.resolver.getPresentation(index);
+    const atlas: *font.Atlas = switch (p) {
+        .text => &self.atlas_greyscale,
+        .emoji => &self.atlas_color,
+    };
+
+    // Render into the atlas
+    const glyph = self.resolver.renderGlyph(
+        alloc,
+        atlas,
+        index,
+        glyph_index,
+        opts,
+    ) catch |err| switch (err) {
+        // If the atlas is full, we resize it
+        error.AtlasFull => blk: {
+            try atlas.grow(alloc, atlas.size * 2);
+            break :blk try self.resolver.renderGlyph(
+                alloc,
+                atlas,
+                index,
+                glyph_index,
+                opts,
+            );
+        },
+
+        else => return err,
+    };
+
+    // Cache and return
+    gop.value_ptr.* = .{
+        .glyph = glyph,
+        .presentation = p,
+    };
+
+    return gop.value_ptr.*;
 }
 
 const CodepointKey = struct {
