@@ -9,6 +9,7 @@ const DeferredFace = font.DeferredFace;
 const Group = font.Group;
 const GroupCache = font.GroupCache;
 const Library = font.Library;
+const SharedGrid = font.SharedGrid;
 const Style = font.Style;
 const Presentation = font.Presentation;
 const terminal = @import("../../terminal/main.zig");
@@ -189,7 +190,7 @@ pub const Shaper = struct {
 
     pub fn runIterator(
         self: *Shaper,
-        group: *GroupCache,
+        grid: *SharedGrid,
         screen: *const terminal.Screen,
         row: terminal.Pin,
         selection: ?terminal.Selection,
@@ -197,7 +198,7 @@ pub const Shaper = struct {
     ) font.shape.RunIterator {
         return .{
             .hooks = .{ .shaper = self },
-            .group = group,
+            .grid = grid,
             .screen = screen,
             .row = row,
             .selection = selection,

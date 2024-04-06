@@ -1649,7 +1649,7 @@ fn rebuildCells(
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
-            self.font_group,
+            self.font_grid,
             screen,
             row,
             row_selection,

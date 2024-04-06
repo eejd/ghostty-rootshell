@@ -15,17 +15,17 @@ pub const TextRun = struct {
     /// The total number of cells produced by this run.
     cells: u16,
 
-    /// The font group that built this run.
-    group: *font.GroupCache,
+    /// The font grid that built this run.
+    grid: *font.SharedGrid,
 
     /// The font index to use for the glyphs of this run.
-    font_index: font.Group.FontIndex,
+    font_index: font.Collection.Index,
 };
 
 /// RunIterator is an iterator that yields text runs.
 pub const RunIterator = struct {
     hooks: font.Shaper.RunIteratorHook,
-    group: *font.GroupCache,
+    grid: *font.SharedGrid,
     screen: *const terminal.Screen,
     row: terminal.Pin,
     selection: ?terminal.Selection = null,
@@ -49,7 +49,7 @@ pub const RunIterator = struct {
         if (self.i >= max) return null;
 
         // Track the font for our current run
-        var current_font: font.Group.FontIndex = .{};
+        var current_font: font.Collection.Index = .{};
 
         // Allow the hook to prepare
         try self.hooks.prepare();
@@ -117,7 +117,7 @@ pub const RunIterator = struct {
             } else emoji: {
                 // If we're not a grapheme, our individual char could be
                 // an emoji so we want to check if we expect emoji presentation.
-                // The font group indexForCodepoint we use below will do this
+                // The font grid indexForCodepoint we use below will do this
                 // automatically.
                 break :emoji null;
             };
@@ -160,7 +160,7 @@ pub const RunIterator = struct {
             // grapheme, i.e. combining characters), we need to find a font
             // that supports all of them.
             const font_info: struct {
-                idx: font.Group.FontIndex,
+                idx: font.Collection.Index,
                 fallback: ?u32 = null,
             } = font_info: {
                 // If we find a font that supports this entire grapheme
@@ -231,7 +231,7 @@ pub const RunIterator = struct {
         return TextRun{
             .offset = @intCast(self.i),
             .cells = @intCast(j - self.i),
-            .group = self.group,
+            .grid = self.grid,
             .font_index = current_font,
         };
     }
@@ -248,7 +248,7 @@ pub const RunIterator = struct {
         cell: *terminal.Cell,
         style: font.Style,
         presentation: ?font.Presentation,
-    ) !?font.Group.FontIndex {
+    ) !?font.Collection.Index {
         // Get the font index for the primary codepoint.
         const primary_cp: u32 = if (cell.isEmpty() or cell.codepoint() == 0) ' ' else cell.codepoint();
         const primary = try self.group.indexForCodepoint(
@@ -265,7 +265,7 @@ pub const RunIterator = struct {
         // If this is a grapheme, we need to find a font that supports
         // all of the codepoints in the grapheme.
         const cps = self.row.grapheme(cell) orelse return primary;
-        var candidates = try std.ArrayList(font.Group.FontIndex).initCapacity(alloc, cps.len + 1);
+        var candidates = try std.ArrayList(font.Collection.Index).initCapacity(alloc, cps.len + 1);
         defer candidates.deinit();
         candidates.appendAssumeCapacity(primary);
 
