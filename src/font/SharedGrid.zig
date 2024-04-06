@@ -143,6 +143,39 @@ pub fn cellSize(self: *SharedGrid) renderer.CellSize {
     };
 }
 
+/// Get the font index for a given codepoint. This is cached.
+pub fn getIndex(
+    self: *SharedGrid,
+    alloc: Allocator,
+    cp: u32,
+    style: Style,
+    p: ?Presentation,
+) !?Collection.Index {
+    const key: CodepointKey = .{ .style = style, .codepoint = cp, .presentation = p };
+
+    // Fast path: the cache has the value. This is almost always true and
+    // only requires a read lock.
+    {
+        self.lock.lockShared();
+        defer self.lock.unlockShared();
+        if (self.codepoints.get(key)) |v| return v;
+    }
+
+    // Slow path: we need to search this codepoint
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    // Try to get it, if it is now in the cache another thread beat us to it.
+    const gop = try self.codepoints.getOrPut(alloc, key);
+    if (gop.found_existing) return gop.value_ptr.*;
+    errdefer self.codepoints.removeByPtr(gop.key_ptr);
+
+    // Load a value and cache it. This even caches negative matches.
+    const value = self.resolver.getIndex(alloc, cp, style, p);
+    gop.value_ptr.* = value;
+    return value;
+}
+
 const CodepointKey = struct {
     style: Style,
     codepoint: u32,
@@ -179,7 +212,7 @@ fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
     return try init(alloc, r, false);
 }
 
-test "SharedGrid inits metrics" {
+test getIndex {
     const testing = std.testing;
     const alloc = testing.allocator;
     // const testEmoji = @import("test.zig").fontEmoji;
@@ -190,21 +223,20 @@ test "SharedGrid inits metrics" {
     var grid = try testGrid(.normal, alloc, lib);
     defer grid.deinit(alloc);
 
-    // Visible ASCII. Do it twice to verify cache is used.
-    // var i: u32 = 32;
-    // while (i < 127) : (i += 1) {
-    //     const idx = (try cache.indexForCodepoint(alloc, i, .regular, null)).?;
-    //     try testing.expectEqual(Style.regular, idx.style);
-    //     try testing.expectEqual(@as(Group.FontIndex.IndexInt, 0), idx.idx);
-    //
-    //     // Render
-    //     const face = try cache.group.faceFromIndex(idx);
-    //     const glyph_index = face.glyphIndex(i).?;
-    //     _ = try cache.renderGlyph(
-    //         alloc,
-    //         idx,
-    //         glyph_index,
-    //         .{},
-    //     );
-    // }
+    // Visible ASCII.
+    for (32..127) |i| {
+        const idx = (try grid.getIndex(alloc, @intCast(i), .regular, null)).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
+    }
+
+    // Do it again without a resolver set to ensure we only hit the cache
+    const old_resolver = grid.resolver;
+    grid.resolver = undefined;
+    defer grid.resolver = old_resolver;
+    for (32..127) |i| {
+        const idx = (try grid.getIndex(alloc, @intCast(i), .regular, null)).?;
+        try testing.expectEqual(Style.regular, idx.style);
+        try testing.expectEqual(@as(Collection.Index.IndexInt, 0), idx.idx);
+    }
 }
