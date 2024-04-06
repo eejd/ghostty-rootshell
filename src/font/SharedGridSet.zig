@@ -5,9 +5,8 @@
 //! This structure allows expensive font information such as
 //! the font atlas, glyph cache, font faces, etc. to be shared.
 //!
-//! This structure itself is not thread-safe. It is expected that a single
-//! main app thread handles initializing new values and dispensing them to
-//! the appropriate threads.
+//! This structure is thread-safe when the operations are documented
+//! as thread-safe.
 const SharedGridSet = @This();
 
 const std = @import("std");
@@ -44,6 +43,9 @@ font_lib: Library,
 /// Font discovery mechanism.
 font_discover: ?Discover = null,
 
+/// Lock to protect multi-threaded access to the map.
+lock: std.Thread.Mutex = .{},
+
 /// Initialize a new SharedGridSet.
 pub fn init(alloc: Allocator) !SharedGridSet {
     var font_lib = try Library.init();
@@ -74,7 +76,9 @@ pub fn deinit(self: *SharedGridSet) void {
 }
 
 /// Returns the number of cached grids.
-pub fn count(self: *const SharedGridSet) usize {
+pub fn count(self: *SharedGridSet) usize {
+    self.lock.lock();
+    defer self.lock.unlock();
     return self.map.count();
 }
 
@@ -93,6 +97,9 @@ pub fn ref(
 ) !struct { Key, *SharedGrid } {
     var key = try Key.init(self.alloc, config);
     errdefer key.deinit();
+
+    self.lock.lock();
+    defer self.lock.unlock();
 
     const gop = try self.map.getOrPut(self.alloc, key);
     if (gop.found_existing) {
@@ -273,6 +280,9 @@ fn collection(
 /// Decrement the ref count for the given key. If the ref count is zero,
 /// the grid will be deinitialized and removed from the map.j:w
 pub fn deref(self: *SharedGridSet, key: Key) void {
+    self.lock.lock();
+    defer self.lock.unlock();
+
     const entry = self.map.getEntry(key) orelse return;
     assert(entry.value_ptr.ref >= 1);
 
