@@ -21,9 +21,6 @@ pub const Message = union(enum) {
     /// Set the mouse shape.
     set_mouse_shape: terminal.MouseShape,
 
-    /// Change the cell size.
-    cell_size: renderer.CellSize,
-
     /// Read the clipboard and write to the pty.
     clipboard_read: apprt.Clipboard,
 

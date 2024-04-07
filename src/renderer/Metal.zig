@@ -566,18 +566,16 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
-pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) !void {
+pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     // Update our grid
     self.font_grid = grid;
     self.texture_greyscale_modified = 0;
     self.texture_color_modified = 0;
 
-    // Recalculate our metrics
-    const metrics = metrics: {
-        grid.lock.lockShared();
-        defer grid.lock.unlockShared();
-        break :metrics grid.metrics;
-    };
+    // Get our metrics from the grid. This doesn't require a lock because
+    // the metrics are never recalculated.
+    const metrics = grid.metrics;
+    self.grid_metrics = metrics;
 
     // Update our uniforms
     self.uniforms = .{
@@ -590,19 +588,6 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) !void {
         .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
         .min_contrast = self.uniforms.min_contrast,
     };
-
-    // Recalculate our cell size. If it is the same as before, then we do
-    // nothing since the grid size couldn't have possibly changed.
-    if (std.meta.eql(self.grid_metrics, metrics)) return;
-    self.grid_metrics = metrics;
-
-    // Notify the window that the cell size changed.
-    _ = self.surface_mailbox.push(.{
-        .cell_size = .{
-            .width = metrics.cell_width,
-            .height = metrics.cell_height,
-        },
-    }, .{ .forever = {} });
 }
 
 /// Update the frame data.

@@ -642,8 +642,6 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             try self.rt_surface.setMouseShape(shape);
         },
 
-        .cell_size => |size| try self.setCellSize(size),
-
         .clipboard_read => |clipboard| {
             if (self.config.clipboard_read == .deny) {
                 log.info("application attempted to read clipboard, but 'clipboard-read' is set to deny", .{});
@@ -966,18 +964,25 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
 /// Change the font size.
 ///
 /// This can only be called from the main thread.
-pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
+pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
     // Update our font size so future changes work
     self.font_size = size;
 
     // We need to build up a new font stack for this font size.
-    const font_grid_key, const font_grid = self.app.font_grid_set.ref(
+    const font_grid_key, const font_grid = try self.app.font_grid_set.ref(
         &self.config.font,
         self.font_size,
-    ) catch unreachable;
+    );
     errdefer self.app.font_grid_set.deref(font_grid_key);
 
-    // Notify our render thread of the new font stack
+    // Set our cell size
+    try self.setCellSize(.{
+        .width = font_grid.metrics.cell_width,
+        .height = font_grid.metrics.cell_height,
+    });
+
+    // Notify our render thread of the new font stack. The renderer
+    // MUST accept the new font grid and deref the old.
     _ = self.renderer_thread.mailbox.push(.{
         .font_grid = .{
             .grid = font_grid,
@@ -988,7 +993,6 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
     }, .{ .forever = {} });
 
     // Once we've sent the key we can replace our key
-    // TODO(fontmem): we should not store this anymore
     self.font_grid_key = font_grid_key;
 
     // Schedule render which also drains our mailbox
@@ -1699,7 +1703,7 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
         return;
     }
 
-    self.setFontSize(size);
+    try self.setFontSize(size);
 
     // Update our padding which is dependent on DPI.
     self.padding = padding: {
@@ -2998,7 +3002,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points +|= delta;
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .decrease_font_size => |delta| {
@@ -3006,7 +3010,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points = @max(1, size.points -| delta);
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .reset_font_size => {
@@ -3014,7 +3018,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points = self.config.original_font_size;
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .clear_screen => {

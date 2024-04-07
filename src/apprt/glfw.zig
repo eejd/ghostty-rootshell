@@ -246,7 +246,7 @@ pub const App = struct {
         // If we have a parent, inherit some properties
         if (self.config.@"window-inherit-font-size") {
             if (parent_) |parent| {
-                surface.core_surface.setFontSize(parent.font_size);
+                try surface.core_surface.setFontSize(parent.font_size);
             }
         }
 
