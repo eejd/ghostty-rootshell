@@ -60,8 +60,9 @@ pub const Descriptor = struct {
     /// Hash the descriptor with the given hasher.
     pub fn hash(self: Descriptor, hasher: anytype) void {
         const autoHash = std.hash.autoHash;
-        autoHash(hasher, self.family);
-        autoHash(hasher, self.style);
+        const autoHashStrat = std.hash.autoHashStrat;
+        autoHashStrat(hasher, self.family, .Deep);
+        autoHashStrat(hasher, self.style, .Deep);
         autoHash(hasher, self.codepoint);
         autoHash(hasher, self.size);
         autoHash(hasher, self.bold);

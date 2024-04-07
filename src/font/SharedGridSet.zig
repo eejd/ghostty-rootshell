@@ -556,7 +556,7 @@ pub const Key = struct {
         const autoHash = std.hash.autoHash;
         autoHash(hasher, self.descriptors.len);
         for (self.descriptors) |d| d.hash(hasher);
-        autoHash(hasher, self.codepoint_map);
+        self.codepoint_map.hash(hasher);
         autoHash(hasher, self.metric_modifiers.count());
         if (self.metric_modifiers.count() > 0) {
             inline for (@typeInfo(Metrics.Key).Enum.fields) |field| {
