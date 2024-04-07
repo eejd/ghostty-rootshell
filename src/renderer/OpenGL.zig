@@ -590,41 +590,13 @@ pub fn setFocus(self: *OpenGL, focus: bool) !void {
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
-pub fn setFontSize(self: *OpenGL, size: font.face.DesiredSize) !void {
-    _ = self;
-    _ = size;
-    if (true) @panic("TODO"); // TODO(fontmem)
-    //
-    // if (single_threaded_draw) self.draw_mutex.lock();
-    // defer if (single_threaded_draw) self.draw_mutex.unlock();
-    //
-    // log.info("set font size={}", .{size});
-    //
-    // // Set our new size, this will also reset our font atlas.
-    // try self.font_group.setSize(size);
-    //
-    // // Reset our GPU uniforms
-    // const metrics = try resetFontMetrics(
-    //     self.alloc,
-    //     self.font_group,
-    //     self.config.font_thicken,
-    // );
-    //
-    // // Defer our GPU updates
-    // self.deferred_font_size = .{ .metrics = metrics };
-    //
-    // // Recalculate our cell size. If it is the same as before, then we do
-    // // nothing since the grid size couldn't have possibly changed.
-    // if (std.meta.eql(self.grid_metrics, metrics)) return;
-    // self.grid_metrics = metrics;
-    //
-    // // Notify the window that the cell size changed.
-    // _ = self.surface_mailbox.push(.{
-    //     .cell_size = .{
-    //         .width = metrics.cell_width,
-    //         .height = metrics.cell_height,
-    //     },
-    // }, .{ .forever = {} });
+pub fn setFontGrid(self: *OpenGL, grid: *font.SharedGrid) void {
+    if (single_threaded_draw) self.draw_mutex.lock();
+    defer if (single_threaded_draw) self.draw_mutex.unlock();
+
+    // Defer our GPU updates
+    self.deferred_font_size = .{ .metrics = grid.metrics };
+    self.grid_metrics = grid.metrics;
 }
 
 /// The primary render callback that is completely thread-safe.
