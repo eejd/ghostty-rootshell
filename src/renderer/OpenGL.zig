@@ -594,9 +594,16 @@ pub fn setFontGrid(self: *OpenGL, grid: *font.SharedGrid) void {
     if (single_threaded_draw) self.draw_mutex.lock();
     defer if (single_threaded_draw) self.draw_mutex.unlock();
 
+    // Reset our font grid
+    self.font_grid = grid;
+    self.grid_metrics = grid.metrics;
+    self.texture_greyscale_modified = 0;
+    self.texture_greyscale_resized = 0;
+    self.texture_color_modified = 0;
+    self.texture_color_resized = 0;
+
     // Defer our GPU updates
     self.deferred_font_size = .{ .metrics = grid.metrics };
-    self.grid_metrics = grid.metrics;
 }
 
 /// The primary render callback that is completely thread-safe.
