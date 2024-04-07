@@ -86,6 +86,21 @@ pub const Descriptor = struct {
         return hasher.final();
     }
 
+    /// Deep copy of the struct. The given allocator is expected to
+    /// be an arena allocator of some sort since the descriptor
+    /// itself doesn't support fine-grained deallocation of fields.
+    pub fn clone(self: *const Descriptor, alloc: Allocator) !Descriptor {
+        // We can't do any errdefer cleanup in here. As documented we
+        // expect the allocator to be an arena so any errors should be
+        // cleaned up somewhere else.
+
+        var copy = self.*;
+        copy.family = if (self.family) |src| try alloc.dupeZ(u8, src) else null;
+        copy.style = if (self.style) |src| try alloc.dupeZ(u8, src) else null;
+        copy.variations = try alloc.dupe(Variation, self.variations);
+        return copy;
+    }
+
     /// Convert to Fontconfig pattern to use for lookup. The pattern does
     /// not have defaults filled/substituted (Fontconfig thing) so callers
     /// must still do this.

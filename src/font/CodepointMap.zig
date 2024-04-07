@@ -30,6 +30,18 @@ pub fn deinit(self: *CodepointMap, alloc: Allocator) void {
     self.list.deinit(alloc);
 }
 
+/// Deep copy of the struct. The given allocator is expected to
+/// be an arena allocator of some sort since the struct itself
+/// doesn't support fine-grained deallocation of fields.
+pub fn clone(self: *const CodepointMap, alloc: Allocator) !CodepointMap {
+    var list = try self.list.clone(alloc);
+    for (list.items(.descriptor)) |*d| {
+        d.* = try d.clone(alloc);
+    }
+
+    return .{ .list = list };
+}
+
 /// Add an entry to the map.
 ///
 /// For conflicting codepoints, entries added later take priority over

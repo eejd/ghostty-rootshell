@@ -2965,11 +2965,7 @@ pub const RepeatableCodepointMap = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) !Self {
-        // TODO(fontmem): clone the codemap descriptors
-
-        return .{
-            .map = .{ .list = try self.map.list.clone(alloc) },
-        };
+        return .{ .map = try self.map.clone(alloc) };
     }
 
     /// Compare if two of our value are requal. Required by Config.
