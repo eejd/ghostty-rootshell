@@ -414,7 +414,7 @@ pub const Surface = struct {
         if (opts.font_size != 0) {
             var font_size = self.core_surface.font_size;
             font_size.points = opts.font_size;
-            self.core_surface.setFontSize(font_size);
+            try self.core_surface.setFontSize(font_size);
         }
     }
 
