@@ -18,9 +18,6 @@
 //! reinitialized and all surfaces should switch over to using that one.
 const SharedGrid = @This();
 
-// TODO(fontmem):
-// - consider config changes and how they affect the shared grid.
-
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;

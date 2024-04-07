@@ -174,12 +174,10 @@ pub const Modifier = union(enum) {
         const autoHash = std.hash.autoHash;
         autoHash(hasher, std.meta.activeTag(self));
         switch (self) {
-            // floats can't be hashed directly so we round it to the
-            // nearest int and then hash that. This is not perfect but
-            // hash collisions due to the modifier being wrong are really
-            // rare so we should fix this up later.
-            // TODO(fontmem): make better
-            .percent => |v| autoHash(hasher, @as(i64, @intFromFloat(v))),
+            // floats can't be hashed directly so we bitcast to i64.
+            // for the purpose of what we're trying to do this seems
+            // good enough but I would prefer value hashing.
+            .percent => |v| autoHash(hasher, @as(i64, @bitCast(v))),
             .absolute => |v| autoHash(hasher, v),
         }
     }

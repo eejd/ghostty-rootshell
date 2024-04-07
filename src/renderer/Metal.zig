@@ -1363,21 +1363,6 @@ fn prepKittyGraphics(
 
 /// Update the configuration.
 pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
-    // On configuration change we always reset our font group. There
-    // are a variety of configurations that can change font settings
-    // so to be safe we just always reset it. This has a performance hit
-    // when its not necessary but config reloading shouldn't be so
-    // common to cause a problem.
-    //
-    // TODO(fontmem): we no longer do this. the surface should handle
-    // font changes, create a new grid for us, and send it via message
-    // passing or something.
-    //
-    // self.font_group.reset();
-    // self.font_group.group.styles = config.font_styles;
-    // self.font_group.atlas_greyscale.clear();
-    // self.font_group.atlas_color.clear();
-
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
     // easier and rare enough to not cause performance issues.
