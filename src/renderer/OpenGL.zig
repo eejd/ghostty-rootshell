@@ -243,7 +243,7 @@ pub const DerivedConfig = struct {
 
     font_thicken: bool,
     font_features: std.ArrayListUnmanaged([:0]const u8),
-    font_styles: font.Group.StyleStatus,
+    font_styles: font.CodepointResolver.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_text: ?terminal.color.RGB,
     cursor_opacity: f64,
@@ -272,7 +272,7 @@ pub const DerivedConfig = struct {
         const font_features = try config.@"font-feature".list.clone(alloc);
 
         // Get our font styles
-        var font_styles = font.Group.StyleStatus.initFill(true);
+        var font_styles = font.CodepointResolver.StyleStatus.initFill(true);
         font_styles.set(.bold, config.@"font-style-bold" != .false);
         font_styles.set(.italic, config.@"font-style-italic" != .false);
         font_styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);

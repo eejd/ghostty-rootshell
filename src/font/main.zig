@@ -10,9 +10,6 @@ pub const CodepointResolver = @import("CodepointResolver.zig");
 pub const Collection = @import("Collection.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
-pub const Group = @import("Group.zig");
-pub const GroupCache = @import("GroupCache.zig");
-pub const GroupCacheSet = @import("GroupCacheSet.zig");
 pub const Glyph = @import("Glyph.zig");
 pub const Metrics = face.Metrics;
 pub const shape = @import("shape.zig");
@@ -30,8 +27,6 @@ pub usingnamespace @import("library.zig");
 pub usingnamespace if (builtin.target.isWasm()) struct {
     pub usingnamespace Atlas.Wasm;
     pub usingnamespace DeferredFace.Wasm;
-    pub usingnamespace Group.Wasm;
-    pub usingnamespace GroupCache.Wasm;
     pub usingnamespace face.web_canvas.Wasm;
     pub usingnamespace shape.web_canvas.Wasm;
 } else struct {};
