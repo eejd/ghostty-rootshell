@@ -698,7 +698,7 @@ test "shape U+3C9 with JB Mono" {
 
         var shaper = &testdata.shaper;
         var it = shaper.runIterator(
-            testdata.cache,
+            testdata.grid,
             &screen,
             screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
             null,
