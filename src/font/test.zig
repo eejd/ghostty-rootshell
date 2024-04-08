@@ -15,6 +15,9 @@ pub const fontVariable = @embedFile("res/Lilex-VF.ttf");
 /// Font with nerd fonts embedded.
 pub const fontNerdFont = @embedFile("res/JetBrainsMonoNerdFont-Regular.ttf");
 
+/// Specific font families below:
+pub const fontJetBrainsMono = @embedFile("res/JetBrainsMonoNoNF-Regular.ttf");
+
 /// Cozette is a unique font because it embeds some emoji characters
 /// but has a text presentation.
 pub const fontCozette = @embedFile("res/CozetteVector.ttf");
