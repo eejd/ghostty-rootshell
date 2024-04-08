@@ -265,18 +265,6 @@ pub const Shaper = struct {
         // We should always have one run because we do our own run splitting.
         const line = try macos.text.Line.createWithAttributedString(attr_str);
         defer line.release();
-        const runs = line.getGlyphRuns();
-        assert(runs.getCount() == 1);
-        const ctrun = runs.getValueAtIndex(macos.text.Run, 0);
-
-        // Get our glyphs and positions
-        const glyphs = try ctrun.getGlyphs(alloc);
-        const positions = try ctrun.getPositions(alloc);
-        const advances = try ctrun.getAdvances(alloc);
-        const indices = try ctrun.getStringIndices(alloc);
-        assert(glyphs.len == positions.len);
-        assert(glyphs.len == advances.len);
-        assert(glyphs.len == indices.len);
 
         // This keeps track of the current offsets within a single cell.
         var cell_offset: struct {
@@ -284,41 +272,69 @@ pub const Shaper = struct {
             x: f64 = 0,
             y: f64 = 0,
         } = .{};
-
         self.cell_buf.clearRetainingCapacity();
-        try self.cell_buf.ensureTotalCapacity(self.alloc, glyphs.len);
-        for (glyphs, positions, advances, indices) |glyph, pos, advance, index| {
-            // Our cluster is also our cell X position. If the cluster changes
-            // then we need to reset our current cell offsets.
-            const cluster = state.codepoints.items[index].cluster;
-            if (cell_offset.cluster != cluster) cell_offset = .{
-                .cluster = cluster,
-            };
 
-            self.cell_buf.appendAssumeCapacity(.{
-                .x = @intCast(cluster),
-                .x_offset = @intFromFloat(@round(cell_offset.x)),
-                .y_offset = @intFromFloat(@round(cell_offset.y)),
-                .glyph_index = glyph,
-            });
+        // CoreText may generate multiple runs even though our input to
+        // CoreText is already split into runs by our own run iterator.
+        // The runs as far as I can tell are always sequential to each
+        // other so we can iterate over them and just append to our
+        // cell buffer.
+        const runs = line.getGlyphRuns();
+        for (0..runs.getCount()) |i| {
+            const ctrun = runs.getValueAtIndex(macos.text.Run, i);
 
-            // Add our advances to keep track of our current cell offsets.
-            // Advances apply to the NEXT cell.
-            cell_offset.x += advance.width;
-            cell_offset.y += advance.height;
+            // Get our glyphs and positions
+            const glyphs = try ctrun.getGlyphs(alloc);
+            const positions = try ctrun.getPositions(alloc);
+            const advances = try ctrun.getAdvances(alloc);
+            const indices = try ctrun.getStringIndices(alloc);
+            assert(glyphs.len == positions.len);
+            assert(glyphs.len == advances.len);
+            assert(glyphs.len == indices.len);
 
-            // TODO: harfbuzz shaper has handling for inserting blank
-            // cells for multi-cell ligatures. Do we need to port that?
-            // Example: try Monaspace "===" with a background color.
+            for (
+                glyphs,
+                positions,
+                advances,
+                indices,
+            ) |glyph, pos, advance, index| {
+                try self.cell_buf.ensureUnusedCapacity(
+                    self.alloc,
+                    glyphs.len,
+                );
 
-            _ = pos;
-            // const i = self.cell_buf.items.len - 1;
-            // log.warn(
-            //     "i={} codepoint={} glyph={} pos={} advance={} index={} cluster={}",
-            //     .{ i, self.codepoints.items[index].codepoint, glyph, pos, advance, index, cluster },
-            // );
+                // Our cluster is also our cell X position. If the cluster changes
+                // then we need to reset our current cell offsets.
+                const cluster = state.codepoints.items[index].cluster;
+                if (cell_offset.cluster != cluster) cell_offset = .{
+                    .cluster = cluster,
+                };
+
+                self.cell_buf.appendAssumeCapacity(.{
+                    .x = @intCast(cluster),
+                    .x_offset = @intFromFloat(@round(cell_offset.x)),
+                    .y_offset = @intFromFloat(@round(cell_offset.y)),
+                    .glyph_index = glyph,
+                });
+
+                // Add our advances to keep track of our current cell offsets.
+                // Advances apply to the NEXT cell.
+                cell_offset.x += advance.width;
+                cell_offset.y += advance.height;
+
+                // TODO: harfbuzz shaper has handling for inserting blank
+                // cells for multi-cell ligatures. Do we need to port that?
+                // Example: try Monaspace "===" with a background color.
+
+                _ = pos;
+                // const i = self.cell_buf.items.len - 1;
+                // log.warn(
+                //     "i={} codepoint={} glyph={} pos={} advance={} index={} cluster={}",
+                //     .{ i, self.codepoints.items[index].codepoint, glyph, pos, advance, index, cluster },
+                // );
+            }
+            //log.warn("-------------------------------", .{});
         }
-        //log.warn("-------------------------------", .{});
 
         return self.cell_buf.items;
     }
@@ -329,6 +345,7 @@ pub const Shaper = struct {
 
         pub fn prepare(self: *RunIteratorHook) !void {
             try self.shaper.run_state.reset();
+            // log.warn("----------- run reset -------------", .{});
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
@@ -347,14 +364,18 @@ pub const Shaper = struct {
                 .codepoint = cp,
                 .cluster = cluster,
             });
+            // log.warn("run cp={X}", .{cp});
 
             // If the UTF-16 codepoint is a pair then we need to insert
             // a dummy entry so that the CTRunGetStringIndices() function
             // maps correctly.
-            if (pair) try state.codepoints.append(self.shaper.alloc, .{
-                .codepoint = 0,
-                .cluster = cluster,
-            });
+            if (pair) {
+                try state.codepoints.append(self.shaper.alloc, .{
+                    .codepoint = 0,
+                    .cluster = cluster,
+                });
+                log.warn("run pair cp=0", .{});
+            }
         }
 
         pub fn finalize(self: RunIteratorHook) !void {
@@ -640,6 +661,40 @@ test "shape monaspace ligs" {
             try testing.expect(cells[0].glyph_index != null);
         }
         try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
+// https://github.com/mitchellh/ghostty/issues/1664
+test "shape U+3C9 with JB Mono" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaperWithFont(alloc, .jetbrains_mono);
+    defer testdata.deinit();
+
+    {
+        var screen = try terminal.Screen.init(alloc, 10, 3, 0);
+        defer screen.deinit();
+        try screen.testWriteString("\u{03C9} foo");
+
+        var shaper = &testdata.shaper;
+        var it = shaper.runIterator(
+            testdata.cache,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
+
+        var run_count: usize = 0;
+        var cell_count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            run_count += 1;
+            const cells = try shaper.shape(run);
+            cell_count += cells.len;
+        }
+        try testing.expectEqual(@as(usize, 1), run_count);
+        try testing.expectEqual(@as(usize, 5), cell_count);
     }
 }
 
@@ -1334,6 +1389,7 @@ const TestShaper = struct {
 
 const TestFont = enum {
     inconsolata,
+    jetbrains_mono,
     monaspace_neon,
     nerd_font,
 };
@@ -1348,6 +1404,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
     const testEmojiText = @import("../test.zig").fontEmojiText;
     const testFont = switch (font_req) {
         .inconsolata => @import("../test.zig").fontRegular,
+        .jetbrains_mono => @import("../test.zig").fontJetBrainsMono,
         .monaspace_neon => @import("../test.zig").fontMonaspaceNeon,
         .nerd_font => @import("../test.zig").fontNerdFont,
     };
