@@ -57,28 +57,48 @@ pub const Descriptor = struct {
     /// will be preferred, but not guaranteed.
     variations: []const Variation = &.{},
 
-    /// Returns a hash code that can be used to uniquely identify this
-    /// action.
-    pub fn hash(self: Descriptor) u64 {
+    /// Hash the descriptor with the given hasher.
+    pub fn hash(self: Descriptor, hasher: anytype) void {
         const autoHash = std.hash.autoHash;
-        var hasher = std.hash.Wyhash.init(0);
-        autoHash(&hasher, self.family);
-        autoHash(&hasher, self.style);
-        autoHash(&hasher, self.codepoint);
-        autoHash(&hasher, self.size);
-        autoHash(&hasher, self.bold);
-        autoHash(&hasher, self.italic);
-        autoHash(&hasher, self.monospace);
-        autoHash(&hasher, self.variations.len);
+        const autoHashStrat = std.hash.autoHashStrat;
+        autoHashStrat(hasher, self.family, .Deep);
+        autoHashStrat(hasher, self.style, .Deep);
+        autoHash(hasher, self.codepoint);
+        autoHash(hasher, self.size);
+        autoHash(hasher, self.bold);
+        autoHash(hasher, self.italic);
+        autoHash(hasher, self.monospace);
+        autoHash(hasher, self.variations.len);
         for (self.variations) |variation| {
-            autoHash(&hasher, variation.id);
+            autoHash(hasher, variation.id);
 
             // This is not correct, but we don't currently depend on the
             // hash value being different based on decimal values of variations.
-            autoHash(&hasher, @as(u64, @intFromFloat(variation.value)));
+            autoHash(hasher, @as(u64, @intFromFloat(variation.value)));
         }
+    }
 
+    /// Returns a hash code that can be used to uniquely identify this
+    /// action.
+    pub fn hashcode(self: Descriptor) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        self.hash(&hasher);
         return hasher.final();
+    }
+
+    /// Deep copy of the struct. The given allocator is expected to
+    /// be an arena allocator of some sort since the descriptor
+    /// itself doesn't support fine-grained deallocation of fields.
+    pub fn clone(self: *const Descriptor, alloc: Allocator) !Descriptor {
+        // We can't do any errdefer cleanup in here. As documented we
+        // expect the allocator to be an arena so any errors should be
+        // cleaned up somewhere else.
+
+        var copy = self.*;
+        copy.family = if (self.family) |src| try alloc.dupeZ(u8, src) else null;
+        copy.style = if (self.style) |src| try alloc.dupeZ(u8, src) else null;
+        copy.variations = try alloc.dupe(Variation, self.variations);
+        return copy;
     }
 
     /// Convert to Fontconfig pattern to use for lookup. The pattern does
@@ -552,7 +572,7 @@ test "descriptor hash" {
     const testing = std.testing;
 
     var d: Descriptor = .{};
-    try testing.expect(d.hash() != 0);
+    try testing.expect(d.hashcode() != 0);
 }
 
 test "descriptor hash familiy names" {
@@ -560,7 +580,7 @@ test "descriptor hash familiy names" {
 
     var d1: Descriptor = .{ .family = "A" };
     var d2: Descriptor = .{ .family = "B" };
-    try testing.expect(d1.hash() != d2.hash());
+    try testing.expect(d1.hashcode() != d2.hashcode());
 }
 
 test "fontconfig" {

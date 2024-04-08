@@ -416,7 +416,7 @@ fn realize(self: *Surface) !void {
 
     // If we have a font size we want, set that now
     if (self.font_size) |size| {
-        self.core_surface.setFontSize(size);
+        try self.core_surface.setFontSize(size);
     }
 
     // Set the intial color scheme

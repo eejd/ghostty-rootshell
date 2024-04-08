@@ -30,6 +30,18 @@ pub fn deinit(self: *CodepointMap, alloc: Allocator) void {
     self.list.deinit(alloc);
 }
 
+/// Deep copy of the struct. The given allocator is expected to
+/// be an arena allocator of some sort since the struct itself
+/// doesn't support fine-grained deallocation of fields.
+pub fn clone(self: *const CodepointMap, alloc: Allocator) !CodepointMap {
+    var list = try self.list.clone(alloc);
+    for (list.items(.descriptor)) |*d| {
+        d.* = try d.clone(alloc);
+    }
+
+    return .{ .list = list };
+}
+
 /// Add an entry to the map.
 ///
 /// For conflicting codepoints, entries added later take priority over
@@ -51,6 +63,26 @@ pub fn get(self: *const CodepointMap, cp: u21) ?discovery.Descriptor {
     }
 
     return null;
+}
+
+/// Hash with the given hasher.
+pub fn hash(self: *const CodepointMap, hasher: anytype) void {
+    const autoHash = std.hash.autoHash;
+    autoHash(hasher, self.list.len);
+    const slice = self.list.slice();
+    for (0..slice.len) |i| {
+        const entry = slice.get(i);
+        autoHash(hasher, entry.range);
+        entry.descriptor.hash(hasher);
+    }
+}
+
+/// Returns a hash code that can be used to uniquely identify this
+/// action.
+pub fn hashcode(self: *const CodepointMap) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    self.hash(&hasher);
+    return hasher.final();
 }
 
 test "codepointmap" {

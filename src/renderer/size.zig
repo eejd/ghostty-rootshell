@@ -17,26 +17,6 @@ const log = std.log.scoped(.renderer_size);
 pub const CellSize = struct {
     width: u32,
     height: u32,
-
-    /// Initialize the cell size information from a font group. This ensures
-    /// that all renderers use the same cell sizing information for the same
-    /// fonts.
-    pub fn init(alloc: Allocator, group: *font.GroupCache) !CellSize {
-        // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
-        // Doesn't matter, any normal ASCII will do we're just trying to make
-        // sure we use the regular font.
-        const metrics = metrics: {
-            const index = (try group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-            const face = try group.group.faceFromIndex(index);
-            break :metrics face.metrics;
-        };
-        log.debug("cell dimensions={}", .{metrics});
-
-        return CellSize{
-            .width = metrics.cell_width,
-            .height = metrics.cell_height,
-        };
-    }
 };
 
 /// The dimensions of the screen that the grid is rendered to. This is the

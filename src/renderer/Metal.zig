@@ -97,7 +97,7 @@ cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
 uniforms: mtl_shaders.Uniforms,
 
 /// The font structures.
-font_group: *font.GroupCache,
+font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
 
 /// The images that we may render.
@@ -118,6 +118,8 @@ queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
 texture_greyscale: objc.Object, // MTLTexture
 texture_color: objc.Object, // MTLTexture
+texture_greyscale_modified: usize = 0,
+texture_color_modified: usize = 0,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -158,7 +160,7 @@ pub const DerivedConfig = struct {
 
     font_thicken: bool,
     font_features: std.ArrayListUnmanaged([:0]const u8),
-    font_styles: font.Group.StyleStatus,
+    font_styles: font.CodepointResolver.StyleStatus,
     cursor_color: ?terminal.color.RGB,
     cursor_opacity: f64,
     cursor_text: ?terminal.color.RGB,
@@ -187,7 +189,7 @@ pub const DerivedConfig = struct {
         const font_features = try config.@"font-feature".list.clone(alloc);
 
         // Get our font styles
-        var font_styles = font.Group.StyleStatus.initFill(true);
+        var font_styles = font.CodepointResolver.StyleStatus.initFill(true);
         font_styles.set(.bold, config.@"font-style-bold" != .false);
         font_styles.set(.italic, config.@"font-style-italic" != .false);
         font_styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
@@ -343,25 +345,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // to blurry rendering.
     layer.setProperty("contentsScale", info.scaleFactor);
 
-    // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
-    // Doesn't matter, any normal ASCII will do we're just trying to make
-    // sure we use the regular font.
-    const metrics = metrics: {
-        const index = (try options.font_group.indexForCodepoint(alloc, 'M', .regular, .text)).?;
-        const face = try options.font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
-    };
-    log.debug("cell dimensions={}", .{metrics});
-
-    // Set the sprite font up
-    options.font_group.group.sprite = font.sprite.Face{
-        .width = metrics.cell_width,
-        .height = metrics.cell_height,
-        .thickness = metrics.underline_thickness *
-            @as(u32, if (options.config.font_thicken) 2 else 1),
-        .underline_position = metrics.underline_position,
-    };
-
     // Create the font shaper. We initially create a shaper that can support
     // a width of 160 which is a common width for modern screens to help
     // avoid allocations later.
@@ -427,15 +410,34 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     var shaders = try Shaders.init(alloc, device, custom_shaders);
     errdefer shaders.deinit(alloc);
 
-    // Font atlas textures
-    const texture_greyscale = try initAtlasTexture(device, &options.font_group.atlas_greyscale);
-    const texture_color = try initAtlasTexture(device, &options.font_group.atlas_color);
+    // Initialize all the data that requires a critical font section.
+    const font_critical: struct {
+        metrics: font.Metrics,
+        texture_greyscale: objc.Object,
+        texture_color: objc.Object,
+    } = font_critical: {
+        const grid = options.font_grid;
+        grid.lock.lockShared();
+        defer grid.lock.unlockShared();
+
+        // Font atlas textures
+        const greyscale = try initAtlasTexture(device, &grid.atlas_greyscale);
+        errdefer deinitMTLResource(greyscale);
+        const color = try initAtlasTexture(device, &grid.atlas_color);
+        errdefer deinitMTLResource(color);
+
+        break :font_critical .{
+            .metrics = grid.metrics,
+            .texture_greyscale = greyscale,
+            .texture_color = color,
+        };
+    };
 
     return Metal{
         .alloc = alloc,
         .config = options.config,
         .surface_mailbox = options.surface_mailbox,
-        .grid_metrics = metrics,
+        .grid_metrics = font_critical.metrics,
         .screen_size = null,
         .padding = options.padding,
         .focused = true,
@@ -450,13 +452,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
-            .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
-            .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
+            .strikethrough_position = @floatFromInt(font_critical.metrics.strikethrough_position),
+            .strikethrough_thickness = @floatFromInt(font_critical.metrics.strikethrough_thickness),
             .min_contrast = options.config.min_contrast,
         },
 
         // Fonts
-        .font_group = options.font_group,
+        .font_grid = options.font_grid,
         .font_shaper = font_shaper,
 
         // Shaders
@@ -469,8 +471,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .device = device,
         .queue = queue,
         .layer = layer,
-        .texture_greyscale = texture_greyscale,
-        .texture_color = texture_color,
+        .texture_greyscale = font_critical.texture_greyscale,
+        .texture_color = font_critical.texture_color,
         .custom_shader_state = custom_shader_state,
     };
 }
@@ -564,18 +566,16 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
-pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
-    log.info("set font size={}", .{size});
+pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
+    // Update our grid
+    self.font_grid = grid;
+    self.texture_greyscale_modified = 0;
+    self.texture_color_modified = 0;
 
-    // Set our new size, this will also reset our font atlas.
-    try self.font_group.setSize(size);
-
-    // Recalculate our metrics
-    const metrics = metrics: {
-        const index = (try self.font_group.indexForCodepoint(self.alloc, 'M', .regular, .text)).?;
-        const face = try self.font_group.group.faceFromIndex(index);
-        break :metrics face.metrics;
-    };
+    // Get our metrics from the grid. This doesn't require a lock because
+    // the metrics are never recalculated.
+    const metrics = grid.metrics;
+    self.grid_metrics = metrics;
 
     // Update our uniforms
     self.uniforms = .{
@@ -588,27 +588,6 @@ pub fn setFontSize(self: *Metal, size: font.face.DesiredSize) !void {
         .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
         .min_contrast = self.uniforms.min_contrast,
     };
-
-    // Recalculate our cell size. If it is the same as before, then we do
-    // nothing since the grid size couldn't have possibly changed.
-    if (std.meta.eql(self.grid_metrics, metrics)) return;
-    self.grid_metrics = metrics;
-
-    // Set the sprite font up
-    self.font_group.group.sprite = font.sprite.Face{
-        .width = metrics.cell_width,
-        .height = metrics.cell_height,
-        .thickness = metrics.underline_thickness * @as(u32, if (self.config.font_thicken) 2 else 1),
-        .underline_position = metrics.underline_position,
-    };
-
-    // Notify the window that the cell size changed.
-    _ = self.surface_mailbox.push(.{
-        .cell_size = .{
-            .width = metrics.cell_width,
-            .height = metrics.cell_height,
-        },
-    }, .{ .forever = {} });
 }
 
 /// Update the frame data.
@@ -773,13 +752,21 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     };
 
     // If our font atlas changed, sync the texture data
-    if (self.font_group.atlas_greyscale.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_greyscale, &self.texture_greyscale);
-        self.font_group.atlas_greyscale.modified = false;
+    texture: {
+        const modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        if (modified <= self.texture_greyscale_modified) break :texture;
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+        self.texture_greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &self.texture_greyscale);
     }
-    if (self.font_group.atlas_color.modified) {
-        try syncAtlasTexture(self.device, &self.font_group.atlas_color, &self.texture_color);
-        self.font_group.atlas_color.modified = false;
+    texture: {
+        const modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        if (modified <= self.texture_color_modified) break :texture;
+        self.font_grid.lock.lockShared();
+        defer self.font_grid.lock.unlockShared();
+        self.texture_color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &self.texture_color);
     }
 
     // Command buffer (MTLCommandBuffer)
@@ -1376,16 +1363,6 @@ fn prepKittyGraphics(
 
 /// Update the configuration.
 pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
-    // On configuration change we always reset our font group. There
-    // are a variety of configurations that can change font settings
-    // so to be safe we just always reset it. This has a performance hit
-    // when its not necessary but config reloading shouldn't be so
-    // common to cause a problem.
-    self.font_group.reset();
-    self.font_group.group.styles = config.font_styles;
-    self.font_group.atlas_greyscale.clear();
-    self.font_group.atlas_color.clear();
-
     // We always redo the font shaper in case font features changed. We
     // could check to see if there was an actual config change but this is
     // easier and rare enough to not cause performance issues.
@@ -1643,7 +1620,7 @@ fn rebuildCells(
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
-            self.font_group,
+            self.font_grid,
             screen,
             row,
             row_selection,
@@ -1868,7 +1845,7 @@ fn updateCell(
     // If the cell has a character, draw it
     if (cell.hasText()) fg: {
         // Render
-        const glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
             shaper_cell.glyph_index orelse break :fg,
@@ -1879,9 +1856,8 @@ fn updateCell(
         );
 
         const mode: mtl_shaders.Cell.Mode = switch (try fgMode(
-            &self.font_group.group,
+            render.presentation,
             cell_pin,
-            shaper_run,
         )) {
             .normal => .fg,
             .color => .fg_color,
@@ -1894,11 +1870,11 @@ fn updateCell(
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
-            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-            .glyph_size = .{ glyph.width, glyph.height },
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
             .glyph_offset = .{
-                glyph.offset_x + shaper_cell.x_offset,
-                glyph.offset_y + shaper_cell.y_offset,
+                render.glyph.offset_x + shaper_cell.x_offset,
+                render.glyph.offset_y + shaper_cell.y_offset,
             },
         });
     }
@@ -1913,7 +1889,7 @@ fn updateCell(
             .curly => .underline_curly,
         };
 
-        const glyph = try self.font_group.renderGlyph(
+        const render = try self.font_grid.renderGlyph(
             self.alloc,
             font.sprite_index,
             @intFromEnum(sprite),
@@ -1931,9 +1907,9 @@ fn updateCell(
             .cell_width = cell.gridWidth(),
             .color = .{ color.r, color.g, color.b, alpha },
             .bg_color = bg,
-            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-            .glyph_size = .{ glyph.width, glyph.height },
-            .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
         });
     }
 
@@ -1982,7 +1958,7 @@ fn addCursor(
         .underline => .underline,
     };
 
-    const glyph = self.font_group.renderGlyph(
+    const render = self.font_grid.renderGlyph(
         self.alloc,
         font.sprite_index,
         @intFromEnum(sprite),
@@ -2004,9 +1980,9 @@ fn addCursor(
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
         .bg_color = .{ 0, 0, 0, 0 },
-        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-        .glyph_size = .{ glyph.width, glyph.height },
-        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
 
     return &self.cells.items[self.cells.items.len - 1];
@@ -2022,31 +1998,19 @@ fn addPreeditCell(
     const bg = self.foreground_color;
     const fg = self.background_color;
 
-    // Get the font for this codepoint.
-    const font_index = if (self.font_group.indexForCodepoint(
+    // Render the glyph for our preedit text
+    const render_ = self.font_grid.renderCodepoint(
         self.alloc,
         @intCast(cp.codepoint),
         .regular,
         .text,
-    )) |index| index orelse return else |_| return;
-
-    // Get the font face so we can get the glyph
-    const face = self.font_group.group.faceFromIndex(font_index) catch |err| {
-        log.warn("error getting face for font_index={} err={}", .{ font_index, err });
-        return;
-    };
-
-    // Use the face to now get the glyph index
-    const glyph_index = face.glyphIndex(@intCast(cp.codepoint)) orelse return;
-
-    // Render the glyph for our preedit text
-    const glyph = self.font_group.renderGlyph(
-        self.alloc,
-        font_index,
-        glyph_index,
         .{ .grid_metrics = self.grid_metrics },
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
+        return;
+    };
+    const render = render_ orelse {
+        log.warn("failed to find font for preedit codepoint={X}", .{cp.codepoint});
         return;
     };
 
@@ -2066,9 +2030,9 @@ fn addPreeditCell(
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
         .bg_color = .{ bg.r, bg.g, bg.b, 255 },
-        .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-        .glyph_size = .{ glyph.width, glyph.height },
-        .glyph_offset = .{ glyph.offset_x, glyph.offset_y },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
 }
 

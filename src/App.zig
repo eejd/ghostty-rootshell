@@ -41,10 +41,9 @@ mailbox: Mailbox.Queue,
 /// Set to true once we're quitting. This never goes false again.
 quit: bool,
 
-/// Font discovery mechanism. This is only safe to use from the main thread.
-/// This is lazily initialized on the first call to fontDiscover so do
-/// not access this directly.
-font_discover: ?font.Discover = null,
+/// The set of font GroupCache instances shared by surfaces with the
+/// same font configuration.
+font_grid_set: font.SharedGridSet,
 
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
@@ -55,11 +54,15 @@ pub fn create(
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
 
+    var font_grid_set = try font.SharedGridSet.init(alloc);
+    errdefer font_grid_set.deinit();
+
     app.* = .{
         .alloc = alloc,
         .surfaces = .{},
         .mailbox = .{},
         .quit = false,
+        .font_grid_set = font_grid_set,
     };
     errdefer app.surfaces.deinit(alloc);
 
@@ -71,9 +74,12 @@ pub fn destroy(self: *App) void {
     for (self.surfaces.items) |surface| surface.deinit();
     self.surfaces.deinit(self.alloc);
 
-    if (comptime font.Discover != void) {
-        if (self.font_discover) |*v| v.deinit();
-    }
+    // Clean up our font group cache
+    // We should have zero items in the grid set at this point because
+    // destroy only gets called when the app is shutting down and this
+    // should gracefully close all surfaces.
+    assert(self.font_grid_set.count() == 0);
+    self.font_grid_set.deinit();
 
     self.alloc.destroy(self);
 }
@@ -164,20 +170,6 @@ pub fn needsConfirmQuit(self: *const App) bool {
     }
 
     return false;
-}
-
-/// Initialize once and return the font discovery mechanism. This remains
-/// initialized throughout the lifetime of the application because some
-/// font discovery mechanisms (i.e. fontconfig) are unsafe to reinit.
-pub fn fontDiscover(self: *App) !?*font.Discover {
-    // If we're built without a font discovery mechanism, return null
-    if (comptime font.Discover == void) return null;
-
-    // If we initialized, use it
-    if (self.font_discover) |*v| return v;
-
-    self.font_discover = font.Discover.init();
-    return &self.font_discover.?;
 }
 
 /// Drain the mailbox.

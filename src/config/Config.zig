@@ -2498,9 +2498,14 @@ pub const RepeatableString = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) !Self {
-        return .{
-            .list = try self.list.clone(alloc),
-        };
+        // Copy the list and all the strings in the list.
+        const list = try self.list.clone(alloc);
+        for (list.items) |*item| {
+            const copy = try alloc.dupeZ(u8, item.*);
+            item.* = copy;
+        }
+
+        return .{ .list = list };
     }
 
     /// The number of itemsin the list
@@ -2960,9 +2965,7 @@ pub const RepeatableCodepointMap = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) !Self {
-        return .{
-            .map = .{ .list = try self.map.list.clone(alloc) },
-        };
+        return .{ .map = try self.map.clone(alloc) };
     }
 
     /// Compare if two of our value are requal. Required by Config.
@@ -3240,6 +3243,14 @@ pub const FontStyle = union(enum) {
         return switch (self) {
             .default, .false => null,
             .name => self.name,
+        };
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: Self, alloc: Allocator) !Self {
+        return switch (self) {
+            .default, .false => self,
+            .name => |v| .{ .name = try alloc.dupeZ(u8, v) },
         };
     }
 

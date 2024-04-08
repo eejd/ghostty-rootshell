@@ -54,8 +54,7 @@ rt_app: *apprt.runtime.App,
 rt_surface: *apprt.runtime.Surface,
 
 /// The font structures
-font_lib: font.Library,
-font_group: *font.GroupCache,
+font_grid_key: font.SharedGridSet.Key,
 font_size: font.face.DesiredSize,
 
 /// The renderer for this surface.
@@ -206,6 +205,7 @@ const DerivedConfig = struct {
     confirm_close_surface: bool,
     cursor_click_to_move: bool,
     desktop_notifications: bool,
+    font: font.SharedGridSet.DerivedConfig,
     mouse_interval: u64,
     mouse_hide_while_typing: bool,
     mouse_scroll_multiplier: f64,
@@ -263,6 +263,7 @@ const DerivedConfig = struct {
             .confirm_close_surface = config.@"confirm-close-surface",
             .cursor_click_to_move = config.@"cursor-click-to-move",
             .desktop_notifications = config.@"desktop-notifications",
+            .font = try font.SharedGridSet.DerivedConfig.init(alloc, config),
             .mouse_interval = config.@"click-repeat-interval" * 1_000_000, // 500ms
             .mouse_hide_while_typing = config.@"mouse-hide-while-typing",
             .mouse_scroll_multiplier = config.@"mouse-scroll-multiplier",
@@ -298,6 +299,10 @@ pub fn init(
     rt_app: *apprt.runtime.App,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
+    // Get our configuration
+    var derived_config = try DerivedConfig.init(alloc, config);
+    errdefer derived_config.deinit();
+
     // Initialize our renderer with our initialized surface.
     try Renderer.surfaceInit(rt_surface);
 
@@ -320,174 +325,15 @@ pub fn init(
         .ydpi = @intFromFloat(y_dpi),
     };
 
-    // Find all the fonts for this surface
-    //
-    // Future: we can share the font group amongst all surfaces to save
-    // some new surface init time and some memory. This will require making
-    // thread-safe changes to font structs.
-    var font_lib = try font.Library.init();
-    errdefer font_lib.deinit();
-    var font_group = try alloc.create(font.GroupCache);
-    errdefer alloc.destroy(font_group);
-    font_group.* = try font.GroupCache.init(alloc, group: {
-        var group = try font.Group.init(alloc, font_lib, font_size);
-        errdefer group.deinit();
-
-        // Setup our font metric modifiers if we have any.
-        group.metric_modifiers = set: {
-            var set: font.face.Metrics.ModifierSet = .{};
-            errdefer set.deinit(alloc);
-            if (config.@"adjust-cell-width") |m| try set.put(alloc, .cell_width, m);
-            if (config.@"adjust-cell-height") |m| try set.put(alloc, .cell_height, m);
-            if (config.@"adjust-font-baseline") |m| try set.put(alloc, .cell_baseline, m);
-            if (config.@"adjust-underline-position") |m| try set.put(alloc, .underline_position, m);
-            if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
-            if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
-            if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
-            break :set set;
-        };
-
-        // If we have codepoint mappings, set those.
-        if (config.@"font-codepoint-map".map.list.len > 0) {
-            group.codepoint_map = config.@"font-codepoint-map".map;
-        }
-
-        // Set our styles
-        group.styles.set(.bold, config.@"font-style-bold" != .false);
-        group.styles.set(.italic, config.@"font-style-italic" != .false);
-        group.styles.set(.bold_italic, config.@"font-style-bold-italic" != .false);
-
-        // Search for fonts
-        if (font.Discover != void) discover: {
-            const disco = try app.fontDiscover() orelse {
-                log.warn("font discovery not available, cannot search for fonts", .{});
-                break :discover;
-            };
-            group.discover = disco;
-
-            // A buffer we use to store the font names for logging.
-            var name_buf: [256]u8 = undefined;
-
-            for (config.@"font-family".list.items) |family| {
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = config.@"font-style".nameValue(),
-                    .size = font_size.points,
-                    .variations = config.@"font-variation".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font regular: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.regular, .{ .deferred = face });
-                } else log.warn("font-family not found: {s}", .{family});
-            }
-
-            // In all the styled cases below, we prefer to specify an exact
-            // style via the `font-style` configuration. If a style is not
-            // specified, we use the discovery mechanism to search for a
-            // style category such as bold, italic, etc. We can't specify both
-            // because the latter will restrict the search to only that. If
-            // a user says `font-style = italic` for the bold face for example,
-            // no results would be found if we restrict to ALSO searching for
-            // italic.
-            for (config.@"font-family-bold".list.items) |family| {
-                const style = config.@"font-style-bold".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .bold = style == null,
-                    .variations = config.@"font-variation-bold".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font bold: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.bold, .{ .deferred = face });
-                } else log.warn("font-family-bold not found: {s}", .{family});
-            }
-            for (config.@"font-family-italic".list.items) |family| {
-                const style = config.@"font-style-italic".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .italic = style == null,
-                    .variations = config.@"font-variation-italic".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font italic: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.italic, .{ .deferred = face });
-                } else log.warn("font-family-italic not found: {s}", .{family});
-            }
-            for (config.@"font-family-bold-italic".list.items) |family| {
-                const style = config.@"font-style-bold-italic".nameValue();
-                var disco_it = try disco.discover(alloc, .{
-                    .family = family,
-                    .style = style,
-                    .size = font_size.points,
-                    .bold = style == null,
-                    .italic = style == null,
-                    .variations = config.@"font-variation-bold-italic".list.items,
-                });
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font bold+italic: {s}", .{try face.name(&name_buf)});
-                    _ = try group.addFace(.bold_italic, .{ .deferred = face });
-                } else log.warn("font-family-bold-italic not found: {s}", .{family});
-            }
-        }
-
-        // Our built-in font will be used as a backup
-        _ = try group.addFace(
-            .regular,
-            .{ .fallback_loaded = try font.Face.init(font_lib, face_ttf, group.faceOptions()) },
-        );
-        _ = try group.addFace(
-            .bold,
-            .{ .fallback_loaded = try font.Face.init(font_lib, face_bold_ttf, group.faceOptions()) },
-        );
-
-        // Auto-italicize if we have to.
-        try group.italicize();
-
-        // On macOS, always search for and add the Apple Emoji font
-        // as our preferred emoji font for fallback. We do this in case
-        // people add other emoji fonts to their system, we always want to
-        // prefer the official one. Users can override this by explicitly
-        // specifying a font-family for emoji.
-        if (comptime builtin.target.isDarwin()) apple_emoji: {
-            const disco = group.discover orelse break :apple_emoji;
-            var disco_it = try disco.discover(alloc, .{
-                .family = "Apple Color Emoji",
-            });
-            defer disco_it.deinit();
-            if (try disco_it.next()) |face| {
-                _ = try group.addFace(.regular, .{ .fallback_deferred = face });
-            }
-        }
-
-        // Emoji fallback. We don't include this on Mac since Mac is expected
-        // to always have the Apple Emoji available on the system.
-        if (comptime !builtin.target.isDarwin() or font.Discover == void) {
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_ttf, group.faceOptions()) },
-            );
-            _ = try group.addFace(
-                .regular,
-                .{ .fallback_loaded = try font.Face.init(font_lib, face_emoji_text_ttf, group.faceOptions()) },
-            );
-        }
-
-        break :group group;
-    });
-    errdefer font_group.deinit(alloc);
-
-    log.info("font loading complete, any non-logged faces are using the built-in font", .{});
+    // Setup our font group. This will reuse an existing font group if
+    // it was already loaded.
+    const font_grid_key, const font_grid = try app.font_grid_set.ref(
+        &derived_config.font,
+        font_size,
+    );
 
     // Pre-calculate our initial cell size ourselves.
-    const cell_size = try renderer.CellSize.init(alloc, font_group);
+    const cell_size = font_grid.cellSize();
 
     // Convert our padding from points to pixels
     const padding_x: u32 = padding_x: {
@@ -509,7 +355,7 @@ pub fn init(
     const app_mailbox: App.Mailbox = .{ .rt_app = rt_app, .mailbox = &app.mailbox };
     var renderer_impl = try Renderer.init(alloc, .{
         .config = try Renderer.DerivedConfig.init(alloc, config),
-        .font_group = font_group,
+        .font_grid = font_grid,
         .padding = .{
             .explicit = padding,
             .balance = config.@"window-padding-balance",
@@ -570,8 +416,7 @@ pub fn init(
         .app = app,
         .rt_app = rt_app,
         .rt_surface = rt_surface,
-        .font_lib = font_lib,
-        .font_group = font_group,
+        .font_grid_key = font_grid_key,
         .font_size = font_size,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
@@ -588,7 +433,7 @@ pub fn init(
         .grid_size = .{},
         .cell_size = cell_size,
         .padding = padding,
-        .config = try DerivedConfig.init(alloc, config),
+        .config = derived_config,
     };
 
     // Report initial cell size on surface creation
@@ -686,14 +531,13 @@ pub fn deinit(self: *Surface) void {
     self.io_thread.deinit();
     self.io.deinit();
 
-    self.font_group.deinit(self.alloc);
-    self.font_lib.deinit();
-    self.alloc.destroy(self.font_group);
-
     if (self.inspector) |v| {
         v.deinit();
         self.alloc.destroy(v);
     }
+
+    // Clean up our font grid
+    self.app.font_grid_set.deref(self.font_grid_key);
 
     // Clean up our render state
     if (self.renderer_state.preedit) |p| self.alloc.free(p.codepoints);
@@ -797,8 +641,6 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             log.debug("changing mouse shape: {}", .{shape});
             try self.rt_surface.setMouseShape(shape);
         },
-
-        .cell_size => |size| try self.setCellSize(size),
 
         .clipboard_read => |clipboard| {
             if (self.config.clipboard_read == .deny) {
@@ -1122,14 +964,36 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
 /// Change the font size.
 ///
 /// This can only be called from the main thread.
-pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) void {
+pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
     // Update our font size so future changes work
     self.font_size = size;
 
-    // Notify our render thread of the font size. This triggers everything else.
+    // We need to build up a new font stack for this font size.
+    const font_grid_key, const font_grid = try self.app.font_grid_set.ref(
+        &self.config.font,
+        self.font_size,
+    );
+    errdefer self.app.font_grid_set.deref(font_grid_key);
+
+    // Set our cell size
+    try self.setCellSize(.{
+        .width = font_grid.metrics.cell_width,
+        .height = font_grid.metrics.cell_height,
+    });
+
+    // Notify our render thread of the new font stack. The renderer
+    // MUST accept the new font grid and deref the old.
     _ = self.renderer_thread.mailbox.push(.{
-        .font_size = size,
+        .font_grid = .{
+            .grid = font_grid,
+            .set = &self.app.font_grid_set,
+            .old_key = self.font_grid_key,
+            .new_key = font_grid_key,
+        },
     }, .{ .forever = {} });
+
+    // Once we've sent the key we can replace our key
+    self.font_grid_key = font_grid_key;
 
     // Schedule render which also drains our mailbox
     self.queueRender() catch unreachable;
@@ -1839,7 +1703,7 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
         return;
     }
 
-    self.setFontSize(size);
+    try self.setFontSize(size);
 
     // Update our padding which is dependent on DPI.
     self.padding = padding: {
@@ -3138,7 +3002,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points +|= delta;
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .decrease_font_size => |delta| {
@@ -3146,7 +3010,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points = @max(1, size.points -| delta);
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .reset_font_size => {
@@ -3154,7 +3018,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             var size = self.font_size;
             size.points = self.config.original_font_size;
-            self.setFontSize(size);
+            try self.setFontSize(size);
         },
 
         .clear_screen => {

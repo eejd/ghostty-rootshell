@@ -22,10 +22,21 @@ pub const Message = union(enum) {
     /// restarting the timer.
     reset_cursor_blink: void,
 
-    /// Change the font size. This should recalculate the grid size and
-    /// send a grid size change message back to the window thread if
-    /// the size changes.
-    font_size: font.face.DesiredSize,
+    /// Change the font grid. This can happen for any number of reasons
+    /// including a font size change, family change, etc.
+    font_grid: struct {
+        grid: *font.SharedGrid,
+        set: *font.SharedGridSet,
+
+        // The key for the new grid. If adopting the new grid fails for any
+        // reason, the old grid should be kept but the new key should be
+        // dereferenced.
+        new_key: font.SharedGridSet.Key,
+
+        // After accepting the new grid, the old grid must be dereferenced
+        // using the fields below.
+        old_key: font.SharedGridSet.Key,
+    },
 
     /// Change the foreground color. This can be done separately from changing
     /// the config file in response to an OSC 10 command.

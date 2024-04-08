@@ -8,8 +8,8 @@ const Config = @import("../config.zig").Config;
 /// The derived configuration for this renderer implementation.
 config: renderer.Renderer.DerivedConfig,
 
-/// The font group that should be used.
-font_group: *font.GroupCache,
+/// The font grid that should be used along with the key for deref-ing.
+font_grid: *font.SharedGrid,
 
 /// Padding options for the viewport.
 padding: Padding,

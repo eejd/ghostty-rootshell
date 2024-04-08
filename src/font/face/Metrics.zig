@@ -169,6 +169,19 @@ pub const Modifier = union(enum) {
         };
     }
 
+    /// Hash using the hasher.
+    pub fn hash(self: Modifier, hasher: anytype) void {
+        const autoHash = std.hash.autoHash;
+        autoHash(hasher, std.meta.activeTag(self));
+        switch (self) {
+            // floats can't be hashed directly so we bitcast to i64.
+            // for the purpose of what we're trying to do this seems
+            // good enough but I would prefer value hashing.
+            .percent => |v| autoHash(hasher, @as(i64, @bitCast(v))),
+            .absolute => |v| autoHash(hasher, v),
+        }
+    }
+
     test "formatConfig percent" {
         const configpkg = @import("../../config.zig");
         const testing = std.testing;

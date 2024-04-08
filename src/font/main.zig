@@ -6,15 +6,19 @@ pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
 pub const CodepointMap = @import("CodepointMap.zig");
+pub const CodepointResolver = @import("CodepointResolver.zig");
+pub const Collection = @import("Collection.zig");
 pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
-pub const Group = @import("Group.zig");
-pub const GroupCache = @import("GroupCache.zig");
 pub const Glyph = @import("Glyph.zig");
+pub const Metrics = face.Metrics;
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
+pub const SharedGrid = @import("SharedGrid.zig");
+pub const SharedGridSet = @import("SharedGridSet.zig");
 pub const sprite = @import("sprite.zig");
 pub const Sprite = sprite.Sprite;
+pub const SpriteFace = sprite.Face;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
 pub usingnamespace @import("library.zig");
@@ -23,8 +27,6 @@ pub usingnamespace @import("library.zig");
 pub usingnamespace if (builtin.target.isWasm()) struct {
     pub usingnamespace Atlas.Wasm;
     pub usingnamespace DeferredFace.Wasm;
-    pub usingnamespace Group.Wasm;
-    pub usingnamespace GroupCache.Wasm;
     pub usingnamespace face.web_canvas.Wasm;
     pub usingnamespace shape.web_canvas.Wasm;
 } else struct {};
@@ -145,7 +147,7 @@ pub const Presentation = enum(u1) {
 };
 
 /// A FontIndex that can be used to use the sprite font directly.
-pub const sprite_index = Group.FontIndex.initSpecial(.sprite);
+pub const sprite_index = Collection.Index.initSpecial(.sprite);
 
 test {
     // For non-wasm we want to test everything we can
