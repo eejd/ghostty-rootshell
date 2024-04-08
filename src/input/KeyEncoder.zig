@@ -266,10 +266,8 @@ fn legacy(
         if (self.event.utf8.len > 0) {
             switch (self.event.key) {
                 else => {},
-                .enter,
-                .escape,
-                .backspace,
-                => break :pc_style,
+                .backspace => return "",
+                .enter, .escape => break :pc_style,
             }
         }
 
@@ -1658,7 +1656,7 @@ test "legacy: backspace with utf8 (dead key state)" {
     };
 
     const actual = try enc.legacy(&buf);
-    try testing.expectEqualStrings("A", actual);
+    try testing.expectEqualStrings("", actual);
 }
 
 test "legacy: enter with utf8 (dead key state)" {
