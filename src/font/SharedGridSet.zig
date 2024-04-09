@@ -428,6 +428,11 @@ pub const Key = struct {
     /// The metric modifier set configuration.
     metric_modifiers: Metrics.ModifierSet = .{},
 
+    /// The configured font size for this key. We don't use this
+    /// directly but it is used as part of the hash for the
+    /// font grid.
+    font_size: DesiredSize = .{ .points = 12 },
+
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;
 
@@ -537,6 +542,7 @@ pub const Key = struct {
             },
             .codepoint_map = codepoint_map,
             .metric_modifiers = metric_modifiers,
+            .font_size = font_size,
         };
     }
 
@@ -559,6 +565,7 @@ pub const Key = struct {
     /// Hash the key with the given hasher.
     pub fn hash(self: Key, hasher: anytype) void {
         const autoHash = std.hash.autoHash;
+        autoHash(hasher, self.font_size);
         autoHash(hasher, self.descriptors.len);
         for (self.descriptors) |d| d.hash(hasher);
         self.codepoint_map.hash(hasher);
@@ -600,7 +607,47 @@ test "Key" {
     var k = try Key.init(alloc, &keycfg, .{ .points = 12 });
     defer k.deinit();
 
+    var k2 = try Key.init(alloc, &keycfg, .{ .points = 12 });
+    defer k2.deinit();
+
     try testing.expect(k.hashcode() > 0);
+    try testing.expectEqual(k.hashcode(), k2.hashcode());
+}
+
+test "Key different font points" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    var keycfg = try DerivedConfig.init(alloc, &cfg);
+    defer keycfg.deinit();
+
+    var k = try Key.init(alloc, &keycfg, .{ .points = 12 });
+    defer k.deinit();
+
+    var k2 = try Key.init(alloc, &keycfg, .{ .points = 16 });
+    defer k2.deinit();
+
+    try testing.expect(k.hashcode() != k2.hashcode());
+}
+
+test "Key different font DPI" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    var keycfg = try DerivedConfig.init(alloc, &cfg);
+    defer keycfg.deinit();
+
+    var k = try Key.init(alloc, &keycfg, .{ .points = 12, .xdpi = 1 });
+    defer k.deinit();
+
+    var k2 = try Key.init(alloc, &keycfg, .{ .points = 12, .xdpi = 2 });
+    defer k2.deinit();
+
+    try testing.expect(k.hashcode() != k2.hashcode());
 }
 
 test SharedGridSet {
