@@ -928,7 +928,7 @@ fn draw_double_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
     self.vline(canvas, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
     self.vline(canvas, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
     self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
+    self.hline(canvas, 0, vmid + 2 * thick_px, hmid + 2 * thick_px, thick_px);
 }
 
 fn draw_vertical_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
