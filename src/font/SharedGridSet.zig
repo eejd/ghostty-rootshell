@@ -521,14 +521,19 @@ pub const Key = struct {
             break :set set;
         };
 
+        const regular_offset = config.@"font-family".list.items.len;
+        const bold_offset = regular_offset + config.@"font-family-bold".list.items.len;
+        const italic_offset = bold_offset + config.@"font-family-italic".list.items.len;
+        const bold_italic_offset = italic_offset + config.@"font-family-bold-italic".list.items.len;
+
         return .{
             .arena = arena,
             .descriptors = try descriptors.toOwnedSlice(),
             .style_offsets = .{
-                config.@"font-family".list.items.len,
-                config.@"font-family-bold".list.items.len,
-                config.@"font-family-italic".list.items.len,
-                config.@"font-family-bold-italic".list.items.len,
+                regular_offset,
+                bold_offset,
+                italic_offset,
+                bold_italic_offset,
             },
             .codepoint_map = codepoint_map,
             .metric_modifiers = metric_modifiers,
