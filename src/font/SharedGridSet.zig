@@ -367,7 +367,9 @@ pub const DerivedConfig = struct {
     @"adjust-strikethrough-position": ?Metrics.Modifier,
     @"adjust-strikethrough-thickness": ?Metrics.Modifier,
 
-    pub fn init(alloc_gpa: Allocator, config: *const Config) !DerivedConfig {
+    /// Initialize a DerivedConfig. The config should be either a
+    /// config.Config or another DerivedConfig to clone from.
+    pub fn init(alloc_gpa: Allocator, config: anytype) !DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();
@@ -447,12 +449,19 @@ pub const Key = struct {
 
     pub fn init(
         alloc_gpa: Allocator,
-        config: *const DerivedConfig,
+        config_src: *const DerivedConfig,
         font_size: DesiredSize,
     ) !Key {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();
+
+        // Clone our configuration. We need to do this because the lifetime
+        // of the derived config is usually shorter than that of a key
+        // and we use pointers into the derived config for the key. We
+        // can remove this if we wanted by dupe-ing the memory we use
+        // from DerivedConfig below.
+        var config = try DerivedConfig.init(alloc, config_src);
 
         var descriptors = std.ArrayList(discovery.Descriptor).init(alloc);
         defer descriptors.deinit();
