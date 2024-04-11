@@ -78,12 +78,11 @@ fn buildSpirvCross(
         },
     });
 
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path(""),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path(""),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     return lib;
 }

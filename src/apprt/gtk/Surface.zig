@@ -145,8 +145,8 @@ pub const Container = union(enum) {
     pub fn split(self: Container) ?*Split {
         return switch (self) {
             .none, .tab_ => null,
-            .split_tl => |ptr| @fieldParentPtr(Split, "top_left", ptr),
-            .split_br => |ptr| @fieldParentPtr(Split, "bottom_right", ptr),
+            .split_tl => |ptr| @fieldParentPtr("top_left", ptr),
+            .split_br => |ptr| @fieldParentPtr("bottom_right", ptr),
         };
     }
 

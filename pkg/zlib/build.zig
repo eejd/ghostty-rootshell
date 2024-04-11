@@ -18,12 +18,11 @@ pub fn build(b: *std.Build) !void {
         try apple_sdk.addPaths(b, &lib.root_module);
     }
 
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path(""),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path(""),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

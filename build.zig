@@ -570,7 +570,7 @@ pub fn build(b: *std.Build) !void {
         // Copy our ghostty.h to include. The header file is shared by
         // all embedded targets.
         const header_install = b.addInstallHeaderFile(
-            "include/ghostty.h",
+            .{ .path = "include/ghostty.h" },
             "ghostty.h",
         );
         b.getInstallStep().dependOn(&header_install.step);

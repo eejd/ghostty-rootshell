@@ -100,13 +100,15 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    lib.installHeader("override/include/libxml/xmlversion.h", "libxml/xmlversion.h");
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("include"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeader(
+        .{ .path = "override/include/libxml/xmlversion.h" },
+        "libxml/xmlversion.h",
+    );
+    lib.installHeadersDirectory(
+        upstream.path("include"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 }

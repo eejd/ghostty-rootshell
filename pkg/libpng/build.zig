@@ -40,13 +40,12 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    lib.installHeader("pnglibconf.h", "pnglibconf.h");
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path(""),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeader(.{ .path = "pnglibconf.h" }, "pnglibconf.h");
+    lib.installHeadersDirectory(
+        upstream.path(""),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 }

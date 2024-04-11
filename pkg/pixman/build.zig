@@ -62,13 +62,12 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    lib.installHeader("pixman-version.h", "pixman-version.h");
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("pixman"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeader(.{ .path = "pixman-version.h" }, "pixman-version.h");
+    lib.installHeadersDirectory(
+        upstream.path("pixman"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 
