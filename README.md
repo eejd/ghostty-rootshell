@@ -513,7 +513,7 @@ the configuration file.
 
 On Linux, you'll need to install header packages for Ghostty's dependencies
 before building it. Typically, these are only gtk4 and libadwaita (unless
-building with `-Dstatic=false`). On Ubuntu, use
+building with `-Dstatic=false`). On Ubuntu and Debian, use
 
 ```
 $ sudo apt install libgtk-4-dev libadwaita-1-dev git
