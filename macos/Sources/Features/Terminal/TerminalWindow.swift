@@ -52,11 +52,13 @@ class TerminalWindow: NSWindow {
     // Used to set the titlebar font.
     var titlebarFont: NSFont? {
         didSet {
-            titlebarTextField?.font = titlebarFont
+            let font = titlebarFont ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+
+            titlebarTextField?.font = font
             tab.attributedTitle = attributedTitle
 
             if let toolbar = toolbar as? TerminalToolbar {
-                toolbar.titleFont = titlebarFont
+                toolbar.titleFont = font
             }
         }
     }
