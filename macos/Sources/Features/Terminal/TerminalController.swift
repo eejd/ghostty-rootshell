@@ -54,8 +54,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     /// This is set to false by init if the window managed by this controller should not be restorable.
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
-    
-    init(_ ghostty: Ghostty.App, 
+
+    init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
     ) {
@@ -120,31 +120,22 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     func relabelTabs() {
         // Reset this to false. It'll be set back to true later.
         tabListenForFrame = false
-        
-        guard let windows = self.window?.tabbedWindows else { return }
-        
+
+        guard let windows = self.window?.tabbedWindows as? [TerminalWindow] else { return }
+
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
-        
+
         for (index, window) in windows.enumerated().prefix(9) {
             let action = "goto_tab:\(index + 1)"
-            guard let equiv = ghostty.config.keyEquivalent(for: action) else {
-                continue
+
+            if let equiv = ghostty.config.keyEquivalent(for: action) {
+                window.keyEquivalent = "\(equiv)"
             }
-            
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.labelFont(ofSize: 0),
-                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ]
-            let attributedString = NSAttributedString(string: " \(equiv) ", attributes: attributes)
-            let text = NSTextField(labelWithAttributedString: attributedString)
-            text.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
-            text.postsFrameChangedNotifications = true
-            window.tab.accessoryView = text
         }
     }
-    
+
     private func fixTabBar() {
         // We do this to make sure that the tab bar will always re-composite. If we don't,
         // then the it will "drag" pieces of the background with it when a transparent
@@ -175,15 +166,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     private func syncAppearance() {
         guard let window = self.window as? TerminalWindow else { return }
         
-        // We match the appearance depending on the lightness/darkness of the
-        // background color. We have to do this because our titlebars in tabs inherit
-        // our background color for the focused tab but use the macOS theme for the
-        // rest of the titlebar.
-        if (window.titlebarTabs) {
-            let color = OSColor(ghostty.config.backgroundColor)
-            let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
-            window.appearance = appearance
-        }
+        let backgroundColor = OSColor(ghostty.config.backgroundColor)
+        let appearance = NSAppearance(named: backgroundColor.isLightColor ? .aqua : .darkAqua)
+        window.appearance = appearance
 
         // Set the font for the window and tab titles.
         if let titleFontName = ghostty.config.windowTitleFontFamily {
@@ -191,6 +176,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         } else {
             window.titlebarFont = nil
         }
+
+        window.backgroundColor = backgroundColor
+        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+        window.updateTabBar()
     }
     
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
@@ -207,7 +196,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             leaf.surface.focusDidChange(focused)
         }
     }
-    
+
     //MARK: - NSWindowController
     
     override func windowWillLoad() {
@@ -262,6 +251,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // when cascading.
         window.center()
 
+        // Set the background color of the window
+        let backgroundColor = NSColor(ghostty.config.backgroundColor)
+        window.backgroundColor = backgroundColor
+
+        // This makes sure our titlebar renders correctly when there is a transparent background
+        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
@@ -271,20 +267,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }
-            
-            // Set the background color of the window
-            window.backgroundColor = NSColor(ghostty.config.backgroundColor)
-
-            // Set a custom background on the titlebar - this is required for when
-            // titlebar tabs are used in conjunction with a transparent background.
-            window.setTitlebarBackground(
-                window
-                    .backgroundColor
-                    .withAlphaComponent(ghostty.config.backgroundOpacity)
-                    .cgColor
-            )
         }
-
+        
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
@@ -322,7 +306,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let surface = self.focusedSurface?.surface else { return }
         ghostty.newTab(surface: surface)
     }
-    
+
     //MARK: - NSWindowDelegate
     
     // This is called when performClose is called on a window (NOT when close()
@@ -402,7 +386,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         }
     }
-    
+
     // Called when the window will be encoded. We handle the data encoding here in the
     // window controller.
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
@@ -603,7 +587,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // we want to invalidate our state.
         invalidateRestorableState()
     }
-    
+
+    func zoomStateDidChange(to: Bool) {
+        guard let window = window as? TerminalWindow else { return }
+        window.surfaceIsZoomed = to
+    }
+
     //MARK: - Clipboard Confirmation
     
     func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {
