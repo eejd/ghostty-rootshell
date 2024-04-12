@@ -515,7 +515,7 @@ pub fn build(b: *std.Build) !void {
 
         // Copy our ghostty.h to include.
         const header_install = b.addInstallHeaderFile(
-            "include/ghostty.h",
+            .{ .path = "include/ghostty.h" },
             "ghostty.h",
         );
         b.getInstallStep().dependOn(&header_install.step);
