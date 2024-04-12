@@ -112,7 +112,7 @@ flags: packed struct {
     /// Set via the XTSHIFTESCAPE sequence. If true (XTSHIFTESCAPE = 1)
     /// then we want to capture the shift key for the mouse protocol
     /// if the configuration allows it.
-    mouse_shift_capture: enum { null, false, true } = .null,
+    mouse_shift_capture: enum(u2) { null, false, true } = .null,
 } = .{},
 
 /// The event types that can be reported for mouse-related activities.
