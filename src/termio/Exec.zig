@@ -2646,9 +2646,15 @@ const StreamHandler = struct {
         // any host (such an SSH session). The best practice terminals follow
         // is to valid the hostname to be local.
         const host_valid = host_valid: {
-            const host = uri.host orelse break :host_valid false;
+            const host_component = uri.host orelse break :host_valid false;
 
-            // Empty or localhost is always good
+            // Get the raw string of the URI. Its unclear to me if the various
+            // tags of this enum guarantee no percent-encoding so we just
+            // check all of it. This isn't a performance critical path.
+            const host = switch (host_component) {
+                .raw => |v| v,
+                .percent_encoded => |v| v,
+            };
             if (host.len == 0 or std.mem.eql(u8, "localhost", host)) {
                 break :host_valid true;
             }
@@ -2671,24 +2677,32 @@ const StreamHandler = struct {
         // the stack and fall back to heap allocation if we have to.
         var pathBuf: [1024]u8 = undefined;
         const path, const heap = path: {
+            // Get the raw string of the URI. Its unclear to me if the various
+            // tags of this enum guarantee no percent-encoding so we just
+            // check all of it. This isn't a performance critical path.
+            const path = switch (uri.path) {
+                .raw => |v| v,
+                .percent_encoded => |v| v,
+            };
+
             // If the path doesn't have any escapes, we can use it directly.
-            if (std.mem.indexOfScalar(u8, uri.path, '%') == null)
-                break :path .{ uri.path, false };
+            if (std.mem.indexOfScalar(u8, path, '%') == null)
+                break :path .{ path, false };
 
             // First try to stack-allocate
             var fba = std.heap.FixedBufferAllocator.init(&pathBuf);
-            if (std.Uri.unescapeString(fba.allocator(), uri.path)) |path|
-                break :path .{ path, false }
+            if (std.fmt.allocPrint(fba.allocator(), "{raw}", .{uri.path})) |v|
+                break :path .{ v, false }
             else |_| {}
 
             // Fall back to heap
-            if (std.Uri.unescapeString(self.alloc, uri.path)) |path|
-                break :path .{ path, true }
+            if (std.fmt.allocPrint(self.alloc, "{raw}", .{uri.path})) |v|
+                break :path .{ v, true }
             else |_| {}
 
             // Fall back to using it directly...
-            log.warn("failed to unescape OSC 7 path, using it directly path={s}", .{uri.path});
-            break :path .{ uri.path, false };
+            log.warn("failed to unescape OSC 7 path, using it directly path={s}", .{path});
+            break :path .{ path, false };
         };
         defer if (heap) self.alloc.free(path);
 
