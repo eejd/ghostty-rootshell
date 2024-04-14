@@ -316,7 +316,9 @@ pub fn Stream(comptime Handler: type) type {
         }
 
         pub fn execute(self: *Self, c: u8) !void {
-            switch (@as(ansi.C0, @enumFromInt(c))) {
+            const c0: ansi.C0 = @enumFromInt(c);
+            // log.info("execute: {}", .{c0});
+            switch (c0) {
                 // We ignore SOH/STX: https://github.com/microsoft/terminal/issues/10786
                 .NUL, .SOH, .STX => {},
 
