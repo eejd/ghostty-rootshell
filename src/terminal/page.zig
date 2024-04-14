@@ -1138,6 +1138,10 @@ pub const Cell = packed struct(u64) {
         };
     }
 
+    pub fn isZero(self: Cell) bool {
+        return @as(u64, @bitCast(self)) == 0;
+    }
+
     pub fn hasText(self: Cell) bool {
         return switch (self.content_tag) {
             .codepoint,
@@ -1230,6 +1234,12 @@ pub const Cell = packed struct(u64) {
 //     try testing.expectEqual(@as(usize, 524_288), total_size); // 512 KiB
 //     //const pages = total_size / std.mem.page_size;
 // }
+
+test "Cell is zero by default" {
+    const cell: Cell = .{};
+    const cell_int: u64 = @bitCast(cell);
+    try std.testing.expectEqual(@as(u64, 0), cell_int);
+}
 
 test "Page capacity adjust cols down" {
     const original = std_capacity;

@@ -1089,7 +1089,15 @@ pub fn index(self: *Terminal) !void {
         } else {
             // Slow path for left and right scrolling region margins.
             if (self.scrolling_region.left != 0 or
-                self.scrolling_region.right != self.cols - 1)
+                self.scrolling_region.right != self.cols - 1 or
+
+                // PERF(mitchellh): If we have an SGR background set then
+                // we need to preserve that background in our erased rows.
+                // scrollUp does that but eraseRowBounded below does not.
+                // However, scrollUp is WAY slower. We should optimize this
+                // case to work in the eraseRowBounded codepath and remove
+                // this check.
+                !self.screen.blankCell().isZero())
             {
                 self.scrollUp(1);
                 return;
@@ -5314,6 +5322,40 @@ test "Terminal: index inside scroll region" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A\n X", str);
+    }
+}
+
+test "Terminal: index bottom of scroll region with background SGR" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    t.setTopAndBottomMargin(1, 3);
+    t.setCursorPos(4, 1);
+    try t.print('B');
+    t.setCursorPos(3, 1);
+    try t.print('A');
+    try t.setAttribute(.{ .direct_color_bg = .{
+        .r = 0xFF,
+        .g = 0,
+        .b = 0,
+    } });
+    try t.index();
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("\nA\n\nB", str);
+    }
+
+    for (0..t.cols) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 2 } }).?;
+        try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
+        try testing.expectEqual(Cell.RGB{
+            .r = 0xFF,
+            .g = 0,
+            .b = 0,
+        }, list_cell.cell.content.color_rgb);
     }
 }
 

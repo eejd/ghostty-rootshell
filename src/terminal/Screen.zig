@@ -967,7 +967,7 @@ pub fn clearPrompt(self: *Screen) void {
 
 /// Returns the blank cell to use when doing terminal operations that
 /// require preserving the bg color.
-fn blankCell(self: *const Screen) Cell {
+pub fn blankCell(self: *const Screen) Cell {
     if (self.cursor.style_id == style.default_id) return .{};
     return self.cursor.style.bgCell() orelse .{};
 }
