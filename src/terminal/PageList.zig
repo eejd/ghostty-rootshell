@@ -2107,7 +2107,14 @@ pub fn eraseRowBounded(
             const p = p_ptr.*;
             if (p.page == page and
                 p.y >= pn.y and
-                p.y <= pn.y + limit) p.y -= 1;
+                p.y <= pn.y + limit)
+            {
+                if (p.y == 0) {
+                    p.x = 0;
+                } else {
+                    p.y -= 1;
+                }
+            }
         }
 
         return;
@@ -2125,7 +2132,13 @@ pub fn eraseRowBounded(
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
             const p = p_ptr.*;
-            if (p.page == page and p.y >= pn.y) p.y -= 1;
+            if (p.page == page and p.y >= pn.y) {
+                if (p.y == 0) {
+                    p.x = 0;
+                } else {
+                    p.y -= 1;
+                }
+            }
         }
     }
 
@@ -4479,6 +4492,26 @@ test "PageList eraseRowBounded less than full row" {
     try testing.expectEqual(s.pages.first.?, p_out.page);
     try testing.expectEqual(@as(usize, 9), p_out.y);
     try testing.expectEqual(@as(usize, 0), p_out.x);
+}
+
+test "PageList eraseRowBounded with pin at top" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 10, null);
+    defer s.deinit();
+
+    // Pins
+    const p_top = try s.trackPin(s.pin(.{ .active = .{ .y = 0, .x = 5 } }).?);
+    defer s.untrackPin(p_top);
+
+    // Erase only a few rows in our active
+    try s.eraseRowBounded(.{ .active = .{ .y = 0 } }, 3);
+    try testing.expectEqual(s.rows, s.totalRows());
+
+    try testing.expectEqual(s.pages.first.?, p_top.page);
+    try testing.expectEqual(@as(usize, 0), p_top.y);
+    try testing.expectEqual(@as(usize, 0), p_top.x);
 }
 
 test "PageList eraseRowBounded full rows single page" {
