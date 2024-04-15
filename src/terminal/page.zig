@@ -91,6 +91,44 @@ pub const Page = struct {
     /// The available set of styles in use on this page.
     styles: style.Set,
 
+    /// The offset to the first mask of dirty bits in the page.
+    ///
+    /// The dirty bits is a contiguous array of usize where each bit represents
+    /// a row in the page, in order. If the bit is set, then the row is dirty
+    /// and requires a redraw. Dirty status is only ever meant to convey that
+    /// a cell has changed visually. A cell which changes in a way that doesn't
+    /// affect the visual representation may not be marked as dirty.
+    ///
+    /// Dirty tracking may have false positives but should never have false
+    /// negatives. A false negative would result in a visual artifact on the
+    /// screen.
+    ///
+    /// Dirty bits are only ever unset by consumers of a page. The page
+    /// structure itself does not unset dirty bits since the page does not
+    /// know when a cell has been redrawn.
+    ///
+    /// As implementation background: it may seem that dirty bits should be
+    /// stored elsewhere and not on the page itself, because the only data
+    /// that could possibly change is in the active area of a terminal
+    /// historically and that area is small compared to the typical scrollback.
+    /// My original thinking was to put the dirty bits on Screen instead and
+    /// have them only track the active area. However, I decided to put them
+    /// into the page directly for a few reasons:
+    ///
+    ///   1. It's simpler. The page is a self-contained unit and it's nice
+    ///      to have all the data for a page in one place.
+    ///
+    ///   2. It's cheap. Even a very large page might have 1000 rows and
+    ///      that's only ~128 bytes of 64-bit integers to track all the dirty
+    ///      bits. Compared to the hundreds of kilobytes a typical page
+    ///      consumes, this is nothing.
+    ///
+    ///   3. It's more flexible. If we ever want to implement new terminal
+    ///      features that allow non-active area to be dirty, we can do that
+    ///      with minimal dirty-tracking work.
+    ///
+    dirty: Offset(usize),
+
     /// The current dimensions of the page. The capacity may be larger
     /// than this. This allows us to allocate a larger page than necessary
     /// and also to resize a page smaller witout reallocating.
@@ -155,6 +193,7 @@ pub const Page = struct {
             .memory = @alignCast(buf.start()[0..l.total_size]),
             .rows = rows,
             .cells = cells,
+            .dirty = buf.member(usize, l.dirty_start),
             .styles = style.Set.init(
                 buf.add(l.styles_start),
                 l.styles_layout,
@@ -866,12 +905,26 @@ pub const Page = struct {
         return self.grapheme_map.map(self.memory).count();
     }
 
+    /// Returns the bitset for the dirty bits on this page.
+    ///
+    /// The returned value is a DynamicBitSetUnmanaged but it is NOT
+    /// actually dynamic; do NOT call resize on this. It is safe to
+    /// read and write but do not resize it.
+    pub fn dirtyBitSet(self: *const Page) std.DynamicBitSetUnmanaged {
+        return .{
+            .bit_length = self.capacity.rows,
+            .masks = self.dirty.ptr(self.memory),
+        };
+    }
+
     pub const Layout = struct {
         total_size: usize,
         rows_start: usize,
         rows_size: usize,
         cells_start: usize,
         cells_size: usize,
+        dirty_start: usize,
+        dirty_size: usize,
         styles_start: usize,
         styles_layout: style.Set.Layout,
         grapheme_alloc_start: usize,
@@ -892,8 +945,19 @@ pub const Page = struct {
         const cells_start = alignForward(usize, rows_end, @alignOf(Cell));
         const cells_end = cells_start + (cells_count * @sizeOf(Cell));
 
+        // The division below cannot fail because our row count cannot
+        // exceed the maximum value of usize.
+        const dirty_bit_length: usize = rows_count;
+        const dirty_usize_length: usize = std.math.divCeil(
+            usize,
+            dirty_bit_length,
+            @bitSizeOf(usize),
+        ) catch unreachable;
+        const dirty_start = alignForward(usize, cells_end, @alignOf(usize));
+        const dirty_end: usize = dirty_start + (dirty_usize_length * @sizeOf(usize));
+
         const styles_layout = style.Set.layout(cap.styles);
-        const styles_start = alignForward(usize, cells_end, style.Set.base_align);
+        const styles_start = alignForward(usize, dirty_end, style.Set.base_align);
         const styles_end = styles_start + styles_layout.total_size;
 
         const grapheme_alloc_layout = GraphemeAlloc.layout(cap.grapheme_bytes);
@@ -913,6 +977,8 @@ pub const Page = struct {
             .rows_size = rows_end - rows_start,
             .cells_start = cells_start,
             .cells_size = cells_end - cells_start,
+            .dirty_start = dirty_start,
+            .dirty_size = dirty_end - dirty_start,
             .styles_start = styles_start,
             .styles_layout = styles_layout,
             .grapheme_alloc_start = grapheme_alloc_start,
@@ -981,9 +1047,18 @@ pub const Capacity = struct {
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
 
-            const available_size = styles_start;
-            const size_per_row = @sizeOf(Row) + (@sizeOf(Cell) * @as(usize, @intCast(cols)));
-            const new_rows = @divFloor(available_size, size_per_row);
+            // The size per row is:
+            //   - The row metadata itself
+            //   - The cells per row (n=cols)
+            //   - 1 bit for dirty tracking
+            const bits_per_row: usize = size: {
+                var bits: usize = @bitSizeOf(Row); // Row metadata
+                bits += @bitSizeOf(Cell) * @as(usize, @intCast(cols)); // Cells (n=cols)
+                bits += 1; // The dirty bit
+                break :size bits;
+            };
+            const available_bits: usize = styles_start * 8;
+            const new_rows: usize = @divFloor(available_bits, bits_per_row);
 
             // If our rows go to zero then we can't fit any row metadata
             // for the desired number of columns.
@@ -1315,6 +1390,10 @@ test "Page init" {
         .styles = 32,
     });
     defer page.deinit();
+
+    // Dirty set should be empty
+    const dirty = page.dirtyBitSet();
+    try std.testing.expectEqual(@as(usize, 0), dirty.count());
 }
 
 test "Page read and write cells" {
