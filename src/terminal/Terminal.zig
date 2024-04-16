@@ -1594,6 +1594,10 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
             const src: *Row = src_rac.row;
             const dst: *Row = dst_rac.row;
 
+            // Mark both our src/dst as dirty
+            p.markDirty();
+            src_p.markDirty();
+
             self.rowWillBeShifted(&src_p.page.data, src);
             self.rowWillBeShifted(&p.page.data, dst);
 
@@ -1658,6 +1662,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
     var it = clear_top.rowIterator(.right_down, bot);
     while (it.next()) |p| {
         const row: *Row = p.rowAndCell().row;
+
+        // This row is now dirty
+        p.markDirty();
 
         // Clear the src row.
         const page = &p.page.data;
@@ -4818,10 +4825,16 @@ test "Terminal: scrollUp simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollUp(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4844,7 +4857,13 @@ test "Terminal: scrollUp top/bottom scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.scrollUp(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4868,10 +4887,16 @@ test "Terminal: scrollUp left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollUp(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4910,7 +4935,12 @@ test "Terminal: scrollUp full top/bottom region" {
     t.setCursorPos(5, 1);
     try t.printString("ABCDE");
     t.setTopAndBottomMargin(2, 5);
+
+    t.clearDirty();
     t.scrollUp(4);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4930,7 +4960,12 @@ test "Terminal: scrollUp full top/bottomleft/right scroll region" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setTopAndBottomMargin(2, 5);
     t.setLeftAndRightMargin(2, 4);
+
+    t.clearDirty();
     t.scrollUp(4);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..5) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
