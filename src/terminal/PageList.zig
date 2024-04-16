@@ -1917,7 +1917,7 @@ fn createPage(
     self: *PageList,
     cap: Capacity,
 ) !*List.Node {
-    log.debug("create page cap={}", .{cap});
+    // log.debug("create page cap={}", .{cap});
     return try createPageExt(&self.pool, cap, &self.page_size);
 }
 
