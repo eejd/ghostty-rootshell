@@ -5881,11 +5881,10 @@ test "Terminal: index bottom of scroll region" {
     try t.index();
     try t.print('X');
 
-    // TODO(dirty)
-    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
-    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
-    // try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
