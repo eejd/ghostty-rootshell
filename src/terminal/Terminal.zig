@@ -1856,6 +1856,9 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
 
     // Insert blanks. The blanks preserve the background color.
     self.screen.clearCells(page, self.screen.cursor.page_row, x[0 .. rem - scroll_amount]);
+
+    // Our row is always dirty
+    self.screen.cursorMarkDirty();
 }
 
 pub fn eraseChars(self: *Terminal, count_req: usize) void {
@@ -7549,7 +7552,10 @@ test "Terminal: deleteChars" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7565,7 +7571,10 @@ test "Terminal: deleteChars zero count" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(0);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7581,7 +7590,10 @@ test "Terminal: deleteChars more than half" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(3);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7597,7 +7609,10 @@ test "Terminal: deleteChars more than line width" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(10);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7613,7 +7628,10 @@ test "Terminal: deleteChars should shift left" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7675,7 +7693,10 @@ test "Terminal: deleteChars simple operation" {
 
     try t.printString("ABC123");
     t.setCursorPos(1, 3);
+
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7726,7 +7747,9 @@ test "Terminal: deleteChars outside scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.screen.cursor.pending_wrap);
 
     {
@@ -7745,7 +7768,10 @@ test "Terminal: deleteChars inside scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     t.setCursorPos(1, 4);
+
+    t.clearDirty();
     t.deleteChars(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
