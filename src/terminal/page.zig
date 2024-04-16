@@ -917,6 +917,20 @@ pub const Page = struct {
         };
     }
 
+    /// Returns true if the given row is dirty. This is NOT very
+    /// efficient if you're checking many rows and you should use
+    /// dirtyBitSet directly instead.
+    pub fn isRowDirty(self: *const Page, y: usize) bool {
+        return self.dirtyBitSet().isSet(y);
+    }
+
+    /// Returns true if this page is dirty at all. If you plan on
+    /// checking any additional rows, you should use dirtyBitSet and
+    /// check this on your own so you have the set available.
+    pub fn isDirty(self: *const Page) bool {
+        return self.dirtyBitSet().findFirstSet() != null;
+    }
+
     pub const Layout = struct {
         total_size: usize,
         rows_start: usize,

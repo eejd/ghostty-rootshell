@@ -2928,6 +2928,17 @@ fn growRows(self: *PageList, n: usize) !void {
     }
 }
 
+/// Clear all dirty bits on all pages. This is not efficient since it
+/// traverses the entire list of pages. This is used for testing/debugging.
+pub fn clearDirty(self: *PageList) void {
+    var page = self.pages.first;
+    while (page) |p| {
+        var set = p.data.dirtyBitSet();
+        set.unsetAll();
+        page = p.next;
+    }
+}
+
 /// Represents an exact x/y coordinate within the screen. This is called
 /// a "pin" because it is a fixed point within the pagelist direct to
 /// a specific page pointer and memory offset. The benefit is that this
@@ -2984,6 +2995,13 @@ pub const Pin = struct {
             self.page.data.memory,
             cell.style_id,
         ).?.*;
+    }
+
+    /// Mark this pin location as dirty.
+    /// TODO: test
+    pub fn markDirty(self: *Pin) void {
+        var set = self.page.data.dirtyBitSet();
+        set.set(self.y);
     }
 
     /// Iterators. These are the same as PageList iterator funcs but operate
@@ -3218,6 +3236,14 @@ const Cell = struct {
     cell: *pagepkg.Cell,
     row_idx: size.CellCountInt,
     col_idx: size.CellCountInt,
+
+    /// Returns true if this cell is marked as dirty.
+    ///
+    /// This is not very performant this is primarily used for assertions
+    /// and testing.
+    pub fn isDirty(self: Cell) bool {
+        return self.page.data.isRowDirty(self.row_idx);
+    }
 
     /// Get the cell style.
     ///

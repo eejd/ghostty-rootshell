@@ -719,6 +719,12 @@ fn cursorChangePin(self: *Screen, new: Pin) void {
     };
 }
 
+/// Mark the cursor position as dirty.
+/// TODO: test
+pub fn cursorMarkDirty(self: *Screen) void {
+    self.cursor.page_pin.markDirty();
+}
+
 /// Options for scrolling the viewport of the terminal grid. The reason
 /// we have this in addition to PageList.Scroll is because we have additional
 /// scroll behaviors that are not part of the PageList.Scroll enum.

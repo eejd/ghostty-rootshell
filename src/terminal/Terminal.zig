@@ -15,6 +15,7 @@ const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const kitty = @import("kitty.zig");
+const point = @import("point.zig");
 const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
 const color = @import("color.zig");
@@ -354,6 +355,7 @@ pub fn print(self: *Terminal, c: u21) !void {
             }
 
             log.debug("c={x} grapheme attach to left={}", .{ c, prev.left });
+            self.screen.cursorMarkDirty();
             try self.screen.appendGrapheme(prev.cell, c);
             return;
         }
@@ -429,7 +431,10 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     switch (width) {
         // Single cell is very easy: just write in the cell
-        1 => @call(.always_inline, printCell, .{ self, c, .narrow }),
+        1 => {
+            self.screen.cursorMarkDirty();
+            @call(.always_inline, printCell, .{ self, c, .narrow });
+        },
 
         // Wide character requires a spacer. We print this by
         // using two cells: the first is flagged "wide" and has the
@@ -452,12 +457,14 @@ pub fn print(self: *Terminal, c: u21) !void {
                 try self.printWrap();
             }
 
+            self.screen.cursorMarkDirty();
             self.printCell(c, .wide);
             self.screen.cursorRight(1);
             self.printCell(' ', .spacer_tail);
         } else {
             // This is pretty broken, terminals should never be only 1-wide.
             // We sould prevent this downstream.
+            self.screen.cursorMarkDirty();
             self.printCell(' ', .narrow);
         },
 
@@ -2494,6 +2501,16 @@ pub fn fullReset(self: *Terminal) void {
     self.status_display = .main;
 }
 
+/// Returns true if the point is dirty, used for testing.
+fn isDirty(t: *const Terminal, pt: point.Point) bool {
+    return t.screen.pages.getCell(pt).?.isDirty();
+}
+
+/// Clear all dirty bits. Testing only.
+fn clearDirty(t: *Terminal) void {
+    t.screen.pages.clearDirty();
+}
+
 test "Terminal: input with no control characters" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 40, .rows = 40 });
@@ -2508,6 +2525,10 @@ test "Terminal: input with no control characters" {
         defer alloc.free(str);
         try testing.expectEqualStrings("hello", str);
     }
+
+    // The first row should be dirty
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 5, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 5, .y = 1 } }));
 }
 
 test "Terminal: input with basic wraparound" {
@@ -2525,6 +2546,20 @@ test "Terminal: input with basic wraparound" {
         defer alloc.free(str);
         try testing.expectEqualStrings("hello\nworld\nabc12", str);
     }
+}
+
+test "Terminal: input with basic wraparound dirty" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 40 });
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    t.clearDirty();
+    try t.print('w');
+
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: input that forces scroll" {
@@ -2582,6 +2617,9 @@ test "Terminal: zero-width character at start" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+
+    // Should not be dirty since we changed nothing.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 // https://github.com/mitchellh/ghostty/issues/1400
@@ -2613,6 +2651,8 @@ test "Terminal: print wide char" {
         const cell = list_cell.cell;
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print wide char at edge creates spacer head" {
@@ -2640,6 +2680,12 @@ test "Terminal: print wide char at edge creates spacer head" {
         const cell = list_cell.cell;
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
+
+    // Our first row just had a spacer head added which does not affect
+    // rendering so only the place where the wide char was printed
+    // should be marked.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: print wide char with 1-column width" {
@@ -2648,6 +2694,9 @@ test "Terminal: print wide char with 1-column width" {
     defer t.deinit(alloc);
 
     try t.print('😀'); // 0x1F600
+
+    // This prints a space so we should be dirty.
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print wide char in single-width terminal" {
@@ -2665,6 +2714,8 @@ test "Terminal: print wide char in single-width terminal" {
         try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char at 0,0" {
@@ -2673,7 +2724,7 @@ test "Terminal: print over wide char at 0,0" {
 
     try t.print(0x1F600); // Smiley face
     t.setCursorPos(0, 0);
-    try t.print('A'); // Smiley face
+    try t.print('A');
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
@@ -2690,6 +2741,9 @@ test "Terminal: print over wide char at 0,0" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: print over wide spacer tail" {
@@ -2718,6 +2772,8 @@ test "Terminal: print over wide spacer tail" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings(" X", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char with bold" {
@@ -2742,6 +2798,8 @@ test "Terminal: print over wide char with bold" {
         const page = t.screen.cursor.page_pin.page.data;
         try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char with bg color" {
@@ -2770,6 +2828,8 @@ test "Terminal: print over wide char with bg color" {
         const page = t.screen.cursor.page_pin.page.data;
         try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
@@ -2840,6 +2900,8 @@ test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
         try testing.expect(list_cell.page.data.lookupGrapheme(cell) == null);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: VS16 doesn't make character with 2027 disabled" {
@@ -2867,6 +2929,21 @@ test "Terminal: VS16 doesn't make character with 2027 disabled" {
         const cps = list_cell.page.data.lookupGrapheme(cell).?;
         try testing.expectEqual(@as(usize, 1), cps.len);
     }
+}
+
+test "Terminal: ignored VS16 doesn't mark dirty" {
+    var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(testing.allocator);
+
+    // Disable grapheme clustering
+    t.modes.set(.grapheme_cluster, false);
+
+    try t.print(0x2764); // Heart
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    t.clearDirty();
+    try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print invalid VS16 non-grapheme" {
@@ -2897,6 +2974,21 @@ test "Terminal: print invalid VS16 non-grapheme" {
     }
 }
 
+test "Terminal: invalid VS16 doesn't mark dirty" {
+    var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(testing.allocator);
+
+    // Disable grapheme clustering
+    t.modes.set(.grapheme_cluster, false);
+
+    try t.print('x');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    t.clearDirty();
+    try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
 test "Terminal: print multicodepoint grapheme, mode 2027" {
     var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
     defer t.deinit(testing.allocator);
@@ -2915,6 +3007,9 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
     // We should have 2 cells taken up. It is one character but "wide".
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // Row should be dirty
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     // Assert various properties about our screen to verify
     // we have all expected cells.
@@ -2936,6 +3031,35 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
     }
 }
 
+test "Terminal: multicodepoint grapheme marks dirty on every codepoint" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x200D);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x1F469);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x200D);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x1F467);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+}
+
 test "Terminal: VS15 to make narrow character" {
     var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
     defer t.deinit(testing.allocator);
@@ -2944,7 +3068,11 @@ test "Terminal: VS15 to make narrow character" {
     t.modes.set(.grapheme_cluster, true);
 
     try t.print(0x26C8); // Thunder cloud and rain
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
     try t.print(0xFE0E); // VS15 to make narrow
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
 
     {
         const str = try t.plainString(testing.allocator);
@@ -2971,7 +3099,11 @@ test "Terminal: VS16 to make wide character with mode 2027" {
     t.modes.set(.grapheme_cluster, true);
 
     try t.print(0x2764); // Heart
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
     try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3001,6 +3133,8 @@ test "Terminal: VS16 repeated with mode 2027" {
     try t.print(0xFE0F); // VS16 to make wide
     try t.print(0x2764); // Heart
     try t.print(0xFE0F); // VS16 to make wide
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3104,8 +3238,12 @@ test "Terminal: overwrite grapheme should clear grapheme data" {
 
     try t.print(0x26C8); // Thunder cloud and rain
     try t.print(0xFE0E); // VS15 to make narrow
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+
     t.setCursorPos(1, 1);
     try t.print('A');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3147,7 +3285,9 @@ test "Terminal: overwrite multicodepoint grapheme clears grapheme data" {
 
     // Move back and overwrite wide
     t.setCursorPos(1, 1);
+    t.clearDirty();
     try t.print('X');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
@@ -3233,6 +3373,11 @@ test "Terminal: print writes to bottom if scrolled" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\nA", str);
     }
+
+    try testing.expect(t.isDirty(.{ .active = .{
+        .x = t.screen.cursor.x,
+        .y = t.screen.cursor.y,
+    } }));
 }
 
 test "Terminal: print charset" {
@@ -3243,6 +3388,9 @@ test "Terminal: print charset" {
     t.configureCharset(.G1, .dec_special);
     t.configureCharset(.G2, .dec_special);
     t.configureCharset(.G3, .dec_special);
+
+    // No dirty to configure charset
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     // Basic grid writing
     try t.print('`');
@@ -3257,6 +3405,8 @@ test "Terminal: print charset" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("```◆", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print charset outside of ASCII" {
@@ -3268,6 +3418,9 @@ test "Terminal: print charset outside of ASCII" {
     t.configureCharset(.G2, .dec_special);
     t.configureCharset(.G3, .dec_special);
 
+    // No dirty to configure charset
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     // Basic grid writing
     t.configureCharset(.G0, .dec_special);
     try t.print('`');
@@ -3277,6 +3430,8 @@ test "Terminal: print charset outside of ASCII" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("◆ ", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print invoke charset" {
@@ -3285,10 +3440,14 @@ test "Terminal: print invoke charset" {
 
     t.configureCharset(.G1, .dec_special);
 
-    // Basic grid writing
     try t.print('`');
+
+    // Invokecharset but should not mark dirty on its own
+    t.clearDirty();
     t.invokeCharset(.GL, .G1, false);
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
     try t.print('`');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
     try t.print('`');
     t.invokeCharset(.GL, .G0, false);
     try t.print('`');
@@ -3336,7 +3495,10 @@ test "Terminal: soft wrap with semantic prompt" {
     var t = try init(testing.allocator, .{ .cols = 3, .rows = 80 });
     defer t.deinit(testing.allocator);
 
+    // Mark our prompt. Should not make anything dirty on its own.
     t.markSemanticPrompt(.prompt);
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     for ("hello") |c| try t.print(c);
 
     {
@@ -3358,6 +3520,7 @@ test "Terminal: disabled wraparound with wide char and one space" {
     // This puts our cursor at the end and there is NO SPACE for a
     // wide character.
     try t.printString("AAAA");
+    t.clearDirty();
     try t.print(0x1F6A8); // Police car light
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3375,6 +3538,9 @@ test "Terminal: disabled wraparound with wide char and one space" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: disabled wraparound with wide char and no space" {
@@ -3386,6 +3552,7 @@ test "Terminal: disabled wraparound with wide char and no space" {
     // This puts our cursor at the end and there is NO SPACE for a
     // wide character.
     try t.printString("AAAAA");
+    t.clearDirty();
     try t.print(0x1F6A8); // Police car light
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3402,6 +3569,9 @@ test "Terminal: disabled wraparound with wide char and no space" {
         try testing.expectEqual(@as(u21, 'A'), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: disabled wraparound with wide grapheme and half space" {
@@ -3415,6 +3585,7 @@ test "Terminal: disabled wraparound with wide grapheme and half space" {
     // wide character.
     try t.printString("AAAA");
     try t.print(0x2764); // Heart
+    t.clearDirty();
     try t.print(0xFE0F); // VS16 to make wide
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3431,6 +3602,9 @@ test "Terminal: disabled wraparound with wide grapheme and half space" {
         try testing.expectEqual(@as(u21, '❤'), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print right margin wrap" {
@@ -3456,6 +3630,34 @@ test "Terminal: print right margin wrap" {
     }
 }
 
+test "Terminal: print right margin wrap dirty tracking" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    try t.printString("123456789");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 5);
+
+    // Writing our X on the first line should mark only that line dirty.
+    t.clearDirty();
+    try t.print('X');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
+
+    // Writing our Y should wrap and only mark the second line dirty.
+    t.clearDirty();
+    try t.print('Y');
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1234X6789\n  Y", str);
+    }
+}
+
 test "Terminal: print right margin outside" {
     var t = try init(testing.allocator, .{ .cols = 10, .rows = 5 });
     defer t.deinit(testing.allocator);
@@ -3464,6 +3666,7 @@ test "Terminal: print right margin outside" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(3, 5);
     t.setCursorPos(1, 6);
+    t.clearDirty();
     try t.printString("XY");
 
     {
@@ -3471,6 +3674,8 @@ test "Terminal: print right margin outside" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("12345XY89", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 5, .y = 0 } }));
 }
 
 test "Terminal: print right margin outside wrap" {
@@ -3500,6 +3705,10 @@ test "Terminal: print wide char at right margin does not create spacer head" {
     try t.print(0x1F600); // Smiley face
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    // Only wrapped row should be dirty
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 1 } }));
 
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 4, .y = 0 } }).?;
