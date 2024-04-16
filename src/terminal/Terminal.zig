@@ -4987,10 +4987,14 @@ test "Terminal: scrollDown simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..5) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5013,10 +5017,17 @@ test "Terminal: scrollDown outside of scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5040,10 +5051,14 @@ test "Terminal: scrollDown left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5067,10 +5082,14 @@ test "Terminal: scrollDown outside of left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(1, 1);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
