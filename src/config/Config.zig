@@ -476,6 +476,10 @@ link: RepeatableLink = .{},
 ///
 /// On macOS, this always creates the window in native fullscreen. Non-native
 /// fullscreen is not currently supported with this setting.
+///
+/// On macOS, this setting does not work if window-decoration is set to
+/// "false", because native fullscreen on macOS requires window decorations
+/// to be set.
 fullscreen: bool = false,
 
 /// The title Ghostty will use for the window. This will force the title of the
