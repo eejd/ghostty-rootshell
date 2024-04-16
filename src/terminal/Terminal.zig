@@ -1959,6 +1959,9 @@ pub fn eraseLine(
     // a valid mode at this point.
     self.screen.cursor.pending_wrap = false;
 
+    // We always mark our row as dirty
+    self.screen.cursorMarkDirty();
+
     // Start of our cells
     const cells: [*]Cell = cells: {
         const cells: [*]Cell = @ptrCast(self.screen.cursor.page_cell);
@@ -8050,7 +8053,9 @@ test "Terminal: eraseLine simple erase right" {
 
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8146,7 +8151,9 @@ test "Terminal: eraseLine right wide character" {
     try t.print('橋');
     for ("DE") |c| try t.print(c);
     t.setCursorPos(1, 4);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8163,7 +8170,9 @@ test "Terminal: eraseLine right protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8182,7 +8191,9 @@ test "Terminal: eraseLine right protected attributes ignored with dec most recen
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8199,7 +8210,9 @@ test "Terminal: eraseLine right protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8218,7 +8231,9 @@ test "Terminal: eraseLine right protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 4);
+    t.clearDirty();
     t.eraseLine(.right, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8234,7 +8249,9 @@ test "Terminal: eraseLine simple erase left" {
 
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8250,7 +8267,9 @@ test "Terminal: eraseLine left resets wrap" {
 
     for ("ABCDE") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('B');
 
@@ -8303,7 +8322,9 @@ test "Terminal: eraseLine left wide character" {
     try t.print('橋');
     for ("DE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8320,7 +8341,9 @@ test "Terminal: eraseLine left protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8339,7 +8362,9 @@ test "Terminal: eraseLine left protected attributes ignored with dec most recent
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8356,7 +8381,9 @@ test "Terminal: eraseLine left protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8375,7 +8402,9 @@ test "Terminal: eraseLine left protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 8);
+    t.clearDirty();
     t.eraseLine(.left, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8425,7 +8454,9 @@ test "Terminal: eraseLine complete protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8444,7 +8475,9 @@ test "Terminal: eraseLine complete protected attributes ignored with dec most re
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8461,7 +8494,9 @@ test "Terminal: eraseLine complete protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8480,7 +8515,9 @@ test "Terminal: eraseLine complete protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 8);
+    t.clearDirty();
     t.eraseLine(.complete, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8496,6 +8533,7 @@ test "Terminal: tabClear single" {
 
     try t.horizontalTab();
     t.tabClear(.current);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     t.setCursorPos(1, 1);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 16), t.screen.cursor.x);
@@ -8507,6 +8545,7 @@ test "Terminal: tabClear all" {
     defer t.deinit(alloc);
 
     t.tabClear(.all);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     t.setCursorPos(1, 1);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 29), t.screen.cursor.x);
@@ -8519,6 +8558,7 @@ test "Terminal: printRepeat simple" {
 
     try t.printString("A");
     try t.printRepeat(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8534,6 +8574,7 @@ test "Terminal: printRepeat wrap" {
 
     try t.printString("    A");
     try t.printRepeat(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8548,6 +8589,7 @@ test "Terminal: printRepeat no previous character" {
     defer t.deinit(alloc);
 
     try t.printRepeat(1);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
