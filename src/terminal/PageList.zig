@@ -2999,7 +2999,7 @@ pub const Pin = struct {
 
     /// Mark this pin location as dirty.
     /// TODO: test
-    pub fn markDirty(self: *Pin) void {
+    pub fn markDirty(self: Pin) void {
         var set = self.page.data.dirtyBitSet();
         set.set(self.y);
     }

@@ -1445,6 +1445,10 @@ pub fn insertLines(self: *Terminal, count: usize) void {
             self.rowWillBeShifted(&p.page.data, src);
             self.rowWillBeShifted(&dst_p.page.data, dst);
 
+            // Mark both our src/dst as dirty
+            p.markDirty();
+            dst_p.markDirty();
+
             // If our scrolling region is full width, then we unset wrap.
             if (!left_right) {
                 dst.wrap = false;
@@ -1508,6 +1512,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     var it = top.rowIterator(.right_down, bot);
     while (it.next()) |p| {
         const row: *Row = p.rowAndCell().row;
+
+        // This row is now dirty
+        p.markDirty();
 
         // Clear the src row.
         const page = &p.page.data;
@@ -1865,6 +1872,9 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
 
         break :end end;
     };
+
+    // Mark our cursor row as dirty
+    self.screen.cursorMarkDirty();
 
     // Clear the cells
     const cells: [*]Cell = @ptrCast(self.screen.cursor.page_cell);
@@ -3736,10 +3746,20 @@ test "Terminal: linefeed and carriage return" {
     var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
     defer t.deinit(testing.allocator);
 
-    // Basic grid writing
+    // Print and CR.
     for ("hello") |c| try t.print(c);
+    t.clearDirty();
     t.carriageReturn();
+
+    // CR should not mark row dirty because it doesn't change rendering.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     try t.linefeed();
+
+    // LF should not mark row dirty
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
+
     for ("world") |c| try t.print(c);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
@@ -3757,7 +3777,10 @@ test "Terminal: linefeed unsets pending wrap" {
     // Basic grid writing
     for ("hello") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap == true);
+    t.clearDirty();
     try t.linefeed();
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
@@ -4132,7 +4155,15 @@ test "Terminal: setTopAndBottomMargin simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(0, 0);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    // Mark the rows we moved as dirty.
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4154,7 +4185,14 @@ test "Terminal: setTopAndBottomMargin top only" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 0);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4176,7 +4214,13 @@ test "Terminal: setTopAndBottomMargin top and bottom" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(1, 2);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4198,7 +4242,14 @@ test "Terminal: setTopAndBottomMargin top equal to bottom" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 2);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4221,7 +4272,12 @@ test "Terminal: setLeftAndRightMargin simple" {
     try t.printString("GHI");
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(0, 0);
+
+    t.clearDirty();
     t.eraseChars(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4247,7 +4303,14 @@ test "Terminal: setLeftAndRightMargin left only" {
     try testing.expectEqual(@as(usize, 1), t.scrolling_region.left);
     try testing.expectEqual(@as(usize, t.cols - 1), t.scrolling_region.right);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4271,7 +4334,14 @@ test "Terminal: setLeftAndRightMargin left and right" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(1, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4295,7 +4365,14 @@ test "Terminal: setLeftAndRightMargin left equal right" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(2, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4319,7 +4396,14 @@ test "Terminal: setLeftAndRightMargin mode 69 unset" {
     t.modes.set(.enable_left_and_right_margin, false);
     t.setLeftAndRightMargin(1, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
