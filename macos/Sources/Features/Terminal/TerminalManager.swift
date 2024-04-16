@@ -105,6 +105,19 @@ class TerminalManager {
     }
     
     private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
+        // If our parent is in non-native fullscreen, then new tabs do not work.
+        // See: https://github.com/mitchellh/ghostty/issues/392
+        if let controller = parent.windowController as? TerminalController,
+           controller.fullscreenHandler.isInNonNativeFullscreen {
+            let alert = NSAlert()
+            alert.messageText = "Cannot Create New Tab"
+            alert.informativeText = "New tabs are unsupported while in non-native fullscreen. Exit fullscreen and try again."
+            alert.addButton(withTitle: "OK")
+            alert.alertStyle = .warning
+            alert.beginSheetModal(for: parent)
+            return
+        }
+        
         // Create a new window and add it to the parent
         let controller = createWindow(withBaseConfig: base)
         let window = controller.window!
