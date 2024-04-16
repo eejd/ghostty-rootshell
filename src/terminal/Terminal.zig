@@ -5126,8 +5126,12 @@ test "Terminal: eraseChars simple operation" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseChars(2);
     try t.print('X');
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5143,8 +5147,10 @@ test "Terminal: eraseChars minimum one" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseChars(0);
     try t.print('X');
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5578,6 +5584,11 @@ test "Terminal: index" {
     try t.index();
     try t.print('A');
 
+    // Only the row we write to is dirty. Moving the cursor itself
+    // does not make a row dirty.
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -5593,9 +5604,15 @@ test "Terminal: index from the bottom" {
     t.setCursorPos(5, 1);
     try t.print('A');
     t.cursorLeft(1); // undo moving right from 'A'
-    try t.index();
 
+    t.clearDirty();
+    try t.index();
     try t.print('B');
+
+    // Only the row we write to is dirty. Moving the cursor itself
+    // does not make a row dirty.
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5623,8 +5640,10 @@ test "Terminal: index from the bottom outside of scroll region" {
     t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(5, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('B');
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5639,8 +5658,12 @@ test "Terminal: index no scroll region, top of screen" {
     defer t.deinit(alloc);
 
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5656,8 +5679,12 @@ test "Terminal: index bottom of primary screen" {
 
     t.setCursorPos(5, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5706,8 +5733,12 @@ test "Terminal: index inside scroll region" {
 
     t.setTopAndBottomMargin(1, 3);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5762,10 +5793,14 @@ test "Terminal: index bottom of primary screen with scroll region" {
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(5, 1);
+    t.clearDirty();
     try t.index();
     try t.index();
     try t.index();
     try t.print('X');
+
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5785,8 +5820,11 @@ test "Terminal: index outside left/right margin" {
     t.setCursorPos(3, 3);
     try t.print('A');
     t.setCursorPos(3, 1);
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5811,7 +5849,13 @@ test "Terminal: index inside left/right margin" {
     t.setTopAndBottomMargin(1, 3);
     t.setLeftAndRightMargin(1, 3);
     t.setCursorPos(3, 1);
+
+    t.clearDirty();
     try t.index();
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
@@ -5833,8 +5877,15 @@ test "Terminal: index bottom of scroll region" {
     try t.print('B');
     t.setCursorPos(3, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    // TODO(dirty)
+    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    // try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
