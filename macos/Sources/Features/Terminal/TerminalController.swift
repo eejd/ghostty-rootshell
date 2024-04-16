@@ -34,7 +34,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
     
     /// Fullscreen state management.
-    private let fullscreenHandler = FullScreenHandler()
+    let fullscreenHandler = FullScreenHandler()
     
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
