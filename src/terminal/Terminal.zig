@@ -1763,6 +1763,9 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 
     // Insert blanks. The blanks preserve the background color.
     self.screen.clearCells(page, self.screen.cursor.page_row, left[0..adjusted_count]);
+
+    // Our row is always dirty
+    self.screen.cursorMarkDirty();
 }
 
 /// Removes amount characters from the current cursor position to the right.
@@ -2137,7 +2140,7 @@ pub fn decaln(self: *Terminal) !void {
     // Move our cursor to the top-left
     self.setCursorPos(1, 1);
 
-    // Erase the display which will deallocate graphames, styles, etc.
+    // Erase the display which will deallocate graphemes, styles, etc.
     self.eraseDisplay(.complete, false);
 
     // Fill with Es by moving the cursor but reset it after.
@@ -2159,6 +2162,7 @@ pub fn decaln(self: *Terminal) !void {
             row.styled = true;
         }
 
+        self.screen.cursorMarkDirty();
         if (self.screen.cursor.y == self.rows - 1) break;
         self.screen.cursorDown(1);
     }
@@ -6368,7 +6372,14 @@ test "Terminal: deleteLines simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6472,7 +6483,14 @@ test "Terminal: deleteLines with scroll region" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     try t.print('E');
     t.carriageReturn();
@@ -6489,7 +6507,6 @@ test "Terminal: deleteLines with scroll region" {
     }
 }
 
-// X
 test "Terminal: deleteLines with scroll region, large count" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 80, .rows = 80 });
@@ -6509,7 +6526,14 @@ test "Terminal: deleteLines with scroll region, large count" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.deleteLines(5);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     try t.print('E');
     t.carriageReturn();
@@ -6526,7 +6550,6 @@ test "Terminal: deleteLines with scroll region, large count" {
     }
 }
 
-// X
 test "Terminal: deleteLines with scroll region, cursor outside of region" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 80, .rows = 80 });
@@ -6546,7 +6569,11 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6619,7 +6646,12 @@ test "Terminal: deleteLines left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6643,7 +6675,11 @@ test "Terminal: deleteLines left/right scroll region from top" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    for (0..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6667,7 +6703,12 @@ test "Terminal: deleteLines left/right scroll region high count" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(100);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7031,6 +7072,8 @@ test "Terminal: DECALN" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7096,7 +7139,11 @@ test "Terminal: insertBlanks" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7116,7 +7163,10 @@ test "Terminal: insertBlanks pushes off end" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7136,7 +7186,10 @@ test "Terminal: insertBlanks more than size" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(5);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7152,7 +7205,10 @@ test "Terminal: insertBlanks no scroll region, fits" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7198,7 +7254,9 @@ test "Terminal: insertBlanks shift off screen" {
 
     for ("  ABC") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -7216,7 +7274,9 @@ test "Terminal: insertBlanks split multi-cell character" {
     for ("123") |c| try t.print(c);
     try t.print('橋');
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7235,7 +7295,10 @@ test "Terminal: insertBlanks inside left/right scroll region" {
     t.setCursorPos(1, 3);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 3);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -7255,7 +7318,9 @@ test "Terminal: insertBlanks outside left/right scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('X');
 
@@ -7275,7 +7340,9 @@ test "Terminal: insertBlanks left/right scroll region large count" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(3, 5);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(140);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -7307,7 +7374,9 @@ test "Terminal: insertBlanks deleting graphemes" {
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(4);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7341,7 +7410,9 @@ test "Terminal: insertBlanks shift graphemes" {
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
