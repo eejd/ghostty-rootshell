@@ -4425,7 +4425,14 @@ test "Terminal: insertLines simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4523,7 +4530,13 @@ test "Terminal: insertLines outside of scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4549,7 +4562,14 @@ test "Terminal: insertLines top/bottom scroll region" {
     try t.printString("123");
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4623,7 +4643,13 @@ test "Terminal: insertLines with scroll region" {
 
     t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     try t.print('X');
 
@@ -4658,7 +4684,12 @@ test "Terminal: insertLines more than remaining" {
     t.setCursorPos(2, 1);
 
     // Insert a bunch of  lines
+    t.clearDirty();
     t.insertLines(20);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4758,7 +4789,14 @@ test "Terminal: insertLines left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
