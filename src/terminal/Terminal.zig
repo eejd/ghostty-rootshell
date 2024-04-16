@@ -8662,7 +8662,13 @@ test "Terminal: eraseDisplay simple erase below" {
     try t.linefeed();
     for ("GHI") |c| try t.print(c);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.eraseDisplay(.below, false);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8840,7 +8846,12 @@ test "Terminal: eraseDisplay simple erase above" {
     try t.linefeed();
     for ("GHI") |c| try t.print(c);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.eraseDisplay(.above, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -9018,7 +9029,10 @@ test "Terminal: eraseDisplay protected complete" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 4);
+
+    t.clearDirty();
     t.eraseDisplay(.complete, true);
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
 
     {
         const str = try t.plainString(testing.allocator);

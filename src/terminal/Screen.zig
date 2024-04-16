@@ -809,6 +809,10 @@ pub fn clearRows(
 
     var it = self.pages.pageIterator(.right_down, tl, bl);
     while (it.next()) |chunk| {
+        // Mark everything in this chunk as dirty
+        var dirty = chunk.page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = chunk.start, .end = chunk.end }, true);
+
         for (chunk.rows()) |*row| {
             const cells_offset = row.cells;
             const cells_multi: [*]Cell = row.cells.ptr(chunk.page.data.memory);
@@ -2508,6 +2512,7 @@ test "Screen clearRows active one line" {
 
     try s.testWriteString("hello, world");
     s.clearRows(.{ .active = .{} }, null, false);
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);
@@ -2522,6 +2527,8 @@ test "Screen clearRows active multi line" {
 
     try s.testWriteString("hello\nworld");
     s.clearRows(.{ .active = .{} }, null, false);
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);
