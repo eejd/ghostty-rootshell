@@ -9,8 +9,8 @@
             .hash = "1220f05bb06ce2704ae7b183514ce415719469bf1fa025b3158c55f7cc4755cb1fa5",
         },
         .mach_glfw = .{
-            .url = "https://github.com/mitchellh/mach-glfw/archive/59bce0b739fd9444f3ff488289164b4aa6761f15.tar.gz",
-            .hash = "1220188f701d79bdc47c9dd963e53b44d03c8feb872fd701a2ab4c2e58be2caf57d6",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/5932d29c91fd2dcb7cea554148eaf501d984fe4e.tar.gz",
+            .hash = "122077df11446a60e4e6868a2e9874583b11b66635e1f535061b1bac0340e7e2f2ca",
             .lazy = true,
         },
         .zig_objc = .{
