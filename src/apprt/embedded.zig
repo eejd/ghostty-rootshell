@@ -292,14 +292,15 @@ pub const PlatformTag = enum(c_int) {
 pub const Surface = struct {
     app: *App,
     platform: Platform,
+    userdata: ?*anyopaque = null,
     core_surface: CoreSurface,
     content_scale: apprt.ContentScale,
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
-    opts: Options,
     keymap_state: input.Keymap.State,
     inspector: ?*Inspector = null,
 
+    /// Surface initialization options.
     pub const Options = extern struct {
         /// The platform that this surface is being initialized for and
         /// the associated platform-specific configuration.
@@ -342,6 +343,7 @@ pub const Surface = struct {
         self.* = .{
             .app = app,
             .platform = try Platform.init(opts.platform_tag, opts.platform),
+            .userdata = opts.userdata,
             .core_surface = undefined,
             .content_scale = .{
                 .x = @floatCast(opts.scale_factor),
@@ -349,7 +351,6 @@ pub const Surface = struct {
             },
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = 0, .y = 0 },
-            .opts = opts,
             .keymap_state = .{},
         };
 
@@ -457,7 +458,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, mode);
+        func(self.userdata, mode);
     }
 
     pub fn newSplit(self: *const Surface, direction: apprt.SplitDirection) !void {
@@ -467,7 +468,7 @@ pub const Surface = struct {
         };
 
         const options = self.newSurfaceOptions();
-        func(self.opts.userdata, direction, options);
+        func(self.userdata, direction, options);
     }
 
     pub fn close(self: *const Surface, process_alive: bool) void {
@@ -476,7 +477,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, process_alive);
+        func(self.userdata, process_alive);
     }
 
     pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
@@ -485,7 +486,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, direction);
+        func(self.userdata, direction);
     }
 
     pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
@@ -494,7 +495,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, direction, amount);
+        func(self.userdata, direction, amount);
     }
 
     pub fn equalizeSplits(self: *const Surface) void {
@@ -503,7 +504,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.userdata);
     }
 
     pub fn toggleSplitZoom(self: *const Surface) void {
@@ -512,7 +513,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.userdata);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
@@ -531,14 +532,14 @@ pub const Surface = struct {
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         self.app.opts.set_title(
-            self.opts.userdata,
+            self.userdata,
             slice.ptr,
         );
     }
 
     pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
         self.app.opts.set_mouse_shape(
-            self.opts.userdata,
+            self.userdata,
             shape,
         );
     }
@@ -546,7 +547,7 @@ pub const Surface = struct {
     /// Set the visibility of the mouse cursor.
     pub fn setMouseVisibility(self: *Surface, visible: bool) void {
         self.app.opts.set_mouse_visibility(
-            self.opts.userdata,
+            self.userdata,
             visible,
         );
     }
@@ -576,7 +577,7 @@ pub const Surface = struct {
         state_ptr.* = state;
 
         self.app.opts.read_clipboard(
-            self.opts.userdata,
+            self.userdata,
             @intCast(@intFromEnum(clipboard_type)),
             state_ptr,
         );
@@ -601,7 +602,7 @@ pub const Surface = struct {
             error.UnauthorizedPaste,
             => {
                 self.app.opts.confirm_read_clipboard(
-                    self.opts.userdata,
+                    self.userdata,
                     str.ptr,
                     state,
                     state.*,
@@ -625,7 +626,7 @@ pub const Surface = struct {
         confirm: bool,
     ) !void {
         self.app.opts.write_clipboard(
-            self.opts.userdata,
+            self.userdata,
             val.ptr,
             @intCast(@intFromEnum(clipboard_type)),
             confirm,
@@ -963,7 +964,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, @enumFromInt(idx));
+        func(self.userdata, @enumFromInt(idx));
     }
 
     pub fn gotoPreviousTab(self: *Surface) void {
@@ -972,7 +973,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, .previous);
+        func(self.userdata, .previous);
     }
 
     pub fn gotoNextTab(self: *Surface) void {
@@ -981,7 +982,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, .next);
+        func(self.userdata, .next);
     }
 
     pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
@@ -990,7 +991,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, nonNativeFullscreen);
+        func(self.userdata, nonNativeFullscreen);
     }
 
     pub fn newTab(self: *const Surface) !void {
@@ -1000,7 +1001,7 @@ pub const Surface = struct {
         };
 
         const options = self.newSurfaceOptions();
-        func(self.opts.userdata, options);
+        func(self.userdata, options);
     }
 
     pub fn newWindow(self: *const Surface) !void {
@@ -1010,7 +1011,7 @@ pub const Surface = struct {
         };
 
         const options = self.newSurfaceOptions();
-        func(self.opts.userdata, options);
+        func(self.userdata, options);
     }
 
     pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
@@ -1019,7 +1020,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, width, height);
+        func(self.userdata, width, height);
     }
 
     fn queueInspectorRender(self: *const Surface) void {
@@ -1028,7 +1029,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata);
+        func(self.userdata);
     }
 
     pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
@@ -1037,7 +1038,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, width, height);
+        func(self.userdata, width, height);
     }
 
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
@@ -1069,7 +1070,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, title, body);
+        func(self.userdata, title, body);
     }
 
     /// Update the health of the renderer.
@@ -1079,7 +1080,7 @@ pub const Surface = struct {
             return;
         };
 
-        func(self.opts.userdata, health);
+        func(self.userdata, health);
     }
 };
 
