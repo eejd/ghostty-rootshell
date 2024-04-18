@@ -5,12 +5,12 @@
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/63e8dd89fae48e90fbd12469c2e3ff9415b832bf.tar.gz",
-            .hash = "1220f05bb06ce2704ae7b183514ce415719469bf1fa025b3158c55f7cc4755cb1fa5",
+            .url = "https://github.com/mitchellh/libxev/archive/a284cf851fe2f88f8947c01160c39ff216dacea1.tar.gz",
+            .hash = "12205b8ea5495b812b9a8943535a7af8da556644d2c1599dc01e1a5ea7aaf59bb2c7",
         },
         .mach_glfw = .{
-            .url = "https://github.com/mitchellh/mach-glfw/archive/e2049b9ca51af3ae23d6ef9d65e98045caf80341.tar.gz",
-            .hash = "1220c32812653c77bb57537ed8a4b69d784ab3a55362c6c13507c55d6f5b0a7e3142",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/20c773d86df269722d8926f98bc8af26ebd90999.tar.gz",
+            .hash = "1220d6df7eb57501616e86ed812854164ff02d2f4a0eaa06b8301f32950d8d3e89df",
             .lazy = true,
         },
         .zig_objc = .{
