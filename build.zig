@@ -1022,7 +1022,7 @@ fn addDeps(
     // on x86_64.
     if (step.rootModuleTarget().os.tag == .linux) {
         const triple = try step.rootModuleTarget().linuxTriple(b.allocator);
-        step.addLibraryPath(b.path(b.fmt("/usr/lib/{s}", .{triple})));
+        step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
     }
 
     // C files
