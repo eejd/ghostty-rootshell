@@ -1236,7 +1236,7 @@ pub const Cell = packed struct(u64) {
 // }
 
 test "Cell is zero by default" {
-    const cell: Cell = .{};
+    const cell = Cell.init(0);
     const cell_int: u64 = @bitCast(cell);
     try std.testing.expectEqual(@as(u64, 0), cell_int);
 }
