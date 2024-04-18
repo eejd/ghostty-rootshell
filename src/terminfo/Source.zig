@@ -88,7 +88,8 @@ pub fn xtgettcapMap(comptime self: Source) type {
             .numeric => |v| numeric: {
                 var buf: [10]u8 = undefined;
                 const num_len = std.fmt.formatIntBuf(&buf, v, 10, .upper, .{});
-                break :numeric buf[0..num_len];
+                const final = buf;
+                break :numeric final[0..num_len];
             },
         } };
     }
@@ -100,7 +101,7 @@ pub fn xtgettcapMap(comptime self: Source) type {
 
         // The value is more complex
         var buf: [5 + entry[0].len + 1 + (entry[1].len * 2) + 2]u8 = undefined;
-        entry[1] = if (std.mem.eql(u8, entry[1], "")) std.fmt.bufPrint(
+        const out = if (std.mem.eql(u8, entry[1], "")) std.fmt.bufPrint(
             &buf,
             "\x1bP1+r{s}\x1b\\",
             .{entry[0]}, // important: hex-encoded name
@@ -109,9 +110,13 @@ pub fn xtgettcapMap(comptime self: Source) type {
             "\x1bP1+r{s}={s}\x1b\\",
             .{ entry[0], hexencode(entry[1]) }, // important: hex-encoded name
         ) catch unreachable;
+
+        const final = buf;
+        entry[1] = final[0..out.len];
     }
 
-    return std.ComptimeStringMap([]const u8, kvs);
+    const kvs_final = kvs;
+    return std.ComptimeStringMap([]const u8, &kvs_final);
 }
 
 fn hexencode(comptime input: []const u8) []const u8 {

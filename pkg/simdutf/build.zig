@@ -27,12 +27,11 @@ pub fn build(b: *std.Build) !void {
             "vendor/simdutf.cpp",
         },
     });
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = .{ .path = "vendor" },
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        .{ .path = "vendor" },
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

@@ -84,12 +84,11 @@ pub fn build(b: *std.Build) !void {
             "hwy/timer.cc",
         },
     });
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("hwy"),
-        .install_dir = .header,
-        .install_subdir = "hwy",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path("hwy"),
+        "hwy",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

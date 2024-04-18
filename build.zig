@@ -25,7 +25,7 @@ const Command = @import("src/Command.zig");
 // but we liberally update it. In the future, we'll be more careful about
 // using released versions so that package managers can integrate better.
 comptime {
-    const required_zig = "0.12.0-dev.3405+31791ae15";
+    const required_zig = "0.12.0-dev.3676+21a6a1b0f";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
@@ -221,7 +221,7 @@ pub fn build(b: *std.Build) !void {
     // We only build an exe if we have a runtime set.
     const exe_: ?*std.Build.Step.Compile = if (config.app_runtime != .none) b.addExecutable(.{
         .name = "ghostty",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     }) else null;
@@ -265,7 +265,7 @@ pub fn build(b: *std.Build) !void {
         if (target.result.os.tag == .windows) {
             exe.subsystem = .Windows;
             exe.addWin32ResourceFile(.{
-                .file = .{ .path = "dist/windows/ghostty.rc" },
+                .file = b.path("dist/windows/ghostty.rc"),
             });
 
             // Building with LTO on Windows is broken.
@@ -309,7 +309,7 @@ pub fn build(b: *std.Build) !void {
     // Shell-integration
     {
         const install = b.addInstallDirectory(.{
-            .source_dir = .{ .path = "src/shell-integration" },
+            .source_dir = b.path("src/shell-integration"),
             .install_dir = .{ .custom = "share" },
             .install_subdir = b.pathJoin(&.{ "ghostty", "shell-integration" }),
             .exclude_extensions = &.{".md"},
@@ -483,7 +483,7 @@ pub fn build(b: *std.Build) !void {
         {
             const lib = b.addSharedLibrary(.{
                 .name = "ghostty",
-                .root_source_file = .{ .path = "src/main_c.zig" },
+                .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
             });
@@ -500,7 +500,7 @@ pub fn build(b: *std.Build) !void {
         {
             const lib = b.addStaticLibrary(.{
                 .name = "ghostty",
-                .root_source_file = .{ .path = "src/main_c.zig" },
+                .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
             });
@@ -515,7 +515,7 @@ pub fn build(b: *std.Build) !void {
 
         // Copy our ghostty.h to include.
         const header_install = b.addInstallHeaderFile(
-            "include/ghostty.h",
+            b.path("include/ghostty.h"),
             "ghostty.h",
         );
         b.getInstallStep().dependOn(&header_install.step);
@@ -570,7 +570,7 @@ pub fn build(b: *std.Build) !void {
         // Copy our ghostty.h to include. The header file is shared by
         // all embedded targets.
         const header_install = b.addInstallHeaderFile(
-            "include/ghostty.h",
+            b.path("include/ghostty.h"),
             "ghostty.h",
         );
         b.getInstallStep().dependOn(&header_install.step);
@@ -583,15 +583,15 @@ pub fn build(b: *std.Build) !void {
             .libraries = &.{
                 .{
                     .library = macos_lib_path,
-                    .headers = .{ .path = "include" },
+                    .headers = b.path("include"),
                 },
                 .{
                     .library = ios_lib_path,
-                    .headers = .{ .path = "include" },
+                    .headers = b.path("include"),
                 },
                 .{
                     .library = ios_sim_lib_path,
-                    .headers = .{ .path = "include" },
+                    .headers = b.path("include"),
                 },
             },
         });
@@ -645,7 +645,7 @@ pub fn build(b: *std.Build) !void {
 
         const wasm = b.addSharedLibrary(.{
             .name = "ghostty-wasm",
-            .root_source_file = .{ .path = "src/main_wasm.zig" },
+            .root_source_file = b.path("src/main_wasm.zig"),
             .target = b.resolveTargetQuery(wasm_crosstarget),
             .optimize = optimize,
         });
@@ -675,7 +675,7 @@ pub fn build(b: *std.Build) !void {
         const test_step = b.step("test-wasm", "Run all tests for wasm");
         const main_test = b.addTest(.{
             .name = "wasm-test",
-            .root_source_file = .{ .path = "src/main_wasm.zig" },
+            .root_source_file = b.path("src/main_wasm.zig"),
             .target = b.resolveTargetQuery(wasm_crosstarget),
         });
 
@@ -714,7 +714,7 @@ pub fn build(b: *std.Build) !void {
 
         const main_test = b.addTest(.{
             .name = "ghostty-test",
-            .root_source_file = .{ .path = "src/main.zig" },
+            .root_source_file = b.path("src/main.zig"),
             .target = test_target,
             .filter = test_filter,
         });
@@ -796,7 +796,7 @@ fn createMacOSLib(
     const static_lib_aarch64 = lib: {
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
-            .root_source_file = .{ .path = "src/main_c.zig" },
+            .root_source_file = b.path("src/main_c.zig"),
             .target = genericMacOSTarget(b),
             .optimize = optimize,
         });
@@ -820,7 +820,7 @@ fn createMacOSLib(
     const static_lib_x86_64 = lib: {
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
-            .root_source_file = .{ .path = "src/main_c.zig" },
+            .root_source_file = b.path("src/main_c.zig"),
             .target = b.resolveTargetQuery(.{
                 .cpu_arch = .x86_64,
                 .os_tag = .macos,
@@ -875,7 +875,7 @@ fn createIOSLib(
 
     const lib = b.addStaticLibrary(.{
         .name = "ghostty",
-        .root_source_file = .{ .path = "src/main_c.zig" },
+        .root_source_file = b.path("src/main_c.zig"),
         .optimize = optimize,
         .target = b.resolveTargetQuery(.{
             .cpu_arch = .aarch64,
@@ -1027,12 +1027,12 @@ fn addDeps(
 
     // C files
     step.linkLibC();
-    step.addIncludePath(.{ .path = "src/stb" });
+    step.addIncludePath(b.path("src/stb"));
     step.addCSourceFiles(.{ .files = &.{"src/stb/stb.c"} });
 
     // C++ files
     step.linkLibCpp();
-    step.addIncludePath(.{ .path = "src" });
+    step.addIncludePath(b.path("src"));
     step.addCSourceFiles(.{ .files = &.{
         "src/simd/codepoint_width.cpp",
         "src/simd/index_of.cpp",
@@ -1160,9 +1160,9 @@ fn addDeps(
 
     if (!lib) {
         // We always statically compile glad
-        step.addIncludePath(.{ .path = "vendor/glad/include/" });
+        step.addIncludePath(b.path("vendor/glad/include/"));
         step.addCSourceFile(.{
-            .file = .{ .path = "vendor/glad/src/gl.c" },
+            .file = b.path("vendor/glad/src/gl.c"),
             .flags = &.{},
         });
 
@@ -1246,7 +1246,7 @@ fn addHelp(
     const help_output = HelpState.generated orelse strings: {
         const help_exe = b.addExecutable(.{
             .name = "helpgen",
-            .root_source_file = .{ .path = "src/helpgen.zig" },
+            .root_source_file = b.path("src/helpgen.zig"),
             .target = b.host,
         });
         if (step_ == null) b.installArtifact(help_exe);
@@ -1286,7 +1286,7 @@ fn addUnicodeTables(
     const output = State.generated orelse strings: {
         const exe = b.addExecutable(.{
             .name = "unigen",
-            .root_source_file = .{ .path = "src/unicode/props.zig" },
+            .root_source_file = b.path("src/unicode/props.zig"),
             .target = b.host,
         });
         exe.linkLibC();
@@ -1326,7 +1326,7 @@ fn buildDocumentation(
     inline for (manpages) |manpage| {
         const generate_markdown = b.addExecutable(.{
             .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
-            .root_source_file = .{ .path = "src/main.zig" },
+            .root_source_file = b.path("src/main.zig"),
             .target = b.host,
         });
         try addHelp(b, generate_markdown, config);
@@ -1412,7 +1412,7 @@ fn benchSteps(
         const bin_name = try std.fmt.allocPrint(b.allocator, "bench-{s}", .{name});
         const c_exe = b.addExecutable(.{
             .name = bin_name,
-            .root_source_file = .{ .path = "src/main.zig" },
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
 
             // We always want our benchmarks to be in release mode.
@@ -1468,7 +1468,7 @@ fn conformanceSteps(
         // Executable builder.
         const c_exe = b.addExecutable(.{
             .name = name,
-            .root_source_file = .{ .path = path },
+            .root_source_file = b.path(path),
             .target = target,
             .optimize = optimize,
         });

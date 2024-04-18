@@ -76,12 +76,11 @@ pub fn build(b: *std.Build) !void {
         .file = upstream.path("src/harfbuzz.cc"),
         .flags = flags.items,
     });
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("src"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path("src"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

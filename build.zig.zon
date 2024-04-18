@@ -5,17 +5,17 @@
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/0f73adfda1cff9c740160717b5431ebada6b8755.tar.gz",
-            .hash = "12203dcbe098ee49ea242432cd198b1ca557626988f056bea86630dcfe8660244407",
+            .url = "https://github.com/mitchellh/libxev/archive/a284cf851fe2f88f8947c01160c39ff216dacea1.tar.gz",
+            .hash = "12205b8ea5495b812b9a8943535a7af8da556644d2c1599dc01e1a5ea7aaf59bb2c7",
         },
         .mach_glfw = .{
-            .url = "https://github.com/der-teufel-programming/mach-glfw/archive/250affff8c52d1eaa0fab2ef1118f691bf1225ec.tar.gz",
-            .hash = "122029f65edf3965d86f7d0741fe141bcc1d68b1f013fa7280bbfda4e87c6affc15f",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/20c773d86df269722d8926f98bc8af26ebd90999.tar.gz",
+            .hash = "1220d6df7eb57501616e86ed812854164ff02d2f4a0eaa06b8301f32950d8d3e89df",
             .lazy = true,
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/0a89cc09da6804ae448241a673ce85a282216074.tar.gz",
-            .hash = "1220acfc53954f699415c6942422571670544a5236866fa7b6e069e2b1b2ba86ae9c",
+            .url = "https://github.com/mitchellh/zig-objc/archive/9e2174ed9b5a2c11bf1779cf6c819260c8091888.tar.gz",
+            .hash = "1220014cd3774aa0b18320e6527ed7b3270412c70958ab16a3c55070ffb7f2042f87",
         },
         .zig_js = .{
             .url = "https://github.com/mitchellh/zig-js/archive/d4edb682733aef8dc3933683272bdf7c8b9fe658.tar.gz",

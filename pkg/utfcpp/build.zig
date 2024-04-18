@@ -27,12 +27,11 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
         .files = &.{"empty.cc"},
     });
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("source"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path("source"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

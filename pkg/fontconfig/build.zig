@@ -162,12 +162,11 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("fontconfig"),
-        .install_dir = .header,
-        .install_subdir = "fontconfig",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path("fontconfig"),
+        "fontconfig",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

@@ -25,7 +25,9 @@ pub const entries: []const Entry = entries: {
             .native = raw[native_idx],
         };
     }
-    break :entries &result;
+
+    const final = result;
+    break :entries &final;
 };
 
 /// Entry contains the USB code, native keycode, and W3C dom code for

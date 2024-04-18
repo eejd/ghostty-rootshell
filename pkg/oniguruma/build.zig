@@ -125,12 +125,11 @@ fn buildOniguruma(
         },
     });
 
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("src"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeadersDirectory(
+        upstream.path("src"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     return lib;
 }

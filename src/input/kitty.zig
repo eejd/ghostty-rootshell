@@ -22,7 +22,9 @@ pub const entries: []const Entry = entries: {
             .modifier = raw[3],
         };
     }
-    break :entries &result;
+
+    const final = result;
+    break :entries &final;
 };
 
 /// Raw entry is the tuple form of an entry for easy human management.

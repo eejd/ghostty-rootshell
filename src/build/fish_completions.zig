@@ -19,7 +19,8 @@ fn comptimeGenerateFishCompletions() []const u8 {
         var buf: [counter.bytes_written]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
         try writeFishCompletions(stream.writer());
-        return stream.getWritten();
+        const final = buf;
+        return final[0..stream.getWritten().len];
     }
 }
 

@@ -81,13 +81,12 @@ pub fn build(b: *std.Build) !void {
         }),
     }
 
-    lib.installHeader("freetype-zig.h", "freetype-zig.h");
-    lib.installHeadersDirectoryOptions(.{
-        .source_dir = upstream.path("include"),
-        .install_dir = .header,
-        .install_subdir = "",
-        .include_extensions = &.{".h"},
-    });
+    lib.installHeader(.{ .path = "freetype-zig.h" }, "freetype-zig.h");
+    lib.installHeadersDirectory(
+        upstream.path("include"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
 
     b.installArtifact(lib);
 

@@ -83,7 +83,7 @@ pub const Mods = packed struct(Mods.Backing) {
         super: Side = .left,
     };
 
-    pub const Side = enum { left, right };
+    pub const Side = enum(u1) { left, right };
 
     /// Integer value of this struct.
     pub fn int(self: Mods) Backing {
