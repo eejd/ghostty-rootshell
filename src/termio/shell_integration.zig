@@ -23,7 +23,7 @@ pub const Shell = enum {
 pub fn setup(
     alloc: Allocator,
     resource_dir: []const u8,
-    command_path: []const u8,
+    command: []const u8,
     env: *EnvMap,
     force_shell: ?Shell,
     features: config.ShellIntegrationFeatures,
@@ -31,7 +31,12 @@ pub fn setup(
     const exe = if (force_shell) |shell| switch (shell) {
         .fish => "fish",
         .zsh => "zsh",
-    } else std.fs.path.basename(command_path);
+    } else exe: {
+        // The command can include arguments. Look for the first space
+        // and use the basename of the first part as the command's exe.
+        const idx = std.mem.indexOfScalar(u8, command, ' ') orelse command.len;
+        break :exe std.fs.path.basename(command[0..idx]);
+    };
 
     const shell: Shell = shell: {
         if (std.mem.eql(u8, "fish", exe)) {
