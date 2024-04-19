@@ -20,6 +20,9 @@ pub const Cell = struct {
     /// The style of this cell.
     style: terminal.Style,
 
+    /// Wide state of the terminal cell
+    wide: terminal.Cell.Wide,
+
     pub fn init(
         alloc: Allocator,
         pin: terminal.Pin,
@@ -37,6 +40,7 @@ pub const Cell = struct {
             .codepoint = cell.codepoint(),
             .cps = cps,
             .style = style,
+            .wide = cell.wide,
         };
     }
 
@@ -81,18 +85,42 @@ pub const Cell = struct {
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             {
                 _ = cimgui.c.igTableSetColumnIndex(0);
-                cimgui.c.igText("Codepoint");
+                cimgui.c.igText("Codepoints");
             }
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
-                if (self.codepoint == 0) {
-                    cimgui.c.igTextDisabled("(empty)");
-                    break :codepoint;
-                }
+                if (cimgui.c.igBeginListBox("##codepoints", .{ .x = 0, .y = 0 })) {
+                    defer cimgui.c.igEndListBox();
 
-                cimgui.c.igText("U+%X", @as(u32, @intCast(self.codepoint)));
+                    if (self.codepoint == 0) {
+                        _ = cimgui.c.igSelectable_Bool("(empty)", false, 0, .{});
+                        break :codepoint;
+                    }
+
+                    // Primary codepoint
+                    var buf: [256]u8 = undefined;
+                    {
+                        const key = std.fmt.bufPrintZ(&buf, "U+{X}", .{self.codepoint}) catch
+                            "<internal error>";
+                        _ = cimgui.c.igSelectable_Bool(key.ptr, false, 0, .{});
+                    }
+
+                    // All extras
+                    for (self.cps) |cp| {
+                        const key = std.fmt.bufPrintZ(&buf, "U+{X}", .{cp}) catch
+                            "<internal error>";
+                        _ = cimgui.c.igSelectable_Bool(key.ptr, false, 0, .{});
+                    }
+                }
             }
         }
+
+        // Character width property
+        cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
+        _ = cimgui.c.igTableSetColumnIndex(0);
+        cimgui.c.igText("Width Property");
+        _ = cimgui.c.igTableSetColumnIndex(1);
+        cimgui.c.igText(@tagName(self.wide));
 
         // If we have a color then we show the color
         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
