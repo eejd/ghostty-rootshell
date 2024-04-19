@@ -193,13 +193,14 @@ const c = @cImport({
 ///
 /// Valid values are:
 ///
-///   * `wcswidth` - Use the wcswidth function to determine grapheme width.
-///     This maximizes compatibility with legacy programs but may result
+///   * `legacy` - Use a legacy method to determine grapheme width, such as
+///     wcswidth This maximizes compatibility with legacy programs but may result
 ///     in incorrect grapheme width for certain graphemes such as skin-tone
 ///     emoji, non-English characters, etc.
 ///
-///     Note that this `wcswidth` functionality is based on the libc wcswidth,
-///     not any other libraries with that name.
+///     This is called "legacy" and not something more specific because the
+///     behavior is undefined and we want to retain the ability to modify it.
+///     For example, we may or may not use libc `wcswidth` now or in the future.
 ///
 ///   * `unicode` - Use the Unicode standard to determine grapheme width.
 ///
@@ -3464,6 +3465,6 @@ pub const WindowNewTabPosition = enum {
 
 /// See grapheme-width-method
 pub const GraphemeWidthMethod = enum {
-    wcswidth,
+    legacy,
     unicode,
 };

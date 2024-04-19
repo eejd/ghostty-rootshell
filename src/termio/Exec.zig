@@ -141,7 +141,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     // switch to ensure we get a compiler error if more cases are added.
     switch (opts.config.grapheme_width_method) {
         .unicode => term.modes.set(.grapheme_cluster, true),
-        .wcswidth => {},
+        .legacy => {},
     }
 
     // Set the image size limits
