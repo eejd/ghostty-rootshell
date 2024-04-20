@@ -29,8 +29,8 @@ pub fn setup(
     features: config.ShellIntegrationFeatures,
 ) !?Shell {
     const exe = if (force_shell) |shell| switch (shell) {
-        .fish => "/fish",
-        .zsh => "/zsh",
+        .fish => "fish",
+        .zsh => "zsh",
     } else std.fs.path.basename(command_path);
 
     const shell: Shell = shell: {
@@ -122,4 +122,17 @@ fn setupZsh(
         .{resource_dir},
     );
     try env.put("ZDOTDIR", integ_dir);
+}
+
+test "force shell" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    inline for (@typeInfo(Shell).Enum.fields) |field| {
+        const shell = @field(Shell, field.name);
+        try testing.expectEqual(shell, setup(alloc, ".", "sh", &env, shell, .{}));
+    }
 }
