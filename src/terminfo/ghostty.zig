@@ -304,7 +304,7 @@ pub const ghostty: Source = .{
         .{ .name = "kUP5", .value = .{ .string = "\\E[1;5A" } },
         .{ .name = "kUP6", .value = .{ .string = "\\E[1;6A" } },
         .{ .name = "kUP7", .value = .{ .string = "\\E[1;7A" } },
-        .{ .name = "kbs", .value = .{ .string = "^?" } },
+        .{ .name = "kbs", .value = .{ .string = "^H" } },
         .{ .name = "kcbt", .value = .{ .string = "\\E[Z" } },
         .{ .name = "kcub1", .value = .{ .string = "\\EOD" } },
         .{ .name = "kcud1", .value = .{ .string = "\\EOB" } },
