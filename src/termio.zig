@@ -16,4 +16,6 @@ pub const Impl = Exec;
 
 test {
     @import("std").testing.refAllDecls(@This());
+
+    _ = @import("termio/shell_integration.zig");
 }
