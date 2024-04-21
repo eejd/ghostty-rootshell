@@ -430,7 +430,7 @@ expand this to other platforms.
 
 ## Developing Ghostty
 
-To build Ghostty, you need [Zig](https://ziglang.org/) installed.
+To build Ghostty, you need [Zig 0.12](https://ziglang.org/) installed.
 
 On Linux, you may need to install additional dependencies. See
 [Linux Installation Tips](#linux-installation-tips). On macOS, you
@@ -444,17 +444,11 @@ Ghostty must pass within these Nix environments.
 
 > [!NOTE]
 >
-> **Zig nightly is required.** Ghostty is built against the nightly
-> releases of Zig while it is still in beta. I plan on stabilizing on a release
-> version when I get closer to generally releasing this to ease downstream
-> packagers. You can find binary releases of nightly builds on the
+> **Zig 0.12 is required.** Ghostty only guarantees that it can build
+> against 0.12. Zig is still a fast-moving project so it is likely newer
+> versions will not be able to build Ghostty yet. You can find binary
+> releases of Zig release builds on the
 > [Zig downloads page](https://ziglang.org/download/).
-
-Under some conditions, the very latest Zig nightly may not work (for example,
-when Zig introduces breaking changes that Ghostty or our dependencies haven't
-been upated for). To be sure what Zig version will work, see the `build.zig`
-file which has a constant `required_zig`. Ghostty plans to pin to Zig 0.12
-once it is released, which will make all of this much easier.
 
 With Zig and necessary dependencies installed, a binary can be built using
 `zig build`:
