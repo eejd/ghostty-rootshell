@@ -20,12 +20,11 @@ const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 const Command = @import("src/Command.zig");
 
-// Do a comptime Zig version requirement. The required Zig version is
-// somewhat arbitrary: it is meant to be a version that we feel works well,
-// but we liberally update it. In the future, we'll be more careful about
-// using released versions so that package managers can integrate better.
+// Do a comptime Zig version requirement. This is the minimum required
+// Zig version. We don't check a maximum so that devs can try newer
+// versions but this is the only version we guarantee to work.
 comptime {
-    const required_zig = "0.12.0-dev.3676+21a6a1b0f";
+    const required_zig = "0.12.0";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
