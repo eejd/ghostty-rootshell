@@ -101,8 +101,15 @@ pub fn xtgettcapMap(comptime self: Source) type {
                     // Replace '^' with the control char version of that char.
                     while (std.mem.indexOfScalar(u8, result, '^')) |idx| {
                         if (idx > 0) @compileError("handle control-char in middle of string");
-                        const c = result[idx + 1];
-                        result = comptimeReplace(result, result[idx .. idx + 2], &.{c - 64});
+                        const replacement = switch (result[idx + 1]) {
+                            '?' => 0x7F, // DEL, special cased from ncurses
+                            else => |c| c - 64,
+                        };
+                        result = comptimeReplace(
+                            result,
+                            result[idx .. idx + 2],
+                            &.{replacement},
+                        );
                     }
                     break :string result;
                 },
@@ -174,6 +181,7 @@ test "xtgettcap map" {
         .capabilities = &.{
             .{ .name = "am", .value = .{ .boolean = {} } },
             .{ .name = "colors", .value = .{ .numeric = 256 } },
+            .{ .name = "kx", .value = .{ .string = "^?" } },
             .{ .name = "kbs", .value = .{ .string = "^H" } },
             .{ .name = "kf1", .value = .{ .string = "\\EOP" } },
             .{ .name = "Smulx", .value = .{ .string = "\\E[4:%p1%dm" } },
@@ -184,6 +192,10 @@ test "xtgettcap map" {
     try testing.expectEqualStrings(
         "\x1bP1+r616D\x1b\\",
         map.get(hexencode("am")).?,
+    );
+    try testing.expectEqualStrings(
+        "\x1bP1+r6B78=7F\x1b\\",
+        map.get(hexencode("kx")).?,
     );
     try testing.expectEqualStrings(
         "\x1bP1+r6B6273=08\x1b\\",
