@@ -66,9 +66,9 @@ pub fn init(self: *Window, app: *App) !void {
 
     c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
 
-    // Remove the window's background if any of the widgets need to be transparent
+    // Apply background opacity if we have it
     if (app.config.@"background-opacity" < 1) {
-        c.gtk_widget_remove_css_class(@ptrCast(window), "background");
+        c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
     // Use the new GTK4 header bar. We only create a header bar if we have
@@ -119,31 +119,16 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_set_vexpand(notebook_widget, 1);
     c.gtk_widget_set_hexpand(notebook_widget, 1);
 
-    // Add the window background to the tab bar so it still has a background
-    // color when we're using a transparent window.
-    const tab_bar = c.gtk_widget_get_first_child(notebook_widget);
-    c.gtk_widget_add_css_class(tab_bar, "background");
-
-    // Remove the background from the stack so it doesn't become opaque
-    // when multiple tabs are open
-    const stack = c.gtk_widget_get_last_child(notebook_widget);
-    c.gtk_widget_add_css_class(stack, "transparent");
-
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
     // In debug we show a warning. This is a really common issue where
     // people build from source in debug and performance is really bad.
     if (builtin.mode == .Debug) {
-        const warning_box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
         const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
-
         c.gtk_widget_set_margin_top(warning, 10);
         c.gtk_widget_set_margin_bottom(warning, 10);
-        c.gtk_box_append(@ptrCast(warning_box), warning);
-
-        c.gtk_widget_add_css_class(@ptrCast(warning_box), "background");
-        c.gtk_box_append(@ptrCast(box), warning_box);
+        c.gtk_box_append(@ptrCast(box), warning);
     }
     c.gtk_box_append(@ptrCast(box), notebook_widget);
 
