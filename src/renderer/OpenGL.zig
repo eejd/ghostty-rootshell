@@ -207,17 +207,6 @@ const SetFontSize = struct {
                 },
             );
         }
-
-        const bind = try gl_state.cell_program.program.use();
-        defer bind.unbind();
-        try gl_state.cell_program.program.setUniform(
-            "strikethrough_position",
-            @as(f32, @floatFromInt(self.metrics.strikethrough_position)),
-        );
-        try gl_state.cell_program.program.setUniform(
-            "strikethrough_thickness",
-            @as(f32, @floatFromInt(self.metrics.strikethrough_thickness)),
-        );
     }
 };
 
@@ -1491,17 +1480,27 @@ fn updateCell(
     }
 
     if (style.flags.strikethrough) {
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(font.Sprite.strikethrough),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
         self.cells.appendAssumeCapacity(.{
-            .mode = .strikethrough,
+            .mode = .fg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
             .grid_width = cell.gridWidth(),
-            .glyph_x = 0,
-            .glyph_y = 0,
-            .glyph_width = 0,
-            .glyph_height = 0,
-            .glyph_offset_x = 0,
-            .glyph_offset_y = 0,
+            .glyph_x = render.glyph.atlas_x,
+            .glyph_y = render.glyph.atlas_y,
+            .glyph_width = render.glyph.width,
+            .glyph_height = render.glyph.height,
+            .glyph_offset_x = render.glyph.offset_x,
+            .glyph_offset_y = render.glyph.offset_y,
             .r = colors.fg.r,
             .g = colors.fg.g,
             .b = colors.fg.b,

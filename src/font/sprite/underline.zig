@@ -7,6 +7,9 @@
 //! to maintain and debug another set of shaders for each renderer instead of
 //! just relying on the glyph system we already need to support for text
 //! anyways.
+//!
+//! This also renders strikethrough, so its really more generally a
+//! "horizontal line" renderer.
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
@@ -71,6 +74,7 @@ const Draw = struct {
             .underline_dotted => self.drawDotted(canvas),
             .underline_dashed => self.drawDashed(canvas),
             .underline_curly => self.drawCurly(canvas),
+            .strikethrough => self.drawSingle(canvas),
             else => unreachable,
         }
     }
@@ -218,6 +222,24 @@ test "single" {
         alloc,
         &atlas_greyscale,
         .underline,
+        36,
+        18,
+        9,
+        2,
+    );
+}
+
+test "strikethrough" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
+    defer atlas_greyscale.deinit(alloc);
+
+    _ = try renderGlyph(
+        alloc,
+        &atlas_greyscale,
+        .strikethrough,
         36,
         18,
         9,

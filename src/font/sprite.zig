@@ -20,6 +20,8 @@ pub const Sprite = enum(u32) {
     underline_dashed,
     underline_curly,
 
+    strikethrough,
+
     cursor_rect,
     cursor_hollow_rect,
     cursor_bar,

@@ -28,7 +28,6 @@ const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
 const uint MODE_FG_CONSTRAINED = 3u;
 const uint MODE_FG_COLOR = 7u;
-const uint MODE_STRIKETHROUGH = 8u;
 
 void main() {
     float a;
@@ -47,10 +46,6 @@ void main() {
 
     case MODE_FG_COLOR:
         out_FragColor = texture(text_color, glyph_tex_coords);
-        break;
-
-    case MODE_STRIKETHROUGH:
-        out_FragColor = color;
         break;
     }
 }
