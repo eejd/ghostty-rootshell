@@ -53,7 +53,6 @@ pub const CellMode = enum(u8) {
     fg = 2,
     fg_constrained = 3,
     fg_color = 7,
-    strikethrough = 8,
 
     // Non-exhaustive because masks change it
     _,
