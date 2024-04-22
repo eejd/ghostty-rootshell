@@ -114,10 +114,6 @@ buf_instance: InstanceBuffer, // MTLBuffer
 device: objc.Object, // MTLDevice
 queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
-texture_greyscale: objc.Object, // MTLTexture
-texture_color: objc.Object, // MTLTexture
-texture_greyscale_modified: usize = 0,
-texture_color_modified: usize = 0,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -187,6 +183,11 @@ pub const FrameState = struct {
     cells: CellBuffer,
     cells_bg: CellBuffer,
 
+    greyscale: objc.Object, // MTLTexture
+    greyscale_modified: usize = 0,
+    color: objc.Object, // MTLTexture
+    color_modified: usize = 0,
+
     /// A buffer containing the uniform data.
     const UniformBuffer = mtl_buffer.Buffer(mtl_shaders.Uniforms);
 
@@ -204,10 +205,26 @@ pub const FrameState = struct {
         var cells_bg = try CellBuffer.init(device, 10 * 10);
         errdefer cells_bg.deinit();
 
+        // Initialize our textures for our font atlas.
+        const greyscale = try initAtlasTexture(device, &.{
+            .data = undefined,
+            .size = 8,
+            .format = .greyscale,
+        });
+        errdefer deinitMTLResource(greyscale);
+        const color = try initAtlasTexture(device, &.{
+            .data = undefined,
+            .size = 8,
+            .format = .rgba,
+        });
+        errdefer deinitMTLResource(color);
+
         return .{
             .uniforms = uniforms,
             .cells = cells,
             .cells_bg = cells_bg,
+            .greyscale = greyscale,
+            .color = color,
         };
     }
 
@@ -215,6 +232,8 @@ pub const FrameState = struct {
         self.uniforms.deinit();
         self.cells.deinit();
         self.cells_bg.deinit();
+        deinitMTLResource(self.greyscale);
+        deinitMTLResource(self.color);
     }
 };
 
@@ -494,23 +513,12 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Initialize all the data that requires a critical font section.
     const font_critical: struct {
         metrics: font.Metrics,
-        texture_greyscale: objc.Object,
-        texture_color: objc.Object,
     } = font_critical: {
         const grid = options.font_grid;
         grid.lock.lockShared();
         defer grid.lock.unlockShared();
-
-        // Font atlas textures
-        const greyscale = try initAtlasTexture(device, &grid.atlas_greyscale);
-        errdefer deinitMTLResource(greyscale);
-        const color = try initAtlasTexture(device, &grid.atlas_color);
-        errdefer deinitMTLResource(color);
-
         break :font_critical .{
             .metrics = grid.metrics,
-            .texture_greyscale = greyscale,
-            .texture_color = color,
         };
     };
 
@@ -552,8 +560,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .device = device,
         .queue = queue,
         .layer = layer,
-        .texture_greyscale = font_critical.texture_greyscale,
-        .texture_color = font_critical.texture_color,
         .custom_shader_state = custom_shader_state,
         .gpu_state = gpu_state,
     };
@@ -584,8 +590,6 @@ pub fn deinit(self: *Metal) void {
     self.image_placements.deinit(self.alloc);
 
     self.buf_instance.deinit();
-    deinitMTLResource(self.texture_greyscale);
-    deinitMTLResource(self.texture_color);
     self.queue.msgSend(void, objc.sel("release"), .{});
 
     if (self.custom_shader_state) |*state| state.deinit();
@@ -652,8 +656,14 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     // Update our grid
     self.font_grid = grid;
-    self.texture_greyscale_modified = 0;
-    self.texture_color_modified = 0;
+
+    // Update all our textures so that they sync on the next frame.
+    // We can modify this without a lock because the GPU does not
+    // touch this data.
+    for (&self.gpu_state.frames) |*frame| {
+        frame.greyscale_modified = 0;
+        frame.color_modified = 0;
+    }
 
     // Get our metrics from the grid. This doesn't require a lock because
     // the metrics are never recalculated.
@@ -841,19 +851,19 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // If our font atlas changed, sync the texture data
     texture: {
         const modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        if (modified <= self.texture_greyscale_modified) break :texture;
+        if (modified <= frame.greyscale_modified) break :texture;
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
-        self.texture_greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &self.texture_greyscale);
+        frame.greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &frame.greyscale);
     }
     texture: {
         const modified = self.font_grid.atlas_color.modified.load(.monotonic);
-        if (modified <= self.texture_color_modified) break :texture;
+        if (modified <= frame.color_modified) break :texture;
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
-        self.texture_color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &self.texture_color);
+        frame.color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &frame.color);
     }
 
     // Command buffer (MTLCommandBuffer)
@@ -1238,7 +1248,7 @@ fn drawCells(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            self.texture_greyscale.value,
+            frame.greyscale.value,
             @as(c_ulong, 0),
         },
     );
@@ -1246,7 +1256,7 @@ fn drawCells(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            self.texture_color.value,
+            frame.color.value,
             @as(c_ulong, 1),
         },
     );
