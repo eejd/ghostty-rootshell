@@ -108,8 +108,6 @@ image_text_end: u32 = 0,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
-buf_cells: CellBuffer, // Vertex buffer for cells
-buf_cells_bg: CellBuffer, // Vertex buffer for background cells
 buf_instance: InstanceBuffer, // MTLBuffer
 
 /// Metal objects
@@ -132,6 +130,93 @@ health: std.atomic.Value(Health) = .{ .raw = .healthy },
 /// one but in the future if we implement double/triple-buffering this
 /// will be incremented.
 inflight: std.Thread.Semaphore = .{ .permits = 1 },
+
+/// Our GPU state
+gpu_state: GPUState,
+
+/// State we need for the GPU that is shared between all frames.
+pub const GPUState = struct {
+    // The count of buffers we use for double/triple buffering. If
+    // this is one then we don't do any double+ buffering at all. This
+    // is comptime because there isn't a good reason to change this at
+    // runtime and there is a lot of complexity to support it. For comptime,
+    // this is useful for debugging.
+    const BufferCount = 3;
+
+    /// The frame data, the current frame index, and the semaphore protecting
+    /// the frame data. This is used to implement double/triple/etc. buffering.
+    frames: [BufferCount]FrameState,
+    frame_index: std.math.IntFittingRange(0, BufferCount - 1) = 0,
+    frame_sema: std.Thread.Semaphore = .{ .permits = BufferCount },
+
+    device: objc.Object, // MTLDevice
+
+    pub fn init() !GPUState {
+        var result: GPUState = .{
+            .device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice()),
+            .frames = undefined,
+        };
+
+        // Initialize all of our frame state.
+        for (&result.frames) |*frame| {
+            frame.* = try FrameState.init(result.device);
+        }
+
+        return result;
+    }
+
+    pub fn deinit(self: *GPUState) void {
+        // Wait for all of our inflight draws to complete so that
+        // we can cleanly deinit our GPU state.
+        for (0..BufferCount) |_| self.frame_sema.wait();
+        for (&self.frames) |*frame| frame.deinit();
+    }
+};
+
+/// State we need duplicated for every frame. Any state that could be
+/// in a data race between the GPU and CPU while a frame is being
+/// drawn should be in this struct.
+///
+/// While a draw is in-process, we "lock" the state (via a semaphore)
+/// and prevent the CPU from updating the state until Metal reports
+/// that the frame is complete.
+///
+/// This is used to implement double/triple buffering.
+pub const FrameState = struct {
+    uniforms: UniformBuffer,
+    cells: CellBuffer,
+    cells_bg: CellBuffer,
+
+    /// A buffer containing the uniform data.
+    const UniformBuffer = mtl_buffer.Buffer(mtl_shaders.Uniforms);
+
+    pub fn init(device: objc.Object) !FrameState {
+        // Uniform buffer contains exactly 1 uniform struct. The
+        // uniform data will be undefined so this must be set before
+        // a frame is drawn.
+        var uniforms = try UniformBuffer.init(device, 1);
+        errdefer uniforms.deinit();
+
+        // Create the buffers for our vertex data. The preallocation size
+        // is likely too small but our first frame update will resize it.
+        var cells = try CellBuffer.init(device, 10 * 10);
+        errdefer cells.deinit();
+        var cells_bg = try CellBuffer.init(device, 10 * 10);
+        errdefer cells_bg.deinit();
+
+        return .{
+            .uniforms = uniforms,
+            .cells = cells,
+            .cells_bg = cells_bg,
+        };
+    }
+
+    pub fn deinit(self: *FrameState) void {
+        self.uniforms.deinit();
+        self.cells.deinit();
+        self.cells_bg.deinit();
+    }
+};
 
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
@@ -354,10 +439,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer font_shaper.deinit();
 
     // Vertex buffers
-    var buf_cells = try CellBuffer.init(device, 160 * 160);
-    errdefer buf_cells.deinit();
-    var buf_cells_bg = try CellBuffer.init(device, 160 * 160);
-    errdefer buf_cells_bg.deinit();
     var buf_instance = try InstanceBuffer.initFill(device, &.{
         0, 1, 3, // Top-left triangle
         1, 2, 3, // Bottom-right triangle
@@ -433,6 +514,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
+    // Build our GPU state
+    var gpu_state = try GPUState.init();
+    errdefer gpu_state.deinit();
+
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -461,8 +546,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Shaders
         .shaders = shaders,
-        .buf_cells = buf_cells,
-        .buf_cells_bg = buf_cells_bg,
         .buf_instance = buf_instance,
 
         // Metal stuff
@@ -472,6 +555,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .texture_greyscale = font_critical.texture_greyscale,
         .texture_color = font_critical.texture_color,
         .custom_shader_state = custom_shader_state,
+        .gpu_state = gpu_state,
     };
 }
 
@@ -481,6 +565,9 @@ pub fn deinit(self: *Metal) void {
     // everything. This is important because our completion callbacks access
     // "self"
     self.inflight.wait();
+
+    // All inflight frames are done, deinit our GPU state.
+    self.gpu_state.deinit();
 
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
@@ -496,8 +583,6 @@ pub fn deinit(self: *Metal) void {
     }
     self.image_placements.deinit(self.alloc);
 
-    self.buf_cells_bg.deinit();
-    self.buf_cells.deinit();
     self.buf_instance.deinit();
     deinitMTLResource(self.texture_greyscale);
     deinitMTLResource(self.texture_color);
@@ -721,6 +806,12 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     self.inflight.wait();
     errdefer self.inflight.post();
 
+    // Setup our frame data
+    const frame = &self.gpu_state.frames[self.gpu_state.frame_index];
+    try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
+    try frame.cells_bg.sync(self.gpu_state.device, self.cells_bg.items);
+    try frame.cells.sync(self.gpu_state.device, self.cells.items);
+
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
         const now = std.time.Instant.now() catch state.first_frame_time;
@@ -818,13 +909,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
+        try self.drawCells(encoder, frame, frame.cells_bg, self.cells_bg.items.len);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCells(encoder, &self.buf_cells, self.cells);
+        try self.drawCells(encoder, frame, frame.cells, self.cells.items.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -1121,13 +1212,10 @@ fn drawImagePlacement(
 fn drawCells(
     self: *Metal,
     encoder: objc.Object,
-    buf: *CellBuffer,
-    cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
+    frame: *const FrameState,
+    buf: CellBuffer,
+    len: usize,
 ) !void {
-    if (cells.items.len == 0) return;
-
-    try buf.sync(self.device, cells.items);
-
     // Use our shader pipeline
     encoder.msgSend(
         void,
@@ -1138,12 +1226,13 @@ fn drawCells(
     // Set our buffers
     encoder.msgSend(
         void,
-        objc.sel("setVertexBytes:length:atIndex:"),
-        .{
-            @as(*const anyopaque, @ptrCast(&self.uniforms)),
-            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-            @as(c_ulong, 1),
-        },
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
     );
     encoder.msgSend(
         void,
@@ -1161,11 +1250,6 @@ fn drawCells(
             @as(c_ulong, 1),
         },
     );
-    encoder.msgSend(
-        void,
-        objc.sel("setVertexBuffer:offset:atIndex:"),
-        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
-    );
 
     encoder.msgSend(
         void,
@@ -1176,7 +1260,7 @@ fn drawCells(
             @intFromEnum(mtl.MTLIndexType.uint16),
             self.buf_instance.buffer.value,
             @as(c_ulong, 0),
-            @as(c_ulong, cells.items.len),
+            @as(c_ulong, len),
         },
     );
 }
