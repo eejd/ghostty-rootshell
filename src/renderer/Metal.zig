@@ -36,7 +36,6 @@ const Image = mtl_image.Image;
 const ImageMap = mtl_image.ImageMap;
 const Shaders = mtl_shaders.Shaders;
 
-const CellBuffer = mtl_buffer.Buffer(mtl_shaders.Cell);
 const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
@@ -90,8 +89,8 @@ current_background_color: terminal.color.RGB,
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
-cells_bg: std.ArrayListUnmanaged(mtl_shaders.Cell),
-cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
+cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
+cells: std.ArrayListUnmanaged(mtl_shaders.CellText),
 
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
@@ -205,8 +204,8 @@ pub const GPUState = struct {
 /// This is used to implement double/triple buffering.
 pub const FrameState = struct {
     uniforms: UniformBuffer,
-    cells: CellBuffer,
-    cells_bg: CellBuffer,
+    cells: CellTextBuffer,
+    cells_bg: CellBgBuffer,
 
     greyscale: objc.Object, // MTLTexture
     greyscale_modified: usize = 0,
@@ -215,6 +214,8 @@ pub const FrameState = struct {
 
     /// A buffer containing the uniform data.
     const UniformBuffer = mtl_buffer.Buffer(mtl_shaders.Uniforms);
+    const CellBgBuffer = mtl_buffer.Buffer(mtl_shaders.CellBg);
+    const CellTextBuffer = mtl_buffer.Buffer(mtl_shaders.CellText);
 
     pub fn init(device: objc.Object) !FrameState {
         // Uniform buffer contains exactly 1 uniform struct. The
@@ -225,9 +226,9 @@ pub const FrameState = struct {
 
         // Create the buffers for our vertex data. The preallocation size
         // is likely too small but our first frame update will resize it.
-        var cells = try CellBuffer.init(device, 10 * 10);
+        var cells = try CellTextBuffer.init(device, 10 * 10);
         errdefer cells.deinit();
-        var cells_bg = try CellBuffer.init(device, 10 * 10);
+        var cells_bg = try CellBgBuffer.init(device, 10 * 10);
         errdefer cells_bg.deinit();
 
         // Initialize our textures for our font atlas.
@@ -1268,7 +1269,7 @@ fn drawCells(
     self: *Metal,
     encoder: objc.Object,
     frame: *const FrameState,
-    buf: CellBuffer,
+    buf: FrameState.CellTextBuffer,
     len: usize,
 ) !void {
     // This triggers an assertion in the Metal API if we try to draw
@@ -1279,7 +1280,7 @@ fn drawCells(
     encoder.msgSend(
         void,
         objc.sel("setRenderPipelineState:"),
-        .{self.shaders.cell_pipeline.value},
+        .{self.shaders.cell_text_pipeline.value},
     );
 
     // Set our buffers
@@ -1694,7 +1695,7 @@ fn rebuildCells(
     // This is the cell that has [mode == .fg] and is underneath our cursor.
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
-    var cursor_cell: ?mtl_shaders.Cell = null;
+    var cursor_cell: ?mtl_shaders.CellText = null;
 
     // Build each cell
     var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
@@ -1847,12 +1848,6 @@ fn rebuildCells(
             self.cells.appendAssumeCapacity(cell.*);
         }
     }
-
-    // Some debug mode safety checks
-    if (std.debug.runtime_safety) {
-        for (self.cells_bg.items) |cell| assert(cell.mode == .bg);
-        for (self.cells.items) |cell| assert(cell.mode != .bg);
-    }
 }
 
 fn updateCell(
@@ -1964,11 +1959,10 @@ fn updateCell(
         };
 
         self.cells_bg.appendAssumeCapacity(.{
-            .mode = .bg,
+            .mode = .rgb,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
             .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
-            .bg_color = .{ 0, 0, 0, 0 },
         });
 
         break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
@@ -1992,7 +1986,7 @@ fn updateCell(
             },
         );
 
-        const mode: mtl_shaders.Cell.Mode = switch (try fgMode(
+        const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
             render.presentation,
             cell_pin,
         )) {
@@ -2080,7 +2074,7 @@ fn addCursor(
     self: *Metal,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-) ?*const mtl_shaders.Cell {
+) ?*const mtl_shaders.CellText {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
@@ -2166,11 +2160,10 @@ fn addPreeditCell(
 
     // Add our opaque background cell
     self.cells_bg.appendAssumeCapacity(.{
-        .mode = .bg,
+        .mode = .rgb,
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ bg.r, bg.g, bg.b, 255 },
-        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
     });
 
     // Add our text

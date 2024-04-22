@@ -1,56 +1,9 @@
 using namespace metal;
 
-// The possible modes that a shader can take.
-enum Mode : uint8_t {
-  MODE_BG = 1u,
-  MODE_FG = 2u,
-  MODE_FG_CONSTRAINED = 3u,
-  MODE_FG_COLOR = 7u,
-};
-
 struct Uniforms {
   float4x4 projection_matrix;
   float2 cell_size;
   float min_contrast;
-};
-
-struct VertexIn {
-  // The mode for this cell.
-  uint8_t mode [[attribute(0)]];
-
-  // The grid coordinates (x, y) where x < columns and y < rows
-  float2 grid_pos [[attribute(1)]];
-
-  // The width of the cell in cells (i.e. 2 for double-wide).
-  uint8_t cell_width [[attribute(6)]];
-
-  // The color. For BG modes, this is the bg color, for FG modes this is
-  // the text color. For styles, this is the color of the style.
-  uchar4 color [[attribute(5)]];
-
-  // The fields below are present only when rendering text (fg mode)
-
-  // The background color of the cell. This is used to determine if
-  // we need to render the text with a different color to ensure
-  // contrast.
-  uchar4 bg_color [[attribute(7)]];
-
-  // The position of the glyph in the texture (x,y)
-  uint2 glyph_pos [[attribute(2)]];
-
-  // The size of the glyph in the texture (w,h)
-  uint2 glyph_size [[attribute(3)]];
-
-  // The left and top bearings for the glyph (x,y)
-  int2 glyph_offset [[attribute(4)]];
-};
-
-struct VertexOut {
-  float4 position [[position]];
-  float2 cell_size;
-  uint8_t mode;
-  float4 color;
-  float2 tex_coord;
 };
 
 //-------------------------------------------------------------------
@@ -103,141 +56,12 @@ float4 contrasted_color(float min, float4 fg, float4 bg) {
 }
 
 //-------------------------------------------------------------------
-// Terminal Grid Cell Shader
-//-------------------------------------------------------------------
-#pragma mark - Terminal Grid Cell Shader
-
-vertex VertexOut uber_vertex(unsigned int vid [[vertex_id]],
-                             VertexIn input [[stage_in]],
-                             constant Uniforms& uniforms [[buffer(1)]]) {
-  // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * input.grid_pos;
-
-  // Scaled cell size for the cell width
-  float2 cell_size_scaled = uniforms.cell_size;
-  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
-
-  // Turn the cell position into a vertex point depending on the
-  // vertex ID. Since we use instanced drawing, we have 4 vertices
-  // for each corner of the cell. We can use vertex ID to determine
-  // which one we're looking at. Using this, we can use 1 or 0 to keep
-  // or discard the value for the vertex.
-  //
-  // 0 = top-right
-  // 1 = bot-right
-  // 2 = bot-left
-  // 3 = top-left
-  float2 position;
-  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
-  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
-
-  VertexOut out;
-  out.mode = input.mode;
-  out.cell_size = uniforms.cell_size;
-  out.color = float4(input.color) / 255.0f;
-  switch (input.mode) {
-    case MODE_BG:
-      // Calculate the final position of our cell in world space.
-      // We have to add our cell size since our vertices are offset
-      // one cell up and to the left. (Do the math to verify yourself)
-      cell_pos = cell_pos + cell_size_scaled * position;
-
-      out.position = uniforms.projection_matrix *
-                     float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
-      break;
-
-    case MODE_FG:
-    case MODE_FG_CONSTRAINED:
-    case MODE_FG_COLOR: {
-      float2 glyph_size = float2(input.glyph_size);
-      float2 glyph_offset = float2(input.glyph_offset);
-
-      // The glyph_offset.y is the y bearing, a y value that when added
-      // to the baseline is the offset (+y is up). Our grid goes down.
-      // So we flip it with `cell_size.y - glyph_offset.y`.
-      glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
-
-      // If we're constrained then we need to scale the glyph.
-      // We also always constrain colored glyphs since we should have
-      // their scaled cell size exactly correct.
-      if (input.mode == MODE_FG_CONSTRAINED || input.mode == MODE_FG_COLOR) {
-        if (glyph_size.x > cell_size_scaled.x) {
-          float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
-          glyph_offset.y += (glyph_size.y - new_y) / 2;
-          glyph_size.y = new_y;
-          glyph_size.x = cell_size_scaled.x;
-        }
-      }
-
-      // Calculate the final position of the cell which uses our glyph size
-      // and glyph offset to create the correct bounding box for the glyph.
-      cell_pos = cell_pos + glyph_size * position + glyph_offset;
-      out.position = uniforms.projection_matrix *
-                     float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
-
-      // Calculate the texture coordinate in pixels. This is NOT normalized
-      // (between 0.0 and 1.0) and must be done in the fragment shader.
-      out.tex_coord =
-          float2(input.glyph_pos) + float2(input.glyph_size) * position;
-
-      // If we have a minimum contrast, we need to check if we need to
-      // change the color of the text to ensure it has enough contrast
-      // with the background.
-      if (uniforms.min_contrast > 1.0f && input.mode == MODE_FG) {
-        float4 bg_color = float4(input.bg_color) / 255.0f;
-        out.color =
-            contrasted_color(uniforms.min_contrast, out.color, bg_color);
-      }
-
-      break;
-    }
-  }
-
-  return out;
-}
-
-fragment float4 uber_fragment(VertexOut in [[stage_in]],
-                              texture2d<float> textureGreyscale [[texture(0)]],
-                              texture2d<float> textureColor [[texture(1)]]) {
-  constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
-
-  switch (in.mode) {
-    case MODE_BG:
-      return in.color;
-
-    case MODE_FG_CONSTRAINED:
-    case MODE_FG: {
-      // Normalize the texture coordinates to [0,1]
-      float2 size =
-          float2(textureGreyscale.get_width(), textureGreyscale.get_height());
-      float2 coord = in.tex_coord / size;
-
-      // We premult the alpha to our whole color since our blend function
-      // uses One/OneMinusSourceAlpha to avoid blurry edges.
-      // We first premult our given color.
-      float4 premult = float4(in.color.rgb * in.color.a, in.color.a);
-      // Then premult the texture color
-      float a = textureGreyscale.sample(textureSampler, coord).r;
-      premult = premult * a;
-      return premult;
-    }
-
-    case MODE_FG_COLOR: {
-      // Normalize the texture coordinates to [0,1]
-      float2 size = float2(textureColor.get_width(), textureColor.get_height());
-      float2 coord = in.tex_coord / size;
-      return textureColor.sample(textureSampler, coord);
-    }
-  }
-}
-
-//-------------------------------------------------------------------
 // Cell Background Shader
 //-------------------------------------------------------------------
 #pragma mark - Cell BG Shader
 
 // The possible modes that a cell bg entry can take.
-enum CellbgMode : uint8_t {
+enum CellBgMode : uint8_t {
   MODE_RGB = 1u,
 };
 
@@ -248,12 +72,12 @@ struct CellBgVertexIn {
   // The grid coordinates (x, y) where x < columns and y < rows
   float2 grid_pos [[attribute(1)]];
 
-  // The width of the cell in cells (i.e. 2 for double-wide).
-  uint8_t cell_width [[attribute(2)]];
-
   // The color. For BG modes, this is the bg color, for FG modes this is
   // the text color. For styles, this is the color of the style.
   uchar4 color [[attribute(3)]];
+
+  // The width of the cell in cells (i.e. 2 for double-wide).
+  uint8_t cell_width [[attribute(2)]];
 };
 
 struct CellBgVertexOut {
@@ -303,6 +127,158 @@ fragment float4 cell_bg_fragment(CellBgVertexOut in [[stage_in]]) {
   return in.color;
 }
 
+//-------------------------------------------------------------------
+// Cell Text Shader
+//-------------------------------------------------------------------
+#pragma mark - Cell Text Shader
+
+// The possible modes that a cell fg entry can take.
+enum CellTextMode : uint8_t {
+  MODE_TEXT = 2u,
+  MODE_TEXT_CONSTRAINED = 3u,
+  MODE_TEXT_COLOR = 7u,
+};
+
+struct CellTextVertexIn {
+  // The mode for this cell.
+  uint8_t mode [[attribute(0)]];
+
+  // The grid coordinates (x, y) where x < columns and y < rows
+  float2 grid_pos [[attribute(1)]];
+
+  // The width of the cell in cells (i.e. 2 for double-wide).
+  uint8_t cell_width [[attribute(6)]];
+
+  // The color of the rendered text glyph.
+  uchar4 color [[attribute(5)]];
+
+  // The background color of the cell. This is used to determine if
+  // we need to render the text with a different color to ensure
+  // contrast.
+  uchar4 bg_color [[attribute(7)]];
+
+  // The position of the glyph in the texture (x,y)
+  uint2 glyph_pos [[attribute(2)]];
+
+  // The size of the glyph in the texture (w,h)
+  uint2 glyph_size [[attribute(3)]];
+
+  // The left and top bearings for the glyph (x,y)
+  int2 glyph_offset [[attribute(4)]];
+};
+
+struct CellTextVertexOut {
+  float4 position [[position]];
+  float2 cell_size;
+  uint8_t mode;
+  float4 color;
+  float2 tex_coord;
+};
+
+vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
+                                          CellTextVertexIn input [[stage_in]],
+                                          constant Uniforms& uniforms
+                                          [[buffer(1)]]) {
+  // Convert the grid x,y into world space x, y by accounting for cell size
+  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+
+  // Scaled cell size for the cell width
+  float2 cell_size_scaled = uniforms.cell_size;
+  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
+
+  // Turn the cell position into a vertex point depending on the
+  // vertex ID. Since we use instanced drawing, we have 4 vertices
+  // for each corner of the cell. We can use vertex ID to determine
+  // which one we're looking at. Using this, we can use 1 or 0 to keep
+  // or discard the value for the vertex.
+  //
+  // 0 = top-right
+  // 1 = bot-right
+  // 2 = bot-left
+  // 3 = top-left
+  float2 position;
+  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
+  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+
+  CellTextVertexOut out;
+  out.mode = input.mode;
+  out.cell_size = uniforms.cell_size;
+  out.color = float4(input.color) / 255.0f;
+
+  float2 glyph_size = float2(input.glyph_size);
+  float2 glyph_offset = float2(input.glyph_offset);
+
+  // The glyph_offset.y is the y bearing, a y value that when added
+  // to the baseline is the offset (+y is up). Our grid goes down.
+  // So we flip it with `cell_size.y - glyph_offset.y`.
+  glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
+
+  // If we're constrained then we need to scale the glyph.
+  // We also always constrain colored glyphs since we should have
+  // their scaled cell size exactly correct.
+  if (input.mode == MODE_TEXT_CONSTRAINED || input.mode == MODE_TEXT_COLOR) {
+    if (glyph_size.x > cell_size_scaled.x) {
+      float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
+      glyph_offset.y += (glyph_size.y - new_y) / 2;
+      glyph_size.y = new_y;
+      glyph_size.x = cell_size_scaled.x;
+    }
+  }
+
+  // Calculate the final position of the cell which uses our glyph size
+  // and glyph offset to create the correct bounding box for the glyph.
+  cell_pos = cell_pos + glyph_size * position + glyph_offset;
+  out.position =
+      uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+
+  // Calculate the texture coordinate in pixels. This is NOT normalized
+  // (between 0.0 and 1.0) and must be done in the fragment shader.
+  out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
+
+  // If we have a minimum contrast, we need to check if we need to
+  // change the color of the text to ensure it has enough contrast
+  // with the background.
+  if (uniforms.min_contrast > 1.0f && input.mode == MODE_TEXT) {
+    float4 bg_color = float4(input.bg_color) / 255.0f;
+    out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
+  }
+
+  return out;
+}
+
+fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
+                                   texture2d<float> textureGreyscale
+                                   [[texture(0)]],
+                                   texture2d<float> textureColor
+                                   [[texture(1)]]) {
+  constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
+
+  switch (in.mode) {
+    case MODE_TEXT_CONSTRAINED:
+    case MODE_TEXT: {
+      // Normalize the texture coordinates to [0,1]
+      float2 size =
+          float2(textureGreyscale.get_width(), textureGreyscale.get_height());
+      float2 coord = in.tex_coord / size;
+
+      // We premult the alpha to our whole color since our blend function
+      // uses One/OneMinusSourceAlpha to avoid blurry edges.
+      // We first premult our given color.
+      float4 premult = float4(in.color.rgb * in.color.a, in.color.a);
+      // Then premult the texture color
+      float a = textureGreyscale.sample(textureSampler, coord).r;
+      premult = premult * a;
+      return premult;
+    }
+
+    case MODE_TEXT_COLOR: {
+      // Normalize the texture coordinates to [0,1]
+      float2 size = float2(textureColor.get_width(), textureColor.get_height());
+      float2 coord = in.tex_coord / size;
+      return textureColor.sample(textureSampler, coord);
+    }
+  }
+}
 //-------------------------------------------------------------------
 // Image Shader
 //-------------------------------------------------------------------

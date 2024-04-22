@@ -16,7 +16,7 @@ pub const Shaders = struct {
     /// The cell shader is the shader used to render the terminal cells.
     /// It is a single shader that is used for both the background and
     /// foreground.
-    cell_pipeline: objc.Object,
+    cell_text_pipeline: objc.Object,
 
     /// The cell background shader is the shader used to render the
     /// background of terminal cells.
@@ -44,8 +44,8 @@ pub const Shaders = struct {
         const library = try initLibrary(device);
         errdefer library.msgSend(void, objc.sel("release"), .{});
 
-        const cell_pipeline = try initCellPipeline(device, library);
-        errdefer cell_pipeline.msgSend(void, objc.sel("release"), .{});
+        const cell_text_pipeline = try initCellTextPipeline(device, library);
+        errdefer cell_text_pipeline.msgSend(void, objc.sel("release"), .{});
 
         const cell_bg_pipeline = try initCellBgPipeline(device, library);
         errdefer cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
@@ -72,7 +72,7 @@ pub const Shaders = struct {
 
         return .{
             .library = library,
-            .cell_pipeline = cell_pipeline,
+            .cell_text_pipeline = cell_text_pipeline,
             .cell_bg_pipeline = cell_bg_pipeline,
             .image_pipeline = image_pipeline,
             .post_pipelines = post_pipelines,
@@ -81,7 +81,7 @@ pub const Shaders = struct {
 
     pub fn deinit(self: *Shaders, alloc: Allocator) void {
         // Release our primary shaders
-        self.cell_pipeline.msgSend(void, objc.sel("release"), .{});
+        self.cell_text_pipeline.msgSend(void, objc.sel("release"), .{});
         self.cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
         self.image_pipeline.msgSend(void, objc.sel("release"), .{});
         self.library.msgSend(void, objc.sel("release"), .{});
@@ -94,25 +94,6 @@ pub const Shaders = struct {
             alloc.free(self.post_pipelines);
         }
     }
-};
-
-/// This is a single parameter for the terminal cell shader.
-pub const Cell = extern struct {
-    mode: Mode,
-    grid_pos: [2]f32,
-    glyph_pos: [2]u32 = .{ 0, 0 },
-    glyph_size: [2]u32 = .{ 0, 0 },
-    glyph_offset: [2]i32 = .{ 0, 0 },
-    color: [4]u8,
-    bg_color: [4]u8,
-    cell_width: u8,
-
-    pub const Mode = enum(u8) {
-        bg = 1,
-        fg = 2,
-        fg_constrained = 3,
-        fg_color = 7,
-    };
 };
 
 /// Single parameter for the image shader. See shader for field details.
@@ -303,12 +284,31 @@ fn initPostPipeline(
     return pipeline_state;
 }
 
+/// This is a single parameter for the terminal cell shader.
+pub const CellText = extern struct {
+    mode: Mode,
+    grid_pos: [2]f32,
+    glyph_pos: [2]u32 = .{ 0, 0 },
+    glyph_size: [2]u32 = .{ 0, 0 },
+    glyph_offset: [2]i32 = .{ 0, 0 },
+    color: [4]u8,
+    bg_color: [4]u8,
+    cell_width: u8,
+
+    pub const Mode = enum(u8) {
+        bg = 1,
+        fg = 2,
+        fg_constrained = 3,
+        fg_color = 7,
+    };
+};
+
 /// Initialize the cell render pipeline for our shader library.
-fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
+fn initCellTextPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     // Get our vertex and fragment functions
     const func_vert = func_vert: {
         const str = try macos.foundation.String.createWithBytes(
-            "uber_vertex",
+            "cell_text_vertex",
             .utf8,
             false,
         );
@@ -319,7 +319,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     };
     const func_frag = func_frag: {
         const str = try macos.foundation.String.createWithBytes(
-            "uber_fragment",
+            "cell_text_fragment",
             .utf8,
             false,
         );
@@ -353,7 +353,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "mode")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "mode")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -364,7 +364,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "grid_pos")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -375,7 +375,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "glyph_pos")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -386,7 +386,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "glyph_size")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_size")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -397,7 +397,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.int2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "glyph_offset")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_offset")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -408,7 +408,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "color")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -419,7 +419,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "bg_color")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "bg_color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -430,7 +430,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "cell_width")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "cell_width")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
@@ -445,7 +445,7 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
             // Access each Cell per instance, not per vertex.
             layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
-            layout.setProperty("stride", @as(c_ulong, @sizeOf(Cell)));
+            layout.setProperty("stride", @as(c_ulong, @sizeOf(CellText)));
         }
 
         break :vertex_desc desc;
@@ -506,8 +506,8 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 pub const CellBg = extern struct {
     mode: Mode,
     grid_pos: [2]f32,
-    cell_width: u8,
     color: [4]u8,
+    cell_width: u8,
 
     pub const Mode = enum(u8) {
         rgb = 1,
@@ -575,7 +575,7 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "grid_pos")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -586,7 +586,7 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "cell_width")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "cell_width")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
         {
@@ -597,7 +597,7 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
             );
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "color")));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
@@ -612,7 +612,7 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
             // Access each Cell per instance, not per vertex.
             layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
-            layout.setProperty("stride", @as(c_ulong, @sizeOf(Cell)));
+            layout.setProperty("stride", @as(c_ulong, @sizeOf(CellBg)));
         }
 
         break :vertex_desc desc;
@@ -840,11 +840,20 @@ fn checkError(err_: ?*anyopaque) !void {
 // on macOS 12 or Apple Silicon macOS 13.
 //
 // To be safe, we put this test in here.
-test "Cell offsets" {
+test "CellText offsets" {
     const testing = std.testing;
-    const alignment = @alignOf(Cell);
-    inline for (@typeInfo(Cell).Struct.fields) |field| {
-        const offset = @offsetOf(Cell, field.name);
+    const alignment = @alignOf(CellText);
+    inline for (@typeInfo(CellText).Struct.fields) |field| {
+        const offset = @offsetOf(CellText, field.name);
+        try testing.expectEqual(0, @mod(offset, alignment));
+    }
+}
+
+test "CellBg offsets" {
+    const testing = std.testing;
+    const alignment = @alignOf(CellBg);
+    inline for (@typeInfo(CellBg).Struct.fields) |field| {
+        const offset = @offsetOf(CellBg, field.name);
         try testing.expectEqual(0, @mod(offset, alignment));
     }
 }
