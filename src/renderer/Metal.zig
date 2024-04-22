@@ -1260,11 +1260,7 @@ fn drawCellBgs(
     );
 }
 
-/// Loads some set of cell data into our buffer and issues a draw call.
-/// This expects all the Metal command encoder state to be setup.
-///
-/// Future: when we move to multiple shaders, this will go away and
-/// we'll have a draw call per-shader.
+/// Draw the cell foregrounds using the text shader.
 fn drawCellFgs(
     self: *Metal,
     encoder: objc.Object,
