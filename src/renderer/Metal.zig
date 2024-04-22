@@ -927,7 +927,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCells(encoder, frame, frame.cells, self.cells.items.len);
+        try self.drawCellFgs(encoder, frame, self.cells.items.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -1265,11 +1265,10 @@ fn drawCellBgs(
 ///
 /// Future: when we move to multiple shaders, this will go away and
 /// we'll have a draw call per-shader.
-fn drawCells(
+fn drawCellFgs(
     self: *Metal,
     encoder: objc.Object,
     frame: *const FrameState,
-    buf: FrameState.CellTextBuffer,
     len: usize,
 ) !void {
     // This triggers an assertion in the Metal API if we try to draw
@@ -1287,7 +1286,7 @@ fn drawCells(
     encoder.msgSend(
         void,
         objc.sel("setVertexBuffer:offset:atIndex:"),
-        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+        .{ frame.cells.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
     encoder.msgSend(
         void,
