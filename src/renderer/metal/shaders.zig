@@ -103,7 +103,6 @@ pub const Cell = extern struct {
         fg = 2,
         fg_constrained = 3,
         fg_color = 7,
-        strikethrough = 8,
     };
 };
 
@@ -123,10 +122,6 @@ pub const Uniforms = extern struct {
 
     /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32,
-
-    /// Metrics for underline/strikethrough
-    strikethrough_position: f32,
-    strikethrough_thickness: f32,
 
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.

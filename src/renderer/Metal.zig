@@ -452,8 +452,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
-            .strikethrough_position = @floatFromInt(font_critical.metrics.strikethrough_position),
-            .strikethrough_thickness = @floatFromInt(font_critical.metrics.strikethrough_thickness),
             .min_contrast = options.config.min_contrast,
         },
 
@@ -584,8 +582,6 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
             @floatFromInt(metrics.cell_width),
             @floatFromInt(metrics.cell_height),
         },
-        .strikethrough_position = @floatFromInt(metrics.strikethrough_position),
-        .strikethrough_thickness = @floatFromInt(metrics.strikethrough_thickness),
         .min_contrast = self.uniforms.min_contrast,
     };
 }
@@ -1436,8 +1432,6 @@ pub fn setScreenSize(
             @floatFromInt(self.grid_metrics.cell_width),
             @floatFromInt(self.grid_metrics.cell_height),
         },
-        .strikethrough_position = old.strikethrough_position,
-        .strikethrough_thickness = old.strikethrough_thickness,
         .min_contrast = old.min_contrast,
     };
 
@@ -1936,14 +1930,6 @@ fn updateCell(
             .glyph_size = .{ render.glyph.width, render.glyph.height },
             .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
         });
-
-        // self.cells.appendAssumeCapacity(.{
-        //     .mode = .strikethrough,
-        //     .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
-        //     .cell_width = cell.gridWidth(),
-        //     .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-        //     .bg_color = bg,
-        // });
     }
 
     return true;
