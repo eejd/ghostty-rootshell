@@ -122,11 +122,6 @@ custom_shader_state: ?CustomShaderState = null,
 /// this will have to be part of the frame state.
 health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
-/// Sempahore blocking our in-flight buffer updates. For now this is just
-/// one but in the future if we implement double/triple-buffering this
-/// will be incremented.
-inflight: std.Thread.Semaphore = .{ .permits = 1 },
-
 /// Our GPU state
 gpu_state: GPUState,
 
@@ -166,6 +161,21 @@ pub const GPUState = struct {
         // we can cleanly deinit our GPU state.
         for (0..BufferCount) |_| self.frame_sema.wait();
         for (&self.frames) |*frame| frame.deinit();
+    }
+
+    /// Get the next frame state to draw to. This will wait on the
+    /// semaphore to ensure that the frame is available. This must
+    /// always be paired with a call to releaseFrame.
+    pub fn nextFrame(self: *GPUState) *FrameState {
+        self.frame_sema.wait();
+        errdefer self.frame_sema.post();
+        self.frame_index = (self.frame_index + 1) % BufferCount;
+        return &self.frames[self.frame_index];
+    }
+
+    /// This should be called when the frame has completed drawing.
+    pub fn releaseFrame(self: *GPUState) void {
+        self.frame_sema.post();
     }
 };
 
@@ -566,13 +576,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 }
 
 pub fn deinit(self: *Metal) void {
-    // If we have inflight buffers, wait for completion. This ensures that
-    // any pending GPU operations are completed before we start deallocating
-    // everything. This is important because our completion callbacks access
-    // "self"
-    self.inflight.wait();
-
-    // All inflight frames are done, deinit our GPU state.
     self.gpu_state.deinit();
 
     self.cells.deinit(self.alloc);
@@ -812,12 +815,12 @@ pub fn updateFrame(
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
 
-    // Wait for a buffer to be available.
-    self.inflight.wait();
-    errdefer self.inflight.post();
+    // Wait for a frame to be available.
+    const frame = self.gpu_state.nextFrame();
+    errdefer self.gpu_state.releaseFrame();
+    //log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
 
     // Setup our frame data
-    const frame = &self.gpu_state.frames[self.gpu_state.frame_index];
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
     try frame.cells_bg.sync(self.gpu_state.device, self.cells_bg.items);
     try frame.cells.sync(self.gpu_state.device, self.cells.items);
@@ -1036,7 +1039,7 @@ fn bufferCompleted(
     }
 
     // Always release our semaphore
-    self.inflight.post();
+    self.gpu_state.releaseFrame();
 }
 
 fn drawPostShader(
