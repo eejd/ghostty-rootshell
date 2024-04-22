@@ -1918,13 +1918,11 @@ fn updateCell(
             },
         );
 
-        const color = style.underlineColor(palette) orelse colors.fg;
-
         self.cells.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
-            .color = .{ color.r, color.g, color.b, alpha },
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
