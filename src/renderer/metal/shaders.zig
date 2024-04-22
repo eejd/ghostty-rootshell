@@ -18,6 +18,10 @@ pub const Shaders = struct {
     /// foreground.
     cell_pipeline: objc.Object,
 
+    /// The cell background shader is the shader used to render the
+    /// background of terminal cells.
+    cell_bg_pipeline: objc.Object,
+
     /// The image shader is the shader used to render images for things
     /// like the Kitty image protocol.
     image_pipeline: objc.Object,
@@ -43,6 +47,9 @@ pub const Shaders = struct {
         const cell_pipeline = try initCellPipeline(device, library);
         errdefer cell_pipeline.msgSend(void, objc.sel("release"), .{});
 
+        const cell_bg_pipeline = try initCellBgPipeline(device, library);
+        errdefer cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
+
         const image_pipeline = try initImagePipeline(device, library);
         errdefer image_pipeline.msgSend(void, objc.sel("release"), .{});
 
@@ -66,6 +73,7 @@ pub const Shaders = struct {
         return .{
             .library = library,
             .cell_pipeline = cell_pipeline,
+            .cell_bg_pipeline = cell_bg_pipeline,
             .image_pipeline = image_pipeline,
             .post_pipelines = post_pipelines,
         };
@@ -74,6 +82,7 @@ pub const Shaders = struct {
     pub fn deinit(self: *Shaders, alloc: Allocator) void {
         // Release our primary shaders
         self.cell_pipeline.msgSend(void, objc.sel("release"), .{});
+        self.cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
         self.image_pipeline.msgSend(void, objc.sel("release"), .{});
         self.library.msgSend(void, objc.sel("release"), .{});
 
@@ -422,6 +431,173 @@ fn initCellPipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "cell_width")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+
+        // The layout describes how and when we fetch the next vertex input.
+        const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
+        {
+            const layout = layouts.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 0)},
+            );
+
+            // Access each Cell per instance, not per vertex.
+            layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
+            layout.setProperty("stride", @as(c_ulong, @sizeOf(Cell)));
+        }
+
+        break :vertex_desc desc;
+    };
+    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
+
+    // Create our descriptor
+    const desc = init: {
+        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
+        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+        break :init id_init;
+    };
+    defer desc.msgSend(void, objc.sel("release"), .{});
+
+    // Set our properties
+    desc.setProperty("vertexFunction", func_vert);
+    desc.setProperty("fragmentFunction", func_frag);
+    desc.setProperty("vertexDescriptor", vertex_desc);
+
+    // Set our color attachment
+    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+    {
+        const attachment = attachments.msgSend(
+            objc.Object,
+            objc.sel("objectAtIndexedSubscript:"),
+            .{@as(c_ulong, 0)},
+        );
+
+        // Value is MTLPixelFormatBGRA8Unorm
+        attachment.setProperty("pixelFormat", @as(c_ulong, 80));
+
+        // Blending. This is required so that our text we render on top
+        // of our drawable properly blends into the bg.
+        attachment.setProperty("blendingEnabled", true);
+        attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+        attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+    }
+
+    // Make our state
+    var err: ?*anyopaque = null;
+    const pipeline_state = device.msgSend(
+        objc.Object,
+        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
+        .{ desc, &err },
+    );
+    try checkError(err);
+    errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
+
+    return pipeline_state;
+}
+
+/// This is a single parameter for the cell bg shader.
+pub const CellBg = extern struct {
+    mode: Mode,
+    grid_pos: [2]f32,
+    cell_width: u8,
+    color: [4]u8,
+
+    pub const Mode = enum(u8) {
+        rgb = 1,
+    };
+};
+
+/// Initialize the cell background render pipeline for our shader library.
+fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
+    // Get our vertex and fragment functions
+    const func_vert = func_vert: {
+        const str = try macos.foundation.String.createWithBytes(
+            "cell_bg_vertex",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_vert objc.Object.fromId(ptr.?);
+    };
+    defer func_vert.msgSend(void, objc.sel("release"), .{});
+    const func_frag = func_frag: {
+        const str = try macos.foundation.String.createWithBytes(
+            "cell_bg_fragment",
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+        break :func_frag objc.Object.fromId(ptr.?);
+    };
+    defer func_frag.msgSend(void, objc.sel("release"), .{});
+
+    // Create the vertex descriptor. The vertex descriptor describes the
+    // data layout of the vertex inputs. We use indexed (or "instanced")
+    // rendering, so this makes it so that each instance gets a single
+    // Cell as input.
+    const vertex_desc = vertex_desc: {
+        const desc = init: {
+            const Class = objc.getClass("MTLVertexDescriptor").?;
+            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+            break :init id_init;
+        };
+
+        // Our attributes are the fields of the input
+        const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 0)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "mode")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 1)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "grid_pos")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 2)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "cell_width")));
+            attr.setProperty("bufferIndex", @as(c_ulong, 0));
+        }
+        {
+            const attr = attrs.msgSend(
+                objc.Object,
+                objc.sel("objectAtIndexedSubscript:"),
+                .{@as(c_ulong, 3)},
+            );
+
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
+            attr.setProperty("offset", @as(c_ulong, @offsetOf(Cell, "color")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 

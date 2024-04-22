@@ -232,6 +232,78 @@ fragment float4 uber_fragment(VertexOut in [[stage_in]],
 }
 
 //-------------------------------------------------------------------
+// Cell Background Shader
+//-------------------------------------------------------------------
+#pragma mark - Cell BG Shader
+
+// The possible modes that a cell bg entry can take.
+enum CellbgMode : uint8_t {
+  MODE_RGB = 1u,
+};
+
+struct CellBgVertexIn {
+  // The mode for this cell.
+  uint8_t mode [[attribute(0)]];
+
+  // The grid coordinates (x, y) where x < columns and y < rows
+  float2 grid_pos [[attribute(1)]];
+
+  // The width of the cell in cells (i.e. 2 for double-wide).
+  uint8_t cell_width [[attribute(2)]];
+
+  // The color. For BG modes, this is the bg color, for FG modes this is
+  // the text color. For styles, this is the color of the style.
+  uchar4 color [[attribute(3)]];
+};
+
+struct CellBgVertexOut {
+  float4 position [[position]];
+  float4 color;
+};
+
+vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
+                                      CellBgVertexIn input [[stage_in]],
+                                      constant Uniforms& uniforms
+                                      [[buffer(1)]]) {
+  // Convert the grid x,y into world space x, y by accounting for cell size
+  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+
+  // Scaled cell size for the cell width
+  float2 cell_size_scaled = uniforms.cell_size;
+  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
+
+  // Turn the cell position into a vertex point depending on the
+  // vertex ID. Since we use instanced drawing, we have 4 vertices
+  // for each corner of the cell. We can use vertex ID to determine
+  // which one we're looking at. Using this, we can use 1 or 0 to keep
+  // or discard the value for the vertex.
+  //
+  // 0 = top-right
+  // 1 = bot-right
+  // 2 = bot-left
+  // 3 = top-left
+  float2 position;
+  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
+  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+
+  // Calculate the final position of our cell in world space.
+  // We have to add our cell size since our vertices are offset
+  // one cell up and to the left. (Do the math to verify yourself)
+  cell_pos = cell_pos + cell_size_scaled * position;
+
+  CellBgVertexOut out;
+  out.color = float4(input.color) / 255.0f;
+  out.position =
+      uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+
+  return out;
+}
+
+fragment float4 cell_bg_fragment(CellBgVertexOut in [[stage_in]]) {
+  return in.color;
+}
+
+//-------------------------------------------------------------------
 // Image Shader
 //-------------------------------------------------------------------
 #pragma mark - Image Shader

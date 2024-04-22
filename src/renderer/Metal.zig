@@ -920,7 +920,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCells(encoder, frame, frame.cells_bg, self.cells_bg.items.len);
+        try self.drawCellBgs(encoder, frame, self.cells_bg.items.len);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
@@ -1213,6 +1213,50 @@ fn drawImagePlacement(
     );
 
     // log.debug("drawImagePlacement: {}", .{p});
+}
+
+/// Draw the cell backgrounds.
+fn drawCellBgs(
+    self: *Metal,
+    encoder: objc.Object,
+    frame: *const FrameState,
+    len: usize,
+) !void {
+    // This triggers an assertion in the Metal API if we try to draw
+    // with an instance count of 0 so just bail.
+    if (len == 0) return;
+
+    // Use our shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.cell_bg_pipeline.value},
+    );
+
+    // Set our buffers
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.cells_bg.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
+    );
+
+    encoder.msgSend(
+        void,
+        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
+            @as(c_ulong, 6),
+            @intFromEnum(mtl.MTLIndexType.uint16),
+            self.gpu_state.instance.buffer.value,
+            @as(c_ulong, 0),
+            @as(c_ulong, len),
+        },
+    );
 }
 
 /// Loads some set of cell data into our buffer and issues a draw call.
