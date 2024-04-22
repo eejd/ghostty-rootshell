@@ -108,11 +108,8 @@ image_text_end: u32 = 0,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
-buf_instance: InstanceBuffer, // MTLBuffer
 
 /// Metal objects
-device: objc.Object, // MTLDevice
-queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
 
 /// Custom shader state. This is only set if we have custom shaders.
@@ -141,10 +138,26 @@ pub const GPUState = struct {
     frame_sema: std.Thread.Semaphore = .{ .permits = BufferCount },
 
     device: objc.Object, // MTLDevice
+    queue: objc.Object, // MTLCommandQueue
+
+    /// This buffer is written exactly once so we can use it globally.
+    instance: InstanceBuffer, // MTLBuffer
 
     pub fn init() !GPUState {
+        const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
+        const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
+        errdefer queue.msgSend(void, objc.sel("release"), .{});
+
+        var instance = try InstanceBuffer.initFill(device, &.{
+            0, 1, 3, // Top-left triangle
+            1, 2, 3, // Bottom-right triangle
+        });
+        errdefer instance.deinit();
+
         var result: GPUState = .{
-            .device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice()),
+            .device = device,
+            .queue = queue,
+            .instance = instance,
             .frames = undefined,
         };
 
@@ -161,6 +174,8 @@ pub const GPUState = struct {
         // we can cleanly deinit our GPU state.
         for (0..BufferCount) |_| self.frame_sema.wait();
         for (&self.frames) |*frame| frame.deinit();
+        self.instance.deinit();
+        self.queue.msgSend(void, objc.sel("release"), .{});
     }
 
     /// Get the next frame state to draw to. This will wait on the
@@ -423,8 +438,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
 
     // Initialize our metal stuff
-    const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
-    const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
+    var gpu_state = try GPUState.init();
+    errdefer gpu_state.deinit();
 
     // Get our CAMetalLayer
     const layer = switch (builtin.os.tag) {
@@ -438,7 +453,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         else => @compileError("unsupported target for Metal"),
     };
-    layer.setProperty("device", device.value);
+    layer.setProperty("device", gpu_state.device.value);
     layer.setProperty("opaque", options.config.background_opacity >= 1);
     layer.setProperty("displaySyncEnabled", false); // disable v-sync
 
@@ -467,13 +482,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     });
     errdefer font_shaper.deinit();
 
-    // Vertex buffers
-    var buf_instance = try InstanceBuffer.initFill(device, &.{
-        0, 1, 3, // Top-left triangle
-        1, 2, 3, // Bottom-right triangle
-    });
-    errdefer buf_instance.deinit();
-
     // Load our custom shaders
     const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
         arena_alloc,
@@ -489,7 +497,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         if (custom_shaders.len == 0) break :state null;
 
         // Build our sampler for our texture
-        var sampler = try mtl_sampler.Sampler.init(device);
+        var sampler = try mtl_sampler.Sampler.init(gpu_state.device);
         errdefer sampler.deinit();
 
         break :state .{
@@ -517,7 +525,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer if (custom_shader_state) |*state| state.deinit();
 
     // Initialize our shaders
-    var shaders = try Shaders.init(alloc, device, custom_shaders);
+    var shaders = try Shaders.init(alloc, gpu_state.device, custom_shaders);
     errdefer shaders.deinit(alloc);
 
     // Initialize all the data that requires a critical font section.
@@ -531,10 +539,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .metrics = grid.metrics,
         };
     };
-
-    // Build our GPU state
-    var gpu_state = try GPUState.init();
-    errdefer gpu_state.deinit();
 
     return Metal{
         .alloc = alloc,
@@ -564,11 +568,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Shaders
         .shaders = shaders,
-        .buf_instance = buf_instance,
 
         // Metal stuff
-        .device = device,
-        .queue = queue,
         .layer = layer,
         .custom_shader_state = custom_shader_state,
         .gpu_state = gpu_state,
@@ -591,9 +592,6 @@ pub fn deinit(self: *Metal) void {
         self.images.deinit(self.alloc);
     }
     self.image_placements.deinit(self.alloc);
-
-    self.buf_instance.deinit();
-    self.queue.msgSend(void, objc.sel("release"), .{});
 
     if (self.custom_shader_state) |*state| state.deinit();
 
@@ -797,7 +795,7 @@ pub fn updateFrame(
                 .replace_grey_alpha,
                 .replace_rgb,
                 .replace_rgba,
-                => try kv.value_ptr.image.upload(self.alloc, self.device),
+                => try kv.value_ptr.image.upload(self.alloc, self.gpu_state.device),
 
                 .unload_pending,
                 .unload_replace,
@@ -858,7 +856,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
         frame.greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &frame.greyscale);
+        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_greyscale, &frame.greyscale);
     }
     texture: {
         const modified = self.font_grid.atlas_color.modified.load(.monotonic);
@@ -866,11 +864,11 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
         frame.color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &frame.color);
+        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_color, &frame.color);
     }
 
     // Command buffer (MTLCommandBuffer)
-    const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
+    const buffer = self.gpu_state.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
 
     {
         // MTLRenderPassDescriptor
@@ -1150,7 +1148,7 @@ fn drawImagePlacement(
     // Create our vertex buffer, which is always exactly one item.
     // future(mitchellh): we can group rendering multiple instances of a single image
     const Buffer = mtl_buffer.Buffer(mtl_shaders.Image);
-    var buf = try Buffer.initFill(self.device, &.{.{
+    var buf = try Buffer.initFill(self.gpu_state.device, &.{.{
         .grid_pos = .{
             @as(f32, @floatFromInt(p.x)),
             @as(f32, @floatFromInt(p.y)),
@@ -1208,7 +1206,7 @@ fn drawImagePlacement(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            self.buf_instance.buffer.value,
+            self.gpu_state.instance.buffer.value,
             @as(c_ulong, 0),
             @as(c_ulong, 1),
         },
@@ -1271,7 +1269,7 @@ fn drawCells(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            self.buf_instance.buffer.value,
+            self.gpu_state.instance.buffer.value,
             @as(c_ulong, 0),
             @as(c_ulong, len),
         },
@@ -1573,7 +1571,7 @@ pub fn setScreenSize(
 
             // If we fail to create the texture, then we just don't have a screen
             // texture and our custom shaders won't run.
-            const id = self.device.msgSend(
+            const id = self.gpu_state.device.msgSend(
                 ?*anyopaque,
                 objc.sel("newTextureWithDescriptor:"),
                 .{desc},
