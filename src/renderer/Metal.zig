@@ -816,7 +816,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // Wait for a frame to be available.
     const frame = self.gpu_state.nextFrame();
     errdefer self.gpu_state.releaseFrame();
-    //log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
+    // log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
 
     // Setup our frame data
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
@@ -1227,6 +1227,10 @@ fn drawCells(
     buf: CellBuffer,
     len: usize,
 ) !void {
+    // This triggers an assertion in the Metal API if we try to draw
+    // with an instance count of 0 so just bail.
+    if (len == 0) return;
+
     // Use our shader pipeline
     encoder.msgSend(
         void,
