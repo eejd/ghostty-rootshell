@@ -1914,13 +1914,36 @@ fn updateCell(
     }
 
     if (style.flags.strikethrough) {
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(font.Sprite.strikethrough),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
+        const color = style.underlineColor(palette) orelse colors.fg;
+
         self.cells.appendAssumeCapacity(.{
-            .mode = .strikethrough,
+            .mode = .fg,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .color = .{ color.r, color.g, color.b, alpha },
             .bg_color = bg,
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
         });
+
+        // self.cells.appendAssumeCapacity(.{
+        //     .mode = .strikethrough,
+        //     .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        //     .cell_width = cell.gridWidth(),
+        //     .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+        //     .bg_color = bg,
+        // });
     }
 
     return true;

@@ -129,6 +129,7 @@ fn reloadMetrics(self: *SharedGrid, thicken: bool) !void {
         .thickness = self.metrics.underline_thickness *
             @as(u32, if (thicken) 2 else 1),
         .underline_position = self.metrics.underline_position,
+        .strikethrough_position = self.metrics.strikethrough_position,
     };
 }
 

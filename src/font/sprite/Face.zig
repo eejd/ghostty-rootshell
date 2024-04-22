@@ -30,10 +30,16 @@ height: u32,
 
 /// Base thickness value for lines of sprites. This is in pixels. If you
 /// want to do any DPI scaling, it is expected to be done earlier.
-thickness: u32,
+thickness: u32 = 1,
 
 /// The position of the underline.
 underline_position: u32 = 0,
+
+/// The position of the strikethrough.
+// NOTE(mitchellh): We don't use a dedicated strikethrough thickness
+// setting yet but fonts can in theory set this. If this becomes an
+// issue in practice we can add it here.
+strikethrough_position: u32 = 0,
 
 /// Returns true if the codepoint exists in our sprite font.
 pub fn hasCodepoint(self: Face, cp: u32, p: ?font.Presentation) bool {
@@ -113,6 +119,16 @@ pub fn renderGlyph(
             self.thickness,
         ),
 
+        .strikethrough => try underline.renderGlyph(
+            alloc,
+            atlas,
+            @enumFromInt(cp),
+            width,
+            self.height,
+            self.strikethrough_position,
+            self.thickness,
+        ),
+
         .powerline => powerline: {
             const f: Powerline = .{
                 .width = width,
@@ -129,6 +145,7 @@ pub fn renderGlyph(
 const Kind = enum {
     box,
     underline,
+    strikethrough,
     powerline,
 
     pub fn init(cp: u32) ?Kind {
@@ -140,6 +157,9 @@ const Kind = enum {
                 .underline_dashed,
                 .underline_curly,
                 => .underline,
+
+                .strikethrough,
+                => .strikethrough,
 
                 .cursor_rect,
                 .cursor_hollow_rect,
@@ -189,3 +209,7 @@ const Kind = enum {
         };
     }
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
