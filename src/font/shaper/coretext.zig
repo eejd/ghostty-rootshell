@@ -1463,7 +1463,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
 
     const grid_ptr = try alloc.create(SharedGrid);
     errdefer alloc.destroy(grid_ptr);
-    grid_ptr.* = try SharedGrid.init(alloc, .{ .collection = c }, false);
+    grid_ptr.* = try SharedGrid.init(alloc, .{ .collection = c });
     errdefer grid_ptr.*.deinit(alloc);
 
     var shaper = try Shaper.init(alloc, .{});
