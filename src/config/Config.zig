@@ -184,6 +184,7 @@ const c = @cImport({
 @"adjust-underline-thickness": ?MetricModifier = null,
 @"adjust-strikethrough-position": ?MetricModifier = null,
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
+@"adjust-cursor-thickness": ?MetricModifier = null,
 
 /// The method to use for calculating the cell width of a grapheme cluster.
 /// The default value is `unicode` which uses the Unicode standard to determine

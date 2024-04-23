@@ -21,6 +21,10 @@ underline_thickness: u32,
 strikethrough_position: u32,
 strikethrough_thickness: u32,
 
+/// The thickness in pixels of the cursor sprite. This has a default value
+/// because it is not determined by fonts but rather by user configuration.
+cursor_thickness: u32 = 1,
+
 /// Original cell width and height. These are used to render the cursor
 /// in the original cell size after modification.
 original_cell_width: ?u32 = null,

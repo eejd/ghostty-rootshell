@@ -74,12 +74,20 @@ pub fn renderGlyph(
     // Safe to ".?" because of the above assertion.
     return switch (Kind.init(cp).?) {
         .box => box: {
+            const thickness = switch (cp) {
+                @intFromEnum(Sprite.cursor_rect),
+                @intFromEnum(Sprite.cursor_hollow_rect),
+                @intFromEnum(Sprite.cursor_bar),
+                => if (opts.grid_metrics) |m| m.cursor_thickness else self.thickness,
+                else => self.thickness,
+            };
+
             const f: Box, const y_offset: u32 = face: {
                 // Expected, usual values.
                 var f: Box = .{
                     .width = width,
                     .height = self.height,
-                    .thickness = self.thickness,
+                    .thickness = thickness,
                 };
 
                 // If the codepoint is unadjusted then we want to adjust

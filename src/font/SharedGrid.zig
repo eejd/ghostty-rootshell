@@ -73,7 +73,6 @@ lock: std.Thread.RwLock,
 pub fn init(
     alloc: Allocator,
     resolver: CodepointResolver,
-    thicken: bool,
 ) !SharedGrid {
     // We need to support loading options since we use the size data
     assert(resolver.collection.load_options != null);
@@ -97,7 +96,7 @@ pub fn init(
     try result.glyphs.ensureTotalCapacity(alloc, 128);
 
     // Initialize our metrics.
-    try result.reloadMetrics(thicken);
+    try result.reloadMetrics();
 
     return result;
 }
@@ -111,7 +110,7 @@ pub fn deinit(self: *SharedGrid, alloc: Allocator) void {
     self.resolver.deinit(alloc);
 }
 
-fn reloadMetrics(self: *SharedGrid, thicken: bool) !void {
+fn reloadMetrics(self: *SharedGrid) !void {
     // Get our cell metrics based on a regular font ascii 'M'. Why 'M'?
     // Doesn't matter, any normal ASCII will do we're just trying to make
     // sure we use the regular font.
@@ -126,8 +125,7 @@ fn reloadMetrics(self: *SharedGrid, thicken: bool) !void {
     self.resolver.sprite = .{
         .width = self.metrics.cell_width,
         .height = self.metrics.cell_height,
-        .thickness = self.metrics.underline_thickness *
-            @as(u32, if (thicken) 2 else 1),
+        .thickness = self.metrics.underline_thickness,
         .underline_position = self.metrics.underline_position,
         .strikethrough_position = self.metrics.strikethrough_position,
     };
@@ -326,7 +324,7 @@ fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
     var r: CodepointResolver = .{ .collection = c };
     errdefer r.deinit(alloc);
 
-    return try init(alloc, r, false);
+    return try init(alloc, r);
 }
 
 test getIndex {
