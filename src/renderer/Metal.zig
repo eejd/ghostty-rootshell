@@ -90,7 +90,8 @@ current_background_color: terminal.color.RGB,
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
 cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
-cells: std.ArrayListUnmanaged(mtl_shaders.CellText),
+cells_text: std.ArrayListUnmanaged(mtl_shaders.CellText),
+cells: CellContents,
 
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
@@ -120,6 +121,76 @@ health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
 /// Our GPU state
 gpu_state: GPUState,
+
+/// The contents of all the cells in the terminal.
+const CellContents = struct {
+    /// The possible cell content keys that exist.
+    const Key = enum { bg, text, underline, strikethrough };
+
+    /// The map contains the mapping of cell content for every cell in the
+    /// terminal to the index in the cells array that the content is at.
+    /// This is ALWAYS sized to exactly (rows * cols) so we want to keep
+    /// this as small as possible.
+    map: []const Map = &.{},
+
+    /// The actual GPU data (on the CPU) for all the cells in the terminal.
+    /// This only contains the cells that have content set. To determine
+    /// if a cell has content set, we check the map.
+    ///
+    /// This data is synced to a buffer on every frame.
+    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg) = .{},
+    text: std.ArrayListUnmanaged(mtl_shaders.CellText) = .{},
+
+    pub fn deinit(self: *CellContents, alloc: Allocator) void {
+        alloc.free(self.map);
+        self.bgs.deinit(alloc);
+        self.text.deinit(alloc);
+    }
+
+    /// Resize the cell contents for the given grid size. This will
+    /// always invalidate the entire cell contents.
+    pub fn resize(
+        self: *CellContents,
+        alloc: Allocator,
+        size: renderer.GridSize,
+    ) !void {
+        const map = try alloc.alloc(Map, size.rows * size.columns);
+        errdefer alloc.free(map);
+        @memset(map, .{});
+
+        alloc.free(self.map);
+        self.map = map;
+        self.bgs.clearAndFree(alloc);
+        self.text.clearAndFree(alloc);
+    }
+
+    /// Structures related to the contents of the cell.
+    const Map = struct {
+        /// The set of cell content mappings for a given cell for every
+        /// possible key. This is used to determine if a cell has a given
+        /// type of content (i.e. an underlyine styling) and if so what index
+        /// in the cells array that content is at.
+        const Array = std.EnumArray(Key, Mapping);
+
+        /// The mapping for a given key consists of a bit indicating if the
+        /// content is set and the index in the cells array that the content
+        /// is at. We pack this into a 32-bit integer so we only use 4 bytes
+        /// per possible cell content type.
+        const Mapping = packed struct(u32) {
+            set: bool = false,
+            index: u31 = 0,
+        };
+
+        /// The backing array of mappings.
+        array: Array = Array.initFill(.{}),
+    };
+};
+
+test "CellContents.Map size" {
+    // We want to be mindful of when this increases because it affects
+    // renderer memory significantly.
+    try std.testing.expectEqual(@as(usize, 16), @sizeOf(CellContents.Map));
+}
 
 /// State we need for the GPU that is shared between all frames.
 pub const GPUState = struct {
@@ -556,6 +627,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Render state
         .cells_bg = .{},
+        .cells_text = .{},
         .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
@@ -582,6 +654,7 @@ pub fn deinit(self: *Metal) void {
 
     self.cells.deinit(self.alloc);
     self.cells_bg.deinit(self.alloc);
+    self.cells_text.deinit(self.alloc);
 
     self.font_shaper.deinit();
 
@@ -822,7 +895,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // Setup our frame data
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
     try frame.cells_bg.sync(self.gpu_state.device, self.cells_bg.items);
-    try frame.cells.sync(self.gpu_state.device, self.cells.items);
+    try frame.cells.sync(self.gpu_state.device, self.cells_text.items);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -927,7 +1000,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCellFgs(encoder, frame, self.cells.items.len);
+        try self.drawCellFgs(encoder, frame, self.cells_text.items.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -1577,8 +1650,11 @@ pub fn setScreenSize(
     // Reset our buffer sizes so that we free memory when the screen shrinks.
     // This could be made more clever by only doing this when the screen
     // shrinks but the performance cost really isn't that much.
-    self.cells.clearAndFree(self.alloc);
+    self.cells_text.clearAndFree(self.alloc);
     self.cells_bg.clearAndFree(self.alloc);
+
+    // Reset our cell contents.
+    try self.cells.resize(self.alloc, grid_size);
 
     // If we have custom shaders then we update the state
     if (self.custom_shader_state) |*state| {
@@ -1650,8 +1726,8 @@ fn rebuildCells(
     );
 
     // Over-allocate just to ensure we don't allocate again during loops.
-    self.cells.clearRetainingCapacity();
-    try self.cells.ensureTotalCapacity(
+    self.cells_text.clearRetainingCapacity();
+    try self.cells_text.ensureTotalCapacity(
         self.alloc,
 
         // * 3 for glyph + underline + strikethrough for each cell
@@ -1726,13 +1802,13 @@ fn rebuildCells(
 
         // If this is the row with our cursor, then we may have to modify
         // the cell with the cursor.
-        const start_i: usize = self.cells.items.len;
+        const start_i: usize = self.cells_text.items.len;
         defer if (cursor_row) {
             // If we're on a wide spacer tail, then we want to look for
             // the previous cell.
             const screen_cell = row.cells(.all)[screen.cursor.x];
             const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
-            for (self.cells.items[start_i..]) |cell| {
+            for (self.cells_text.items[start_i..]) |cell| {
                 if (cell.grid_pos[0] == @as(f32, @floatFromInt(x)) and
                     (cell.mode == .fg or cell.mode == .fg_color))
                 {
@@ -1840,7 +1916,7 @@ fn rebuildCells(
                     .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
             }
 
-            self.cells.appendAssumeCapacity(cell.*);
+            self.cells_text.appendAssumeCapacity(cell.*);
         }
     }
 }
@@ -1990,7 +2066,7 @@ fn updateCell(
             .constrained => .fg_constrained,
         };
 
-        self.cells.appendAssumeCapacity(.{
+        self.cells_text.appendAssumeCapacity(.{
             .mode = mode,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
@@ -2027,7 +2103,7 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        self.cells.appendAssumeCapacity(.{
+        self.cells_text.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
@@ -2050,7 +2126,7 @@ fn updateCell(
             },
         );
 
-        self.cells.appendAssumeCapacity(.{
+        self.cells_text.appendAssumeCapacity(.{
             .mode = .fg,
             .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
             .cell_width = cell.gridWidth(),
@@ -2110,7 +2186,7 @@ fn addCursor(
         return null;
     };
 
-    self.cells.appendAssumeCapacity(.{
+    self.cells_text.appendAssumeCapacity(.{
         .mode = .fg,
         .grid_pos = .{
             @as(f32, @floatFromInt(x)),
@@ -2124,7 +2200,7 @@ fn addCursor(
         .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
 
-    return &self.cells.items[self.cells.items.len - 1];
+    return &self.cells_text.items[self.cells_text.items.len - 1];
 }
 
 fn addPreeditCell(
@@ -2162,7 +2238,7 @@ fn addPreeditCell(
     });
 
     // Add our text
-    self.cells.appendAssumeCapacity(.{
+    self.cells_text.appendAssumeCapacity(.{
         .mode = .fg,
         .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
         .cell_width = if (cp.wide) 2 else 1,
