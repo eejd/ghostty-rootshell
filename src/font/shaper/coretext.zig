@@ -379,7 +379,6 @@ pub const Shaper = struct {
 
         pub fn prepare(self: *RunIteratorHook) !void {
             try self.shaper.run_state.reset();
-            // log.warn("----------- run reset -------------", .{});
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
@@ -398,7 +397,6 @@ pub const Shaper = struct {
                 .codepoint = cp,
                 .cluster = cluster,
             });
-            // log.warn("run cp={X}", .{cp});
 
             // If the UTF-16 codepoint is a pair then we need to insert
             // a dummy entry so that the CTRunGetStringIndices() function
