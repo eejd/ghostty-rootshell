@@ -242,7 +242,7 @@ pub const Face = struct {
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
         // Get the bounding rect for rendering this glyph.
-        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
+        const rect = self.font.getBoundingRectsForGlyphs(.horizontal, &glyphs, null);
 
         // The x/y that we render the glyph at. The Y value has to be flipped
         // because our coordinates in 3D space are (0, 0) bottom left with
