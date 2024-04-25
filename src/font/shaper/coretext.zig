@@ -304,19 +304,16 @@ pub const Shaper = struct {
 
             // Get our glyphs and positions
             const glyphs = try ctrun.getGlyphs(alloc);
-            const positions = try ctrun.getPositions(alloc);
             const advances = try ctrun.getAdvances(alloc);
             const indices = try ctrun.getStringIndices(alloc);
-            assert(glyphs.len == positions.len);
             assert(glyphs.len == advances.len);
             assert(glyphs.len == indices.len);
 
             for (
                 glyphs,
-                positions,
                 advances,
                 indices,
-            ) |glyph, pos, advance, index| {
+            ) |glyph, advance, index| {
                 try self.cell_buf.ensureUnusedCapacity(
                     self.alloc,
                     glyphs.len,
@@ -351,15 +348,7 @@ pub const Shaper = struct {
                 // Advances apply to the NEXT cell.
                 cell_offset.x += advance.width;
                 cell_offset.y += advance.height;
-
-                _ = pos;
-                // const i = self.cell_buf.items.len - 1;
-                // log.warn(
-                //     "i={} codepoint={} glyph={} pos={} advance={} index={} cluster={}",
-                //     .{ i, self.codepoints.items[index].codepoint, glyph, pos, advance, index, cluster },
-                // );
             }
-            //log.warn("-------------------------------", .{});
         }
 
         // If our last cell doesn't match our last cluster then we have

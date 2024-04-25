@@ -396,7 +396,6 @@ pub const Face = struct {
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
-            //const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
             const baseline_from_bottom: f64 = @floatFromInt(metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We
@@ -424,18 +423,6 @@ pub const Face = struct {
         // Get our advance
         var advances: [glyphs.len]macos.graphics.Size = undefined;
         _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
-
-        // std.log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
-        //     rect,
-        //     width,
-        //     height,
-        //     render_x,
-        //     render_y,
-        //     offset_y,
-        //     glyph_ascent,
-        //     self.metrics.cell_height,
-        //     self.metrics.cell_baseline,
-        // });
 
         return .{
             .width = width,
@@ -537,9 +524,6 @@ pub const Face = struct {
             .strikethrough_position = @intFromFloat(strikethrough_position),
             .strikethrough_thickness = @intFromFloat(strikethrough_thickness),
         };
-
-        // std.log.warn("font size size={d}", .{ct_font.getSize()});
-        // std.log.warn("font metrics={}", .{result});
 
         return result;
     }
