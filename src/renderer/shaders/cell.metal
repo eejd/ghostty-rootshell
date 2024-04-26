@@ -70,7 +70,7 @@ struct CellBgVertexIn {
   uint8_t mode [[attribute(0)]];
 
   // The grid coordinates (x, y) where x < columns and y < rows
-  float2 grid_pos [[attribute(1)]];
+  ushort2 grid_pos [[attribute(1)]];
 
   // The color. For BG modes, this is the bg color, for FG modes this is
   // the text color. For styles, this is the color of the style.
@@ -90,7 +90,7 @@ vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
                                       constant Uniforms& uniforms
                                       [[buffer(1)]]) {
   // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+  float2 cell_pos = uniforms.cell_size * float2(input.grid_pos);
 
   // Scaled cell size for the cell width
   float2 cell_size_scaled = uniforms.cell_size;
@@ -144,7 +144,7 @@ struct CellTextVertexIn {
   uint8_t mode [[attribute(0)]];
 
   // The grid coordinates (x, y) where x < columns and y < rows
-  float2 grid_pos [[attribute(1)]];
+  ushort2 grid_pos [[attribute(1)]];
 
   // The width of the cell in cells (i.e. 2 for double-wide).
   uint8_t cell_width [[attribute(6)]];
@@ -180,7 +180,7 @@ vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
                                           constant Uniforms& uniforms
                                           [[buffer(1)]]) {
   // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * input.grid_pos;
+  float2 cell_pos = uniforms.cell_size * float2(input.grid_pos);
 
   // Scaled cell size for the cell width
   float2 cell_size_scaled = uniforms.cell_size;

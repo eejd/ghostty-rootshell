@@ -50,6 +50,7 @@ pub const MTLIndexType = enum(c_ulong) {
 /// https://developer.apple.com/documentation/metal/mtlvertexformat?language=objc
 pub const MTLVertexFormat = enum(c_ulong) {
     uchar4 = 3,
+    ushort2 = 13,
     float2 = 29,
     float4 = 31,
     int2 = 33,

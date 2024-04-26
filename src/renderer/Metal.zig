@@ -1751,8 +1751,8 @@ fn rebuildCells(
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
     const preedit_range: ?struct {
-        y: usize,
-        x: [2]usize,
+        y: terminal.size.CellCountInt,
+        x: [2]terminal.size.CellCountInt,
         cp_offset: usize,
     } = if (preedit) |preedit_v| preedit: {
         const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
@@ -1770,7 +1770,7 @@ fn rebuildCells(
 
     // Build each cell
     var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: usize = 0;
+    var y: terminal.size.CellCountInt = 0;
     while (row_it.next()) |row| {
         defer y += 1;
 
@@ -1809,7 +1809,7 @@ fn rebuildCells(
             const screen_cell = row.cells(.all)[screen.cursor.x];
             const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
             for (self.cells_text.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == @as(f32, @floatFromInt(x)) and
+                if (cell.grid_pos[0] == x and
                     (cell.mode == .fg or cell.mode == .fg_color))
                 {
                     cursor_cell = cell;
@@ -1929,8 +1929,8 @@ fn updateCell(
     palette: *const terminal.color.Palette,
     shaper_cell: font.shape.Cell,
     shaper_run: font.shape.TextRun,
-    x: usize,
-    y: usize,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
 ) !bool {
     const BgFg = struct {
         /// Background is optional because in un-inverted mode
@@ -2031,7 +2031,7 @@ fn updateCell(
 
         self.cells_bg.appendAssumeCapacity(.{
             .mode = .rgb,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ x, y },
             .cell_width = cell.gridWidth(),
             .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
         });
@@ -2068,7 +2068,7 @@ fn updateCell(
 
         self.cells_text.appendAssumeCapacity(.{
             .mode = mode,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ x, y },
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
@@ -2105,7 +2105,7 @@ fn updateCell(
 
         self.cells_text.appendAssumeCapacity(.{
             .mode = .fg,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ x, y },
             .cell_width = cell.gridWidth(),
             .color = .{ color.r, color.g, color.b, alpha },
             .bg_color = bg,
@@ -2128,7 +2128,7 @@ fn updateCell(
 
         self.cells_text.appendAssumeCapacity(.{
             .mode = .fg,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ x, y },
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
@@ -2188,10 +2188,7 @@ fn addCursor(
 
     self.cells_text.appendAssumeCapacity(.{
         .mode = .fg,
-        .grid_pos = .{
-            @as(f32, @floatFromInt(x)),
-            @as(f32, @floatFromInt(screen.cursor.y)),
-        },
+        .grid_pos = .{ x, screen.cursor.y },
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
         .bg_color = .{ 0, 0, 0, 0 },
@@ -2206,8 +2203,8 @@ fn addCursor(
 fn addPreeditCell(
     self: *Metal,
     cp: renderer.State.Preedit.Codepoint,
-    x: usize,
-    y: usize,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
 ) !void {
     // Preedit is rendered inverted
     const bg = self.foreground_color;
@@ -2232,7 +2229,7 @@ fn addPreeditCell(
     // Add our opaque background cell
     self.cells_bg.appendAssumeCapacity(.{
         .mode = .rgb,
-        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        .grid_pos = .{ x, y },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ bg.r, bg.g, bg.b, 255 },
     });
@@ -2240,7 +2237,7 @@ fn addPreeditCell(
     // Add our text
     self.cells_text.appendAssumeCapacity(.{
         .mode = .fg,
-        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        .grid_pos = .{ x, y },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
         .bg_color = .{ bg.r, bg.g, bg.b, 255 },

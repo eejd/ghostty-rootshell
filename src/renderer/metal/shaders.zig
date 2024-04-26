@@ -287,7 +287,7 @@ fn initPostPipeline(
 /// This is a single parameter for the terminal cell shader.
 pub const CellText = extern struct {
     mode: Mode,
-    grid_pos: [2]f32,
+    grid_pos: [2]u16,
     glyph_pos: [2]u32 = .{ 0, 0 },
     glyph_size: [2]u32 = .{ 0, 0 },
     glyph_offset: [2]i32 = .{ 0, 0 },
@@ -363,7 +363,7 @@ fn initCellTextPipeline(device: objc.Object, library: objc.Object) !objc.Object 
                 .{@as(c_ulong, 1)},
             );
 
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.ushort2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
@@ -505,7 +505,7 @@ fn initCellTextPipeline(device: objc.Object, library: objc.Object) !objc.Object 
 /// This is a single parameter for the cell bg shader.
 pub const CellBg = extern struct {
     mode: Mode,
-    grid_pos: [2]f32,
+    grid_pos: [2]u16,
     color: [4]u8,
     cell_width: u8,
 
@@ -574,7 +574,7 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 1)},
             );
 
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
+            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.ushort2));
             attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "grid_pos")));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
