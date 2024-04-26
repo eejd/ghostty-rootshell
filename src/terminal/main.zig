@@ -25,6 +25,7 @@ pub const Charset = charsets.Charset;
 pub const CharsetSlot = charsets.Slots;
 pub const CharsetActiveSlot = charsets.ActiveSlot;
 pub const Cell = page.Cell;
+pub const Coordinate = point.Coordinate;
 pub const CSI = Parser.Action.CSI;
 pub const DCS = Parser.Action.DCS;
 pub const MouseShape = @import("mouse_shape.zig").MouseShape;
