@@ -424,6 +424,18 @@ pub const Face = struct {
         var advances: [glyphs.len]macos.graphics.Size = undefined;
         _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
 
+        // std.log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
+        //     rect,
+        //     width,
+        //     height,
+        //     render_x,
+        //     render_y,
+        //     offset_y,
+        //     glyph_ascent,
+        //     self.metrics.cell_height,
+        //     self.metrics.cell_baseline,
+        // });
+
         return .{
             .width = width,
             .height = height,
@@ -524,6 +536,9 @@ pub const Face = struct {
             .strikethrough_position = @intFromFloat(strikethrough_position),
             .strikethrough_thickness = @intFromFloat(strikethrough_thickness),
         };
+
+        // std.log.warn("font size size={d}", .{ct_font.getSize()});
+        // std.log.warn("font metrics={}", .{result});
 
         return result;
     }
