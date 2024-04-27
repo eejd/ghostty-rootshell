@@ -1421,7 +1421,7 @@ fn resizeWithoutReflowGrowCols(
 
     // Keeps track of all our copied rows. Assertions at the end is that
     // we copied exactly our page size.
-    var copied: usize = 0;
+    var copied: size.CellCountInt = 0;
 
     // This function has an unfortunate side effect in that it causes memory
     // fragmentation on rows if the columns are increasing in a way that
@@ -2545,7 +2545,7 @@ pub fn cellIterator(
 pub const RowIterator = struct {
     page_it: PageIterator,
     chunk: ?PageIterator.Chunk = null,
-    offset: usize = 0,
+    offset: size.CellCountInt = 0,
 
     pub fn next(self: *RowIterator) ?Pin {
         const chunk = self.chunk orelse return null;
@@ -2767,8 +2767,8 @@ pub const PageIterator = struct {
 
     pub const Chunk = struct {
         page: *List.Node,
-        start: usize,
-        end: usize,
+        start: size.CellCountInt,
+        end: size.CellCountInt,
 
         pub fn rows(self: Chunk) []Row {
             const rows_ptr = self.page.data.rows.ptr(self.page.data.memory);
@@ -2944,8 +2944,8 @@ fn growRows(self: *PageList, n: usize) !void {
 /// should limit the number of active pins as much as possible.
 pub const Pin = struct {
     page: *List.Node,
-    y: usize = 0,
-    x: usize = 0,
+    y: size.CellCountInt = 0,
+    x: size.CellCountInt = 0,
 
     pub fn rowAndCell(self: Pin) struct {
         row: *pagepkg.Row,
@@ -3104,7 +3104,7 @@ pub const Pin = struct {
     pub fn left(self: Pin, n: usize) Pin {
         assert(n <= self.x);
         var result = self;
-        result.x -= n;
+        result.x -= std.math.cast(size.CellCountInt, n) orelse result.x;
         return result;
     }
 
@@ -3112,7 +3112,8 @@ pub const Pin = struct {
     pub fn right(self: Pin, n: usize) Pin {
         assert(self.x + n < self.page.data.size.cols);
         var result = self;
-        result.x += n;
+        result.x +|= std.math.cast(size.CellCountInt, n) orelse
+            std.math.maxInt(size.CellCountInt);
         return result;
     }
 
@@ -3147,7 +3148,8 @@ pub const Pin = struct {
         const rows = self.page.data.size.rows - (self.y + 1);
         if (n <= rows) return .{ .offset = .{
             .page = self.page,
-            .y = n + self.y,
+            .y = std.math.cast(size.CellCountInt, self.y + n) orelse
+                std.math.maxInt(size.CellCountInt),
             .x = self.x,
         } };
 
@@ -3165,7 +3167,8 @@ pub const Pin = struct {
             } };
             if (n_left <= page.data.size.rows) return .{ .offset = .{
                 .page = page,
-                .y = n_left - 1,
+                .y = std.math.cast(size.CellCountInt, n_left - 1) orelse
+                    std.math.maxInt(size.CellCountInt),
                 .x = self.x,
             } };
             n_left -= page.data.size.rows;
@@ -3184,7 +3187,8 @@ pub const Pin = struct {
         // Index fits within this page
         if (n <= self.y) return .{ .offset = .{
             .page = self.page,
-            .y = self.y - n,
+            .y = std.math.cast(size.CellCountInt, self.y - n) orelse
+                std.math.maxInt(size.CellCountInt),
             .x = self.x,
         } };
 
@@ -3198,7 +3202,8 @@ pub const Pin = struct {
             } };
             if (n_left <= page.data.size.rows) return .{ .offset = .{
                 .page = page,
-                .y = page.data.size.rows - n_left,
+                .y = std.math.cast(size.CellCountInt, page.data.size.rows - n_left) orelse
+                    std.math.maxInt(size.CellCountInt),
                 .x = self.x,
             } };
             n_left -= page.data.size.rows;
@@ -3210,8 +3215,8 @@ const Cell = struct {
     page: *List.Node,
     row: *pagepkg.Row,
     cell: *pagepkg.Cell,
-    row_idx: usize,
-    col_idx: usize,
+    row_idx: size.CellCountInt,
+    col_idx: size.CellCountInt,
 
     /// Get the cell style.
     ///
@@ -3231,7 +3236,7 @@ const Cell = struct {
     /// this file then consider a different approach and ask yourself very
     /// carefully if you really need this.
     pub fn screenPoint(self: Cell) point.Point {
-        var y: usize = self.row_idx;
+        var y: size.CellCountInt = self.row_idx;
         var page = self.page;
         while (page.prev) |prev| {
             y += prev.data.size.rows;
@@ -3402,7 +3407,7 @@ test "PageList pointFromPin traverse pages" {
 
         try testing.expectEqual(point.Point{
             .screen = .{
-                .y = expected_y,
+                .y = @intCast(expected_y),
                 .x = 2,
             },
         }, s.pointFromPin(.screen, .{
@@ -5629,7 +5634,7 @@ test "PageList resize (no reflow) more rows adds blank rows if cursor at bottom"
 
     // Go through our active, we should get only 3,4,5
     for (0..3) |y| {
-        const get = s.getCell(.{ .active = .{ .y = y } }).?;
+        const get = s.getCell(.{ .active = .{ .y = @intCast(y) } }).?;
         const expected: u21 = @intCast(y + 2);
         try testing.expectEqual(expected, get.cell.content.codepoint);
     }
@@ -6557,7 +6562,7 @@ test "PageList resize reflow less cols no wrapped rows" {
     while (it.next()) |offset| {
         for (0..4) |x| {
             var offset_copy = offset;
-            offset_copy.x = x;
+            offset_copy.x = @intCast(x);
             const rac = offset_copy.rowAndCell();
             const cells = offset.page.data.getCells(rac.row);
             try testing.expectEqual(@as(usize, 5), cells.len);
@@ -7247,7 +7252,7 @@ test "PageList resize reflow less cols copy style" {
     while (it.next()) |offset| {
         for (0..s.cols - 1) |x| {
             var offset_copy = offset;
-            offset_copy.x = x;
+            offset_copy.x = @intCast(x);
             const rac = offset_copy.rowAndCell();
             const style_id = rac.cell.style_id;
             try testing.expect(style_id != 0);

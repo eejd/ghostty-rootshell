@@ -232,7 +232,10 @@ test Contents {
     // Assert that get returns null for everything.
     for (0..rows) |y| {
         for (0..cols) |x| {
-            try testing.expect(c.get(.bg, .{ .x = x, .y = y }) == null);
+            try testing.expect(c.get(.bg, .{
+                .x = @intCast(x),
+                .y = @intCast(y),
+            }) == null);
         }
     }
 
@@ -250,7 +253,10 @@ test Contents {
     c.clear(1);
     for (0..rows) |y| {
         for (0..cols) |x| {
-            try testing.expect(c.get(.bg, .{ .x = x, .y = y }) == null);
+            try testing.expect(c.get(.bg, .{
+                .x = @intCast(x),
+                .y = @intCast(y),
+            }) == null);
         }
     }
 }

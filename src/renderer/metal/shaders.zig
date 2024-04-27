@@ -287,12 +287,12 @@ fn initPostPipeline(
 /// This is a single parameter for the terminal cell shader.
 pub const CellText = extern struct {
     mode: Mode,
-    grid_pos: [2]u16,
     glyph_pos: [2]u32 = .{ 0, 0 },
     glyph_size: [2]u32 = .{ 0, 0 },
     glyph_offset: [2]i32 = .{ 0, 0 },
     color: [4]u8,
     bg_color: [4]u8,
+    grid_pos: [2]u16,
     cell_width: u8,
 
     pub const Mode = enum(u8) {

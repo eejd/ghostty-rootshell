@@ -1908,7 +1908,7 @@ fn rebuildCells2(
     // font shaping by row. In the future, we will also do dirty tracking
     // by row.
     var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: usize = 0;
+    var y: terminal.size.CellCountInt = 0;
     while (row_it.next()) |row| {
         defer y += 1;
 

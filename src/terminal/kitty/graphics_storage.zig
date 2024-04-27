@@ -5,6 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const terminal = @import("../main.zig");
 const point = @import("../point.zig");
+const size = @import("../size.zig");
 const command = @import("graphics_command.zig");
 const PageList = @import("../PageList.zig");
 const Screen = @import("../Screen.zig");
@@ -265,13 +266,13 @@ pub const ImageStorage = struct {
                 );
             },
 
-            .intersect_cell => |v| {
+            .intersect_cell => |v| intersect_cell: {
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = v.x,
-                        .y = v.y,
+                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell,
+                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell,
                     } },
                     v.delete,
                     {},
@@ -279,13 +280,13 @@ pub const ImageStorage = struct {
                 );
             },
 
-            .intersect_cell_z => |v| {
+            .intersect_cell_z => |v| intersect_cell_z: {
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = v.x,
-                        .y = v.y,
+                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell_z,
+                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell_z,
                     } },
                     v.delete,
                     v.z,
@@ -317,7 +318,7 @@ pub const ImageStorage = struct {
                 // v.y is in active coords so we want to convert it to a pin
                 // so we can compare by page offsets.
                 const target_pin = t.screen.pages.pin(.{ .active = .{
-                    .y = v.y,
+                    .y = std.math.cast(size.CellCountInt, v.y) orelse break :row,
                 } }) orelse break :row;
 
                 var it = self.placements.iterator();

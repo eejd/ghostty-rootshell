@@ -4169,7 +4169,10 @@ test "Terminal: insertLines colors with bg color" {
     }
 
     for (0..t.cols) |x| {
-        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 1 } }).?;
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 1,
+        } }).?;
         try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
         try testing.expectEqual(Cell.RGB{
             .r = 0xFF,
@@ -5297,7 +5300,10 @@ test "Terminal: index bottom of primary screen background sgr" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\n\n\nA", str);
         for (0..5) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 4 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 4,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,
@@ -5349,7 +5355,10 @@ test "Terminal: index bottom of scroll region with background SGR" {
     }
 
     for (0..t.cols) |x| {
-        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 2 } }).?;
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 2,
+        } }).?;
         try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
         try testing.expectEqual(Cell.RGB{
             .r = 0xFF,
@@ -5961,7 +5970,10 @@ test "Terminal: deleteLines colors with bg color" {
     }
 
     for (0..t.cols) |x| {
-        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 4 } }).?;
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 4,
+        } }).?;
         try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
         try testing.expectEqual(Cell.RGB{
             .r = 0xFF,
@@ -6148,7 +6160,10 @@ test "Terminal: deleteLines resets wrap" {
     }
 
     for (0..t.rows) |y| {
-        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = 0, .y = y } }).?;
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = 0,
+            .y = @intCast(y),
+        } }).?;
         const row = list_cell.row;
         try testing.expect(!row.wrap);
     }
@@ -7183,7 +7198,10 @@ test "Terminal: deleteChars preserves background sgr" {
         try testing.expectEqualStrings("AB23", str);
     }
     for (t.cols - 2..t.cols) |x| {
-        const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 0 } }).?;
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
         try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
         try testing.expectEqual(Cell.RGB{
             .r = 0xFF,
@@ -7573,7 +7591,10 @@ test "Terminal: eraseLine right preserves background sgr" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("A", str);
         for (1..5) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 0 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,
@@ -7727,7 +7748,10 @@ test "Terminal: eraseLine left preserves background sgr" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("  CDE", str);
         for (0..2) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 0 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,
@@ -7847,7 +7871,10 @@ test "Terminal: eraseLine complete preserves background sgr" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("", str);
         for (0..5) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 0 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,
@@ -8096,7 +8123,10 @@ test "Terminal: eraseDisplay erase below preserves SGR bg" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("ABC\nD", str);
         for (1..5) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 1 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 1,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,
@@ -8271,7 +8301,10 @@ test "Terminal: eraseDisplay erase above preserves SGR bg" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\n  F\nGHI", str);
         for (0..2) |x| {
-            const list_cell = t.screen.pages.getCell(.{ .active = .{ .x = x, .y = 1 } }).?;
+            const list_cell = t.screen.pages.getCell(.{ .active = .{
+                .x = @intCast(x),
+                .y = 1,
+            } }).?;
             try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
             try testing.expectEqual(Cell.RGB{
                 .r = 0xFF,

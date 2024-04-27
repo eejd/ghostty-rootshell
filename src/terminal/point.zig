@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const size = @import("size.zig");
 
 /// The possible reference locations for a point. When someone says "(42, 80)" in the context of a terminal, that could mean multiple
 /// things: it is in the current visible viewport? the current active
@@ -65,8 +66,8 @@ pub const Point = union(Tag) {
 };
 
 pub const Coordinate = struct {
-    x: usize = 0,
-    y: usize = 0,
+    x: size.CellCountInt = 0,
+    y: size.CellCountInt = 0,
 
     pub fn eql(self: Coordinate, other: Coordinate) bool {
         return self.x == other.x and self.y == other.y;

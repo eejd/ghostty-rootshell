@@ -1412,8 +1412,8 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                     if (mapbuilder) |*b| {
                         for (0..encode_len) |_| try b.append(.{
                             .page = chunk.page,
-                            .y = y,
-                            .x = x,
+                            .y = @intCast(y),
+                            .x = @intCast(x),
                         });
                     }
                 }
@@ -1425,8 +1425,8 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                         if (mapbuilder) |*b| {
                             for (0..encode_len) |_| try b.append(.{
                                 .page = chunk.page,
-                                .y = y,
-                                .x = x,
+                                .y = @intCast(y),
+                                .x = @intCast(x),
                             });
                         }
                     }
@@ -1441,7 +1441,7 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                 try strbuilder.append('\n');
                 if (mapbuilder) |*b| try b.append(.{
                     .page = chunk.page,
-                    .y = y,
+                    .y = @intCast(y),
                     .x = chunk.page.data.size.cols - 1,
                 });
             }
@@ -3959,7 +3959,10 @@ test "Screen: resize (no reflow) less rows trims blank lines" {
 
     // Write only a background color into the remaining rows
     for (1..s.pages.rows) |y| {
-        const list_cell = s.pages.getCell(.{ .active = .{ .x = 0, .y = y } }).?;
+        const list_cell = s.pages.getCell(.{ .active = .{
+            .x = 0,
+            .y = @intCast(y),
+        } }).?;
         list_cell.cell.* = .{
             .content_tag = .bg_color_rgb,
             .content = .{ .color_rgb = .{ .r = 0xFF, .g = 0, .b = 0 } },
@@ -3991,7 +3994,10 @@ test "Screen: resize (no reflow) more rows trims blank lines" {
 
     // Write only a background color into the remaining rows
     for (1..s.pages.rows) |y| {
-        const list_cell = s.pages.getCell(.{ .active = .{ .x = 0, .y = y } }).?;
+        const list_cell = s.pages.getCell(.{ .active = .{
+            .x = 0,
+            .y = @intCast(y),
+        } }).?;
         list_cell.cell.* = .{
             .content_tag = .bg_color_rgb,
             .content = .{ .color_rgb = .{ .r = 0xFF, .g = 0, .b = 0 } },
@@ -4118,7 +4124,10 @@ test "Screen: resize (no reflow) more rows with soft wrapping" {
 
     // Every second row should be wrapped
     for (0..6) |y| {
-        const list_cell = s.pages.getCell(.{ .screen = .{ .x = 0, .y = y } }).?;
+        const list_cell = s.pages.getCell(.{ .screen = .{
+            .x = 0,
+            .y = @intCast(y),
+        } }).?;
         const row = list_cell.row;
         const wrapped = (y % 2 == 0);
         try testing.expectEqual(wrapped, row.wrap);
@@ -4135,7 +4144,10 @@ test "Screen: resize (no reflow) more rows with soft wrapping" {
 
     // Every second row should be wrapped
     for (0..6) |y| {
-        const list_cell = s.pages.getCell(.{ .screen = .{ .x = 0, .y = y } }).?;
+        const list_cell = s.pages.getCell(.{ .screen = .{
+            .x = 0,
+            .y = @intCast(y),
+        } }).?;
         const row = list_cell.row;
         const wrapped = (y % 2 == 0);
         try testing.expectEqual(wrapped, row.wrap);
