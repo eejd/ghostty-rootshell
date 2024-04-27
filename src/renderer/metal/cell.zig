@@ -151,7 +151,7 @@ pub const Contents = struct {
                 const coord_: ?terminal.Coordinate = switch (entry.key) {
                     .bg => bg: {
                         _ = self.bgs.swapRemove(original_index);
-                        if (self.bgs.items.len == 0) break :bg null;
+                        if (self.bgs.items.len == original_index) break :bg null;
                         const new = self.bgs.items[original_index];
                         break :bg .{ .x = new.grid_pos[0], .y = new.grid_pos[1] };
                     },
@@ -161,7 +161,7 @@ pub const Contents = struct {
                     .strikethrough,
                     => text: {
                         _ = self.text.swapRemove(original_index);
-                        if (self.text.items.len == 0) break :text null;
+                        if (self.text.items.len == original_index) break :text null;
                         const new = self.text.items[original_index];
                         break :text .{ .x = new.grid_pos[0], .y = new.grid_pos[1] };
                     },
@@ -175,9 +175,19 @@ pub const Contents = struct {
                 // removing the last element in the array, then nothing
                 // is swapped in and nothing needs to be updated.
                 if (coord_) |coord| {
-                    const mapping = self.map[self.index(coord)].array.getPtr(entry.key);
-                    assert(mapping.set);
-                    mapping.index = original_index;
+                    const old_index = switch (entry.key) {
+                        .bg => self.bgs.items.len,
+                        .text, .underline, .strikethrough => self.text.items.len,
+                    };
+                    var old_it = self.map[self.index(coord)].array.iterator();
+                    while (old_it.next()) |old_entry| {
+                        if (old_entry.value.set and
+                            old_entry.value.index == old_index)
+                        {
+                            old_entry.value.index = original_index;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -291,6 +301,38 @@ test "Contents clear retains other content" {
 
     // Row 2 should still be valid.
     try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
+}
+
+test "Contents clear last added content" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const rows = 10;
+    const cols = 10;
+
+    var c: Contents = .{};
+    try c.resize(alloc, .{ .rows = rows, .columns = cols });
+    defer c.deinit(alloc);
+
+    // Set some contents
+    const cell1: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    const cell2: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 2 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    try c.set(alloc, .bg, cell1);
+    try c.set(alloc, .bg, cell2);
+    c.clear(2);
+
+    // Row 2 should still be valid.
+    try testing.expectEqual(cell1, c.get(.bg, .{ .x = 4, .y = 1 }).?);
 }
 
 test "Contents.Map size" {

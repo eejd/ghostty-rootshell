@@ -90,8 +90,8 @@ current_background_color: terminal.color.RGB,
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
-cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
-cells_text: std.ArrayListUnmanaged(mtl_shaders.CellText),
+// cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
+// cells_text: std.ArrayListUnmanaged(mtl_shaders.CellText),
 cells: mtl_cell.Contents,
 
 /// The current GPU uniform values.
@@ -557,8 +557,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .current_background_color = options.config.background,
 
         // Render state
-        .cells_bg = .{},
-        .cells_text = .{},
         .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
@@ -584,8 +582,6 @@ pub fn deinit(self: *Metal) void {
     self.gpu_state.deinit();
 
     self.cells.deinit(self.alloc);
-    self.cells_bg.deinit(self.alloc);
-    self.cells_text.deinit(self.alloc);
 
     self.font_shaper.deinit();
 
@@ -776,13 +772,13 @@ pub fn updateFrame(
     }
 
     // Build our GPU cells (OLD)
-    try self.rebuildCells(
-        &critical.screen,
-        critical.mouse,
-        critical.preedit,
-        critical.cursor_style,
-        &critical.color_palette,
-    );
+    // try self.rebuildCells(
+    //     &critical.screen,
+    //     critical.mouse,
+    //     critical.preedit,
+    //     critical.cursor_style,
+    //     &critical.color_palette,
+    // );
 
     // Build our GPU cells
     try self.rebuildCells2(
@@ -834,8 +830,8 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // Setup our frame data
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    try frame.cells_bg.sync(self.gpu_state.device, self.cells_bg.items);
-    try frame.cells.sync(self.gpu_state.device, self.cells_text.items);
+    try frame.cells_bg.sync(self.gpu_state.device, self.cells.bgs.items);
+    try frame.cells.sync(self.gpu_state.device, self.cells.text.items);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -934,13 +930,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, self.cells_bg.items.len);
+        try self.drawCellBgs(encoder, frame, self.cells.bgs.items.len);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCellFgs(encoder, frame, self.cells_text.items.len);
+        try self.drawCellFgs(encoder, frame, self.cells.text.items.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -1587,12 +1583,6 @@ pub fn setScreenSize(
         .min_contrast = old.min_contrast,
     };
 
-    // Reset our buffer sizes so that we free memory when the screen shrinks.
-    // This could be made more clever by only doing this when the screen
-    // shrinks but the performance cost really isn't that much.
-    self.cells_text.clearAndFree(self.alloc);
-    self.cells_bg.clearAndFree(self.alloc);
-
     // Reset our cell contents.
     try self.cells.resize(self.alloc, grid_size);
 
@@ -1892,8 +1882,8 @@ fn rebuildCells2(
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
     const preedit_range: ?struct {
-        y: usize,
-        x: [2]usize,
+        y: terminal.size.CellCountInt,
+        x: [2]terminal.size.CellCountInt,
         cp_offset: usize,
     } = if (preedit) |preedit_v| preedit: {
         const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
@@ -1911,6 +1901,9 @@ fn rebuildCells2(
     var y: terminal.size.CellCountInt = 0;
     while (row_it.next()) |row| {
         defer y += 1;
+
+        // If we're rebuilding a row, then we always clear the cells
+        self.cells.clear(y);
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
