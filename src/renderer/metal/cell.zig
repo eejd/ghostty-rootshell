@@ -128,6 +128,14 @@ pub const Contents = struct {
     }
 
     /// Clear all of the cell contents for a given row.
+    ///
+    /// Due to the way this works internally, it is best to clear rows
+    /// from the bottom up. This is because when we clear a row, we
+    /// swap remove the last element in the list and then update the
+    /// mapping for the swapped element. If we clear from the top down,
+    /// then we would have to update the mapping for every element in
+    /// the list. If we clear from the bottom up, then we only have to
+    /// update the mapping for the last element in the list.
     pub fn clear(
         self: *Contents,
         y: usize,
@@ -135,7 +143,12 @@ pub const Contents = struct {
         const start_idx = y * self.cols;
         const end_idx = start_idx + self.cols;
         const maps = self.map[start_idx..end_idx];
-        for (maps) |*map| {
+        for (0..self.cols) |x| {
+            // It is better to clear from the right left due to the same
+            // reasons noted for bottom-up clearing in the doc comment.
+            const rev_x = self.cols - x - 1;
+            const map = &maps[rev_x];
+
             var it = map.array.iterator();
             while (it.next()) |entry| {
                 if (!entry.value.set) continue;

@@ -1897,10 +1897,10 @@ fn rebuildCells2(
     // Go row-by-row to build the cells. We go row by row because we do
     // font shaping by row. In the future, we will also do dirty tracking
     // by row.
-    var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: terminal.size.CellCountInt = 0;
+    var row_it = screen.pages.rowIterator(.left_up, .{ .viewport = .{} }, null);
+    var y: terminal.size.CellCountInt = screen.pages.rows;
     while (row_it.next()) |row| {
-        defer y += 1;
+        y = y - 1;
 
         // If we're rebuilding a row, then we always clear the cells
         self.cells.clear(y);
