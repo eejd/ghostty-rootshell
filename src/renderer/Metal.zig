@@ -29,6 +29,7 @@ const Health = renderer.Health;
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
+const mtl_cell = @import("metal/cell.zig");
 const mtl_image = @import("metal/image.zig");
 const mtl_sampler = @import("metal/sampler.zig");
 const mtl_shaders = @import("metal/shaders.zig");
@@ -91,7 +92,7 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
 cells_text: std.ArrayListUnmanaged(mtl_shaders.CellText),
-cells: CellContents,
+cells: mtl_cell.Contents,
 
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
@@ -121,76 +122,6 @@ health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
 /// Our GPU state
 gpu_state: GPUState,
-
-/// The contents of all the cells in the terminal.
-const CellContents = struct {
-    /// The possible cell content keys that exist.
-    const Key = enum { bg, text, underline, strikethrough };
-
-    /// The map contains the mapping of cell content for every cell in the
-    /// terminal to the index in the cells array that the content is at.
-    /// This is ALWAYS sized to exactly (rows * cols) so we want to keep
-    /// this as small as possible.
-    map: []const Map = &.{},
-
-    /// The actual GPU data (on the CPU) for all the cells in the terminal.
-    /// This only contains the cells that have content set. To determine
-    /// if a cell has content set, we check the map.
-    ///
-    /// This data is synced to a buffer on every frame.
-    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg) = .{},
-    text: std.ArrayListUnmanaged(mtl_shaders.CellText) = .{},
-
-    pub fn deinit(self: *CellContents, alloc: Allocator) void {
-        alloc.free(self.map);
-        self.bgs.deinit(alloc);
-        self.text.deinit(alloc);
-    }
-
-    /// Resize the cell contents for the given grid size. This will
-    /// always invalidate the entire cell contents.
-    pub fn resize(
-        self: *CellContents,
-        alloc: Allocator,
-        size: renderer.GridSize,
-    ) !void {
-        const map = try alloc.alloc(Map, size.rows * size.columns);
-        errdefer alloc.free(map);
-        @memset(map, .{});
-
-        alloc.free(self.map);
-        self.map = map;
-        self.bgs.clearAndFree(alloc);
-        self.text.clearAndFree(alloc);
-    }
-
-    /// Structures related to the contents of the cell.
-    const Map = struct {
-        /// The set of cell content mappings for a given cell for every
-        /// possible key. This is used to determine if a cell has a given
-        /// type of content (i.e. an underlyine styling) and if so what index
-        /// in the cells array that content is at.
-        const Array = std.EnumArray(Key, Mapping);
-
-        /// The mapping for a given key consists of a bit indicating if the
-        /// content is set and the index in the cells array that the content
-        /// is at. We pack this into a 32-bit integer so we only use 4 bytes
-        /// per possible cell content type.
-        const Mapping = packed struct(u32) {
-            set: bool = false,
-            index: u31 = 0,
-        };
-
-        /// The backing array of mappings.
-        array: Array = Array.initFill(.{}),
-    };
-};
-
-test "CellContents.Map size" {
-    // We want to be mindful of when this increases because it affects
-    // renderer memory significantly.
-    try std.testing.expectEqual(@as(usize, 16), @sizeOf(CellContents.Map));
-}
 
 /// State we need for the GPU that is shared between all frames.
 pub const GPUState = struct {
@@ -844,8 +775,17 @@ pub fn updateFrame(
         if (critical.preedit) |p| p.deinit(self.alloc);
     }
 
-    // Build our GPU cells
+    // Build our GPU cells (OLD)
     try self.rebuildCells(
+        &critical.screen,
+        critical.mouse,
+        critical.preedit,
+        critical.cursor_style,
+        &critical.color_palette,
+    );
+
+    // Build our GPU cells
+    try self.rebuildCells2(
         &critical.screen,
         critical.mouse,
         critical.preedit,
@@ -1921,6 +1861,388 @@ fn rebuildCells(
     }
 }
 
+/// Convert the terminal state to GPU cells stored in CPU memory. These
+/// are then synced to the GPU in the next frame. This only updates CPU
+/// memory and doesn't touch the GPU.
+fn rebuildCells2(
+    self: *Metal,
+    screen: *terminal.Screen,
+    mouse: renderer.State.Mouse,
+    preedit: ?renderer.State.Preedit,
+    cursor_style_: ?renderer.CursorStyle,
+    color_palette: *const terminal.color.Palette,
+) !void {
+    // TODO: cursor_cell
+    // TODO: cursor_Row
+    _ = cursor_style_;
+
+    // Create an arena for all our temporary allocations while rebuilding
+    var arena = ArenaAllocator.init(self.alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    // Create our match set for the links.
+    var link_match_set: link.MatchSet = if (mouse.point) |mouse_pt| try self.config.links.matchSet(
+        arena_alloc,
+        screen,
+        mouse_pt,
+        mouse.mods,
+    ) else .{};
+
+    // Determine our x/y range for preedit. We don't want to render anything
+    // here because we will render the preedit separately.
+    const preedit_range: ?struct {
+        y: usize,
+        x: [2]usize,
+        cp_offset: usize,
+    } = if (preedit) |preedit_v| preedit: {
+        const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
+        break :preedit .{
+            .y = screen.cursor.y,
+            .x = .{ range.start, range.end },
+            .cp_offset = range.cp_offset,
+        };
+    } else null;
+
+    // Go row-by-row to build the cells. We go row by row because we do
+    // font shaping by row. In the future, we will also do dirty tracking
+    // by row.
+    var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
+    var y: usize = 0;
+    while (row_it.next()) |row| {
+        defer y += 1;
+
+        // True if we want to do font shaping around the cursor. We want to
+        // do font shaping as long as the cursor is enabled.
+        const shape_cursor = screen.viewportIsBottom() and
+            y == screen.cursor.y;
+
+        // We need to get this row's selection if there is one for proper
+        // run splitting.
+        const row_selection = sel: {
+            const sel = screen.selection orelse break :sel null;
+            const pin = screen.pages.pin(.{ .viewport = .{ .y = y } }) orelse
+                break :sel null;
+            break :sel sel.containedRow(screen, pin) orelse null;
+        };
+
+        // Split our row into runs and shape each one.
+        var iter = self.font_shaper.runIterator(
+            self.font_grid,
+            screen,
+            row,
+            row_selection,
+            if (shape_cursor) screen.cursor.x else null,
+        );
+        while (try iter.next(self.alloc)) |run| {
+            for (try self.font_shaper.shape(run)) |shaper_cell| {
+                const coord: terminal.Coordinate = .{
+                    .x = shaper_cell.x,
+                    .y = y,
+                };
+
+                // If this cell falls within our preedit range then we skip it.
+                // We do this so we don't have conflicting data on the same
+                // cell.
+                if (preedit_range) |range| {
+                    if (range.y == coord.y and
+                        coord.x >= range.x[0] and
+                        coord.x <= range.x[1])
+                    {
+                        continue;
+                    }
+                }
+
+                // It this cell is within our hint range then we need to
+                // underline it.
+                const cell: terminal.Pin = cell: {
+                    var copy = row;
+                    copy.x = coord.x;
+                    break :cell copy;
+                };
+
+                if (self.updateCell2(
+                    screen,
+                    cell,
+                    if (link_match_set.orderedContains(screen, cell))
+                        .single
+                    else
+                        null,
+                    color_palette,
+                    shaper_cell,
+                    run,
+                    coord,
+                )) |update| {
+                    assert(update);
+                } else |err| {
+                    log.warn("error building cell, will be invalid x={} y={}, err={}", .{
+                        coord.x,
+                        coord.y,
+                        err,
+                    });
+                }
+            }
+        }
+    }
+
+    // Add the cursor at the end so that it overlays everything. If we have
+    // a cursor cell then we invert the colors on that and add it in so
+    // that we can always see it.
+    // if (cursor_style_) |cursor_style| cursor_style: {
+    //     // If we have a preedit, we try to render the preedit text on top
+    //     // of the cursor.
+    //     if (preedit) |preedit_v| {
+    //         const range = preedit_range.?;
+    //         var x = range.x[0];
+    //         for (preedit_v.codepoints[range.cp_offset..]) |cp| {
+    //             self.addPreeditCell(cp, x, range.y) catch |err| {
+    //                 log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+    //                     x,
+    //                     range.y,
+    //                     err,
+    //                 });
+    //             };
+    //
+    //             x += if (cp.wide) 2 else 1;
+    //         }
+    //
+    //         // Preedit hides the cursor
+    //         break :cursor_style;
+    //     }
+    //
+    //     _ = self.addCursor(screen, cursor_style);
+    //     // if (cursor_cell) |*cell| {
+    //     //     if (cell.mode == .fg) {
+    //     //         cell.color = if (self.config.cursor_text) |txt|
+    //     //             .{ txt.r, txt.g, txt.b, 255 }
+    //     //         else
+    //     //             .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
+    //     //     }
+    //     //
+    //     //     self.cells_text.appendAssumeCapacity(cell.*);
+    //     // }
+    // }
+}
+
+fn updateCell2(
+    self: *Metal,
+    screen: *const terminal.Screen,
+    cell_pin: terminal.Pin,
+    cell_underline: ?terminal.Attribute.Underline,
+    palette: *const terminal.color.Palette,
+    shaper_cell: font.shape.Cell,
+    shaper_run: font.shape.TextRun,
+    coord: terminal.Coordinate,
+) !bool {
+    const BgFg = struct {
+        /// Background is optional because in un-inverted mode
+        /// it may just be equivalent to the default background in
+        /// which case we do nothing to save on GPU render time.
+        bg: ?terminal.color.RGB,
+
+        /// Fg is always set to some color, though we may not render
+        /// any fg if the cell is empty or has no attributes like
+        /// underline.
+        fg: terminal.color.RGB,
+    };
+
+    // True if this cell is selected
+    const selected: bool = if (screen.selection) |sel|
+        sel.contains(screen, cell_pin)
+    else
+        false;
+
+    const rac = cell_pin.rowAndCell();
+    const cell = rac.cell;
+    const style = cell_pin.style(cell);
+    const underline = cell_underline orelse style.flags.underline;
+
+    // The colors for the cell.
+    const colors: BgFg = colors: {
+        // The normal cell result
+        const cell_res: BgFg = if (!style.flags.inverse) .{
+            // In normal mode, background and fg match the cell. We
+            // un-optionalize the fg by defaulting to our fg color.
+            .bg = style.bg(cell, palette),
+            .fg = style.fg(palette) orelse self.foreground_color,
+        } else .{
+            // In inverted mode, the background MUST be set to something
+            // (is never null) so it is either the fg or default fg. The
+            // fg is either the bg or default background.
+            .bg = style.fg(palette) orelse self.foreground_color,
+            .fg = style.bg(cell, palette) orelse self.background_color,
+        };
+
+        // If we are selected, we our colors are just inverted fg/bg
+        const selection_res: ?BgFg = if (selected) .{
+            .bg = if (self.config.invert_selection_fg_bg)
+                cell_res.fg
+            else
+                self.config.selection_background orelse self.foreground_color,
+            .fg = if (self.config.invert_selection_fg_bg)
+                cell_res.bg orelse self.background_color
+            else
+                self.config.selection_foreground orelse self.background_color,
+        } else null;
+
+        // If the cell is "invisible" then we just make fg = bg so that
+        // the cell is transparent but still copy-able.
+        const res: BgFg = selection_res orelse cell_res;
+        if (style.flags.invisible) {
+            break :colors BgFg{
+                .bg = res.bg,
+                .fg = res.bg orelse self.background_color,
+            };
+        }
+
+        break :colors res;
+    };
+
+    // Alpha multiplier
+    const alpha: u8 = if (style.flags.faint) 175 else 255;
+
+    // If the cell has a background, we always draw it.
+    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
+        // Determine our background alpha. If we have transparency configured
+        // then this is dynamic depending on some situations. This is all
+        // in an attempt to make transparency look the best for various
+        // situations. See inline comments.
+        const bg_alpha: u8 = bg_alpha: {
+            const default: u8 = 255;
+
+            if (self.config.background_opacity >= 1) break :bg_alpha default;
+
+            // If we're selected, we do not apply background opacity
+            if (selected) break :bg_alpha default;
+
+            // If we're reversed, do not apply background opacity
+            if (style.flags.inverse) break :bg_alpha default;
+
+            // If we have a background and its not the default background
+            // then we apply background opacity
+            if (style.bg(cell, palette) != null and !rgb.eql(self.background_color)) {
+                break :bg_alpha default;
+            }
+
+            // We apply background opacity.
+            var bg_alpha: f64 = @floatFromInt(default);
+            bg_alpha *= self.config.background_opacity;
+            bg_alpha = @ceil(bg_alpha);
+            break :bg_alpha @intFromFloat(bg_alpha);
+        };
+
+        try self.cells.set(self.alloc, .bg, .{
+            .mode = .rgb,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+            .cell_width = cell.gridWidth(),
+            .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
+        });
+
+        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
+    } else .{
+        self.current_background_color.r,
+        self.current_background_color.g,
+        self.current_background_color.b,
+        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
+    };
+
+    // If the cell has a character, draw it
+    if (cell.hasText()) fg: {
+        // Render
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            shaper_run.font_index,
+            shaper_cell.glyph_index orelse break :fg,
+            .{
+                .grid_metrics = self.grid_metrics,
+                .thicken = self.config.font_thicken,
+            },
+        );
+
+        const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
+            render.presentation,
+            cell_pin,
+        )) {
+            .normal => .fg,
+            .color => .fg_color,
+            .constrained => .fg_constrained,
+        };
+
+        try self.cells.set(self.alloc, .text, .{
+            .mode = mode,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+            .cell_width = cell.gridWidth(),
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{
+                render.glyph.offset_x + shaper_cell.x_offset,
+                render.glyph.offset_y + shaper_cell.y_offset,
+            },
+        });
+    }
+
+    if (underline != .none) {
+        const sprite: font.Sprite = switch (underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
+            .curly => .underline_curly,
+        };
+
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(sprite),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
+        const color = style.underlineColor(palette) orelse colors.fg;
+
+        try self.cells.set(self.alloc, .underline, .{
+            .mode = .fg,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+            .cell_width = cell.gridWidth(),
+            .color = .{ color.r, color.g, color.b, alpha },
+            .bg_color = bg,
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+        });
+    }
+
+    if (style.flags.strikethrough) {
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(font.Sprite.strikethrough),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
+        try self.cells.set(self.alloc, .strikethrough, .{
+            .mode = .fg,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+            .cell_width = cell.gridWidth(),
+            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+            .bg_color = bg,
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+        });
+    }
+
+    return true;
+}
+
 fn updateCell(
     self: *Metal,
     screen: *const terminal.Screen,
@@ -2325,4 +2647,8 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 /// memory associated with it.
 fn deinitMTLResource(obj: objc.Object) void {
     obj.msgSend(void, objc.sel("release"), .{});
+}
+
+test {
+    _ = mtl_cell;
 }
