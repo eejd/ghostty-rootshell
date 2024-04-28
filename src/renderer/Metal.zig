@@ -565,6 +565,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .projection_matrix = undefined,
             .cell_size = undefined,
             .min_contrast = options.config.min_contrast,
+            .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
+            .cursor_color = undefined,
         },
 
         // Fonts
@@ -683,6 +685,8 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
             @floatFromInt(metrics.cell_height),
         },
         .min_contrast = self.uniforms.min_contrast,
+        .cursor_pos = self.uniforms.cursor_pos,
+        .cursor_color = self.uniforms.cursor_color,
     };
 }
 
@@ -1586,6 +1590,8 @@ pub fn setScreenSize(
             @floatFromInt(self.grid_metrics.cell_height),
         },
         .min_contrast = old.min_contrast,
+        .cursor_pos = old.cursor_pos,
+        .cursor_color = old.cursor_color,
     };
 
     // Reset our cell contents.
@@ -1987,11 +1993,30 @@ fn rebuildCells2(
         // If we have no cursor style then we don't render the cursor.
         const style = cursor_style_ orelse {
             self.cells.setCursor(null);
+            self.uniforms.cursor_pos = .{
+                std.math.maxInt(u16),
+                std.math.maxInt(u16),
+            };
             break :cursor;
         };
 
         // Prepare the cursor cell contents.
         self.addCursor2(screen, style);
+
+        // Setup our uniforms for the cursor so that any data
+        // under the cursor can render differently.
+        self.uniforms.cursor_pos = .{ screen.cursor.x, screen.cursor.y };
+        self.uniforms.cursor_color = if (self.config.cursor_text) |txt| .{
+            txt.r,
+            txt.g,
+            txt.b,
+            255,
+        } else .{
+            self.background_color.r,
+            self.background_color.g,
+            self.background_color.b,
+            255,
+        };
     }
 
     // If we have a preedit, we try to render the preedit text on top
@@ -2512,7 +2537,7 @@ fn addCursor2(
     };
 
     self.cells.setCursor(.{
-        .mode = .fg,
+        .mode = .cursor,
         .grid_pos = .{ x, screen.cursor.y },
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },

@@ -4,6 +4,8 @@ struct Uniforms {
   float4x4 projection_matrix;
   float2 cell_size;
   float min_contrast;
+  ushort2 cursor_pos;
+  uchar4 cursor_color;
 };
 
 //-------------------------------------------------------------------
@@ -134,9 +136,10 @@ fragment float4 cell_bg_fragment(CellBgVertexOut in [[stage_in]]) {
 
 // The possible modes that a cell fg entry can take.
 enum CellTextMode : uint8_t {
-  MODE_TEXT = 2u,
-  MODE_TEXT_CONSTRAINED = 3u,
-  MODE_TEXT_COLOR = 7u,
+  MODE_TEXT = 1u,
+  MODE_TEXT_CONSTRAINED = 2u,
+  MODE_TEXT_COLOR = 3u,
+  MODE_TEXT_CURSOR = 4u,
 };
 
 struct CellTextVertexIn {
@@ -243,6 +246,13 @@ vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
     out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
   }
 
+  // If this cell is the cursor cell, then we need to change the color.
+  if (input.mode != MODE_TEXT_CURSOR &&
+      input.grid_pos.x == uniforms.cursor_pos.x &&
+      input.grid_pos.y == uniforms.cursor_pos.y) {
+    out.color = float4(uniforms.cursor_color) / 255.0f;
+  }
+
   return out;
 }
 
@@ -254,6 +264,7 @@ fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
   switch (in.mode) {
+    case MODE_TEXT_CURSOR:
     case MODE_TEXT_CONSTRAINED:
     case MODE_TEXT: {
       // Normalize the texture coordinates to [0,1]

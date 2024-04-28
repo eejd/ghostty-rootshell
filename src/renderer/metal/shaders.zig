@@ -116,6 +116,10 @@ pub const Uniforms = extern struct {
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.
     min_contrast: f32,
+
+    /// The cursor position and color.
+    cursor_pos: [2]u16,
+    cursor_color: [4]u8,
 };
 
 /// The uniforms used for custom postprocess shaders.
@@ -296,10 +300,10 @@ pub const CellText = extern struct {
     cell_width: u8,
 
     pub const Mode = enum(u8) {
-        bg = 1,
-        fg = 2,
-        fg_constrained = 3,
-        fg_color = 7,
+        fg = 1,
+        fg_constrained = 2,
+        fg_color = 3,
+        cursor = 4,
     };
 };
 
