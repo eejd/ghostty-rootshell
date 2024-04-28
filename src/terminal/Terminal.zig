@@ -2383,6 +2383,9 @@ pub fn resize(
         }
     }
 
+    // Whenever we resize we just mark it as a screen clear
+    self.flags.dirty.clear = true;
+
     // Set our size
     self.cols = cols;
     self.rows = rows;
