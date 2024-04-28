@@ -778,17 +778,8 @@ pub fn updateFrame(
         if (critical.preedit) |p| p.deinit(self.alloc);
     }
 
-    // Build our GPU cells (OLD)
-    // try self.rebuildCells(
-    //     &critical.screen,
-    //     critical.mouse,
-    //     critical.preedit,
-    //     critical.cursor_style,
-    //     &critical.color_palette,
-    // );
-
     // Build our GPU cells
-    try self.rebuildCells2(
+    try self.rebuildCells(
         &critical.screen,
         critical.mouse,
         critical.preedit,
@@ -1645,227 +1636,10 @@ pub fn setScreenSize(
     log.debug("screen size screen={} grid={}, cell_width={} cell_height={}", .{ dim, grid_size, self.grid_metrics.cell_width, self.grid_metrics.cell_height });
 }
 
-/// Sync all the CPU cells with the GPU state (but still on the CPU here).
-/// This builds all our "GPUCells" on this struct, but doesn't send them
-/// down to the GPU yet.
-fn rebuildCells(
-    self: *Metal,
-    screen: *terminal.Screen,
-    mouse: renderer.State.Mouse,
-    preedit: ?renderer.State.Preedit,
-    cursor_style_: ?renderer.CursorStyle,
-    color_palette: *const terminal.color.Palette,
-) !void {
-    const rows_usize: usize = @intCast(screen.pages.rows);
-    const cols_usize: usize = @intCast(screen.pages.cols);
-
-    // Bg cells at most will need space for the visible screen size
-    self.cells_bg.clearRetainingCapacity();
-    try self.cells_bg.ensureTotalCapacity(
-        self.alloc,
-        rows_usize * cols_usize,
-    );
-
-    // Over-allocate just to ensure we don't allocate again during loops.
-    self.cells_text.clearRetainingCapacity();
-    try self.cells_text.ensureTotalCapacity(
-        self.alloc,
-
-        // * 3 for glyph + underline + strikethrough for each cell
-        // + 1 for cursor
-        (rows_usize * cols_usize * 3) + 1,
-    );
-
-    // Create an arena for all our temporary allocations while rebuilding
-    var arena = ArenaAllocator.init(self.alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    // Create our match set for the links.
-    var link_match_set: link.MatchSet = if (mouse.point) |mouse_pt| try self.config.links.matchSet(
-        arena_alloc,
-        screen,
-        mouse_pt,
-        mouse.mods,
-    ) else .{};
-
-    // Determine our x/y range for preedit. We don't want to render anything
-    // here because we will render the preedit separately.
-    const preedit_range: ?struct {
-        y: terminal.size.CellCountInt,
-        x: [2]terminal.size.CellCountInt,
-        cp_offset: usize,
-    } = if (preedit) |preedit_v| preedit: {
-        const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
-        break :preedit .{
-            .y = screen.cursor.y,
-            .x = .{ range.start, range.end },
-            .cp_offset = range.cp_offset,
-        };
-    } else null;
-
-    // This is the cell that has [mode == .fg] and is underneath our cursor.
-    // We keep track of it so that we can invert the colors so the character
-    // remains visible.
-    var cursor_cell: ?mtl_shaders.CellText = null;
-
-    // Build each cell
-    var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: terminal.size.CellCountInt = 0;
-    while (row_it.next()) |row| {
-        defer y += 1;
-
-        // True if this is the row with our cursor. There are a lot of conditions
-        // here because the reasons we need to know this are primarily to invert.
-        //
-        //   - If we aren't drawing the cursor then we don't need to change our rendering.
-        //   - If the cursor is not visible, then we don't need to change rendering.
-        //   - If the cursor style is not a box, then we don't need to change
-        //     rendering because it'll never fully overlap a glyph.
-        //   - If the viewport is not at the bottom, then we don't need to
-        //     change rendering because the cursor is not visible.
-        //     (NOTE: this may not be fully correct, we may be scrolled
-        //     slightly up and the cursor may be visible)
-        //   - If this y doesn't match our cursor y then we don't need to
-        //     change rendering.
-        //
-        const cursor_row = if (cursor_style_) |cursor_style|
-            cursor_style == .block and
-                screen.viewportIsBottom() and
-                y == screen.cursor.y
-        else
-            false;
-
-        // True if we want to do font shaping around the cursor. We want to
-        // do font shaping as long as the cursor is enabled.
-        const shape_cursor = screen.viewportIsBottom() and
-            y == screen.cursor.y;
-
-        // If this is the row with our cursor, then we may have to modify
-        // the cell with the cursor.
-        const start_i: usize = self.cells_text.items.len;
-        defer if (cursor_row) {
-            // If we're on a wide spacer tail, then we want to look for
-            // the previous cell.
-            const screen_cell = row.cells(.all)[screen.cursor.x];
-            const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
-            for (self.cells_text.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == x and
-                    (cell.mode == .fg or cell.mode == .fg_color))
-                {
-                    cursor_cell = cell;
-                    break;
-                }
-            }
-        };
-
-        // We need to get this row's selection if there is one for proper
-        // run splitting.
-        const row_selection = sel: {
-            const sel = screen.selection orelse break :sel null;
-            const pin = screen.pages.pin(.{ .viewport = .{ .y = y } }) orelse
-                break :sel null;
-            break :sel sel.containedRow(screen, pin) orelse null;
-        };
-
-        // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(
-            self.font_grid,
-            screen,
-            row,
-            row_selection,
-            if (shape_cursor) screen.cursor.x else null,
-        );
-        while (try iter.next(self.alloc)) |run| {
-            for (try self.font_shaper.shape(run)) |shaper_cell| {
-                // If this cell falls within our preedit range then we skip it.
-                // We do this so we don't have conflicting data on the same
-                // cell.
-                if (preedit_range) |range| {
-                    if (range.y == y and
-                        shaper_cell.x >= range.x[0] and
-                        shaper_cell.x <= range.x[1])
-                    {
-                        continue;
-                    }
-                }
-
-                // It this cell is within our hint range then we need to
-                // underline it.
-                const cell: terminal.Pin = cell: {
-                    var copy = row;
-                    copy.x = shaper_cell.x;
-                    break :cell copy;
-                };
-
-                if (self.updateCell(
-                    screen,
-                    cell,
-                    if (link_match_set.orderedContains(screen, cell))
-                        .single
-                    else
-                        null,
-                    color_palette,
-                    shaper_cell,
-                    run,
-                    shaper_cell.x,
-                    y,
-                )) |update| {
-                    assert(update);
-                } else |err| {
-                    log.warn("error building cell, will be invalid x={} y={}, err={}", .{
-                        shaper_cell.x,
-                        y,
-                        err,
-                    });
-                }
-            }
-        }
-    }
-
-    // Add the cursor at the end so that it overlays everything. If we have
-    // a cursor cell then we invert the colors on that and add it in so
-    // that we can always see it.
-    if (cursor_style_) |cursor_style| cursor_style: {
-        // If we have a preedit, we try to render the preedit text on top
-        // of the cursor.
-        if (preedit) |preedit_v| {
-            const range = preedit_range.?;
-            var x = range.x[0];
-            for (preedit_v.codepoints[range.cp_offset..]) |cp| {
-                self.addPreeditCell(cp, x, range.y) catch |err| {
-                    log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
-                        x,
-                        range.y,
-                        err,
-                    });
-                };
-
-                x += if (cp.wide) 2 else 1;
-            }
-
-            // Preedit hides the cursor
-            break :cursor_style;
-        }
-
-        _ = self.addCursor(screen, cursor_style);
-        if (cursor_cell) |*cell| {
-            if (cell.mode == .fg) {
-                cell.color = if (self.config.cursor_text) |txt|
-                    .{ txt.r, txt.g, txt.b, 255 }
-                else
-                    .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
-            }
-
-            self.cells_text.appendAssumeCapacity(cell.*);
-        }
-    }
-}
-
 /// Convert the terminal state to GPU cells stored in CPU memory. These
 /// are then synced to the GPU in the next frame. This only updates CPU
 /// memory and doesn't touch the GPU.
-fn rebuildCells2(
+fn rebuildCells(
     self: *Metal,
     screen: *terminal.Screen,
     mouse: renderer.State.Mouse,
@@ -1960,7 +1734,7 @@ fn rebuildCells2(
                     break :cell copy;
                 };
 
-                if (self.updateCell2(
+                if (self.updateCell(
                     screen,
                     cell,
                     if (link_match_set.orderedContains(screen, cell))
@@ -1998,7 +1772,7 @@ fn rebuildCells2(
 
         // Prepare the cursor cell contents.
         const style = cursor_style_ orelse break :cursor;
-        self.addCursor2(screen, style);
+        self.addCursor(screen, style);
 
         // If the cursor is visible then we set our uniforms.
         if (style == .block and screen.viewportIsBottom()) {
@@ -2025,7 +1799,7 @@ fn rebuildCells2(
         const range = preedit_range.?;
         var x = range.x[0];
         for (preedit_v.codepoints[range.cp_offset..]) |cp| {
-            self.addPreeditCell2(cp, .{ .x = x, .y = range.y }) catch |err| {
+            self.addPreeditCell(cp, .{ .x = x, .y = range.y }) catch |err| {
                 log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
                     x,
                     range.y,
@@ -2038,7 +1812,7 @@ fn rebuildCells2(
     }
 }
 
-fn updateCell2(
+fn updateCell(
     self: *Metal,
     screen: *const terminal.Screen,
     cell_pin: terminal.Pin,
@@ -2257,227 +2031,7 @@ fn updateCell2(
     return true;
 }
 
-fn updateCell(
-    self: *Metal,
-    screen: *const terminal.Screen,
-    cell_pin: terminal.Pin,
-    cell_underline: ?terminal.Attribute.Underline,
-    palette: *const terminal.color.Palette,
-    shaper_cell: font.shape.Cell,
-    shaper_run: font.shape.TextRun,
-    x: terminal.size.CellCountInt,
-    y: terminal.size.CellCountInt,
-) !bool {
-    const BgFg = struct {
-        /// Background is optional because in un-inverted mode
-        /// it may just be equivalent to the default background in
-        /// which case we do nothing to save on GPU render time.
-        bg: ?terminal.color.RGB,
-
-        /// Fg is always set to some color, though we may not render
-        /// any fg if the cell is empty or has no attributes like
-        /// underline.
-        fg: terminal.color.RGB,
-    };
-
-    // True if this cell is selected
-    const selected: bool = if (screen.selection) |sel|
-        sel.contains(screen, cell_pin)
-    else
-        false;
-
-    const rac = cell_pin.rowAndCell();
-    const cell = rac.cell;
-    const style = cell_pin.style(cell);
-    const underline = cell_underline orelse style.flags.underline;
-
-    // The colors for the cell.
-    const colors: BgFg = colors: {
-        // The normal cell result
-        const cell_res: BgFg = if (!style.flags.inverse) .{
-            // In normal mode, background and fg match the cell. We
-            // un-optionalize the fg by defaulting to our fg color.
-            .bg = style.bg(cell, palette),
-            .fg = style.fg(palette) orelse self.foreground_color,
-        } else .{
-            // In inverted mode, the background MUST be set to something
-            // (is never null) so it is either the fg or default fg. The
-            // fg is either the bg or default background.
-            .bg = style.fg(palette) orelse self.foreground_color,
-            .fg = style.bg(cell, palette) orelse self.background_color,
-        };
-
-        // If we are selected, we our colors are just inverted fg/bg
-        const selection_res: ?BgFg = if (selected) .{
-            .bg = if (self.config.invert_selection_fg_bg)
-                cell_res.fg
-            else
-                self.config.selection_background orelse self.foreground_color,
-            .fg = if (self.config.invert_selection_fg_bg)
-                cell_res.bg orelse self.background_color
-            else
-                self.config.selection_foreground orelse self.background_color,
-        } else null;
-
-        // If the cell is "invisible" then we just make fg = bg so that
-        // the cell is transparent but still copy-able.
-        const res: BgFg = selection_res orelse cell_res;
-        if (style.flags.invisible) {
-            break :colors BgFg{
-                .bg = res.bg,
-                .fg = res.bg orelse self.background_color,
-            };
-        }
-
-        break :colors res;
-    };
-
-    // Alpha multiplier
-    const alpha: u8 = if (style.flags.faint) 175 else 255;
-
-    // If the cell has a background, we always draw it.
-    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
-        // Determine our background alpha. If we have transparency configured
-        // then this is dynamic depending on some situations. This is all
-        // in an attempt to make transparency look the best for various
-        // situations. See inline comments.
-        const bg_alpha: u8 = bg_alpha: {
-            const default: u8 = 255;
-
-            if (self.config.background_opacity >= 1) break :bg_alpha default;
-
-            // If we're selected, we do not apply background opacity
-            if (selected) break :bg_alpha default;
-
-            // If we're reversed, do not apply background opacity
-            if (style.flags.inverse) break :bg_alpha default;
-
-            // If we have a background and its not the default background
-            // then we apply background opacity
-            if (style.bg(cell, palette) != null and !rgb.eql(self.background_color)) {
-                break :bg_alpha default;
-            }
-
-            // We apply background opacity.
-            var bg_alpha: f64 = @floatFromInt(default);
-            bg_alpha *= self.config.background_opacity;
-            bg_alpha = @ceil(bg_alpha);
-            break :bg_alpha @intFromFloat(bg_alpha);
-        };
-
-        self.cells_bg.appendAssumeCapacity(.{
-            .mode = .rgb,
-            .grid_pos = .{ x, y },
-            .cell_width = cell.gridWidth(),
-            .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
-        });
-
-        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
-    } else .{
-        self.current_background_color.r,
-        self.current_background_color.g,
-        self.current_background_color.b,
-        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
-    };
-
-    // If the cell has a character, draw it
-    if (cell.hasText()) fg: {
-        // Render
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            shaper_run.font_index,
-            shaper_cell.glyph_index orelse break :fg,
-            .{
-                .grid_metrics = self.grid_metrics,
-                .thicken = self.config.font_thicken,
-            },
-        );
-
-        const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
-            render.presentation,
-            cell_pin,
-        )) {
-            .normal => .fg,
-            .color => .fg_color,
-            .constrained => .fg_constrained,
-        };
-
-        self.cells_text.appendAssumeCapacity(.{
-            .mode = mode,
-            .grid_pos = .{ x, y },
-            .cell_width = cell.gridWidth(),
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .bg_color = bg,
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{
-                render.glyph.offset_x + shaper_cell.x_offset,
-                render.glyph.offset_y + shaper_cell.y_offset,
-            },
-        });
-    }
-
-    if (underline != .none) {
-        const sprite: font.Sprite = switch (underline) {
-            .none => unreachable,
-            .single => .underline,
-            .double => .underline_double,
-            .dotted => .underline_dotted,
-            .dashed => .underline_dashed,
-            .curly => .underline_curly,
-        };
-
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(sprite),
-            .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        const color = style.underlineColor(palette) orelse colors.fg;
-
-        self.cells_text.appendAssumeCapacity(.{
-            .mode = .fg,
-            .grid_pos = .{ x, y },
-            .cell_width = cell.gridWidth(),
-            .color = .{ color.r, color.g, color.b, alpha },
-            .bg_color = bg,
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
-        });
-    }
-
-    if (style.flags.strikethrough) {
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(font.Sprite.strikethrough),
-            .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        self.cells_text.appendAssumeCapacity(.{
-            .mode = .fg,
-            .grid_pos = .{ x, y },
-            .cell_width = cell.gridWidth(),
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .bg_color = bg,
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
-        });
-    }
-
-    return true;
-}
-
-fn addCursor2(
+fn addCursor(
     self: *Metal,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
@@ -2534,66 +2088,7 @@ fn addCursor2(
     });
 }
 
-fn addCursor(
-    self: *Metal,
-    screen: *terminal.Screen,
-    cursor_style: renderer.CursorStyle,
-) ?*const mtl_shaders.CellText {
-    // Add the cursor. We render the cursor over the wide character if
-    // we're on the wide characer tail.
-    const wide, const x = cell: {
-        // The cursor goes over the screen cursor position.
-        const cell = screen.cursor.page_cell;
-        if (cell.wide != .spacer_tail or screen.cursor.x == 0)
-            break :cell .{ cell.wide == .wide, screen.cursor.x };
-
-        // If we're part of a wide character, we move the cursor back to
-        // the actual character.
-        const prev_cell = screen.cursorCellLeft(1);
-        break :cell .{ prev_cell.wide == .wide, screen.cursor.x - 1 };
-    };
-
-    const color = self.cursor_color orelse self.foreground_color;
-    const alpha: u8 = if (!self.focused) 255 else alpha: {
-        const alpha = 255 * self.config.cursor_opacity;
-        break :alpha @intFromFloat(@ceil(alpha));
-    };
-
-    const sprite: font.Sprite = switch (cursor_style) {
-        .block => .cursor_rect,
-        .block_hollow => .cursor_hollow_rect,
-        .bar => .cursor_bar,
-        .underline => .underline,
-    };
-
-    const render = self.font_grid.renderGlyph(
-        self.alloc,
-        font.sprite_index,
-        @intFromEnum(sprite),
-        .{
-            .cell_width = if (wide) 2 else 1,
-            .grid_metrics = self.grid_metrics,
-        },
-    ) catch |err| {
-        log.warn("error rendering cursor glyph err={}", .{err});
-        return null;
-    };
-
-    self.cells_text.appendAssumeCapacity(.{
-        .mode = .fg,
-        .grid_pos = .{ x, screen.cursor.y },
-        .cell_width = if (wide) 2 else 1,
-        .color = .{ color.r, color.g, color.b, alpha },
-        .bg_color = .{ 0, 0, 0, 0 },
-        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-        .glyph_size = .{ render.glyph.width, render.glyph.height },
-        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
-    });
-
-    return &self.cells_text.items[self.cells_text.items.len - 1];
-}
-
-fn addPreeditCell2(
+fn addPreeditCell(
     self: *Metal,
     cp: renderer.State.Preedit.Codepoint,
     coord: terminal.Coordinate,
@@ -2630,53 +2125,6 @@ fn addPreeditCell2(
     try self.cells.set(self.alloc, .text, .{
         .mode = .fg,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-        .cell_width = if (cp.wide) 2 else 1,
-        .color = .{ fg.r, fg.g, fg.b, 255 },
-        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
-        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-        .glyph_size = .{ render.glyph.width, render.glyph.height },
-        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
-    });
-}
-
-fn addPreeditCell(
-    self: *Metal,
-    cp: renderer.State.Preedit.Codepoint,
-    x: terminal.size.CellCountInt,
-    y: terminal.size.CellCountInt,
-) !void {
-    // Preedit is rendered inverted
-    const bg = self.foreground_color;
-    const fg = self.background_color;
-
-    // Render the glyph for our preedit text
-    const render_ = self.font_grid.renderCodepoint(
-        self.alloc,
-        @intCast(cp.codepoint),
-        .regular,
-        .text,
-        .{ .grid_metrics = self.grid_metrics },
-    ) catch |err| {
-        log.warn("error rendering preedit glyph err={}", .{err});
-        return;
-    };
-    const render = render_ orelse {
-        log.warn("failed to find font for preedit codepoint={X}", .{cp.codepoint});
-        return;
-    };
-
-    // Add our opaque background cell
-    self.cells_bg.appendAssumeCapacity(.{
-        .mode = .rgb,
-        .grid_pos = .{ x, y },
-        .cell_width = if (cp.wide) 2 else 1,
-        .color = .{ bg.r, bg.g, bg.b, 255 },
-    });
-
-    // Add our text
-    self.cells_text.appendAssumeCapacity(.{
-        .mode = .fg,
-        .grid_pos = .{ x, y },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
         .bg_color = .{ bg.r, bg.g, bg.b, 255 },
