@@ -78,9 +78,13 @@ pub const Preedit = struct {
     /// Range returns the start and end x position of the preedit text
     /// along with any codepoint offset necessary to fit the preedit
     /// into the available space.
-    pub fn range(self: *const Preedit, start: usize, max: usize) struct {
-        start: usize,
-        end: usize,
+    pub fn range(
+        self: *const Preedit,
+        start: terminal.size.CellCountInt,
+        max: terminal.size.CellCountInt,
+    ) struct {
+        start: terminal.size.CellCountInt,
+        end: terminal.size.CellCountInt,
         cp_offset: usize,
     } {
         // If our width is greater than the number of cells we have
@@ -92,7 +96,7 @@ pub const Preedit = struct {
 
             // Rebuild our width in reverse order. This is because we want
             // to offset by the end cells, not the start cells (if we have to).
-            var w: usize = 0;
+            var w: terminal.size.CellCountInt = 0;
             for (0..self.codepoints.len) |i| {
                 const reverse_i = self.codepoints.len - i - 1;
                 const cp = self.codepoints[reverse_i];

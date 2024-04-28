@@ -435,7 +435,7 @@ pub fn adjust(
                 const cells = next.page.data.getCells(rac.row);
                 if (page.Cell.hasTextAny(cells)) {
                     end_pin.* = next;
-                    end_pin.x = cells.len - 1;
+                    end_pin.x = @intCast(cells.len - 1);
                     break;
                 }
             }

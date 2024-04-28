@@ -29,6 +29,7 @@ const Health = renderer.Health;
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
+const mtl_cell = @import("metal/cell.zig");
 const mtl_image = @import("metal/image.zig");
 const mtl_sampler = @import("metal/sampler.zig");
 const mtl_shaders = @import("metal/shaders.zig");
@@ -36,7 +37,6 @@ const Image = mtl_image.Image;
 const ImageMap = mtl_image.ImageMap;
 const Shaders = mtl_shaders.Shaders;
 
-const CellBuffer = mtl_buffer.Buffer(mtl_shaders.Cell);
 const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
@@ -90,8 +90,7 @@ current_background_color: terminal.color.RGB,
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
-cells_bg: std.ArrayListUnmanaged(mtl_shaders.Cell),
-cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
+cells: mtl_cell.Contents,
 
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
@@ -108,18 +107,9 @@ image_text_end: u32 = 0,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
-buf_cells: CellBuffer, // Vertex buffer for cells
-buf_cells_bg: CellBuffer, // Vertex buffer for background cells
-buf_instance: InstanceBuffer, // MTLBuffer
 
 /// Metal objects
-device: objc.Object, // MTLDevice
-queue: objc.Object, // MTLCommandQueue
 layer: objc.Object, // CAMetalLayer
-texture_greyscale: objc.Object, // MTLTexture
-texture_color: objc.Object, // MTLTexture
-texture_greyscale_modified: usize = 0,
-texture_color_modified: usize = 0,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -128,10 +118,151 @@ custom_shader_state: ?CustomShaderState = null,
 /// this will have to be part of the frame state.
 health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
-/// Sempahore blocking our in-flight buffer updates. For now this is just
-/// one but in the future if we implement double/triple-buffering this
-/// will be incremented.
-inflight: std.Thread.Semaphore = .{ .permits = 1 },
+/// Our GPU state
+gpu_state: GPUState,
+
+/// State we need for the GPU that is shared between all frames.
+pub const GPUState = struct {
+    // The count of buffers we use for double/triple buffering. If
+    // this is one then we don't do any double+ buffering at all. This
+    // is comptime because there isn't a good reason to change this at
+    // runtime and there is a lot of complexity to support it. For comptime,
+    // this is useful for debugging.
+    // TODO(mitchellh): enable triple-buffering when we improve our frame times
+    const BufferCount = 1;
+
+    /// The frame data, the current frame index, and the semaphore protecting
+    /// the frame data. This is used to implement double/triple/etc. buffering.
+    frames: [BufferCount]FrameState,
+    frame_index: std.math.IntFittingRange(0, BufferCount) = 0,
+    frame_sema: std.Thread.Semaphore = .{ .permits = BufferCount },
+
+    device: objc.Object, // MTLDevice
+    queue: objc.Object, // MTLCommandQueue
+
+    /// This buffer is written exactly once so we can use it globally.
+    instance: InstanceBuffer, // MTLBuffer
+
+    pub fn init() !GPUState {
+        const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
+        const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
+        errdefer queue.msgSend(void, objc.sel("release"), .{});
+
+        var instance = try InstanceBuffer.initFill(device, &.{
+            0, 1, 3, // Top-left triangle
+            1, 2, 3, // Bottom-right triangle
+        });
+        errdefer instance.deinit();
+
+        var result: GPUState = .{
+            .device = device,
+            .queue = queue,
+            .instance = instance,
+            .frames = undefined,
+        };
+
+        // Initialize all of our frame state.
+        for (&result.frames) |*frame| {
+            frame.* = try FrameState.init(result.device);
+        }
+
+        return result;
+    }
+
+    pub fn deinit(self: *GPUState) void {
+        // Wait for all of our inflight draws to complete so that
+        // we can cleanly deinit our GPU state.
+        for (0..BufferCount) |_| self.frame_sema.wait();
+        for (&self.frames) |*frame| frame.deinit();
+        self.instance.deinit();
+        self.queue.msgSend(void, objc.sel("release"), .{});
+    }
+
+    /// Get the next frame state to draw to. This will wait on the
+    /// semaphore to ensure that the frame is available. This must
+    /// always be paired with a call to releaseFrame.
+    pub fn nextFrame(self: *GPUState) *FrameState {
+        self.frame_sema.wait();
+        errdefer self.frame_sema.post();
+        self.frame_index = (self.frame_index + 1) % BufferCount;
+        return &self.frames[self.frame_index];
+    }
+
+    /// This should be called when the frame has completed drawing.
+    pub fn releaseFrame(self: *GPUState) void {
+        self.frame_sema.post();
+    }
+};
+
+/// State we need duplicated for every frame. Any state that could be
+/// in a data race between the GPU and CPU while a frame is being
+/// drawn should be in this struct.
+///
+/// While a draw is in-process, we "lock" the state (via a semaphore)
+/// and prevent the CPU from updating the state until Metal reports
+/// that the frame is complete.
+///
+/// This is used to implement double/triple buffering.
+pub const FrameState = struct {
+    uniforms: UniformBuffer,
+    cells: CellTextBuffer,
+    cells_bg: CellBgBuffer,
+
+    greyscale: objc.Object, // MTLTexture
+    greyscale_modified: usize = 0,
+    color: objc.Object, // MTLTexture
+    color_modified: usize = 0,
+
+    /// A buffer containing the uniform data.
+    const UniformBuffer = mtl_buffer.Buffer(mtl_shaders.Uniforms);
+    const CellBgBuffer = mtl_buffer.Buffer(mtl_shaders.CellBg);
+    const CellTextBuffer = mtl_buffer.Buffer(mtl_shaders.CellText);
+
+    pub fn init(device: objc.Object) !FrameState {
+        // Uniform buffer contains exactly 1 uniform struct. The
+        // uniform data will be undefined so this must be set before
+        // a frame is drawn.
+        var uniforms = try UniformBuffer.init(device, 1);
+        errdefer uniforms.deinit();
+
+        // Create the buffers for our vertex data. The preallocation size
+        // is likely too small but our first frame update will resize it.
+        var cells = try CellTextBuffer.init(device, 10 * 10);
+        errdefer cells.deinit();
+        var cells_bg = try CellBgBuffer.init(device, 10 * 10);
+        errdefer cells_bg.deinit();
+
+        // Initialize our textures for our font atlas.
+        const greyscale = try initAtlasTexture(device, &.{
+            .data = undefined,
+            .size = 8,
+            .format = .greyscale,
+        });
+        errdefer deinitMTLResource(greyscale);
+        const color = try initAtlasTexture(device, &.{
+            .data = undefined,
+            .size = 8,
+            .format = .rgba,
+        });
+        errdefer deinitMTLResource(color);
+
+        return .{
+            .uniforms = uniforms,
+            .cells = cells,
+            .cells_bg = cells_bg,
+            .greyscale = greyscale,
+            .color = color,
+        };
+    }
+
+    pub fn deinit(self: *FrameState) void {
+        self.uniforms.deinit();
+        self.cells.deinit();
+        self.cells_bg.deinit();
+        deinitMTLResource(self.greyscale);
+        deinitMTLResource(self.color);
+    }
+};
 
 pub const CustomShaderState = struct {
     /// The screen texture that we render the terminal to. If we don't have
@@ -309,8 +440,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
 
     // Initialize our metal stuff
-    const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
-    const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
+    var gpu_state = try GPUState.init();
+    errdefer gpu_state.deinit();
 
     // Get our CAMetalLayer
     const layer = switch (builtin.os.tag) {
@@ -324,7 +455,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         else => @compileError("unsupported target for Metal"),
     };
-    layer.setProperty("device", device.value);
+    layer.setProperty("device", gpu_state.device.value);
     layer.setProperty("opaque", options.config.background_opacity >= 1);
     layer.setProperty("displaySyncEnabled", false); // disable v-sync
 
@@ -353,17 +484,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     });
     errdefer font_shaper.deinit();
 
-    // Vertex buffers
-    var buf_cells = try CellBuffer.init(device, 160 * 160);
-    errdefer buf_cells.deinit();
-    var buf_cells_bg = try CellBuffer.init(device, 160 * 160);
-    errdefer buf_cells_bg.deinit();
-    var buf_instance = try InstanceBuffer.initFill(device, &.{
-        0, 1, 3, // Top-left triangle
-        1, 2, 3, // Bottom-right triangle
-    });
-    errdefer buf_instance.deinit();
-
     // Load our custom shaders
     const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
         arena_alloc,
@@ -379,7 +499,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         if (custom_shaders.len == 0) break :state null;
 
         // Build our sampler for our texture
-        var sampler = try mtl_sampler.Sampler.init(device);
+        var sampler = try mtl_sampler.Sampler.init(gpu_state.device);
         errdefer sampler.deinit();
 
         break :state .{
@@ -407,31 +527,23 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer if (custom_shader_state) |*state| state.deinit();
 
     // Initialize our shaders
-    var shaders = try Shaders.init(alloc, device, custom_shaders);
+    var shaders = try Shaders.init(alloc, gpu_state.device, custom_shaders);
     errdefer shaders.deinit(alloc);
 
     // Initialize all the data that requires a critical font section.
     const font_critical: struct {
         metrics: font.Metrics,
-        texture_greyscale: objc.Object,
-        texture_color: objc.Object,
     } = font_critical: {
         const grid = options.font_grid;
         grid.lock.lockShared();
         defer grid.lock.unlockShared();
-
-        // Font atlas textures
-        const greyscale = try initAtlasTexture(device, &grid.atlas_greyscale);
-        errdefer deinitMTLResource(greyscale);
-        const color = try initAtlasTexture(device, &grid.atlas_color);
-        errdefer deinitMTLResource(color);
-
         break :font_critical .{
             .metrics = grid.metrics,
-            .texture_greyscale = greyscale,
-            .texture_color = color,
         };
     };
+
+    const cells = try mtl_cell.Contents.init(alloc);
+    errdefer cells.deinit(alloc);
 
     return Metal{
         .alloc = alloc,
@@ -447,12 +559,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .current_background_color = options.config.background,
 
         // Render state
-        .cells_bg = .{},
-        .cells = .{},
+        .cells = cells,
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
             .min_contrast = options.config.min_contrast,
+            .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
+            .cursor_color = undefined,
         },
 
         // Fonts
@@ -461,29 +574,18 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Shaders
         .shaders = shaders,
-        .buf_cells = buf_cells,
-        .buf_cells_bg = buf_cells_bg,
-        .buf_instance = buf_instance,
 
         // Metal stuff
-        .device = device,
-        .queue = queue,
         .layer = layer,
-        .texture_greyscale = font_critical.texture_greyscale,
-        .texture_color = font_critical.texture_color,
         .custom_shader_state = custom_shader_state,
+        .gpu_state = gpu_state,
     };
 }
 
 pub fn deinit(self: *Metal) void {
-    // If we have inflight buffers, wait for completion. This ensures that
-    // any pending GPU operations are completed before we start deallocating
-    // everything. This is important because our completion callbacks access
-    // "self"
-    self.inflight.wait();
+    self.gpu_state.deinit();
 
     self.cells.deinit(self.alloc);
-    self.cells_bg.deinit(self.alloc);
 
     self.font_shaper.deinit();
 
@@ -495,13 +597,6 @@ pub fn deinit(self: *Metal) void {
         self.images.deinit(self.alloc);
     }
     self.image_placements.deinit(self.alloc);
-
-    self.buf_cells_bg.deinit();
-    self.buf_cells.deinit();
-    self.buf_instance.deinit();
-    deinitMTLResource(self.texture_greyscale);
-    deinitMTLResource(self.texture_color);
-    self.queue.msgSend(void, objc.sel("release"), .{});
 
     if (self.custom_shader_state) |*state| state.deinit();
 
@@ -567,8 +662,14 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
 pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     // Update our grid
     self.font_grid = grid;
-    self.texture_greyscale_modified = 0;
-    self.texture_color_modified = 0;
+
+    // Update all our textures so that they sync on the next frame.
+    // We can modify this without a lock because the GPU does not
+    // touch this data.
+    for (&self.gpu_state.frames) |*frame| {
+        frame.greyscale_modified = 0;
+        frame.color_modified = 0;
+    }
 
     // Get our metrics from the grid. This doesn't require a lock because
     // the metrics are never recalculated.
@@ -583,6 +684,8 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
             @floatFromInt(metrics.cell_height),
         },
         .min_contrast = self.uniforms.min_contrast,
+        .cursor_pos = self.uniforms.cursor_pos,
+        .cursor_color = self.uniforms.cursor_color,
     };
 }
 
@@ -699,7 +802,7 @@ pub fn updateFrame(
                 .replace_grey_alpha,
                 .replace_rgb,
                 .replace_rgba,
-                => try kv.value_ptr.image.upload(self.alloc, self.device),
+                => try kv.value_ptr.image.upload(self.alloc, self.gpu_state.device),
 
                 .unload_pending,
                 .unload_replace,
@@ -717,9 +820,17 @@ pub fn updateFrame(
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
 
-    // Wait for a buffer to be available.
-    self.inflight.wait();
-    errdefer self.inflight.post();
+    // Wait for a frame to be available.
+    const frame = self.gpu_state.nextFrame();
+    errdefer self.gpu_state.releaseFrame();
+    // log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
+
+    // Setup our frame data
+    const cells_bg = self.cells.bgCells();
+    const cells_fg = self.cells.fgCells();
+    try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
+    try frame.cells_bg.sync(self.gpu_state.device, cells_bg);
+    try frame.cells.sync(self.gpu_state.device, cells_fg);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -750,23 +861,23 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // If our font atlas changed, sync the texture data
     texture: {
         const modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        if (modified <= self.texture_greyscale_modified) break :texture;
+        if (modified <= frame.greyscale_modified) break :texture;
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
-        self.texture_greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_greyscale, &self.texture_greyscale);
+        frame.greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
+        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_greyscale, &frame.greyscale);
     }
     texture: {
         const modified = self.font_grid.atlas_color.modified.load(.monotonic);
-        if (modified <= self.texture_color_modified) break :texture;
+        if (modified <= frame.color_modified) break :texture;
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
-        self.texture_color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
-        try syncAtlasTexture(self.device, &self.font_grid.atlas_color, &self.texture_color);
+        frame.color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
+        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_color, &frame.color);
     }
 
     // Command buffer (MTLCommandBuffer)
-    const buffer = self.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
+    const buffer = self.gpu_state.queue.msgSend(objc.Object, objc.sel("commandBuffer"), .{});
 
     {
         // MTLRenderPassDescriptor
@@ -818,13 +929,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCells(encoder, &self.buf_cells_bg, self.cells_bg);
+        try self.drawCellBgs(encoder, frame, cells_bg.len);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCells(encoder, &self.buf_cells, self.cells);
+        try self.drawCellFgs(encoder, frame, cells_fg.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -935,7 +1046,7 @@ fn bufferCompleted(
     }
 
     // Always release our semaphore
-    self.inflight.post();
+    self.gpu_state.releaseFrame();
 }
 
 fn drawPostShader(
@@ -1046,7 +1157,7 @@ fn drawImagePlacement(
     // Create our vertex buffer, which is always exactly one item.
     // future(mitchellh): we can group rendering multiple instances of a single image
     const Buffer = mtl_buffer.Buffer(mtl_shaders.Image);
-    var buf = try Buffer.initFill(self.device, &.{.{
+    var buf = try Buffer.initFill(self.gpu_state.device, &.{.{
         .grid_pos = .{
             @as(f32, @floatFromInt(p.x)),
             @as(f32, @floatFromInt(p.y)),
@@ -1104,7 +1215,7 @@ fn drawImagePlacement(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            self.buf_instance.buffer.value,
+            self.gpu_state.instance.buffer.value,
             @as(c_ulong, 0),
             @as(c_ulong, 1),
         },
@@ -1113,58 +1224,34 @@ fn drawImagePlacement(
     // log.debug("drawImagePlacement: {}", .{p});
 }
 
-/// Loads some set of cell data into our buffer and issues a draw call.
-/// This expects all the Metal command encoder state to be setup.
-///
-/// Future: when we move to multiple shaders, this will go away and
-/// we'll have a draw call per-shader.
-fn drawCells(
+/// Draw the cell backgrounds.
+fn drawCellBgs(
     self: *Metal,
     encoder: objc.Object,
-    buf: *CellBuffer,
-    cells: std.ArrayListUnmanaged(mtl_shaders.Cell),
+    frame: *const FrameState,
+    len: usize,
 ) !void {
-    if (cells.items.len == 0) return;
-
-    try buf.sync(self.device, cells.items);
+    // This triggers an assertion in the Metal API if we try to draw
+    // with an instance count of 0 so just bail.
+    if (len == 0) return;
 
     // Use our shader pipeline
     encoder.msgSend(
         void,
         objc.sel("setRenderPipelineState:"),
-        .{self.shaders.cell_pipeline.value},
+        .{self.shaders.cell_bg_pipeline.value},
     );
 
     // Set our buffers
     encoder.msgSend(
         void,
-        objc.sel("setVertexBytes:length:atIndex:"),
-        .{
-            @as(*const anyopaque, @ptrCast(&self.uniforms)),
-            @as(c_ulong, @sizeOf(@TypeOf(self.uniforms))),
-            @as(c_ulong, 1),
-        },
-    );
-    encoder.msgSend(
-        void,
-        objc.sel("setFragmentTexture:atIndex:"),
-        .{
-            self.texture_greyscale.value,
-            @as(c_ulong, 0),
-        },
-    );
-    encoder.msgSend(
-        void,
-        objc.sel("setFragmentTexture:atIndex:"),
-        .{
-            self.texture_color.value,
-            @as(c_ulong, 1),
-        },
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.cells_bg.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
     encoder.msgSend(
         void,
         objc.sel("setVertexBuffer:offset:atIndex:"),
-        .{ buf.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+        .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
     );
 
     encoder.msgSend(
@@ -1174,9 +1261,69 @@ fn drawCells(
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 6),
             @intFromEnum(mtl.MTLIndexType.uint16),
-            self.buf_instance.buffer.value,
+            self.gpu_state.instance.buffer.value,
             @as(c_ulong, 0),
-            @as(c_ulong, cells.items.len),
+            @as(c_ulong, len),
+        },
+    );
+}
+
+/// Draw the cell foregrounds using the text shader.
+fn drawCellFgs(
+    self: *Metal,
+    encoder: objc.Object,
+    frame: *const FrameState,
+    len: usize,
+) !void {
+    // This triggers an assertion in the Metal API if we try to draw
+    // with an instance count of 0 so just bail.
+    if (len == 0) return;
+
+    // Use our shader pipeline
+    encoder.msgSend(
+        void,
+        objc.sel("setRenderPipelineState:"),
+        .{self.shaders.cell_text_pipeline.value},
+    );
+
+    // Set our buffers
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.cells.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            frame.greyscale.value,
+            @as(c_ulong, 0),
+        },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setFragmentTexture:atIndex:"),
+        .{
+            frame.color.value,
+            @as(c_ulong, 1),
+        },
+    );
+
+    encoder.msgSend(
+        void,
+        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        .{
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
+            @as(c_ulong, 6),
+            @intFromEnum(mtl.MTLIndexType.uint16),
+            self.gpu_state.instance.buffer.value,
+            @as(c_ulong, 0),
+            @as(c_ulong, len),
         },
     );
 }
@@ -1433,13 +1580,12 @@ pub fn setScreenSize(
             @floatFromInt(self.grid_metrics.cell_height),
         },
         .min_contrast = old.min_contrast,
+        .cursor_pos = old.cursor_pos,
+        .cursor_color = old.cursor_color,
     };
 
-    // Reset our buffer sizes so that we free memory when the screen shrinks.
-    // This could be made more clever by only doing this when the screen
-    // shrinks but the performance cost really isn't that much.
-    self.cells.clearAndFree(self.alloc);
-    self.cells_bg.clearAndFree(self.alloc);
+    // Reset our cell contents.
+    try self.cells.resize(self.alloc, grid_size);
 
     // If we have custom shaders then we update the state
     if (self.custom_shader_state) |*state| {
@@ -1476,7 +1622,7 @@ pub fn setScreenSize(
 
             // If we fail to create the texture, then we just don't have a screen
             // texture and our custom shaders won't run.
-            const id = self.device.msgSend(
+            const id = self.gpu_state.device.msgSend(
                 ?*anyopaque,
                 objc.sel("newTextureWithDescriptor:"),
                 .{desc},
@@ -1489,9 +1635,9 @@ pub fn setScreenSize(
     log.debug("screen size screen={} grid={}, cell_width={} cell_height={}", .{ dim, grid_size, self.grid_metrics.cell_width, self.grid_metrics.cell_height });
 }
 
-/// Sync all the CPU cells with the GPU state (but still on the CPU here).
-/// This builds all our "GPUCells" on this struct, but doesn't send them
-/// down to the GPU yet.
+/// Convert the terminal state to GPU cells stored in CPU memory. These
+/// are then synced to the GPU in the next frame. This only updates CPU
+/// memory and doesn't touch the GPU.
 fn rebuildCells(
     self: *Metal,
     screen: *terminal.Screen,
@@ -1500,26 +1646,6 @@ fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
-    const rows_usize: usize = @intCast(screen.pages.rows);
-    const cols_usize: usize = @intCast(screen.pages.cols);
-
-    // Bg cells at most will need space for the visible screen size
-    self.cells_bg.clearRetainingCapacity();
-    try self.cells_bg.ensureTotalCapacity(
-        self.alloc,
-        rows_usize * cols_usize,
-    );
-
-    // Over-allocate just to ensure we don't allocate again during loops.
-    self.cells.clearRetainingCapacity();
-    try self.cells.ensureTotalCapacity(
-        self.alloc,
-
-        // * 3 for glyph + underline + strikethrough for each cell
-        // + 1 for cursor
-        (rows_usize * cols_usize * 3) + 1,
-    );
-
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
     defer arena.deinit();
@@ -1536,8 +1662,8 @@ fn rebuildCells(
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
     const preedit_range: ?struct {
-        y: usize,
-        x: [2]usize,
+        y: terminal.size.CellCountInt,
+        x: [2]terminal.size.CellCountInt,
         cp_offset: usize,
     } = if (preedit) |preedit_v| preedit: {
         const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
@@ -1548,60 +1674,21 @@ fn rebuildCells(
         };
     } else null;
 
-    // This is the cell that has [mode == .fg] and is underneath our cursor.
-    // We keep track of it so that we can invert the colors so the character
-    // remains visible.
-    var cursor_cell: ?mtl_shaders.Cell = null;
-
-    // Build each cell
-    var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: usize = 0;
+    // Go row-by-row to build the cells. We go row by row because we do
+    // font shaping by row. In the future, we will also do dirty tracking
+    // by row.
+    var row_it = screen.pages.rowIterator(.left_up, .{ .viewport = .{} }, null);
+    var y: terminal.size.CellCountInt = screen.pages.rows;
     while (row_it.next()) |row| {
-        defer y += 1;
+        y = y - 1;
 
-        // True if this is the row with our cursor. There are a lot of conditions
-        // here because the reasons we need to know this are primarily to invert.
-        //
-        //   - If we aren't drawing the cursor then we don't need to change our rendering.
-        //   - If the cursor is not visible, then we don't need to change rendering.
-        //   - If the cursor style is not a box, then we don't need to change
-        //     rendering because it'll never fully overlap a glyph.
-        //   - If the viewport is not at the bottom, then we don't need to
-        //     change rendering because the cursor is not visible.
-        //     (NOTE: this may not be fully correct, we may be scrolled
-        //     slightly up and the cursor may be visible)
-        //   - If this y doesn't match our cursor y then we don't need to
-        //     change rendering.
-        //
-        const cursor_row = if (cursor_style_) |cursor_style|
-            cursor_style == .block and
-                screen.viewportIsBottom() and
-                y == screen.cursor.y
-        else
-            false;
+        // If we're rebuilding a row, then we always clear the cells
+        self.cells.clear(y);
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
         const shape_cursor = screen.viewportIsBottom() and
             y == screen.cursor.y;
-
-        // If this is the row with our cursor, then we may have to modify
-        // the cell with the cursor.
-        const start_i: usize = self.cells.items.len;
-        defer if (cursor_row) {
-            // If we're on a wide spacer tail, then we want to look for
-            // the previous cell.
-            const screen_cell = row.cells(.all)[screen.cursor.x];
-            const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
-            for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_pos[0] == @as(f32, @floatFromInt(x)) and
-                    (cell.mode == .fg or cell.mode == .fg_color))
-                {
-                    cursor_cell = cell;
-                    break;
-                }
-            }
-        };
 
         // We need to get this row's selection if there is one for proper
         // run splitting.
@@ -1622,13 +1709,17 @@ fn rebuildCells(
         );
         while (try iter.next(self.alloc)) |run| {
             for (try self.font_shaper.shape(run)) |shaper_cell| {
-                // If this cell falls within our preedit range then we skip it.
-                // We do this so we don't have conflicting data on the same
-                // cell.
+                const coord: terminal.Coordinate = .{
+                    .x = shaper_cell.x,
+                    .y = y,
+                };
+
+                // If this cell falls within our preedit range then we
+                // skip this because preedits are setup separately.
                 if (preedit_range) |range| {
-                    if (range.y == y and
-                        shaper_cell.x >= range.x[0] and
-                        shaper_cell.x <= range.x[1])
+                    if (range.y == coord.y and
+                        coord.x >= range.x[0] and
+                        coord.x <= range.x[1])
                     {
                         continue;
                     }
@@ -1638,7 +1729,7 @@ fn rebuildCells(
                 // underline it.
                 const cell: terminal.Pin = cell: {
                     var copy = row;
-                    copy.x = shaper_cell.x;
+                    copy.x = coord.x;
                     break :cell copy;
                 };
 
@@ -1652,14 +1743,13 @@ fn rebuildCells(
                     color_palette,
                     shaper_cell,
                     run,
-                    shaper_cell.x,
-                    y,
+                    coord,
                 )) |update| {
                     assert(update);
                 } else |err| {
                     log.warn("error building cell, will be invalid x={} y={}, err={}", .{
-                        shaper_cell.x,
-                        y,
+                        coord.x,
+                        coord.y,
                         err,
                     });
                 }
@@ -1667,48 +1757,57 @@ fn rebuildCells(
         }
     }
 
-    // Add the cursor at the end so that it overlays everything. If we have
-    // a cursor cell then we invert the colors on that and add it in so
-    // that we can always see it.
-    if (cursor_style_) |cursor_style| cursor_style: {
-        // If we have a preedit, we try to render the preedit text on top
-        // of the cursor.
-        if (preedit) |preedit_v| {
-            const range = preedit_range.?;
-            var x = range.x[0];
-            for (preedit_v.codepoints[range.cp_offset..]) |cp| {
-                self.addPreeditCell(cp, x, range.y) catch |err| {
-                    log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
-                        x,
-                        range.y,
-                        err,
-                    });
-                };
+    // Setup our cursor rendering information.
+    cursor: {
+        // By default, we don't handle cursor inversion on the shader.
+        self.cells.setCursor(null);
+        self.uniforms.cursor_pos = .{
+            std.math.maxInt(u16),
+            std.math.maxInt(u16),
+        };
 
-                x += if (cp.wide) 2 else 1;
-            }
+        // If we have preedit text, we don't setup a cursor
+        if (preedit != null) break :cursor;
 
-            // Preedit hides the cursor
-            break :cursor_style;
-        }
+        // Prepare the cursor cell contents.
+        const style = cursor_style_ orelse break :cursor;
+        self.addCursor(screen, style);
 
-        _ = self.addCursor(screen, cursor_style);
-        if (cursor_cell) |*cell| {
-            if (cell.mode == .fg) {
-                cell.color = if (self.config.cursor_text) |txt|
-                    .{ txt.r, txt.g, txt.b, 255 }
-                else
-                    .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
-            }
-
-            self.cells.appendAssumeCapacity(cell.*);
+        // If the cursor is visible then we set our uniforms.
+        if (style == .block and screen.viewportIsBottom()) {
+            self.uniforms.cursor_pos = .{
+                screen.cursor.x,
+                screen.cursor.y,
+            };
+            self.uniforms.cursor_color = if (self.config.cursor_text) |txt| .{
+                txt.r,
+                txt.g,
+                txt.b,
+                255,
+            } else .{
+                self.background_color.r,
+                self.background_color.g,
+                self.background_color.b,
+                255,
+            };
         }
     }
 
-    // Some debug mode safety checks
-    if (std.debug.runtime_safety) {
-        for (self.cells_bg.items) |cell| assert(cell.mode == .bg);
-        for (self.cells.items) |cell| assert(cell.mode != .bg);
+    // Setup our preedit text.
+    if (preedit) |preedit_v| {
+        const range = preedit_range.?;
+        var x = range.x[0];
+        for (preedit_v.codepoints[range.cp_offset..]) |cp| {
+            self.addPreeditCell(cp, .{ .x = x, .y = range.y }) catch |err| {
+                log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+                    x,
+                    range.y,
+                    err,
+                });
+            };
+
+            x += if (cp.wide) 2 else 1;
+        }
     }
 }
 
@@ -1720,8 +1819,7 @@ fn updateCell(
     palette: *const terminal.color.Palette,
     shaper_cell: font.shape.Cell,
     shaper_run: font.shape.TextRun,
-    x: usize,
-    y: usize,
+    coord: terminal.Coordinate,
 ) !bool {
     const BgFg = struct {
         /// Background is optional because in un-inverted mode
@@ -1820,12 +1918,11 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        self.cells_bg.appendAssumeCapacity(.{
-            .mode = .bg,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        try self.cells.set(self.alloc, .bg, .{
+            .mode = .rgb,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
             .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
-            .bg_color = .{ 0, 0, 0, 0 },
         });
 
         break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
@@ -1849,7 +1946,7 @@ fn updateCell(
             },
         );
 
-        const mode: mtl_shaders.Cell.Mode = switch (try fgMode(
+        const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
             render.presentation,
             cell_pin,
         )) {
@@ -1858,9 +1955,9 @@ fn updateCell(
             .constrained => .fg_constrained,
         };
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.set(self.alloc, .text, .{
             .mode = mode,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
@@ -1895,9 +1992,9 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.set(self.alloc, .underline, .{
             .mode = .fg,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
             .color = .{ color.r, color.g, color.b, alpha },
             .bg_color = bg,
@@ -1918,9 +2015,9 @@ fn updateCell(
             },
         );
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.set(self.alloc, .strikethrough, .{
             .mode = .fg,
-            .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .bg_color = bg,
@@ -1937,7 +2034,7 @@ fn addCursor(
     self: *Metal,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-) ?*const mtl_shaders.Cell {
+) void {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
@@ -1975,15 +2072,12 @@ fn addCursor(
         },
     ) catch |err| {
         log.warn("error rendering cursor glyph err={}", .{err});
-        return null;
+        return;
     };
 
-    self.cells.appendAssumeCapacity(.{
-        .mode = .fg,
-        .grid_pos = .{
-            @as(f32, @floatFromInt(x)),
-            @as(f32, @floatFromInt(screen.cursor.y)),
-        },
+    self.cells.setCursor(.{
+        .mode = .cursor,
+        .grid_pos = .{ x, screen.cursor.y },
         .cell_width = if (wide) 2 else 1,
         .color = .{ color.r, color.g, color.b, alpha },
         .bg_color = .{ 0, 0, 0, 0 },
@@ -1991,15 +2085,12 @@ fn addCursor(
         .glyph_size = .{ render.glyph.width, render.glyph.height },
         .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
     });
-
-    return &self.cells.items[self.cells.items.len - 1];
 }
 
 fn addPreeditCell(
     self: *Metal,
     cp: renderer.State.Preedit.Codepoint,
-    x: usize,
-    y: usize,
+    coord: terminal.Coordinate,
 ) !void {
     // Preedit is rendered inverted
     const bg = self.foreground_color;
@@ -2022,18 +2113,17 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    self.cells_bg.appendAssumeCapacity(.{
-        .mode = .bg,
-        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+    try self.cells.set(self.alloc, .bg, .{
+        .mode = .rgb,
+        .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ bg.r, bg.g, bg.b, 255 },
-        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
     });
 
     // Add our text
-    self.cells.appendAssumeCapacity(.{
+    try self.cells.set(self.alloc, .text, .{
         .mode = .fg,
-        .grid_pos = .{ @as(f32, @floatFromInt(x)), @as(f32, @floatFromInt(y)) },
+        .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
         .bg_color = .{ bg.r, bg.g, bg.b, 255 },
@@ -2121,4 +2211,8 @@ fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object 
 /// memory associated with it.
 fn deinitMTLResource(obj: objc.Object) void {
     obj.msgSend(void, objc.sel("release"), .{});
+}
+
+test {
+    _ = mtl_cell;
 }

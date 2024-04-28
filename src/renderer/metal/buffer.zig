@@ -49,6 +49,21 @@ pub fn Buffer(comptime T: type) type {
             self.buffer.msgSend(void, objc.sel("release"), .{});
         }
 
+        /// Get the buffer contents as a slice of T. The contents are
+        /// mutable. The contents may or may not be automatically synced
+        /// depending on the buffer storage mode. See the Metal docs.
+        pub fn contents(self: *Self) ![]T {
+            const len_bytes = self.buffer.getProperty(c_ulong, "length");
+            assert(@mod(len_bytes, @sizeOf(T)) == 0);
+            const len = @divExact(len_bytes, @sizeOf(T));
+            const ptr = self.buffer.msgSend(
+                ?[*]T,
+                objc.sel("contents"),
+                .{},
+            ).?;
+            return ptr[0..len];
+        }
+
         /// Sync new contents to the buffer.
         pub fn sync(self: *Self, device: objc.Object, data: []const T) !void {
             // If we need more bytes than our buffer has, we need to reallocate.
