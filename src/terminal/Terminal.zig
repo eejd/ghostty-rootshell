@@ -131,6 +131,10 @@ pub const Dirty = packed struct {
 
     /// Set when the reverse colors mode is modified.
     reverse_colors: bool = false,
+
+    /// Screen clear of some kind. This can be due to a screen change,
+    /// erase display, etc.
+    clear: bool = false,
 };
 
 /// The event types that can be reported for mouse-related activities.
@@ -2095,6 +2099,9 @@ pub fn eraseDisplay(
                 self,
                 .{ .all = true },
             );
+
+            // Cleared screen dirty bit
+            self.flags.dirty.clear = true;
         },
 
         .below => {
@@ -2453,6 +2460,9 @@ pub fn alternateScreen(
     // Mark kitty images as dirty so they redraw
     self.screen.kitty_images.dirty = true;
 
+    // Mark our terminal as dirty
+    self.flags.dirty.clear = true;
+
     // Bring our pen with us
     self.screen.cursorCopy(old.cursor) catch |err| {
         log.warn("cursor copy failed entering alt screen err={}", .{err});
@@ -2487,6 +2497,9 @@ pub fn primaryScreen(
 
     // Mark kitty images as dirty so they redraw
     self.screen.kitty_images.dirty = true;
+
+    // Mark our terminal as dirty
+    self.flags.dirty.clear = true;
 
     // Restore the cursor from the primary screen. This should not
     // fail because we should not have to allocate memory since swapping
