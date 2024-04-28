@@ -134,7 +134,7 @@ pub const GPUState = struct {
     /// The frame data, the current frame index, and the semaphore protecting
     /// the frame data. This is used to implement double/triple/etc. buffering.
     frames: [BufferCount]FrameState,
-    frame_index: std.math.IntFittingRange(0, BufferCount - 1) = 0,
+    frame_index: std.math.IntFittingRange(0, BufferCount) = 0,
     frame_sema: std.Thread.Semaphore = .{ .permits = BufferCount },
 
     device: objc.Object, // MTLDevice
