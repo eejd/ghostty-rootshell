@@ -4861,7 +4861,9 @@ test "PageList clone full dirty" {
 
     // Should still be dirty
     try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!s2.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 12 } }));
+    try testing.expect(!s2.isDirty(.{ .active = .{ .x = 0, .y = 14 } }));
     try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 23 } }));
 }
 
