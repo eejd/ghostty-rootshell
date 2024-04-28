@@ -2962,6 +2962,11 @@ pub fn isDirty(self: *const PageList, pt: point.Point) bool {
     return self.getCell(pt).?.isDirty();
 }
 
+/// Mark a point as dirty, used for testing.
+fn markDirty(self: *PageList, pt: point.Point) void {
+    self.pin(pt).?.markDirty();
+}
+
 /// Represents an exact x/y coordinate within the screen. This is called
 /// a "pin" because it is a fixed point within the pagelist direct to
 /// a specific page pointer and memory offset. The benefit is that this
@@ -3020,8 +3025,12 @@ pub const Pin = struct {
         ).?.*;
     }
 
+    /// Check if this pin is dirty.
+    pub fn isDirty(self: Pin) bool {
+        return self.page.data.isRowDirty(self.y);
+    }
+
     /// Mark this pin location as dirty.
-    /// TODO: test
     pub fn markDirty(self: Pin) void {
         var set = self.page.data.dirtyBitSet();
         set.set(self.y);
@@ -4828,6 +4837,32 @@ test "PageList clone remap tracked pin not in cloned area" {
 
     // We should be able to find our tracked pin
     try testing.expect(pin_remap.get(p) == null);
+}
+
+test "PageList clone full dirty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, null);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s.totalRows());
+
+    // Mark a row as dirty
+    s.markDirty(.{ .active = .{ .x = 0, .y = 0 } });
+    s.markDirty(.{ .active = .{ .x = 0, .y = 12 } });
+    s.markDirty(.{ .active = .{ .x = 0, .y = 23 } });
+
+    var s2 = try s.clone(.{
+        .top = .{ .screen = .{} },
+        .memory = .{ .alloc = alloc },
+    });
+    defer s2.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s2.totalRows());
+
+    // Should still be dirty
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 12 } }));
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 23 } }));
 }
 
 test "PageList resize (no reflow) more rows" {

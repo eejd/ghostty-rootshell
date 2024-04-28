@@ -500,11 +500,16 @@ pub const Page = struct {
 
         const other_rows = other.rows.ptr(other.memory)[y_start..y_end];
         const rows = self.rows.ptr(self.memory)[0 .. y_end - y_start];
-        for (rows, other_rows) |*dst_row, *src_row| try self.cloneRowFrom(
-            other,
-            dst_row,
-            src_row,
-        );
+        for (rows, other_rows) |*dst_row, *src_row| {
+            try self.cloneRowFrom(other, dst_row, src_row);
+        }
+
+        // Set our dirty range for all the rows we copied
+        var dirty_set = self.dirtyBitSet();
+        dirty_set.setRangeValue(.{
+            .start = 0,
+            .end = y_end - y_start,
+        }, true);
 
         // We should remain consistent
         self.assertIntegrity();
