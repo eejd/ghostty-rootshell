@@ -676,6 +676,15 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     const metrics = grid.metrics;
     self.grid_metrics = metrics;
 
+    // Reset our cell contents.
+    self.cells.resize(self.alloc, self.gridSize().?) catch |err| {
+        // The setFontGrid function can't fail but resizing our cell
+        // buffer definitely can fail. If it does, our renderer is probably
+        // screwed but let's just log it and continue until we can figure
+        // out a better way to handle this.
+        log.err("error resizing cells buffer err={}", .{err});
+    };
+
     // Update our uniforms
     self.uniforms = .{
         .projection_matrix = self.uniforms.projection_matrix,
