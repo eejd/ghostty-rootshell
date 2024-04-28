@@ -1941,9 +1941,8 @@ fn rebuildCells2(
                     .y = y,
                 };
 
-                // If this cell falls within our preedit range then we skip it.
-                // We do this so we don't have conflicting data on the same
-                // cell.
+                // If this cell falls within our preedit range then we
+                // skip this because preedits are setup separately.
                 if (preedit_range) |range| {
                     if (range.y == coord.y and
                         coord.x >= range.x[0] and
@@ -1994,6 +1993,9 @@ fn rebuildCells2(
             std.math.maxInt(u16),
         };
 
+        // If we have preedit text, we don't setup a cursor
+        if (preedit != null) break :cursor;
+
         // Prepare the cursor cell contents.
         const style = cursor_style_ orelse break :cursor;
         self.addCursor2(screen, style);
@@ -2018,37 +2020,22 @@ fn rebuildCells2(
         }
     }
 
-    // If we have a preedit, we try to render the preedit text on top
-    // of the cursor.
-    // if (preedit) |preedit_v| {
-    //     const range = preedit_range.?;
-    //     var x = range.x[0];
-    //     for (preedit_v.codepoints[range.cp_offset..]) |cp| {
-    //         self.addPreeditCell(cp, x, range.y) catch |err| {
-    //             log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
-    //                 x,
-    //                 range.y,
-    //                 err,
-    //             });
-    //         };
-    //
-    //         x += if (cp.wide) 2 else 1;
-    //     }
-    //
-    //     // Preedit hides the cursor
-    //     break :cursor_style;
-    // }
+    // Setup our preedit text.
+    if (preedit) |preedit_v| {
+        const range = preedit_range.?;
+        var x = range.x[0];
+        for (preedit_v.codepoints[range.cp_offset..]) |cp| {
+            self.addPreeditCell2(cp, .{ .x = x, .y = range.y }) catch |err| {
+                log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+                    x,
+                    range.y,
+                    err,
+                });
+            };
 
-    // if (cursor_cell) |*cell| {
-    //     if (cell.mode == .fg) {
-    //         cell.color = if (self.config.cursor_text) |txt|
-    //             .{ txt.r, txt.g, txt.b, 255 }
-    //         else
-    //             .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
-    //     }
-    //
-    //     self.cells_text.appendAssumeCapacity(cell.*);
-    // }
+            x += if (cp.wide) 2 else 1;
+        }
+    }
 }
 
 fn updateCell2(
@@ -2604,6 +2591,52 @@ fn addCursor(
     });
 
     return &self.cells_text.items[self.cells_text.items.len - 1];
+}
+
+fn addPreeditCell2(
+    self: *Metal,
+    cp: renderer.State.Preedit.Codepoint,
+    coord: terminal.Coordinate,
+) !void {
+    // Preedit is rendered inverted
+    const bg = self.foreground_color;
+    const fg = self.background_color;
+
+    // Render the glyph for our preedit text
+    const render_ = self.font_grid.renderCodepoint(
+        self.alloc,
+        @intCast(cp.codepoint),
+        .regular,
+        .text,
+        .{ .grid_metrics = self.grid_metrics },
+    ) catch |err| {
+        log.warn("error rendering preedit glyph err={}", .{err});
+        return;
+    };
+    const render = render_ orelse {
+        log.warn("failed to find font for preedit codepoint={X}", .{cp.codepoint});
+        return;
+    };
+
+    // Add our opaque background cell
+    try self.cells.set(self.alloc, .bg, .{
+        .mode = .rgb,
+        .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+        .cell_width = if (cp.wide) 2 else 1,
+        .color = .{ bg.r, bg.g, bg.b, 255 },
+    });
+
+    // Add our text
+    try self.cells.set(self.alloc, .text, .{
+        .mode = .fg,
+        .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+        .cell_width = if (cp.wide) 2 else 1,
+        .color = .{ fg.r, fg.g, fg.b, 255 },
+        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+    });
 }
 
 fn addPreeditCell(
