@@ -114,7 +114,24 @@ flags: packed struct {
     /// then we want to capture the shift key for the mouse protocol
     /// if the configuration allows it.
     mouse_shift_capture: enum(u2) { null, false, true } = .null,
+
+    /// Dirty flags for the renderer.
+    dirty: Dirty = .{},
 } = .{},
+
+/// This is a set of dirty flags the renderer can use to determine
+/// what parts of the screen need to be redrawn. It is up to the renderer
+/// to clear these flags.
+///
+/// This only contains dirty flags for terminal state, not for the screen
+/// state. The screen state has its own dirty flags.
+pub const Dirty = packed struct {
+    /// Set when the color palette is modified in any way.
+    palette: bool = false,
+
+    /// Set when the reverse colors mode is modified.
+    reverse_colors: bool = false,
+};
 
 /// The event types that can be reported for mouse-related activities.
 /// These are all mutually exclusive (hence in a single enum).

@@ -397,6 +397,7 @@ pub fn changeConfig(self: *Exec, config: *DerivedConfig) !void {
     for (0..config.palette.len) |i| {
         if (!self.terminal.color_palette.mask.isSet(i)) {
             self.terminal.color_palette.colors[i] = config.palette[i];
+            self.terminal.flags.dirty.palette = true;
         }
     }
 
@@ -2166,7 +2167,10 @@ const StreamHandler = struct {
             .autorepeat => {},
 
             // Schedule a render since we changed colors
-            .reverse_colors => try self.queueRender(),
+            .reverse_colors => {
+                self.terminal.flags.dirty.reverse_colors = true;
+                try self.queueRender();
+            },
 
             // Origin resets cursor pos. This is called whether or not
             // we're enabling or disabling origin mode and whether or
@@ -2792,6 +2796,7 @@ const StreamHandler = struct {
 
         switch (kind) {
             .palette => |i| {
+                self.terminal.flags.dirty.palette = true;
                 self.terminal.color_palette.colors[i] = color;
                 self.terminal.color_palette.mask.set(i);
             },
@@ -2829,6 +2834,7 @@ const StreamHandler = struct {
                     // reset those indices to the default palette
                     var it = mask.iterator(.{});
                     while (it.next()) |i| {
+                        self.terminal.flags.dirty.palette = true;
                         self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                         mask.unset(i);
                     }
@@ -2838,6 +2844,7 @@ const StreamHandler = struct {
                         // Skip invalid parameters
                         const i = std.fmt.parseUnsigned(u8, param, 10) catch continue;
                         if (mask.isSet(i)) {
+                            self.terminal.flags.dirty.palette = true;
                             self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                             mask.unset(i);
                         }
