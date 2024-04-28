@@ -27,6 +27,19 @@ pub const Key = enum {
 };
 
 /// The contents of all the cells in the terminal.
+///
+/// The goal of this data structure is to make it efficient for two operations:
+///
+///   1. Setting the contents of a cell by coordinate. More specifically,
+///      we want to be efficient setting cell contents by row since we
+///      will be doing row dirty tracking.
+///
+///   2. Syncing the contents of the CPU buffers to GPU buffers. This happens
+///      every frame and should be as fast as possible.
+///
+/// To achieve this, the contents are stored in contiguous arrays by
+/// GPU vertex type and we have an array of mappings indexed by coordinate
+/// that map to the index in the GPU vertex array that the content is at.
 pub const Contents = struct {
     /// The map contains the mapping of cell content for every cell in the
     /// terminal to the index in the cells array that the content is at.
@@ -49,7 +62,8 @@ pub const Contents = struct {
     bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg),
     text: std.ArrayListUnmanaged(mtl_shaders.CellText),
 
-    /// True when the cursor should be rendered.
+    /// True when the cursor should be rendered. This is managed by
+    /// the setCursor method and should not be set directly.
     cursor: bool,
 
     /// The amount of text elements we reserve at the beginning for
@@ -257,7 +271,8 @@ pub const Contents = struct {
         return coord.y * self.cols + coord.x;
     }
 
-    /// Structures related to the contents of the cell.
+    /// The mapping of a cell at a specific coordinate to the index in the
+    /// vertex arrays where the cell content is at, if it is set.
     const Map = struct {
         /// The set of cell content mappings for a given cell for every
         /// possible key. This is used to determine if a cell has a given

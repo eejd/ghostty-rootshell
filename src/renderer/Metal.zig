@@ -90,8 +90,6 @@ current_background_color: terminal.color.RGB,
 /// The current set of cells to render. This is rebuilt on every frame
 /// but we keep this around so that we don't reallocate. Each set of
 /// cells goes into a separate shader.
-// cells_bg: std.ArrayListUnmanaged(mtl_shaders.CellBg),
-// cells_text: std.ArrayListUnmanaged(mtl_shaders.CellText),
 cells: mtl_cell.Contents,
 
 /// The current GPU uniform values.
