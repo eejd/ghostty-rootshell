@@ -128,7 +128,8 @@ pub const GPUState = struct {
     // is comptime because there isn't a good reason to change this at
     // runtime and there is a lot of complexity to support it. For comptime,
     // this is useful for debugging.
-    const BufferCount = 3;
+    // TODO(mitchellh): enable triple-buffering when we improve our frame times
+    const BufferCount = 1;
 
     /// The frame data, the current frame index, and the semaphore protecting
     /// the frame data. This is used to implement double/triple/etc. buffering.
