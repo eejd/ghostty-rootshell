@@ -1873,9 +1873,6 @@ fn rebuildCells2(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
-    // TODO: cursor_cell
-    // TODO: cursor_Row
-
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
     defer arena.deinit();
@@ -1990,33 +1987,35 @@ fn rebuildCells2(
 
     // Setup our cursor rendering information.
     cursor: {
-        // If we have no cursor style then we don't render the cursor.
-        const style = cursor_style_ orelse {
-            self.cells.setCursor(null);
-            self.uniforms.cursor_pos = .{
-                std.math.maxInt(u16),
-                std.math.maxInt(u16),
-            };
-            break :cursor;
+        // By default, we don't handle cursor inversion on the shader.
+        self.cells.setCursor(null);
+        self.uniforms.cursor_pos = .{
+            std.math.maxInt(u16),
+            std.math.maxInt(u16),
         };
 
         // Prepare the cursor cell contents.
+        const style = cursor_style_ orelse break :cursor;
         self.addCursor2(screen, style);
 
-        // Setup our uniforms for the cursor so that any data
-        // under the cursor can render differently.
-        self.uniforms.cursor_pos = .{ screen.cursor.x, screen.cursor.y };
-        self.uniforms.cursor_color = if (self.config.cursor_text) |txt| .{
-            txt.r,
-            txt.g,
-            txt.b,
-            255,
-        } else .{
-            self.background_color.r,
-            self.background_color.g,
-            self.background_color.b,
-            255,
-        };
+        // If the cursor is visible then we set our uniforms.
+        if (style == .block and screen.viewportIsBottom()) {
+            self.uniforms.cursor_pos = .{
+                screen.cursor.x,
+                screen.cursor.y,
+            };
+            self.uniforms.cursor_color = if (self.config.cursor_text) |txt| .{
+                txt.r,
+                txt.g,
+                txt.b,
+                255,
+            } else .{
+                self.background_color.r,
+                self.background_color.g,
+                self.background_color.b,
+                255,
+            };
+        }
     }
 
     // If we have a preedit, we try to render the preedit text on top
