@@ -92,6 +92,9 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells: mtl_cell.Contents,
 
+/// If this is true, we do a full cell rebuild on the next frame.
+cells_rebuild: bool = true,
+
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
 
@@ -784,6 +787,31 @@ pub fn updateFrame(
         // it changes.
         if (state.terminal.screen.kitty_images.dirty) {
             try self.prepKittyGraphics(state.terminal);
+        }
+
+        // If we have any terminal dirty flags set then we need to rebuild
+        // the entire screen. This can be optimized in the future.
+        {
+            const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
+            const v: Int = @bitCast(state.terminal.flags.dirty);
+            if (v > 0) self.cells_rebuild = true;
+        }
+
+        // Reset the dirty flags in the terminal and screen. We assume
+        // that our rebuild will be successful since so we optimize for
+        // success and reset while we hold the lock. This is much easier
+        // than coordinating row by row or as changes are persisted.
+        state.terminal.flags.dirty = .{};
+        {
+            var it = state.terminal.screen.pages.pageIterator(
+                .right_down,
+                .{ .screen = .{} },
+                null,
+            );
+            while (it.next()) |chunk| {
+                var dirty_set = chunk.page.data.dirtyBitSet();
+                dirty_set.unsetAll();
+            }
         }
 
         break :critical .{
@@ -1711,6 +1739,10 @@ fn rebuildCells(
     while (row_it.next()) |row| {
         y = y - 1;
 
+        // Only rebuild if we are doing a full rebuild or this row is dirty.
+        // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
+        if (!self.cells_rebuild and !row.isDirty()) continue;
+
         // If we're rebuilding a row, then we always clear the cells
         self.cells.clear(y);
 
@@ -1855,6 +1887,9 @@ fn rebuildCells(
             x += if (cp.wide) 2 else 1;
         }
     }
+
+    // We always mark our rebuild flag as false since we're done.
+    self.cells_rebuild = false;
 
     // Log some things
     // log.debug("rebuildCells complete cached_runs={}", .{
