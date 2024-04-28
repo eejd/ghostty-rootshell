@@ -939,8 +939,8 @@ pub fn rebuildCells(
     // Determine our x/y range for preedit. We don't want to render anything
     // here because we will render the preedit separately.
     const preedit_range: ?struct {
-        y: usize,
-        x: [2]usize,
+        y: terminal.size.CellCountInt,
+        x: [2]terminal.size.CellCountInt,
         cp_offset: usize,
     } = if (preedit) |preedit_v| preedit: {
         const range = preedit_v.range(screen.cursor.x, screen.pages.cols - 1);
@@ -958,7 +958,7 @@ pub fn rebuildCells(
 
     // Build each cell
     var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
-    var y: usize = 0;
+    var y: terminal.size.CellCountInt = 0;
     while (row_it.next()) |row| {
         defer y += 1;
 
