@@ -266,10 +266,6 @@ pub fn build(b: *std.Build) !void {
             exe.addWin32ResourceFile(.{
                 .file = b.path("dist/windows/ghostty.rc"),
             });
-
-            // Building with LTO on Windows is broken.
-            // https://github.com/ziglang/zig/issues/15958
-            exe.want_lto = false;
         }
 
         // If we're installing, we get the install step so we can add
