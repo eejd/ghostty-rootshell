@@ -4601,7 +4601,10 @@ test "PageList eraseRowBounded full rows single page" {
 
     // The erased rows should be dirty
     try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
-    for (5..10) |y| try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (5..10) |y| try testing.expect(s.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     // Our pin should move to the first page
     try testing.expectEqual(s.pages.first.?, p_in.page);
@@ -4662,7 +4665,10 @@ test "PageList eraseRowBounded full rows two pages" {
 
     // The erased rows should be dirty
     try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
-    for (4..8) |y| try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (4..8) |y| try testing.expect(s.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     // In page in first page is shifted
     try testing.expectEqual(s.pages.last.?.prev.?, p_first.page);

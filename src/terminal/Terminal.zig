@@ -4975,7 +4975,10 @@ test "Terminal: scrollUp full top/bottomleft/right scroll region" {
     t.scrollUp(4);
 
     try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    for (1..5) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (1..5) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5004,7 +5007,10 @@ test "Terminal: scrollDown simple" {
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
 
-    for (0..5) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..5) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5068,7 +5074,10 @@ test "Terminal: scrollDown left/right scroll region" {
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
 
-    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5099,7 +5108,10 @@ test "Terminal: scrollDown outside of left/right scroll region" {
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
 
-    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5809,7 +5821,10 @@ test "Terminal: index bottom of primary screen with scroll region" {
     try t.index();
     try t.print('X');
 
-    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
@@ -6579,7 +6594,10 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
     t.clearDirty();
     t.deleteLines(1);
 
-    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6657,7 +6675,10 @@ test "Terminal: deleteLines left/right scroll region" {
     t.deleteLines(1);
 
     try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6685,7 +6706,10 @@ test "Terminal: deleteLines left/right scroll region from top" {
     t.clearDirty();
     t.deleteLines(1);
 
-    for (0..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6714,7 +6738,10 @@ test "Terminal: deleteLines left/right scroll region high count" {
     t.deleteLines(100);
 
     try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7078,7 +7105,10 @@ test "Terminal: DECALN" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 
-    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -9032,7 +9062,10 @@ test "Terminal: eraseDisplay protected complete" {
 
     t.clearDirty();
     t.eraseDisplay(.complete, true);
-    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = y } }));
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
