@@ -79,8 +79,7 @@ pub const Contents = struct {
         comptime key: Key,
         coord: terminal.Coordinate,
     ) ?key.CellType() {
-        const idx = coord.y * self.cols + coord.x;
-        const mapping = self.map[idx].array.get(key);
+        const mapping = self.map[self.index(coord)].array.get(key);
         if (!mapping.set) return null;
         return switch (key) {
             .bg => self.bgs.items[mapping.index],
@@ -136,11 +135,8 @@ pub const Contents = struct {
     /// then we would have to update the mapping for every element in
     /// the list. If we clear from the bottom up, then we only have to
     /// update the mapping for the last element in the list.
-    pub fn clear(
-        self: *Contents,
-        y: usize,
-    ) void {
-        const start_idx = y * self.cols;
+    pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
+        const start_idx = self.index(.{ .x = 0, .y = y });
         const end_idx = start_idx + self.cols;
         const maps = self.map[start_idx..end_idx];
         for (0..self.cols) |x| {
