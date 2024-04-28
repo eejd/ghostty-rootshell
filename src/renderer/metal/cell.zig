@@ -35,19 +35,47 @@ pub const Contents = struct {
     ///
     /// Before any operation, this must be initialized by calling resize
     /// on the contents.
-    map: []Map = undefined,
+    map: []Map,
 
     /// The grid size of the terminal. This is used to determine the
     /// map array index from a coordinate.
-    cols: usize = 0,
+    cols: usize,
 
     /// The actual GPU data (on the CPU) for all the cells in the terminal.
     /// This only contains the cells that have content set. To determine
     /// if a cell has content set, we check the map.
     ///
     /// This data is synced to a buffer on every frame.
-    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg) = .{},
-    text: std.ArrayListUnmanaged(mtl_shaders.CellText) = .{},
+    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg),
+    text: std.ArrayListUnmanaged(mtl_shaders.CellText),
+
+    /// True when the cursor should be rendered.
+    cursor: bool,
+
+    /// The amount of text elements we reserve at the beginning for
+    /// special elements like the cursor.
+    const text_reserved_len = 1;
+
+    pub fn init(alloc: Allocator) !Contents {
+        const map = try alloc.alloc(Map, 0);
+        errdefer alloc.free(map);
+
+        var result: Contents = .{
+            .map = map,
+            .cols = 0,
+            .bgs = .{},
+            .text = .{},
+            .cursor = false,
+        };
+
+        // We preallocate some amount of space for cell contents
+        // we always have as a prefix. For now the current prefix
+        // is length 1: the cursor.
+        try result.text.ensureTotalCapacity(alloc, text_reserved_len);
+        result.text.items.len = text_reserved_len;
+
+        return result;
+    }
 
     pub fn deinit(self: *Contents, alloc: Allocator) void {
         alloc.free(self.map);
@@ -70,7 +98,30 @@ pub const Contents = struct {
         self.map = map;
         self.cols = size.columns;
         self.bgs.clearAndFree(alloc);
-        self.text.clearAndFree(alloc);
+        self.text.shrinkAndFree(alloc, text_reserved_len);
+    }
+
+    /// Returns the slice of fg cell contents to sync with the GPU.
+    pub fn fgCells(self: *const Contents) []const mtl_shaders.CellText {
+        const start: usize = if (self.cursor) 0 else 1;
+        return self.text.items[start..];
+    }
+
+    /// Returns the slice of bg cell contents to sync with the GPU.
+    pub fn bgCells(self: *const Contents) []const mtl_shaders.CellBg {
+        return self.bgs.items;
+    }
+
+    /// Set the cursor value. If the value is null then the cursor
+    /// is hidden.
+    pub fn setCursor(self: *Contents, v: ?mtl_shaders.CellText) void {
+        const cell = v orelse {
+            self.cursor = false;
+            return;
+        };
+
+        self.cursor = true;
+        self.text.items[0] = cell;
     }
 
     /// Get the cell contents for the given type and coordinate.
@@ -244,7 +295,7 @@ test Contents {
     const rows = 10;
     const cols = 10;
 
-    var c: Contents = .{};
+    var c = try Contents.init(alloc);
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 
@@ -287,7 +338,7 @@ test "Contents clear retains other content" {
     const rows = 10;
     const cols = 10;
 
-    var c: Contents = .{};
+    var c = try Contents.init(alloc);
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 
@@ -319,7 +370,7 @@ test "Contents clear last added content" {
     const rows = 10;
     const cols = 10;
 
-    var c: Contents = .{};
+    var c = try Contents.init(alloc);
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 

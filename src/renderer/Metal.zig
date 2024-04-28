@@ -543,6 +543,9 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
+    const cells = try mtl_cell.Contents.init(alloc);
+    errdefer cells.deinit(alloc);
+
     return Metal{
         .alloc = alloc,
         .config = options.config,
@@ -557,7 +560,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .current_background_color = options.config.background,
 
         // Render state
-        .cells = .{},
+        .cells = cells,
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
@@ -829,9 +832,11 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
 
     // Setup our frame data
+    const cells_bg = self.cells.bgCells();
+    const cells_fg = self.cells.fgCells();
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    try frame.cells_bg.sync(self.gpu_state.device, self.cells.bgs.items);
-    try frame.cells.sync(self.gpu_state.device, self.cells.text.items);
+    try frame.cells_bg.sync(self.gpu_state.device, cells_bg);
+    try frame.cells.sync(self.gpu_state.device, cells_fg);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -930,13 +935,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, self.cells.bgs.items.len);
+        try self.drawCellBgs(encoder, frame, cells_bg.len);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCellFgs(encoder, frame, self.cells.text.items.len);
+        try self.drawCellFgs(encoder, frame, cells_fg.len);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -1864,7 +1869,6 @@ fn rebuildCells2(
 ) !void {
     // TODO: cursor_cell
     // TODO: cursor_Row
-    _ = cursor_style_;
 
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
@@ -1978,42 +1982,48 @@ fn rebuildCells2(
         }
     }
 
-    // Add the cursor at the end so that it overlays everything. If we have
-    // a cursor cell then we invert the colors on that and add it in so
-    // that we can always see it.
-    // if (cursor_style_) |cursor_style| cursor_style: {
-    //     // If we have a preedit, we try to render the preedit text on top
-    //     // of the cursor.
-    //     if (preedit) |preedit_v| {
-    //         const range = preedit_range.?;
-    //         var x = range.x[0];
-    //         for (preedit_v.codepoints[range.cp_offset..]) |cp| {
-    //             self.addPreeditCell(cp, x, range.y) catch |err| {
-    //                 log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
-    //                     x,
-    //                     range.y,
-    //                     err,
-    //                 });
-    //             };
+    // Setup our cursor rendering information.
+    cursor: {
+        // If we have no cursor style then we don't render the cursor.
+        const style = cursor_style_ orelse {
+            self.cells.setCursor(null);
+            break :cursor;
+        };
+
+        // Prepare the cursor cell contents.
+        self.addCursor2(screen, style);
+    }
+
+    // If we have a preedit, we try to render the preedit text on top
+    // of the cursor.
+    // if (preedit) |preedit_v| {
+    //     const range = preedit_range.?;
+    //     var x = range.x[0];
+    //     for (preedit_v.codepoints[range.cp_offset..]) |cp| {
+    //         self.addPreeditCell(cp, x, range.y) catch |err| {
+    //             log.warn("error building preedit cell, will be invalid x={} y={}, err={}", .{
+    //                 x,
+    //                 range.y,
+    //                 err,
+    //             });
+    //         };
     //
-    //             x += if (cp.wide) 2 else 1;
-    //         }
-    //
-    //         // Preedit hides the cursor
-    //         break :cursor_style;
+    //         x += if (cp.wide) 2 else 1;
     //     }
     //
-    //     _ = self.addCursor(screen, cursor_style);
-    //     // if (cursor_cell) |*cell| {
-    //     //     if (cell.mode == .fg) {
-    //     //         cell.color = if (self.config.cursor_text) |txt|
-    //     //             .{ txt.r, txt.g, txt.b, 255 }
-    //     //         else
-    //     //             .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
-    //     //     }
-    //     //
-    //     //     self.cells_text.appendAssumeCapacity(cell.*);
-    //     // }
+    //     // Preedit hides the cursor
+    //     break :cursor_style;
+    // }
+
+    // if (cursor_cell) |*cell| {
+    //     if (cell.mode == .fg) {
+    //         cell.color = if (self.config.cursor_text) |txt|
+    //             .{ txt.r, txt.g, txt.b, 255 }
+    //         else
+    //             .{ self.background_color.r, self.background_color.g, self.background_color.b, 255 };
+    //     }
+    //
+    //     self.cells_text.appendAssumeCapacity(cell.*);
     // }
 }
 
@@ -2454,6 +2464,63 @@ fn updateCell(
     }
 
     return true;
+}
+
+fn addCursor2(
+    self: *Metal,
+    screen: *terminal.Screen,
+    cursor_style: renderer.CursorStyle,
+) void {
+    // Add the cursor. We render the cursor over the wide character if
+    // we're on the wide characer tail.
+    const wide, const x = cell: {
+        // The cursor goes over the screen cursor position.
+        const cell = screen.cursor.page_cell;
+        if (cell.wide != .spacer_tail or screen.cursor.x == 0)
+            break :cell .{ cell.wide == .wide, screen.cursor.x };
+
+        // If we're part of a wide character, we move the cursor back to
+        // the actual character.
+        const prev_cell = screen.cursorCellLeft(1);
+        break :cell .{ prev_cell.wide == .wide, screen.cursor.x - 1 };
+    };
+
+    const color = self.cursor_color orelse self.foreground_color;
+    const alpha: u8 = if (!self.focused) 255 else alpha: {
+        const alpha = 255 * self.config.cursor_opacity;
+        break :alpha @intFromFloat(@ceil(alpha));
+    };
+
+    const sprite: font.Sprite = switch (cursor_style) {
+        .block => .cursor_rect,
+        .block_hollow => .cursor_hollow_rect,
+        .bar => .cursor_bar,
+        .underline => .underline,
+    };
+
+    const render = self.font_grid.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @intFromEnum(sprite),
+        .{
+            .cell_width = if (wide) 2 else 1,
+            .grid_metrics = self.grid_metrics,
+        },
+    ) catch |err| {
+        log.warn("error rendering cursor glyph err={}", .{err});
+        return;
+    };
+
+    self.cells.setCursor(.{
+        .mode = .fg,
+        .grid_pos = .{ x, screen.cursor.y },
+        .cell_width = if (wide) 2 else 1,
+        .color = .{ color.r, color.g, color.b, alpha },
+        .bg_color = .{ 0, 0, 0, 0 },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+    });
 }
 
 fn addCursor(
