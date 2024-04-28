@@ -24,6 +24,15 @@ pub const Key = enum {
             => mtl_shaders.CellText,
         };
     }
+
+    /// Returns true if the two keys share the same data array.
+    fn sharedData(self: Key, other: Key) bool {
+        return switch (self) {
+            inline else => |self_tag| switch (other) {
+                inline else => |other_tag| self_tag.CellType() == other_tag.CellType(),
+            },
+        };
+    }
 };
 
 /// The contents of all the cells in the terminal.
@@ -256,7 +265,8 @@ pub const Contents = struct {
                     var old_it = self.map[self.index(coord)].array.iterator();
                     while (old_it.next()) |old_entry| {
                         if (old_entry.value.set and
-                            old_entry.value.index == old_index)
+                            old_entry.value.index == old_index and
+                            entry.key.sharedData(old_entry.key))
                         {
                             old_entry.value.index = original_index;
                             break;
@@ -408,6 +418,53 @@ test "Contents clear last added content" {
 
     // Row 2 should still be valid.
     try testing.expectEqual(cell1, c.get(.bg, .{ .x = 4, .y = 1 }).?);
+}
+
+test "Contents clear modifies same data array" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const rows = 10;
+    const cols = 10;
+
+    var c = try Contents.init(alloc);
+    try c.resize(alloc, .{ .rows = rows, .columns = cols });
+    defer c.deinit(alloc);
+
+    // Set some contents
+    const cell1: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    const cell2: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 2 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    try c.set(alloc, .bg, cell1);
+    try c.set(alloc, .bg, cell2);
+
+    const fg1: mtl_shaders.CellText = text: {
+        var cell: mtl_shaders.CellText = undefined;
+        cell.grid_pos = .{ 4, 1 };
+        break :text cell;
+    };
+    const fg2: mtl_shaders.CellText = text: {
+        var cell: mtl_shaders.CellText = undefined;
+        cell.grid_pos = .{ 4, 2 };
+        break :text cell;
+    };
+    try c.set(alloc, .text, fg1);
+    try c.set(alloc, .text, fg2);
+
+    c.clear(1);
+
+    // Should have all of row 2
+    try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
+    try testing.expectEqual(fg2, c.get(.text, .{ .x = 4, .y = 2 }).?);
 }
 
 test "Contents.Map size" {
