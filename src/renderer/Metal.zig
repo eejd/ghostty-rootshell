@@ -740,6 +740,17 @@ pub fn updateFrame(
             self.foreground_color = bg;
         }
 
+        // If our terminal screen size doesn't match our expected renderer
+        // size then we skip a frame. This can happen if we get resized
+        // before the terminal gets resized. The terminal resize event also
+        // wakes up the renderer so we'll get another chance to update frame
+        // data.
+        if (self.cells.size.rows < state.terminal.rows or
+            self.cells.size.columns < state.terminal.cols)
+        {
+            return;
+        }
+
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
         // hold the lock while rebuilding GPU cells.

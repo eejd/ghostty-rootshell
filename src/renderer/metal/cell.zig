@@ -61,7 +61,7 @@ pub const Contents = struct {
 
     /// The grid size of the terminal. This is used to determine the
     /// map array index from a coordinate.
-    cols: usize,
+    size: renderer.GridSize,
 
     /// The actual GPU data (on the CPU) for all the cells in the terminal.
     /// This only contains the cells that have content set. To determine
@@ -85,7 +85,7 @@ pub const Contents = struct {
 
         var result: Contents = .{
             .map = map,
-            .cols = 0,
+            .size = .{ .rows = 0, .columns = 0 },
             .bgs = .{},
             .text = .{},
             .cursor = false,
@@ -119,7 +119,7 @@ pub const Contents = struct {
 
         alloc.free(self.map);
         self.map = map;
-        self.cols = size.columns;
+        self.size = size;
         self.bgs.clearAndFree(alloc);
         self.text.shrinkAndFree(alloc, text_reserved_len);
     }
@@ -211,12 +211,12 @@ pub const Contents = struct {
     /// update the mapping for the last element in the list.
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
         const start_idx = self.index(.{ .x = 0, .y = y });
-        const end_idx = start_idx + self.cols;
+        const end_idx = start_idx + self.size.columns;
         const maps = self.map[start_idx..end_idx];
-        for (0..self.cols) |x| {
+        for (0..self.size.columns) |x| {
             // It is better to clear from the right left due to the same
             // reasons noted for bottom-up clearing in the doc comment.
-            const rev_x = self.cols - x - 1;
+            const rev_x = self.size.columns - x - 1;
             const map = &maps[rev_x];
 
             var it = map.array.iterator();
@@ -278,7 +278,7 @@ pub const Contents = struct {
     }
 
     fn index(self: *const Contents, coord: terminal.Coordinate) usize {
-        return coord.y * self.cols + coord.x;
+        return coord.y * self.size.columns + coord.x;
     }
 
     /// The mapping of a cell at a specific coordinate to the index in the
