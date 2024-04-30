@@ -325,9 +325,20 @@ pub const Shaper = struct {
                 // Our cluster is also our cell X position. If the cluster changes
                 // then we need to reset our current cell offsets.
                 const cluster = state.codepoints.items[index].cluster;
-                if (cell_offset.cluster != cluster) cell_offset = .{
-                    .cluster = cluster,
-                };
+                if (cell_offset.cluster != cluster) {
+                    assert(cell_offset.cluster < cluster);
+
+                    // If we have a gap between clusters then we need to
+                    // add empty cells to the buffer.
+                    for (cell_offset.cluster + 1..cluster) |x| {
+                        self.cell_buf.appendAssumeCapacity(.{
+                            .x = @intCast(x),
+                            .glyph_index = null,
+                        });
+                    }
+
+                    cell_offset = .{ .cluster = cluster };
+                }
 
                 self.cell_buf.appendAssumeCapacity(.{
                     .x = @intCast(cluster),
@@ -341,10 +352,6 @@ pub const Shaper = struct {
                 cell_offset.x += advance.width;
                 cell_offset.y += advance.height;
 
-                // TODO: harfbuzz shaper has handling for inserting blank
-                // cells for multi-cell ligatures. Do we need to port that?
-                // Example: try Monaspace "===" with a background color.
-
                 _ = pos;
                 // const i = self.cell_buf.items.len - 1;
                 // log.warn(
@@ -353,6 +360,25 @@ pub const Shaper = struct {
                 // );
             }
             //log.warn("-------------------------------", .{});
+        }
+
+        // If our last cell doesn't match our last cluster then we have
+        // a left-replaced ligature that needs to have spaces appended
+        // so that cells retain their background colors.
+        if (self.cell_buf.items.len > 0) pad: {
+            const last_cell = self.cell_buf.items[self.cell_buf.items.len - 1];
+            const last_cp = state.codepoints.items[state.codepoints.items.len - 1];
+            if (last_cell.x == last_cp.cluster) break :pad;
+            assert(last_cell.x < last_cp.cluster);
+
+            // We need to go back to the last matched cluster and add
+            // padding up to there.
+            for (last_cell.x + 1..last_cp.cluster + 1) |x| {
+                self.cell_buf.appendAssumeCapacity(.{
+                    .x = @intCast(x),
+                    .glyph_index = null,
+                });
+            }
         }
 
         return self.cell_buf.items;
@@ -388,13 +414,10 @@ pub const Shaper = struct {
             // If the UTF-16 codepoint is a pair then we need to insert
             // a dummy entry so that the CTRunGetStringIndices() function
             // maps correctly.
-            if (pair) {
-                try state.codepoints.append(self.shaper.alloc, .{
-                    .codepoint = 0,
-                    .cluster = cluster,
-                });
-                log.warn("run pair cp=0", .{});
-            }
+            if (pair) try state.codepoints.append(self.shaper.alloc, .{
+                .codepoint = 0,
+                .cluster = cluster,
+            });
         }
 
         pub fn finalize(self: RunIteratorHook) !void {
@@ -620,8 +643,9 @@ test "shape inconsolata ligs" {
             count += 1;
 
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(usize, 2), cells.len);
             try testing.expect(cells[0].glyph_index != null);
+            try testing.expect(cells[1].glyph_index == null);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -644,8 +668,10 @@ test "shape inconsolata ligs" {
             count += 1;
 
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(usize, 3), cells.len);
             try testing.expect(cells[0].glyph_index != null);
+            try testing.expect(cells[1].glyph_index == null);
+            try testing.expect(cells[2].glyph_index == null);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -676,10 +702,79 @@ test "shape monaspace ligs" {
             count += 1;
 
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 1), cells.len);
+            try testing.expectEqual(@as(usize, 3), cells.len);
             try testing.expect(cells[0].glyph_index != null);
+            try testing.expect(cells[1].glyph_index == null);
+            try testing.expect(cells[2].glyph_index == null);
         }
         try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
+// https://github.com/mitchellh/ghostty/issues/1708
+test "shape left-replaced lig in last run" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaperWithFont(alloc, .geist_mono);
+    defer testdata.deinit();
+
+    {
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
+        defer screen.deinit();
+        try screen.testWriteString("!==");
+
+        var shaper = &testdata.shaper;
+        var it = shaper.runIterator(
+            testdata.grid,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
+        var count: usize = 0;
+        while (try it.next(alloc)) |run| {
+            count += 1;
+
+            const cells = try shaper.shape(run);
+            try testing.expectEqual(@as(usize, 3), cells.len);
+            try testing.expect(cells[0].glyph_index != null);
+            try testing.expect(cells[1].glyph_index == null);
+            try testing.expect(cells[2].glyph_index == null);
+        }
+        try testing.expectEqual(@as(usize, 1), count);
+    }
+}
+
+// https://github.com/mitchellh/ghostty/issues/1708
+test "shape left-replaced lig in early run" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaperWithFont(alloc, .geist_mono);
+    defer testdata.deinit();
+
+    {
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
+        defer screen.deinit();
+        try screen.testWriteString("!==X");
+
+        var shaper = &testdata.shaper;
+        var it = shaper.runIterator(
+            testdata.grid,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
+
+        const run = (try it.next(alloc)).?;
+        const cells = try shaper.shape(run);
+        try testing.expectEqual(@as(usize, 4), cells.len);
+        try testing.expect(cells[0].glyph_index != null);
+        try testing.expect(cells[1].glyph_index == null);
+        try testing.expect(cells[2].glyph_index == null);
+        try testing.expect(cells[3].glyph_index != null);
     }
 }
 
@@ -782,8 +877,8 @@ test "shape emoji width long" {
         count += 1;
         const cells = try shaper.shape(run);
 
-        // screen.testWriteString isn't grapheme aware, otherwise this is two
-        try testing.expectEqual(@as(usize, 1), cells.len);
+        // screen.testWriteString isn't grapheme aware, otherwise this is one
+        try testing.expectEqual(@as(usize, 5), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -1401,6 +1496,7 @@ const TestShaper = struct {
 
 const TestFont = enum {
     inconsolata,
+    geist_mono,
     jetbrains_mono,
     monaspace_neon,
     nerd_font,
@@ -1416,6 +1512,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
     const testEmojiText = @import("../test.zig").fontEmojiText;
     const testFont = switch (font_req) {
         .inconsolata => @import("../test.zig").fontRegular,
+        .geist_mono => @import("../test.zig").fontGeistMono,
         .jetbrains_mono => @import("../test.zig").fontJetBrainsMono,
         .monaspace_neon => @import("../test.zig").fontMonaspaceNeon,
         .nerd_font => @import("../test.zig").fontNerdFont,
