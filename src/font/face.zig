@@ -13,7 +13,7 @@ pub const Face = switch (options.backend) {
     .coretext_freetype,
     => freetype.Face,
 
-    .coretext => coretext.Face,
+    .coretext, .coretext_harfbuzz => coretext.Face,
     .web_canvas => web_canvas.Face,
 };
 

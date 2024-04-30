@@ -14,7 +14,7 @@ const log = std.log.scoped(.discovery);
 pub const Discover = switch (options.backend) {
     .freetype => void, // no discovery
     .fontconfig_freetype => Fontconfig,
-    .coretext, .coretext_freetype => CoreText,
+    .coretext, .coretext_freetype, .coretext_harfbuzz => CoreText,
     .web_canvas => void, // no discovery
 };
 

@@ -50,11 +50,15 @@ pub const Backend = enum {
     /// Fontconfig for font discovery and FreeType for font rendering.
     fontconfig_freetype,
 
-    /// CoreText for both font discovery for rendering (macOS).
+    /// CoreText for font discovery, rendering, and shaping (macOS).
     coretext,
 
-    /// CoreText for font discovery and FreeType for rendering (macOS).
+    /// CoreText for font discovery, FreeType for rendering, and
+    /// HarfBuzz for shaping (macOS).
     coretext_freetype,
+
+    /// CoreText for font discovery and rendering, HarfBuzz for shaping
+    coretext_harfbuzz,
 
     /// Use the browser font system and the Canvas API (wasm). This limits
     /// the available fonts to browser fonts (anything Canvas natively
@@ -89,7 +93,11 @@ pub const Backend = enum {
             .fontconfig_freetype,
             .coretext_freetype,
             => true,
-            .coretext, .web_canvas => false,
+
+            .coretext,
+            .coretext_harfbuzz,
+            .web_canvas,
+            => false,
         };
     }
 
@@ -97,6 +105,7 @@ pub const Backend = enum {
         return switch (self) {
             .coretext,
             .coretext_freetype,
+            .coretext_harfbuzz,
             => true,
 
             .freetype,
@@ -113,6 +122,7 @@ pub const Backend = enum {
             .freetype,
             .coretext,
             .coretext_freetype,
+            .coretext_harfbuzz,
             .web_canvas,
             => false,
         };
@@ -123,6 +133,7 @@ pub const Backend = enum {
             .freetype,
             .fontconfig_freetype,
             .coretext_freetype,
+            .coretext_harfbuzz,
             => true,
 
             .coretext,
