@@ -144,7 +144,7 @@ pub fn ref(
             .discover = try self.discover(),
             .codepoint_map = key.codepoint_map,
         };
-    }, config.@"font-thicken");
+    });
     errdefer grid.deinit(self.alloc);
 
     return .{ gop.key_ptr.*, gop.value_ptr.grid };
@@ -358,7 +358,6 @@ pub const DerivedConfig = struct {
     @"font-variation-italic": configpkg.RepeatableFontVariation,
     @"font-variation-bold-italic": configpkg.RepeatableFontVariation,
     @"font-codepoint-map": configpkg.RepeatableCodepointMap,
-    @"font-thicken": bool,
     @"adjust-cell-width": ?Metrics.Modifier,
     @"adjust-cell-height": ?Metrics.Modifier,
     @"adjust-font-baseline": ?Metrics.Modifier,
@@ -366,6 +365,7 @@ pub const DerivedConfig = struct {
     @"adjust-underline-thickness": ?Metrics.Modifier,
     @"adjust-strikethrough-position": ?Metrics.Modifier,
     @"adjust-strikethrough-thickness": ?Metrics.Modifier,
+    @"adjust-cursor-thickness": ?Metrics.Modifier,
 
     /// Initialize a DerivedConfig. The config should be either a
     /// config.Config or another DerivedConfig to clone from.
@@ -388,7 +388,6 @@ pub const DerivedConfig = struct {
             .@"font-variation-italic" = try config.@"font-variation-italic".clone(alloc),
             .@"font-variation-bold-italic" = try config.@"font-variation-bold-italic".clone(alloc),
             .@"font-codepoint-map" = try config.@"font-codepoint-map".clone(alloc),
-            .@"font-thicken" = config.@"font-thicken",
             .@"adjust-cell-width" = config.@"adjust-cell-width",
             .@"adjust-cell-height" = config.@"adjust-cell-height",
             .@"adjust-font-baseline" = config.@"adjust-font-baseline",
@@ -396,6 +395,7 @@ pub const DerivedConfig = struct {
             .@"adjust-underline-thickness" = config.@"adjust-underline-thickness",
             .@"adjust-strikethrough-position" = config.@"adjust-strikethrough-position",
             .@"adjust-strikethrough-thickness" = config.@"adjust-strikethrough-thickness",
+            .@"adjust-cursor-thickness" = config.@"adjust-cursor-thickness",
 
             // This must be last so the arena contains all our allocations
             // from above since Zig does assignment in order.
@@ -532,6 +532,7 @@ pub const Key = struct {
             if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
             if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
             if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
+            if (config.@"adjust-cursor-thickness") |m| try set.put(alloc, .cursor_thickness, m);
             break :set set;
         };
 
