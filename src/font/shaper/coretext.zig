@@ -526,12 +526,7 @@ test "run iterator: empty cells with background set" {
         {
             const run = (try it.next(alloc)).?;
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 1), cells.len);
-        }
-        {
-            const run = (try it.next(alloc)).?;
-            const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
+            try testing.expectEqual(@as(usize, 3), cells.len);
         }
         try testing.expect(try it.next(alloc) == null);
     }
@@ -1419,7 +1414,7 @@ test "shape cell attribute change" {
         try testing.expectEqual(@as(usize, 2), count);
     }
 
-    // Changing bg color should split
+    // Changing bg color should NOT split
     {
         var screen = try terminal.Screen.init(alloc, 3, 10, 0);
         defer screen.deinit();
@@ -1441,7 +1436,7 @@ test "shape cell attribute change" {
             count += 1;
             _ = try shaper.shape(run);
         }
-        try testing.expectEqual(@as(usize, 2), count);
+        try testing.expectEqual(@as(usize, 1), count);
     }
 
     // Same bg color should not split
