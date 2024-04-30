@@ -242,7 +242,7 @@ pub const Face = struct {
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
         // Get the bounding rect for rendering this glyph.
-        const rect = self.font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
+        const rect = self.font.getBoundingRectsForGlyphs(.horizontal, &glyphs, null);
 
         // The x/y that we render the glyph at. The Y value has to be flipped
         // because our coordinates in 3D space are (0, 0) bottom left with
@@ -396,7 +396,6 @@ pub const Face = struct {
         const offset_y: i32 = offset_y: {
             // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
             // We need to calculate our baseline from the bottom of a cell.
-            //const baseline_from_bottom: f64 = @floatFromInt(self.metrics.cell_baseline);
             const baseline_from_bottom: f64 = @floatFromInt(metrics.cell_baseline);
 
             // Next we offset our baseline by the bearing in the font. We

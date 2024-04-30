@@ -81,7 +81,7 @@ pub const Font = opaque {
         );
     }
 
-    pub fn getBoundingRectForGlyphs(
+    pub fn getBoundingRectsForGlyphs(
         self: *Font,
         orientation: FontOrientation,
         glyphs: []const graphics.Glyph,
@@ -197,11 +197,11 @@ test {
 
     // Bounding rect
     {
-        var rect = font.getBoundingRectForGlyphs(.horizontal, &glyphs, null);
+        var rect = font.getBoundingRectsForGlyphs(.horizontal, &glyphs, null);
         try testing.expect(rect.size.width > 0);
 
         var singles: [1]graphics.Rect = undefined;
-        rect = font.getBoundingRectForGlyphs(.horizontal, &glyphs, &singles);
+        rect = font.getBoundingRectsForGlyphs(.horizontal, &glyphs, &singles);
         try testing.expect(rect.size.width > 0);
         try testing.expect(singles[0].size.width > 0);
     }
