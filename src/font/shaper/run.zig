@@ -88,9 +88,17 @@ pub const RunIterator = struct {
             // If our cell attributes are changing, then we split the run.
             // This prevents a single glyph for ">=" to be rendered with
             // one color when the two components have different styling.
-            if (j > self.i) {
+            if (j > self.i) style: {
                 const prev_cell = cells[j - 1];
-                if (prev_cell.style_id != cell.style_id) break;
+
+                // If the style is exactly the change then fast path out.
+                if (prev_cell.style_id == cell.style_id) break :style;
+
+                // The style is different. We allow differing background
+                // styles but any other change results in a new run.
+                const c1 = comparableStyle(style);
+                const c2 = comparableStyle(self.row.style(&cells[j]));
+                if (!c1.eql(c2)) break;
             }
 
             // Text runs break when font styles change so we need to get
@@ -301,3 +309,16 @@ pub const RunIterator = struct {
         return null;
     }
 };
+
+/// Returns a style that when compared must be identical for a run to
+/// continue.
+fn comparableStyle(style: terminal.Style) terminal.Style {
+    var s = style;
+
+    // We allow background colors to differ because we'll just paint the
+    // cell background whatever the style is, and wherever the glyph
+    // lands on top of it will be the color of the glyph.
+    s.bg_color = .none;
+
+    return s;
+}
