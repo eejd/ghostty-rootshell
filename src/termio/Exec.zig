@@ -906,8 +906,8 @@ const Subprocess = struct {
         errdefer arena.deinit();
         const alloc = arena.allocator();
 
-        // Determine the path to the binary we're executing
-        const default_path = switch (builtin.os.tag) {
+        // Determine the shell command we're executing
+        const shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
             .windows => "cmd.exe",
             else => "sh",
         };
@@ -1054,7 +1054,7 @@ const Subprocess = struct {
                 const cmd = try std.fmt.allocPrint(
                     alloc,
                     "exec -l {s}",
-                    .{opts.full_config.command orelse default_path},
+                    .{shell_command},
                 );
 
                 // The reason for executing login this way is unclear. This
@@ -1145,7 +1145,7 @@ const Subprocess = struct {
                 try args.append("-c");
             }
 
-            try args.append(opts.full_config.command orelse default_path);
+            try args.append(shell_command);
             break :args try args.toOwnedSlice();
         };
 
@@ -1165,20 +1165,12 @@ const Subprocess = struct {
                 .zsh => .zsh,
             };
 
-            // We have to get the path to the executing shell. The command
-            // can be a full shell string with arguments so we look for a space
-            // and take the first part.
-            const path = if (opts.full_config.command) |cmd| path: {
-                const idx = std.mem.indexOfScalar(u8, cmd, ' ') orelse cmd.len;
-                break :path cmd[0..idx];
-            } else default_path;
-
             const dir = opts.resources_dir orelse break :shell null;
 
             break :shell try shell_integration.setup(
                 gpa,
                 dir,
-                path,
+                shell_command,
                 &env,
                 force,
                 opts.full_config.@"shell-integration-features",
