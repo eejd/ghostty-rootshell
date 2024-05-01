@@ -16,6 +16,7 @@ pub const Library = switch (options.backend) {
     // Some backends such as CT and Canvas don't have a "library"
     .coretext,
     .coretext_harfbuzz,
+    .coretext_noshape,
     .web_canvas,
     => NoopLibrary,
 };

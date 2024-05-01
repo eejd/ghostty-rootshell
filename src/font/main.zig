@@ -61,6 +61,9 @@ pub const Backend = enum {
     /// CoreText for font discovery and rendering, HarfBuzz for shaping
     coretext_harfbuzz,
 
+    /// CoreText for font discovery and rendering, no shaping.
+    coretext_noshape,
+
     /// Use the browser font system and the Canvas API (wasm). This limits
     /// the available fonts to browser fonts (anything Canvas natively
     /// supports).
@@ -97,6 +100,7 @@ pub const Backend = enum {
 
             .coretext,
             .coretext_harfbuzz,
+            .coretext_noshape,
             .web_canvas,
             => false,
         };
@@ -107,6 +111,7 @@ pub const Backend = enum {
             .coretext,
             .coretext_freetype,
             .coretext_harfbuzz,
+            .coretext_noshape,
             => true,
 
             .freetype,
@@ -124,6 +129,7 @@ pub const Backend = enum {
             .coretext,
             .coretext_freetype,
             .coretext_harfbuzz,
+            .coretext_noshape,
             .web_canvas,
             => false,
         };
@@ -138,6 +144,7 @@ pub const Backend = enum {
             => true,
 
             .coretext,
+            .coretext_noshape,
             .web_canvas,
             => false,
         };

@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
+pub const noop = @import("shaper/noop.zig");
 pub const harfbuzz = @import("shaper/harfbuzz.zig");
 pub const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
@@ -18,6 +19,8 @@ pub const Shaper = switch (options.backend) {
     // shaper because the coretext shaper requests CoreText
     // font faces.
     .coretext => coretext.Shaper,
+
+    .coretext_noshape => noop.Shaper,
 
     .web_canvas => web_canvas.Shaper,
 };
@@ -61,4 +64,7 @@ pub const Options = struct {
 test {
     _ = Cache;
     _ = Shaper;
+
+    // Always test noop
+    _ = noop;
 }
