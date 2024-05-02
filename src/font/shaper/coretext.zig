@@ -210,6 +210,14 @@ pub const Shaper = struct {
     pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
         const state = &self.run_state;
 
+        // {
+        //     log.debug("shape -----------------------------------", .{});
+        //     for (state.codepoints.items) |entry| {
+        //         log.debug("cp={X} cluster={}", .{ entry.codepoint, entry.cluster });
+        //     }
+        //     log.debug("shape end -------------------------------", .{});
+        // }
+
         // Special fonts aren't shaped and their codepoint == glyph so we
         // can just return the codepoints as-is.
         if (run.font_index.special() != null) {
@@ -322,8 +330,13 @@ pub const Shaper = struct {
                 // Our cluster is also our cell X position. If the cluster changes
                 // then we need to reset our current cell offsets.
                 const cluster = state.codepoints.items[index].cluster;
-                if (cell_offset.cluster != cluster) {
-                    assert(cell_offset.cluster < cluster);
+                if (cell_offset.cluster != cluster) pad: {
+                    // We previously asserted this but for rtl text this is
+                    // not true. So we check for this and break out. In the
+                    // future we probably need to reverse pad for rtl but
+                    // I don't have a solid test case for this yet so let's
+                    // wait for that.
+                    if (cell_offset.cluster > cluster) break :pad;
 
                     // If we have a gap between clusters then we need to
                     // add empty cells to the buffer.
