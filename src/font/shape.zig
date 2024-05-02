@@ -4,6 +4,7 @@ pub const harfbuzz = @import("shaper/harfbuzz.zig");
 pub const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
 pub usingnamespace @import("shaper/run.zig");
+pub const Cache = @import("shaper/Cache.zig");
 
 /// Shaper implementation for our compile options.
 pub const Shaper = switch (options.backend) {
@@ -56,3 +57,8 @@ pub const Options = struct {
     /// support applying features globally.
     features: []const []const u8 = &.{},
 };
+
+test {
+    _ = Cache;
+    _ = Shaper;
+}
