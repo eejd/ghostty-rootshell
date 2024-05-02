@@ -98,6 +98,7 @@ uniforms: mtl_shaders.Uniforms,
 /// The font structures.
 font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
+font_shaper_cache: font.ShaperCache,
 
 /// The images that we may render.
 images: ImageMap = .{},
@@ -571,6 +572,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         // Fonts
         .font_grid = options.font_grid,
         .font_shaper = font_shaper,
+        .font_shaper_cache = font.ShaperCache.init(),
 
         // Shaders
         .shaders = shaders,
@@ -588,6 +590,7 @@ pub fn deinit(self: *Metal) void {
     self.cells.deinit(self.alloc);
 
     self.font_shaper.deinit();
+    self.font_shaper_cache.deinit(self.alloc);
 
     self.config.deinit();
 
@@ -1728,7 +1731,24 @@ fn rebuildCells(
             if (shape_cursor) screen.cursor.x else null,
         );
         while (try iter.next(self.alloc)) |run| {
-            for (try self.font_shaper.shape(run)) |shaper_cell| {
+            // Try to read the cells from the shaping cache if we can.
+            const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
+                const cells = try self.font_shaper.shape(run);
+
+                // Try to cache them. If caching fails for any reason we continue
+                // because it is just a performance optimization, not a correctness
+                // issue.
+                self.font_shaper_cache.put(self.alloc, run, cells) catch |err| {
+                    log.warn("error caching font shaping results err={}", .{err});
+                };
+
+                // The cells we get from direct shaping are always owned by
+                // the shaper and valid until the next shaping call so we can
+                // just return them.
+                break :cache cells;
+            };
+
+            for (shaper_cells) |shaper_cell| {
                 const coord: terminal.Coordinate = .{
                     .x = shaper_cell.x,
                     .y = y,

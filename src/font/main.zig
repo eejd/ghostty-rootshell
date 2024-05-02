@@ -14,6 +14,7 @@ pub const Glyph = @import("Glyph.zig");
 pub const Metrics = face.Metrics;
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
+pub const ShaperCache = shape.Cache;
 pub const SharedGrid = @import("SharedGrid.zig");
 pub const SharedGridSet = @import("SharedGridSet.zig");
 pub const sprite = @import("sprite.zig");
