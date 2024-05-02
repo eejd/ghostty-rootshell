@@ -74,6 +74,7 @@ gl_state: ?GLState = null,
 /// The font structures.
 font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
+font_shaper_cache: font.ShaperCache,
 texture_greyscale_modified: usize = 0,
 texture_greyscale_resized: usize = 0,
 texture_color_modified: usize = 0,
@@ -345,6 +346,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .gl_state = gl_state,
         .font_grid = grid,
         .font_shaper = shaper,
+        .font_shaper_cache = font.ShaperCache.init(),
         .draw_background = options.config.background,
         .focused = true,
         .foreground_color = options.config.foreground,
@@ -359,6 +361,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
 
 pub fn deinit(self: *OpenGL) void {
     self.font_shaper.deinit();
+    self.font_shaper_cache.deinit(self.alloc);
 
     {
         var it = self.images.iterator();
@@ -1013,7 +1016,24 @@ pub fn rebuildCells(
             if (shape_cursor) screen.cursor.x else null,
         );
         while (try iter.next(self.alloc)) |run| {
-            for (try self.font_shaper.shape(run)) |shaper_cell| {
+            // Try to read the cells from the shaping cache if we can.
+            const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
+                const cells = try self.font_shaper.shape(run);
+
+                // Try to cache them. If caching fails for any reason we continue
+                // because it is just a performance optimization, not a correctness
+                // issue.
+                self.font_shaper_cache.put(self.alloc, run, cells) catch |err| {
+                    log.warn("error caching font shaping results err={}", .{err});
+                };
+
+                // The cells we get from direct shaping are always owned by
+                // the shaper and valid until the next shaping call so we can
+                // just return them.
+                break :cache cells;
+            };
+
+            for (shaper_cells) |shaper_cell| {
                 // If this cell falls within our preedit range then we skip it.
                 // We do this so we don't have conflicting data on the same
                 // cell.
