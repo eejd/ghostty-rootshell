@@ -250,6 +250,9 @@ pub const RunIterator = struct {
         // Add our length to the hash as an additional mechanism to avoid collisions
         autoHash(&hasher, j - self.i);
 
+        // Add our font index
+        autoHash(&hasher, current_font);
+
         // Move our cursor. Must defer since we use self.i below.
         defer self.i = j;
 
