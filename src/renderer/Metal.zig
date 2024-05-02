@@ -1669,6 +1669,12 @@ fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
+    // const start = try std.time.Instant.now();
+    // defer {
+    //     const end = std.time.Instant.now() catch unreachable;
+    //     std.log.warn("rebuildCells time={}us", .{end.since(start) / std.time.ns_per_us});
+    // }
+
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
     defer arena.deinit();
@@ -1851,9 +1857,9 @@ fn rebuildCells(
     }
 
     // Log some things
-    log.debug("rebuildCells complete cached_runs={}", .{
-        self.font_shaper_cache.count(),
-    });
+    // log.debug("rebuildCells complete cached_runs={}", .{
+    //     self.font_shaper_cache.count(),
+    // });
 }
 
 fn updateCell(
