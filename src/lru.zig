@@ -150,7 +150,7 @@ pub fn HashMap(
         }
 
         /// Get a value for a key.
-        pub fn get(self: *Self, key: K) ?V {
+        pub fn get(self: *const Self, key: K) ?V {
             if (@sizeOf(Context) != 0) {
                 @compileError("getContext must be used.");
             }
@@ -158,7 +158,7 @@ pub fn HashMap(
         }
 
         /// See get
-        pub fn getContext(self: *Self, key: K, ctx: Context) ?V {
+        pub fn getContext(self: *const Self, key: K, ctx: Context) ?V {
             const node = self.map.getContext(key, ctx) orelse return null;
             return node.data.value;
         }
