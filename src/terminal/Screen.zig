@@ -62,6 +62,16 @@ kitty_keyboard: kitty.KeyFlagStack = .{},
 /// Kitty graphics protocol state.
 kitty_images: kitty.graphics.ImageStorage = .{},
 
+/// Dirty flags for the renderer.
+dirty: Dirty = .{},
+
+/// See Terminal.Dirty. This behaves the same way.
+pub const Dirty = packed struct {
+    /// Set when the selection is set or unset, regardless of if the
+    /// selection is changed or not.
+    selection: bool = false,
+};
+
 /// The cursor position.
 pub const Cursor = struct {
     // The x/y position within the viewport.
@@ -362,6 +372,7 @@ pub fn clonePool(
         .no_scrollback = self.no_scrollback,
         .cursor = cursor,
         .selection = sel,
+        .dirty = self.dirty,
     };
     result.assertIntegrity();
     return result;
@@ -1328,12 +1339,14 @@ pub fn select(self: *Screen, sel_: ?Selection) !void {
     // Untrack prior selection
     if (self.selection) |*old| old.deinit(self);
     self.selection = tracked_sel;
+    self.dirty.selection = true;
 }
 
 /// Same as select(null) but can't fail.
 pub fn clearSelection(self: *Screen) void {
     if (self.selection) |*sel| sel.deinit(self);
     self.selection = null;
+    self.dirty.selection = true;
 }
 
 pub const SelectionString = struct {

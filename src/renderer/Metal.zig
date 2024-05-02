@@ -795,6 +795,11 @@ pub fn updateFrame(
             const v: Int = @bitCast(state.terminal.flags.dirty);
             if (v > 0) self.cells_rebuild = true;
         }
+        {
+            const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
+            const v: Int = @bitCast(state.terminal.screen.dirty);
+            if (v > 0) self.cells_rebuild = true;
+        }
 
         // Reset the dirty flags in the terminal and screen. We assume
         // that our rebuild will be successful since so we optimize for
