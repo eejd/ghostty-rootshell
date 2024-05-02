@@ -1849,6 +1849,11 @@ fn rebuildCells(
             x += if (cp.wide) 2 else 1;
         }
     }
+
+    // Log some things
+    log.debug("rebuildCells complete cached_runs={}", .{
+        self.font_shaper_cache.count(),
+    });
 }
 
 fn updateCell(

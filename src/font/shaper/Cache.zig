@@ -16,6 +16,8 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const lru = @import("../../lru.zig");
 
+const log = std.log.scoped(.font_shaper_cache);
+
 /// Our LRU is the run hash to the shaped cells.
 const LRU = lru.AutoHashMap(u64, []font.shape.Cell);
 
@@ -53,8 +55,15 @@ pub fn put(
 ) Allocator.Error!void {
     const copy = try alloc.dupe(font.shape.Cell, cells);
     const gop = try self.map.getOrPut(alloc, run.hash);
-    if (gop.evicted) |evicted| alloc.free(evicted.value);
+    if (gop.evicted) |evicted| {
+        log.debug("evicted shaped cells for text run hash={}", .{run.hash});
+        alloc.free(evicted.value);
+    }
     gop.value_ptr.* = copy;
+}
+
+pub fn count(self: *const Cache) usize {
+    return self.map.map.count();
 }
 
 test Cache {
