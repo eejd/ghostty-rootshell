@@ -4,11 +4,21 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const shape = @import("../shape.zig");
 const terminal = @import("../../terminal/main.zig");
+const autoHash = std.hash.autoHash;
+const Hasher = std.hash.Wyhash;
 
 /// A single text run. A text run is only valid for one Shaper instance and
 /// until the next run is created. A text run never goes across multiple
 /// rows in a terminal, so it is guaranteed to always be one line.
 pub const TextRun = struct {
+    /// A unique hash for this run. This can be used to cache the shaping
+    /// results. We don't provide a means to compare actual values if the
+    /// hash is the same, so we should continue to improve this hash to
+    /// lower the chance of hash collisions if they become a problem. If
+    /// there are hash collisions, it would result in rendering issues but
+    /// the core data would be correct.
+    hash: u64,
+
     /// The offset in the row where this run started
     offset: u16,
 
@@ -53,6 +63,9 @@ pub const RunIterator = struct {
 
         // Allow the hook to prepare
         try self.hooks.prepare();
+
+        // Initialize our hash for this run.
+        var hasher = Hasher.init(0);
 
         // Let's get our style that we'll expect for the run.
         const style = self.row.style(&cells[self.i]);
@@ -211,12 +224,13 @@ pub const RunIterator = struct {
             // If we're a fallback character, add that and continue; we
             // don't want to add the entire grapheme.
             if (font_info.fallback) |cp| {
-                try self.hooks.addCodepoint(cp, @intCast(cluster));
+                try self.addCodepoint(&hasher, cp, @intCast(cluster));
                 continue;
             }
 
             // Add all the codepoints for our grapheme
-            try self.hooks.addCodepoint(
+            try self.addCodepoint(
+                &hasher,
                 if (cell.codepoint() == 0) ' ' else cell.codepoint(),
                 @intCast(cluster),
             );
@@ -225,7 +239,7 @@ pub const RunIterator = struct {
                 for (cps) |cp| {
                     // Do not send presentation modifiers
                     if (cp == 0xFE0E or cp == 0xFE0F) continue;
-                    try self.hooks.addCodepoint(cp, @intCast(cluster));
+                    try self.addCodepoint(&hasher, cp, @intCast(cluster));
                 }
             }
         }
@@ -233,15 +247,25 @@ pub const RunIterator = struct {
         // Finalize our buffer
         try self.hooks.finalize();
 
+        // Add our length to the hash as an additional mechanism to avoid collisions
+        autoHash(&hasher, j - self.i);
+
         // Move our cursor. Must defer since we use self.i below.
         defer self.i = j;
 
         return TextRun{
+            .hash = hasher.final(),
             .offset = @intCast(self.i),
             .cells = @intCast(j - self.i),
             .grid = self.grid,
             .font_index = current_font,
         };
+    }
+
+    fn addCodepoint(self: *RunIterator, hasher: anytype, cp: u32, cluster: u32) !void {
+        autoHash(hasher, cp);
+        autoHash(hasher, cluster);
+        try self.hooks.addCodepoint(cp, cluster);
     }
 
     /// Find a font index that supports the grapheme for the given cell,
