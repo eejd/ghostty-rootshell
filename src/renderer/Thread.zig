@@ -14,7 +14,7 @@ const App = @import("../App.zig");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
 
-const DRAW_INTERVAL = 33; // 30 FPS
+const DRAW_INTERVAL = 8; // 120 FPS
 const CURSOR_BLINK_INTERVAL = 600;
 
 /// The type used for sending messages to the IO thread. For now this is
@@ -498,7 +498,7 @@ fn renderCallback(
     ) catch |err|
         log.warn("error rendering err={}", .{err});
 
-    // Draw
+    // Draw immediately
     t.drawFrame();
 
     return .disarm;
