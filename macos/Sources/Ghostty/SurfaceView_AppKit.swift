@@ -439,7 +439,7 @@ extension Ghostty {
 
         override func updateLayer() {
             guard let surface = self.surface else { return }
-            ghostty_surface_refresh(surface);
+            ghostty_surface_draw(surface);
         }
         
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

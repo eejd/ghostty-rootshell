@@ -653,6 +653,13 @@ pub const Surface = struct {
         };
     }
 
+    pub fn draw(self: *Surface) void {
+        self.core_surface.draw() catch |err| {
+            log.err("error in draw err={}", .{err});
+            return;
+        };
+    }
+
     pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
         // We are an embedded API so the caller can send us all sorts of
         // garbage. We want to make sure that the float values are valid
@@ -1523,6 +1530,12 @@ pub const CAPI = struct {
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();
+    }
+
+    /// Tell the surface that it needs to schedule a render
+    /// call as soon as possible (NOW if possible).
+    export fn ghostty_surface_draw(surface: *Surface) void {
+        surface.draw();
     }
 
     /// Update the size of a surface. This will trigger resize notifications
