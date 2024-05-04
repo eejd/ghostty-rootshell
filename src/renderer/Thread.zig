@@ -272,6 +272,9 @@ fn drainMailbox(self: *Thread) !void {
                 // still be happening.
                 if (v) self.drawFrame();
 
+                // Notify the renderer so it can update any state.
+                self.renderer.setVisible(v);
+
                 // Note that we're explicitly today not stopping any
                 // cursor timers, draw timers, etc. These things have very
                 // little resource cost and properly maintaining their active

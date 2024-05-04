@@ -579,6 +579,14 @@ pub fn setFocus(self: *OpenGL, focus: bool) !void {
     self.focused = focus;
 }
 
+/// Callback when the window is visible or occluded.
+///
+/// Must be called on the render thread.
+pub fn setVisible(self: *OpenGL, visible: bool) void {
+    _ = self;
+    _ = visible;
+}
+
 /// Set the new font size.
 ///
 /// Must be called on the render thread.

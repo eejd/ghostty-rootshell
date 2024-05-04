@@ -737,6 +737,25 @@ pub fn setFocus(self: *Metal, focus: bool) !void {
     }
 }
 
+/// Callback when the window is visible or occluded.
+///
+/// Must be called on the render thread.
+pub fn setVisible(self: *Metal, visible: bool) void {
+    // If we're not visible, then we want to stop the display link
+    // because it is a waste of resources and we can move to pure
+    // change-driven updates.
+    if (comptime DisplayLink != void) link: {
+        const display_link = self.display_link orelse break :link;
+        if (visible and self.focused) {
+            log.warn("starting display link because window is visible", .{});
+            display_link.start() catch {};
+        } else {
+            log.warn("stopping display link because window is not visible", .{});
+            display_link.stop() catch {};
+        }
+    }
+}
+
 /// Set the new font size.
 ///
 /// Must be called on the render thread.
