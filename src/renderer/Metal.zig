@@ -747,10 +747,8 @@ pub fn setVisible(self: *Metal, visible: bool) void {
     if (comptime DisplayLink != void) link: {
         const display_link = self.display_link orelse break :link;
         if (visible and self.focused) {
-            log.warn("starting display link because window is visible", .{});
             display_link.start() catch {};
         } else {
-            log.warn("stopping display link because window is not visible", .{});
             display_link.stop() catch {};
         }
     }
