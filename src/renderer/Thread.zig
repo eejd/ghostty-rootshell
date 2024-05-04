@@ -422,18 +422,21 @@ fn wakeupCallback(
     t.drainMailbox() catch |err|
         log.err("error draining mailbox err={}", .{err});
 
-    // If the timer is already active then we don't have to do anything.
-    if (t.render_c.state() == .active) return .rearm;
+    // Render immediately
+    _ = renderCallback(t, undefined, undefined, {});
 
-    // Timer is not active, let's start it
-    t.render_h.run(
-        &t.loop,
-        &t.render_c,
-        10,
-        Thread,
-        t,
-        renderCallback,
-    );
+    // // If the timer is already active then we don't have to do anything.
+    // if (t.render_c.state() == .active) return .rearm;
+    //
+    // // Timer is not active, let's start it
+    // t.render_h.run(
+    //     &t.loop,
+    //     &t.render_c,
+    //     10,
+    //     Thread,
+    //     t,
+    //     renderCallback,
+    // );
 
     return .rearm;
 }
