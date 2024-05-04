@@ -1917,6 +1917,7 @@ fn createPage(
     self: *PageList,
     cap: Capacity,
 ) !*List.Node {
+    // log.debug("create page cap={}", .{cap});
     return try createPageExt(&self.pool, cap, &self.page_size);
 }
 
@@ -2101,6 +2102,10 @@ pub fn eraseRowBounded(
         page.data.clearCells(&rows[pn.y], 0, page.data.size.cols);
         fastmem.rotateOnce(Row, rows[pn.y..][0 .. limit + 1]);
 
+        // Set all the rows as dirty
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = pn.y, .end = pn.y + limit }, true);
+
         // Update pins in the shifted region.
         var pin_it = self.tracked_pins.keyIterator();
         while (pin_it.next()) |p_ptr| {
@@ -2121,6 +2126,12 @@ pub fn eraseRowBounded(
     }
 
     fastmem.rotateOnce(Row, rows[pn.y..page.data.size.rows]);
+
+    // All the rows in the page are dirty below the erased row.
+    {
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = pn.y, .end = page.data.size.rows }, true);
+    }
 
     // We need to keep track of how many rows we've shifted so that we can
     // determine at what point we need to do a partial shift on subsequent
@@ -2164,6 +2175,10 @@ pub fn eraseRowBounded(
             page.data.clearCells(&rows[0], 0, page.data.size.cols);
             fastmem.rotateOnce(Row, rows[0 .. shifted_limit + 1]);
 
+            // Set all the rows as dirty
+            var dirty = page.data.dirtyBitSet();
+            dirty.setRangeValue(.{ .start = 0, .end = shifted_limit }, true);
+
             // Update pins in the shifted region.
             var pin_it = self.tracked_pins.keyIterator();
             while (pin_it.next()) |p_ptr| {
@@ -2181,6 +2196,10 @@ pub fn eraseRowBounded(
         }
 
         fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        // Set all the rows as dirty
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = page.data.size.rows }, true);
 
         // Account for the rows shifted in this page.
         shifted += page.data.size.rows;
@@ -2927,6 +2946,27 @@ fn growRows(self: *PageList, n: usize) !void {
     }
 }
 
+/// Clear all dirty bits on all pages. This is not efficient since it
+/// traverses the entire list of pages. This is used for testing/debugging.
+pub fn clearDirty(self: *PageList) void {
+    var page = self.pages.first;
+    while (page) |p| {
+        var set = p.data.dirtyBitSet();
+        set.unsetAll();
+        page = p.next;
+    }
+}
+
+/// Returns true if the point is dirty, used for testing.
+pub fn isDirty(self: *const PageList, pt: point.Point) bool {
+    return self.getCell(pt).?.isDirty();
+}
+
+/// Mark a point as dirty, used for testing.
+fn markDirty(self: *PageList, pt: point.Point) void {
+    self.pin(pt).?.markDirty();
+}
+
 /// Represents an exact x/y coordinate within the screen. This is called
 /// a "pin" because it is a fixed point within the pagelist direct to
 /// a specific page pointer and memory offset. The benefit is that this
@@ -2983,6 +3023,17 @@ pub const Pin = struct {
             self.page.data.memory,
             cell.style_id,
         ).?.*;
+    }
+
+    /// Check if this pin is dirty.
+    pub fn isDirty(self: Pin) bool {
+        return self.page.data.isRowDirty(self.y);
+    }
+
+    /// Mark this pin location as dirty.
+    pub fn markDirty(self: Pin) void {
+        var set = self.page.data.dirtyBitSet();
+        set.set(self.y);
     }
 
     /// Iterators. These are the same as PageList iterator funcs but operate
@@ -3217,6 +3268,14 @@ const Cell = struct {
     cell: *pagepkg.Cell,
     row_idx: size.CellCountInt,
     col_idx: size.CellCountInt,
+
+    /// Returns true if this cell is marked as dirty.
+    ///
+    /// This is not very performant this is primarily used for assertions
+    /// and testing.
+    pub fn isDirty(self: Cell) bool {
+        return self.page.data.isRowDirty(self.row_idx);
+    }
 
     /// Get the cell style.
     ///
@@ -4486,6 +4545,13 @@ test "PageList eraseRowBounded less than full row" {
     try s.eraseRowBounded(.{ .active = .{ .y = 5 } }, 3);
     try testing.expectEqual(s.rows, s.totalRows());
 
+    // The erased rows should be dirty
+    try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 5 } }));
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 6 } }));
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 7 } }));
+    try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 8 } }));
+
     try testing.expectEqual(s.pages.first.?, p_top.page);
     try testing.expectEqual(@as(usize, 4), p_top.y);
     try testing.expectEqual(@as(usize, 0), p_top.x);
@@ -4514,6 +4580,12 @@ test "PageList eraseRowBounded with pin at top" {
     try s.eraseRowBounded(.{ .active = .{ .y = 0 } }, 3);
     try testing.expectEqual(s.rows, s.totalRows());
 
+    // The erased rows should be dirty
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(s.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+
     try testing.expectEqual(s.pages.first.?, p_top.page);
     try testing.expectEqual(@as(usize, 0), p_top.y);
     try testing.expectEqual(@as(usize, 0), p_top.x);
@@ -4535,6 +4607,13 @@ test "PageList eraseRowBounded full rows single page" {
     // Erase only a few rows in our active
     try s.eraseRowBounded(.{ .active = .{ .y = 5 } }, 10);
     try testing.expectEqual(s.rows, s.totalRows());
+
+    // The erased rows should be dirty
+    try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
+    for (5..10) |y| try testing.expect(s.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     // Our pin should move to the first page
     try testing.expectEqual(s.pages.first.?, p_in.page);
@@ -4592,6 +4671,13 @@ test "PageList eraseRowBounded full rows two pages" {
 
     // Erase only a few rows in our active
     try s.eraseRowBounded(.{ .active = .{ .y = 4 } }, 4);
+
+    // The erased rows should be dirty
+    try testing.expect(!s.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    for (4..8) |y| try testing.expect(s.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     // In page in first page is shifted
     try testing.expectEqual(s.pages.last.?.prev.?, p_first.page);
@@ -4751,6 +4837,34 @@ test "PageList clone remap tracked pin not in cloned area" {
 
     // We should be able to find our tracked pin
     try testing.expect(pin_remap.get(p) == null);
+}
+
+test "PageList clone full dirty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, null);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s.totalRows());
+
+    // Mark a row as dirty
+    s.markDirty(.{ .active = .{ .x = 0, .y = 0 } });
+    s.markDirty(.{ .active = .{ .x = 0, .y = 12 } });
+    s.markDirty(.{ .active = .{ .x = 0, .y = 23 } });
+
+    var s2 = try s.clone(.{
+        .top = .{ .screen = .{} },
+        .memory = .{ .alloc = alloc },
+    });
+    defer s2.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s2.totalRows());
+
+    // Should still be dirty
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!s2.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 12 } }));
+    try testing.expect(!s2.isDirty(.{ .active = .{ .x = 0, .y = 14 } }));
+    try testing.expect(s2.isDirty(.{ .active = .{ .x = 0, .y = 23 } }));
 }
 
 test "PageList resize (no reflow) more rows" {

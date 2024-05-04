@@ -83,9 +83,13 @@ pub const WebCanvas = struct {
 pub fn deinit(self: *DeferredFace) void {
     switch (options.backend) {
         .fontconfig_freetype => if (self.fc) |*fc| fc.deinit(),
-        .coretext, .coretext_freetype, .coretext_harfbuzz => if (self.ct) |*ct| ct.deinit(),
         .freetype => {},
         .web_canvas => if (self.wc) |*wc| wc.deinit(),
+        .coretext,
+        .coretext_freetype,
+        .coretext_harfbuzz,
+        .coretext_noshape,
+        => if (self.ct) |*ct| ct.deinit(),
     }
     self.* = undefined;
 }
@@ -98,7 +102,11 @@ pub fn familyName(self: DeferredFace, buf: []u8) ![]const u8 {
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.family, 0)).string,
 
-        .coretext, .coretext_freetype, .coretext_harfbuzz => if (self.ct) |ct| {
+        .coretext,
+        .coretext_freetype,
+        .coretext_harfbuzz,
+        .coretext_noshape,
+        => if (self.ct) |ct| {
             const family_name = ct.font.copyAttribute(.family_name);
             return family_name.cstringPtr(.utf8) orelse unsupported: {
                 break :unsupported family_name.cstring(buf, .utf8) orelse
@@ -121,7 +129,11 @@ pub fn name(self: DeferredFace, buf: []u8) ![]const u8 {
         .fontconfig_freetype => if (self.fc) |fc|
             return (try fc.pattern.get(.fullname, 0)).string,
 
-        .coretext, .coretext_freetype, .coretext_harfbuzz => if (self.ct) |ct| {
+        .coretext,
+        .coretext_freetype,
+        .coretext_harfbuzz,
+        .coretext_noshape,
+        => if (self.ct) |ct| {
             const display_name = ct.font.copyDisplayName();
             return display_name.cstringPtr(.utf8) orelse unsupported: {
                 // "NULL if the internal storage of theString does not allow
@@ -147,7 +159,7 @@ pub fn load(
 ) !Face {
     return switch (options.backend) {
         .fontconfig_freetype => try self.loadFontconfig(lib, opts),
-        .coretext, .coretext_harfbuzz => try self.loadCoreText(lib, opts),
+        .coretext, .coretext_harfbuzz, .coretext_noshape => try self.loadCoreText(lib, opts),
         .coretext_freetype => try self.loadCoreTextFreetype(lib, opts),
         .web_canvas => try self.loadWebCanvas(opts),
 
@@ -262,7 +274,11 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
             }
         },
 
-        .coretext, .coretext_freetype, .coretext_harfbuzz => {
+        .coretext,
+        .coretext_freetype,
+        .coretext_harfbuzz,
+        .coretext_noshape,
+        => {
             // If we are using coretext, we check the loaded CT font.
             if (self.ct) |ct| {
                 if (p) |desired_p| {

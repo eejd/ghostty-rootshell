@@ -64,7 +64,12 @@ pub fn Buffer(comptime T: type) type {
             return ptr[0..len];
         }
 
-        /// Sync new contents to the buffer.
+        /// Sync new contents to the buffer. The data is expected to be the
+        /// complete contents of the buffer. If the amont of data is larger
+        /// than the buffer length, the buffer will be reallocated.
+        ///
+        /// If the amount of data is smaller than the buffer length, the
+        /// remaining data in the buffer is left untouched.
         pub fn sync(self: *Self, device: objc.Object, data: []const T) !void {
             // If we need more bytes than our buffer has, we need to reallocate.
             const req_bytes = data.len * @sizeOf(T);

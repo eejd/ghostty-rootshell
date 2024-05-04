@@ -62,6 +62,16 @@ kitty_keyboard: kitty.KeyFlagStack = .{},
 /// Kitty graphics protocol state.
 kitty_images: kitty.graphics.ImageStorage = .{},
 
+/// Dirty flags for the renderer.
+dirty: Dirty = .{},
+
+/// See Terminal.Dirty. This behaves the same way.
+pub const Dirty = packed struct {
+    /// Set when the selection is set or unset, regardless of if the
+    /// selection is changed or not.
+    selection: bool = false,
+};
+
 /// The cursor position.
 pub const Cursor = struct {
     // The x/y position within the viewport.
@@ -362,6 +372,7 @@ pub fn clonePool(
         .no_scrollback = self.no_scrollback,
         .cursor = cursor,
         .selection = sel,
+        .dirty = self.dirty,
     };
     result.assertIntegrity();
     return result;
@@ -719,6 +730,12 @@ fn cursorChangePin(self: *Screen, new: Pin) void {
     };
 }
 
+/// Mark the cursor position as dirty.
+/// TODO: test
+pub fn cursorMarkDirty(self: *Screen) void {
+    self.cursor.page_pin.markDirty();
+}
+
 /// Options for scrolling the viewport of the terminal grid. The reason
 /// we have this in addition to PageList.Scroll is because we have additional
 /// scroll behaviors that are not part of the PageList.Scroll enum.
@@ -803,6 +820,10 @@ pub fn clearRows(
 
     var it = self.pages.pageIterator(.right_down, tl, bl);
     while (it.next()) |chunk| {
+        // Mark everything in this chunk as dirty
+        var dirty = chunk.page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = chunk.start, .end = chunk.end }, true);
+
         for (chunk.rows()) |*row| {
             const cells_offset = row.cells;
             const cells_multi: [*]Cell = row.cells.ptr(chunk.page.data.memory);
@@ -1318,12 +1339,14 @@ pub fn select(self: *Screen, sel_: ?Selection) !void {
     // Untrack prior selection
     if (self.selection) |*old| old.deinit(self);
     self.selection = tracked_sel;
+    self.dirty.selection = true;
 }
 
 /// Same as select(null) but can't fail.
 pub fn clearSelection(self: *Screen) void {
     if (self.selection) |*sel| sel.deinit(self);
     self.selection = null;
+    self.dirty.selection = true;
 }
 
 pub const SelectionString = struct {
@@ -2502,6 +2525,7 @@ test "Screen clearRows active one line" {
 
     try s.testWriteString("hello, world");
     s.clearRows(.{ .active = .{} }, null, false);
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);
@@ -2516,6 +2540,8 @@ test "Screen clearRows active multi line" {
 
     try s.testWriteString("hello\nworld");
     s.clearRows(.{ .active = .{} }, null, false);
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);
     try testing.expectEqualStrings("", str);

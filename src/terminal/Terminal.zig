@@ -15,6 +15,7 @@ const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
 const kitty = @import("kitty.zig");
+const point = @import("point.zig");
 const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
 const color = @import("color.zig");
@@ -113,7 +114,28 @@ flags: packed struct {
     /// then we want to capture the shift key for the mouse protocol
     /// if the configuration allows it.
     mouse_shift_capture: enum(u2) { null, false, true } = .null,
+
+    /// Dirty flags for the renderer.
+    dirty: Dirty = .{},
 } = .{},
+
+/// This is a set of dirty flags the renderer can use to determine
+/// what parts of the screen need to be redrawn. It is up to the renderer
+/// to clear these flags.
+///
+/// This only contains dirty flags for terminal state, not for the screen
+/// state. The screen state has its own dirty flags.
+pub const Dirty = packed struct {
+    /// Set when the color palette is modified in any way.
+    palette: bool = false,
+
+    /// Set when the reverse colors mode is modified.
+    reverse_colors: bool = false,
+
+    /// Screen clear of some kind. This can be due to a screen change,
+    /// erase display, etc.
+    clear: bool = false,
+};
 
 /// The event types that can be reported for mouse-related activities.
 /// These are all mutually exclusive (hence in a single enum).
@@ -354,6 +376,7 @@ pub fn print(self: *Terminal, c: u21) !void {
             }
 
             log.debug("c={x} grapheme attach to left={}", .{ c, prev.left });
+            self.screen.cursorMarkDirty();
             try self.screen.appendGrapheme(prev.cell, c);
             return;
         }
@@ -429,7 +452,10 @@ pub fn print(self: *Terminal, c: u21) !void {
 
     switch (width) {
         // Single cell is very easy: just write in the cell
-        1 => @call(.always_inline, printCell, .{ self, c, .narrow }),
+        1 => {
+            self.screen.cursorMarkDirty();
+            @call(.always_inline, printCell, .{ self, c, .narrow });
+        },
 
         // Wide character requires a spacer. We print this by
         // using two cells: the first is flagged "wide" and has the
@@ -452,12 +478,14 @@ pub fn print(self: *Terminal, c: u21) !void {
                 try self.printWrap();
             }
 
+            self.screen.cursorMarkDirty();
             self.printCell(c, .wide);
             self.screen.cursorRight(1);
             self.printCell(' ', .spacer_tail);
         } else {
             // This is pretty broken, terminals should never be only 1-wide.
             // We sould prevent this downstream.
+            self.screen.cursorMarkDirty();
             self.printCell(' ', .narrow);
         },
 
@@ -1438,6 +1466,10 @@ pub fn insertLines(self: *Terminal, count: usize) void {
             self.rowWillBeShifted(&p.page.data, src);
             self.rowWillBeShifted(&dst_p.page.data, dst);
 
+            // Mark both our src/dst as dirty
+            p.markDirty();
+            dst_p.markDirty();
+
             // If our scrolling region is full width, then we unset wrap.
             if (!left_right) {
                 dst.wrap = false;
@@ -1501,6 +1533,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     var it = top.rowIterator(.right_down, bot);
     while (it.next()) |p| {
         const row: *Row = p.rowAndCell().row;
+
+        // This row is now dirty
+        p.markDirty();
 
         // Clear the src row.
         const page = &p.page.data;
@@ -1580,6 +1615,10 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
             const src: *Row = src_rac.row;
             const dst: *Row = dst_rac.row;
 
+            // Mark both our src/dst as dirty
+            p.markDirty();
+            src_p.markDirty();
+
             self.rowWillBeShifted(&src_p.page.data, src);
             self.rowWillBeShifted(&p.page.data, dst);
 
@@ -1644,6 +1683,9 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
     var it = clear_top.rowIterator(.right_down, bot);
     while (it.next()) |p| {
         const row: *Row = p.rowAndCell().row;
+
+        // This row is now dirty
+        p.markDirty();
 
         // Clear the src row.
         const page = &p.page.data;
@@ -1742,6 +1784,9 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
 
     // Insert blanks. The blanks preserve the background color.
     self.screen.clearCells(page, self.screen.cursor.page_row, left[0..adjusted_count]);
+
+    // Our row is always dirty
+    self.screen.cursorMarkDirty();
 }
 
 /// Removes amount characters from the current cursor position to the right.
@@ -1832,6 +1877,9 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
 
     // Insert blanks. The blanks preserve the background color.
     self.screen.clearCells(page, self.screen.cursor.page_row, x[0 .. rem - scroll_amount]);
+
+    // Our row is always dirty
+    self.screen.cursorMarkDirty();
 }
 
 pub fn eraseChars(self: *Terminal, count_req: usize) void {
@@ -1858,6 +1906,9 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
 
         break :end end;
     };
+
+    // Mark our cursor row as dirty
+    self.screen.cursorMarkDirty();
 
     // Clear the cells
     const cells: [*]Cell = @ptrCast(self.screen.cursor.page_cell);
@@ -1928,6 +1979,9 @@ pub fn eraseLine(
     // All modes will clear the pending wrap state and we know we have
     // a valid mode at this point.
     self.screen.cursor.pending_wrap = false;
+
+    // We always mark our row as dirty
+    self.screen.cursorMarkDirty();
 
     // Start of our cells
     const cells: [*]Cell = cells: {
@@ -2045,6 +2099,9 @@ pub fn eraseDisplay(
                 self,
                 .{ .all = true },
             );
+
+            // Cleared screen dirty bit
+            self.flags.dirty.clear = true;
         },
 
         .below => {
@@ -2113,7 +2170,7 @@ pub fn decaln(self: *Terminal) !void {
     // Move our cursor to the top-left
     self.setCursorPos(1, 1);
 
-    // Erase the display which will deallocate graphames, styles, etc.
+    // Erase the display which will deallocate graphemes, styles, etc.
     self.eraseDisplay(.complete, false);
 
     // Fill with Es by moving the cursor but reset it after.
@@ -2135,6 +2192,7 @@ pub fn decaln(self: *Terminal) !void {
             row.styled = true;
         }
 
+        self.screen.cursorMarkDirty();
         if (self.screen.cursor.y == self.rows - 1) break;
         self.screen.cursorDown(1);
     }
@@ -2325,6 +2383,9 @@ pub fn resize(
         }
     }
 
+    // Whenever we resize we just mark it as a screen clear
+    self.flags.dirty.clear = true;
+
     // Set our size
     self.cols = cols;
     self.rows = rows;
@@ -2402,6 +2463,9 @@ pub fn alternateScreen(
     // Mark kitty images as dirty so they redraw
     self.screen.kitty_images.dirty = true;
 
+    // Mark our terminal as dirty
+    self.flags.dirty.clear = true;
+
     // Bring our pen with us
     self.screen.cursorCopy(old.cursor) catch |err| {
         log.warn("cursor copy failed entering alt screen err={}", .{err});
@@ -2436,6 +2500,9 @@ pub fn primaryScreen(
 
     // Mark kitty images as dirty so they redraw
     self.screen.kitty_images.dirty = true;
+
+    // Mark our terminal as dirty
+    self.flags.dirty.clear = true;
 
     // Restore the cursor from the primary screen. This should not
     // fail because we should not have to allocate memory since swapping
@@ -2494,6 +2561,16 @@ pub fn fullReset(self: *Terminal) void {
     self.status_display = .main;
 }
 
+/// Returns true if the point is dirty, used for testing.
+fn isDirty(t: *const Terminal, pt: point.Point) bool {
+    return t.screen.pages.getCell(pt).?.isDirty();
+}
+
+/// Clear all dirty bits. Testing only.
+fn clearDirty(t: *Terminal) void {
+    t.screen.pages.clearDirty();
+}
+
 test "Terminal: input with no control characters" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 40, .rows = 40 });
@@ -2508,6 +2585,10 @@ test "Terminal: input with no control characters" {
         defer alloc.free(str);
         try testing.expectEqualStrings("hello", str);
     }
+
+    // The first row should be dirty
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 5, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 5, .y = 1 } }));
 }
 
 test "Terminal: input with basic wraparound" {
@@ -2525,6 +2606,20 @@ test "Terminal: input with basic wraparound" {
         defer alloc.free(str);
         try testing.expectEqualStrings("hello\nworld\nabc12", str);
     }
+}
+
+test "Terminal: input with basic wraparound dirty" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 5, .rows = 40 });
+    defer t.deinit(alloc);
+
+    for ("hello") |c| try t.print(c);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    t.clearDirty();
+    try t.print('w');
+
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: input that forces scroll" {
@@ -2582,6 +2677,9 @@ test "Terminal: zero-width character at start" {
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+
+    // Should not be dirty since we changed nothing.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 // https://github.com/mitchellh/ghostty/issues/1400
@@ -2613,6 +2711,8 @@ test "Terminal: print wide char" {
         const cell = list_cell.cell;
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print wide char at edge creates spacer head" {
@@ -2640,6 +2740,12 @@ test "Terminal: print wide char at edge creates spacer head" {
         const cell = list_cell.cell;
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
+
+    // Our first row just had a spacer head added which does not affect
+    // rendering so only the place where the wide char was printed
+    // should be marked.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: print wide char with 1-column width" {
@@ -2648,6 +2754,9 @@ test "Terminal: print wide char with 1-column width" {
     defer t.deinit(alloc);
 
     try t.print('😀'); // 0x1F600
+
+    // This prints a space so we should be dirty.
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print wide char in single-width terminal" {
@@ -2665,6 +2774,8 @@ test "Terminal: print wide char in single-width terminal" {
         try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char at 0,0" {
@@ -2673,7 +2784,7 @@ test "Terminal: print over wide char at 0,0" {
 
     try t.print(0x1F600); // Smiley face
     t.setCursorPos(0, 0);
-    try t.print('A'); // Smiley face
+    try t.print('A');
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
@@ -2690,6 +2801,9 @@ test "Terminal: print over wide char at 0,0" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
 test "Terminal: print over wide spacer tail" {
@@ -2718,6 +2832,8 @@ test "Terminal: print over wide spacer tail" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings(" X", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char with bold" {
@@ -2742,6 +2858,8 @@ test "Terminal: print over wide char with bold" {
         const page = t.screen.cursor.page_pin.page.data;
         try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print over wide char with bg color" {
@@ -2770,6 +2888,8 @@ test "Terminal: print over wide char with bg color" {
         const page = t.screen.cursor.page_pin.page.data;
         try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
@@ -2840,6 +2960,8 @@ test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
         try testing.expect(list_cell.page.data.lookupGrapheme(cell) == null);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: VS16 doesn't make character with 2027 disabled" {
@@ -2867,6 +2989,21 @@ test "Terminal: VS16 doesn't make character with 2027 disabled" {
         const cps = list_cell.page.data.lookupGrapheme(cell).?;
         try testing.expectEqual(@as(usize, 1), cps.len);
     }
+}
+
+test "Terminal: ignored VS16 doesn't mark dirty" {
+    var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(testing.allocator);
+
+    // Disable grapheme clustering
+    t.modes.set(.grapheme_cluster, false);
+
+    try t.print(0x2764); // Heart
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    t.clearDirty();
+    try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print invalid VS16 non-grapheme" {
@@ -2897,6 +3034,21 @@ test "Terminal: print invalid VS16 non-grapheme" {
     }
 }
 
+test "Terminal: invalid VS16 doesn't mark dirty" {
+    var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(testing.allocator);
+
+    // Disable grapheme clustering
+    t.modes.set(.grapheme_cluster, false);
+
+    try t.print('x');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    t.clearDirty();
+    try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
 test "Terminal: print multicodepoint grapheme, mode 2027" {
     var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
     defer t.deinit(testing.allocator);
@@ -2915,6 +3067,9 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
     // We should have 2 cells taken up. It is one character but "wide".
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+
+    // Row should be dirty
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     // Assert various properties about our screen to verify
     // we have all expected cells.
@@ -2936,6 +3091,35 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
     }
 }
 
+test "Terminal: multicodepoint grapheme marks dirty on every codepoint" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // https://github.com/mitchellh/ghostty/issues/289
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    try t.print(0x1F468);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x200D);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x1F469);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x200D);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+    try t.print(0x1F467);
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    // We should have 2 cells taken up. It is one character but "wide".
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
+}
+
 test "Terminal: VS15 to make narrow character" {
     var t = try init(testing.allocator, .{ .rows = 5, .cols = 5 });
     defer t.deinit(testing.allocator);
@@ -2944,7 +3128,11 @@ test "Terminal: VS15 to make narrow character" {
     t.modes.set(.grapheme_cluster, true);
 
     try t.print(0x26C8); // Thunder cloud and rain
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
     try t.print(0xFE0E); // VS15 to make narrow
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
 
     {
         const str = try t.plainString(testing.allocator);
@@ -2971,7 +3159,11 @@ test "Terminal: VS16 to make wide character with mode 2027" {
     t.modes.set(.grapheme_cluster, true);
 
     try t.print(0x2764); // Heart
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
     try t.print(0xFE0F); // VS16 to make wide
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3001,6 +3193,8 @@ test "Terminal: VS16 repeated with mode 2027" {
     try t.print(0xFE0F); // VS16 to make wide
     try t.print(0x2764); // Heart
     try t.print(0xFE0F); // VS16 to make wide
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3104,8 +3298,12 @@ test "Terminal: overwrite grapheme should clear grapheme data" {
 
     try t.print(0x26C8); // Thunder cloud and rain
     try t.print(0xFE0E); // VS15 to make narrow
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    t.clearDirty();
+
     t.setCursorPos(1, 1);
     try t.print('A');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3147,7 +3345,9 @@ test "Terminal: overwrite multicodepoint grapheme clears grapheme data" {
 
     // Move back and overwrite wide
     t.setCursorPos(1, 1);
+    t.clearDirty();
     try t.print('X');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
@@ -3233,6 +3433,11 @@ test "Terminal: print writes to bottom if scrolled" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\nA", str);
     }
+
+    try testing.expect(t.isDirty(.{ .active = .{
+        .x = t.screen.cursor.x,
+        .y = t.screen.cursor.y,
+    } }));
 }
 
 test "Terminal: print charset" {
@@ -3243,6 +3448,9 @@ test "Terminal: print charset" {
     t.configureCharset(.G1, .dec_special);
     t.configureCharset(.G2, .dec_special);
     t.configureCharset(.G3, .dec_special);
+
+    // No dirty to configure charset
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     // Basic grid writing
     try t.print('`');
@@ -3257,6 +3465,8 @@ test "Terminal: print charset" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("```◆", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print charset outside of ASCII" {
@@ -3268,6 +3478,9 @@ test "Terminal: print charset outside of ASCII" {
     t.configureCharset(.G2, .dec_special);
     t.configureCharset(.G3, .dec_special);
 
+    // No dirty to configure charset
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     // Basic grid writing
     t.configureCharset(.G0, .dec_special);
     try t.print('`');
@@ -3277,6 +3490,8 @@ test "Terminal: print charset outside of ASCII" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("◆ ", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print invoke charset" {
@@ -3285,10 +3500,14 @@ test "Terminal: print invoke charset" {
 
     t.configureCharset(.G1, .dec_special);
 
-    // Basic grid writing
     try t.print('`');
+
+    // Invokecharset but should not mark dirty on its own
+    t.clearDirty();
     t.invokeCharset(.GL, .G1, false);
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
     try t.print('`');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
     try t.print('`');
     t.invokeCharset(.GL, .G0, false);
     try t.print('`');
@@ -3336,7 +3555,10 @@ test "Terminal: soft wrap with semantic prompt" {
     var t = try init(testing.allocator, .{ .cols = 3, .rows = 80 });
     defer t.deinit(testing.allocator);
 
+    // Mark our prompt. Should not make anything dirty on its own.
     t.markSemanticPrompt(.prompt);
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     for ("hello") |c| try t.print(c);
 
     {
@@ -3358,6 +3580,7 @@ test "Terminal: disabled wraparound with wide char and one space" {
     // This puts our cursor at the end and there is NO SPACE for a
     // wide character.
     try t.printString("AAAA");
+    t.clearDirty();
     try t.print(0x1F6A8); // Police car light
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3375,6 +3598,9 @@ test "Terminal: disabled wraparound with wide char and one space" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: disabled wraparound with wide char and no space" {
@@ -3386,6 +3612,7 @@ test "Terminal: disabled wraparound with wide char and no space" {
     // This puts our cursor at the end and there is NO SPACE for a
     // wide character.
     try t.printString("AAAAA");
+    t.clearDirty();
     try t.print(0x1F6A8); // Police car light
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3402,6 +3629,9 @@ test "Terminal: disabled wraparound with wide char and no space" {
         try testing.expectEqual(@as(u21, 'A'), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: disabled wraparound with wide grapheme and half space" {
@@ -3415,6 +3645,7 @@ test "Terminal: disabled wraparound with wide grapheme and half space" {
     // wide character.
     try t.printString("AAAA");
     try t.print(0x2764); // Heart
+    t.clearDirty();
     try t.print(0xFE0F); // VS16 to make wide
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
@@ -3431,6 +3662,9 @@ test "Terminal: disabled wraparound with wide grapheme and half space" {
         try testing.expectEqual(@as(u21, '❤'), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
+
+    // Should not be dirty since we didn't modify anything
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: print right margin wrap" {
@@ -3456,6 +3690,34 @@ test "Terminal: print right margin wrap" {
     }
 }
 
+test "Terminal: print right margin wrap dirty tracking" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    try t.printString("123456789");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(3, 5);
+    t.setCursorPos(1, 5);
+
+    // Writing our X on the first line should mark only that line dirty.
+    t.clearDirty();
+    try t.print('X');
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
+
+    // Writing our Y should wrap and only mark the second line dirty.
+    t.clearDirty();
+    try t.print('Y');
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1234X6789\n  Y", str);
+    }
+}
+
 test "Terminal: print right margin outside" {
     var t = try init(testing.allocator, .{ .cols = 10, .rows = 5 });
     defer t.deinit(testing.allocator);
@@ -3464,6 +3726,7 @@ test "Terminal: print right margin outside" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(3, 5);
     t.setCursorPos(1, 6);
+    t.clearDirty();
     try t.printString("XY");
 
     {
@@ -3471,6 +3734,8 @@ test "Terminal: print right margin outside" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("12345XY89", str);
     }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 5, .y = 0 } }));
 }
 
 test "Terminal: print right margin outside wrap" {
@@ -3501,6 +3766,10 @@ test "Terminal: print wide char at right margin does not create spacer head" {
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
 
+    // Only wrapped row should be dirty
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 1 } }));
+
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 4, .y = 0 } }).?;
         const cell = list_cell.cell;
@@ -3527,10 +3796,20 @@ test "Terminal: linefeed and carriage return" {
     var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
     defer t.deinit(testing.allocator);
 
-    // Basic grid writing
+    // Print and CR.
     for ("hello") |c| try t.print(c);
+    t.clearDirty();
     t.carriageReturn();
+
+    // CR should not mark row dirty because it doesn't change rendering.
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
     try t.linefeed();
+
+    // LF should not mark row dirty
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
+
     for ("world") |c| try t.print(c);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 5), t.screen.cursor.x);
@@ -3548,7 +3827,10 @@ test "Terminal: linefeed unsets pending wrap" {
     // Basic grid writing
     for ("hello") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap == true);
+    t.clearDirty();
     try t.linefeed();
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
@@ -3923,7 +4205,15 @@ test "Terminal: setTopAndBottomMargin simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(0, 0);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    // Mark the rows we moved as dirty.
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3945,7 +4235,14 @@ test "Terminal: setTopAndBottomMargin top only" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 0);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3967,7 +4264,13 @@ test "Terminal: setTopAndBottomMargin top and bottom" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(1, 2);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -3989,7 +4292,14 @@ test "Terminal: setTopAndBottomMargin top equal to bottom" {
     try t.linefeed();
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 2);
+
+    t.clearDirty();
     t.scrollDown(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4012,7 +4322,12 @@ test "Terminal: setLeftAndRightMargin simple" {
     try t.printString("GHI");
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(0, 0);
+
+    t.clearDirty();
     t.eraseChars(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4038,7 +4353,14 @@ test "Terminal: setLeftAndRightMargin left only" {
     try testing.expectEqual(@as(usize, 1), t.scrolling_region.left);
     try testing.expectEqual(@as(usize, t.cols - 1), t.scrolling_region.right);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4062,7 +4384,14 @@ test "Terminal: setLeftAndRightMargin left and right" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(1, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4086,7 +4415,14 @@ test "Terminal: setLeftAndRightMargin left equal right" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(2, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4110,7 +4446,14 @@ test "Terminal: setLeftAndRightMargin mode 69 unset" {
     t.modes.set(.enable_left_and_right_margin, false);
     t.setLeftAndRightMargin(1, 2);
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4132,7 +4475,14 @@ test "Terminal: insertLines simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4230,7 +4580,13 @@ test "Terminal: insertLines outside of scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4256,7 +4612,14 @@ test "Terminal: insertLines top/bottom scroll region" {
     try t.printString("123");
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4330,7 +4693,13 @@ test "Terminal: insertLines with scroll region" {
 
     t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     try t.print('X');
 
@@ -4365,7 +4734,12 @@ test "Terminal: insertLines more than remaining" {
     t.setCursorPos(2, 1);
 
     // Insert a bunch of  lines
+    t.clearDirty();
     t.insertLines(20);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4465,7 +4839,14 @@ test "Terminal: insertLines left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.insertLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4487,10 +4868,16 @@ test "Terminal: scrollUp simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollUp(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4513,7 +4900,13 @@ test "Terminal: scrollUp top/bottom scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(2, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.scrollUp(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4537,10 +4930,16 @@ test "Terminal: scrollUp left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollUp(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4579,7 +4978,12 @@ test "Terminal: scrollUp full top/bottom region" {
     t.setCursorPos(5, 1);
     try t.printString("ABCDE");
     t.setTopAndBottomMargin(2, 5);
+
+    t.clearDirty();
     t.scrollUp(4);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4599,7 +5003,15 @@ test "Terminal: scrollUp full top/bottomleft/right scroll region" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setTopAndBottomMargin(2, 5);
     t.setLeftAndRightMargin(2, 4);
+
+    t.clearDirty();
     t.scrollUp(4);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..5) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4621,10 +5033,17 @@ test "Terminal: scrollDown simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..5) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4647,10 +5066,17 @@ test "Terminal: scrollDown outside of scroll region" {
     try t.printString("GHI");
     t.setTopAndBottomMargin(3, 4);
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4674,10 +5100,17 @@ test "Terminal: scrollDown left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4701,10 +5134,17 @@ test "Terminal: scrollDown outside of left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(1, 1);
+
     const cursor = t.screen.cursor;
+    t.clearDirty();
     t.scrollDown(1);
     try testing.expectEqual(cursor.x, t.screen.cursor.x);
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
+
+    for (0..4) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4741,8 +5181,12 @@ test "Terminal: eraseChars simple operation" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseChars(2);
     try t.print('X');
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -4758,8 +5202,10 @@ test "Terminal: eraseChars minimum one" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseChars(0);
     try t.print('X');
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5193,6 +5639,11 @@ test "Terminal: index" {
     try t.index();
     try t.print('A');
 
+    // Only the row we write to is dirty. Moving the cursor itself
+    // does not make a row dirty.
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -5208,9 +5659,15 @@ test "Terminal: index from the bottom" {
     t.setCursorPos(5, 1);
     try t.print('A');
     t.cursorLeft(1); // undo moving right from 'A'
-    try t.index();
 
+    t.clearDirty();
+    try t.index();
     try t.print('B');
+
+    // Only the row we write to is dirty. Moving the cursor itself
+    // does not make a row dirty.
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5238,8 +5695,10 @@ test "Terminal: index from the bottom outside of scroll region" {
     t.setTopAndBottomMargin(1, 2);
     t.setCursorPos(5, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('B');
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5254,8 +5713,12 @@ test "Terminal: index no scroll region, top of screen" {
     defer t.deinit(alloc);
 
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5271,8 +5734,12 @@ test "Terminal: index bottom of primary screen" {
 
     t.setCursorPos(5, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5321,8 +5788,12 @@ test "Terminal: index inside scroll region" {
 
     t.setTopAndBottomMargin(1, 3);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5377,10 +5848,17 @@ test "Terminal: index bottom of primary screen with scroll region" {
     t.setCursorPos(3, 1);
     try t.print('A');
     t.setCursorPos(5, 1);
+    t.clearDirty();
     try t.index();
     try t.index();
     try t.index();
     try t.print('X');
+
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5400,8 +5878,11 @@ test "Terminal: index outside left/right margin" {
     t.setCursorPos(3, 3);
     try t.print('A');
     t.setCursorPos(3, 1);
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5426,7 +5907,13 @@ test "Terminal: index inside left/right margin" {
     t.setTopAndBottomMargin(1, 3);
     t.setLeftAndRightMargin(1, 3);
     t.setCursorPos(3, 1);
+
+    t.clearDirty();
     try t.index();
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
@@ -5448,8 +5935,14 @@ test "Terminal: index bottom of scroll region" {
     try t.print('B');
     t.setCursorPos(3, 1);
     try t.print('A');
+    t.clearDirty();
     try t.index();
     try t.print('X');
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -5933,7 +6426,14 @@ test "Terminal: deleteLines simple" {
     try t.linefeed();
     try t.printString("GHI");
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6037,7 +6537,14 @@ test "Terminal: deleteLines with scroll region" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     try t.print('E');
     t.carriageReturn();
@@ -6054,7 +6561,6 @@ test "Terminal: deleteLines with scroll region" {
     }
 }
 
-// X
 test "Terminal: deleteLines with scroll region, large count" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 80, .rows = 80 });
@@ -6074,7 +6580,14 @@ test "Terminal: deleteLines with scroll region, large count" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.deleteLines(5);
+
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     try t.print('E');
     t.carriageReturn();
@@ -6091,7 +6604,6 @@ test "Terminal: deleteLines with scroll region, large count" {
     }
 }
 
-// X
 test "Terminal: deleteLines with scroll region, cursor outside of region" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 80, .rows = 80 });
@@ -6111,7 +6623,14 @@ test "Terminal: deleteLines with scroll region, cursor outside of region" {
 
     t.setTopAndBottomMargin(1, 3);
     t.setCursorPos(4, 1);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    for (0..4) |y| try testing.expect(!t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6184,7 +6703,15 @@ test "Terminal: deleteLines left/right scroll region" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6208,7 +6735,14 @@ test "Terminal: deleteLines left/right scroll region from top" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(1, 2);
+
+    t.clearDirty();
     t.deleteLines(1);
+
+    for (0..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6232,7 +6766,15 @@ test "Terminal: deleteLines left/right scroll region high count" {
     t.scrolling_region.left = 1;
     t.scrolling_region.right = 3;
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.deleteLines(100);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    for (1..3) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6596,6 +7138,11 @@ test "Terminal: DECALN" {
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
 
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -6661,7 +7208,11 @@ test "Terminal: insertBlanks" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6681,7 +7232,10 @@ test "Terminal: insertBlanks pushes off end" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6701,7 +7255,10 @@ test "Terminal: insertBlanks more than size" {
     try t.print('B');
     try t.print('C');
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(5);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6717,7 +7274,10 @@ test "Terminal: insertBlanks no scroll region, fits" {
 
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6763,7 +7323,9 @@ test "Terminal: insertBlanks shift off screen" {
 
     for ("  ABC") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -6781,7 +7343,9 @@ test "Terminal: insertBlanks split multi-cell character" {
     for ("123") |c| try t.print(c);
     try t.print('橋');
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6800,7 +7364,10 @@ test "Terminal: insertBlanks inside left/right scroll region" {
     t.setCursorPos(1, 3);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 3);
+
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -6820,7 +7387,9 @@ test "Terminal: insertBlanks outside left/right scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.insertBlanks(2);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('X');
 
@@ -6840,7 +7409,9 @@ test "Terminal: insertBlanks left/right scroll region large count" {
     t.modes.set(.enable_left_and_right_margin, true);
     t.setLeftAndRightMargin(3, 5);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(140);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try t.print('X');
 
     {
@@ -6872,7 +7443,9 @@ test "Terminal: insertBlanks deleting graphemes" {
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(4);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -6906,7 +7479,9 @@ test "Terminal: insertBlanks shift graphemes" {
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.insertBlanks(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7043,7 +7618,10 @@ test "Terminal: deleteChars" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7059,7 +7637,10 @@ test "Terminal: deleteChars zero count" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(0);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7075,7 +7656,10 @@ test "Terminal: deleteChars more than half" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(3);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7091,7 +7675,10 @@ test "Terminal: deleteChars more than line width" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(10);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7107,7 +7694,10 @@ test "Terminal: deleteChars should shift left" {
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 2);
 
+    t.clearDirty();
     t.deleteChars(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
@@ -7169,7 +7759,10 @@ test "Terminal: deleteChars simple operation" {
 
     try t.printString("ABC123");
     t.setCursorPos(1, 3);
+
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7220,7 +7813,9 @@ test "Terminal: deleteChars outside scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.deleteChars(2);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.screen.cursor.pending_wrap);
 
     {
@@ -7239,7 +7834,10 @@ test "Terminal: deleteChars inside scroll region" {
     t.scrolling_region.left = 2;
     t.scrolling_region.right = 4;
     t.setCursorPos(1, 4);
+
+    t.clearDirty();
     t.deleteChars(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7518,7 +8116,9 @@ test "Terminal: eraseLine simple erase right" {
 
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7614,7 +8214,9 @@ test "Terminal: eraseLine right wide character" {
     try t.print('橋');
     for ("DE") |c| try t.print(c);
     t.setCursorPos(1, 4);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7631,7 +8233,9 @@ test "Terminal: eraseLine right protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7650,7 +8254,9 @@ test "Terminal: eraseLine right protected attributes ignored with dec most recen
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7667,7 +8273,9 @@ test "Terminal: eraseLine right protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.right, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7686,7 +8294,9 @@ test "Terminal: eraseLine right protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 4);
+    t.clearDirty();
     t.eraseLine(.right, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7702,7 +8312,9 @@ test "Terminal: eraseLine simple erase left" {
 
     for ("ABCDE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7718,7 +8330,9 @@ test "Terminal: eraseLine left resets wrap" {
 
     for ("ABCDE") |c| try t.print(c);
     try testing.expect(t.screen.cursor.pending_wrap);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(!t.screen.cursor.pending_wrap);
     try t.print('B');
 
@@ -7771,7 +8385,9 @@ test "Terminal: eraseLine left wide character" {
     try t.print('橋');
     for ("DE") |c| try t.print(c);
     t.setCursorPos(1, 3);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7788,7 +8404,9 @@ test "Terminal: eraseLine left protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7807,7 +8425,9 @@ test "Terminal: eraseLine left protected attributes ignored with dec most recent
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7824,7 +8444,9 @@ test "Terminal: eraseLine left protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.left, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7843,7 +8465,9 @@ test "Terminal: eraseLine left protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 8);
+    t.clearDirty();
     t.eraseLine(.left, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7893,7 +8517,9 @@ test "Terminal: eraseLine complete protected attributes respected with iso" {
     t.setProtectedMode(.iso);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 1);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7912,7 +8538,9 @@ test "Terminal: eraseLine complete protected attributes ignored with dec most re
     t.setProtectedMode(.dec);
     t.setProtectedMode(.off);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7929,7 +8557,9 @@ test "Terminal: eraseLine complete protected attributes ignored with dec set" {
     t.setProtectedMode(.dec);
     for ("ABC") |c| try t.print(c);
     t.setCursorPos(1, 2);
+    t.clearDirty();
     t.eraseLine(.complete, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7948,7 +8578,9 @@ test "Terminal: eraseLine complete protected requested" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 8);
+    t.clearDirty();
     t.eraseLine(.complete, true);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -7964,6 +8596,7 @@ test "Terminal: tabClear single" {
 
     try t.horizontalTab();
     t.tabClear(.current);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     t.setCursorPos(1, 1);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 16), t.screen.cursor.x);
@@ -7975,6 +8608,7 @@ test "Terminal: tabClear all" {
     defer t.deinit(alloc);
 
     t.tabClear(.all);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     t.setCursorPos(1, 1);
     try t.horizontalTab();
     try testing.expectEqual(@as(usize, 29), t.screen.cursor.x);
@@ -7987,6 +8621,7 @@ test "Terminal: printRepeat simple" {
 
     try t.printString("A");
     try t.printRepeat(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8002,6 +8637,7 @@ test "Terminal: printRepeat wrap" {
 
     try t.printString("    A");
     try t.printRepeat(1);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8016,6 +8652,7 @@ test "Terminal: printRepeat no previous character" {
     defer t.deinit(alloc);
 
     try t.printRepeat(1);
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8088,7 +8725,13 @@ test "Terminal: eraseDisplay simple erase below" {
     try t.linefeed();
     for ("GHI") |c| try t.print(c);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.eraseDisplay(.below, false);
+
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8266,7 +8909,12 @@ test "Terminal: eraseDisplay simple erase above" {
     try t.linefeed();
     for ("GHI") |c| try t.print(c);
     t.setCursorPos(2, 2);
+
+    t.clearDirty();
     t.eraseDisplay(.above, false);
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
@@ -8444,7 +9092,13 @@ test "Terminal: eraseDisplay protected complete" {
     t.setProtectedMode(.dec);
     try t.print('X');
     t.setCursorPos(t.screen.cursor.y + 1, 4);
+
+    t.clearDirty();
     t.eraseDisplay(.complete, true);
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
 
     {
         const str = try t.plainString(testing.allocator);
