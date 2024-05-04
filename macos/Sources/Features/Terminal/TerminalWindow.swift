@@ -76,10 +76,12 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    var windowTheme: String?
+
     // We only need to set this once, but need to do it after the window has been created in order
     // to determine if the theme is using a very dark background, in which case we don't want to
     // remove the effect view if the default tab bar is being used since the effect created in
-    // `updateTabsForVeryDarkBackgrounds`.
+    // `updateTabsForVeryDarkBackgrounds` creates a confusing visual design.
     private var effectViewIsHidden = false
 
     override func becomeKey() {
@@ -119,6 +121,21 @@ class TerminalWindow: NSWindow {
     override func update() {
         super.update()
 
+        if titlebarTabs {
+            updateTabsForVeryDarkBackgrounds()
+            // This is called when we open, close, switch, and reorder tabs, at which point we determine if the
+            // first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
+            // as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
+            // color as the background of unselected tabs.
+            if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
+                windowButtonsBackdrop?.isHighlighted = index == 0
+            }
+        }
+
+        updateResetZoomTitlebarButtonVisibility()
+
+        guard let windowTheme, windowTheme == "auto" else { return }
+
 		titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
 		if !effectViewIsHidden {
@@ -137,20 +154,8 @@ class TerminalWindow: NSWindow {
 			effectViewIsHidden = true
 		}
 
-		if titlebarTabs {
-			updateTabsForVeryDarkBackgrounds()
-			// This is called when we open, close, switch, and reorder tabs, at which point we determine if the
-			// first tab in the tab bar is selected. If it is, we make the `windowButtonsBackdrop` color the same
-			// as that of the active tab (i.e. the titlebar's background color), otherwise we make it the same
-			// color as the background of unselected tabs.
-			if let index = windowController?.window?.tabbedWindows?.firstIndex(of: self) {
-				windowButtonsBackdrop?.isHighlighted = index == 0
-			}
-		}
-
         updateNewTabButtonOpacity()
-		updateNewTabButtonImage()
-		updateResetZoomTitlebarButtonVisibility()
+        updateNewTabButtonImage()
     }
 
     override func updateConstraintsIfNeeded() {

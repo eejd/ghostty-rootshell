@@ -166,10 +166,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     private func syncAppearance() {
         guard let window = self.window as? TerminalWindow else { return }
         
-        let backgroundColor = OSColor(ghostty.config.backgroundColor)
-        let appearance = NSAppearance(named: backgroundColor.isLightColor ? .aqua : .darkAqua)
-        window.appearance = appearance
-
         // Set the font for the window and tab titles.
         if let titleFontName = ghostty.config.windowTitleFontFamily {
             window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
@@ -177,6 +173,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.titlebarFont = nil
         }
 
+        let backgroundColor = OSColor(ghostty.config.backgroundColor)
         window.backgroundColor = backgroundColor
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
         window.updateTabBar()
@@ -257,6 +254,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         // This makes sure our titlebar renders correctly when there is a transparent background
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+
+        window.windowTheme = ghostty.config.windowTheme
 
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
