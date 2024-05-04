@@ -11,6 +11,7 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
+const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -41,6 +42,11 @@ const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
 const ImagePlacementList = std.ArrayListUnmanaged(mtl_image.Placement);
+
+const DisplayLink = switch (builtin.os.tag) {
+    .macos => *macos.video.DisplayLink,
+    else => void,
+};
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -114,6 +120,11 @@ shaders: Shaders, // Compiled shaders
 
 /// Metal objects
 layer: objc.Object, // CAMetalLayer
+
+/// The CVDisplayLink used to drive the rendering loop in sync
+/// with the display. This is void on platforms that don't support
+/// a display link.
+display_link: ?DisplayLink = null,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -545,8 +556,14 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
-    const cells = try mtl_cell.Contents.init(alloc);
+    var cells = try mtl_cell.Contents.init(alloc);
     errdefer cells.deinit(alloc);
+
+    const display_link: ?DisplayLink = switch (builtin.os.tag) {
+        .macos => try macos.video.DisplayLink.createWithActiveCGDisplays(),
+        else => null,
+    };
+    errdefer if (display_link) |v| v.release();
 
     return Metal{
         .alloc = alloc,
@@ -581,6 +598,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Metal stuff
         .layer = layer,
+        .display_link = display_link,
         .custom_shader_state = custom_shader_state,
         .gpu_state = gpu_state,
     };
@@ -588,6 +606,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
 pub fn deinit(self: *Metal) void {
     self.gpu_state.deinit();
+
+    if (DisplayLink != void) {
+        if (self.display_link) |display_link| {
+            display_link.stop() catch {};
+            display_link.release();
+        }
+    }
 
     self.cells.deinit(self.alloc);
 
@@ -633,6 +658,45 @@ pub fn threadExit(self: *const Metal) void {
     _ = self;
 
     // Metal requires no per-thread state.
+}
+
+/// Called by renderer.Thread when it starts the main loop.
+pub fn loopEnter(self: *Metal, thr: *renderer.Thread) !void {
+    // If we don't support a display link we have no work to do.
+    if (comptime DisplayLink == void) return;
+
+    // This is when we know our "self" pointer is stable so we can
+    // setup the display link. To setup the display link we set our
+    // callback and we can start it immediately.
+    const display_link = self.display_link orelse return;
+    try display_link.setOutputCallback(
+        xev.Async,
+        &displayLinkCallback,
+        &thr.draw_now,
+    );
+    display_link.start() catch {};
+}
+
+/// Called by renderer.Thread when it exits the main loop.
+pub fn loopExit(self: *const Metal) void {
+    // If we don't support a display link we have no work to do.
+    if (comptime DisplayLink == void) return;
+
+    // Stop our display link. If this fails its okay it just means
+    // that we either never started it or the view its attached to
+    // is gone which is fine.
+    const display_link = self.display_link orelse return;
+    display_link.stop() catch {};
+}
+
+fn displayLinkCallback(
+    _: *macos.video.DisplayLink,
+    ud: ?*xev.Async,
+) void {
+    const draw_now = ud orelse return;
+    draw_now.notify() catch |err| {
+        log.err("error notifying draw_now err={}", .{err});
+    };
 }
 
 /// True if our renderer has animations so that a higher frequency

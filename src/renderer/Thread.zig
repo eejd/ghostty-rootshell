@@ -146,7 +146,7 @@ pub fn init(
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
 
-    return Thread{
+    return .{
         .alloc = alloc,
         .config = DerivedConfig.init(config),
         .loop = loop,
@@ -190,6 +190,11 @@ pub fn threadMain(self: *Thread) void {
 
 fn threadMain_(self: *Thread) !void {
     defer log.debug("renderer thread exited", .{});
+
+    // Run our loop start/end callbacks if the renderer cares.
+    const has_loop = @hasDecl(renderer.Renderer, "loopEnter");
+    if (has_loop) try self.renderer.loopEnter(self);
+    defer if (has_loop) self.renderer.loopExit();
 
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
