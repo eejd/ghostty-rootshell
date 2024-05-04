@@ -425,6 +425,10 @@ fn wakeupCallback(
     // Render immediately
     _ = renderCallback(t, undefined, undefined, {});
 
+    // The below is not used anymore but if we ever want to introduce
+    // a configuration to introduce a delay to coalesce renders, we can
+    // use this.
+    //
     // // If the timer is already active then we don't have to do anything.
     // if (t.render_c.state() == .active) return .rearm;
     //
