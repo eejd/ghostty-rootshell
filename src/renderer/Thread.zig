@@ -50,6 +50,11 @@ draw_h: xev.Timer,
 draw_c: xev.Completion = .{},
 draw_active: bool = false,
 
+/// This async is used to force a draw immediately. This does not
+/// coalesce like the wakeup does.
+draw_now: xev.Async,
+draw_now_c: xev.Completion = .{},
+
 /// The timer used for cursor blinking
 cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
@@ -129,6 +134,10 @@ pub fn init(
     var draw_h = try xev.Timer.init();
     errdefer draw_h.deinit();
 
+    // Draw now async, see comments.
+    var draw_now = try xev.Async.init();
+    errdefer draw_now.deinit();
+
     // Setup a timer for blinking the cursor
     var cursor_timer = try xev.Timer.init();
     errdefer cursor_timer.deinit();
@@ -145,6 +154,7 @@ pub fn init(
         .stop = stop_h,
         .render_h = render_h,
         .draw_h = draw_h,
+        .draw_now = draw_now,
         .cursor_h = cursor_timer,
         .surface = surface,
         .renderer = renderer_impl,
@@ -161,6 +171,7 @@ pub fn deinit(self: *Thread) void {
     self.wakeup.deinit();
     self.render_h.deinit();
     self.draw_h.deinit();
+    self.draw_now.deinit();
     self.cursor_h.deinit();
     self.loop.deinit();
 
@@ -189,6 +200,7 @@ fn threadMain_(self: *Thread) !void {
     // Start the async handlers
     self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
     self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
+    self.draw_now.wait(&self.loop, &self.draw_now_c, Thread, self, drawNowCallback);
 
     // Send an initial wakeup message so that we render right away.
     try self.wakeup.notify();
@@ -414,6 +426,24 @@ fn wakeupCallback(
         t,
         renderCallback,
     );
+
+    return .rearm;
+}
+
+fn drawNowCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Async.WaitError!void,
+) xev.CallbackAction {
+    _ = r catch |err| {
+        log.err("error in draw now err={}", .{err});
+        return .rearm;
+    };
+
+    // Draw immediately
+    const t = self_.?;
+    t.drawFrame();
 
     return .rearm;
 }
