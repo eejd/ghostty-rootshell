@@ -101,6 +101,11 @@ cells: mtl_cell.Contents,
 /// If this is true, we do a full cell rebuild on the next frame.
 cells_rebuild: bool = true,
 
+/// Set to true after rebuildCells is called. This can be used
+/// to determine if any possible changes have been made to the
+/// cells for the draw call.
+cells_rebuilt: bool = false,
+
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
 
@@ -967,6 +972,12 @@ pub fn updateFrame(
 /// Draw the frame to the screen.
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
+
+    // If our cells are not rebuilt, do a no-op draw. This means
+    // that no possible new data can exist that would warrant a full
+    // GPU update, our existing drawable is valid.
+    if (!self.cells_rebuilt) return;
+    self.cells_rebuilt = false;
 
     // Wait for a frame to be available.
     const frame = self.gpu_state.nextFrame();
@@ -1987,6 +1998,9 @@ fn rebuildCells(
 
     // We always mark our rebuild flag as false since we're done.
     self.cells_rebuild = false;
+
+    // Update that our cells rebuilt
+    self.cells_rebuilt = true;
 
     // Log some things
     // log.debug("rebuildCells complete cached_runs={}", .{
