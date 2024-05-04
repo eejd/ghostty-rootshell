@@ -723,6 +723,18 @@ fn gridSize(self: *Metal) ?renderer.GridSize {
 /// Must be called on the render thread.
 pub fn setFocus(self: *Metal, focus: bool) !void {
     self.focused = focus;
+
+    // If we're not focused, then we want to stop the display link
+    // because it is a waste of resources and we can move to pure
+    // change-driven updates.
+    if (comptime DisplayLink != void) link: {
+        const display_link = self.display_link orelse break :link;
+        if (focus) {
+            display_link.start() catch {};
+        } else {
+            display_link.stop() catch {};
+        }
+    }
 }
 
 /// Set the new font size.
