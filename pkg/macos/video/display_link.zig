@@ -52,8 +52,9 @@ pub const DisplayLink = opaque {
     // pass this through.
     pub fn setOutputCallback(
         self: *DisplayLink,
-        comptime callbackFn: *const fn (*DisplayLink, ?*anyopaque) void,
-        userinfo: ?*anyopaque,
+        comptime Userdata: type,
+        comptime callbackFn: *const fn (*DisplayLink, ?*Userdata) void,
+        userinfo: ?*Userdata,
     ) Error!void {
         if (c.CVDisplayLinkSetOutputCallback(
             @ptrCast(self),
@@ -71,7 +72,10 @@ pub const DisplayLink = opaque {
                     _ = flagsIn;
                     _ = flagsOut;
 
-                    callbackFn(displayLink, inner_userinfo);
+                    callbackFn(
+                        displayLink,
+                        @alignCast(@ptrCast(inner_userinfo)),
+                    );
                     return c.kCVReturnSuccess;
                 }
             }).callback),
