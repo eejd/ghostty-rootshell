@@ -16,9 +16,7 @@ pub const ShellIntegration = struct {
     /// The successfully-integrated shell.
     shell: Shell,
 
-    /// A revised shell command. This value will be allocated
-    /// with the setup() function's allocator and becomes the
-    /// caller's responsibility to free it.
+    /// A revised, integration-aware shell command.
     command: ?[]const u8 = null,
 
     pub fn deinit(self: ShellIntegration, alloc: Allocator) void {
