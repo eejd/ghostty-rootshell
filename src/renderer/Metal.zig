@@ -98,9 +98,6 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells: mtl_cell.Contents,
 
-/// If this is true, we do a full cell rebuild on the next frame.
-cells_rebuild: bool = true,
-
 /// Set to true after rebuildCells is called. This can be used
 /// to determine if any possible changes have been made to the
 /// cells for the draw call.
@@ -818,6 +815,9 @@ pub fn updateFrame(
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
         color_palette: terminal.color.Palette,
+
+        /// If true, rebuild the full screen.
+        full_rebuild: bool,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -888,16 +888,20 @@ pub fn updateFrame(
 
         // If we have any terminal dirty flags set then we need to rebuild
         // the entire screen. This can be optimized in the future.
-        {
-            const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
-            const v: Int = @bitCast(state.terminal.flags.dirty);
-            if (v > 0) self.cells_rebuild = true;
-        }
-        {
-            const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
-            const v: Int = @bitCast(state.terminal.screen.dirty);
-            if (v > 0) self.cells_rebuild = true;
-        }
+        const full_rebuild: bool = rebuild: {
+            {
+                const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.flags.dirty);
+                if (v > 0) break :rebuild true;
+            }
+            {
+                const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.screen.dirty);
+                if (v > 0) break :rebuild true;
+            }
+
+            break :rebuild false;
+        };
 
         // Reset the dirty flags in the terminal and screen. We assume
         // that our rebuild will be successful since so we optimize for
@@ -923,6 +927,7 @@ pub fn updateFrame(
             .preedit = preedit,
             .cursor_style = cursor_style,
             .color_palette = state.terminal.color_palette.colors,
+            .full_rebuild = full_rebuild,
         };
     };
     defer {
@@ -932,6 +937,7 @@ pub fn updateFrame(
 
     // Build our GPU cells
     try self.rebuildCells(
+        critical.full_rebuild,
         &critical.screen,
         critical.mouse,
         critical.preedit,
@@ -1799,6 +1805,7 @@ pub fn setScreenSize(
 /// memory and doesn't touch the GPU.
 fn rebuildCells(
     self: *Metal,
+    rebuild: bool,
     screen: *terminal.Screen,
     mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
@@ -1839,6 +1846,9 @@ fn rebuildCells(
         };
     } else null;
 
+    // If we are doing a full rebuild, then we clear the entire cell buffer.
+    if (rebuild) self.cells.reset();
+
     // Go row-by-row to build the cells. We go row by row because we do
     // font shaping by row. In the future, we will also do dirty tracking
     // by row.
@@ -1847,12 +1857,14 @@ fn rebuildCells(
     while (row_it.next()) |row| {
         y = y - 1;
 
-        // Only rebuild if we are doing a full rebuild or this row is dirty.
-        // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
-        if (!self.cells_rebuild and !row.isDirty()) continue;
+        if (!rebuild) {
+            // Only rebuild if we are doing a full rebuild or this row is dirty.
+            // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
+            if (!row.isDirty()) continue;
 
-        // If we're rebuilding a row, then we always clear the cells
-        self.cells.clear(y);
+            // Clear the cells if the row is dirty
+            self.cells.clear(y);
+        }
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
@@ -1995,9 +2007,6 @@ fn rebuildCells(
             x += if (cp.wide) 2 else 1;
         }
     }
-
-    // We always mark our rebuild flag as false since we're done.
-    self.cells_rebuild = false;
 
     // Update that our cells rebuilt
     self.cells_rebuilt = true;
