@@ -270,7 +270,7 @@ fn drainMailbox(self: *Thread) !void {
                 // If we became visible then we immediately trigger a draw.
                 // We don't need to update frame data because that should
                 // still be happening.
-                if (v) self.drawFrame();
+                if (v) self.drawFrame(false);
 
                 // Notify the renderer so it can update any state.
                 self.renderer.setVisible(v);
@@ -391,9 +391,13 @@ fn changeConfig(self: *Thread, config: *const DerivedConfig) !void {
 
 /// Trigger a draw. This will not update frame data or anything, it will
 /// just trigger a draw/paint.
-fn drawFrame(self: *Thread) void {
+fn drawFrame(self: *Thread, now: bool) void {
     // If we're invisible, we do not draw.
     if (!self.flags.visible) return;
+
+    // If the renderer is managing a vsync on its own, we only draw
+    // when we're forced to via now.
+    if (!now and self.renderer.hasVsync()) return;
 
     // If we're doing single-threaded GPU calls then we just wake up the
     // app thread to redraw at this point.
@@ -464,7 +468,7 @@ fn drawNowCallback(
 
     // Draw immediately
     const t = self_.?;
-    t.drawFrame();
+    t.drawFrame(true);
 
     return .rearm;
 }
@@ -483,7 +487,7 @@ fn drawCallback(
     };
 
     // Draw
-    t.drawFrame();
+    t.drawFrame(false);
 
     // Only continue if we're still active
     if (t.draw_active) {
@@ -518,9 +522,7 @@ fn renderCallback(
         t.flags.cursor_blink_visible,
     ) catch |err|
         log.warn("error rendering err={}", .{err});
-
-    // Draw immediately
-    t.drawFrame();
+    t.drawFrame(false);
 
     return .disarm;
 }
