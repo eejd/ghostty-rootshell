@@ -572,6 +572,14 @@ pub fn hasAnimations(self: *const OpenGL) bool {
     return state.custom != null;
 }
 
+/// See Metal
+pub fn hasVsync(self: *const OpenGL) bool {
+    _ = self;
+
+    // OpenGL currently never has vsync
+    return false;
+}
+
 /// Callback when the focus changes for the terminal this is rendering.
 ///
 /// Must be called on the render thread.

@@ -615,6 +615,19 @@ keybind: Keybinds = .{},
 /// given a certain viewport size and grid cell size.
 @"window-padding-balance": bool = false,
 
+/// Synchronize rendering with the screen refresh rate. If true, this will
+/// minimize tearing and align redraws with the screen but may cause input
+/// latency. If false, this will maximize redraw frequency but may cause tearing,
+/// and under heavy load may use more CPU and power.
+///
+/// This defaults to false because out of the box a lot of users prefer to
+/// feel like the terminal is as responsive as possible.
+///
+/// Changing this value at runtime will only affect new terminals.
+///
+/// This setting is only supported currently on macOS.
+@"window-vsync": bool = false,
+
 /// If true, new windows and tabs will inherit the working directory of the
 /// previously focused window. If no window was previously focused, the default
 /// working directory will be used (the `working-directory` option).

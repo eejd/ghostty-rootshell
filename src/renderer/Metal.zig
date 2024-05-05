@@ -320,6 +320,7 @@ pub const DerivedConfig = struct {
     min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     links: link.Set,
+    vsync: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -382,6 +383,7 @@ pub const DerivedConfig = struct {
 
             .custom_shaders = custom_shaders,
             .links = links,
+            .vsync = config.@"window-vsync",
 
             .arena = arena,
         };
@@ -473,7 +475,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
     layer.setProperty("device", gpu_state.device.value);
     layer.setProperty("opaque", options.config.background_opacity >= 1);
-    layer.setProperty("displaySyncEnabled", false); // disable v-sync
+    layer.setProperty("displaySyncEnabled", options.config.vsync);
 
     // Make our view layer-backed with our Metal layer. On iOS views are
     // always layer backed so we don't need to do this. But on iOS the
@@ -561,14 +563,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     var cells = try mtl_cell.Contents.init(alloc);
     errdefer cells.deinit(alloc);
 
-    const display_link: ?DisplayLink = null;
-    // Note(mitchellh): if/when we ever want to add vsync, we can use this
-    // display link to trigger rendering. We don't need this if vsync is off
-    // because any change will trigger a redraw immediately.
-    // const display_link: ?DisplayLink = switch (builtin.os.tag) {
-    //     .macos => try macos.video.DisplayLink.createWithActiveCGDisplays(),
-    //     else => null,
-    // };
+    const display_link: ?DisplayLink = switch (builtin.os.tag) {
+        .macos => if (options.config.vsync)
+            try macos.video.DisplayLink.createWithActiveCGDisplays()
+        else
+            null,
+        else => null,
+    };
     errdefer if (display_link) |v| v.release();
 
     return Metal{
@@ -719,6 +720,15 @@ pub fn setMacOSDisplayID(self: *Metal, id: u32) !void {
 /// timer is used.
 pub fn hasAnimations(self: *const Metal) bool {
     return self.custom_shader_state != null;
+}
+
+/// True if our renderer is using vsync. If true, the renderer or apprt
+/// is responsible for triggering draw_now calls to the render thread. That
+/// is the only way to trigger a drawFrame.
+pub fn hasVsync(self: *const Metal) bool {
+    if (comptime DisplayLink == void) return false;
+    const display_link = self.display_link orelse return false;
+    return display_link.isRunning();
 }
 
 /// Returns the grid size for a given screen size. This is safe to call
