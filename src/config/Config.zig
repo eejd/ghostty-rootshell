@@ -408,7 +408,7 @@ palette: Palette = .{},
 /// Ghostty does not do any shell command parsing.
 ///
 /// If you're using the `ghostty` CLI there is also a shortcut to run a command
-/// with argumens directly: you can use the `-e` flag. For example: `ghostty -e
+/// with arguments directly: you can use the `-e` flag. For example: `ghostty -e
 /// fish --with --custom --args`.
 command: ?[]const u8 = null,
 
@@ -841,7 +841,7 @@ keybind: Keybinds = .{},
 ///
 ///   * `detect` - Detect the shell based on the filename.
 ///
-///   * `fish`, `zsh` - Use this specific shell injection scheme.
+///   * `bash`, `fish`, `zsh` - Use this specific shell injection scheme.
 ///
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
@@ -3402,6 +3402,7 @@ pub const CopyOnSelect = enum {
 pub const ShellIntegration = enum {
     none,
     detect,
+    bash,
     fish,
     zsh,
 };
