@@ -36,13 +36,25 @@ pub const DisplayLink = opaque {
         return c.CVDisplayLinkIsRunning(@ptrCast(self)) != 0;
     }
 
+    pub fn setCurrentCGDisplay(
+        self: *DisplayLink,
+        display_id: c.CGDirectDisplayID,
+    ) Error!void {
+        if (c.CVDisplayLinkSetCurrentCGDisplay(
+            @ptrCast(self),
+            display_id,
+        ) != c.kCVReturnSuccess)
+            return error.InvalidOperation;
+    }
+
     // Note: this purposely throws away a ton of arguments I didn't need.
     // It would be trivial to refactor this into Zig types and properly
     // pass this through.
     pub fn setOutputCallback(
         self: *DisplayLink,
-        comptime callbackFn: *const fn (*DisplayLink, ?*anyopaque) void,
-        userinfo: ?*anyopaque,
+        comptime Userdata: type,
+        comptime callbackFn: *const fn (*DisplayLink, ?*Userdata) void,
+        userinfo: ?*Userdata,
     ) Error!void {
         if (c.CVDisplayLinkSetOutputCallback(
             @ptrCast(self),
@@ -60,7 +72,10 @@ pub const DisplayLink = opaque {
                     _ = flagsIn;
                     _ = flagsOut;
 
-                    callbackFn(displayLink, inner_userinfo);
+                    callbackFn(
+                        displayLink,
+                        @alignCast(@ptrCast(inner_userinfo)),
+                    );
                     return c.kCVReturnSuccess;
                 }
             }).callback),

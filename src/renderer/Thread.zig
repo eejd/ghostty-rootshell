@@ -14,7 +14,7 @@ const App = @import("../App.zig");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
 
-const DRAW_INTERVAL = 33; // 30 FPS
+const DRAW_INTERVAL = 8; // 120 FPS
 const CURSOR_BLINK_INTERVAL = 600;
 
 /// The type used for sending messages to the IO thread. For now this is
@@ -49,6 +49,11 @@ render_c: xev.Completion = .{},
 draw_h: xev.Timer,
 draw_c: xev.Completion = .{},
 draw_active: bool = false,
+
+/// This async is used to force a draw immediately. This does not
+/// coalesce like the wakeup does.
+draw_now: xev.Async,
+draw_now_c: xev.Completion = .{},
 
 /// The timer used for cursor blinking
 cursor_h: xev.Timer,
@@ -129,6 +134,10 @@ pub fn init(
     var draw_h = try xev.Timer.init();
     errdefer draw_h.deinit();
 
+    // Draw now async, see comments.
+    var draw_now = try xev.Async.init();
+    errdefer draw_now.deinit();
+
     // Setup a timer for blinking the cursor
     var cursor_timer = try xev.Timer.init();
     errdefer cursor_timer.deinit();
@@ -137,7 +146,7 @@ pub fn init(
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
 
-    return Thread{
+    return .{
         .alloc = alloc,
         .config = DerivedConfig.init(config),
         .loop = loop,
@@ -145,6 +154,7 @@ pub fn init(
         .stop = stop_h,
         .render_h = render_h,
         .draw_h = draw_h,
+        .draw_now = draw_now,
         .cursor_h = cursor_timer,
         .surface = surface,
         .renderer = renderer_impl,
@@ -161,6 +171,7 @@ pub fn deinit(self: *Thread) void {
     self.wakeup.deinit();
     self.render_h.deinit();
     self.draw_h.deinit();
+    self.draw_now.deinit();
     self.cursor_h.deinit();
     self.loop.deinit();
 
@@ -180,6 +191,11 @@ pub fn threadMain(self: *Thread) void {
 fn threadMain_(self: *Thread) !void {
     defer log.debug("renderer thread exited", .{});
 
+    // Run our loop start/end callbacks if the renderer cares.
+    const has_loop = @hasDecl(renderer.Renderer, "loopEnter");
+    if (has_loop) try self.renderer.loopEnter(self);
+    defer if (has_loop) self.renderer.loopExit();
+
     // Run our thread start/end callbacks. This is important because some
     // renderers have to do per-thread setup. For example, OpenGL has to set
     // some thread-local state since that is how it works.
@@ -189,6 +205,7 @@ fn threadMain_(self: *Thread) !void {
     // Start the async handlers
     self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
     self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
+    self.draw_now.wait(&self.loop, &self.draw_now_c, Thread, self, drawNowCallback);
 
     // Send an initial wakeup message so that we render right away.
     try self.wakeup.notify();
@@ -254,6 +271,9 @@ fn drainMailbox(self: *Thread) !void {
                 // We don't need to update frame data because that should
                 // still be happening.
                 if (v) self.drawFrame();
+
+                // Notify the renderer so it can update any state.
+                self.renderer.setVisible(v);
 
                 // Note that we're explicitly today not stopping any
                 // cursor timers, draw timers, etc. These things have very
@@ -355,6 +375,12 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .inspector => |v| self.flags.has_inspector = v,
+
+            .macos_display_id => |v| {
+                if (@hasDecl(renderer.Renderer, "setMacOSDisplayID")) {
+                    try self.renderer.setMacOSDisplayID(v);
+                }
+            },
         }
     }
 }
@@ -402,18 +428,43 @@ fn wakeupCallback(
     t.drainMailbox() catch |err|
         log.err("error draining mailbox err={}", .{err});
 
-    // If the timer is already active then we don't have to do anything.
-    if (t.render_c.state() == .active) return .rearm;
+    // Render immediately
+    _ = renderCallback(t, undefined, undefined, {});
 
-    // Timer is not active, let's start it
-    t.render_h.run(
-        &t.loop,
-        &t.render_c,
-        10,
-        Thread,
-        t,
-        renderCallback,
-    );
+    // The below is not used anymore but if we ever want to introduce
+    // a configuration to introduce a delay to coalesce renders, we can
+    // use this.
+    //
+    // // If the timer is already active then we don't have to do anything.
+    // if (t.render_c.state() == .active) return .rearm;
+    //
+    // // Timer is not active, let's start it
+    // t.render_h.run(
+    //     &t.loop,
+    //     &t.render_c,
+    //     10,
+    //     Thread,
+    //     t,
+    //     renderCallback,
+    // );
+
+    return .rearm;
+}
+
+fn drawNowCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Async.WaitError!void,
+) xev.CallbackAction {
+    _ = r catch |err| {
+        log.err("error in draw now err={}", .{err});
+        return .rearm;
+    };
+
+    // Draw immediately
+    const t = self_.?;
+    t.drawFrame();
 
     return .rearm;
 }
@@ -468,7 +519,7 @@ fn renderCallback(
     ) catch |err|
         log.warn("error rendering err={}", .{err});
 
-    // Draw
+    // Draw immediately
     t.drawFrame();
 
     return .disarm;

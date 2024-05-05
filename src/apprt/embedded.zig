@@ -653,6 +653,13 @@ pub const Surface = struct {
         };
     }
 
+    pub fn draw(self: *Surface) void {
+        self.core_surface.draw() catch |err| {
+            log.err("error in draw err={}", .{err});
+            return;
+        };
+    }
+
     pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
         // We are an embedded API so the caller can send us all sorts of
         // garbage. We want to make sure that the float values are valid
@@ -1525,6 +1532,12 @@ pub const CAPI = struct {
         surface.refresh();
     }
 
+    /// Tell the surface that it needs to schedule a render
+    /// call as soon as possible (NOW if possible).
+    export fn ghostty_surface_draw(surface: *Surface) void {
+        surface.draw();
+    }
+
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
@@ -1724,6 +1737,15 @@ pub const CAPI = struct {
 
     // Inspector Metal APIs are only available on Apple systems
     usingnamespace if (builtin.target.isDarwin()) struct {
+        export fn ghostty_surface_set_display_id(ptr: *Surface, display_id: u32) void {
+            const surface = &ptr.core_surface;
+            _ = surface.renderer_thread.mailbox.push(
+                .{ .macos_display_id = display_id },
+                .{ .forever = {} },
+            );
+            surface.renderer_thread.wakeup.notify() catch {};
+        }
+
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
             return ptr.initMetal(objc.Object.fromId(device));
         }

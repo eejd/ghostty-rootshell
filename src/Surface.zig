@@ -553,6 +553,13 @@ pub fn close(self: *Surface) void {
     self.rt_surface.close(self.needsConfirmQuit());
 }
 
+/// Forces the surface to render. This is useful for when the surface
+/// is in the middle of animation (such as a resize, etc.) or when
+/// the render timer is managed manually by the apprt.
+pub fn draw(self: *Surface) !void {
+    try self.renderer_thread.draw_now.notify();
+}
+
 /// Activate the inspector. This will begin collecting inspection data.
 /// This will not affect the GUI. The GUI must use performAction to
 /// show/hide the inspector UI.

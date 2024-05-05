@@ -11,6 +11,7 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
+const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -41,6 +42,11 @@ const ImageBuffer = mtl_buffer.Buffer(mtl_shaders.Image);
 const InstanceBuffer = mtl_buffer.Buffer(u16);
 
 const ImagePlacementList = std.ArrayListUnmanaged(mtl_image.Placement);
+
+const DisplayLink = switch (builtin.os.tag) {
+    .macos => *macos.video.DisplayLink,
+    else => void,
+};
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
@@ -92,8 +98,10 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells: mtl_cell.Contents,
 
-/// If this is true, we do a full cell rebuild on the next frame.
-cells_rebuild: bool = true,
+/// Set to true after rebuildCells is called. This can be used
+/// to determine if any possible changes have been made to the
+/// cells for the draw call.
+cells_rebuilt: bool = false,
 
 /// The current GPU uniform values.
 uniforms: mtl_shaders.Uniforms,
@@ -114,6 +122,11 @@ shaders: Shaders, // Compiled shaders
 
 /// Metal objects
 layer: objc.Object, // CAMetalLayer
+
+/// The CVDisplayLink used to drive the rendering loop in sync
+/// with the display. This is void on platforms that don't support
+/// a display link.
+display_link: ?DisplayLink = null,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -545,8 +558,18 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
-    const cells = try mtl_cell.Contents.init(alloc);
+    var cells = try mtl_cell.Contents.init(alloc);
     errdefer cells.deinit(alloc);
+
+    const display_link: ?DisplayLink = null;
+    // Note(mitchellh): if/when we ever want to add vsync, we can use this
+    // display link to trigger rendering. We don't need this if vsync is off
+    // because any change will trigger a redraw immediately.
+    // const display_link: ?DisplayLink = switch (builtin.os.tag) {
+    //     .macos => try macos.video.DisplayLink.createWithActiveCGDisplays(),
+    //     else => null,
+    // };
+    errdefer if (display_link) |v| v.release();
 
     return Metal{
         .alloc = alloc,
@@ -581,6 +604,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         // Metal stuff
         .layer = layer,
+        .display_link = display_link,
         .custom_shader_state = custom_shader_state,
         .gpu_state = gpu_state,
     };
@@ -588,6 +612,13 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
 pub fn deinit(self: *Metal) void {
     self.gpu_state.deinit();
+
+    if (DisplayLink != void) {
+        if (self.display_link) |display_link| {
+            display_link.stop() catch {};
+            display_link.release();
+        }
+    }
 
     self.cells.deinit(self.alloc);
 
@@ -635,6 +666,55 @@ pub fn threadExit(self: *const Metal) void {
     // Metal requires no per-thread state.
 }
 
+/// Called by renderer.Thread when it starts the main loop.
+pub fn loopEnter(self: *Metal, thr: *renderer.Thread) !void {
+    // If we don't support a display link we have no work to do.
+    if (comptime DisplayLink == void) return;
+
+    // This is when we know our "self" pointer is stable so we can
+    // setup the display link. To setup the display link we set our
+    // callback and we can start it immediately.
+    const display_link = self.display_link orelse return;
+    try display_link.setOutputCallback(
+        xev.Async,
+        &displayLinkCallback,
+        &thr.draw_now,
+    );
+    display_link.start() catch {};
+}
+
+/// Called by renderer.Thread when it exits the main loop.
+pub fn loopExit(self: *const Metal) void {
+    // If we don't support a display link we have no work to do.
+    if (comptime DisplayLink == void) return;
+
+    // Stop our display link. If this fails its okay it just means
+    // that we either never started it or the view its attached to
+    // is gone which is fine.
+    const display_link = self.display_link orelse return;
+    display_link.stop() catch {};
+}
+
+fn displayLinkCallback(
+    _: *macos.video.DisplayLink,
+    ud: ?*xev.Async,
+) void {
+    const draw_now = ud orelse return;
+    draw_now.notify() catch |err| {
+        log.err("error notifying draw_now err={}", .{err});
+    };
+}
+
+/// Called when we get an updated display ID for our display link.
+pub fn setMacOSDisplayID(self: *Metal, id: u32) !void {
+    if (comptime DisplayLink == void) return;
+    const display_link = self.display_link orelse return;
+    log.info("updating display link display id={}", .{id});
+    display_link.setCurrentCGDisplay(id) catch |err| {
+        log.warn("error setting display link display id err={}", .{err});
+    };
+}
+
 /// True if our renderer has animations so that a higher frequency
 /// timer is used.
 pub fn hasAnimations(self: *const Metal) bool {
@@ -659,6 +739,35 @@ fn gridSize(self: *Metal) ?renderer.GridSize {
 /// Must be called on the render thread.
 pub fn setFocus(self: *Metal, focus: bool) !void {
     self.focused = focus;
+
+    // If we're not focused, then we want to stop the display link
+    // because it is a waste of resources and we can move to pure
+    // change-driven updates.
+    if (comptime DisplayLink != void) link: {
+        const display_link = self.display_link orelse break :link;
+        if (focus) {
+            display_link.start() catch {};
+        } else {
+            display_link.stop() catch {};
+        }
+    }
+}
+
+/// Callback when the window is visible or occluded.
+///
+/// Must be called on the render thread.
+pub fn setVisible(self: *Metal, visible: bool) void {
+    // If we're not visible, then we want to stop the display link
+    // because it is a waste of resources and we can move to pure
+    // change-driven updates.
+    if (comptime DisplayLink != void) link: {
+        const display_link = self.display_link orelse break :link;
+        if (visible and self.focused) {
+            display_link.start() catch {};
+        } else {
+            display_link.stop() catch {};
+        }
+    }
 }
 
 /// Set the new font size.
@@ -720,6 +829,9 @@ pub fn updateFrame(
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
         color_palette: terminal.color.Palette,
+
+        /// If true, rebuild the full screen.
+        full_rebuild: bool,
     };
 
     // Update all our data as tightly as possible within the mutex.
@@ -790,16 +902,20 @@ pub fn updateFrame(
 
         // If we have any terminal dirty flags set then we need to rebuild
         // the entire screen. This can be optimized in the future.
-        {
-            const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
-            const v: Int = @bitCast(state.terminal.flags.dirty);
-            if (v > 0) self.cells_rebuild = true;
-        }
-        {
-            const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
-            const v: Int = @bitCast(state.terminal.screen.dirty);
-            if (v > 0) self.cells_rebuild = true;
-        }
+        const full_rebuild: bool = rebuild: {
+            {
+                const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.flags.dirty);
+                if (v > 0) break :rebuild true;
+            }
+            {
+                const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.screen.dirty);
+                if (v > 0) break :rebuild true;
+            }
+
+            break :rebuild false;
+        };
 
         // Reset the dirty flags in the terminal and screen. We assume
         // that our rebuild will be successful since so we optimize for
@@ -825,6 +941,7 @@ pub fn updateFrame(
             .preedit = preedit,
             .cursor_style = cursor_style,
             .color_palette = state.terminal.color_palette.colors,
+            .full_rebuild = full_rebuild,
         };
     };
     defer {
@@ -834,6 +951,7 @@ pub fn updateFrame(
 
     // Build our GPU cells
     try self.rebuildCells(
+        critical.full_rebuild,
         &critical.screen,
         critical.mouse,
         critical.preedit,
@@ -874,6 +992,12 @@ pub fn updateFrame(
 /// Draw the frame to the screen.
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
+
+    // If our cells are not rebuilt, do a no-op draw. This means
+    // that no possible new data can exist that would warrant a full
+    // GPU update, our existing drawable is valid.
+    if (!self.cells_rebuilt) return;
+    self.cells_rebuilt = false;
 
     // Wait for a frame to be available.
     const frame = self.gpu_state.nextFrame();
@@ -1695,6 +1819,7 @@ pub fn setScreenSize(
 /// memory and doesn't touch the GPU.
 fn rebuildCells(
     self: *Metal,
+    rebuild: bool,
     screen: *terminal.Screen,
     mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
@@ -1735,6 +1860,9 @@ fn rebuildCells(
         };
     } else null;
 
+    // If we are doing a full rebuild, then we clear the entire cell buffer.
+    if (rebuild) self.cells.reset();
+
     // Go row-by-row to build the cells. We go row by row because we do
     // font shaping by row. In the future, we will also do dirty tracking
     // by row.
@@ -1743,12 +1871,14 @@ fn rebuildCells(
     while (row_it.next()) |row| {
         y = y - 1;
 
-        // Only rebuild if we are doing a full rebuild or this row is dirty.
-        // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
-        if (!self.cells_rebuild and !row.isDirty()) continue;
+        if (!rebuild) {
+            // Only rebuild if we are doing a full rebuild or this row is dirty.
+            // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
+            if (!row.isDirty()) continue;
 
-        // If we're rebuilding a row, then we always clear the cells
-        self.cells.clear(y);
+            // Clear the cells if the row is dirty
+            self.cells.clear(y);
+        }
 
         // True if we want to do font shaping around the cursor. We want to
         // do font shaping as long as the cursor is enabled.
@@ -1892,8 +2022,8 @@ fn rebuildCells(
         }
     }
 
-    // We always mark our rebuild flag as false since we're done.
-    self.cells_rebuild = false;
+    // Update that our cells rebuilt
+    self.cells_rebuilt = true;
 
     // Log some things
     // log.debug("rebuildCells complete cached_runs={}", .{

@@ -124,6 +124,13 @@ pub const Contents = struct {
         self.text.shrinkAndFree(alloc, text_reserved_len);
     }
 
+    /// Reset the cell contents to an empty state without resizing.
+    pub fn reset(self: *Contents) void {
+        @memset(self.map, .{});
+        self.bgs.clearRetainingCapacity();
+        self.text.shrinkRetainingCapacity(text_reserved_len);
+    }
+
     /// Returns the slice of fg cell contents to sync with the GPU.
     pub fn fgCells(self: *const Contents) []const mtl_shaders.CellText {
         const start: usize = if (self.cursor) 0 else 1;

@@ -112,6 +112,11 @@ extension Ghostty {
                 selector: #selector(onUpdateRendererHealth),
                 name: Ghostty.Notification.didUpdateRendererHealth,
                 object: self)
+            center.addObserver(
+                self,
+                selector: #selector(windowDidChangeScreen),
+                name: NSWindow.didChangeScreenNotification,
+                object: nil)
             
             // Setup our surface. This will also initialize all the terminal IO.
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
@@ -322,6 +327,19 @@ extension Ghostty {
             healthy = health == GHOSTTY_RENDERER_HEALTH_OK
         }
         
+        @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {
+            guard let window = self.window else { return }
+            guard let object = notification.object as? NSWindow, window == object else { return }
+            guard let screen = window.screen else { return }
+            guard let surface = self.surface else { return }
+            
+            // When the window changes screens, we need to update libghostty with the screen
+            // ID. If vsync is enabled, this will be used with the CVDisplayLink to ensure
+            // the proper refresh rate is going.
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
+            ghostty_surface_set_display_id(surface, id)
+        }
+        
         // MARK: - NSView
         
         override func viewDidMoveToWindow() {
@@ -439,7 +457,7 @@ extension Ghostty {
 
         override func updateLayer() {
             guard let surface = self.surface else { return }
-            ghostty_surface_refresh(surface);
+            ghostty_surface_draw(surface);
         }
         
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
