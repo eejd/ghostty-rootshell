@@ -69,6 +69,9 @@ pub const Message = union(enum) {
     /// Activate or deactivate the inspector.
     inspector: bool,
 
+    /// The macOS display ID has changed for the window.
+    macos_display_id: u32,
+
     /// Initialize a change_config message.
     pub fn initChangeConfig(alloc: Allocator, config: *const configpkg.Config) !Message {
         const thread_ptr = try alloc.create(renderer.Thread.DerivedConfig);

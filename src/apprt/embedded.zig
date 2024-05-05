@@ -1737,6 +1737,15 @@ pub const CAPI = struct {
 
     // Inspector Metal APIs are only available on Apple systems
     usingnamespace if (builtin.target.isDarwin()) struct {
+        export fn ghostty_surface_set_display_id(ptr: *Surface, display_id: u32) void {
+            const surface = &ptr.core_surface;
+            _ = surface.renderer_thread.mailbox.push(
+                .{ .macos_display_id = display_id },
+                .{ .forever = {} },
+            );
+            surface.renderer_thread.wakeup.notify() catch {};
+        }
+
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
             return ptr.initMetal(objc.Object.fromId(device));
         }

@@ -561,10 +561,14 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     var cells = try mtl_cell.Contents.init(alloc);
     errdefer cells.deinit(alloc);
 
-    const display_link: ?DisplayLink = switch (builtin.os.tag) {
-        .macos => try macos.video.DisplayLink.createWithActiveCGDisplays(),
-        else => null,
-    };
+    const display_link: ?DisplayLink = null;
+    // Note(mitchellh): if/when we ever want to add vsync, we can use this
+    // display link to trigger rendering. We don't need this if vsync is off
+    // because any change will trigger a redraw immediately.
+    // const display_link: ?DisplayLink = switch (builtin.os.tag) {
+    //     .macos => try macos.video.DisplayLink.createWithActiveCGDisplays(),
+    //     else => null,
+    // };
     errdefer if (display_link) |v| v.release();
 
     return Metal{
@@ -698,6 +702,16 @@ fn displayLinkCallback(
     const draw_now = ud orelse return;
     draw_now.notify() catch |err| {
         log.err("error notifying draw_now err={}", .{err});
+    };
+}
+
+/// Called when we get an updated display ID for our display link.
+pub fn setMacOSDisplayID(self: *Metal, id: u32) !void {
+    if (comptime DisplayLink == void) return;
+    const display_link = self.display_link orelse return;
+    log.info("updating display link display id={}", .{id});
+    display_link.setCurrentCGDisplay(id) catch |err| {
+        log.warn("error setting display link display id err={}", .{err});
     };
 }
 

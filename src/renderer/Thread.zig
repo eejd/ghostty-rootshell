@@ -375,6 +375,12 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .inspector => |v| self.flags.has_inspector = v,
+
+            .macos_display_id => |v| {
+                if (@hasDecl(renderer.Renderer, "setMacOSDisplayID")) {
+                    try self.renderer.setMacOSDisplayID(v);
+                }
+            },
         }
     }
 }
