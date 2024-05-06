@@ -18,6 +18,18 @@ pub const Font = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createForString(
+        self: *Font,
+        str: *foundation.String,
+        range: foundation.Range,
+    ) ?*Font {
+        return @ptrCast(@constCast(c.CTFontCreateForString(
+            @ptrCast(self),
+            @ptrCast(str),
+            @bitCast(range),
+        )));
+    }
+
     pub fn copyWithAttributes(
         self: *Font,
         size: f32,
