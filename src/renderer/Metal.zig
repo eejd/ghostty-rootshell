@@ -98,10 +98,11 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells: mtl_cell.Contents,
 
-/// If this is true, it forces a full cell contents rebuild on the next frame.
-/// This can be used to force a rebuild whenever internal state changes for
-/// our cells structures (i.e. a resize).
-cells_rebuild: bool = true,
+/// The last viewport that we based our rebuild off of. If this changes,
+/// then we do a full rebuild of the cells. The pointer values in this pin
+/// are NOT SAFE to read because they may be modified, freed, etc from the
+/// termio thread. We treat the pointers as integers for comparison only.
+cells_viewport: ?terminal.Pin = null,
 
 /// Set to true after rebuildCells is called. This can be used
 /// to determine if any possible changes have been made to the
@@ -844,6 +845,7 @@ pub fn updateFrame(
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
         color_palette: terminal.color.Palette,
+        viewport_pin: terminal.Pin,
 
         /// If true, rebuild the full screen.
         full_rebuild: bool,
@@ -882,6 +884,9 @@ pub fn updateFrame(
         {
             return;
         }
+
+        // Get the viewport pin so that we can compare it to the current.
+        const viewport_pin = state.terminal.screen.pages.pin(.{ .viewport = .{} }).?;
 
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
@@ -929,6 +934,12 @@ pub fn updateFrame(
                 if (v > 0) break :rebuild true;
             }
 
+            // If our viewport changed then we need to rebuild the entire
+            // screen because it means we scrolled. If we have no previous
+            // viewport then we must rebuild.
+            const prev_viewport = self.cells_viewport orelse break :rebuild true;
+            if (!prev_viewport.eql(viewport_pin)) break :rebuild true;
+
             break :rebuild false;
         };
 
@@ -957,6 +968,7 @@ pub fn updateFrame(
             .preedit = preedit,
             .cursor_style = cursor_style,
             .color_palette = state.terminal.color_palette.colors,
+            .viewport_pin = viewport_pin,
             .full_rebuild = full_rebuild,
         };
     };
@@ -967,13 +979,16 @@ pub fn updateFrame(
 
     // Build our GPU cells
     try self.rebuildCells(
-        critical.full_rebuild or self.cells_rebuild,
+        critical.full_rebuild,
         &critical.screen,
         critical.mouse,
         critical.preedit,
         critical.cursor_style,
         &critical.color_palette,
     );
+
+    // Update our viewport pin
+    self.cells_viewport = critical.viewport_pin;
 
     // Update our background color
     self.current_background_color = critical.bg;
@@ -1781,7 +1796,9 @@ pub fn setScreenSize(
 
     // Reset our cell contents.
     try self.cells.resize(self.alloc, grid_size);
-    self.cells_rebuild = true;
+
+    // Reset our viewport to force a rebuild
+    self.cells_viewport = null;
 
     // If we have custom shaders then we update the state
     if (self.custom_shader_state) |*state| {
@@ -2040,7 +2057,6 @@ fn rebuildCells(
 
     // Update that our cells rebuilt
     self.cells_rebuilt = true;
-    self.cells_rebuild = false;
 
     // Log some things
     // log.debug("rebuildCells complete cached_runs={}", .{
