@@ -932,6 +932,7 @@ pub fn updateFrame(
         // success and reset while we hold the lock. This is much easier
         // than coordinating row by row or as changes are persisted.
         state.terminal.flags.dirty = .{};
+        state.terminal.screen.dirty = .{};
         {
             var it = state.terminal.screen.pages.pageIterator(
                 .right_down,
