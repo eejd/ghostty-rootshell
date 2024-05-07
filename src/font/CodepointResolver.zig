@@ -172,7 +172,7 @@ pub fn getIndex(
         if (self.discover) |disco| discover: {
             const load_opts = self.collection.load_options orelse
                 break :discover;
-            var disco_it = disco.discover(alloc, .{
+            var disco_it = disco.discoverFallback(alloc, &self.collection, .{
                 .codepoint = cp,
                 .size = load_opts.size.points,
                 .bold = style == .bold or style == .bold_italic,

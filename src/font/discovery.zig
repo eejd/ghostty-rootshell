@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 const fontconfig = @import("fontconfig");
 const macos = @import("macos");
 const options = @import("main.zig").options;
+const Collection = @import("main.zig").Collection;
 const DeferredFace = @import("main.zig").DeferredFace;
 const Variation = @import("main.zig").face.Variation;
 
@@ -258,7 +259,11 @@ pub const Fontconfig = struct {
 
     /// Discover fonts from a descriptor. This returns an iterator that can
     /// be used to build up the deferred fonts.
-    pub fn discover(self: *const Fontconfig, alloc: Allocator, desc: Descriptor) !DiscoverIterator {
+    pub fn discover(
+        self: *const Fontconfig,
+        alloc: Allocator,
+        desc: Descriptor,
+    ) !DiscoverIterator {
         _ = alloc;
 
         // Build our pattern that we'll search for
@@ -280,6 +285,16 @@ pub const Fontconfig = struct {
             .variations = desc.variations,
             .i = 0,
         };
+    }
+
+    pub fn discoverFallback(
+        self: *const CoreText,
+        alloc: Allocator,
+        collection: *Collection,
+        desc: Descriptor,
+    ) !DiscoverIterator {
+        _ = collection;
+        return try self.discover(alloc, desc);
     }
 
     pub const DiscoverIterator = struct {
@@ -364,6 +379,87 @@ pub const CoreText = struct {
         };
     }
 
+    pub fn discoverFallback(
+        self: *const CoreText,
+        alloc: Allocator,
+        collection: *Collection,
+        desc: Descriptor,
+    ) !DiscoverIterator {
+        // If we have a codepoint within the CJK unified ideographs block
+        // then we fallback to macOS to find a font that supports it because
+        // there isn't a better way manually with CoreText that I can find that
+        // properly takes into account system locale.
+        //
+        // References:
+        // - http://unicode.org/charts/PDF/U4E00.pdf
+        // - https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/platform/fonts/LocaleInFonts.md#unified-han-ideographs
+        if (desc.codepoint >= 0x4E00 and
+            desc.codepoint <= 0x9FFF)
+        han: {
+            const han = try self.discoverCodepoint(
+                collection,
+                desc,
+            ) orelse break :han;
+
+            // This is silly but our discover iterator needs a slice so
+            // we allocate here. This isn't a performance bottleneck but
+            // this is something we can optimize very easily...
+            const list = try alloc.alloc(*macos.text.FontDescriptor, 1);
+            errdefer alloc.free(list);
+            list[0] = han;
+
+            return DiscoverIterator{
+                .alloc = alloc,
+                .list = list,
+                .i = 0,
+            };
+        }
+
+        return try self.discover(alloc, desc);
+    }
+
+    /// Discover a font for a specific codepoint using the CoreText
+    /// CTFontCreateForString API.
+    fn discoverCodepoint(
+        self: *const CoreText,
+        collection: *Collection,
+        desc: Descriptor,
+    ) !?*macos.text.FontDescriptor {
+        _ = self;
+
+        assert(desc.codepoint > 0);
+
+        // Get our original font. This is dependent on the requestd style
+        // from the descriptor.
+        const original = original: {
+            break :original try collection.getFace(.{ .style = .regular });
+        };
+
+        // We need it in utf8 format
+        var buf: [4]u8 = undefined;
+        const len = try std.unicode.utf8Encode(
+            @intCast(desc.codepoint),
+            &buf,
+        );
+
+        // We need a CFString
+        const str = try macos.foundation.String.createWithBytes(
+            buf[0..len],
+            .utf8,
+            false,
+        );
+        defer str.release();
+
+        // Get our font
+        const font = original.font.createForString(
+            str,
+            macos.foundation.Range.init(0, 1),
+        ) orelse return null;
+        defer font.release();
+
+        // Get the descriptor
+        return font.copyDescriptor();
+    }
     fn copyMatchingDescriptors(
         alloc: Allocator,
         list: *macos.foundation.Array,
