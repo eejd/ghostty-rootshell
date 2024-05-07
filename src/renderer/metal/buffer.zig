@@ -107,5 +107,53 @@ pub fn Buffer(comptime T: type) type {
 
             @memcpy(dst, src);
         }
+
+        /// Like Buffer.sync but takes data from an array of ArrayLists,
+        /// rather than a single array. Returns the number of items synced.
+        pub fn syncFromArrayLists(self: *Self, device: objc.Object, lists: []std.ArrayListUnmanaged(T)) !usize {
+            var total_len: usize = 0;
+            for (lists) |list| {
+                total_len += list.items.len;
+            }
+
+            // If we need more bytes than our buffer has, we need to reallocate.
+            const req_bytes = total_len * @sizeOf(T);
+            const avail_bytes = self.buffer.getProperty(c_ulong, "length");
+            if (req_bytes > avail_bytes) {
+                // Deallocate previous buffer
+                self.buffer.msgSend(void, objc.sel("release"), .{});
+
+                // Allocate a new buffer with enough to hold double what we require.
+                const size = req_bytes * 2;
+                self.buffer = device.msgSend(
+                    objc.Object,
+                    objc.sel("newBufferWithLength:options:"),
+                    .{
+                        @as(c_ulong, @intCast(size * @sizeOf(T))),
+                        mtl.MTLResourceStorageModeShared,
+                    },
+                );
+            }
+
+            // We can fit within the buffer so we can just replace bytes.
+            const dst = dst: {
+                const ptr = self.buffer.msgSend(?[*]u8, objc.sel("contents"), .{}) orelse {
+                    log.warn("buffer contents ptr is null", .{});
+                    return error.MetalFailed;
+                };
+
+                break :dst ptr[0..req_bytes];
+            };
+
+            var i: usize = 0;
+
+            for (lists) |list| {
+                const ptr = @as([*]const u8, @ptrCast(list.items.ptr));
+                @memcpy(dst[i..][0..list.items.len*@sizeOf(T)], ptr);
+                i += list.items.len*@sizeOf(T);
+            }
+
+            return total_len;
+        }
     };
 }

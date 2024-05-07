@@ -24,150 +24,77 @@ pub const Key = enum {
             => mtl_shaders.CellText,
         };
     }
-
-    /// Returns true if the two keys share the same data array.
-    fn sharedData(self: Key, other: Key) bool {
-        return switch (self) {
-            inline else => |self_tag| switch (other) {
-                inline else => |other_tag| self_tag.CellType() == other_tag.CellType(),
-            },
-        };
-    }
 };
+
+/// A collection of ArrayLists with methods for bulk operations.
+fn PooledArrayList(comptime T: type) type {
+    return struct {
+        pools: []std.ArrayListUnmanaged(T),
+
+        pub fn init(alloc: Allocator, pool_count: usize) !PooledArrayList(T) {
+            var self: PooledArrayList(T) = .{
+                .pools = try alloc.alloc(std.ArrayListUnmanaged(T), pool_count),
+            };
+
+            for (self.pools) |*list| {
+                list.* = .{};
+            }
+
+            self.reset();
+
+            return self;
+        }
+
+        pub fn deinit(self: *PooledArrayList(T), alloc: Allocator) void {
+            for (self.pools) |*list| {
+                list.deinit(alloc);
+            }
+            alloc.free(self.pools);
+        }
+
+        /// Reset all pools to an empty state without freeing or resizing.
+        pub fn reset(self: *PooledArrayList(T)) void {
+            for (self.pools) |*list| {
+                list.clearRetainingCapacity();
+            }
+        }
+
+        /// Change the pool count and clear the contents of all pools.
+        pub fn resize(self: *PooledArrayList(T), alloc: Allocator, pool_count: u16) !void {
+            const pools  = try alloc.alloc(std.ArrayListUnmanaged(T), pool_count);
+            errdefer alloc.free(pools);
+
+            alloc.free(self.pools);
+
+            self.pools = pools;
+
+            for (self.pools) |*list| {
+                list.* = .{};
+            }
+
+            self.reset();
+        }
+    };
+}
 
 /// The contents of all the cells in the terminal.
 ///
-/// The goal of this data structure is to make it efficient for two operations:
-///
-///   1. Setting the contents of a cell by coordinate. More specifically,
-///      we want to be efficient setting cell contents by row since we
-///      will be doing row dirty tracking.
-///
-///   2. Syncing the contents of the CPU buffers to GPU buffers. This happens
-///      every frame and should be as fast as possible.
-///
-/// To achieve this, the contents are stored in contiguous arrays by
-/// GPU vertex type and we have an array of mappings indexed per row
-/// that map to the index in the GPU vertex array that the content is at.
+/// The goal of this data structure is to allow for efficient row-wise
+/// clearing of data from the GPU buffers, to allow for row-wise dirty
+/// tracking to eliminate the overhead of rebuilding the GPU buffers
+/// each frame.
 pub const Contents = struct {
-    const Map = struct {
-        /// The rows of index mappings are stored in a single contiguous array
-        /// where the start of each row can be direct indexed by its y coord,
-        /// and the used length of each row's section is stored separately.
-        rows: []u32,
-
-        /// The used length for each row.
-        lens: []u16,
-
-        /// The size of each row in the contiguous rows array.
-        row_size: u16,
-
-        pub fn init(alloc: Allocator, size: renderer.GridSize) !Map {
-            var map: Map = .{
-                .rows = try alloc.alloc(u32, size.columns * size.rows),
-                .lens = try alloc.alloc(u16, size.rows),
-                .row_size = size.columns,
-            };
-
-            map.reset();
-
-            return map;
-        }
-
-        pub fn deinit(self: *Map, alloc: Allocator) void {
-            alloc.free(self.rows);
-            alloc.free(self.lens);
-        }
-
-        /// Clear all rows in this map.
-        pub fn reset(self: *Map) void {
-            @memset(self.lens, 0);
-        }
-
-        /// Add a mapped index to a row.
-        pub fn add(self: *Map, row: u16, idx: u32) void {
-            assert(row < self.lens.len);
-
-            const start = self.row_size * row;
-            assert(start < self.rows.len);
-
-            // TODO: Currently this makes the assumption that a given row
-            // will never contain more cells than it has columns. That
-            // assumption is easily violated due to graphemes and multiple-
-            // substitution opentype operations. Currently I've just capped
-            // the length so that additional cells will overwrite the last
-            // one once the row size is exceeded. A better behavior should
-            // be decided upon, this one could cause issues.
-            const len = @min(self.row_size - 1, self.lens[row]);
-            assert(len < self.row_size);
-
-            self.rows[start + len] = idx;
-            self.lens[row] = len + 1;
-        }
-
-        /// Get a slice containing all the mappings for a given row.
-        pub fn getRow(self: *Map, row: u16) []u32 {
-            assert(row < self.lens.len);
-
-            const start = self.row_size * row;
-            assert(start < self.rows.len);
-
-            return self.rows[start..][0..self.lens[row]];
-        }
-
-        /// Clear a given row by resetting its len.
-        pub fn clearRow(self: *Map, row: u16) void {
-            assert(row < self.lens.len);
-            self.lens[row] = 0;
-        }
-    };
-
-    /// The grid size of the terminal. This is used to determine the
-    /// map array index from a coordinate.
     size: renderer.GridSize,
 
-    /// The actual GPU data (on the CPU) for all the cells in the terminal.
-    /// This only contains the cells that have content set. To determine
-    /// if a cell has content set, we check the map.
-    ///
-    /// This data is synced to a buffer on every frame.
-    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg),
-    text: std.ArrayListUnmanaged(mtl_shaders.CellText),
-
-    /// The map for the bg cells.
-    bg_map: Map,
-    /// The map for the text cells.
-    tx_map: Map,
-    /// The map for the underline cells.
-    ul_map: Map,
-    /// The map for the strikethrough cells.
-    st_map: Map,
-
-    /// True when the cursor should be rendered. This is managed by
-    /// the setCursor method and should not be set directly.
-    cursor: bool,
-
-    /// The amount of text elements we reserve at the beginning for
-    /// special elements like the cursor.
-    const text_reserved_len = 1;
+    bgs: PooledArrayList(mtl_shaders.CellBg),
+    text: PooledArrayList(mtl_shaders.CellText),
 
     pub fn init(alloc: Allocator) !Contents {
-        var result: Contents = .{
+        const result: Contents = .{
             .size = .{ .rows = 0, .columns = 0 },
-            .bgs = .{},
-            .text = .{},
-            .bg_map = try Map.init(alloc, .{ .rows = 0, .columns = 0 }),
-            .tx_map = try Map.init(alloc, .{ .rows = 0, .columns = 0 }),
-            .ul_map = try Map.init(alloc, .{ .rows = 0, .columns = 0 }),
-            .st_map = try Map.init(alloc, .{ .rows = 0, .columns = 0 }),
-            .cursor = false,
+            .bgs = try PooledArrayList(mtl_shaders.CellBg).init(alloc, 0),
+            .text = try PooledArrayList(mtl_shaders.CellText).init(alloc, 0),
         };
-
-        // We preallocate some amount of space for cell contents
-        // we always have as a prefix. For now the current prefix
-        // is length 1: the cursor.
-        try result.text.ensureTotalCapacity(alloc, text_reserved_len);
-        result.text.items.len = text_reserved_len;
 
         return result;
     }
@@ -175,10 +102,6 @@ pub const Contents = struct {
     pub fn deinit(self: *Contents, alloc: Allocator) void {
         self.bgs.deinit(alloc);
         self.text.deinit(alloc);
-        self.bg_map.deinit(alloc);
-        self.tx_map.deinit(alloc);
-        self.ul_map.deinit(alloc);
-        self.st_map.deinit(alloc);
     }
 
     /// Resize the cell contents for the given grid size. This will
@@ -189,52 +112,26 @@ pub const Contents = struct {
         size: renderer.GridSize,
     ) !void {
         self.size = size;
-        self.bgs.clearAndFree(alloc);
-        self.text.shrinkAndFree(alloc, text_reserved_len);
+        try self.bgs.resize(alloc, size.rows);
+        try self.text.resize(alloc, size.rows + 1);
 
-        self.bg_map.deinit(alloc);
-        self.tx_map.deinit(alloc);
-        self.ul_map.deinit(alloc);
-        self.st_map.deinit(alloc);
-
-        self.bg_map = try Map.init(alloc, size);
-        self.tx_map = try Map.init(alloc, size);
-        self.ul_map = try Map.init(alloc, size);
-        self.st_map = try Map.init(alloc, size);
+        // Make sure we don't have to allocate for the cursor cell.
+        try self.text.pools[0].ensureTotalCapacity(alloc, 1);
     }
 
     /// Reset the cell contents to an empty state without resizing.
     pub fn reset(self: *Contents) void {
-        self.bgs.clearRetainingCapacity();
-        self.text.shrinkRetainingCapacity(text_reserved_len);
-
-        self.bg_map.reset();
-        self.tx_map.reset();
-        self.ul_map.reset();
-        self.st_map.reset();
+        self.bgs.reset();
+        self.text.reset();
     }
 
-    /// Returns the slice of fg cell contents to sync with the GPU.
-    pub fn fgCells(self: *const Contents) []const mtl_shaders.CellText {
-        const start: usize = if (self.cursor) 0 else 1;
-        return self.text.items[start..];
-    }
-
-    /// Returns the slice of bg cell contents to sync with the GPU.
-    pub fn bgCells(self: *const Contents) []const mtl_shaders.CellBg {
-        return self.bgs.items;
-    }
-
-    /// Set the cursor value. If the value is null then the cursor
-    /// is hidden.
+    /// Set the cursor value. If the value is null then the cursor is hidden.
     pub fn setCursor(self: *Contents, v: ?mtl_shaders.CellText) void {
-        const cell = v orelse {
-            self.cursor = false;
-            return;
-        };
+        self.text.pools[0].clearRetainingCapacity();
 
-        self.cursor = true;
-        self.text.items[0] = cell;
+        if (v) |cell| {
+            self.text.pools[0].appendAssumeCapacity(cell);
+        }
     }
 
     /// Add a cell to the appropriate list. Adding the same cell twice will
@@ -246,98 +143,29 @@ pub const Contents = struct {
         comptime key: Key,
         cell: key.CellType(),
     ) !void {
-        // Get our list of cells based on the key (comptime).
-        const list = &@field(self, switch (key) {
-            .bg => "bgs",
-            .text, .underline, .strikethrough => "text",
-        });
+        const y = cell.grid_pos[1];
 
-        // Add a new cell to the list.
-        const idx: u32 = @intCast(list.items.len);
-        try list.append(alloc, cell);
+        switch (key) {
+            .bg
+            => try self.bgs.pools[y].append(alloc, cell),
 
-        // And to the appropriate mapping.
-        self.getMap(key).add(cell.grid_pos[1], idx);
+            .text,
+            .underline,
+            .strikethrough
+            // We have a special pool containing the cursor cell at the start
+            // of our text pool list, so we need to add 1 to the y to get the
+            // correct index.
+            => try self.text.pools[y + 1].append(alloc, cell),
+        }
     }
 
     /// Clear all of the cell contents for a given row.
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
-        inline for (std.meta.fields(Key)) |field| {
-            const key: Key = @enumFromInt(field.value);
-            // Get our list of cells based on the key (comptime).
-            const list = &@field(self, switch (key) {
-                .bg => "bgs",
-                .text, .underline, .strikethrough => "text",
-            });
-
-            const map = self.getMap(key);
-
-            const start = y * map.row_size;
-
-            // We iterate from the end of the row because this makes it more
-            // likely that we remove from the end of the list, which results
-            // in not having to re-map anything.
-            while (map.lens[y] > 0) {
-                map.lens[y] -= 1;
-                const i = start + map.lens[y];
-                const idx = map.rows[i];
-
-                _ = list.swapRemove(idx);
-
-                // If we took this cell off the end of the arraylist then
-                // we won't need to re-map anything.
-                if (idx == list.items.len) continue;
-
-                const new = list.items[idx];
-                const new_y = new.grid_pos[1];
-
-                // The cell contents that were moved need to be remapped so
-                // we don't lose track of them.
-                switch (key) {
-                    .bg => self.remapBgs(new_y, idx),
-                    .text, .underline, .strikethrough => self.remapText(new_y, idx),
-                }
-            }
-        }
-    }
-
-    fn remapText(self: *Contents, row: u16, idx: u32) void {
-        for (self.tx_map.getRow(row)) |*new_idx| {
-            if (new_idx.* == self.text.items.len) {
-                new_idx.* = idx;
-                return;
-            }
-        }
-        for (self.ul_map.getRow(row)) |*new_idx| {
-            if (new_idx.* == self.text.items.len) {
-                new_idx.* = idx;
-                return;
-            }
-        }
-        for (self.st_map.getRow(row)) |*new_idx| {
-            if (new_idx.* == self.text.items.len) {
-                new_idx.* = idx;
-                return;
-            }
-        }
-    }
-
-    fn remapBgs(self: *Contents, row: u16, idx: u32) void {
-        for (self.bg_map.getRow(row)) |*new_idx| {
-            if (new_idx.* == self.bgs.items.len) {
-                new_idx.* = idx;
-                return;
-            }
-        }
-    }
-
-    fn getMap(self: *Contents, key: Key) *Map {
-        return switch (key) {
-            .bg => &self.bg_map,
-            .text => &self.tx_map,
-            .underline => &self.ul_map,
-            .strikethrough => &self.st_map,
-        };
+        self.bgs.pools[y].clearRetainingCapacity();
+        // We have a special pool containing the cursor cell at the start
+        // of our text pool list, so we need to add 1 to the y to get the
+        // correct index.
+        self.text.pools[y + 1].clearRetainingCapacity();
     }
 };
 

@@ -1036,11 +1036,9 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
 
     // Setup our frame data
-    const cells_bg = self.cells.bgCells();
-    const cells_fg = self.cells.fgCells();
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    try frame.cells_bg.sync(self.gpu_state.device, cells_bg);
-    try frame.cells.sync(self.gpu_state.device, cells_fg);
+    const bg_count = try frame.cells_bg.syncFromArrayLists(self.gpu_state.device, self.cells.bgs.pools);
+    const fg_count = try frame.cells.syncFromArrayLists(self.gpu_state.device, self.cells.text.pools);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -1139,13 +1137,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, cells_bg.len);
+        try self.drawCellBgs(encoder, frame, bg_count);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCellFgs(encoder, frame, cells_fg.len);
+        try self.drawCellFgs(encoder, frame, fg_count);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
