@@ -633,6 +633,9 @@ pub fn cursorDownScroll(self: *Screen) !void {
         self.cursor.page_row = page_rac.row;
         self.cursor.page_cell = page_rac.cell;
 
+        // Our new row is always dirty
+        self.cursorMarkDirty();
+
         // Clear the new row so it gets our bg color. We only do this
         // if we have a bg color at all.
         if (self.cursor.style.bg_color != .none) {
@@ -2889,6 +2892,7 @@ test "Screen: cursorAbsolute across pages preserves style" {
         try testing.expect(styleval.flags.bold);
     }
 }
+
 test "Screen: scrolling" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -2966,6 +2970,12 @@ test "Screen: scrolling with a single-row screen with scrollback" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("", contents);
     }
+
+    // Active should be dirty
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+
+    // Our scrollback should not be dirty
+    try testing.expect(!s.pages.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     s.scroll(.{ .delta_row = -1 });
     {
