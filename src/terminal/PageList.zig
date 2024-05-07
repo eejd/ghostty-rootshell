@@ -473,6 +473,11 @@ pub fn clone(
             continue;
         }
 
+        // We want to maintain the dirty bits from the original page so
+        // instead of setting a range we grab the dirty bit and then
+        // set it on the new page in the new location.
+        var dirty = page.data.dirtyBitSet();
+
         // Kind of slow, we want to shift the rows up in the page up to
         // end and then resize down.
         const rows = page.data.rows.ptr(page.data.memory);
@@ -483,6 +488,7 @@ pub fn clone(
             const old_dst = dst.*;
             dst.* = src.*;
             src.* = old_dst;
+            dirty.setValue(i, dirty.isSet(i + chunk.start));
         }
         page.data.size.rows = @intCast(len);
         total_rows += len;
