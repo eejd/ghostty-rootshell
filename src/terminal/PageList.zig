@@ -2322,6 +2322,10 @@ pub fn eraseRows(
         // Our new size is the amount we scrolled
         chunk.page.data.size.rows = @intCast(scroll_amount);
         erased += chunk.end;
+
+        // Set all the rows as dirty
+        var dirty = chunk.page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = chunk.page.data.size.rows }, true);
     }
 
     // If we deleted active, we need to regrow because one of our invariants
