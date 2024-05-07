@@ -432,6 +432,31 @@ pub const CoreText = struct {
         // Get our original font. This is dependent on the requestd style
         // from the descriptor.
         const original = original: {
+            // In all the styles below, we try to match it but if we don't
+            // we always fall back to some other option. The order matters
+            // here.
+
+            if (desc.bold and desc.italic) {
+                const items = collection.faces.get(.bold_italic).items;
+                if (items.len > 0) {
+                    break :original try collection.getFace(.{ .style = .bold_italic });
+                }
+            }
+
+            if (desc.bold) {
+                const items = collection.faces.get(.bold).items;
+                if (items.len > 0) {
+                    break :original try collection.getFace(.{ .style = .bold });
+                }
+            }
+
+            if (desc.italic) {
+                const items = collection.faces.get(.italic).items;
+                if (items.len > 0) {
+                    break :original try collection.getFace(.{ .style = .italic });
+                }
+            }
+
             break :original try collection.getFace(.{ .style = .regular });
         };
 
