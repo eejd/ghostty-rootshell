@@ -2171,7 +2171,7 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        try self.cells.set(self.alloc, .bg, .{
+        try self.cells.add(self.alloc, .bg, .{
             .mode = .rgb,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2186,18 +2186,24 @@ fn updateCell(
         @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
     };
 
-    // If the cell has a character, draw it
-    if (cell.hasText()) fg: {
+    // If the shaper cell has a glyph, draw it.
+    if (shaper_cell.glyph_index) |glyph_index| glyph: {
         // Render
         const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
-            shaper_cell.glyph_index orelse break :fg,
+            glyph_index,
             .{
                 .grid_metrics = self.grid_metrics,
                 .thicken = self.config.font_thicken,
             },
         );
+
+        // If the glyph is 0 width or height, it will be invisible
+        // when drawn, so don't bother adding it to the buffer.
+        if (render.glyph.width == 0 or render.glyph.height == 0) {
+            break :glyph;
+        }
 
         const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
             render.presentation,
@@ -2208,7 +2214,7 @@ fn updateCell(
             .constrained => .fg_constrained,
         };
 
-        try self.cells.set(self.alloc, .text, .{
+        try self.cells.add(self.alloc, .text, .{
             .mode = mode,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2245,7 +2251,7 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        try self.cells.set(self.alloc, .underline, .{
+        try self.cells.add(self.alloc, .underline, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2268,7 +2274,7 @@ fn updateCell(
             },
         );
 
-        try self.cells.set(self.alloc, .strikethrough, .{
+        try self.cells.add(self.alloc, .strikethrough, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2366,7 +2372,7 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    try self.cells.set(self.alloc, .bg, .{
+    try self.cells.add(self.alloc, .bg, .{
         .mode = .rgb,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
@@ -2374,7 +2380,7 @@ fn addPreeditCell(
     });
 
     // Add our text
-    try self.cells.set(self.alloc, .text, .{
+    try self.cells.add(self.alloc, .text, .{
         .mode = .fg,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
