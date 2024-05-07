@@ -288,7 +288,7 @@ pub const Fontconfig = struct {
     }
 
     pub fn discoverFallback(
-        self: *const CoreText,
+        self: *const Fontconfig,
         alloc: Allocator,
         collection: *Collection,
         desc: Descriptor,
