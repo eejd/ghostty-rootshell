@@ -929,6 +929,9 @@ pub fn updateFrame(
                 if (v > 0) break :rebuild true;
             }
 
+            // Temporary while: https://github.com/mitchellh/ghostty/issues/1731
+            if (true) break :rebuild true;
+
             break :rebuild false;
         };
 
