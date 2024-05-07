@@ -1344,9 +1344,11 @@ pub fn select(self: *Screen, sel_: ?Selection) !void {
 
 /// Same as select(null) but can't fail.
 pub fn clearSelection(self: *Screen) void {
-    if (self.selection) |*sel| sel.deinit(self);
+    if (self.selection) |*sel| {
+        sel.deinit(self);
+        self.dirty.selection = true;
+    }
     self.selection = null;
-    self.dirty.selection = true;
 }
 
 pub const SelectionString = struct {
