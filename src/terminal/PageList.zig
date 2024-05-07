@@ -473,6 +473,11 @@ pub fn clone(
             continue;
         }
 
+        // We want to maintain the dirty bits from the original page so
+        // instead of setting a range we grab the dirty bit and then
+        // set it on the new page in the new location.
+        var dirty = page.data.dirtyBitSet();
+
         // Kind of slow, we want to shift the rows up in the page up to
         // end and then resize down.
         const rows = page.data.rows.ptr(page.data.memory);
@@ -483,6 +488,7 @@ pub fn clone(
             const old_dst = dst.*;
             dst.* = src.*;
             src.* = old_dst;
+            dirty.setValue(i, dirty.isSet(i + chunk.start));
         }
         page.data.size.rows = @intCast(len);
         total_rows += len;
@@ -2023,6 +2029,12 @@ pub fn eraseRow(
         }
     }
 
+    {
+        // Set all the rows as dirty in this page
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = pn.y, .end = page.data.size.rows }, true);
+    }
+
     // We iterate through all of the following pages in order to move their
     // rows up by 1 as well.
     while (page.next) |next| {
@@ -2053,6 +2065,10 @@ pub fn eraseRow(
         rows = next_rows;
 
         fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        // Set all the rows as dirty
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = page.data.size.rows }, true);
 
         // Our tracked pins for this page need to be updated.
         // If the pin is in row 0 that means the corresponding row has
@@ -2306,6 +2322,10 @@ pub fn eraseRows(
         // Our new size is the amount we scrolled
         chunk.page.data.size.rows = @intCast(scroll_amount);
         erased += chunk.end;
+
+        // Set all the rows as dirty
+        var dirty = chunk.page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = chunk.page.data.size.rows }, true);
     }
 
     // If we deleted active, we need to regrow because one of our invariants
