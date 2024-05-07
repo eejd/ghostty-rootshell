@@ -98,6 +98,11 @@ current_background_color: terminal.color.RGB,
 /// cells goes into a separate shader.
 cells: mtl_cell.Contents,
 
+/// If this is true, it forces a full cell contents rebuild on the next frame.
+/// This can be used to force a rebuild whenever internal state changes for
+/// our cells structures (i.e. a resize).
+cells_rebuild: bool = true,
+
 /// Set to true after rebuildCells is called. This can be used
 /// to determine if any possible changes have been made to the
 /// cells for the draw call.
@@ -962,7 +967,7 @@ pub fn updateFrame(
 
     // Build our GPU cells
     try self.rebuildCells(
-        critical.full_rebuild,
+        critical.full_rebuild or self.cells_rebuild,
         &critical.screen,
         critical.mouse,
         critical.preedit,
@@ -1776,6 +1781,7 @@ pub fn setScreenSize(
 
     // Reset our cell contents.
     try self.cells.resize(self.alloc, grid_size);
+    self.cells_rebuild = true;
 
     // If we have custom shaders then we update the state
     if (self.custom_shader_state) |*state| {
@@ -1884,7 +1890,6 @@ fn rebuildCells(
 
         if (!rebuild) {
             // Only rebuild if we are doing a full rebuild or this row is dirty.
-            // if (row.isDirty()) std.log.warn("dirty y={}", .{y});
             if (!row.isDirty()) continue;
 
             // Clear the cells if the row is dirty
@@ -2035,6 +2040,7 @@ fn rebuildCells(
 
     // Update that our cells rebuilt
     self.cells_rebuilt = true;
+    self.cells_rebuild = false;
 
     // Log some things
     // log.debug("rebuildCells complete cached_runs={}", .{
