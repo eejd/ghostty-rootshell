@@ -18,6 +18,18 @@ pub const Font = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createForString(
+        self: *Font,
+        str: *foundation.String,
+        range: foundation.Range,
+    ) ?*Font {
+        return @ptrCast(@constCast(c.CTFontCreateForString(
+            @ptrCast(self),
+            @ptrCast(str),
+            @bitCast(range),
+        )));
+    }
+
     pub fn copyWithAttributes(
         self: *Font,
         size: f32,
@@ -49,6 +61,10 @@ pub const Font = opaque {
 
     pub fn copyFeatures(self: *Font) *foundation.Array {
         return @ptrCast(@constCast(c.CTFontCopyFeatures(@ptrCast(self))));
+    }
+
+    pub fn copyDefaultCascadeListForLanguages(self: *Font) *foundation.Array {
+        return @ptrCast(@constCast(c.CTFontCopyDefaultCascadeListForLanguages(@ptrCast(self), null)));
     }
 
     pub fn getGlyphCount(self: *Font) usize {
