@@ -2023,6 +2023,12 @@ pub fn eraseRow(
         }
     }
 
+    {
+        // Set all the rows as dirty in this page
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = pn.y, .end = page.data.size.rows }, true);
+    }
+
     // We iterate through all of the following pages in order to move their
     // rows up by 1 as well.
     while (page.next) |next| {
@@ -2053,6 +2059,10 @@ pub fn eraseRow(
         rows = next_rows;
 
         fastmem.rotateOnce(Row, rows[0..page.data.size.rows]);
+
+        // Set all the rows as dirty
+        var dirty = page.data.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = page.data.size.rows }, true);
 
         // Our tracked pins for this page need to be updated.
         // If the pin is in row 0 that means the corresponding row has

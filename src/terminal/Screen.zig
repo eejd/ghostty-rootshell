@@ -565,9 +565,16 @@ pub fn cursorDownScroll(self: *Screen) !void {
                 self.cursor.page_row,
                 self.cursor.page_pin.page.data.getCells(self.cursor.page_row),
             );
+
+            var dirty = self.cursor.page_pin.page.data.dirtyBitSet();
+            dirty.set(0);
         } else {
             // eraseRow will shift everything below it up.
             try self.pages.eraseRow(.{ .active = .{} });
+
+            // Note we don't need to mark anything dirty in this branch
+            // because eraseRow will mark all the rotated rows as dirty
+            // in the entire page.
 
             // We need to move our cursor down one because eraseRows will
             // preserve our pin directly and we're erasing one row.
@@ -2909,6 +2916,11 @@ test "Screen: scrolling" {
         }, cell.content.color_rgb);
     }
 
+    // Everything is dirty because we have no scrollback
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+
     // Scrolling to the bottom does nothing
     s.scroll(.{ .active = {} });
 
@@ -2934,6 +2946,9 @@ test "Screen: scrolling with a single-row screen no scrollback" {
         defer alloc.free(contents);
         try testing.expectEqualStrings("", contents);
     }
+
+    // Screen should be dirty
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 }
 
 test "Screen: scrolling with a single-row screen with scrollback" {
