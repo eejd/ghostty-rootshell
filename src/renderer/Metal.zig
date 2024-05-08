@@ -566,9 +566,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
-    var cells = try mtl_cell.Contents.init(alloc);
-    errdefer cells.deinit(alloc);
-
     const display_link: ?DisplayLink = switch (builtin.os.tag) {
         .macos => if (options.config.vsync)
             try macos.video.DisplayLink.createWithActiveCGDisplays()
@@ -592,7 +589,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .current_background_color = options.config.background,
 
         // Render state
-        .cells = cells,
+        .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
@@ -1037,8 +1034,8 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // Setup our frame data
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    const bg_count = try frame.cells_bg.syncFromArrayLists(self.gpu_state.device, self.cells.bgs.pools);
-    const fg_count = try frame.cells.syncFromArrayLists(self.gpu_state.device, self.cells.text.pools);
+    const bg_count = try frame.cells_bg.syncFromArrayLists(self.gpu_state.device, self.cells.bg_rows.lists);
+    const fg_count = try frame.cells.syncFromArrayLists(self.gpu_state.device, self.cells.fg_rows.lists);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
