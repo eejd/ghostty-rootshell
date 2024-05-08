@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const config = @import("../config.zig");
+const homedir = @import("../os/homedir.zig");
 
 const log = std.log.scoped(.shell_integration);
 
@@ -178,13 +179,23 @@ fn setupBash(
     }
     try env.put("GHOSTTY_BASH_INJECT", inject.slice());
 
-    // In POSIX mode, HISTFILE defaults to ~/.sh_history.
+    // In POSIX mode, HISTFILE defaults to ~/.sh_history, so unless we're
+    // staying in POSIX mode (--posix), change it back to ~/.bash_history.
     if (!posix and env.get("HISTFILE") == null) {
-        try env.put("HISTFILE", "~/.bash_history");
-        try env.put("GHOSTTY_BASH_UNEXPORT_HISTFILE", "1");
+        var home_buf: [1024]u8 = undefined;
+        if (try homedir.home(&home_buf)) |home| {
+            var histfile_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            const histfile = try std.fmt.bufPrint(
+                &histfile_buf,
+                "{s}/.bash_history",
+                .{home},
+            );
+            try env.put("HISTFILE", histfile);
+            try env.put("GHOSTTY_BASH_UNEXPORT_HISTFILE", "1");
+        }
     }
 
-    // Preserve the existing ENV value in POSIX mode.
+    // Preserve the existing ENV value when staying in POSIX mode (--posix).
     if (env.get("ENV")) |old| {
         if (posix) {
             try env.put("GHOSTTY_BASH_ENV", old);
@@ -298,7 +309,7 @@ test "bash: HISTFILE" {
         const command = try setupBash(alloc, "bash", ".", &env);
         defer if (command) |c| alloc.free(c);
 
-        try testing.expectEqualStrings("~/.bash_history", env.get("HISTFILE").?);
+        try testing.expect(std.mem.endsWith(u8, env.get("HISTFILE").?, ".bash_history"));
         try testing.expectEqualStrings("1", env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE").?);
     }
 
