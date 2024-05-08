@@ -427,6 +427,13 @@ pub const CoreText = struct {
     ) !?*macos.text.FontDescriptor {
         _ = self;
 
+        if (comptime options.backend.hasFreetype()) {
+            // If we have freetype, we can't use CoreText to find a font
+            // that supports a specific codepoint because we need to
+            // have a CoreText font to be able to do so.
+            return null;
+        }
+
         assert(desc.codepoint > 0);
 
         // Get our original font. This is dependent on the requestd style
