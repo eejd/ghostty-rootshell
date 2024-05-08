@@ -240,7 +240,9 @@ pub const GlobalState = struct {
         }
 
         // We need to export GDK_DEBUG to run on wayland after gtk 4.14
+        // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
         if (builtin.target.os.tag == .linux) _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
+
         // I don't love the env var name but I don't have it in my heart
         // to parse CLI args 3 times (once for actions, once for config,
         // maybe once for logging) so for now this is an easy way to do
