@@ -24,86 +24,100 @@ pub const Key = enum {
             => mtl_shaders.CellText,
         };
     }
-
-    /// Returns true if the two keys share the same data array.
-    fn sharedData(self: Key, other: Key) bool {
-        return switch (self) {
-            inline else => |self_tag| switch (other) {
-                inline else => |other_tag| self_tag.CellType() == other_tag.CellType(),
-            },
-        };
-    }
 };
+
+/// A pool of ArrayLists with methods for bulk operations.
+fn ArrayListPool(comptime T: type) type {
+    return struct {
+        const Self = ArrayListPool(T);
+        const ArrayListT = std.ArrayListUnmanaged(T);
+
+        // An array containing the lists that belong to this pool.
+        lists: []ArrayListT = &[_]ArrayListT{},
+
+        // The pool will be initialized with empty ArrayLists.
+        pub fn init(alloc: Allocator, list_count: usize, initial_capacity: usize) !Self {
+            const self: Self = .{
+                .lists = try alloc.alloc(ArrayListT, list_count),
+            };
+
+            for (self.lists) |*list| {
+                list.* = try ArrayListT.initCapacity(alloc, initial_capacity);
+            }
+
+            return self;
+        }
+
+        pub fn deinit(self: *Self, alloc: Allocator) void {
+            for (self.lists) |*list| {
+                list.deinit(alloc);
+            }
+            alloc.free(self.lists);
+        }
+
+        /// Clear all lists in the pool.
+        pub fn reset(self: *Self) void {
+            for (self.lists) |*list| {
+                list.clearRetainingCapacity();
+            }
+        }
+    };
+}
 
 /// The contents of all the cells in the terminal.
 ///
-/// The goal of this data structure is to make it efficient for two operations:
+/// The goal of this data structure is to allow for efficient row-wise
+/// clearing of data from the GPU buffers, to allow for row-wise dirty
+/// tracking to eliminate the overhead of rebuilding the GPU buffers
+/// each frame.
 ///
-///   1. Setting the contents of a cell by coordinate. More specifically,
-///      we want to be efficient setting cell contents by row since we
-///      will be doing row dirty tracking.
-///
-///   2. Syncing the contents of the CPU buffers to GPU buffers. This happens
-///      every frame and should be as fast as possible.
-///
-/// To achieve this, the contents are stored in contiguous arrays by
-/// GPU vertex type and we have an array of mappings indexed by coordinate
-/// that map to the index in the GPU vertex array that the content is at.
+/// Must be initialized by resizing before calling any operations.
 pub const Contents = struct {
-    /// The map contains the mapping of cell content for every cell in the
-    /// terminal to the index in the cells array that the content is at.
-    /// This is ALWAYS sized to exactly (rows * cols) so we want to keep
-    /// this as small as possible.
+    size: renderer.GridSize = .{ .rows = 0, .columns = 0 },
+
+    /// The ArrayListPool which holds all of the background cells. When sized
+    /// with Contents.resize the individual ArrayLists SHOULD be given enough
+    /// capacity that appendAssumeCapacity may be used, since it should be
+    /// impossible for a row to have more background cells than columns.
     ///
-    /// Before any operation, this must be initialized by calling resize
-    /// on the contents.
-    map: []Map,
-
-    /// The grid size of the terminal. This is used to determine the
-    /// map array index from a coordinate.
-    size: renderer.GridSize,
-
-    /// The actual GPU data (on the CPU) for all the cells in the terminal.
-    /// This only contains the cells that have content set. To determine
-    /// if a cell has content set, we check the map.
+    /// HOWEVER, the initial capacity can be exceeded due to multi-glyph
+    /// composites each adding a background cell for the same position.
+    /// This should probably be considered a bug, but for now it means
+    /// that sometimes allocations might happen, so appendAssumeCapacity
+    /// MUST NOT be used.
     ///
-    /// This data is synced to a buffer on every frame.
-    bgs: std.ArrayListUnmanaged(mtl_shaders.CellBg),
-    text: std.ArrayListUnmanaged(mtl_shaders.CellText),
+    /// Rows are indexed as Contents.bg_rows[y].
+    ///
+    /// Must be initialized by calling resize on the Contents struct before
+    /// calling any operations.
+    bg_rows: ArrayListPool(mtl_shaders.CellBg) = .{},
 
-    /// True when the cursor should be rendered. This is managed by
-    /// the setCursor method and should not be set directly.
-    cursor: bool,
-
-    /// The amount of text elements we reserve at the beginning for
-    /// special elements like the cursor.
-    const text_reserved_len = 1;
-
-    pub fn init(alloc: Allocator) !Contents {
-        const map = try alloc.alloc(Map, 0);
-        errdefer alloc.free(map);
-
-        var result: Contents = .{
-            .map = map,
-            .size = .{ .rows = 0, .columns = 0 },
-            .bgs = .{},
-            .text = .{},
-            .cursor = false,
-        };
-
-        // We preallocate some amount of space for cell contents
-        // we always have as a prefix. For now the current prefix
-        // is length 1: the cursor.
-        try result.text.ensureTotalCapacity(alloc, text_reserved_len);
-        result.text.items.len = text_reserved_len;
-
-        return result;
-    }
+    /// The ArrayListPool which holds all of the foreground cells. When sized
+    /// with Contents.resize the individual ArrayLists are given enough room
+    /// that they can hold a single row with #cols glyphs, underlines, and
+    /// strikethroughs; however, appendAssumeCapacity MUST NOT be used since
+    /// it is possible to exceed this with combining glyphs that add a glyph
+    /// but take up no column since they combine with the previous one, as
+    /// well as with fonts that perform multi-substitutions for glyphs, which
+    /// can result in a similar situation where multiple glyphs reside in the
+    /// same column.
+    ///
+    /// Allocations should nevertheless be exceedingly rare since hitting the
+    /// initial capacity of a list would require a row filled with underlined
+    /// struck through characters, at least one of which is a multi-glyph
+    /// composite.
+    ///
+    /// Rows are indexed as Contents.fg_rows[y + 1], because the first list in
+    /// the pool is reserved for the cursor, which must be the first item in
+    /// the buffer.
+    ///
+    /// Must be initialized by calling resize on the Contents struct before
+    /// calling any operations.
+    fg_rows: ArrayListPool(mtl_shaders.CellText) = .{},
 
     pub fn deinit(self: *Contents, alloc: Allocator) void {
-        alloc.free(self.map);
-        self.bgs.deinit(alloc);
-        self.text.deinit(alloc);
+        self.bg_rows.deinit(alloc);
+        self.fg_rows.deinit(alloc);
     }
 
     /// Resize the cell contents for the given grid size. This will
@@ -113,211 +127,98 @@ pub const Contents = struct {
         alloc: Allocator,
         size: renderer.GridSize,
     ) !void {
-        const map = try alloc.alloc(Map, size.rows * size.columns);
-        errdefer alloc.free(map);
-        @memset(map, .{});
-
-        alloc.free(self.map);
-        self.map = map;
         self.size = size;
-        self.bgs.clearAndFree(alloc);
-        self.text.shrinkAndFree(alloc, text_reserved_len);
+
+        // When we create our bg_rows pool, we give the lists an initial
+        // capacity of size.columns. This is to account for the usual case
+        // where you have a row with normal text and background colors.
+        // This can be exceeded due to multi-glyph composites each adding
+        // a background cell for the same position. This should probably be
+        // considered a bug, but for now it means that sometimes allocations
+        // might happen, and appendAssumeCapacity MUST NOT be used.
+        var bg_rows = try ArrayListPool(mtl_shaders.CellBg).init(alloc, size.rows, size.columns);
+        errdefer bg_rows.deinit(alloc);
+
+        // The foreground lists can hold 3 types of items:
+        // - Glyphs
+        // - Underlines
+        // - Strikethroughs
+        // So we give them an initial capacity of size.columns * 3, which will
+        // avoid any further allocations in the vast majority of cases. Sadly
+        // we can not assume capacity though, since with combining glyphs that
+        // form a single grapheme, and multi-substitutions in fonts, the number
+        // of glyphs in a row is theoretically unlimited.
+        //
+        // We have size.rows + 1 lists because index 0 is used for a special
+        // list containing the cursor cell which needs to be first in the buffer.
+        var fg_rows = try ArrayListPool(mtl_shaders.CellText).init(alloc, size.rows + 1, size.columns * 3);
+        errdefer fg_rows.deinit(alloc);
+
+        self.bg_rows.deinit(alloc);
+        self.fg_rows.deinit(alloc);
+
+        self.bg_rows = bg_rows;
+        self.fg_rows = fg_rows;
+
+        // We don't need 3*cols worth of cells for the cursor list, so we can
+        // replace it with a smaller list. This is technically a tiny bit of
+        // extra work but resize is not a hot function so it's worth it to not
+        // waste the memory.
+        self.fg_rows.lists[0].deinit(alloc);
+        self.fg_rows.lists[0] = try std.ArrayListUnmanaged(mtl_shaders.CellText).initCapacity(alloc, 1);
     }
 
     /// Reset the cell contents to an empty state without resizing.
     pub fn reset(self: *Contents) void {
-        @memset(self.map, .{});
-        self.bgs.clearRetainingCapacity();
-        self.text.shrinkRetainingCapacity(text_reserved_len);
+        self.bg_rows.reset();
+        self.fg_rows.reset();
     }
 
-    /// Returns the slice of fg cell contents to sync with the GPU.
-    pub fn fgCells(self: *const Contents) []const mtl_shaders.CellText {
-        const start: usize = if (self.cursor) 0 else 1;
-        return self.text.items[start..];
-    }
-
-    /// Returns the slice of bg cell contents to sync with the GPU.
-    pub fn bgCells(self: *const Contents) []const mtl_shaders.CellBg {
-        return self.bgs.items;
-    }
-
-    /// Set the cursor value. If the value is null then the cursor
-    /// is hidden.
+    /// Set the cursor value. If the value is null then the cursor is hidden.
     pub fn setCursor(self: *Contents, v: ?mtl_shaders.CellText) void {
-        const cell = v orelse {
-            self.cursor = false;
-            return;
-        };
+        self.fg_rows.lists[0].clearRetainingCapacity();
 
-        self.cursor = true;
-        self.text.items[0] = cell;
+        if (v) |cell| {
+            self.fg_rows.lists[0].appendAssumeCapacity(cell);
+        }
     }
 
-    /// Get the cell contents for the given type and coordinate.
-    pub fn get(
-        self: *const Contents,
-        comptime key: Key,
-        coord: terminal.Coordinate,
-    ) ?key.CellType() {
-        const mapping = self.map[self.index(coord)].array.get(key);
-        if (!mapping.set) return null;
-        return switch (key) {
-            .bg => self.bgs.items[mapping.index],
-
-            .text,
-            .underline,
-            .strikethrough,
-            => self.text.items[mapping.index],
-        };
-    }
-
-    /// Set the cell contents for a given type of content at a given
-    /// coordinate (provided by the celll contents).
-    pub fn set(
+    /// Add a cell to the appropriate list. Adding the same cell twice will
+    /// result in duplication in the vertex buffer. The caller should clear
+    /// the corresponding row with Contents.clear to remove old cells first.
+    pub fn add(
         self: *Contents,
         alloc: Allocator,
         comptime key: Key,
         cell: key.CellType(),
     ) !void {
-        const mapping = self.map[
-            self.index(.{
-                .x = cell.grid_pos[0],
-                .y = cell.grid_pos[1],
-            })
-        ].array.getPtr(key);
+        const y = cell.grid_pos[1];
 
-        // Get our list of cells based on the key (comptime).
-        const list = &@field(self, switch (key) {
-            .bg => "bgs",
-            .text, .underline, .strikethrough => "text",
-        });
+        assert(y < self.size.rows);
 
-        // If this content type is already set on this cell, we can
-        // simply update the pre-existing index in the list to the new
-        // contents.
-        if (mapping.set) {
-            list.items[mapping.index] = cell;
-            return;
+        switch (key) {
+            .bg => try self.bg_rows.lists[y].append(alloc, cell),
+
+            .text,
+            .underline,
+            .strikethrough,
+            // We have a special list containing the cursor cell at the start
+            // of our fg row pool, so we need to add 1 to the y to get the
+            // correct index.
+            => try self.fg_rows.lists[y + 1].append(alloc, cell),
         }
-
-        // Otherwise we need to append the new cell to the list.
-        const idx: u31 = @intCast(list.items.len);
-        try list.append(alloc, cell);
-        mapping.* = .{ .set = true, .index = idx };
     }
 
     /// Clear all of the cell contents for a given row.
-    ///
-    /// Due to the way this works internally, it is best to clear rows
-    /// from the bottom up. This is because when we clear a row, we
-    /// swap remove the last element in the list and then update the
-    /// mapping for the swapped element. If we clear from the top down,
-    /// then we would have to update the mapping for every element in
-    /// the list. If we clear from the bottom up, then we only have to
-    /// update the mapping for the last element in the list.
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
-        const start_idx = self.index(.{ .x = 0, .y = y });
-        const end_idx = start_idx + self.size.columns;
-        const maps = self.map[start_idx..end_idx];
-        for (0..self.size.columns) |x| {
-            // It is better to clear from the right left due to the same
-            // reasons noted for bottom-up clearing in the doc comment.
-            const rev_x = self.size.columns - x - 1;
-            const map = &maps[rev_x];
+        assert(y < self.size.rows);
 
-            var it = map.array.iterator();
-            while (it.next()) |entry| {
-                if (!entry.value.set) continue;
-
-                // This value is no longer set
-                entry.value.set = false;
-
-                // Remove the value at index. This does a "swap remove"
-                // which swaps the last element in to this place. This is
-                // important because after this we need to update the mapping
-                // for the swapped element.
-                const original_index = entry.value.index;
-                const coord_: ?terminal.Coordinate = switch (entry.key) {
-                    .bg => bg: {
-                        _ = self.bgs.swapRemove(original_index);
-                        if (self.bgs.items.len == original_index) break :bg null;
-                        const new = self.bgs.items[original_index];
-                        break :bg .{ .x = new.grid_pos[0], .y = new.grid_pos[1] };
-                    },
-
-                    .text,
-                    .underline,
-                    .strikethrough,
-                    => text: {
-                        _ = self.text.swapRemove(original_index);
-                        if (self.text.items.len == original_index) break :text null;
-                        const new = self.text.items[original_index];
-                        break :text .{ .x = new.grid_pos[0], .y = new.grid_pos[1] };
-                    },
-                };
-
-                // If we have the coordinate of the swapped element, then
-                // we need to update it to point at its new index, which is
-                // the index of the element we just removed.
-                //
-                // The reason we wouldn't have a coordinate is if we are
-                // removing the last element in the array, then nothing
-                // is swapped in and nothing needs to be updated.
-                if (coord_) |coord| {
-                    const old_index = switch (entry.key) {
-                        .bg => self.bgs.items.len,
-                        .text, .underline, .strikethrough => self.text.items.len,
-                    };
-                    var old_it = self.map[self.index(coord)].array.iterator();
-                    while (old_it.next()) |old_entry| {
-                        if (old_entry.value.set and
-                            old_entry.value.index == old_index and
-                            entry.key.sharedData(old_entry.key))
-                        {
-                            old_entry.value.index = original_index;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        self.bg_rows.lists[y].clearRetainingCapacity();
+        // We have a special list containing the cursor cell at the start
+        // of our fg row pool, so we need to add 1 to the y to get the
+        // correct index.
+        self.fg_rows.lists[y + 1].clearRetainingCapacity();
     }
-
-    fn index(self: *const Contents, coord: terminal.Coordinate) usize {
-        return coord.y * self.size.columns + coord.x;
-    }
-
-    /// The mapping of a cell at a specific coordinate to the index in the
-    /// vertex arrays where the cell content is at, if it is set.
-    const Map = struct {
-        /// The set of cell content mappings for a given cell for every
-        /// possible key. This is used to determine if a cell has a given
-        /// type of content (i.e. an underlyine styling) and if so what index
-        /// in the cells array that content is at.
-        const Array = std.EnumArray(Key, Mapping);
-
-        /// The mapping for a given key consists of a bit indicating if the
-        /// content is set and the index in the cells array that the content
-        /// is at. We pack this into a 32-bit integer so we only use 4 bytes
-        /// per possible cell content type.
-        const Mapping = packed struct(u32) {
-            set: bool = false,
-            index: u31 = 0,
-        };
-
-        /// The backing array of mappings.
-        array: Array = Array.initFill(.{}),
-
-        pub fn empty(self: *Map) bool {
-            var it = self.array.iterator();
-            while (it.next()) |entry| {
-                if (entry.value.set) return false;
-            }
-
-            return true;
-        }
-    };
 };
 
 test Contents {
@@ -327,40 +228,60 @@ test Contents {
     const rows = 10;
     const cols = 10;
 
-    var c = try Contents.init(alloc);
+    var c: Contents = .{};
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 
-    // Assert that get returns null for everything.
+    // We should start off empty after resizing.
     for (0..rows) |y| {
-        for (0..cols) |x| {
-            try testing.expect(c.get(.bg, .{
-                .x = @intCast(x),
-                .y = @intCast(y),
-            }) == null);
-        }
+        try testing.expect(c.bg_rows.lists[y].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
     }
+    // And the cursor row should have a capacity of 1 and also be empty.
+    try testing.expect(c.fg_rows.lists[0].capacity == 1);
+    try testing.expect(c.fg_rows.lists[0].items.len == 0);
 
-    // Set some contents
-    const cell: mtl_shaders.CellBg = .{
+    // Add some contents.
+    const bg_cell: mtl_shaders.CellBg = .{
         .mode = .rgb,
         .grid_pos = .{ 4, 1 },
         .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.set(alloc, .bg, cell);
-    try testing.expectEqual(cell, c.get(.bg, .{ .x = 4, .y = 1 }).?);
+    const fg_cell: mtl_shaders.CellText = .{
+        .mode = .fg,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+        .bg_color = .{ 0, 0, 0, 1 },
+    };
+    try c.add(alloc, .bg, bg_cell);
+    try c.add(alloc, .text, fg_cell);
+    try testing.expectEqual(bg_cell, c.bg_rows.lists[1].items[0]);
+    // The fg row index is offset by 1 because of the cursor list.
+    try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
 
-    // Can clear it
+    // And we should be able to clear it.
     c.clear(1);
     for (0..rows) |y| {
-        for (0..cols) |x| {
-            try testing.expect(c.get(.bg, .{
-                .x = @intCast(x),
-                .y = @intCast(y),
-            }) == null);
-        }
+        try testing.expect(c.bg_rows.lists[y].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
     }
+
+    // Add a cursor.
+    const cursor_cell: mtl_shaders.CellText = .{
+        .mode = .cursor,
+        .grid_pos = .{ 2, 3 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+        .bg_color = .{ 0, 0, 0, 1 },
+    };
+    c.setCursor(cursor_cell);
+    try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
+
+    // And remove it.
+    c.setCursor(null);
+    try testing.expectEqual(0, c.fg_rows.lists[0].items.len);
 }
 
 test "Contents clear retains other content" {
@@ -370,7 +291,7 @@ test "Contents clear retains other content" {
     const rows = 10;
     const cols = 10;
 
-    var c = try Contents.init(alloc);
+    var c: Contents = .{};
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 
@@ -387,12 +308,12 @@ test "Contents clear retains other content" {
         .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.set(alloc, .bg, cell1);
-    try c.set(alloc, .bg, cell2);
+    try c.add(alloc, .bg, cell1);
+    try c.add(alloc, .bg, cell2);
     c.clear(1);
 
-    // Row 2 should still be valid.
-    try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
+    // Row 2 should still contain its cell.
+    try testing.expectEqual(cell2, c.bg_rows.lists[2].items[0]);
 }
 
 test "Contents clear last added content" {
@@ -402,7 +323,7 @@ test "Contents clear last added content" {
     const rows = 10;
     const cols = 10;
 
-    var c = try Contents.init(alloc);
+    var c: Contents = .{};
     try c.resize(alloc, .{ .rows = rows, .columns = cols });
     defer c.deinit(alloc);
 
@@ -419,63 +340,10 @@ test "Contents clear last added content" {
         .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.set(alloc, .bg, cell1);
-    try c.set(alloc, .bg, cell2);
+    try c.add(alloc, .bg, cell1);
+    try c.add(alloc, .bg, cell2);
     c.clear(2);
 
-    // Row 2 should still be valid.
-    try testing.expectEqual(cell1, c.get(.bg, .{ .x = 4, .y = 1 }).?);
-}
-
-test "Contents clear modifies same data array" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    const rows = 10;
-    const cols = 10;
-
-    var c = try Contents.init(alloc);
-    try c.resize(alloc, .{ .rows = rows, .columns = cols });
-    defer c.deinit(alloc);
-
-    // Set some contents
-    const cell1: mtl_shaders.CellBg = .{
-        .mode = .rgb,
-        .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
-        .color = .{ 0, 0, 0, 1 },
-    };
-    const cell2: mtl_shaders.CellBg = .{
-        .mode = .rgb,
-        .grid_pos = .{ 4, 2 },
-        .cell_width = 1,
-        .color = .{ 0, 0, 0, 1 },
-    };
-    try c.set(alloc, .bg, cell1);
-    try c.set(alloc, .bg, cell2);
-
-    const fg1: mtl_shaders.CellText = text: {
-        var cell: mtl_shaders.CellText = undefined;
-        cell.grid_pos = .{ 4, 1 };
-        break :text cell;
-    };
-    const fg2: mtl_shaders.CellText = text: {
-        var cell: mtl_shaders.CellText = undefined;
-        cell.grid_pos = .{ 4, 2 };
-        break :text cell;
-    };
-    try c.set(alloc, .text, fg1);
-    try c.set(alloc, .text, fg2);
-
-    c.clear(1);
-
-    // Should have all of row 2
-    try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
-    try testing.expectEqual(fg2, c.get(.text, .{ .x = 4, .y = 2 }).?);
-}
-
-test "Contents.Map size" {
-    // We want to be mindful of when this increases because it affects
-    // renderer memory significantly.
-    try std.testing.expectEqual(@as(usize, 16), @sizeOf(Contents.Map));
+    // Row 1 should still contain its cell.
+    try testing.expectEqual(cell1, c.bg_rows.lists[1].items[0]);
 }

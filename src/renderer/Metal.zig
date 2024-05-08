@@ -566,9 +566,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         };
     };
 
-    var cells = try mtl_cell.Contents.init(alloc);
-    errdefer cells.deinit(alloc);
-
     const display_link: ?DisplayLink = switch (builtin.os.tag) {
         .macos => if (options.config.vsync)
             try macos.video.DisplayLink.createWithActiveCGDisplays()
@@ -592,7 +589,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .current_background_color = options.config.background,
 
         // Render state
-        .cells = cells,
+        .cells = .{},
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
@@ -1036,11 +1033,9 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // log.debug("drawing frame index={}", .{self.gpu_state.frame_index});
 
     // Setup our frame data
-    const cells_bg = self.cells.bgCells();
-    const cells_fg = self.cells.fgCells();
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    try frame.cells_bg.sync(self.gpu_state.device, cells_bg);
-    try frame.cells.sync(self.gpu_state.device, cells_fg);
+    const bg_count = try frame.cells_bg.syncFromArrayLists(self.gpu_state.device, self.cells.bg_rows.lists);
+    const fg_count = try frame.cells.syncFromArrayLists(self.gpu_state.device, self.cells.fg_rows.lists);
 
     // If we have custom shaders, update the animation time.
     if (self.custom_shader_state) |*state| {
@@ -1139,13 +1134,13 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, cells_bg.len);
+        try self.drawCellBgs(encoder, frame, bg_count);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
 
         // Then draw fg cells
-        try self.drawCellFgs(encoder, frame, cells_fg.len);
+        try self.drawCellFgs(encoder, frame, fg_count);
 
         // Then draw remaining images
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
@@ -2171,7 +2166,7 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        try self.cells.set(self.alloc, .bg, .{
+        try self.cells.add(self.alloc, .bg, .{
             .mode = .rgb,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2186,18 +2181,24 @@ fn updateCell(
         @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
     };
 
-    // If the cell has a character, draw it
-    if (cell.hasText()) fg: {
+    // If the shaper cell has a glyph, draw it.
+    if (shaper_cell.glyph_index) |glyph_index| glyph: {
         // Render
         const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
-            shaper_cell.glyph_index orelse break :fg,
+            glyph_index,
             .{
                 .grid_metrics = self.grid_metrics,
                 .thicken = self.config.font_thicken,
             },
         );
+
+        // If the glyph is 0 width or height, it will be invisible
+        // when drawn, so don't bother adding it to the buffer.
+        if (render.glyph.width == 0 or render.glyph.height == 0) {
+            break :glyph;
+        }
 
         const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
             render.presentation,
@@ -2208,7 +2209,7 @@ fn updateCell(
             .constrained => .fg_constrained,
         };
 
-        try self.cells.set(self.alloc, .text, .{
+        try self.cells.add(self.alloc, .text, .{
             .mode = mode,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2245,7 +2246,7 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        try self.cells.set(self.alloc, .underline, .{
+        try self.cells.add(self.alloc, .underline, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2268,7 +2269,7 @@ fn updateCell(
             },
         );
 
-        try self.cells.set(self.alloc, .strikethrough, .{
+        try self.cells.add(self.alloc, .strikethrough, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .cell_width = cell.gridWidth(),
@@ -2366,7 +2367,7 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    try self.cells.set(self.alloc, .bg, .{
+    try self.cells.add(self.alloc, .bg, .{
         .mode = .rgb,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
@@ -2374,7 +2375,7 @@ fn addPreeditCell(
     });
 
     // Add our text
-    try self.cells.set(self.alloc, .text, .{
+    try self.cells.add(self.alloc, .text, .{
         .mode = .fg,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
         .cell_width = if (cp.wide) 2 else 1,
