@@ -194,7 +194,7 @@ const DerivedConfig = struct {
     arena: ArenaAllocator,
 
     /// For docs for these, see the associated config they are derived from.
-    original_font_size: u8,
+    original_font_size: f32,
     keybind: configpkg.Keybinds,
     clipboard_read: configpkg.ClipboardAccess,
     clipboard_write: configpkg.ClipboardAccess,
@@ -321,8 +321,8 @@ pub fn init(
     // The font size we desire along with the DPI determined for the surface
     const font_size: font.face.DesiredSize = .{
         .points = config.@"font-size",
-        .xdpi = @intFromFloat(x_dpi),
-        .ydpi = @intFromFloat(y_dpi),
+        .xdpi = x_dpi,
+        .ydpi = y_dpi,
     };
 
     // Setup our font group. This will reuse an existing font group if
@@ -1703,8 +1703,8 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
     // Update our font size which is dependent on the DPI
     const size = size: {
         var size = self.font_size;
-        size.xdpi = @intFromFloat(x_dpi);
-        size.ydpi = @intFromFloat(y_dpi);
+        size.xdpi = x_dpi;
+        size.ydpi = y_dpi;
         break :size size;
     };
 
@@ -3011,7 +3011,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             log.debug("increase font size={}", .{delta});
 
             var size = self.font_size;
-            size.points +|= delta;
+            size.points = size.points + delta;
             try self.setFontSize(size);
         },
 
@@ -3019,7 +3019,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             log.debug("decrease font size={}", .{delta});
 
             var size = self.font_size;
-            size.points = @max(1, size.points -| delta);
+            size.points = @max(1, size.points - delta);
             try self.setFontSize(size);
         },
 
