@@ -34,10 +34,13 @@ pub const ParagraphStyleSpecifier = enum(c_uint) {
     base_writing_direction = 13,
 };
 
-pub const WritingDirection = enum(i8) {
+/// https://developer.apple.com/documentation/uikit/nswritingdirectionattributename?language=objc
+pub const WritingDirection = enum(c_int) {
     natural = -1,
-    left_to_right = 0,
-    right_to_left = 1,
+    ltr = 0,
+    rtl = 1,
+    lro = 2,
+    rlo = 3,
 };
 
 test ParagraphStyle {
