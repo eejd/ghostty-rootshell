@@ -44,6 +44,11 @@ pub const Shaper = struct {
     /// The shared memory used for shaping results.
     cell_buf: CellBuf,
 
+    /// The cached writing direction value for shaping. This isn't
+    /// configurable we just use this as a cache to avoid creating
+    /// and releasing many objects when shaping.
+    writing_direction: *macos.foundation.Array,
+
     const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
     const CodepointList = std.ArrayListUnmanaged(Codepoint);
     const Codepoint = struct {
@@ -172,14 +177,37 @@ pub const Shaper = struct {
         for (hardcoded_features) |name| try feats.append(name);
         for (opts.features) |name| try feats.append(name);
 
-        const run_state = try RunState.init();
-        errdefer run_state.deinit();
+        var run_state = try RunState.init();
+        errdefer run_state.deinit(alloc);
+
+        // For now we only support LTR text. If we shape RTL text then
+        // rendering will be very wrong so we need to explicitly force
+        // LTR no matter what.
+        //
+        // See: https://github.com/mitchellh/ghostty/issues/1737
+        // See: https://github.com/mitchellh/ghostty/issues/1442
+        const writing_direction = array: {
+            const dir: macos.text.WritingDirection = .lro;
+            const num = try macos.foundation.Number.create(
+                .int,
+                &@intFromEnum(dir),
+            );
+            defer num.release();
+
+            var arr_init = [_]*const macos.foundation.Number{num};
+            break :array try macos.foundation.Array.create(
+                macos.foundation.Number,
+                &arr_init,
+            );
+        };
+        errdefer writing_direction.release();
 
         return Shaper{
             .alloc = alloc,
             .cell_buf = .{},
             .run_state = run_state,
             .features = feats,
+            .writing_direction = writing_direction,
         };
     }
 
@@ -187,6 +215,7 @@ pub const Shaper = struct {
         self.cell_buf.deinit(self.alloc);
         self.run_state.deinit(self.alloc);
         self.features.deinit();
+        self.writing_direction.release();
     }
 
     pub fn runIterator(
@@ -276,8 +305,14 @@ pub const Shaper = struct {
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
         const attr_dict = dict: {
-            var keys = [_]?*const anyopaque{macos.text.StringAttribute.font.key()};
-            var values = [_]?*const anyopaque{run_font};
+            var keys = [_]?*const anyopaque{
+                macos.text.StringAttribute.font.key(),
+                macos.text.StringAttribute.writing_direction.key(),
+            };
+            var values = [_]?*const anyopaque{
+                run_font,
+                self.writing_direction,
+            };
             break :dict try macos.foundation.Dictionary.create(&keys, &values);
         };
         defer attr_dict.release();
