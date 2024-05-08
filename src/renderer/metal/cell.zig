@@ -195,12 +195,11 @@ pub const Contents = struct {
         const y = cell.grid_pos[1];
 
         switch (key) {
-            .bg
-            => try self.bg_rows.lists[y].append(alloc, cell),
+            .bg => try self.bg_rows.lists[y].append(alloc, cell),
 
             .text,
             .underline,
-            .strikethrough
+            .strikethrough,
             // We have a special list containing the cursor cell at the start
             // of our fg row pool, so we need to add 1 to the y to get the
             // correct index.
@@ -218,162 +217,129 @@ pub const Contents = struct {
     }
 };
 
-// test Contents {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     const rows = 10;
-//     const cols = 10;
-//
-//     var c = try Contents.init(alloc);
-//     try c.resize(alloc, .{ .rows = rows, .columns = cols });
-//     defer c.deinit(alloc);
-//
-//     // Assert that get returns null for everything.
-//     for (0..rows) |y| {
-//         for (0..cols) |x| {
-//             try testing.expect(c.get(.bg, .{
-//                 .x = @intCast(x),
-//                 .y = @intCast(y),
-//             }) == null);
-//         }
-//     }
-//
-//     // Set some contents
-//     const cell: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 1 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     try c.set(alloc, .bg, cell);
-//     try testing.expectEqual(cell, c.get(.bg, .{ .x = 4, .y = 1 }).?);
-//
-//     // Can clear it
-//     c.clear(1);
-//     for (0..rows) |y| {
-//         for (0..cols) |x| {
-//             try testing.expect(c.get(.bg, .{
-//                 .x = @intCast(x),
-//                 .y = @intCast(y),
-//             }) == null);
-//         }
-//     }
-// }
+test Contents {
+    const testing = std.testing;
+    const alloc = testing.allocator;
 
-// test "Contents clear retains other content" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     const rows = 10;
-//     const cols = 10;
-//
-//     var c = try Contents.init(alloc);
-//     try c.resize(alloc, .{ .rows = rows, .columns = cols });
-//     defer c.deinit(alloc);
-//
-//     // Set some contents
-//     const cell1: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 1 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     const cell2: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 2 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     try c.set(alloc, .bg, cell1);
-//     try c.set(alloc, .bg, cell2);
-//     c.clear(1);
-//
-//     // Row 2 should still be valid.
-//     try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
-// }
+    const rows = 10;
+    const cols = 10;
 
-// test "Contents clear last added content" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     const rows = 10;
-//     const cols = 10;
-//
-//     var c = try Contents.init(alloc);
-//     try c.resize(alloc, .{ .rows = rows, .columns = cols });
-//     defer c.deinit(alloc);
-//
-//     // Set some contents
-//     const cell1: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 1 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     const cell2: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 2 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     try c.set(alloc, .bg, cell1);
-//     try c.set(alloc, .bg, cell2);
-//     c.clear(2);
-//
-//     // Row 2 should still be valid.
-//     try testing.expectEqual(cell1, c.get(.bg, .{ .x = 4, .y = 1 }).?);
-// }
+    var c: Contents = .{};
+    try c.resize(alloc, .{ .rows = rows, .columns = cols });
+    defer c.deinit(alloc);
 
-// test "Contents clear modifies same data array" {
-//     const testing = std.testing;
-//     const alloc = testing.allocator;
-//
-//     const rows = 10;
-//     const cols = 10;
-//
-//     var c = try Contents.init(alloc);
-//     try c.resize(alloc, .{ .rows = rows, .columns = cols });
-//     defer c.deinit(alloc);
-//
-//     // Set some contents
-//     const cell1: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 1 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     const cell2: mtl_shaders.CellBg = .{
-//         .mode = .rgb,
-//         .grid_pos = .{ 4, 2 },
-//         .cell_width = 1,
-//         .color = .{ 0, 0, 0, 1 },
-//     };
-//     try c.set(alloc, .bg, cell1);
-//     try c.set(alloc, .bg, cell2);
-//
-//     const fg1: mtl_shaders.CellText = text: {
-//         var cell: mtl_shaders.CellText = undefined;
-//         cell.grid_pos = .{ 4, 1 };
-//         break :text cell;
-//     };
-//     const fg2: mtl_shaders.CellText = text: {
-//         var cell: mtl_shaders.CellText = undefined;
-//         cell.grid_pos = .{ 4, 2 };
-//         break :text cell;
-//     };
-//     try c.set(alloc, .text, fg1);
-//     try c.set(alloc, .text, fg2);
-//
-//     c.clear(1);
-//
-//     // Should have all of row 2
-//     try testing.expectEqual(cell2, c.get(.bg, .{ .x = 4, .y = 2 }).?);
-//     try testing.expectEqual(fg2, c.get(.text, .{ .x = 4, .y = 2 }).?);
-// }
+    // We should start off empty after resizing.
+    for (0..rows) |y| {
+        try testing.expect(c.bg_rows.lists[y].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+    }
+    // And the cursor row should have a capacity of 1 and also be empty.
+    try testing.expect(c.fg_rows.lists[0].capacity == 1);
+    try testing.expect(c.fg_rows.lists[0].items.len == 0);
 
-test "Contents.Map size" {
-    // We want to be mindful of when this increases because it affects
-    // renderer memory significantly.
-    try std.testing.expectEqual(@as(usize, 16), @sizeOf(Contents.Map));
+    // Add some contents.
+    const bg_cell: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    const fg_cell: mtl_shaders.CellText = .{
+        .mode = .fg,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+        .bg_color = .{ 0, 0, 0, 1 },
+    };
+    try c.add(alloc, .bg, bg_cell);
+    try c.add(alloc, .text, fg_cell);
+    try testing.expectEqual(bg_cell, c.bg_rows.lists[1].items[0]);
+    // The fg row index is offset by 1 because of the cursor list.
+    try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
+
+    // And we should be able to clear it.
+    c.clear(1);
+    for (0..rows) |y| {
+        try testing.expect(c.bg_rows.lists[y].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+    }
+
+    // Add a cursor.
+    const cursor_cell: mtl_shaders.CellText = .{
+        .mode = .cursor,
+        .grid_pos = .{ 2, 3 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+        .bg_color = .{ 0, 0, 0, 1 },
+    };
+    c.setCursor(cursor_cell);
+    try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
+
+    // And remove it.
+    c.setCursor(null);
+    try testing.expectEqual(0, c.fg_rows.lists[0].items.len);
+}
+
+test "Contents clear retains other content" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const rows = 10;
+    const cols = 10;
+
+    var c: Contents = .{};
+    try c.resize(alloc, .{ .rows = rows, .columns = cols });
+    defer c.deinit(alloc);
+
+    // Set some contents
+    const cell1: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    const cell2: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 2 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    try c.add(alloc, .bg, cell1);
+    try c.add(alloc, .bg, cell2);
+    c.clear(1);
+
+    // Row 2 should still contain its cell.
+    try testing.expectEqual(cell2, c.bg_rows.lists[2].items[0]);
+}
+
+test "Contents clear last added content" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const rows = 10;
+    const cols = 10;
+
+    var c: Contents = .{};
+    try c.resize(alloc, .{ .rows = rows, .columns = cols });
+    defer c.deinit(alloc);
+
+    // Set some contents
+    const cell1: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 1 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    const cell2: mtl_shaders.CellBg = .{
+        .mode = .rgb,
+        .grid_pos = .{ 4, 2 },
+        .cell_width = 1,
+        .color = .{ 0, 0, 0, 1 },
+    };
+    try c.add(alloc, .bg, cell1);
+    try c.add(alloc, .bg, cell2);
+    c.clear(2);
+
+    // Row 1 should still contain its cell.
+    try testing.expectEqual(cell1, c.bg_rows.lists[1].items[0]);
 }
