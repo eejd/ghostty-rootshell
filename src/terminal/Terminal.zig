@@ -135,6 +135,9 @@ pub const Dirty = packed struct {
     /// Screen clear of some kind. This can be due to a screen change,
     /// erase display, etc.
     clear: bool = false,
+
+    /// Set when the pre-edit is modified.
+    preedit: bool = false,
 };
 
 /// The event types that can be reported for mouse-related activities.

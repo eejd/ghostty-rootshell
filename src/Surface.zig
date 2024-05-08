@@ -1089,6 +1089,9 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
         self.renderer_state.preedit = null;
     }
 
+    // Mark preedit dirty flag
+    self.io.terminal.flags.dirty.preedit = true;
+
     // If we have no text, we're done. We queue a render in case we cleared
     // a prior preedit (likely).
     const text = preedit_ orelse {
