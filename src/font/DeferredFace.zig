@@ -371,7 +371,7 @@ pub const Wasm = struct {
         }
     }
 
-    export fn deferred_face_load(self: *DeferredFace, pts: u16) void {
+    export fn deferred_face_load(self: *DeferredFace, pts: f32) void {
         self.load(.{}, .{ .points = pts }) catch |err| {
             log.warn("error loading deferred face err={}", .{err});
             return;
