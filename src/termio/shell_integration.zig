@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const config = @import("../config.zig");
 
@@ -7,28 +8,42 @@ const log = std.log.scoped(.shell_integration);
 
 /// Shell types we support
 pub const Shell = enum {
+    bash,
     fish,
     zsh,
 };
 
+/// The result of setting up a shell integration.
+pub const ShellIntegration = struct {
+    /// The successfully-integrated shell.
+    shell: Shell,
+
+    /// The command to use to start the shell with the integration.
+    /// In most cases this is identical to the command given but for
+    /// bash in particular it may be different.
+    ///
+    /// The memory is allocated in the arena given to setup.
+    command: []const u8,
+};
+
 /// Setup the command execution environment for automatic
-/// integrated shell integration. This returns true if shell
-/// integration was successful. False could mean many things:
-/// the shell type wasn't detected, etc.
+/// integrated shell integration and return a ShellIntegration
+/// struct describing the integration.  If integration fails
+/// (shell type couldn't be detected, etc.), this will return null.
 ///
-/// The allocator is only used for temporary values, so it should
-/// be given a general purpose allocator. No allocated memory remains
-/// after this function returns except anything allocated by the
-/// EnvMap.
+/// The allocator is used for temporary values and to allocate values
+/// in the ShellIntegration result. It is expected to be an arena to
+/// simplify cleanup.
 pub fn setup(
-    alloc: Allocator,
+    alloc_arena: Allocator,
     resource_dir: []const u8,
     command: []const u8,
     env: *EnvMap,
     force_shell: ?Shell,
     features: config.ShellIntegrationFeatures,
-) !?Shell {
+) !?ShellIntegration {
     const exe = if (force_shell) |shell| switch (shell) {
+        .bash => "bash",
         .fish => "fish",
         .zsh => "zsh",
     } else exe: {
@@ -38,15 +53,34 @@ pub fn setup(
         break :exe std.fs.path.basename(command[0..idx]);
     };
 
-    const shell: Shell = shell: {
+    const result: ShellIntegration = shell: {
+        if (std.mem.eql(u8, "bash", exe)) {
+            const new_command = try setupBash(
+                alloc_arena,
+                command,
+                resource_dir,
+                env,
+            ) orelse return null;
+            break :shell .{
+                .shell = .bash,
+                .command = new_command,
+            };
+        }
+
         if (std.mem.eql(u8, "fish", exe)) {
-            try setupFish(alloc, resource_dir, env);
-            break :shell .fish;
+            try setupFish(alloc_arena, resource_dir, env);
+            break :shell .{
+                .shell = .fish,
+                .command = command,
+            };
         }
 
         if (std.mem.eql(u8, "zsh", exe)) {
             try setupZsh(resource_dir, env);
-            break :shell .zsh;
+            break :shell .{
+                .shell = .zsh,
+                .command = command,
+            };
         }
 
         return null;
@@ -57,7 +91,292 @@ pub fn setup(
     if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
     if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
 
-    return shell;
+    return result;
+}
+
+test "force shell" {
+    const testing = std.testing;
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    inline for (@typeInfo(Shell).Enum.fields) |field| {
+        const shell = @field(Shell, field.name);
+        const result = try setup(alloc, ".", "sh", &env, shell, .{});
+        try testing.expectEqual(shell, result.?.shell);
+    }
+}
+
+/// Setup the bash automatic shell integration. This works by
+/// starting bash in POSIX mode and using the ENV environment
+/// variable to load our bash integration script. This prevents
+/// bash from loading its normal startup files, which becomes
+/// our script's responsibility (along with disabling POSIX
+/// mode).
+///
+/// This returns a new (allocated) shell command string that
+/// enables the integration or null if integration failed.
+fn setupBash(
+    alloc: Allocator,
+    command: []const u8,
+    resource_dir: []const u8,
+    env: *EnvMap,
+) !?[]const u8 {
+    // Accumulates the arguments that will form the final shell command line.
+    // We can build this list on the stack because we're just temporarily
+    // referencing other slices, but we can fall back to heap in extreme cases.
+    var args_alloc = std.heap.stackFallback(1024, alloc);
+    var args = try std.ArrayList([]const u8).initCapacity(args_alloc.get(), 2);
+    defer args.deinit();
+
+    // Iterator that yields each argument in the original command line.
+    // This will allocate once proportionate to the command line length.
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(alloc, command);
+    defer iter.deinit();
+
+    // Start accumulating arguments with the executable and `--posix` mode flag.
+    if (iter.next()) |exe| {
+        try args.append(exe);
+    } else return null;
+    try args.append("--posix");
+
+    // Stores the list of intercepted command line flags that will be passed
+    // to our shell integration script: --posix --norc --noprofile
+    // We always include at least "1" so the script can differentiate between
+    // being manually sourced or automatically injected (from here).
+    var inject = try std.BoundedArray(u8, 32).init(0);
+    try inject.appendSlice("1");
+
+    var posix = false;
+
+    // Some additional cases we don't yet cover:
+    //
+    //  - If the `c` shell option is set, interactive mode is disabled, so skip
+    //    loading our shell integration.
+    //  - If additional file arguments are provided (after a `-` or `--` flag),
+    //    and the `i` shell option isn't being explicitly set, we can assume a
+    //    non-interactive shell session and skip loading our shell integration.
+    while (iter.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--posix")) {
+            try inject.appendSlice(" --posix");
+            posix = true;
+        } else if (std.mem.eql(u8, arg, "--norc")) {
+            try inject.appendSlice(" --norc");
+        } else if (std.mem.eql(u8, arg, "--noprofile")) {
+            try inject.appendSlice(" --noprofile");
+        } else if (std.mem.eql(u8, arg, "--rcfile") or std.mem.eql(u8, arg, "--init-file")) {
+            if (iter.next()) |rcfile| {
+                try env.put("GHOSTTY_BASH_RCFILE", rcfile);
+            }
+        } else {
+            try args.append(arg);
+        }
+    }
+    try env.put("GHOSTTY_BASH_INJECT", inject.slice());
+
+    // In POSIX mode, HISTFILE defaults to ~/.sh_history.
+    if (!posix and env.get("HISTFILE") == null) {
+        try env.put("HISTFILE", "~/.bash_history");
+        try env.put("GHOSTTY_BASH_UNEXPORT_HISTFILE", "1");
+    }
+
+    // Preserve the existing ENV value in POSIX mode.
+    if (env.get("ENV")) |old| {
+        if (posix) {
+            try env.put("GHOSTTY_BASH_ENV", old);
+        }
+    }
+
+    // Set our new ENV to point to our integration script.
+    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const integ_dir = try std.fmt.bufPrint(
+        &path_buf,
+        "{s}/shell-integration/bash/ghostty.bash",
+        .{resource_dir},
+    );
+    try env.put("ENV", integ_dir);
+
+    // Join the acculumated arguments to form the final command string.
+    return try std.mem.join(alloc, " ", args.items);
+}
+
+test "bash" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    const command = try setupBash(alloc, "bash", ".", &env);
+    defer if (command) |c| alloc.free(c);
+
+    try testing.expectEqualStrings("bash --posix", command.?);
+    try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
+    try testing.expectEqualStrings("1", env.get("GHOSTTY_BASH_INJECT").?);
+}
+
+test "bash: inject flags" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // bash --posix
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        const command = try setupBash(alloc, "bash --posix", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix", command.?);
+        try testing.expectEqualStrings("1 --posix", env.get("GHOSTTY_BASH_INJECT").?);
+    }
+
+    // bash --norc
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        const command = try setupBash(alloc, "bash --norc", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix", command.?);
+        try testing.expectEqualStrings("1 --norc", env.get("GHOSTTY_BASH_INJECT").?);
+    }
+
+    // bash --noprofile
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        const command = try setupBash(alloc, "bash --noprofile", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix", command.?);
+        try testing.expectEqualStrings("1 --noprofile", env.get("GHOSTTY_BASH_INJECT").?);
+    }
+}
+
+test "bash: rcfile" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    // bash --rcfile
+    {
+        const command = try setupBash(alloc, "bash --rcfile profile.sh", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix", command.?);
+        try testing.expectEqualStrings("profile.sh", env.get("GHOSTTY_BASH_RCFILE").?);
+    }
+
+    // bash --init-file
+    {
+        const command = try setupBash(alloc, "bash --init-file profile.sh", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix", command.?);
+        try testing.expectEqualStrings("profile.sh", env.get("GHOSTTY_BASH_RCFILE").?);
+    }
+}
+
+test "bash: HISTFILE" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // HISTFILE unset
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        const command = try setupBash(alloc, "bash", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("~/.bash_history", env.get("HISTFILE").?);
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE").?);
+    }
+
+    // HISTFILE set
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        try env.put("HISTFILE", "my_history");
+
+        const command = try setupBash(alloc, "bash", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
+        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
+    }
+
+    // HISTFILE unset (POSIX mode)
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        const command = try setupBash(alloc, "bash --posix", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expect(env.get("HISTFILE") == null);
+        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
+    }
+
+    // HISTFILE set (POSIX mode)
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        try env.put("HISTFILE", "my_history");
+
+        const command = try setupBash(alloc, "bash --posix", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
+        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
+    }
+}
+
+test "bash: preserve ENV" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    const original_env = "original-env.bash";
+
+    // POSIX mode
+    {
+        try env.put("ENV", original_env);
+        const command = try setupBash(alloc, "bash --posix", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expect(std.mem.indexOf(u8, command.?, "--posix") != null);
+        try testing.expect(std.mem.indexOf(u8, env.get("GHOSTTY_BASH_INJECT").?, "posix") != null);
+        try testing.expectEqualStrings(original_env, env.get("GHOSTTY_BASH_ENV").?);
+        try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
+    }
+
+    env.remove("GHOSTTY_BASH_ENV");
+
+    // Not POSIX mode
+    {
+        try env.put("ENV", original_env);
+        const command = try setupBash(alloc, "bash", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expect(std.mem.indexOf(u8, command.?, "--posix") != null);
+        try testing.expect(std.mem.indexOf(u8, env.get("GHOSTTY_BASH_INJECT").?, "posix") == null);
+        try testing.expect(env.get("GHOSTTY_BASH_ENV") == null);
+        try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
+    }
 }
 
 /// Setup the fish automatic shell integration. This works by
@@ -65,7 +384,7 @@ pub fn setup(
 /// Fish will automatically load configuration in XDG_DATA_DIRS
 /// "fish/vendor_conf.d/*.fish".
 fn setupFish(
-    alloc_gpa: Allocator,
+    alloc_arena: Allocator,
     resource_dir: []const u8,
     env: *EnvMap,
 ) !void {
@@ -91,7 +410,7 @@ fn setupFish(
         // 4K is a reasonable size for this for most cases. However, env
         // vars can be significantly larger so if we have to we fall
         // back to a heap allocated value.
-        var stack_alloc = std.heap.stackFallback(4096, alloc_gpa);
+        var stack_alloc = std.heap.stackFallback(4096, alloc_arena);
         const alloc = stack_alloc.get();
         const prepended = try std.fmt.allocPrint(
             alloc,
@@ -127,17 +446,4 @@ fn setupZsh(
         .{resource_dir},
     );
     try env.put("ZDOTDIR", integ_dir);
-}
-
-test "force shell" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var env = EnvMap.init(alloc);
-    defer env.deinit();
-
-    inline for (@typeInfo(Shell).Enum.fields) |field| {
-        const shell = @field(Shell, field.name);
-        try testing.expectEqual(shell, setup(alloc, ".", "sh", &env, shell, .{}));
-    }
 }

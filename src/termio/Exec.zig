@@ -907,12 +907,6 @@ const Subprocess = struct {
         errdefer arena.deinit();
         const alloc = arena.allocator();
 
-        // Determine the shell command we're executing
-        const shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
-            .windows => "cmd.exe",
-            else => "sh",
-        };
-
         // Set our env vars. For Flatpak builds running in Flatpak we don't
         // inherit our environment because the login shell on the host side
         // will get it.
@@ -1017,6 +1011,47 @@ const Subprocess = struct {
 
             // Remove this so that running `ghostty` within Ghostty works.
             env.remove("GHOSTTY_MAC_APP");
+        }
+
+        // Setup our shell integration, if we can.
+        const integrated_shell: ?shell_integration.Shell, const shell_command: []const u8 = shell: {
+            const default_shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
+                .windows => "cmd.exe",
+                else => "sh",
+            };
+
+            const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
+                .none => break :shell .{ null, default_shell_command },
+                .detect => null,
+                .bash => .bash,
+                .fish => .fish,
+                .zsh => .zsh,
+            };
+
+            const dir = opts.resources_dir orelse break :shell .{
+                null,
+                default_shell_command,
+            };
+
+            const integration = try shell_integration.setup(
+                alloc,
+                dir,
+                default_shell_command,
+                &env,
+                force,
+                opts.full_config.@"shell-integration-features",
+            ) orelse break :shell .{ null, default_shell_command };
+
+            break :shell .{ integration.shell, integration.command };
+        };
+
+        if (integrated_shell) |shell| {
+            log.info(
+                "shell integration automatically injected shell={}",
+                .{shell},
+            );
+        } else if (opts.full_config.@"shell-integration" != .none) {
+            log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }
 
         // Build our args list
@@ -1156,35 +1191,6 @@ const Subprocess = struct {
             try alloc.dupe(u8, cwd)
         else
             null;
-
-        // Setup our shell integration, if we can.
-        const shell_integrated: ?shell_integration.Shell = shell: {
-            const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
-                .none => break :shell null,
-                .detect => null,
-                .fish => .fish,
-                .zsh => .zsh,
-            };
-
-            const dir = opts.resources_dir orelse break :shell null;
-
-            break :shell try shell_integration.setup(
-                gpa,
-                dir,
-                shell_command,
-                &env,
-                force,
-                opts.full_config.@"shell-integration-features",
-            );
-        };
-        if (shell_integrated) |shell| {
-            log.info(
-                "shell integration automatically injected shell={}",
-                .{shell},
-            );
-        } else if (opts.full_config.@"shell-integration" != .none) {
-            log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
-        }
 
         // Our screen size should be our padded size
         const padded_size = opts.screen_size.subPadding(opts.padding);
