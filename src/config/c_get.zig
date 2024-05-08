@@ -42,8 +42,8 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
             ptr.* = @intCast(value);
         },
 
-        f32, f64 => {
-            const ptr: *f64 = @ptrCast(@alignCast(ptr_raw));
+        f32, f64 => |Float| {
+            const ptr: *Float = @ptrCast(@alignCast(ptr_raw));
             ptr.* = @floatCast(value);
         },
 
@@ -102,9 +102,9 @@ test "u8" {
     defer c.deinit();
     c.@"font-size" = 24;
 
-    var cval: c_uint = undefined;
+    var cval: f32 = undefined;
     try testing.expect(get(&c, .@"font-size", &cval));
-    try testing.expectEqual(@as(c_uint, 24), cval);
+    try testing.expectEqual(@as(f32, 24), cval);
 }
 
 test "enum" {

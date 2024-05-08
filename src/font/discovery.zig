@@ -125,7 +125,7 @@ pub const Descriptor = struct {
         }
         if (self.size > 0) assert(pat.add(
             .size,
-            .{ .integer = @round(self.size) },
+            .{ .integer = @intFromFloat(@round(self.size)) },
             false,
         ));
         if (self.bold) assert(pat.add(
