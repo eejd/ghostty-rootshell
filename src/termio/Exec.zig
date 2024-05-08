@@ -907,12 +907,6 @@ const Subprocess = struct {
         errdefer arena.deinit();
         const alloc = arena.allocator();
 
-        // Determine the shell command we're executing
-        var shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
-            .windows => "cmd.exe",
-            else => "sh",
-        };
-
         // Set our env vars. For Flatpak builds running in Flatpak we don't
         // inherit our environment because the login shell on the host side
         // will get it.
@@ -1020,36 +1014,42 @@ const Subprocess = struct {
         }
 
         // Setup our shell integration, if we can.
-        const integrated_shell: ?shell_integration.ShellIntegration = shell: {
+        const integrated_shell: ?shell_integration.Shell, const shell_command: []const u8 = shell: {
+            const default_shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
+                .windows => "cmd.exe",
+                else => "sh",
+            };
+
             const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
-                .none => break :shell null,
+                .none => break :shell .{ null, default_shell_command },
                 .detect => null,
                 .bash => .bash,
                 .fish => .fish,
                 .zsh => .zsh,
             };
 
-            const dir = opts.resources_dir orelse break :shell null;
+            const dir = opts.resources_dir orelse break :shell .{
+                null,
+                default_shell_command,
+            };
 
-            break :shell try shell_integration.setup(
-                gpa,
+            const integration = try shell_integration.setup(
+                alloc,
                 dir,
-                shell_command,
+                default_shell_command,
                 &env,
                 force,
                 opts.full_config.@"shell-integration-features",
-            );
+            ) orelse break :shell .{ null, default_shell_command };
+
+            break :shell .{ integration.shell, integration.command };
         };
-        defer if (integrated_shell) |shell| shell.deinit(gpa);
 
         if (integrated_shell) |shell| {
             log.info(
                 "shell integration automatically injected shell={}",
-                .{shell.shell},
+                .{shell},
             );
-            if (shell.command) |command| {
-                shell_command = command;
-            }
         } else if (opts.full_config.@"shell-integration" != .none) {
             log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }

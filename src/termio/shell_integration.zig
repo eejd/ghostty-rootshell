@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const config = @import("../config.zig");
 
@@ -12,18 +13,17 @@ pub const Shell = enum {
     zsh,
 };
 
+/// The result of setting up a shell integration.
 pub const ShellIntegration = struct {
     /// The successfully-integrated shell.
     shell: Shell,
 
-    /// A revised, integration-aware shell command.
-    command: ?[]const u8 = null,
-
-    pub fn deinit(self: ShellIntegration, alloc: Allocator) void {
-        if (self.command) |command| {
-            alloc.free(command);
-        }
-    }
+    /// The command to use to start the shell with the integration.
+    /// In most cases this is identical to the command given but for
+    /// bash in particular it may be different.
+    ///
+    /// The memory is allocated in the arena given to setup.
+    command: []const u8,
 };
 
 /// Setup the command execution environment for automatic
@@ -32,9 +32,10 @@ pub const ShellIntegration = struct {
 /// (shell type couldn't be detected, etc.), this will return null.
 ///
 /// The allocator is used for temporary values and to allocate values
-/// in the ShellIntegration result.
+/// in the ShellIntegration result. It is expected to be an arena to
+/// simplify cleanup.
 pub fn setup(
-    alloc: Allocator,
+    alloc_arena: Allocator,
     resource_dir: []const u8,
     command: []const u8,
     env: *EnvMap,
@@ -52,22 +53,34 @@ pub fn setup(
         break :exe std.fs.path.basename(command[0..idx]);
     };
 
-    var new_command: ?[]const u8 = null;
-    const shell: Shell = shell: {
+    const result: ShellIntegration = shell: {
         if (std.mem.eql(u8, "bash", exe)) {
-            new_command = try setupBash(alloc, command, resource_dir, env);
-            if (new_command == null) return null;
-            break :shell .bash;
+            const new_command = try setupBash(
+                alloc_arena,
+                command,
+                resource_dir,
+                env,
+            ) orelse return null;
+            break :shell .{
+                .shell = .bash,
+                .command = new_command,
+            };
         }
 
         if (std.mem.eql(u8, "fish", exe)) {
-            try setupFish(alloc, resource_dir, env);
-            break :shell .fish;
+            try setupFish(alloc_arena, resource_dir, env);
+            break :shell .{
+                .shell = .fish,
+                .command = command,
+            };
         }
 
         if (std.mem.eql(u8, "zsh", exe)) {
             try setupZsh(resource_dir, env);
-            break :shell .zsh;
+            break :shell .{
+                .shell = .zsh,
+                .command = command,
+            };
         }
 
         return null;
@@ -78,15 +91,15 @@ pub fn setup(
     if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
     if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
 
-    return .{
-        .shell = shell,
-        .command = new_command,
-    };
+    return result;
 }
 
 test "force shell" {
     const testing = std.testing;
-    const alloc = testing.allocator;
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
     var env = EnvMap.init(alloc);
     defer env.deinit();
@@ -94,12 +107,7 @@ test "force shell" {
     inline for (@typeInfo(Shell).Enum.fields) |field| {
         const shell = @field(Shell, field.name);
         const result = try setup(alloc, ".", "sh", &env, shell, .{});
-
-        try testing.expect(result != null);
-        if (result) |r| {
-            try testing.expectEqual(shell, r.shell);
-            r.deinit(alloc);
-        }
+        try testing.expectEqual(shell, result.?.shell);
     }
 }
 
@@ -376,7 +384,7 @@ test "bash: preserve ENV" {
 /// Fish will automatically load configuration in XDG_DATA_DIRS
 /// "fish/vendor_conf.d/*.fish".
 fn setupFish(
-    alloc_gpa: Allocator,
+    alloc_arena: Allocator,
     resource_dir: []const u8,
     env: *EnvMap,
 ) !void {
@@ -402,7 +410,7 @@ fn setupFish(
         // 4K is a reasonable size for this for most cases. However, env
         // vars can be significantly larger so if we have to we fall
         // back to a heap allocated value.
-        var stack_alloc = std.heap.stackFallback(4096, alloc_gpa);
+        var stack_alloc = std.heap.stackFallback(4096, alloc_arena);
         const alloc = stack_alloc.get();
         const prepended = try std.fmt.allocPrint(
             alloc,
