@@ -322,11 +322,6 @@ pub const Shaper = struct {
                 advances,
                 indices,
             ) |glyph, advance, index| {
-                try self.cell_buf.ensureUnusedCapacity(
-                    self.alloc,
-                    glyphs.len,
-                );
-
                 // Our cluster is also our cell X position. If the cluster changes
                 // then we need to reset our current cell offsets.
                 const cluster = state.codepoints.items[index].cluster;
@@ -341,7 +336,7 @@ pub const Shaper = struct {
                     // If we have a gap between clusters then we need to
                     // add empty cells to the buffer.
                     for (cell_offset.cluster + 1..cluster) |x| {
-                        self.cell_buf.appendAssumeCapacity(.{
+                        try self.cell_buf.append(self.alloc, .{
                             .x = @intCast(x),
                             .glyph_index = null,
                         });
@@ -350,7 +345,7 @@ pub const Shaper = struct {
                     cell_offset = .{ .cluster = cluster };
                 }
 
-                self.cell_buf.appendAssumeCapacity(.{
+                try self.cell_buf.append(self.alloc, .{
                     .x = @intCast(cluster),
                     .x_offset = @intFromFloat(@round(cell_offset.x)),
                     .y_offset = @intFromFloat(@round(cell_offset.y)),
@@ -376,7 +371,7 @@ pub const Shaper = struct {
             // We need to go back to the last matched cluster and add
             // padding up to there.
             for (last_cell.x + 1..last_cp.cluster + 1) |x| {
-                self.cell_buf.appendAssumeCapacity(.{
+                try self.cell_buf.append(self.alloc, .{
                     .x = @intCast(x),
                     .glyph_index = null,
                 });
