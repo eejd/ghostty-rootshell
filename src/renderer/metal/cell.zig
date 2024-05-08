@@ -194,6 +194,8 @@ pub const Contents = struct {
     ) !void {
         const y = cell.grid_pos[1];
 
+        assert(y < self.size.rows);
+
         switch (key) {
             .bg => try self.bg_rows.lists[y].append(alloc, cell),
 
@@ -209,6 +211,8 @@ pub const Contents = struct {
 
     /// Clear all of the cell contents for a given row.
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
+        assert(y < self.size.rows);
+
         self.bg_rows.lists[y].clearRetainingCapacity();
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
