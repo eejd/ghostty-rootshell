@@ -41,7 +41,11 @@ pub fn build(b: *std.Build) !void {
         try apple_sdk.addPaths(b, module);
     }
 
-    const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
+    const freetype_dep = b.dependency("freetype", .{
+        .target = target,
+        .optimize = optimize,
+        .@"enable-libpng" = true,
+    });
     lib.linkLibrary(freetype_dep.artifact("freetype"));
     module.addIncludePath(freetype_dep.builder.dependency("freetype", .{}).path("include"));
 
