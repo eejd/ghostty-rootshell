@@ -38,13 +38,13 @@ pub const DesiredSize = struct {
     points: f32,
 
     // The DPI of the screen so we can convert points to pixels.
-    xdpi: f32 = default_dpi,
-    ydpi: f32 = default_dpi,
+    xdpi: u16 = default_dpi,
+    ydpi: u16 = default_dpi,
 
     // Converts points to pixels
     pub fn pixels(self: DesiredSize) u16 {
         // 1 point = 1/72 inch
-        return @intFromFloat(@round((self.points * self.ydpi) / 72));
+        return @intFromFloat(@round((self.points * @as(f32, @floatFromInt(self.ydpi))) / 72));
     }
 };
 
