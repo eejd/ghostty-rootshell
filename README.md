@@ -201,10 +201,10 @@ The currently supported shell integration features in Ghostty:
 
 #### Shell Integration Installation and Verification
 
-Ghostty will automatically inject the shell integration code for `zsh` and
-`fish`. `bash` does not support automatic injection but you can manually
-`source` the `ghostty.bash` file in `src/shell-integration`. Other shells are
-not supported. **If you want to disable this feature,** set
+Ghostty will automatically inject the shell integration code for `bash`, `zsh`
+and `fish`. Other shells do not have shell integration code written but will
+function fine within Ghostty with the above mentioned shell integration features
+inoperative. **If you want to disable automatic shell integration,** set
 `shell-integration = none` in your configuration file.
 
 **For the automatic shell integration to work,** Ghostty must either be run
