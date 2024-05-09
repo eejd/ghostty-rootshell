@@ -380,32 +380,35 @@ test getIndex {
     var c = try Collection.init(alloc);
     c.load_options = .{ .library = lib };
 
-    _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
-        lib,
-        testFont,
-        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
-    ) });
-    if (font.options.backend != .coretext) {
-        // Coretext doesn't support Noto's format
+    {
+        errdefer c.deinit(alloc);
+        _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+            lib,
+            testFont,
+            .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+        ) });
+        if (comptime !font.options.backend.hasCoretext()) {
+            // Coretext doesn't support Noto's format
+            _ = try c.add(
+                alloc,
+                .regular,
+                .{ .loaded = try Face.init(
+                    lib,
+                    testEmoji,
+                    .{ .size = .{ .points = 12 } },
+                ) },
+            );
+        }
         _ = try c.add(
             alloc,
             .regular,
             .{ .loaded = try Face.init(
                 lib,
-                testEmoji,
+                testEmojiText,
                 .{ .size = .{ .points = 12 } },
             ) },
         );
     }
-    _ = try c.add(
-        alloc,
-        .regular,
-        .{ .loaded = try Face.init(
-            lib,
-            testEmojiText,
-            .{ .size = .{ .points = 12 } },
-        ) },
-    );
 
     var r: CodepointResolver = .{ .collection = c };
     defer r.deinit(alloc);
@@ -429,7 +432,7 @@ test getIndex {
     {
         const idx = r.getIndex(alloc, 0x270C, .regular, .text).?;
         try testing.expectEqual(Style.regular, idx.style);
-        const text_idx = if (font.options.backend == .coretext) 1 else 2;
+        const text_idx = if (comptime font.options.backend.hasCoretext()) 1 else 2;
         try testing.expectEqual(@as(Collection.Index.IndexInt, text_idx), idx.idx);
     }
     {
