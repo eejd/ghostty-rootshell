@@ -250,8 +250,10 @@ fn parseIntoField(
                     0,
                 ) catch return error.InvalidValue,
 
-                f64 => std.fmt.parseFloat(
-                    f64,
+                f32,
+                f64,
+                => |Float| std.fmt.parseFloat(
+                    Float,
                     value orelse return error.ValueRequired,
                 ) catch return error.InvalidValue,
 

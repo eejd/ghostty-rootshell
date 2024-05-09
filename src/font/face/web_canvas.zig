@@ -497,7 +497,7 @@ pub const Wasm = struct {
         return face_new_(ptr, len, pts, p) catch null;
     }
 
-    fn face_new_(ptr: [*]const u8, len: usize, pts: u16, presentation: u16) !*Face {
+    fn face_new_(ptr: [*]const u8, len: usize, pts: f32, presentation: u16) !*Face {
         var face = try Face.initNamed(
             alloc,
             ptr[0..len],

@@ -575,7 +575,9 @@ pub const Key = struct {
     /// Hash the key with the given hasher.
     pub fn hash(self: Key, hasher: anytype) void {
         const autoHash = std.hash.autoHash;
-        autoHash(hasher, self.font_size);
+        autoHash(hasher, @as(u32, @bitCast(self.font_size.points)));
+        autoHash(hasher, self.font_size.xdpi);
+        autoHash(hasher, self.font_size.ydpi);
         autoHash(hasher, self.descriptors.len);
         for (self.descriptors) |d| d.hash(hasher);
         self.codepoint_map.hash(hasher);

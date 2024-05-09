@@ -194,7 +194,7 @@ const DerivedConfig = struct {
     arena: ArenaAllocator,
 
     /// For docs for these, see the associated config they are derived from.
-    original_font_size: u8,
+    original_font_size: f32,
     keybind: configpkg.Keybinds,
     clipboard_read: configpkg.ClipboardAccess,
     clipboard_write: configpkg.ClipboardAccess,
@@ -3008,18 +3008,25 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         ),
 
         .increase_font_size => |delta| {
-            log.debug("increase font size={}", .{delta});
+            // Max delta is somewhat arbitrary.
+            const clamped_delta = @max(0, @min(255, delta));
+
+            log.debug("increase font size={}", .{clamped_delta});
 
             var size = self.font_size;
-            size.points +|= delta;
+            // Max point size is somewhat arbitrary.
+            size.points = @min(size.points + clamped_delta, 255);
             try self.setFontSize(size);
         },
 
         .decrease_font_size => |delta| {
-            log.debug("decrease font size={}", .{delta});
+            // Max delta is somewhat arbitrary.
+            const clamped_delta = @max(0, @min(255, delta));
+
+            log.debug("decrease font size={}", .{clamped_delta});
 
             var size = self.font_size;
-            size.points = @max(1, size.points -| delta);
+            size.points = @max(1, size.points - clamped_delta);
             try self.setFontSize(size);
         },
 

@@ -49,7 +49,7 @@ pub const Descriptor = struct {
     /// Font size in points that the font should support. For conversion
     /// to pixels, we will use 72 DPI for Mac and 96 DPI for everything else.
     /// (If pixel conversion is necessary, i.e. emoji fonts)
-    size: u16 = 0,
+    size: f32 = 0,
 
     /// True if we want to search specifically for a font that supports
     /// specific styles.
@@ -69,7 +69,7 @@ pub const Descriptor = struct {
         autoHashStrat(hasher, self.family, .Deep);
         autoHashStrat(hasher, self.style, .Deep);
         autoHash(hasher, self.codepoint);
-        autoHash(hasher, self.size);
+        autoHash(hasher, @as(u32, @bitCast(self.size)));
         autoHash(hasher, self.bold);
         autoHash(hasher, self.italic);
         autoHash(hasher, self.monospace);
@@ -125,7 +125,7 @@ pub const Descriptor = struct {
         }
         if (self.size > 0) assert(pat.add(
             .size,
-            .{ .integer = self.size },
+            .{ .integer = @intFromFloat(@round(self.size)) },
             false,
         ));
         if (self.bold) assert(pat.add(
@@ -183,7 +183,7 @@ pub const Descriptor = struct {
 
         // Set our size attribute if set
         if (self.size > 0) {
-            const size32 = @as(i32, @intCast(self.size));
+            const size32: i32 = @intFromFloat(@round(self.size));
             const size = try macos.foundation.Number.create(
                 .sint32,
                 &size32,

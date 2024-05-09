@@ -99,8 +99,12 @@ const c = @cImport({
 /// separate repetitive entries in your config).
 @"font-feature": RepeatableString = .{},
 
-/// Font size in points
-@"font-size": u8 = switch (builtin.os.tag) {
+/// Font size in points. This value can be a non-integer and the nearest integer
+/// pixel size will be selected. If you have a high dpi display where 1pt = 2px
+/// then you can get an odd numbered pixel size by specifying a half point.
+///
+/// For example, 13.5pt @ 2px/pt = 27px
+@"font-size": f32 = switch (builtin.os.tag) {
     // On macOS we default a little bigger since this tends to look better. This
     // is purely subjective but this is easy to modify.
     .macos => 13,

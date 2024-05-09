@@ -35,7 +35,7 @@ pub const Options = struct {
 /// The desired size for loading a font.
 pub const DesiredSize = struct {
     // Desired size in points
-    points: u8,
+    points: f32,
 
     // The DPI of the screen so we can convert points to pixels.
     xdpi: u16 = default_dpi,
@@ -44,8 +44,7 @@ pub const DesiredSize = struct {
     // Converts points to pixels
     pub fn pixels(self: DesiredSize) u16 {
         // 1 point = 1/72 inch
-        const points_u16: u16 = @intCast(self.points);
-        return (points_u16 * self.ydpi) / 72;
+        return @intFromFloat(@round((self.points * @as(f32, @floatFromInt(self.ydpi))) / 72));
     }
 };
 

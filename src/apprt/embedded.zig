@@ -314,7 +314,7 @@ pub const Surface = struct {
         scale_factor: f64 = 1,
 
         /// The font size to inherit. If 0, default font size will be used.
-        font_size: u8 = 0,
+        font_size: f32 = 0,
 
         /// The working directory to load into.
         working_directory: [*:0]const u8 = "",
@@ -1049,7 +1049,7 @@ pub const Surface = struct {
     }
 
     fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
-        const font_size: u8 = font_size: {
+        const font_size: f32 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size self.core_surface.font_size.points;
         };

@@ -137,7 +137,7 @@ pub const Face = struct {
         // to what the user requested. Otherwise, we can choose an arbitrary
         // pixel size.
         if (face.isScalable()) {
-            const size_26dot6 = @as(i32, @intCast(size.points)) << 6; // mult by 64
+            const size_26dot6: i32 = @intFromFloat(@round(size.points * 64));
             try face.setCharSize(0, size_26dot6, size.xdpi, size.ydpi);
         } else try selectSizeNearest(face, size.pixels());
     }

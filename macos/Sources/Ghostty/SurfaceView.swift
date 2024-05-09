@@ -252,7 +252,7 @@ extension Ghostty {
     /// libghostty, usually from the Ghostty configuration.
     struct SurfaceConfiguration {
         /// Explicit font size to use in points
-        var fontSize: UInt8? = nil
+        var fontSize: Float32? = nil
         
         /// Explicit working directory to set
         var workingDirectory: String? = nil
