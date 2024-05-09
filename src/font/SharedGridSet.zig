@@ -233,7 +233,7 @@ fn collection(
     // people add other emoji fonts to their system, we always want to
     // prefer the official one. Users can override this by explicitly
     // specifying a font-family for emoji.
-    if (comptime builtin.target.isDarwin()) apple_emoji: {
+    if (comptime builtin.target.isDarwin() and Discover != void) apple_emoji: {
         const disco = try self.discover() orelse break :apple_emoji;
         var disco_it = try disco.discover(self.alloc, .{
             .family = "Apple Color Emoji",
