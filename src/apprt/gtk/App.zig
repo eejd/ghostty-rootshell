@@ -64,6 +64,14 @@ x11_xkb: ?x11.Xkb = null,
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
+    // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
+    // Older versions of GTK do not support these values so it is safe
+    // to always set this. Forwards versions are uncertain so we'll have to
+    // reassess...
+    //
+    // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+    _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
+
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
