@@ -812,6 +812,9 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
         log.err("error resizing cells buffer err={}", .{err});
     };
 
+    // Reset our viewport to force a rebuild
+    self.cells_viewport = null;
+
     // Update our uniforms
     self.uniforms = .{
         .projection_matrix = self.uniforms.projection_matrix,
