@@ -1213,7 +1213,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
         .{ .size = .{ .points = 12 } },
     ) });
 
-    if (font.options.backend != .coretext) {
+    if (comptime !font.options.backend.hasCoretext()) {
         // Coretext doesn't support Noto's format
         _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
             lib,
