@@ -1,10 +1,10 @@
 .{
     .name = "libxml2",
-    .version = "2.11.5",
+    .version = "2.12.6",
     .dependencies = .{
         .libxml2 = .{
-            .url = "https://github.com/GNOME/libxml2/archive/refs/tags/v2.11.5.tar.gz",
-            .hash = "122032442d95c3b428ae8e526017fad881e7dc78eab4d558e9a58a80bfbd65a64f7d",
+            .url = "https://github.com/GNOME/libxml2/archive/refs/tags/v2.12.6.tar.gz",
+            .hash = "1220aa400cd479a884390db9cf4a09c03899e5b370a5ab35614ac735834a27f3286d",
         },
     },
 }
