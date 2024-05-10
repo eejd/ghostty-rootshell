@@ -783,7 +783,7 @@ pub fn setVisible(self: *Metal, visible: bool) void {
     }
 }
 
-/// Set the new font size.
+/// Set the new font grid.
 ///
 /// Must be called on the render thread.
 pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
@@ -811,6 +811,13 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
         // out a better way to handle this.
         log.err("error resizing cells buffer err={}", .{err});
     };
+
+    // Reset our shaper cache. If our font changed (not just the size) then
+    // the data in the shaper cache may be invalid and cannot be used, so we
+    // always clear the cache just in case.
+    const font_shaper_cache = font.ShaperCache.init();
+    self.font_shaper_cache.deinit(self.alloc);
+    self.font_shaper_cache = font_shaper_cache;
 
     // Reset our viewport to force a rebuild
     self.cells_viewport = null;
@@ -1726,6 +1733,12 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
         self.font_shaper = font_shaper;
     }
 
+    // We also need to reset the shaper cache so shaper info
+    // from the previous font isn't re-used for the new font.
+    const font_shaper_cache = font.ShaperCache.init();
+    self.font_shaper_cache.deinit(self.alloc);
+    self.font_shaper_cache = font_shaper_cache;
+
     // Set our new minimum contrast
     self.uniforms.min_contrast = config.min_contrast;
 
@@ -1736,6 +1749,9 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
 
     self.config.deinit();
     self.config = config.*;
+
+    // Reset our viewport to force a rebuild, in case of a font change.
+    self.cells_viewport = null;
 }
 
 /// Resize the screen.
