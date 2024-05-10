@@ -1116,7 +1116,7 @@ pub const Inspector = struct {
     };
 
     pub fn init(surface: *Surface) !Inspector {
-        const ig_ctx = cimgui.c.igCreateContext(null);
+        const ig_ctx = cimgui.c.igCreateContext(null) orelse return error.OutOfMemory;
         errdefer cimgui.c.igDestroyContext(ig_ctx);
         cimgui.c.igSetCurrentContext(ig_ctx);
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
