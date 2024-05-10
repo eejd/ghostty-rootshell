@@ -41,8 +41,8 @@
                 <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
                 <outlet property="menuSelectSplitRight" destination="upj-mc-L7X" id="nLY-o1-lky"/>
                 <outlet property="menuServices" destination="aQe-vS-j8Q" id="uWQ-Wo-T1L"/>
-                <outlet property="menuSplitHorizontal" destination="VUR-Ld-nLx" id="RxO-Zw-ovb"/>
-                <outlet property="menuSplitVertical" destination="UDZ-4y-6xL" id="fgZ-Wb-8OR"/>
+                <outlet property="menuSplitRight" destination="VUR-Ld-nLx" id="RxO-Zw-ovb"/>
+                <outlet property="menuSplitDown" destination="UDZ-4y-6xL" id="fgZ-Wb-8OR"/>
                 <outlet property="menuTerminalInspector" destination="QwP-M5-fvh" id="wJi-Dh-S9f"/>
                 <outlet property="menuToggleFullScreen" destination="8kY-Pi-KaY" id="yQg-6V-OO6"/>
                 <outlet property="menuZoomSplit" destination="oPd-mn-IEH" id="wTu-jK-egI"/>
@@ -126,16 +126,16 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="m54-Is-iLE"/>
-                            <menuItem title="Split Horizontally" id="VUR-Ld-nLx">
+                            <menuItem title="Split Right" id="VUR-Ld-nLx">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="splitHorizontally:" target="-1" id="cv2-Xg-FR4"/>
+                                    <action selector="splitRight:" target="-1" id="cv2-Xg-FR4"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Split Vertically" id="UDZ-4y-6xL">
+                            <menuItem title="Split Down" id="UDZ-4y-6xL">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="splitVertically:" target="-1" id="c6x-CF-u52"/>
+                                    <action selector="splitDown:" target="-1" id="c6x-CF-u52"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="sjq-M1-UGS"/>
