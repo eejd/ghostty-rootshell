@@ -6,8 +6,8 @@
         // This should be kept in sync with the submodule in the cimgui source
         // code to be safe that they're compatible.
         .imgui = .{
-            .url = "https://github.com/ocornut/imgui/archive/1d8e48c161370c37628c4f37f3f87cb19fbcb723.tar.gz",
-            .hash = "12205e93e208aada4c835acdc3e2c1fac95b3ad92b47abe6412ab043f9f13817ad9b",
+            .url = "https://github.com/ocornut/imgui/archive/e391fe2e66eb1c96b1624ae8444dc64c23146ef4.tar.gz",
+            .hash = "1220bc6b9daceaf7c8c60f3c3998058045ba0c5c5f48ae255ff97776d9cd8bfc6402",
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },
