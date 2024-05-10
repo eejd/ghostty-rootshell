@@ -26,8 +26,8 @@ class AppDelegate: NSObject,
     
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
-    @IBOutlet private var menuSplitHorizontal: NSMenuItem?
-    @IBOutlet private var menuSplitVertical: NSMenuItem?
+    @IBOutlet private var menuSplitRight: NSMenuItem?
+    @IBOutlet private var menuSplitDown: NSMenuItem?
     @IBOutlet private var menuClose: NSMenuItem?
     @IBOutlet private var menuCloseWindow: NSMenuItem?
     @IBOutlet private var menuCloseAllWindows: NSMenuItem?
@@ -257,8 +257,8 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "close_surface", menuItem: self.menuClose)
         syncMenuShortcut(action: "close_window", menuItem: self.menuCloseWindow)
         syncMenuShortcut(action: "close_all_windows", menuItem: self.menuCloseAllWindows)
-        syncMenuShortcut(action: "new_split:right", menuItem: self.menuSplitHorizontal)
-        syncMenuShortcut(action: "new_split:down", menuItem: self.menuSplitVertical)
+        syncMenuShortcut(action: "new_split:right", menuItem: self.menuSplitRight)
+        syncMenuShortcut(action: "new_split:down", menuItem: self.menuSplitDown)
         
         syncMenuShortcut(action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(action: "paste_from_clipboard", menuItem: self.menuPaste)
