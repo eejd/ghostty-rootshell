@@ -1,11 +1,11 @@
 .{
     .name = "libpng",
-    .version = "1.6.40",
+    .version = "1.6.43",
     .paths = .{""},
     .dependencies = .{
         .libpng = .{
-            .url = "https://github.com/glennrp/libpng/archive/refs/tags/v1.6.40.tar.gz",
-            .hash = "12203d2722e3af6f9556503b114c25fe3eead528a93f5f26eefcb187a460d1548e07",
+            .url = "https://github.com/glennrp/libpng/archive/refs/tags/v1.6.43.tar.gz",
+            .hash = "1220aa013f0c83da3fb64ea6d327f9173fa008d10e28bc9349eac3463457723b1c66",
         },
 
         .zlib = .{ .path = "../zlib" },
