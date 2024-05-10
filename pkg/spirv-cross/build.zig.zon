@@ -4,8 +4,8 @@
     .paths = .{""},
     .dependencies = .{
         .spirv_cross = .{
-            .url = "https://github.com/KhronosGroup/SPIRV-Cross/archive/4818f7e7ef7b7078a3a7a5a52c4a338e0dda22f4.tar.gz",
-            .hash = "1220b2d8a6cff1926ef28a29e312a0a503b555ebc2f082230b882410f49e672ac9c6",
+            .url = "https://github.com/KhronosGroup/SPIRV-Cross/archive/476f384eb7d9e48613c45179e502a15ab95b6b49.tar.gz",
+            .hash = "1220fb3b5586e8be67bc3feb34cbe749cf42a60d628d2953632c2f8141302748c8da",
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },
