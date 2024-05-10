@@ -461,12 +461,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         })
     }
     
-    @IBAction func splitHorizontally(_ sender: Any) {
+    @IBAction func splitRight(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
     }
     
-    @IBAction func splitVertically(_ sender: Any) {
+    @IBAction func splitDown(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
     }

@@ -126,16 +126,16 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="m54-Is-iLE"/>
-                            <menuItem title="Split Horizontally" id="VUR-Ld-nLx">
+                            <menuItem title="Split Right" id="VUR-Ld-nLx">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="splitHorizontally:" target="-1" id="cv2-Xg-FR4"/>
+                                    <action selector="splitRight:" target="-1" id="cv2-Xg-FR4"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Split Vertically" id="UDZ-4y-6xL">
+                            <menuItem title="Split Down" id="UDZ-4y-6xL">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="splitVertically:" target="-1" id="c6x-CF-u52"/>
+                                    <action selector="splitDown:" target="-1" id="c6x-CF-u52"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="sjq-M1-UGS"/>
