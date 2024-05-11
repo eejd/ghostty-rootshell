@@ -3496,13 +3496,22 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
 
         var new_notification_digest: [hash_algorithm.digest_length]u8 = undefined;
 
-        var hash = hash_algorithm.init(.{});
-        hash.update(title);
-        hash.update(body);
-        hash.final(&new_notification_digest);
+        if (last_notification_time) |last| {
+            if (now.since(last) < 1 * std.time.ns_per_s) {
+                log.warn("rate limiting desktop notifications", .{});
+                return;
+            }
+        }
 
-        if (std.mem.eql(u8, &last_notification_digest, &new_notification_digest)) {
-            if (last_notification_time) |last| {
+        {
+            var hash = hash_algorithm.init(.{});
+            hash.update(title);
+            hash.update(body);
+            hash.final(&new_notification_digest);
+        }
+
+        if (last_notification_time) |last| {
+            if (std.mem.eql(u8, &last_notification_digest, &new_notification_digest)) {
                 if (now.since(last) < 5 * std.time.ns_per_s) {
                     log.warn("suppressing identical notification", .{});
                     return;
