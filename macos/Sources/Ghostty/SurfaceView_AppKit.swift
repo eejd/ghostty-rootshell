@@ -971,11 +971,14 @@ extension Ghostty.SurfaceView: NSTextInputClient {
 
         // Ghostty coordinates are in top-left (0, 0) so we have to convert to
         // bottom-left since that is what UIKit expects
-        let rect = NSMakeRect(x, frame.size.height - y, 0, 0)
+        let viewRect = NSMakeRect(x, frame.size.height - y, 0, 0)
+        
+        // Convert the point to the window coordinates
+        let winRect = self.convert(viewRect, to: nil)
 
         // Convert from view to screen coordinates
-        guard let window = self.window else { return rect }
-        return window.convertToScreen(rect)
+        guard let window = self.window else { return winRect }
+        return window.convertToScreen(winRect)
     }
 
     func insertText(_ string: Any, replacementRange: NSRange) {
