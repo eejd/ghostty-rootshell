@@ -340,6 +340,8 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
     try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
+    try self.syncActionAccelerator("win.split_right", .{ .new_split = .right });
+    try self.syncActionAccelerator("win.split_down", .{ .new_split = .down });
 }
 
 fn syncActionAccelerator(
@@ -678,6 +680,8 @@ fn initMenu(self: *App) void {
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "New Window", "win.new_window");
         c.g_menu_append(section, "New Tab", "win.new_tab");
+        c.g_menu_append(section, "Split Right", "win.split_right");
+        c.g_menu_append(section, "Split Down", "win.split_down");
         c.g_menu_append(section, "Close Window", "win.close");
     }
 

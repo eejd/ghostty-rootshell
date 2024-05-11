@@ -162,6 +162,8 @@ fn initActions(self: *Window) void {
         .{ "close", &gtkActionClose },
         .{ "new_window", &gtkActionNewWindow },
         .{ "new_tab", &gtkActionNewTab },
+        .{ "split_right", &gtkActionSplitRight },
+        .{ "split_down", &gtkActionSplitDown },
         .{ "toggle_inspector", &gtkActionToggleInspector },
     };
 
@@ -507,6 +509,32 @@ fn gtkActionNewTab(
 ) callconv(.C) void {
     // We can use undefined because the button is not used.
     gtkTabNewClick(undefined, ud);
+}
+
+fn gtkActionSplitRight(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .new_split = .right }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionSplitDown(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .new_split = .down }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
 }
 
 fn gtkActionToggleInspector(
