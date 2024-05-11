@@ -3486,8 +3486,33 @@ fn completeClipboardReadOSC52(
     self.io_thread.wakeup.notify() catch {};
 }
 
+const hash_algorithm = std.crypto.hash.sha2.Sha224;
+var last_notification_time: ?std.time.Instant = null;
+var last_notification_digest = [_]u8{0} ** hash_algorithm.digest_length;
+
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
     if (@hasDecl(apprt.Surface, "showDesktopNotification")) {
+        const now = try std.time.Instant.now();
+
+        var new_notification_digest: [hash_algorithm.digest_length]u8 = undefined;
+
+        var hash = hash_algorithm.init(.{});
+        hash.update(title);
+        hash.update(body);
+        hash.final(&new_notification_digest);
+
+        if (std.mem.eql(u8, &last_notification_digest, &new_notification_digest)) {
+            if (last_notification_time) |last| {
+                if (now.since(last) < 5 * std.time.ns_per_s) {
+                    log.warn("suppressing identical notification", .{});
+                    return;
+                }
+            }
+        }
+
+        last_notification_time = now;
+        @memcpy(&last_notification_digest, &new_notification_digest);
+
         try self.rt_surface.showDesktopNotification(title, body);
     } else log.warn("runtime doesn't support desktop notifications", .{});
 }
