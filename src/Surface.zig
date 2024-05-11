@@ -3513,7 +3513,7 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
         if (last_notification_time) |last| {
             if (std.mem.eql(u8, &last_notification_digest, &new_notification_digest)) {
                 if (now.since(last) < 5 * std.time.ns_per_s) {
-                    log.warn("suppressing identical notification", .{});
+                    log.warn("suppressing identical desktop notification", .{});
                     return;
                 }
             }
