@@ -717,12 +717,16 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
         // want caps/num lock or sided modifiers to affect the mouse.
         self.mouse.mods = mods.binding();
 
-        // We also need to update the renderer so it knows if it
-        // should highlight links.
+        // We also need to update the renderer so it knows if it should
+        // highlight links. Additionally, mark the screen as dirty so
+        // that the highlight state of all links is properly updated.
         {
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
             self.renderer_state.mouse.mods = self.mouseModsWithCapture(self.mouse.mods);
+
+            // We use the clear screen dirty flag to force a rebuild of all rows.
+            self.renderer_state.terminal.flags.dirty.clear = true;
         }
 
         self.queueRender() catch |err| {
@@ -2546,6 +2550,17 @@ pub fn cursorPosCallback(
 
     // Handle link hovering
     if (self.mouse.link_point) |last_vp| {
+        // Mark the link's row as dirty.
+        if (over_link) {
+            // TODO: This doesn't handle soft-wrapped links. Ideally this would
+            // be storing the link's start and end points and marking all rows
+            // between and including those as dirty, instead of just the row
+            // containing the part the cursor is hovering. This can result in
+            // a bit of jank.
+            if (self.renderer_state.terminal.screen.pages.pin(.{ .viewport = last_vp })) |pin| {
+                pin.markDirty();
+            }
+        }
         // If our last link viewport point is unchanged, then don't process
         // links. This avoids constantly reprocessing regular expressions
         // for every pixel change.
@@ -2564,6 +2579,10 @@ pub fn cursorPosCallback(
     if (try self.linkAtPos(pos)) |_| {
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
+        // Mark the new link's row as dirty.
+        if (self.renderer_state.terminal.screen.pages.pin(.{ .viewport = pos_vp })) |pin| {
+            pin.markDirty();
+        }
         try self.rt_surface.setMouseShape(.pointer);
         try self.queueRender();
     } else if (over_link) {
