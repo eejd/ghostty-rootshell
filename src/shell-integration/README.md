@@ -12,8 +12,13 @@ README.
 
 ### Bash
 
-The bash shell integration must currently be sourced manually
-from `bash/ghostty.bash`.
+Automatic [Bash](https://www.gnu.org/software/bash/) shell integration works by
+starting Bash in POSIX mode and using the `ENV` environment variable to load
+our integration script (`bash/ghostty.bash`). This prevents Bash from loading
+its normal startup files, which becomes our script's responsibility (along with
+disabling POSIX mode).
+
+Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
 
 ### Fish
 
