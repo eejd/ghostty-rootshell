@@ -624,13 +624,15 @@ keybind: Keybinds = .{},
 /// latency. If false, this will maximize redraw frequency but may cause tearing,
 /// and under heavy load may use more CPU and power.
 ///
-/// This defaults to false because out of the box a lot of users prefer to
-/// feel like the terminal is as responsive as possible.
+/// This defaults to true because out-of-sync rendering on macOS can
+/// cause kernel panics (macOS 14.4+) and performance issues for external
+/// displays over some hardware such as DisplayLink. If you want to maximize
+/// input latency, set this to false with the known aforementioned risks.
 ///
 /// Changing this value at runtime will only affect new terminals.
 ///
 /// This setting is only supported currently on macOS.
-@"window-vsync": bool = false,
+@"window-vsync": bool = true,
 
 /// If true, new windows and tabs will inherit the working directory of the
 /// previously focused window. If no window was previously focused, the default
