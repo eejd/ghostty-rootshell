@@ -83,6 +83,7 @@ _ghostty_last_reported_cwd=""
 
 function __ghostty_get_current_command() {
     builtin local last_cmd
+    # shellcheck disable=SC1007
     last_cmd=$(HISTTIMEFORMAT= builtin history 1)
     last_cmd="${last_cmd#*[[:digit:]]*[[:space:]]}"  # remove leading history number
     last_cmd="${last_cmd#"${last_cmd%%[![:space:]]*}"}"  # remove remaining leading whitespace
@@ -109,6 +110,7 @@ function __ghostty_precmd() {
       # Sudo
       if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO" != "1" ]] && [[ -n "$TERMINFO" ]]; then
         # Wrap `sudo` command to ensure Ghostty terminfo is preserved
+        # shellcheck disable=SC2317
         sudo() {
           builtin local sudo_has_sudoedit_flags="no"
           for arg in "$@"; do
@@ -131,7 +133,8 @@ function __ghostty_precmd() {
       fi
 
       if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
-        # Command
+        # Command and working directory
+        # shellcheck disable=SC2016
         PS0=$PS0'$(__ghostty_get_current_command)'
         PS1=$PS1'\[\e]2;$PWD\a\]'
       fi
