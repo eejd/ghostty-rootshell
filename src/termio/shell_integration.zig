@@ -12,6 +12,7 @@ pub const Shell = enum {
     bash,
     fish,
     zsh,
+    elvish,
 };
 
 /// The result of setting up a shell integration.
@@ -47,6 +48,7 @@ pub fn setup(
         .bash => "bash",
         .fish => "fish",
         .zsh => "zsh",
+        .elvish => "elvish",
     } else exe: {
         // The command can include arguments. Look for the first space
         // and use the basename of the first part as the command's exe.
@@ -72,6 +74,14 @@ pub fn setup(
             try setupFish(alloc_arena, resource_dir, env);
             break :shell .{
                 .shell = .fish,
+                .command = command,
+            };
+        }
+
+        if (std.mem.eql(u8, "elvish", exe)) {
+            try setupElvish(alloc_arena, resource_dir, env);
+            break :shell .{
+                .shell = .elvish,
                 .command = command,
             };
         }
@@ -450,6 +460,18 @@ fn setupFish(
         // No XDG_DATA_DIRS set, we just set it our desired value.
         try env.put("XDG_DATA_DIRS", integ_dir);
     }
+}
+
+/// Setup the Elvish automatic shell integration.
+/// This reuses integration primitives of Fish, as Elvish also
+/// loads config in XDG_DATA_DIRS (except it imports
+/// "./elvish/lib/*.elv" files).
+fn setupElvish(
+    alloc_arena: Allocator,
+    resource_dir: []const u8,
+    env: *EnvMap,
+) !void {
+    try setupFish(alloc_arena, resource_dir, env);
 }
 
 /// Setup the zsh automatic shell integration. This works by setting

@@ -3414,6 +3414,7 @@ pub const ShellIntegration = enum {
     bash,
     fish,
     zsh,
+    elvish,
 };
 
 /// Shell integration features
