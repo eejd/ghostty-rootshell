@@ -75,8 +75,10 @@ class TerminalWindow: NSWindow {
             tab.attributedTitle = attributedTitle
         }
     }
-
-    var windowTheme: String?
+    
+    // The window theme configuration from Ghostty. This is used to control some
+    // behaviors that don't look quite right in certain situations.
+    var windowTheme: TerminalWindowTheme?
 
     // We only need to set this once, but need to do it after the window has been created in order
     // to determine if the theme is using a very dark background, in which case we don't want to
@@ -134,7 +136,10 @@ class TerminalWindow: NSWindow {
 
         updateResetZoomTitlebarButtonVisibility()
 
-        guard let windowTheme, windowTheme == "auto" else { return }
+        // The remainder of the styles we only apply if we're on "auto" theming
+        // because they conflict with the appearance being forced a certain
+        // direction. See issue #1709.
+        guard let windowTheme, windowTheme == .auto else { return }
 
 		titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
@@ -630,4 +635,10 @@ fileprivate class WindowButtonsBackdropView: NSView {
 
         layer?.addSublayer(overlayLayer)
     }
+}
+
+enum TerminalWindowTheme: String {
+    case auto
+    case light
+    case dark
 }

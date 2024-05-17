@@ -254,8 +254,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         // This makes sure our titlebar renders correctly when there is a transparent background
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
-
-        window.windowTheme = ghostty.config.windowTheme
+        
+        // Make sure our theme is set on the window so styling is correct.
+        if let windowTheme = ghostty.config.windowTheme {
+            window.windowTheme = .init(rawValue: windowTheme)
+        }
 
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
