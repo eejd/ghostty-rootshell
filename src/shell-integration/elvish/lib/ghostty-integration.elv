@@ -1,4 +1,41 @@
 {
+  fn restore-xdg-dirs {
+    var integration-dir = $E:GHOSTTY_FISH_XDG_DIR
+    var xdg-dirs = [(str:split ':' $E:XDG_DATA_DIRS)]
+    var len = (count $xdg-dirs)
+
+    var index = $nil
+    range $len | each {|dir-index|
+      if (eq $xdg-dirs[$dir-index] $integration-dir) {
+        set index = $dir-index
+        break
+      }
+    }
+    if (eq $nil $index) { return } # will appear as an error
+
+    if (== 0 $index) {
+      set xdg-dirs = $xdg-dirs[1..]
+    } elif (== (- $len 1) $index) {
+      set xdg-dirs = $xdg-dirs[0..(- $len 1)]
+    } else {
+      # no builtin function for this : )
+      set xdg-dirs = [ (take $index $xdg-dirs) (drop (+ 1 $index) $xdg-dirs) ]
+    }
+
+    if (== 0 (count $xdg-dirs)) {
+      unset-env XDG_DATA_DIRS
+    } else {
+      set-env XDG_DATA_DIRS (str:join ':' $xdg-dirs)
+    }
+    unset-env GHOSTTY_FISH_XDG_DIR
+  }
+  if (and (has-env GHOSTTY_FISH_XDG_DIR) (has-env XDG_DATA_DIRS)) {
+    restore-xdg-dirs
+  }
+}
+
+{
+  # helper used by `mark-*` functions
   fn set-prompt-state {|new| set-env __ghostty_prompt_state $new }
 
   fn mark-prompt-start {
@@ -57,13 +94,18 @@
     command sudo $@args
   }
 
+  defer {
+    mark-prompt-start
+    report-pwd
+  }
+
+  var no-cursor = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_CURSOR)
+  var no-sudo   = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_SUDO)
+
   set edit:before-readline = (conj $edit:before-readline $mark-prompt-start~)
   set edit:after-readline  = (conj $edit:after-readline $mark-output-start~)
   set edit:after-command   = (conj $edit:after-command $mark-output-end~)
   set after-chdir = (conj $after-chdir {|_| report-pwd })
-
-  var no-cursor = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_CURSOR)
-  var no-sudo   = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_SUDO)
 
   if $no-cursor {
     fn beam  { printf "\e[5 q" }
@@ -71,17 +113,8 @@
     set edit:before-readline = (conj $edit:before-readline $beam~)
     set edit:after-readline  = (conj $edit:after-readline {|_| block })
   }
-
-  try {
-    if (not $no-sudo) { return }
-    if (eq "" $E:TERMINFO) { return }
-    if (not-eq file (type -t sudo)) { return }
-
-    # overwrite root namespace `sudo`
+  if (and $no-sudo (not-eq ""$E:TERMINFO) (eq file (type -t sudo))) {
     edit:add-var sudo~ $sudo-with-terminfo~
-  } catch e { nop } # catch early returns, do nothing
-
-  mark-prompt-start
-  report-pwd
+  }
 }
 
