@@ -725,7 +725,10 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
             defer self.renderer_state.mutex.unlock();
             self.renderer_state.mouse.mods = self.mouseModsWithCapture(self.mouse.mods);
 
-            // We use the clear screen dirty flag to force a rebuild of all rows.
+            // We use the clear screen dirty flag to force a rebuild of all
+            // rows because changing mouse mods can affect the highlight state
+            // of a link. If there is no link this seems very wasteful but
+            // its really only one frame so it's not so bad.
             self.renderer_state.terminal.flags.dirty.clear = true;
         }
 
@@ -2557,10 +2560,13 @@ pub fn cursorPosCallback(
             // between and including those as dirty, instead of just the row
             // containing the part the cursor is hovering. This can result in
             // a bit of jank.
-            if (self.renderer_state.terminal.screen.pages.pin(.{ .viewport = last_vp })) |pin| {
+            if (self.renderer_state.terminal.screen.pages.pin(.{
+                .viewport = last_vp,
+            })) |pin| {
                 pin.markDirty();
             }
         }
+
         // If our last link viewport point is unchanged, then don't process
         // links. This avoids constantly reprocessing regular expressions
         // for every pixel change.
