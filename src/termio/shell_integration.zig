@@ -10,9 +10,9 @@ const log = std.log.scoped(.shell_integration);
 /// Shell types we support
 pub const Shell = enum {
     bash,
+    elvish,
     fish,
     zsh,
-    elvish,
 };
 
 /// The result of setting up a shell integration.
@@ -46,9 +46,9 @@ pub fn setup(
 ) !?ShellIntegration {
     const exe = if (force_shell) |shell| switch (shell) {
         .bash => "bash",
+        .elvish => "elvish",
         .fish => "fish",
         .zsh => "zsh",
-        .elvish => "elvish",
     } else exe: {
         // The command can include arguments. Look for the first space
         // and use the basename of the first part as the command's exe.
@@ -70,18 +70,18 @@ pub fn setup(
             };
         }
 
-        if (std.mem.eql(u8, "fish", exe)) {
-            try setupFish(alloc_arena, resource_dir, env);
+        if (std.mem.eql(u8, "elvish", exe)) {
+            try setupXdgDataDirs(alloc_arena, resource_dir, env);
             break :shell .{
-                .shell = .fish,
+                .shell = .elvish,
                 .command = command,
             };
         }
 
-        if (std.mem.eql(u8, "elvish", exe)) {
-            try setupElvish(alloc_arena, resource_dir, env);
+        if (std.mem.eql(u8, "fish", exe)) {
+            try setupXdgDataDirs(alloc_arena, resource_dir, env);
             break :shell .{
-                .shell = .elvish,
+                .shell = .fish,
                 .command = command,
             };
         }
@@ -415,11 +415,14 @@ test "bash: preserve ENV" {
     }
 }
 
-/// Setup the fish automatic shell integration. This works by
-/// modify XDG_DATA_DIRS to include the resource directory.
-/// Fish will automatically load configuration in XDG_DATA_DIRS
-/// "fish/vendor_conf.d/*.fish".
-fn setupFish(
+/// Setup automatic shell integration for shells that include
+/// their modules from paths in `XDG_DATA_DIRS` env variable.
+///
+/// Path of shell-integration dir is prepended to `XDG_DATA_DIRS`.
+/// It is also saved in `GHOSTTY_INTEGRATION_DIR` variable so that
+/// the shell can refer to it and safely remove this directory
+/// from `XDG_DATA_DIRS` when integration is complete.
+fn setupXdgDataDirs(
     alloc_arena: Allocator,
     resource_dir: []const u8,
     env: *EnvMap,
@@ -436,7 +439,7 @@ fn setupFish(
     // Set an env var so we can remove this from XDG_DATA_DIRS later.
     // This happens in the shell integration config itself. We do this
     // so that our modifications don't interfere with other commands.
-    try env.put("GHOSTTY_FISH_XDG_DIR", integ_dir);
+    try env.put("GHOSTTY_INTEGRATION_DIR", integ_dir);
 
     if (env.get("XDG_DATA_DIRS")) |old| {
         // We have an old value, We need to prepend our value to it.
@@ -460,18 +463,6 @@ fn setupFish(
         // No XDG_DATA_DIRS set, we just set it our desired value.
         try env.put("XDG_DATA_DIRS", integ_dir);
     }
-}
-
-/// Setup the Elvish automatic shell integration.
-/// This reuses integration primitives of Fish, as Elvish also
-/// loads config in XDG_DATA_DIRS (except it imports
-/// "./elvish/lib/*.elv" files).
-fn setupElvish(
-    alloc_arena: Allocator,
-    resource_dir: []const u8,
-    env: *EnvMap,
-) !void {
-    try setupFish(alloc_arena, resource_dir, env);
 }
 
 /// Setup the zsh automatic shell integration. This works by setting

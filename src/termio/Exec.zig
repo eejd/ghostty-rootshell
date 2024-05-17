@@ -1024,6 +1024,7 @@ const Subprocess = struct {
                 .none => break :shell .{ null, default_shell_command },
                 .detect => null,
                 .bash => .bash,
+                .elvish => .elvish,
                 .fish => .fish,
                 .zsh => .zsh,
             };
