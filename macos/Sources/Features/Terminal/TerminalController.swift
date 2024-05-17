@@ -172,11 +172,22 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         } else {
             window.titlebarFont = nil
         }
-
+        
+        // The titlebar is always updated. We don't need to worry about opacity
+        // because we handle it here.
         let backgroundColor = OSColor(ghostty.config.backgroundColor)
-        window.backgroundColor = backgroundColor
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
-        window.updateTabBar()
+        
+        if (window.isOpaque) {
+            // Bg color is only synced if we have no transparency. This is because
+            // the transparency is handled at the surface level (window.backgroundColor
+            // ignores alpha components)
+            window.backgroundColor = backgroundColor
+            
+            // If there is transparency, calling this will make the titlebar opaque
+            // so we only call this if we are opaque.
+            window.updateTabBar()
+        }
     }
     
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
