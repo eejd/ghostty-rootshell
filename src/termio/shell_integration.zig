@@ -156,8 +156,6 @@ fn setupBash(
 
     // Some additional cases we don't yet cover:
     //
-    //  - If the `c` shell option is set, interactive mode is disabled, so skip
-    //    loading our shell integration.
     //  - If additional file arguments are provided (after a `-` or `--` flag),
     //    and the `i` shell option isn't being explicitly set, we can assume a
     //    non-interactive shell session and skip loading our shell integration.
@@ -173,6 +171,12 @@ fn setupBash(
             if (iter.next()) |rcfile| {
                 try env.put("GHOSTTY_BASH_RCFILE", rcfile);
             }
+        } else if (arg.len > 1 and arg[0] == '-' and arg[1] != '-') {
+            // '-c command' is always non-interactive
+            if (std.mem.indexOfScalar(u8, arg, 'c') != null) {
+                return null;
+            }
+            try args.append(arg);
         } else {
             try args.append(arg);
         }
@@ -295,6 +299,17 @@ test "bash: rcfile" {
         try testing.expectEqualStrings("bash --posix", command.?);
         try testing.expectEqualStrings("profile.sh", env.get("GHOSTTY_BASH_RCFILE").?);
     }
+}
+
+test "bash: -c command" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    try testing.expect(try setupBash(alloc, "bash -c script.sh", ".", &env) == null);
+    try testing.expect(try setupBash(alloc, "bash -ic script.sh", ".", &env) == null);
 }
 
 test "bash: HISTFILE" {
