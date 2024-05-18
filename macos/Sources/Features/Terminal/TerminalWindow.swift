@@ -138,8 +138,12 @@ class TerminalWindow: NSWindow {
 
         // The remainder of the styles we only apply if we're on "auto" theming
         // because they conflict with the appearance being forced a certain
-        // direction. See issue #1709.
-        guard let windowTheme, windowTheme == .auto else { return }
+        // direction. Titlebar tabs are excluded (they always style the titlebar)
+        // because historically this is how they've always worked. So this
+        // exclusion only applies to native tabs. See issue #1709. 
+        if let windowTheme, windowTheme != .auto && !titlebarTabs {
+            return
+        }
 
 		titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
