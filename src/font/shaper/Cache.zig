@@ -21,8 +21,24 @@ const log = std.log.scoped(.font_shaper_cache);
 /// Our LRU is the run hash to the shaped cells.
 const LRU = lru.AutoHashMap(u64, []font.shape.Cell);
 
+/// This is the threshold of evictions at which point we reset
+/// the LRU completely. This is a workaround for the issue that
+/// Zig stdlib hashmap gets slower over time
+/// (https://github.com/ziglang/zig/issues/17851).
+///
+/// The value is based on naive measuring on my local machine.
+/// If someone has a better idea of what this value should be,
+/// please let me know.
+const evictions_threshold = 8192;
+
 /// The cache of shaped cells.
 map: LRU,
+
+/// Keep track of the number of evictions. We use this to workaround
+/// the issue that Zig stdlib hashmap gets slower over time
+/// (https://github.com/ziglang/zig/issues/17851). When evictions
+/// reaches a certain threshold, we reset the LRU.
+evictions: std.math.IntFittingRange(0, evictions_threshold) = 0,
 
 pub fn init() Cache {
     // Note: this is very arbitrary. Increasing this number will increase
@@ -56,14 +72,31 @@ pub fn put(
     const copy = try alloc.dupe(font.shape.Cell, cells);
     const gop = try self.map.getOrPut(alloc, run.hash);
     if (gop.evicted) |evicted| {
-        log.debug("evicted shaped cells for text run hash={}", .{run.hash});
         alloc.free(evicted.value);
+
+        // See the doc comment on evictions_threshold for why we do this.
+        self.evictions += 1;
+        if (self.evictions >= evictions_threshold) {
+            log.debug("resetting cache due to too many evictions", .{});
+            // We need to put our value here so deinit can free
+            gop.value_ptr.* = copy;
+            self.clear(alloc);
+
+            // We need to call put again because self is now a
+            // different pointer value so our gop pointers are invalid.
+            return try self.put(alloc, run, cells);
+        }
     }
     gop.value_ptr.* = copy;
 }
 
 pub fn count(self: *const Cache) usize {
     return self.map.map.count();
+}
+
+fn clear(self: *Cache, alloc: Allocator) void {
+    self.deinit(alloc);
+    self.* = init();
 }
 
 test Cache {
