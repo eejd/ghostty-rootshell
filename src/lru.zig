@@ -15,6 +15,13 @@ pub fn AutoHashMap(comptime K: type, comptime V: type) type {
 
 /// HashMap implementation that supports least-recently-used eviction.
 ///
+/// Beware of the Zig bug where a hashmap gets slower over time
+/// (https://github.com/ziglang/zig/issues/17851). This LRU uses a hashmap
+/// and evictions will cause this issue to appear. Callers should keep
+/// track of eviction counts and periodically reinitialize the LRU to
+/// avoid this issue. The LRU itself can't do this because it doesn't
+/// know how to free values.
+///
 /// Note: This is a really elementary CS101 version of an LRU right now.
 /// This is done initially to get something working. Once we have it working,
 /// we can benchmark and improve if this ends up being a source of slowness.
