@@ -643,6 +643,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
 
 enum TerminalWindowTheme: String {
     case auto
+    case system
     case light
     case dark
 }
