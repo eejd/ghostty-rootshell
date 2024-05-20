@@ -3,6 +3,9 @@ const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
 /// Open a URL in the default handling application.
+///
+/// Any output on stderr is logged as a warning in the application logs.
+/// Output on stdout is ignored.
 pub fn open(alloc: Allocator, url: []const u8) !void {
     const argv = switch (builtin.os.tag) {
         .linux => &.{ "xdg-open", url },
@@ -24,13 +27,14 @@ pub fn open(alloc: Allocator, url: []const u8) !void {
         stderr.deinit();
     }
 
-    try exe.spawn();
-
     // 50 KiB is the default value used by std.process.Child.run
-    try exe.collectOutput(&stdout, &stderr, 50 * 1024);
+    const output_max_size = 50 * 1024;
 
+    try exe.spawn();
+    try exe.collectOutput(&stdout, &stderr, output_max_size);
     _ = try exe.wait();
-    if (stderr.items.len > 0) {
-        std.log.err("os.open: {s}", .{stderr.items});
-    }
+
+    // If we have any stderr output we log it. This makes it easier for
+    // users to debug why some open commands may not work as expected.
+    if (stderr.items.len > 0) std.log.err("open stderr={s}", .{stderr.items});
 }
