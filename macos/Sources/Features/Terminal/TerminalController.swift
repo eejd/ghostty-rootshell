@@ -173,6 +173,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.titlebarFont = nil
         }
         
+        guard window.hasStyledTabs else { return }
+
         // The titlebar is always updated. We don't need to worry about opacity
         // because we handle it here.
         let backgroundColor = OSColor(ghostty.config.backgroundColor)
@@ -275,12 +277,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         }
         
-        // Set the background color of the window
-        let backgroundColor = NSColor(ghostty.config.backgroundColor)
-        window.backgroundColor = backgroundColor
+        if window.hasStyledTabs {
+            // Set the background color of the window
+            let backgroundColor = NSColor(ghostty.config.backgroundColor)
+            window.backgroundColor = backgroundColor
 
-        // This makes sure our titlebar renders correctly when there is a transparent background
-        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+            // This makes sure our titlebar renders correctly when there is a transparent background
+            window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+        }
 
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
