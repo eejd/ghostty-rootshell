@@ -136,14 +136,8 @@ class TerminalWindow: NSWindow {
 
         updateResetZoomTitlebarButtonVisibility()
 
-        // The remainder of the styles we only apply if we're on "auto" theming
-        // because they conflict with the appearance being forced a certain
-        // direction. Titlebar tabs are excluded (they always style the titlebar)
-        // because historically this is how they've always worked. So this
-        // exclusion only applies to native tabs. See issue #1709. 
-        if let windowTheme, windowTheme != .auto && !titlebarTabs {
-            return
-        }
+        // The remainder of this function only applies to styled tabs.
+        guard hasStyledTabs else { return }
 
 		titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
 
@@ -176,6 +170,20 @@ class TerminalWindow: NSWindow {
     }
 
     // MARK: - Tab Bar Styling
+
+    // This is true if we should apply styles to the titlebar or tab bar.
+    var hasStyledTabs: Bool {
+        // If we have titlebar tabs then we always style.
+        guard !titlebarTabs else { return true }
+
+        // This should never happen, but if we don't have a theme set then
+        // we just style the tabs. Either response here is probably okay.
+        guard let windowTheme else { return true }
+
+        // We only style if the window theme is auto. Any other specific
+        // window theme type will always show up as that native theme.
+        return windowTheme == .auto
+    }
 
     var hasVeryDarkBackground: Bool {
         backgroundColor.luminance < 0.05
