@@ -850,7 +850,7 @@ fn prepKittyGraphics(
         const source_height = if (p.source_height > 0)
             @min(image.height, p.source_height)
         else
-            image.height -| offset_y;
+            image.height -| source_y;
 
         // Calculate the width/height of our image.
         const dest_width = if (p.columns > 0) p.columns * self.grid_metrics.cell_width else source_width;
