@@ -214,8 +214,8 @@ is running from. On Linux, this should automatically work if you run from
 the `zig-out` directory tree structure (a standard FHS-style tree).
 
 You may also manually set the `GHOSTTY_RESOURCES_DIR` to point to the
-`zig-out/share` contents. To validate this directory the file
-`$GHOSTTY_RESOURCES_DIR/terminfo/ghostty.terminfo` should exist.
+`zig-out/share/ghostty` contents. To validate this directory the file
+`$GHOSTTY_RESOURCES_DIR/../terminfo/ghostty.terminfo` should exist.
 
 To verify shell integration is working, look for the following log lines:
 
