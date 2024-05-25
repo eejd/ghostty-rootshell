@@ -85,10 +85,19 @@ pub const Style = struct {
     pub fn fg(
         self: Style,
         palette: *const color.Palette,
+        bold_is_bright: bool,
     ) ?color.RGB {
         return switch (self.fg_color) {
             .none => null,
-            .palette => |idx| palette[idx],
+            .palette => |idx| palette: {
+                if (bold_is_bright and self.flags.bold) {
+                    const bright_offset = @intFromEnum(color.Name.bright_black);
+
+                    if (idx < bright_offset)
+                        break :palette palette[idx + bright_offset];
+                }
+                break :palette palette[idx];
+            },
             .rgb => |rgb| rgb,
         };
     }

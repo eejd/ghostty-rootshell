@@ -1030,6 +1030,9 @@ keybind: Keybinds = .{},
 /// notifications using certain escape sequences such as OSC 9 or OSC 777.
 @"desktop-notifications": bool = true,
 
+/// If `true`, the bold text will use its bright palette
+@"bold-is-bright": bool = false,
+
 /// This will be used to set the `TERM` environment variable.
 /// HACK: We set this with an `xterm` prefix because vim uses that to enable key
 /// protocols (specifically this will enable `modifyOtherKeys`), among other
