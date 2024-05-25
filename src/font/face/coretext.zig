@@ -489,6 +489,7 @@ pub const Face = struct {
         const layout_metrics: struct {
             height: f32,
             ascent: f32,
+            leading: f32,
         } = metrics: {
             const ascent = ct_font.getAscent();
             const descent = ct_font.getDescent();
@@ -504,6 +505,7 @@ pub const Face = struct {
             break :metrics .{
                 .height = @floatCast(@ceil(ascent + descent + leading)),
                 .ascent = @floatCast(@ceil(ascent + (leading / 2))),
+                .leading = @floatCast(leading),
             };
         };
 
@@ -511,7 +513,20 @@ pub const Face = struct {
         const cell_height = @ceil(layout_metrics.height);
         const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
-        const strikethrough_position = @ceil(layout_metrics.height - (layout_metrics.ascent * 0.6));
+        const strikethrough_position = strikethrough_position: {
+            // This is the height above baseline consumed by text. To get
+            // this, its cell height minus baseline. We must also take into
+            // account that our cell height splits the leading between two
+            // rows so we subtract leading space (blank space).
+            const above = cell_height - cell_baseline - (layout_metrics.leading / 2);
+
+            // We want to position the strikethrough at 65% of the height.
+            // This generally gives a nice visual appearance. The number 65%
+            // is somewhat arbitrary but is a common value across terminals.
+            const pos = above * 0.65;
+
+            break :strikethrough_position @ceil(pos);
+        };
         const strikethrough_thickness = underline_thickness;
 
         // Underline position reported is usually something like "-1" to
