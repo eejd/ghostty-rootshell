@@ -92,10 +92,10 @@ pub const Style = struct {
             .palette => |idx| palette: {
                 if (bold_is_bright and self.flags.bold) {
                     const bright_offset = @intFromEnum(color.Name.bright_black);
-
                     if (idx < bright_offset)
                         break :palette palette[idx + bright_offset];
                 }
+
                 break :palette palette[idx];
             },
             .rgb => |rgb| rgb,

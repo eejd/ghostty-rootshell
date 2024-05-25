@@ -1030,7 +1030,7 @@ keybind: Keybinds = .{},
 /// notifications using certain escape sequences such as OSC 9 or OSC 777.
 @"desktop-notifications": bool = true,
 
-/// If `true`, the bold text will use its bright palette
+/// If `true`, the bold text will use the bright color palette.
 @"bold-is-bright": bool = false,
 
 /// This will be used to set the `TERM` environment variable.
