@@ -323,6 +323,7 @@ pub const DerivedConfig = struct {
     selection_background: ?terminal.color.RGB,
     selection_foreground: ?terminal.color.RGB,
     invert_selection_fg_bg: bool,
+    bold_is_bright: bool,
     min_contrast: f32,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     links: link.Set,
@@ -375,6 +376,7 @@ pub const DerivedConfig = struct {
             .background = config.background.toTerminalRGB(),
             .foreground = config.foreground.toTerminalRGB(),
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
+            .bold_is_bright = config.@"bold-is-bright",
             .min_contrast = @floatCast(config.@"minimum-contrast"),
 
             .selection_background = if (config.@"selection-background") |bg|
@@ -2118,12 +2120,12 @@ fn updateCell(
             // In normal mode, background and fg match the cell. We
             // un-optionalize the fg by defaulting to our fg color.
             .bg = style.bg(cell, palette),
-            .fg = style.fg(palette) orelse self.foreground_color,
+            .fg = style.fg(palette, self.config.bold_is_bright) orelse self.foreground_color,
         } else .{
             // In inverted mode, the background MUST be set to something
             // (is never null) so it is either the fg or default fg. The
             // fg is either the bg or default background.
-            .bg = style.fg(palette) orelse self.foreground_color,
+            .bg = style.fg(palette, self.config.bold_is_bright) orelse self.foreground_color,
             .fg = style.bg(cell, palette) orelse self.background_color,
         };
 
