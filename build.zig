@@ -1387,7 +1387,7 @@ fn benchSteps(
 ) !void {
     // Open the directory ./src/bench
     const c_dir_path = (comptime root()) ++ "/src/bench";
-    var c_dir = try fs.openDirAbsolute(c_dir_path, .{ .iterate = true });
+    var c_dir = try fs.cwd().openDir(c_dir_path, .{ .iterate = true });
     defer c_dir.close();
 
     // Go through and add each as a step
@@ -1443,7 +1443,7 @@ fn conformanceSteps(
 
     // Open the directory ./conformance
     const c_dir_path = (comptime root()) ++ "/conformance";
-    var c_dir = try fs.openDirAbsolute(c_dir_path, .{ .iterate = true });
+    var c_dir = try fs.cwd().openDir(c_dir_path, .{ .iterate = true });
     defer c_dir.close();
 
     // Go through and add each as a step
