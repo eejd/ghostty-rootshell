@@ -514,16 +514,15 @@ pub const Face = struct {
         const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
         const strikethrough_position = strikethrough_position: {
-            // This is the height above baseline consumed by text. To get
-            // this, its cell height minus baseline. We must also take into
-            // account that our cell height splits the leading between two
+            // This is the height above baseline consumed by text. We must take
+            // into account that our cell height splits the leading between two
             // rows so we subtract leading space (blank space).
-            const above = cell_height - cell_baseline - (layout_metrics.leading / 2);
+            const text_height_above_baseline = layout_metrics.ascent - (layout_metrics.leading / 2);
 
             // We want to position the strikethrough at 65% of the height.
             // This generally gives a nice visual appearance. The number 65%
             // is somewhat arbitrary but is a common value across terminals.
-            const pos = above * 0.65;
+            const pos = text_height_above_baseline * 0.65;
 
             break :strikethrough_position @ceil(pos);
         };
