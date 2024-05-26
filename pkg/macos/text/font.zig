@@ -81,6 +81,14 @@ pub const Font = opaque {
         );
     }
 
+    pub fn createPathForGlyph(self: *Font, glyph: graphics.Glyph) ?*graphics.Path {
+        return @constCast(@ptrCast(c.CTFontCreatePathForGlyph(
+            @ptrCast(self),
+            glyph,
+            null,
+        )));
+    }
+
     pub fn drawGlyphs(
         self: *Font,
         glyphs: []const graphics.Glyph,
