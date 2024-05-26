@@ -102,6 +102,20 @@ pub const Face = struct {
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
+        // If our presentation is emoji, we also check for the presence of
+        // emoji codepoints. This forces fonts with colorized glyphs that aren't
+        // emoji font to be treated as text. Long term, this isn't what we want
+        // but this fixes some bugs in the short term. See:
+        // https://github.com/mitchellh/ghostty/issues/1768
+        //
+        // Longer term, we'd like to detect mixed color/non-color fonts and
+        // handle them correctly by rendering the color glyphs as color and the
+        // non-color glyphs as text.
+        if (result.presentation == .emoji and result.glyphIndex('🥸') == null) {
+            log.warn("font has colorized glyphs but isn't emoji, treating as text", .{});
+            result.presentation = .text;
+        }
+
         // In debug mode, we output information about available variation axes,
         // if they exist.
         if (comptime builtin.mode == .Debug) {
@@ -699,4 +713,17 @@ test "variable set variation" {
         try testing.expect(face.glyphIndex(i) != null);
         _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
+}
+
+test "mixed color/non-color font treated as text" {
+    const testing = std.testing;
+    const testFont = @import("../test.zig").fontJuliaMono;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
+
+    try testing.expect(face.presentation == .text);
 }

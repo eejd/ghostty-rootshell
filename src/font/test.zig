@@ -18,6 +18,7 @@ pub const fontNerdFont = @embedFile("res/JetBrainsMonoNerdFont-Regular.ttf");
 /// Specific font families below:
 pub const fontGeistMono = @embedFile("res/GeistMono-Regular.ttf");
 pub const fontJetBrainsMono = @embedFile("res/JetBrainsMonoNoNF-Regular.ttf");
+pub const fontJuliaMono = @embedFile("res/JuliaMono-Regular.ttf");
 
 /// Cozette is a unique font because it embeds some emoji characters
 /// but has a text presentation.

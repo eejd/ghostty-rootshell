@@ -72,6 +72,12 @@ pub const Face = struct {
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
+        // See coretext.zig which has a similar check for this.
+        if (result.presentation == .emoji and result.glyphIndex('🥸') == null) {
+            log.warn("font has colorized glyphs but isn't emoji, treating as text", .{});
+            result.presentation = .text;
+        }
+
         // In debug mode, we output information about available variation axes,
         // if they exist.
         if (comptime builtin.mode == .Debug) mm: {
