@@ -19,6 +19,7 @@ its normal startup files, which becomes our script's responsibility (along with
 disabling POSIX mode).
 
 Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
+
 ### Elvish
 
 For [Elvish](https://elv.sh), `$GHOSTTY_RESOURCES_DIR/src/shell-integration`
@@ -54,4 +55,3 @@ For `zsh`, Ghostty sets `ZDOTDIR` so that it loads our configuration
 from the `zsh` directory. The existing `ZDOTDIR` is retained so that
 after loading the Ghostty shell integration the normal Zsh loading
 sequence occurs.
-
