@@ -3486,49 +3486,48 @@ fn completeClipboardReadOSC52(
     self.io_thread.wakeup.notify() catch {};
 }
 
-// Wyhash is used to hash the contents of the desktop notification to limit how
-// fast identical notifications can be sent sequentially.
-const hash_algorithm = std.hash.Wyhash;
-// This seed for Wyhash was literally chosen at random. The actual seed (AFAIK)
-// shouldn't matter as long as it stays constant.
-const hash_seed = 0xb8179c65b93cc558;
-
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
-    if (@hasDecl(apprt.Surface, "showDesktopNotification")) {
-        const now = try std.time.Instant.now();
+    if (comptime !@hasDecl(apprt.Surface, "showDesktopNotification")) {
+        log.warn("runtime doesn't support desktop notifications", .{});
+        return;
+    }
 
-        // Set a limit of one desktop notification per second so that the OS
-        // doesn't kill us when we run out of resources.
-        if (self.app.last_notification_time) |last| {
-            if (now.since(last) < 1 * std.time.ns_per_s) {
-                log.warn("rate limiting desktop notifications", .{});
+    // Wyhash is used to hash the contents of the desktop notification to limit
+    // how fast identical notifications can be sent sequentially.
+    const hash_algorithm = std.hash.Wyhash;
+
+    const now = try std.time.Instant.now();
+
+    // Set a limit of one desktop notification per second so that the OS
+    // doesn't kill us when we run out of resources.
+    if (self.app.last_notification_time) |last| {
+        if (now.since(last) < 1 * std.time.ns_per_s) {
+            log.warn("rate limiting desktop notifications", .{});
+            return;
+        }
+    }
+
+    const new_digest = d: {
+        var hash = hash_algorithm.init(0);
+        hash.update(title);
+        hash.update(body);
+        break :d hash.final();
+    };
+
+    // Set a limit of one notification per five seconds for desktop
+    // notifications with identical content.
+    if (self.app.last_notification_time) |last| {
+        if (self.app.last_notification_digest == new_digest) {
+            if (now.since(last) < 5 * std.time.ns_per_s) {
+                log.warn("suppressing identical desktop notification", .{});
                 return;
             }
         }
+    }
 
-        const new_notification_digest = d: {
-            var hash = hash_algorithm.init(hash_seed);
-            hash.update(title);
-            hash.update(body);
-            break :d hash.final();
-        };
-
-        // Set a limit of one notification per five seconds for desktop
-        // notifications with identical content.
-        if (self.app.last_notification_time) |last| {
-            if (self.app.last_notification_digest == new_notification_digest) {
-                if (now.since(last) < 5 * std.time.ns_per_s) {
-                    log.warn("suppressing identical desktop notification", .{});
-                    return;
-                }
-            }
-        }
-
-        self.app.last_notification_time = now;
-        self.app.last_notification_digest = new_notification_digest;
-
-        try self.rt_surface.showDesktopNotification(title, body);
-    } else log.warn("runtime doesn't support desktop notifications", .{});
+    self.app.last_notification_time = now;
+    self.app.last_notification_digest = new_digest;
+    try self.rt_surface.showDesktopNotification(title, body);
 }
 
 pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");
