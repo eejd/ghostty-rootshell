@@ -22,6 +22,18 @@ Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
 
 ### Elvish
 
+For [Elvish](https://elv.sh), `$GHOSTTY_RESOURCES_DIR/src/shell-integration`
+contains an `./elvish/lib/ghostty-integration.elv` file.
+
+Elvish, on startup, searches for paths defined in `XDG_DATA_DIRS`
+variable for `./elvish/lib/*.elv` files and imports them. They are thus
+made available for use as modules by way of `use <filename>`.
+
+Ghostty launches Elvish, passing the environment with `XDG_DATA_DIRS`prepended
+with `$GHOSTTY_RESOURCES_DIR/src/shell-integration`. It contains
+`./elvish/lib/ghostty-integration.elv`. The user can then import it
+by `use ghostty-integration`, which will run the integration routines.
+
 The [Elvish](https://elv.sh) shell integration is supported by
 the community and is not officially supported by Ghostty. We distribute
 it for ease of access and use but do not provide support for it.

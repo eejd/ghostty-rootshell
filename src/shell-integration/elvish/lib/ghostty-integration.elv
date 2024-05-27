@@ -1,6 +1,6 @@
 {
   fn restore-xdg-dirs {
-    var integration-dir = $E:GHOSTTY_FISH_XDG_DIR
+    var integration-dir = $E:GHOSTTY_SHELL_INTEGRATION_XDG_DIR
     var xdg-dirs = [(str:split ':' $E:XDG_DATA_DIRS)]
     var len = (count $xdg-dirs)
 
@@ -27,9 +27,9 @@
     } else {
       set-env XDG_DATA_DIRS (str:join ':' $xdg-dirs)
     }
-    unset-env GHOSTTY_FISH_XDG_DIR
+    unset-env GHOSTTY_SHELL_INTEGRATION_XDG_DIR
   }
-  if (and (has-env GHOSTTY_FISH_XDG_DIR) (has-env XDG_DATA_DIRS)) {
+  if (and (has-env GHOSTTY_SHELL_INTEGRATION_XDG_DIR) (has-env XDG_DATA_DIRS)) {
     restore-xdg-dirs
   }
 }
@@ -117,4 +117,3 @@
     edit:add-var sudo~ $sudo-with-terminfo~
   }
 }
-

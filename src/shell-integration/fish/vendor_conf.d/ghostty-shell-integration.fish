@@ -6,7 +6,7 @@
 
 function ghostty_restore_xdg_data_dir -d "restore the original XDG_DATA_DIR value"
     # If we don't have our own data dir then we don't need to do anything.
-    if not set -q GHOSTTY_FISH_XDG_DIR
+    if not set -q GHOSTTY_SHELL_INTEGRATION_XDG_DIR
         return
     end
 
@@ -19,7 +19,7 @@ function ghostty_restore_xdg_data_dir -d "restore the original XDG_DATA_DIR valu
     set --function --path xdg_data_dirs "$XDG_DATA_DIRS"
 
     # If our data dir is in the list then remove it.
-    if set --function index (contains --index "$GHOSTTY_FISH_XDG_DIR" $xdg_data_dirs)
+    if set --function index (contains --index "$GHOSTTY_SHELL_INTEGRATION_XDG_DIR" $xdg_data_dirs)
         set --erase --function xdg_data_dirs[$index]
     end
 
@@ -30,7 +30,7 @@ function ghostty_restore_xdg_data_dir -d "restore the original XDG_DATA_DIR valu
         set --erase --global XDG_DATA_DIRS
     end
 
-    set --erase GHOSTTY_FISH_XDG_DIR
+    set --erase GHOSTTY_SHELL_INTEGRATION_XDG_DIR
 end
 
 function ghostty_exit -d "exit the shell integration setup"
