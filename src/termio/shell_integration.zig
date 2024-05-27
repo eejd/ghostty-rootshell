@@ -419,8 +419,8 @@ test "bash: preserve ENV" {
 /// their modules from paths in `XDG_DATA_DIRS` env variable.
 ///
 /// Path of shell-integration dir is prepended to `XDG_DATA_DIRS`.
-/// It is also saved in `GHOSTTY_INTEGRATION_DIR` variable so that
-/// the shell can refer to it and safely remove this directory
+/// It is also saved in `GHOSTTY_SHELL_INTEGRATION_XDG_DIR` variable
+/// so that the shell can refer to it and safely remove this directory
 /// from `XDG_DATA_DIRS` when integration is complete.
 fn setupXdgDataDirs(
     alloc_arena: Allocator,
@@ -439,7 +439,7 @@ fn setupXdgDataDirs(
     // Set an env var so we can remove this from XDG_DATA_DIRS later.
     // This happens in the shell integration config itself. We do this
     // so that our modifications don't interfere with other commands.
-    try env.put("GHOSTTY_INTEGRATION_DIR", integ_dir);
+    try env.put("GHOSTTY_SHELL_INTEGRATION_XDG_DIR", integ_dir);
 
     if (env.get("XDG_DATA_DIRS")) |old| {
         // We have an old value, We need to prepend our value to it.
