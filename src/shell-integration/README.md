@@ -20,6 +20,14 @@ disabling POSIX mode).
 
 Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
 
+### Elvish
+
+The [Elvish](https://elv.sh) shell integration is supported by
+the community and is not officially supported by Ghostty. We distribute
+it for ease of access and use but do not provide support for it.
+If you experience issues with the Elvish shell integration, I welcome
+any contributions to fix them. Thank you!
+
 ### Fish
 
 For [Fish](https://fishshell.com/), Ghostty prepends to the
