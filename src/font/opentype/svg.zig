@@ -2,7 +2,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 const font = @import("../main.zig");
 
-/// SVG glyphs description table:
+/// SVG glyphs description table.
+///
+/// This struct is focused purely on the operations we need for Ghostty,
+/// namely to be able to look up whether an glyph ID is present in the SVG
+/// table or not. This struct isn't meant to be a general purpose SVG table
+/// reader.
 ///
 /// References:
 /// - https://www.w3.org/2013/10/SVG_in_OpenType/#thesvg

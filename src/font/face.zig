@@ -48,6 +48,15 @@ pub const DesiredSize = struct {
     }
 };
 
+/// Glyph index into a face.
+pub const GlyphIndex = struct {
+    /// The index in the face.
+    index: u32,
+
+    /// True if the glyph is a colored glyph.
+    color: bool,
+};
+
 /// A font variation setting. The best documentation for this I know of
 /// is actually the CSS font-variation-settings property on MDN:
 /// https://developer.mozilla.org/en-US/docs/Web/CSS/font-variation-settings
