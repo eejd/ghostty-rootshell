@@ -570,6 +570,21 @@ pub const Face = struct {
 
         return result;
     }
+
+    /// Copy the font table data for the given tag.
+    pub fn copyTable(self: Face, alloc: Allocator, tag: *const [4]u8) !?[]u8 {
+        const data = self.font.copyTable(macos.text.FontTableTag.init(tag)) orelse
+            return null;
+        defer data.release();
+
+        const buf = try alloc.alloc(u8, data.getLength());
+        errdefer alloc.free(buf);
+
+        const ptr = data.getPointer();
+        @memcpy(buf, ptr[0..buf.len]);
+
+        return buf;
+    }
 };
 
 test {
@@ -726,4 +741,21 @@ test "mixed color/non-color font treated as text" {
     defer face.deinit();
 
     try testing.expect(face.presentation == .text);
+}
+
+test "svg font table" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontJuliaMono;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
+
+    const table = (try face.copyTable(alloc, "SVG ")).?;
+    defer alloc.free(table);
+
+    try testing.expect(table.len > 0);
 }
