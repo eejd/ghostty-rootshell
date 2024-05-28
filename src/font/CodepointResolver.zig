@@ -291,7 +291,10 @@ fn getIndexCodepointOverride(
 
 /// Returns the presentation for a specific font index. This is useful for
 /// determining what atlas is needed.
-pub fn getPresentation(self: *CodepointResolver, index: Collection.Index) !Presentation {
+pub fn getPresentation(
+    self: *CodepointResolver,
+    index: Collection.Index,
+) !Presentation {
     if (index.special()) |sp| return switch (sp) {
         .sprite => .text,
     };

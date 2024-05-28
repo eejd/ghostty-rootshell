@@ -242,9 +242,22 @@ pub const Face = struct {
         self.* = face;
     }
 
+    /// Returns true if the face has any glyphs that are colorized.
+    /// To determine if an individual glyph is colorized you must use
+    /// isColored.
+    pub fn hasColor(self: *const Face) bool {
+        return self.color != null;
+    }
+
+    /// Returns true if the given glyph ID is colorized.
+    pub fn isColored(self: *const Face, glyph_id: u16) bool {
+        const c = self.color orelse return false;
+        return c.isColored(glyph_id);
+    }
+
     /// Returns the glyph index for the given Unicode code point. If this
     /// face doesn't support this glyph, null is returned.
-    pub fn glyphIndex(self: Face, cp: u32) ?GlyphIndex {
+    pub fn glyphIndex(self: Face, cp: u32) ?u16 {
         // Turn UTF-32 into UTF-16 for CT API
         var unichars: [2]u16 = undefined;
         const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
@@ -262,10 +275,7 @@ pub const Face = struct {
         // If we have colorization information, then check if this
         // glyph is colorized.
 
-        return .{
-            .index = @intCast(glyphs[0]),
-            .color = if (self.color) |v| v.isColored(glyphs[0]) else false,
-        };
+        return @intCast(glyphs[0]);
     }
 
     pub fn renderGlyph(
@@ -695,7 +705,7 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?.index, .{});
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -737,8 +747,8 @@ test "emoji" {
 
     // Glyph index check
     {
-        const glyph = face.glyphIndex('🥸').?;
-        try testing.expect(glyph.color);
+        const id = face.glyphIndex('🥸').?;
+        try testing.expect(face.isColored(id));
     }
 }
 
@@ -762,7 +772,7 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?.index, .{});
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -786,7 +796,7 @@ test "variable" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?.index, .{});
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -814,7 +824,7 @@ test "variable set variation" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?.index, .{});
+        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
     }
 }
 
@@ -860,13 +870,13 @@ test "glyphIndex colored vs text" {
 
     {
         const glyph = face.glyphIndex('A').?;
-        try testing.expectEqual(4, glyph.index);
-        try testing.expectEqual(false, glyph.color);
+        try testing.expectEqual(4, glyph);
+        try testing.expect(!face.isColored(glyph));
     }
 
     {
         const glyph = face.glyphIndex(0xE800).?;
-        try testing.expectEqual(11482, glyph.index);
-        try testing.expectEqual(true, glyph.color);
+        try testing.expectEqual(11482, glyph);
+        try testing.expect(face.isColored(glyph));
     }
 }

@@ -160,7 +160,7 @@ pub const Style = enum(u3) {
     bold_italic = 3,
 };
 
-/// The presentation for a an emoji.
+/// The presentation for an emoji.
 pub const Presentation = enum(u1) {
     text = 0, // U+FE0E
     emoji = 1, // U+FEOF
