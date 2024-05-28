@@ -12,6 +12,7 @@ pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
 pub const Glyph = @import("Glyph.zig");
 pub const Metrics = face.Metrics;
+pub const opentype = @import("opentype.zig");
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
 pub const ShaperCache = shape.Cache;
