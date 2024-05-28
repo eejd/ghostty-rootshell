@@ -631,6 +631,11 @@ pub const Face = struct {
         const div = @as(f32, @floatFromInt(mul)) / 64;
         return @ceil(div);
     }
+
+    /// Copy the font table data for the given tag.
+    pub fn copyTable(self: Face, alloc: Allocator, tag: *const [4]u8) !?[]u8 {
+        return try self.face.loadSfntTable(alloc, freetype.Tag.init(tag));
+    }
 };
 
 test {
@@ -762,4 +767,20 @@ test "mono to rgba" {
 
     // glyph 3 is mono in Noto
     _ = try ft_font.renderGlyph(alloc, &atlas, 3, .{});
+}
+
+test "svg font table" {
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontJuliaMono;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
+
+    const table = (try face.copyTable(alloc, "SVG ")).?;
+    defer alloc.free(table);
+
+    try testing.expectEqual(430, table.len);
 }

@@ -1,7 +1,9 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const c = @import("c.zig");
 const errors = @import("errors.zig");
 const Library = @import("Library.zig");
+const Tag = @import("tag.zig").Tag;
 const Error = errors.Error;
 const intToError = errors.intToError;
 
@@ -100,6 +102,31 @@ pub const Face = struct {
         var name: c.FT_SfntName = undefined;
         const res = c.FT_Get_Sfnt_Name(self.handle, @intCast(i), &name);
         return if (intToError(res)) |_| name else |err| err;
+    }
+
+    /// Load any SFNT font table into client memory.
+    pub fn loadSfntTable(
+        self: Face,
+        alloc: Allocator,
+        tag: Tag,
+    ) (Allocator.Error || Error)!?[]u8 {
+        const tag_u64: u64 = @intCast(@as(u32, @bitCast(tag)));
+
+        // Get the length of the table in bytes
+        var len: c_ulong = 0;
+        var res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, null, &len);
+        _ = intToError(res) catch |err| return err;
+
+        // If our length is zero we don't have a table.
+        if (len == 0) return null;
+
+        // Allocate a buffer to hold the table and load it
+        const buf = try alloc.alloc(u8, len);
+        errdefer alloc.free(buf);
+        res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, buf.ptr, &len);
+        _ = intToError(res) catch |err| return err;
+
+        return buf;
     }
 
     /// Retrieve the font variation descriptor for a font.
