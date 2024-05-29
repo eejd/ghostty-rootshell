@@ -26,6 +26,12 @@ pub const Face = struct {
         return c.FT_HAS_COLOR(self.handle);
     }
 
+    /// A macro that returns true whenever a face object contains an ‘sbix’
+    /// OpenType table and outline glyphs.
+    pub fn hasSBIX(self: Face) bool {
+        return c.FT_HAS_SBIX(self.handle);
+    }
+
     /// A macro that returns true whenever a face object contains some
     /// multiple masters.
     pub fn hasMultipleMasters(self: Face) bool {
