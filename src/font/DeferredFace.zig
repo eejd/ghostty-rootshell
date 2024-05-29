@@ -281,6 +281,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
         => {
             // If we are using coretext, we check the loaded CT font.
             if (self.ct) |ct| {
+                // TODO(mixed-fonts): handle presentation on a glyph level
                 if (p) |desired_p| {
                     const traits = ct.font.getSymbolicTraits();
                     const actual_p: Presentation = if (traits.color_glyphs) .emoji else .text;

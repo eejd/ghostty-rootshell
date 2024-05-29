@@ -190,16 +190,23 @@ pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
         const list = self.faces.get(.regular);
         if (list.items.len == 0) return;
 
-        // Find our first font that is text. This will force
-        // loading any deferred faces but we only load them until
-        // we find a text face. A text face is almost always the
-        // first face in the list.
+        // Find our first regular face that has text glyphs.
         for (0..list.items.len) |i| {
             const face = try self.getFace(.{
                 .style = .regular,
                 .idx = @intCast(i),
             });
-            if (face.presentation == .text) break :regular face;
+
+            // We have two conditionals here. The color check is obvious:
+            // we want to auto-italicize a normal text font. The second
+            // check is less obvious... for mixed color/non-color fonts, we
+            // accept the regular font if it has basic ASCII. This may not
+            // be strictly correct (especially with international fonts) but
+            // it's a reasonable heuristic and the first case will match 99%
+            // of the time.
+            if (!face.hasColor() or face.glyphIndex('A') != null) {
+                break :regular face;
+            }
         }
 
         // No regular text face found.
@@ -344,7 +351,13 @@ pub const Entry = union(enum) {
             },
 
             .loaded => |face| switch (p_mode) {
-                .explicit => |p| face.presentation == p and face.glyphIndex(cp) != null,
+                .explicit => |p| explicit: {
+                    const index = face.glyphIndex(cp) orelse break :explicit false;
+                    break :explicit switch (p) {
+                        .text => !face.isColorGlyph(index),
+                        .emoji => face.isColorGlyph(index),
+                    };
+                },
                 .default, .any => face.glyphIndex(cp) != null,
             },
 
@@ -357,7 +370,13 @@ pub const Entry = union(enum) {
             .fallback_loaded => |face| switch (p_mode) {
                 .explicit,
                 .default,
-                => |p| face.presentation == p and face.glyphIndex(cp) != null,
+                => |p| explicit: {
+                    const index = face.glyphIndex(cp) orelse break :explicit false;
+                    break :explicit switch (p) {
+                        .text => !face.isColorGlyph(index),
+                        .emoji => face.isColorGlyph(index),
+                    };
+                },
                 .any => face.glyphIndex(cp) != null,
             },
         };
@@ -371,7 +390,7 @@ pub const PresentationMode = union(enum) {
     explicit: Presentation,
 
     /// The codepoint has no explicit presentation and we should use
-    /// the presentation from the UCd.
+    /// the presentation from the UCD.
     default: Presentation,
 
     /// The codepoint can be any presentation.
