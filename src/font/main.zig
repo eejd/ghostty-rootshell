@@ -12,6 +12,7 @@ pub const DeferredFace = @import("DeferredFace.zig");
 pub const Face = face.Face;
 pub const Glyph = @import("Glyph.zig");
 pub const Metrics = face.Metrics;
+pub const opentype = @import("opentype.zig");
 pub const shape = @import("shape.zig");
 pub const Shaper = shape.Shaper;
 pub const ShaperCache = shape.Cache;
@@ -159,7 +160,7 @@ pub const Style = enum(u3) {
     bold_italic = 3,
 };
 
-/// The presentation for a an emoji.
+/// The presentation for an emoji.
 pub const Presentation = enum(u1) {
     text = 0, // U+FE0E
     emoji = 1, // U+FEOF

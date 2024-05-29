@@ -281,6 +281,12 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
         => {
             // If we are using coretext, we check the loaded CT font.
             if (self.ct) |ct| {
+                // This presentation check isn't as detailed as isColorGlyph
+                // because forced presentation modes are only used for emoji and
+                // emoji should always have color glyphs set. This can be
+                // more correct by using the isColorGlyph logic but I'd want
+                // to find a font that actualy requires this so we can write
+                // a test for it before changing it.
                 if (p) |desired_p| {
                     const traits = ct.font.getSymbolicTraits();
                     const actual_p: Presentation = if (traits.color_glyphs) .emoji else .text;

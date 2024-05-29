@@ -253,7 +253,7 @@ pub fn renderGlyph(
     if (gop.found_existing) return gop.value_ptr.*;
 
     // Get the presentation to determine what atlas to use
-    const p = try self.resolver.getPresentation(index);
+    const p = try self.resolver.getPresentation(index, glyph_index);
     const atlas: *font.Atlas = switch (p) {
         .text => &self.atlas_greyscale,
         .emoji => &self.atlas_color,

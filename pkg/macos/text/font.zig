@@ -67,6 +67,14 @@ pub const Font = opaque {
         return @ptrCast(@constCast(c.CTFontCopyDefaultCascadeListForLanguages(@ptrCast(self), null)));
     }
 
+    pub fn copyTable(self: *Font, tag: FontTableTag) ?*foundation.Data {
+        return @constCast(@ptrCast(c.CTFontCopyTable(
+            @ptrCast(self),
+            @intFromEnum(tag),
+            c.kCTFontTableOptionNoOptions,
+        )));
+    }
+
     pub fn getGlyphCount(self: *Font) usize {
         return @intCast(c.CTFontGetGlyphCount(@ptrCast(self)));
     }
@@ -193,6 +201,16 @@ pub const FontOrientation = enum(c_uint) {
     default = c.kCTFontOrientationDefault,
     horizontal = c.kCTFontOrientationHorizontal,
     vertical = c.kCTFontOrientationVertical,
+};
+
+pub const FontTableTag = enum(u32) {
+    svg = c.kCTFontTableSVG,
+    _,
+
+    pub fn init(v: *const [4]u8) FontTableTag {
+        const raw: u32 = @bitCast(foundation.FourCharCode.init(v));
+        return @enumFromInt(raw);
+    }
 };
 
 test {

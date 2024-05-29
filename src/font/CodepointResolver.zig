@@ -291,13 +291,17 @@ fn getIndexCodepointOverride(
 
 /// Returns the presentation for a specific font index. This is useful for
 /// determining what atlas is needed.
-pub fn getPresentation(self: *CodepointResolver, index: Collection.Index) !Presentation {
+pub fn getPresentation(
+    self: *CodepointResolver,
+    index: Collection.Index,
+    glyph_index: u32,
+) !Presentation {
     if (index.special()) |sp| return switch (sp) {
         .sprite => .text,
     };
 
     const face = try self.collection.getFace(index);
-    return face.presentation;
+    return if (face.isColorGlyph(glyph_index)) .emoji else .text;
 }
 
 /// Render a glyph by glyph index into the given font atlas and return

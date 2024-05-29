@@ -15,7 +15,6 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const Glyph = font.Glyph;
 const Library = font.Library;
-const Presentation = font.Presentation;
 const convert = @import("freetype_convert.zig");
 const fastmem = @import("../../fastmem.zig");
 const quirks = @import("../../quirks.zig");
@@ -31,10 +30,6 @@ pub const Face = struct {
 
     /// Harfbuzz font corresponding to this face.
     hb_font: harfbuzz.Font,
-
-    /// The presentation for this font. This is a heuristic since fonts don't have
-    /// a way to declare this. We just assume a font with color is an emoji font.
-    presentation: Presentation,
 
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
@@ -67,16 +62,9 @@ pub const Face = struct {
             .lib = lib.lib,
             .face = face,
             .hb_font = hb_font,
-            .presentation = if (face.hasColor()) .emoji else .text,
             .metrics = calcMetrics(face, opts.metric_modifiers),
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
-
-        // See coretext.zig which has a similar check for this.
-        if (result.presentation == .emoji and result.glyphIndex('🥸') == null) {
-            log.warn("font has colorized glyphs but isn't emoji, treating as text", .{});
-            result.presentation = .text;
-        }
 
         // In debug mode, we output information about available variation axes,
         // if they exist.
@@ -219,8 +207,32 @@ pub const Face = struct {
 
     /// Returns true if this font is colored. This can be used by callers to
     /// determine what kind of atlas to pass in.
-    fn hasColor(self: Face) bool {
+    pub fn hasColor(self: Face) bool {
         return self.face.hasColor();
+    }
+
+    /// Returns true if the given glyph ID is colorized.
+    pub fn isColorGlyph(self: *const Face, glyph_id: u32) bool {
+        // sbix table is always true for now
+        if (self.face.hasSBIX()) return true;
+
+        // CBDT/CBLC tables always imply colorized glyphs.
+        // These are used by Noto.
+        if (self.face.hasSfntTable(freetype.Tag.init("CBDT"))) return true;
+        if (self.face.hasSfntTable(freetype.Tag.init("CBLC"))) return true;
+
+        // Otherwise, load the glyph and see what format it is in.
+        self.face.loadGlyph(glyph_id, .{
+            .render = true,
+            .color = self.face.hasColor(),
+            .no_bitmap = !self.face.hasColor(),
+        }) catch return false;
+
+        // If the glyph is SVG we assume colorized
+        const glyph = self.face.handle.*.glyph;
+        if (glyph.*.format == freetype.c.FT_GLYPH_FORMAT_SVG) return true;
+
+        return false;
     }
 
     /// Render a glyph using the glyph index. The rendered glyph is stored in the
@@ -631,6 +643,11 @@ pub const Face = struct {
         const div = @as(f32, @floatFromInt(mul)) / 64;
         return @ceil(div);
     }
+
+    /// Copy the font table data for the given tag.
+    pub fn copyTable(self: Face, alloc: Allocator, tag: *const [4]u8) !?[]u8 {
+        return try self.face.loadSfntTable(alloc, freetype.Tag.init(tag));
+    }
 };
 
 test {
@@ -649,8 +666,6 @@ test {
         .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
     );
     defer ft_font.deinit();
-
-    try testing.expectEqual(Presentation.text, ft_font.presentation);
 
     // Generate all visible ASCII
     var i: u8 = 32;
@@ -686,9 +701,14 @@ test "color emoji" {
     );
     defer ft_font.deinit();
 
-    try testing.expectEqual(Presentation.emoji, ft_font.presentation);
-
     _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, .{});
+
+    // Make sure this glyph has color
+    {
+        try testing.expect(ft_font.hasColor());
+        const glyph_id = ft_font.glyphIndex('🥸').?;
+        try testing.expect(ft_font.isColorGlyph(glyph_id));
+    }
 
     // resize
     {
@@ -762,4 +782,20 @@ test "mono to rgba" {
 
     // glyph 3 is mono in Noto
     _ = try ft_font.renderGlyph(alloc, &atlas, 3, .{});
+}
+
+test "svg font table" {
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontJuliaMono;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
+
+    const table = (try face.copyTable(alloc, "SVG ")).?;
+    defer alloc.free(table);
+
+    try testing.expectEqual(430, table.len);
 }

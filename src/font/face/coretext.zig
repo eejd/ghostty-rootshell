@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
+const opentype = @import("../opentype.zig");
 const quirks = @import("../../quirks.zig");
 
 const log = std.log.scoped(.font_face);
@@ -17,14 +18,17 @@ pub const Face = struct {
     /// if we're using Harfbuzz.
     hb_font: if (harfbuzz_shaper) harfbuzz.Font else void,
 
-    /// The presentation for this font.
-    presentation: font.Presentation,
-
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
+
+    /// If the face can possibly be colored, then this is the state
+    /// used to check for color information. This is null if the font
+    /// can't possibly be colored (i.e. doesn't have SVG, sbix, etc
+    /// tables).
+    color: ?ColorState = null,
 
     /// True if our build is using Harfbuzz. If we're not, we can avoid
     /// some Harfbuzz-specific code paths.
@@ -94,27 +98,19 @@ pub const Face = struct {
         } else {};
         errdefer if (comptime harfbuzz_shaper) hb_font.destroy();
 
+        const color: ?ColorState = if (traits.color_glyphs)
+            try ColorState.init(ct_font)
+        else
+            null;
+        errdefer if (color) |v| v.deinit();
+
         var result: Face = .{
             .font = ct_font,
             .hb_font = hb_font,
-            .presentation = if (traits.color_glyphs) .emoji else .text,
             .metrics = metrics,
+            .color = color,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
-
-        // If our presentation is emoji, we also check for the presence of
-        // emoji codepoints. This forces fonts with colorized glyphs that aren't
-        // emoji font to be treated as text. Long term, this isn't what we want
-        // but this fixes some bugs in the short term. See:
-        // https://github.com/mitchellh/ghostty/issues/1768
-        //
-        // Longer term, we'd like to detect mixed color/non-color fonts and
-        // handle them correctly by rendering the color glyphs as color and the
-        // non-color glyphs as text.
-        if (result.presentation == .emoji and result.glyphIndex('🥸') == null) {
-            log.warn("font has colorized glyphs but isn't emoji, treating as text", .{});
-            result.presentation = .text;
-        }
 
         // In debug mode, we output information about available variation axes,
         // if they exist.
@@ -167,6 +163,7 @@ pub const Face = struct {
     pub fn deinit(self: *Face) void {
         self.font.release();
         if (comptime harfbuzz_shaper) self.hb_font.destroy();
+        if (self.color) |v| v.deinit();
         self.* = undefined;
     }
 
@@ -224,6 +221,19 @@ pub const Face = struct {
         const face = try initFont(ct_font, opts);
         self.deinit();
         self.* = face;
+    }
+
+    /// Returns true if the face has any glyphs that are colorized.
+    /// To determine if an individual glyph is colorized you must use
+    /// isColorGlyph.
+    pub fn hasColor(self: *const Face) bool {
+        return self.color != null;
+    }
+
+    /// Returns true if the given glyph ID is colorized.
+    pub fn isColorGlyph(self: *const Face, glyph_id: u32) bool {
+        const c = self.color orelse return false;
+        return c.isColorGlyph(glyph_id);
     }
 
     /// Returns the glyph index for the given Unicode code point. If this
@@ -296,7 +306,7 @@ pub const Face = struct {
             depth: u32,
             space: *macos.graphics.ColorSpace,
             context_opts: c_uint,
-        } = if (self.presentation == .text) .{
+        } = if (!self.isColorGlyph(glyph_index)) .{
             .color = false,
             .depth = 1,
             .space = try macos.graphics.ColorSpace.createDeviceGray(),
@@ -570,6 +580,91 @@ pub const Face = struct {
 
         return result;
     }
+
+    /// Copy the font table data for the given tag.
+    pub fn copyTable(self: Face, alloc: Allocator, tag: *const [4]u8) !?[]u8 {
+        const data = self.font.copyTable(macos.text.FontTableTag.init(tag)) orelse
+            return null;
+        defer data.release();
+
+        const buf = try alloc.alloc(u8, data.getLength());
+        errdefer alloc.free(buf);
+
+        const ptr = data.getPointer();
+        @memcpy(buf, ptr[0..buf.len]);
+
+        return buf;
+    }
+};
+
+/// The state associated with a font face that may have colorized glyphs.
+/// This is used to determine if a specific glyph ID is colorized.
+const ColorState = struct {
+    /// True if there is an sbix font table. For now, the mere presence
+    /// of an sbix font table causes us to assume the glyph is colored.
+    /// We can improve this later.
+    sbix: bool,
+
+    /// The SVG font table data (if any), which we can use to determine
+    /// if a glyph is present in the SVG table.
+    svg: ?opentype.SVG,
+    svg_data: ?*macos.foundation.Data,
+
+    pub fn init(f: *macos.text.Font) !ColorState {
+        // sbix is true if the table exists in the font data at all.
+        // In the future we probably want to actually parse it and
+        // check for glyphs.
+        const sbix: bool = sbix: {
+            const tag = macos.text.FontTableTag.init("sbix");
+            const data = f.copyTable(tag) orelse break :sbix false;
+            data.release();
+            break :sbix data.getLength() > 0;
+        };
+
+        // Read the SVG table out of the font data.
+        const svg: ?struct {
+            svg: opentype.SVG,
+            data: *macos.foundation.Data,
+        } = svg: {
+            const tag = macos.text.FontTableTag.init("SVG ");
+            const data = f.copyTable(tag) orelse break :svg null;
+            errdefer data.release();
+            const ptr = data.getPointer();
+            const len = data.getLength();
+            break :svg .{
+                .svg = try opentype.SVG.init(ptr[0..len]),
+                .data = data,
+            };
+        };
+
+        return .{
+            .sbix = sbix,
+            .svg = if (svg) |v| v.svg else null,
+            .svg_data = if (svg) |v| v.data else null,
+        };
+    }
+
+    pub fn deinit(self: *const ColorState) void {
+        if (self.svg_data) |v| v.release();
+    }
+
+    /// Returns true if the given glyph ID is colored.
+    pub fn isColorGlyph(self: *const ColorState, glyph_id: u32) bool {
+        // Our font system uses 32-bit glyph IDs for special values but
+        // actual fonts only contain 16-bit glyph IDs so if we can't cast
+        // into it it must be false.
+        const glyph_u16 = std.math.cast(u16, glyph_id) orelse return false;
+
+        // sbix is always true for now
+        if (self.sbix) return true;
+
+        // if we have svg data, check it
+        if (self.svg) |svg| {
+            if (svg.hasGlyph(glyph_u16)) return true;
+        }
+
+        return false;
+    }
 };
 
 test {
@@ -588,8 +683,6 @@ test {
 
     var face = try Face.initFontCopy(ct_font, .{ .size = .{ .points = 12 } });
     defer face.deinit();
-
-    try testing.expectEqual(font.Presentation.text, face.presentation);
 
     // Generate all visible ASCII
     var i: u8 = 32;
@@ -612,8 +705,6 @@ test "name" {
     var face = try Face.initFontCopy(ct_font, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
-    try testing.expectEqual(font.Presentation.text, face.presentation);
-
     var buf: [1024]u8 = undefined;
     const font_name = try face.name(&buf);
     try testing.expect(std.mem.eql(u8, font_name, "Menlo"));
@@ -632,11 +723,11 @@ test "emoji" {
     var face = try Face.initFontCopy(ct_font, .{ .size = .{ .points = 18 } });
     defer face.deinit();
 
-    // Presentation
-    try testing.expectEqual(font.Presentation.emoji, face.presentation);
-
     // Glyph index check
-    try testing.expect(face.glyphIndex('🥸') != null);
+    {
+        const id = face.glyphIndex('🥸').?;
+        try testing.expect(face.isColorGlyph(id));
+    }
 }
 
 test "in-memory" {
@@ -652,8 +743,6 @@ test "in-memory" {
 
     var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
-
-    try testing.expectEqual(font.Presentation.text, face.presentation);
 
     // Generate all visible ASCII
     var i: u8 = 32;
@@ -677,8 +766,6 @@ test "variable" {
     var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
-    try testing.expectEqual(font.Presentation.text, face.presentation);
-
     // Generate all visible ASCII
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
@@ -701,8 +788,6 @@ test "variable set variation" {
     var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
-    try testing.expectEqual(font.Presentation.text, face.presentation);
-
     try face.setVariations(&.{
         .{ .id = font.face.Variation.Id.init("wght"), .value = 400 },
     }, .{ .size = .{ .points = 12 } });
@@ -715,7 +800,24 @@ test "variable set variation" {
     }
 }
 
-test "mixed color/non-color font treated as text" {
+test "svg font table" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = @import("../test.zig").fontJuliaMono;
+
+    var lib = try font.Library.init();
+    defer lib.deinit();
+
+    var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
+
+    const table = (try face.copyTable(alloc, "SVG ")).?;
+    defer alloc.free(table);
+
+    try testing.expect(table.len > 0);
+}
+
+test "glyphIndex colored vs text" {
     const testing = std.testing;
     const testFont = @import("../test.zig").fontJuliaMono;
 
@@ -725,5 +827,15 @@ test "mixed color/non-color font treated as text" {
     var face = try Face.init(lib, testFont, .{ .size = .{ .points = 12 } });
     defer face.deinit();
 
-    try testing.expect(face.presentation == .text);
+    {
+        const glyph = face.glyphIndex('A').?;
+        try testing.expectEqual(4, glyph);
+        try testing.expect(!face.isColorGlyph(glyph));
+    }
+
+    {
+        const glyph = face.glyphIndex(0xE800).?;
+        try testing.expectEqual(11482, glyph);
+        try testing.expect(face.isColorGlyph(glyph));
+    }
 }

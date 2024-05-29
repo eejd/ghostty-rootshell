@@ -1,7 +1,9 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const c = @import("c.zig");
 const errors = @import("errors.zig");
 const Library = @import("Library.zig");
+const Tag = @import("tag.zig").Tag;
 const Error = errors.Error;
 const intToError = errors.intToError;
 
@@ -22,6 +24,12 @@ pub const Face = struct {
     /// color glyphs.
     pub fn hasColor(self: Face) bool {
         return c.FT_HAS_COLOR(self.handle);
+    }
+
+    /// A macro that returns true whenever a face object contains an ‘sbix’
+    /// OpenType table and outline glyphs.
+    pub fn hasSBIX(self: Face) bool {
+        return c.FT_HAS_SBIX(self.handle);
     }
 
     /// A macro that returns true whenever a face object contains some
@@ -100,6 +108,40 @@ pub const Face = struct {
         var name: c.FT_SfntName = undefined;
         const res = c.FT_Get_Sfnt_Name(self.handle, @intCast(i), &name);
         return if (intToError(res)) |_| name else |err| err;
+    }
+
+    /// Load any SFNT font table into client memory.
+    pub fn loadSfntTable(
+        self: Face,
+        alloc: Allocator,
+        tag: Tag,
+    ) (Allocator.Error || Error)!?[]u8 {
+        const tag_c: c_ulong = @intCast(@as(u32, @bitCast(tag)));
+
+        // Get the length of the table in bytes
+        var len: c_ulong = 0;
+        var res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
+        _ = intToError(res) catch |err| return err;
+
+        // If our length is zero we don't have a table.
+        if (len == 0) return null;
+
+        // Allocate a buffer to hold the table and load it
+        const buf = try alloc.alloc(u8, len);
+        errdefer alloc.free(buf);
+        res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, buf.ptr, &len);
+        _ = intToError(res) catch |err| return err;
+
+        return buf;
+    }
+
+    /// Check whether a given SFNT table is available in a face.
+    pub fn hasSfntTable(self: Face, tag: Tag) bool {
+        const tag_c: c_ulong = @intCast(@as(u32, @bitCast(tag)));
+        var len: c_ulong = 0;
+        const res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
+        _ = intToError(res) catch return false;
+        return len != 0;
     }
 
     /// Retrieve the font variation descriptor for a font.

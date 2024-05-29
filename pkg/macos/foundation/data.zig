@@ -20,8 +20,12 @@ pub const Data = opaque {
         foundation.CFRelease(self);
     }
 
-    pub fn getPointer(self: *Data) *const anyopaque {
+    pub fn getPointer(self: *Data) [*]const u8 {
         return @ptrCast(c.CFDataGetBytePtr(@ptrCast(self)));
+    }
+
+    pub fn getLength(self: *Data) usize {
+        return @intCast(c.CFDataGetLength(@ptrCast(self)));
     }
 };
 
