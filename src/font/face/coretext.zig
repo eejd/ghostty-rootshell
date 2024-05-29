@@ -7,7 +7,6 @@ const harfbuzz = @import("harfbuzz");
 const font = @import("../main.zig");
 const opentype = @import("../opentype.zig");
 const quirks = @import("../../quirks.zig");
-const GlyphIndex = font.face.GlyphIndex;
 
 const log = std.log.scoped(.font_face);
 
