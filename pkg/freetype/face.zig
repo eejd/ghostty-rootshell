@@ -135,6 +135,15 @@ pub const Face = struct {
         return buf;
     }
 
+    /// Check whether a given SFNT table is available in a face.
+    pub fn hasSfntTable(self: Face, tag: Tag) bool {
+        const tag_u64: u64 = @intCast(@as(u32, @bitCast(tag)));
+        var len: c_ulong = 0;
+        const res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, null, &len);
+        _ = intToError(res) catch return false;
+        return len != 0;
+    }
+
     /// Retrieve the font variation descriptor for a font.
     pub fn getMMVar(self: Face) Error!*c.FT_MM_Var {
         var result: *c.FT_MM_Var = undefined;

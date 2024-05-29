@@ -216,6 +216,11 @@ pub const Face = struct {
         // sbix table is always true for now
         if (self.face.hasSBIX()) return true;
 
+        // CBDT/CBLC tables always imply colorized glyphs.
+        // These are used by Noto.
+        if (self.face.hasSfntTable(freetype.Tag.init("CBDT"))) return true;
+        if (self.face.hasSfntTable(freetype.Tag.init("CBLC"))) return true;
+
         // Otherwise, load the glyph and see what format it is in.
         self.face.loadGlyph(glyph_id, .{
             .render = true,
@@ -697,6 +702,13 @@ test "color emoji" {
     defer ft_font.deinit();
 
     _ = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('🥸').?, .{});
+
+    // Make sure this glyph has color
+    {
+        try testing.expect(ft_font.hasColor());
+        const glyph_id = ft_font.glyphIndex('🥸').?;
+        try testing.expect(ft_font.isColorGlyph(glyph_id));
+    }
 
     // resize
     {
