@@ -238,7 +238,7 @@ pub const Face = struct {
 
     /// Returns the glyph index for the given Unicode code point. If this
     /// face doesn't support this glyph, null is returned.
-    pub fn glyphIndex(self: Face, cp: u32) ?u16 {
+    pub fn glyphIndex(self: Face, cp: u32) ?u32 {
         // Turn UTF-32 into UTF-16 for CT API
         var unichars: [2]u16 = undefined;
         const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(cp, &unichars);
