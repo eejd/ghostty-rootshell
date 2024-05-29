@@ -116,11 +116,11 @@ pub const Face = struct {
         alloc: Allocator,
         tag: Tag,
     ) (Allocator.Error || Error)!?[]u8 {
-        const tag_u64: u64 = @intCast(@as(u32, @bitCast(tag)));
+        const tag_c: c_ulong = @intCast(@as(u32, @bitCast(tag)));
 
         // Get the length of the table in bytes
         var len: c_ulong = 0;
-        var res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, null, &len);
+        var res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
         _ = intToError(res) catch |err| return err;
 
         // If our length is zero we don't have a table.
@@ -129,7 +129,7 @@ pub const Face = struct {
         // Allocate a buffer to hold the table and load it
         const buf = try alloc.alloc(u8, len);
         errdefer alloc.free(buf);
-        res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, buf.ptr, &len);
+        res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, buf.ptr, &len);
         _ = intToError(res) catch |err| return err;
 
         return buf;
@@ -137,9 +137,9 @@ pub const Face = struct {
 
     /// Check whether a given SFNT table is available in a face.
     pub fn hasSfntTable(self: Face, tag: Tag) bool {
-        const tag_u64: u64 = @intCast(@as(u32, @bitCast(tag)));
+        const tag_c: c_ulong = @intCast(@as(u32, @bitCast(tag)));
         var len: c_ulong = 0;
-        const res = c.FT_Load_Sfnt_Table(self.handle, tag_u64, 0, null, &len);
+        const res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
         _ = intToError(res) catch return false;
         return len != 0;
     }
