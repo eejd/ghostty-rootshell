@@ -253,9 +253,6 @@ pub const Face = struct {
         // to decode down into exactly one glyph ID.
         if (pair) assert(glyphs[1] == 0);
 
-        // If we have colorization information, then check if this
-        // glyph is colorized.
-
         return @intCast(glyphs[0]);
     }
 
@@ -600,6 +597,8 @@ pub const Face = struct {
     }
 };
 
+/// The state associated with a font face that may have colorized glyphs.
+/// This is used to determine if a specific glyph ID is colorized.
 const ColorState = struct {
     /// True if there is an sbix font table. For now, the mere presence
     /// of an sbix font table causes us to assume the glyph is colored.
