@@ -3166,7 +3166,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 // the file and write the empty file to the pty so that this
                 // command always works on the primary screen.
                 const pages = &self.io.terminal.screen.pages;
-                if (pages.getBottomRight(.history)) |br| {
+                if (pages.getBottomRight(.active)) |br| {
                     const tl = pages.getTopLeft(.history);
                     try self.io.terminal.screen.dumpString(
                         file.writer(),
