@@ -211,8 +211,10 @@ pub fn getIndex(
         }
     }
 
-    // If this is already regular, we're done falling back.
-    if (style == .regular and p == null) return null;
+    // If this is regular with any matching presentation, then we are done
+    // there is nothing more we can do. Otherwise we fall through and do
+    // an any presentation search.
+    if (style == .regular and p_mode == .any) return null;
 
     // For non-regular fonts, we fall back to regular with any presentation
     return self.collection.getIndex(cp, .regular, .{ .any = {} });
