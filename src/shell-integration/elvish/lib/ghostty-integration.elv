@@ -1,5 +1,6 @@
 {
   fn restore-xdg-dirs {
+    use str
     var integration-dir = $E:GHOSTTY_SHELL_INTEGRATION_XDG_DIR
     var xdg-dirs = [(str:split ':' $E:XDG_DATA_DIRS)]
     var len = (count $xdg-dirs)
@@ -77,7 +78,7 @@
 
   fn sudo-with-terminfo {|@args|
     var sudoedit = $false
-    put $args | each {|arg|
+    for arg $args {
       use str
       if (str:has-prefix $arg -) {
         if (has-value [e -edit] $arg[1..]) {
@@ -90,7 +91,7 @@
       if (not (has-value $arg =)) { break }
     }
 
-    if $sudoedit { set args = [ TERMINFO=$E:TERMINFO $@args ] }
+    if (not $sudoedit) { set args = [ TERMINFO=$E:TERMINFO $@args ] }
     command sudo $@args
   }
 
@@ -99,21 +100,24 @@
     report-pwd
   }
 
-  var no-cursor = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_CURSOR)
-  var no-sudo   = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_SUDO)
-
   set edit:before-readline = (conj $edit:before-readline $mark-prompt-start~)
   set edit:after-readline  = (conj $edit:after-readline $mark-output-start~)
   set edit:after-command   = (conj $edit:after-command $mark-output-end~)
-  set after-chdir = (conj $after-chdir {|_| report-pwd })
 
-  if $no-cursor {
+  var no-title  = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_TITLE)
+  var no-cursor = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_CURSOR)
+  var no-sudo   = (eq 1 $E:GHOSTTY_SHELL_INTEGRATION_NO_SUDO)
+
+  if (not $no-title) {
+    set after-chdir = (conj $after-chdir {|_| report-pwd })
+  }
+  if (not $no-cursor) {
     fn beam  { printf "\e[5 q" }
     fn block { printf "\e[0 q" }
     set edit:before-readline = (conj $edit:before-readline $beam~)
     set edit:after-readline  = (conj $edit:after-readline {|_| block })
   }
-  if (and $no-sudo (not-eq ""$E:TERMINFO) (eq file (type -t sudo))) {
+  if (and (not $no-sudo) (not-eq "" $E:TERMINFO) (eq file (type -t sudo))) {
     edit:add-var sudo~ $sudo-with-terminfo~
   }
 }
