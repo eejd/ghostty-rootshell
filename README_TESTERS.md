@@ -1,7 +1,7 @@
 # Hello Ghostty Testers! 👋👻
 
 Thank you for being an early Ghostty user! I'm super excited to have you
-here. **Please, please read the [README](https://github.com/mitchellh/ghostty#readme)!**
+here. **Please, please read the [README](https://github.com/ghostty-org/ghostty#readme)!**
 There is a lot of information in the README that I will not be repeating here,
 especially about how to get Ghostty and configure it.
 
@@ -50,18 +50,6 @@ This is the priority of bugs:
    unsupported escape sequences that impact your workflow.
 
 3. Anything else...
-
-### Commit Access
-
-**Warning:** All Ghostty beta testers also have full push access to the
-repository. GitHub doesn't allow personal private repositories to have
-fine-grained permissions so its all-or-nothing. However, after hundreds
-of testers we've never had an issue.
-
-For this to work, our community has to work on trust. We expect everyone
-to respect each others work and to point out if you see any bad actors.
-For contributions, please open PRs as previously mentioned, and only
-`@mitchellh` should merge to main. Thank you!
 
 ## Let's Talk!
 

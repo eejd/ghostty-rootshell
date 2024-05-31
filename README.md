@@ -16,7 +16,7 @@
     <a href="#developing-ghostty">Developing</a>
   </p>
   <p align="center">
-    <a href="https://github.com/mitchellh/ghostty/blob/main/README_TESTERS.md"><b>Testers! Read This Too!</b></a>
+    <a href="https://github.com/ghostty-org/ghostty/blob/main/README_TESTERS.md"><b>Testers! Read This Too!</b></a>
   </p>
 </p>
 
@@ -45,12 +45,12 @@ beta users using Ghostty as their primary terminal. See more in
 
 ## Download
 
-| Platform / Package | Links                                                                    | Notes                      |
-| ------------------ | ------------------------------------------------------------------------ | -------------------------- |
-| macOS              | [Tip ("Nightly")](https://github.com/mitchellh/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
-| Linux              | [Build from Source](#developing-ghostty)                                 |                            |
-| Linux (NixOS/Nix)  | [Use the Flake](#nix-package)                                            |                            |
-| Windows            | [Build from Source](#developing-ghostty)                                 | [Notes](#windows-notes)    |
+| Platform / Package | Links                                                                      | Notes                      |
+| ------------------ | -------------------------------------------------------------------------- | -------------------------- |
+| macOS              | [Tip ("Nightly")](https://github.com/ghostty-org/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
+| Linux              | [Build from Source](#developing-ghostty)                                   |                            |
+| Linux (NixOS/Nix)  | [Use the Flake](#nix-package)                                              |                            |
+| Windows            | [Build from Source](#developing-ghostty)                                   | [Notes](#windows-notes)    |
 
 ### Configuration
 
@@ -117,7 +117,7 @@ you may want to pipe that through a pager, an editor, etc.
 > to have something to attach the doc comment to.
 
 You can also see and read all available configuration options in the source
-[Config structure](https://github.com/mitchellh/ghostty/blob/main/src/config/Config.zig).
+[Config structure](https://github.com/ghostty-org/ghostty/blob/main/src/config/Config.zig).
 The available keys are the keys verbatim, and their possible values are typically
 documented in the comments. You also can search for the
 [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
@@ -352,7 +352,7 @@ Additional details for each step in the big roadmap below:
 
 Ghostty implements enough control sequences to be used by hundreds of
 testers daily for over the past year. Further, we've done a
-[comprehensive xterm audit](https://github.com/mitchellh/ghostty/issues/632)
+[comprehensive xterm audit](https://github.com/ghostty-org/ghostty/issues/632)
 comparing Ghostty's behavior to xterm and building a set of conformance
 test cases.
 
@@ -597,7 +597,7 @@ $ cd macos && xcodebuild
 
 This will output the app to `macos/build/ReleaseLocal/Ghostty.app`.
 This app will be not be signed or notarized.
-[Official continuous builds are available](https://github.com/mitchellh/ghostty/releases/tag/tip)
+[Official continuous builds are available](https://github.com/ghostty-org/ghostty/releases/tag/tip)
 that are both signed and notarized.
 
 The "ReleaseLocal" build configuration is specifically for local release
@@ -605,7 +605,7 @@ builds and disables some security features (such as "Library Validation")
 to make it easier to run without having to have a code signing identity
 and so on. These builds aren't meant for distribution. If you want a release
 build with all security features, I highly recommend you use
-[the official continuous builds](https://github.com/mitchellh/ghostty/releases/tag/tip).
+[the official continuous builds](https://github.com/ghostty-org/ghostty/releases/tag/tip).
 
 When running the app, logs are available via macOS unified logging such
 as `Console.app`. The easiest way I've found to view these is to just use the CLI:
@@ -617,14 +617,14 @@ $ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 
 ### Windows Notes
 
-Windows support is still a [work-in-progress](https://github.com/mitchellh/ghostty/issues/437).
+Windows support is still a [work-in-progress](https://github.com/ghostty-org/ghostty/issues/437).
 The current status is that a bare bones glfw-based build _works_! The experience
 with this build is super minimal: there are no native experiences, only a
 single window is supported, no tabs, etc. Therefore, the current status is
 simply that the core terminal experience works.
 
 If you want to help with Windows development, please see the
-[tracking issue](https://github.com/mitchellh/ghostty/issues/437). We plan
+[tracking issue](https://github.com/ghostty-org/ghostty/issues/437). We plan
 on vastly improving this experience over time.
 
 ### Linting
@@ -641,7 +641,7 @@ run this from the repo root before you commit:
 prettier --write .
 ```
 
-Make sure your Prettier version matches the version of Prettier in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
+Make sure your Prettier version matches the version of Prettier in [devShell.nix](https://github.com/ghostty-org/ghostty/blob/main/nix/devShell.nix).
 
 Nix users can use the following command to format with Prettier:
 
@@ -666,7 +666,7 @@ Non-Nix users should install Alejandra and use the following command to format w
 alejandra .
 ```
 
-Make sure your Alejandra version matches the version of Alejandra in [devShell.nix](https://github.com/mitchellh/ghostty/blob/main/nix/devShell.nix).
+Make sure your Alejandra version matches the version of Alejandra in [devShell.nix](https://github.com/ghostty-org/ghostty/blob/main/nix/devShell.nix).
 
 ### Nix Package
 
@@ -687,7 +687,7 @@ Below is an example:
     # to compile LLVM, Zig and Ghostty itself on your machine,
     # which will take a very very long time.
     ghostty = {
-      url = "git+ssh://git@github.com/mitchellh/ghostty";
+      url = "git+ssh://git@github.com/ghostty-org/ghostty";
     };
   };
 
