@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 now = datetime.now(timezone.utc)
 build = os.environ["GHOSTTY_BUILD"]
 commit = os.environ["GHOSTTY_COMMIT"]
-repo = "https://github.com/mitchellh/ghostty"
+repo = "https://github.com/ghostty-org/ghostty"
 
 # Read our sign_update output
 with open("sign_update.txt", "r") as f:

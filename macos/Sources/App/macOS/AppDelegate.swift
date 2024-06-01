@@ -463,7 +463,7 @@ class AppDelegate: NSObject,
     }
     
     @IBAction func showHelp(_ sender: Any) {
-        guard let url = URL(string: "https://github.com/mitchellh/ghostty") else { return }
+        guard let url = URL(string: "https://github.com/ghostty-org/ghostty") else { return }
         NSWorkspace.shared.open(url)
     }
 }

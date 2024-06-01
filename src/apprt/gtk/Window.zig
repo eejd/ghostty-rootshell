@@ -471,7 +471,7 @@ fn gtkActionAbout(
         "version",
         build_config.version_string.ptr,
         "website",
-        "https://github.com/mitchellh/ghostty",
+        "https://github.com/ghostty-org/ghostty",
         @as(?*anyopaque, null),
     );
 }
