@@ -160,7 +160,7 @@ in
     '';
 
     meta = with lib; {
-      homepage = "https://github.com/mitchellh/ghostty";
+      homepage = "https://github.com/ghostty-org/ghostty";
       license = licenses.mit;
       platforms = ["x86_64-linux" "aarch64-linux"];
       mainProgram = "ghostty";
