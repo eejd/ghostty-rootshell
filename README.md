@@ -5,7 +5,7 @@
   <br>Ghostty
 </h1>
   <p align="center">
-    GPU-accelerated terminal emulator pushing modern features.
+    Fast, native, feature-rich terminal emulator pushing modern features.
     <br />
     <a href="#about">About</a>
     ·
@@ -33,10 +33,11 @@ with modern, optional, non-standards-compliant features to enhance the
 capabilities of CLI applications. We aim to be the best in this category,
 and competitive in the rest.
 
-While aiming for this ambitious goal, Ghostty is a fully standards compliant
-terminal emulator that aims to remain compatible with all existing shells
-and software. You can use this as a drop-in replacement for your existing
-terminal emulator.
+While aiming for this ambitious goal, our first step is to make Ghostty
+one of the best fully standards compliant terminal emulator, remaining
+compatible with all existing shells and software while supporting all of
+the latest terminal innovations in the ecosystem. You can use Ghostty
+as a drop-in replacement for your existing terminal emulator.
 
 **Project Status:** Ghostty is still in beta but implements most of the
 features you'd expect for a daily driver. We currently have hundreds of active
