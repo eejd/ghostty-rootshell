@@ -358,14 +358,20 @@ fn legacy(
     // Let's see if we should apply fixterms to this codepoint.
     // At this stage of key processing, we only need to apply fixterms
     // to unicode codepoints if we have ctrl set.
-    if (self.event.mods.ctrl) {
+    if (self.event.mods.ctrl) csiu: {
         // Important: we want to use the original mods here, not the
         // effective mods. The fixterms spec states the shifted chars
         // should be sent uppercase but Kitty changes that behavior
         // so we'll send all the mods.
         const csi_u_mods, const char = mods: {
-            var char: u21 = @intCast(utf8[0]);
             var mods = CsiUMods.fromInput(self.event.mods);
+
+            // Get our codepoint. If we have more than one codepoint this
+            // can't be valid CSIu.
+            const view = std.unicode.Utf8View.init(self.event.utf8) catch break :csiu;
+            var it = view.iterator();
+            var char = it.nextCodepoint() orelse break :csiu;
+            if (it.nextCodepoint() != null) break :csiu;
 
             // If our character is A to Z and we have shift set, then
             // we lowercase it. This is a Kitty-specific behavior that
@@ -2113,6 +2119,21 @@ test "legacy: right_shift+tab" {
     try testing.expectEqualStrings("\x1b[Z", actual);
 }
 
+test "legacy: hu layout ctrl+ő sends proper codepoint" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .left_bracket,
+            .physical_key = .left_bracket,
+            .mods = .{ .ctrl = true },
+            .utf8 = "ő",
+            .unshifted_codepoint = 337,
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("[337;5u", actual[1..]);
+}
 test "ctrlseq: normal ctrl c" {
     const seq = ctrlSeq("c", 'c', .{ .ctrl = true });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
