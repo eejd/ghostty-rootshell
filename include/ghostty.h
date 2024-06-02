@@ -330,10 +330,22 @@ typedef struct {
   bool composing;
 } ghostty_input_key_s;
 
+typedef enum {
+  GHOSTTY_TRIGGER_TRANSLATED,
+  GHOSTTY_TRIGGER_PHYSICAL,
+  GHOSTTY_TRIGGER_UNICODE,
+} ghostty_input_trigger_tag_e;
+
+typedef union {
+  ghostty_input_key_e translated;
+  ghostty_input_key_e physical;
+  uint32_t unicode;
+} ghostty_input_trigger_key_u;
+
 typedef struct {
-  ghostty_input_key_e key;
+  ghostty_input_trigger_tag_e tag;
+  ghostty_input_trigger_key_u key;
   ghostty_input_mods_e mods;
-  bool physical;
 } ghostty_input_trigger_s;
 
 typedef enum {
