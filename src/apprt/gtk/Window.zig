@@ -315,9 +315,15 @@ fn gtkPageAdded(
     _: c.guint,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-    _ = self;
     _ = child;
+    const self = userdataSelf(ud.?);
+
+    // Whenever a new page is added, we always grab focus of the
+    // currently selected page. This was added specifically so that when
+    // we drag a tab out to create a new window ("create-window" event)
+    // we grab focus in the new window. Without this, the terminal didn't
+    // have focus.
+    self.focusCurrentTab();
 }
 
 fn gtkPageRemoved(
