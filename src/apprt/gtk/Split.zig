@@ -274,37 +274,50 @@ pub fn directionMap(self: *const Split, from: Side) DirectionMap {
     var result = DirectionMap.initFull(null);
 
     if (self.directionPrevious(from)) |prev| {
-        result.put(.previous, prev);
-
-        // This behavior matches the behavior of macOS at the time of writing
-        // this. There is an open issue (#524) to make this depend on the
-        // actual physical location of the current split.
-        result.put(.top, prev);
-        result.put(.left, prev);
+        result.put(.previous, prev.surface);
+        if (!prev.wrapped) {
+            // This behavior matches the behavior of macOS at the time of writing
+            // this. There is an open issue (#524) to make this depend on the
+            // actual physical location of the current split.
+            result.put(.top, prev.surface);
+            result.put(.left, prev.surface);
+        }
     }
 
     if (self.directionNext(from)) |next| {
-        result.put(.next, next);
-        result.put(.bottom, next);
-        result.put(.right, next);
+        result.put(.next, next.surface);
+        if (!next.wrapped) {
+            result.put(.bottom, next.surface);
+            result.put(.right, next.surface);
+        }
     }
 
     return result;
 }
 
-fn directionPrevious(self: *const Split, from: Side) ?*Surface {
+fn directionPrevious(self: *const Split, from: Side) ?struct {
+    surface: *Surface,
+    wrapped: bool,
+} {
     switch (from) {
         // From the bottom right, our previous is the deepest surface
         // in the top-left of our own split.
-        .bottom_right => return self.top_left.deepestSurface(.bottom_right),
+        .bottom_right => return .{
+            .surface = self.top_left.deepestSurface(.bottom_right) orelse return null,
+            .wrapped = false,
+        },
 
         // From the top left its more complicated. It is the de
         .top_left => {
-            // If we have no parent split then there can be no previous.
-            const parent = self.container.split() orelse return null;
-            const side = self.container.splitSide() orelse return null;
+            // If we have no parent split then there can be no unwrapped prev.
+            // We can still have a wrapped previous.
+            const parent = self.container.split() orelse return .{
+                .surface = self.bottom_right.deepestSurface(.bottom_right) orelse return null,
+                .wrapped = true,
+            };
 
             // The previous value is the previous of the side that we are.
+            const side = self.container.splitSide() orelse return null;
             return switch (side) {
                 .top_left => parent.directionPrevious(.top_left),
                 .bottom_right => parent.directionPrevious(.bottom_right),
@@ -313,20 +326,29 @@ fn directionPrevious(self: *const Split, from: Side) ?*Surface {
     }
 }
 
-fn directionNext(self: *const Split, from: Side) ?*Surface {
+fn directionNext(self: *const Split, from: Side) ?struct {
+    surface: *Surface,
+    wrapped: bool,
+} {
     switch (from) {
         // From the top left, our next is the earliest surface in the
         // top-left direction of the bottom-right side of our split. Fun!
-        .top_left => return self.bottom_right.deepestSurface(.top_left),
+        .top_left => return .{
+            .surface = self.bottom_right.deepestSurface(.top_left) orelse return null,
+            .wrapped = false,
+        },
 
         // From the bottom right is more compliated. It is the deepest
         // (last) surface in the
         .bottom_right => {
             // If we have no parent split then there can be no next.
-            const parent = self.container.split() orelse return null;
-            const side = self.container.splitSide() orelse return null;
+            const parent = self.container.split() orelse return .{
+                .surface = self.top_left.deepestSurface(.top_left) orelse return null,
+                .wrapped = true,
+            };
 
             // The previous value is the previous of the side that we are.
+            const side = self.container.splitSide() orelse return null;
             return switch (side) {
                 .top_left => parent.directionNext(.top_left),
                 .bottom_right => parent.directionNext(.bottom_right),
