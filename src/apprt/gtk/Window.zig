@@ -114,6 +114,9 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_notebook_set_show_tabs(notebook, 0);
     c.gtk_notebook_set_show_border(notebook, 0);
 
+    // This enables all Ghostty terminal tabs to be exchanged across windows.
+    c.gtk_notebook_set_group_name(notebook, "ghostty-terminal-tabs");
+
     // This is important so the notebook expands to fit available space.
     // Otherwise, it will be zero/zero in the box below.
     c.gtk_widget_set_vexpand(notebook_widget, 1);
