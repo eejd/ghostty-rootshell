@@ -803,8 +803,12 @@ pub fn setMouseShape(
     };
     errdefer c.g_object_unref(cursor);
 
-    // Set our new cursor
-    c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+    // Set our new cursor. We only do this if the cursor we currently
+    // have is NOT set to "none" because setting the cursor causes it
+    // to become visible again.
+    if (c.gtk_widget_get_cursor(@ptrCast(self.gl_area)) != self.app.cursor_none) {
+        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+    }
 
     // Free our existing cursor
     if (self.cursor) |old| c.g_object_unref(old);
