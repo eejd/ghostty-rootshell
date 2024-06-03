@@ -66,8 +66,14 @@ pub const Point = union(Tag) {
 };
 
 pub const Coordinate = struct {
+    /// x can use size.CellCountInt because the number of columns
+    /// can't ever be more than a valid number of columns in a Page.
     x: size.CellCountInt = 0,
-    y: size.CellCountInt = 0,
+
+    /// y does not use size.CellCountInt because certain coordinate
+    /// usage such as screen/history can have more rows than are possible
+    /// in a single page.
+    y: u32 = 0,
 
     pub fn eql(self: Coordinate, other: Coordinate) bool {
         return self.x == other.x and self.y == other.y;
