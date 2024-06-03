@@ -1308,7 +1308,10 @@ pub fn keyCallback(
     }
 
     // If this input event has text, then we hide the mouse if configured.
+    // We only do this on pressed events to avoid hiding the mouse when we
+    // change focus due to a keybinding (i.e. switching tabs).
     if (self.config.mouse_hide_while_typing and
+        event.action == .press and
         !self.mouse.hidden and
         event.utf8.len > 0)
     {
