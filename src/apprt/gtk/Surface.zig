@@ -741,7 +741,14 @@ fn updateTitleLabels(self: *Surface) void {
     // If we have a window and are focused, then we have to update the window title.
     if (self.container.window()) |window| {
         const widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-        if (c.gtk_widget_is_focus(widget) == 1) c.gtk_window_set_title(window.window, title.ptr);
+        if (c.gtk_widget_is_focus(widget) == 1) {
+            // Changing the title somehow unhides our cursor.
+            // https://github.com/ghostty-org/ghostty/issues/1419
+            // I don't know a way around this yet. I've tried re-hiding the
+            // cursor after setting the title but it doesn't work, I think
+            // due to some gtk event loop things...
+            c.gtk_window_set_title(window.window, title.ptr);
+        }
     }
 }
 
@@ -803,8 +810,12 @@ pub fn setMouseShape(
     };
     errdefer c.g_object_unref(cursor);
 
-    // Set our new cursor
-    c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+    // Set our new cursor. We only do this if the cursor we currently
+    // have is NOT set to "none" because setting the cursor causes it
+    // to become visible again.
+    if (c.gtk_widget_get_cursor(@ptrCast(self.gl_area)) != self.app.cursor_none) {
+        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+    }
 
     // Free our existing cursor
     if (self.cursor) |old| c.g_object_unref(old);

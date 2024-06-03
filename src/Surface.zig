@@ -1308,7 +1308,10 @@ pub fn keyCallback(
     }
 
     // If this input event has text, then we hide the mouse if configured.
+    // We only do this on pressed events to avoid hiding the mouse when we
+    // change focus due to a keybinding (i.e. switching tabs).
     if (self.config.mouse_hide_while_typing and
+        event.action == .press and
         !self.mouse.hidden and
         event.utf8.len > 0)
     {
@@ -1319,9 +1322,12 @@ pub fn keyCallback(
     // This handles the scenario where URL highlighting should be
     // toggled for example.
     if (!self.mouse.mods.equal(event.mods)) mouse_mods: {
-        // Usually moving the cursor unhides the mouse so we need
-        // to hide it again if it was hidden.
+        // This is a hacky way to prevent cursorPosCallback from
+        // showing our hidden mouse: we just pretend the mouse isn't hidden.
+        // We used to re-call `self.hideMouse()` but this causes flickering
+        // in some cases in GTK.
         const rehide = self.mouse.hidden;
+        self.mouse.hidden = false;
 
         // Update our modifiers, this will update mouse mods too
         self.modsChanged(event.mods);
@@ -1331,7 +1337,7 @@ pub fn keyCallback(
         self.mouse.link_point = null;
         const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
         self.cursorPosCallback(pos) catch {};
-        if (rehide) self.hideMouse();
+        if (rehide) self.mouse.hidden = true;
     }
 
     // Process the cursor state logic. This will update the cursor shape if
