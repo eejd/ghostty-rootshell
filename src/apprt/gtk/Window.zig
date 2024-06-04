@@ -313,13 +313,20 @@ fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
 }
 
 fn gtkPageAdded(
-    _: *c.GtkNotebook,
-    child: *c.GtkWidget,
-    _: c.guint,
+    notebook: *c.GtkNotebook,
+    _: *c.GtkWidget,
+    page_idx: c.guint,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    _ = child;
     const self = userdataSelf(ud.?);
+
+    // The added page can come from another window with drag and drop, thus we migrate the tab
+    // window to be self.
+    const page = c.gtk_notebook_get_nth_page(notebook, @intCast(page_idx));
+    const tab: *Tab = @ptrCast(@alignCast(
+        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return,
+    ));
+    tab.window = self;
 
     // Whenever a new page is added, we always grab focus of the
     // currently selected page. This was added specifically so that when
