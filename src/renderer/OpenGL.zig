@@ -926,27 +926,9 @@ pub fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
-    const rows_usize: usize = @intCast(screen.pages.rows);
-    const cols_usize: usize = @intCast(screen.pages.cols);
-
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
-    try self.cells_bg.ensureTotalCapacity(
-        self.alloc,
-        rows_usize * cols_usize,
-    );
-
-    // For now, we just ensure that we have enough cells for all the lines
-    // we have plus a full width. This is very likely too much but its
-    // the probably close enough while guaranteeing no more allocations.
     self.cells.clearRetainingCapacity();
-    try self.cells.ensureTotalCapacity(
-        self.alloc,
-
-        // * 3 for glyph + underline + strikethrough for each cell
-        // + 1 for cursor
-        (rows_usize * cols_usize * 3) + 1,
-    );
 
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
@@ -1129,7 +1111,7 @@ pub fn rebuildCells(
             break :cursor_style;
         }
 
-        _ = self.addCursor(screen, cursor_style);
+        _ = try self.addCursor(screen, cursor_style);
         if (cursor_cell) |*cell| {
             if (cell.mode == .fg) {
                 if (self.config.cursor_text) |txt| {
@@ -1144,7 +1126,7 @@ pub fn rebuildCells(
                     cell.a = 255;
                 }
             }
-            self.cells.appendAssumeCapacity(cell.*);
+            try self.cells.append(self.alloc, cell.*);
         }
     }
 
@@ -1182,7 +1164,7 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    self.cells_bg.appendAssumeCapacity(.{
+    try self.cells_bg.append(self.alloc, .{
         .mode = .bg,
         .grid_col = @intCast(x),
         .grid_row = @intCast(y),
@@ -1204,7 +1186,7 @@ fn addPreeditCell(
     });
 
     // Add our text
-    self.cells.appendAssumeCapacity(.{
+    try self.cells.append(self.alloc, .{
         .mode = .fg,
         .grid_col = @intCast(x),
         .grid_row = @intCast(y),
@@ -1230,7 +1212,7 @@ fn addCursor(
     self: *OpenGL,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
-) ?*const CellProgram.Cell {
+) !?*const CellProgram.Cell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
     const wide, const x = cell: {
@@ -1271,7 +1253,7 @@ fn addCursor(
         return null;
     };
 
-    self.cells.appendAssumeCapacity(.{
+    try self.cells.append(self.alloc, .{
         .mode = .fg,
         .grid_col = @intCast(x),
         .grid_row = @intCast(screen.cursor.y),
@@ -1406,7 +1388,7 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        self.cells_bg.appendAssumeCapacity(.{
+        try self.cells_bg.append(self.alloc, .{
             .mode = .bg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
@@ -1458,7 +1440,7 @@ fn updateCell(
             .constrained => .fg_constrained,
         };
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.append(self.alloc, .{
             .mode = mode,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
@@ -1502,7 +1484,7 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.append(self.alloc, .{
             .mode = .fg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
@@ -1535,7 +1517,7 @@ fn updateCell(
             },
         );
 
-        self.cells.appendAssumeCapacity(.{
+        try self.cells.append(self.alloc, .{
             .mode = .fg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
