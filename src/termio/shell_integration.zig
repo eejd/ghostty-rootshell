@@ -57,7 +57,11 @@ pub fn setup(
     };
 
     const result: ShellIntegration = shell: {
-        if (std.mem.eql(u8, "bash", exe)) {
+        // For now, bash integration must be explicitly enabled via force_shell.
+        // Our automatic shell integration requires bash version 4 or later,
+        // and systems like macOS continue to ship bash version 3 by default.
+        // This approach avoids the cost of performing a runtime version check.
+        if (std.mem.eql(u8, "bash", exe) and force_shell == .bash) {
             const new_command = try setupBash(
                 alloc_arena,
                 command,
@@ -128,6 +132,8 @@ test "force shell" {
 /// bash from loading its normal startup files, which becomes
 /// our script's responsibility (along with disabling POSIX
 /// mode).
+///
+/// This approach requires bash version 4 or later.
 ///
 /// This returns a new (allocated) shell command string that
 /// enables the integration or null if integration failed.
