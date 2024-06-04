@@ -1432,17 +1432,25 @@ pub fn keyCallback(
         break :req try termio.Message.WriteReq.init(self.alloc, seq);
     };
 
+    // Copy the encoded data into the inspector event if we have one.
+    // We do this before the mailbox because the IO thread could
+    // release the memory before we get a chance to copy it.
+    if (insp_ev) |*ev| pty: {
+        const slice = write_req.slice();
+        const copy = self.alloc.alloc(u8, slice.len) catch |err| {
+            log.warn("error allocating pty data for inspector err={}", .{err});
+            break :pty;
+        };
+        errdefer self.alloc.free(copy);
+        @memcpy(copy, slice);
+        ev.pty = copy;
+    }
+
     _ = self.io_thread.mailbox.push(switch (write_req) {
         .small => |v| .{ .write_small = v },
         .stable => |v| .{ .write_stable = v },
         .alloc => |v| .{ .write_alloc = v },
     }, .{ .forever = {} });
-    if (insp_ev) |*ev| {
-        ev.pty = self.alloc.dupe(u8, write_req.slice()) catch |err| err: {
-            log.warn("error copying pty data for inspector err={}", .{err});
-            break :err "";
-        };
-    }
     try self.io_thread.wakeup.notify();
 
     // If our event is any keypress that isn't a modifier and we generated
