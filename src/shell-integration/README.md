@@ -18,7 +18,11 @@ our integration script (`bash/ghostty.bash`). This prevents Bash from loading
 its normal startup files, which becomes our script's responsibility (along with
 disabling POSIX mode).
 
+Because automatic Bash shell integration requires Bash version 4 or later, it
+must be explicitly enabled (`shell-integration = bash`).
+
 Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
+This also works for older versions of Bash.
 
 ### Elvish
 

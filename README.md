@@ -208,6 +208,9 @@ function fine within Ghostty with the above mentioned shell integration features
 inoperative. **If you want to disable automatic shell integration,** set
 `shell-integration = none` in your configuration file.
 
+Automatic `bash` shell integration requires Bash version 4 or later and must be
+explicitly enabled by setting `shell-integration = bash`.
+
 **For the automatic shell integration to work,** Ghostty must either be run
 from the macOS app bundle or be installed in a location where the contents of
 `zig-out/share` are available somewhere above the directory where Ghostty
