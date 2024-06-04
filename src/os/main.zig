@@ -13,6 +13,7 @@ pub usingnamespace @import("open.zig");
 pub usingnamespace @import("pipe.zig");
 pub usingnamespace @import("resourcesdir.zig");
 pub const TempDir = @import("TempDir.zig");
+pub const linux = @import("linux.zig");
 pub const passwd = @import("passwd.zig");
 pub const xdg = @import("xdg.zig");
 pub const windows = @import("windows.zig");
