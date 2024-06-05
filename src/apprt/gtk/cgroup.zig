@@ -67,8 +67,11 @@ fn enableControllers(alloc: Allocator, cgroup: []const u8) !void {
         if (it.rest().len > 0) try builder.append(' ');
     }
 
-    // TODO
-    log.warn("enabling controllers={s}", .{builder.items});
+    // Enable them all
+    try internal_os.cgroup.configureControllers(
+        cgroup,
+        builder.items,
+    );
 }
 
 /// Create a transient systemd scope unit for the current process.

@@ -61,3 +61,25 @@ pub fn controllers(alloc: Allocator, cgroup: []const u8) ![]const u8 {
     const result = std.mem.trimRight(u8, contents, " \r\n");
     return try alloc.dupe(u8, result);
 }
+
+/// Configure the set of controllers in the cgroup. The "v" should
+/// be in a valid format for "cgroup.subtree_control"
+pub fn configureControllers(
+    cgroup: []const u8,
+    v: []const u8,
+) !void {
+    assert(cgroup[0] == '/');
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+
+    // Read the available controllers. These will be space separated.
+    const path = try std.fmt.bufPrint(
+        &buf,
+        "/sys/fs/cgroup{s}/cgroup.subtree_control",
+        .{cgroup},
+    );
+    const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
+    defer file.close();
+
+    // Write
+    try file.writer().writeAll(v);
+}
