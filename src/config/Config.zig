@@ -1003,6 +1003,10 @@ keybind: Keybinds = .{},
 /// more likely to have many windows, tabs, etc. so cgroup isolation is a
 /// big benefit.
 ///
+/// This feature requires systemd. If systemd is unavailable, cgroup
+/// initialization will fail. By default, this will not prevent Ghostty
+/// from working (see linux-cgroup-hard-fail).
+///
 /// Valid values are:
 ///
 ///   * `never` - Never use cgroups.
