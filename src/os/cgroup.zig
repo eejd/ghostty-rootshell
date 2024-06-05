@@ -28,6 +28,30 @@ pub fn current(alloc: Allocator, pid: std.os.linux.pid_t) !?[]const u8 {
     return try alloc.dupe(u8, result);
 }
 
+/// Create a new cgroup. This will not move any process into it unless move is
+/// set. If move is set, the given pid will be moved into the created cgroup.
+pub fn create(
+    cgroup: []const u8,
+    child: []const u8,
+    move: ?std.os.linux.pid_t,
+) !void {
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try std.fmt.bufPrint(&buf, "/sys/fs/cgroup{s}/{s}", .{ cgroup, child });
+    try std.fs.cwd().makePath(path);
+
+    // If we have a PID to move into the cgroup immediately, do it.
+    if (move) |pid| {
+        const pid_path = try std.fmt.bufPrint(
+            &buf,
+            "/sys/fs/cgroup{s}/{s}/cgroup.procs",
+            .{ cgroup, child },
+        );
+        const file = try std.fs.cwd().openFile(pid_path, .{ .mode = .write_only });
+        defer file.close();
+        try file.writer().print("{}", .{pid});
+    }
+}
+
 /// Returns all available cgroup controllers for the given cgroup.
 /// The cgroup should have a '/'-prefix.
 ///

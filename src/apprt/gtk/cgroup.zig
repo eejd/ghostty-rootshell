@@ -41,6 +41,11 @@ pub fn init(app: *App) ![]const u8 {
     errdefer alloc.free(transient);
     log.info("transient scope created cgroup={s}", .{transient});
 
+    // Create the app cgroup and put ourselves in it. This is
+    // required because controllers can't be configured while a
+    // process is in a cgroup.
+    try internal_os.cgroup.create(transient, "app.scope", pid);
+
     // Enable all of our cgroup controllers. If these fail then
     // we just log. We can't reasonably undo what we've done above
     // so we log the warning and still return the transient group.
