@@ -36,6 +36,7 @@ pub fn init(app: *App) ![]const u8 {
             pid,
         ) orelse "";
         if (!std.mem.eql(u8, original, current)) break :transient current;
+        alloc.free(current);
         std.time.sleep(25 * std.time.ns_per_ms);
     };
     errdefer alloc.free(transient);

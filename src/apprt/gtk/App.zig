@@ -62,6 +62,11 @@ running: bool = true,
 /// Xkb state (X11 only). Will be null on Wayland.
 x11_xkb: ?x11.Xkb = null,
 
+/// The base path of the transient cgroup used to put all surfaces
+/// into their own cgroup. This is only set if cgroups are enabled
+/// and initialization was successful.
+transient_cgroup_base: ?[]const u8 = null,
+
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
@@ -281,6 +286,7 @@ pub fn terminate(self: *App) void {
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
     if (self.menu) |menu| c.g_object_unref(menu);
+    if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
     self.config.deinit();
 }
@@ -381,9 +387,9 @@ pub fn run(self: *App) !void {
 
     // If we are running, then we proceed to setup our app.
 
-    // Setup our cgroup configurations for our tabs.
+    // Setup our cgroup configurations for our surfaces.
     if (cgroup.init(self)) |cgroup_path| {
-        self.core_app.alloc.free(cgroup_path);
+        self.transient_cgroup_base = cgroup_path;
     } else |err| {
         // If we can't initialize cgroups then that's okay. We
         // want to continue to run so we just won't isolate surfaces.
