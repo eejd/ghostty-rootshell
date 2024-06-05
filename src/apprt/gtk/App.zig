@@ -23,6 +23,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const build_options = @import("build_options");
 
+const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
@@ -373,9 +374,27 @@ pub fn wakeup(self: App) void {
 
 /// Run the event loop. This doesn't return until the app exits.
 pub fn run(self: *App) !void {
+    // Running will be false when we're not the primary instance and should
+    // exit (GTK single instance mode). If we're not running, we're done
+    // right away.
     if (!self.running) return;
 
-    // If we're not remote, then we also setup our actions and menus.
+    // If we are running, then we proceed to setup our app.
+
+    // Setup our cgroup configurations for our tabs.
+    if (cgroup.init(self)) |cgroup_path| {
+        self.core_app.alloc.free(cgroup_path);
+    } else |err| {
+        // If we can't initialize cgroups then that's okay. We
+        // want to continue to run so we just won't isolate surfaces.
+        // NOTE(mitchellh): do we want a config to force it?
+        log.warn(
+            "failed to initialize cgroups, terminals will not be isolated err={}",
+            .{err},
+        );
+    }
+
+    // Setup our menu items
     self.initActions();
     self.initMenu();
 
