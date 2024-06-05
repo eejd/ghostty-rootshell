@@ -1012,6 +1012,19 @@ keybind: Keybinds = .{},
 ///
 @"linux-cgroup": LinuxCgroup = .@"single-instance",
 
+/// If this is false, then any cgroup initialization (for linux-cgroup)
+/// will be allowed to fail and the failure is ignored. This is useful if
+/// you view cgroup isolation as a "nice to have" and not a critical resource
+/// management feature, because Ghostty startup will not fail if cgroup APIs
+/// fail.
+///
+/// If this is true, then any cgroup initialization failure will cause
+/// Ghostty to exit or new surfaces to not be created.
+///
+/// Note: this currently only affects cgroup initialization. Subprocesses
+/// must always be able to move themselves into an isolated cgroup.
+@"linux-cgroup-hard-fail": bool = false,
+
 /// If true, the Ghostty GTK application will run in single-instance mode:
 /// each new `ghostty` process launched will result in a new window if there
 /// is already a running process.

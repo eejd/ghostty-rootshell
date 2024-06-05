@@ -405,6 +405,13 @@ pub fn run(self: *App) !void {
                 "failed to initialize cgroups, terminals will not be isolated err={}",
                 .{err},
             );
+
+            // If we have hard fail enabled then we exit now.
+            if (self.config.@"linux-cgroup-hard-fail") {
+                log.err("linux-cgroup-hard-fail enabled, exiting", .{});
+                return error.CgroupInitFailed;
+            }
+
             break :cgroup;
         };
 
