@@ -1,5 +1,6 @@
 //! The options that are used to configure a terminal IO implementation.
 
+const builtin = @import("builtin");
 const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const renderer = @import("../renderer.zig");
@@ -41,3 +42,10 @@ renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for sending the surface messages.
 surface_mailbox: apprt.surface.Mailbox,
+
+/// The cgroup to apply to the started termio process, if able by
+/// the termio implementation. This only applies to Linux.
+linux_cgroup: LinuxCgroup = linux_cgroup_default,
+
+pub const LinuxCgroup = if (builtin.os.tag == .linux) ?[]const u8 else void;
+pub const linux_cgroup_default = if (LinuxCgroup == void) {} else null;

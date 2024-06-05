@@ -11,6 +11,7 @@ const font = @import("../../font/main.zig");
 const input = @import("../../input.zig");
 const terminal = @import("../../terminal/main.zig");
 const CoreSurface = @import("../../Surface.zig");
+const internal_os = @import("../../os/main.zig");
 
 const App = @import("App.zig");
 const Split = @import("Split.zig");
@@ -255,6 +256,10 @@ im_commit_buffered: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
+/// The surface-specific cgroup path. See App.transient_cgroup_path for
+/// details on what this is.
+cgroup_path: ?[]const u8 = null,
+
 pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
     var surface = try alloc.create(Surface);
     errdefer alloc.destroy(surface);
@@ -342,6 +347,36 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         break :font_size parent.font_size;
     };
 
+    // If the parent has a transient cgroup, then we're creating cgroups
+    // for each surface if we can. We need to create a child cgroup.
+    const cgroup_path: ?[]const u8 = cgroup: {
+        const base = app.transient_cgroup_base orelse break :cgroup null;
+
+        // For the unique group name we use the self pointer. This may
+        // not be a good idea for security reasons but not sure yet. We
+        // may want to change this to something else eventually to be safe.
+        var buf: [256]u8 = undefined;
+        const name = std.fmt.bufPrint(
+            &buf,
+            "surface({X}).scope",
+            .{@intFromPtr(self)},
+        ) catch unreachable;
+
+        // Create the cgroup. If it fails, no big deal... just ignore.
+        internal_os.cgroup.create(base, name, null) catch |err| {
+            log.err("failed to create surface cgroup err={}", .{err});
+            break :cgroup null;
+        };
+
+        // Success, save the cgroup path.
+        break :cgroup std.fmt.allocPrint(
+            app.core_app.alloc,
+            "{s}/{s}",
+            .{ base, name },
+        ) catch null;
+    };
+    errdefer if (cgroup_path) |path| app.core_app.alloc.free(path);
+
     // Build our result
     self.* = .{
         .app = app,
@@ -354,6 +389,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
+        .cgroup_path = cgroup_path,
     };
     errdefer self.* = undefined;
 
@@ -442,9 +478,10 @@ pub fn deinit(self: *Surface) void {
     self.core_surface.deinit();
     self.core_surface = undefined;
 
+    if (self.cgroup_path) |path| self.app.core_app.alloc.free(path);
+
     // Free all our GTK stuff
     c.g_object_unref(self.im_context);
-
     if (self.cursor) |cursor| c.g_object_unref(cursor);
 }
 
@@ -461,6 +498,11 @@ pub fn destroy(self: *Surface, alloc: Allocator) void {
 
 fn render(self: *Surface) !void {
     try self.core_surface.renderer.drawFrame(self);
+}
+
+/// Called by core surface to get the cgroup.
+pub fn cgroup(self: *const Surface) ?[]const u8 {
+    return self.cgroup_path;
 }
 
 /// Queue the inspector to render if we have one.

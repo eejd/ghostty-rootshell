@@ -179,7 +179,14 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     term.width_px = subprocess.screen_size.width;
     term.height_px = subprocess.screen_size.height;
 
-    return Exec{
+    // TODO: make work
+    if (comptime builtin.os.tag == .linux) {
+        if (opts.linux_cgroup) |cgroup| {
+            log.warn("DESIRED cgroup={s}", .{cgroup});
+        }
+    }
+
+    return .{
         .alloc = alloc,
         .terminal = term,
         .subprocess = subprocess,
