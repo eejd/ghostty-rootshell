@@ -179,13 +179,6 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Exec {
     term.width_px = subprocess.screen_size.width;
     term.height_px = subprocess.screen_size.height;
 
-    // TODO: make work
-    if (comptime builtin.os.tag == .linux) {
-        if (opts.linux_cgroup) |cgroup| {
-            log.warn("DESIRED cgroup={s}", .{cgroup});
-        }
-    }
-
     return .{
         .alloc = alloc,
         .terminal = term,
@@ -904,6 +897,7 @@ const Subprocess = struct {
     pty: ?Pty = null,
     command: ?Command = null,
     flatpak_command: ?FlatpakHostCommand = null,
+    linux_cgroup: termio.Options.LinuxCgroup = termio.Options.linux_cgroup_default,
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
@@ -1200,6 +1194,15 @@ const Subprocess = struct {
         else
             null;
 
+        // If we have a cgroup, then we copy that into our arena so the
+        // memory remains valid when we start.
+        const linux_cgroup: termio.Options.LinuxCgroup = cgroup: {
+            const default = termio.Options.linux_cgroup_default;
+            if (comptime builtin.os.tag != .linux) break :cgroup default;
+            const path = opts.linux_cgroup orelse break :cgroup default;
+            break :cgroup try alloc.dupe(u8, path);
+        };
+
         // Our screen size should be our padded size
         const padded_size = opts.screen_size.subPadding(opts.padding);
 
@@ -1210,6 +1213,7 @@ const Subprocess = struct {
             .args = args,
             .grid_size = opts.grid_size,
             .screen_size = padded_size,
+            .linux_cgroup = linux_cgroup,
         };
     }
 
@@ -1303,12 +1307,14 @@ const Subprocess = struct {
             .pseudo_console = if (builtin.os.tag == .windows) pty.pseudo_console else {},
             .pre_exec = if (builtin.os.tag == .windows) null else (struct {
                 fn callback(cmd: *Command) void {
-                    const p = cmd.getData(Pty) orelse unreachable;
-                    p.childPreExec() catch |err|
-                        log.err("error initializing child: {}", .{err});
+                    const sp = cmd.getData(Subprocess) orelse unreachable;
+                    sp.childPreExec() catch |err| log.err(
+                        "error initializing child: {}",
+                        .{err},
+                    );
                 }
             }).callback,
-            .data = &self.pty.?,
+            .data = self,
         };
         try cmd.start(alloc);
         errdefer killCommand(&cmd) catch |err| {
@@ -1328,6 +1334,22 @@ const Subprocess = struct {
                 .write = pty.master,
             },
         };
+    }
+
+    /// This should be called after fork but before exec in the child process.
+    /// To repeat: this function RUNS IN THE FORKED CHILD PROCESS before
+    /// exec is called; it does NOT run in the main Ghostty process.
+    fn childPreExec(self: *Subprocess) !void {
+        // Setup our pty
+        try self.pty.?.childPreExec();
+
+        // If we have a cgroup set, then we want to move into that cgroup.
+        if (comptime builtin.os.tag == .linux) {
+            if (self.linux_cgroup) |cgroup| {
+                // TODO: do it
+                _ = cgroup;
+            }
+        }
     }
 
     /// Called to notify that we exited externally so we can unset our

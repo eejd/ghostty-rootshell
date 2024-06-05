@@ -166,8 +166,8 @@ fn createScope(connection: *c.GDBusConnection) !void {
         &err,
     ) orelse {
         if (err) |e| log.err(
-            "creating transient cgroup scope failed err={s}",
-            .{e.message},
+            "creating transient cgroup scope failed code={} err={s}",
+            .{ e.code, e.message },
         );
         return error.DbusCallFailed;
     };
