@@ -41,7 +41,34 @@ pub fn init(app: *App) ![]const u8 {
     errdefer alloc.free(transient);
     log.info("transient scope created cgroup={s}", .{transient});
 
+    // Enable all of our cgroup controllers. If these fail then
+    // we just log. We can't reasonably undo what we've done above
+    // so we log the warning and still return the transient group.
+    // I don't know a scenario where this fails yet.
+    try enableControllers(alloc, transient);
+
     return transient;
+}
+
+/// Enable all the cgroup controllers for the given cgroup.
+fn enableControllers(alloc: Allocator, cgroup: []const u8) !void {
+    const raw = try internal_os.linux.cgroupControllers(alloc, cgroup);
+    defer alloc.free(raw);
+
+    // Build our string builder for enabling all controllers
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+
+    // Controllers are space-separated
+    var it = std.mem.splitScalar(u8, raw, ' ');
+    while (it.next()) |controller| {
+        try builder.append('+');
+        try builder.appendSlice(controller);
+        if (it.rest().len > 0) try builder.append(' ');
+    }
+
+    // TODO
+    log.warn("enabling controllers={s}", .{builder.items});
 }
 
 /// Create a transient systemd scope unit for the current process.
