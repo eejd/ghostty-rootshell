@@ -1012,6 +1012,15 @@ keybind: Keybinds = .{},
 ///
 @"linux-cgroup": LinuxCgroup = .@"single-instance",
 
+/// Memory limit for any individual terminal process (tab, split, window,
+/// etc.) in bytes. If this is unset then no memory limit will be set.
+///
+/// Note that this sets the "memory.high" configuration for the memory
+/// controller, which is a soft limit. You should configure something like
+/// systemd-oom to handle killing processes that have too much memory
+/// pressure.
+@"linux-cgroup-memory-limit": ?u64 = null,
+
 /// If this is false, then any cgroup initialization (for linux-cgroup)
 /// will be allowed to fail and the failure is ignored. This is useful if
 /// you view cgroup isolation as a "nice to have" and not a critical resource
