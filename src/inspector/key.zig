@@ -52,7 +52,18 @@ pub const Event = struct {
         if (self.event.mods.ctrl) try writer.writeAll("Ctrl+");
         if (self.event.mods.alt) try writer.writeAll("Alt+");
         if (self.event.mods.super) try writer.writeAll("Super+");
-        try writer.writeAll(@tagName(self.event.key));
+
+        try writer.writeAll(key: {
+            if (self.event.key != .invalid) {
+                break :key @tagName(self.event.key);
+            }
+
+            if (self.event.utf8.len > 0) {
+                break :key self.event.utf8;
+            }
+
+            break :key @tagName(.invalid);
+        });
 
         // Deadkey
         if (self.event.composing) try writer.writeAll(" (composing)");
