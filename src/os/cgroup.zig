@@ -107,3 +107,31 @@ pub fn configureControllers(
     // Write
     try file.writer().writeAll(v);
 }
+
+pub const MemoryLimit = union(enum) {
+    /// memory.high
+    high: usize,
+};
+
+/// Configure the memory limit for the given cgroup. Use the various
+/// fields in MemoryLimit to configure a specific type of limit.
+pub fn configureMemoryLimit(cgroup: []const u8, limit: MemoryLimit) !void {
+    assert(cgroup[0] == '/');
+
+    const filename, const size = switch (limit) {
+        .high => |v| .{ "memory.high", v },
+    };
+
+    // Open our file
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try std.fmt.bufPrint(
+        &buf,
+        "/sys/fs/cgroup{s}/{s}",
+        .{ cgroup, filename },
+    );
+    const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
+    defer file.close();
+
+    // Write our limit in bytes
+    try file.writer().print("{}", .{size});
+}

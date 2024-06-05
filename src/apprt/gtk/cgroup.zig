@@ -52,6 +52,15 @@ pub fn init(app: *App) ![]const u8 {
     // I don't know a scenario where this fails yet.
     try enableControllers(alloc, transient);
 
+    // Configure the "high" memory limit. This limit is used instead
+    // of "max" because it's a soft limit that can be exceeded and
+    // can be monitored by things like systemd-oomd to kill if needed,
+    // versus an instant hard kill.
+    // try internal_os.cgroup.configureMemoryLimit(transient, .{
+    //     // 1GB
+    //     .high = 1 * 1024 * 1024 * 1024,
+    // });
+
     return transient;
 }
 
