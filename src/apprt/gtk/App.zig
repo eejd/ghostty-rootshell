@@ -44,6 +44,9 @@ config: Config,
 app: *c.GtkApplication,
 ctx: *c.GMainContext,
 
+/// True if the app was launched with single instance mode.
+single_instance: bool,
+
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
 
@@ -269,6 +272,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .ctx = ctx,
         .cursor_none = cursor_none,
         .x11_xkb = x11_xkb,
+        .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
@@ -388,17 +392,25 @@ pub fn run(self: *App) !void {
     // If we are running, then we proceed to setup our app.
 
     // Setup our cgroup configurations for our surfaces.
-    if (cgroup.init(self)) |cgroup_path| {
-        self.transient_cgroup_base = cgroup_path;
-    } else |err| {
-        // If we can't initialize cgroups then that's okay. We
-        // want to continue to run so we just won't isolate surfaces.
-        // NOTE(mitchellh): do we want a config to force it?
-        log.warn(
-            "failed to initialize cgroups, terminals will not be isolated err={}",
-            .{err},
-        );
-    }
+    if (switch (self.config.@"linux-cgroup") {
+        .never => false,
+        .always => true,
+        .@"single-instance" => self.single_instance,
+    }) cgroup: {
+        const path = cgroup.init(self) catch |err| {
+            // If we can't initialize cgroups then that's okay. We
+            // want to continue to run so we just won't isolate surfaces.
+            // NOTE(mitchellh): do we want a config to force it?
+            log.warn(
+                "failed to initialize cgroups, terminals will not be isolated err={}",
+                .{err},
+            );
+            break :cgroup;
+        };
+
+        log.info("cgroup isolation enabled base={s}", .{path});
+        self.transient_cgroup_base = path;
+    } else log.debug("cgroup isoation disabled config={}", .{self.config.@"linux-cgroup"});
 
     // Setup our menu items
     self.initActions();
