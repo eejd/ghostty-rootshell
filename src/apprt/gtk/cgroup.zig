@@ -20,7 +20,7 @@ pub fn init(app: *App) ![]const u8 {
 
     // Get our initial cgroup. We need this so we can compare
     // and detect when we've switched to our transient group.
-    const original = try internal_os.linux.cgroupPath(
+    const original = try internal_os.cgroup.current(
         alloc,
         pid,
     ) orelse "";
@@ -31,7 +31,7 @@ pub fn init(app: *App) ![]const u8 {
     // to do a dumb busy loop to wait for the move to complete.
     try createScope(connection);
     const transient = transient: while (true) {
-        const current = try internal_os.linux.cgroupPath(
+        const current = try internal_os.cgroup.current(
             alloc,
             pid,
         ) orelse "";
@@ -52,7 +52,7 @@ pub fn init(app: *App) ![]const u8 {
 
 /// Enable all the cgroup controllers for the given cgroup.
 fn enableControllers(alloc: Allocator, cgroup: []const u8) !void {
-    const raw = try internal_os.linux.cgroupControllers(alloc, cgroup);
+    const raw = try internal_os.cgroup.controllers(alloc, cgroup);
     defer alloc.free(raw);
 
     // Build our string builder for enabling all controllers
