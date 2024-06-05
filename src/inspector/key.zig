@@ -53,16 +53,11 @@ pub const Event = struct {
         if (self.event.mods.alt) try writer.writeAll("Alt+");
         if (self.event.mods.super) try writer.writeAll("Super+");
 
-        try writer.writeAll(key: {
-            if (self.event.key != .invalid) {
-                break :key @tagName(self.event.key);
-            }
-
-            if (self.event.utf8.len > 0) {
-                break :key self.event.utf8;
-            }
-
-            break :key @tagName(.invalid);
+        // Write our key. If we have an invalid key we attempt to write
+        // the utf8 associated with it if we have it to handle non-ascii.
+        try writer.writeAll(switch (self.event.key) {
+            .invalid => if (self.event.utf8.len > 0) self.event.utf8 else @tagName(.invalid),
+            else => @tagName(self.event.key),
         });
 
         // Deadkey
