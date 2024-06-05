@@ -45,20 +45,28 @@ pub fn init(app: *App) ![]const u8 {
     // Create the app cgroup and put ourselves in it. This is
     // required because controllers can't be configured while a
     // process is in a cgroup.
-    try internal_os.cgroup.create(transient, "app.scope", pid);
+    try internal_os.cgroup.create(transient, "app", pid);
+
+    // Create a cgroup that will contain all our surfaces. We will
+    // enable the controllers and configure resource limits for surfaces
+    // only on this cgroup so that it doesn't affect our main app.
+    try internal_os.cgroup.create(transient, "surfaces", null);
+    const surfaces = try std.fmt.allocPrint(alloc, "{s}/surfaces", .{transient});
+    defer alloc.free(surfaces);
 
     // Enable all of our cgroup controllers. If these fail then
     // we just log. We can't reasonably undo what we've done above
     // so we log the warning and still return the transient group.
     // I don't know a scenario where this fails yet.
     try enableControllers(alloc, transient);
+    try enableControllers(alloc, surfaces);
 
     // Configure the "high" memory limit. This limit is used instead
     // of "max" because it's a soft limit that can be exceeded and
     // can be monitored by things like systemd-oomd to kill if needed,
     // versus an instant hard kill.
     if (app.config.@"linux-cgroup-memory-limit") |limit| {
-        try internal_os.cgroup.configureMemoryLimit(transient, .{
+        try internal_os.cgroup.configureMemoryLimit(surfaces, .{
             .high = limit,
         });
     }

@@ -1321,6 +1321,9 @@ const Subprocess = struct {
             log.warn("error killing command during cleanup err={}", .{err});
         };
         log.info("started subcommand path={s} pid={?}", .{ self.args[0], cmd.pid });
+        if (comptime builtin.os.tag == .linux) {
+            log.info("subcommand cgroup={s}", .{self.linux_cgroup orelse "-"});
+        }
 
         self.command = cmd;
         return switch (builtin.os.tag) {
