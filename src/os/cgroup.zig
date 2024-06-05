@@ -52,6 +52,18 @@ pub fn create(
     }
 }
 
+/// Move the given PID into the given cgroup.
+pub fn moveInto(
+    cgroup: []const u8,
+    pid: std.os.linux.pid_t,
+) !void {
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try std.fmt.bufPrint(&buf, "/sys/fs/cgroup{s}/cgroup.procs", .{cgroup});
+    const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
+    defer file.close();
+    try file.writer().print("{}", .{pid});
+}
+
 /// Returns all available cgroup controllers for the given cgroup.
 /// The cgroup should have a '/'-prefix.
 ///

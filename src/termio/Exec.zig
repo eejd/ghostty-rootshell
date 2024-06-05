@@ -1346,8 +1346,7 @@ const Subprocess = struct {
         // If we have a cgroup set, then we want to move into that cgroup.
         if (comptime builtin.os.tag == .linux) {
             if (self.linux_cgroup) |cgroup| {
-                // TODO: do it
-                _ = cgroup;
+                try internal_os.cgroup.moveInto(cgroup, 0);
             }
         }
     }
