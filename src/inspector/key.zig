@@ -52,7 +52,13 @@ pub const Event = struct {
         if (self.event.mods.ctrl) try writer.writeAll("Ctrl+");
         if (self.event.mods.alt) try writer.writeAll("Alt+");
         if (self.event.mods.super) try writer.writeAll("Super+");
-        try writer.writeAll(@tagName(self.event.key));
+
+        // Write our key. If we have an invalid key we attempt to write
+        // the utf8 associated with it if we have it to handle non-ascii.
+        try writer.writeAll(switch (self.event.key) {
+            .invalid => if (self.event.utf8.len > 0) self.event.utf8 else @tagName(.invalid),
+            else => @tagName(self.event.key),
+        });
 
         // Deadkey
         if (self.event.composing) try writer.writeAll(" (composing)");
