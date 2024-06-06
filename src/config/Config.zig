@@ -1665,34 +1665,34 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     //     styling, etc. based on the command.
     //
     // See: https://github.com/Vladimir-csp/xdg-terminal-exec
-    if (comptime builtin.os.tag == .linux) xdg: {
-        if (!std.mem.eql(
-            u8,
-            std.fs.path.basename(std.mem.sliceTo(std.os.argv[0], 0)),
-            "xdg-terminal-exec",
-        )) break :xdg;
+    if (comptime builtin.os.tag == .linux) {
+        if (internal_os.xdg.parseTerminalExec(std.os.argv)) |args| {
+            const arena_alloc = self._arena.?.allocator();
 
-        const arena_alloc = self._arena.?.allocator();
+            // First, we add an artificial "-e" so that if we
+            // replay the inputs to rebuild the config (i.e. if
+            // a theme is set) then we will get the same behavior.
+            try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
 
-        // First, we add an artificial "-e" so that if we
-        // replay the inputs to rebuild the config (i.e. if
-        // a theme is set) then we will get the same behavior.
-        try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
+            // Next, take all remaining args and use that to build up
+            // a command to execute.
+            var command = std.ArrayList(u8).init(arena_alloc);
+            errdefer command.deinit();
+            for (args) |arg_raw| {
+                const arg = std.mem.sliceTo(arg_raw, 0);
+                try self._replay_steps.append(
+                    arena_alloc,
+                    .{ .arg = try arena_alloc.dupe(u8, arg) },
+                );
 
-        // Next, take all remaining args and use that to build up
-        // a command to execute.
-        var command = std.ArrayList(u8).init(arena_alloc);
-        errdefer command.deinit();
-        for (std.os.argv[1..]) |arg_raw| {
-            const arg = std.mem.sliceTo(arg_raw, 0);
-            try self._replay_steps.append(arena_alloc, .{ .arg = try arena_alloc.dupe(u8, arg) });
-            try command.appendSlice(arg);
-            try command.append(' ');
+                try command.appendSlice(arg);
+                try command.append(' ');
+            }
+
+            self.@"_xdg-terminal-exec" = true;
+            self.command = command.items[0 .. command.items.len - 1];
+            return;
         }
-
-        self.@"_xdg-terminal-exec" = true;
-        self.command = command.items[0 .. command.items.len - 1];
-        return;
     }
 
     // Parse the config from the CLI args

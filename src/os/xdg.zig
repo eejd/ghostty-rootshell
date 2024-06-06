@@ -78,6 +78,23 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
     return error.NoHomeDir;
 }
 
+/// Parses the xdg-terminal-exec specification. This expects argv[0] to
+/// be "xdg-terminal-exec".
+pub fn parseTerminalExec(argv: []const [*:0]const u8) ?[]const [*:0]const u8 {
+    if (!std.mem.eql(
+        u8,
+        std.fs.path.basename(std.mem.sliceTo(argv[0], 0)),
+        "xdg-terminal-exec",
+    )) return null;
+
+    // We expect at least one argument
+    if (argv.len < 2) return &.{};
+
+    // If the first argument is "-e" we skip it.
+    const start: usize = if (std.mem.eql(u8, std.mem.sliceTo(argv[1], 0), "-e")) 2 else 1;
+    return argv[start..];
+}
+
 test {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -86,5 +103,30 @@ test {
         const value = try config(alloc, .{});
         defer alloc.free(value);
         try testing.expect(value.len > 0);
+    }
+}
+
+test parseTerminalExec {
+    const testing = std.testing;
+
+    {
+        const actual = parseTerminalExec(&.{ "a", "b", "c" });
+        try testing.expect(actual == null);
+    }
+    {
+        const actual = parseTerminalExec(&.{"xdg-terminal-exec"}).?;
+        try testing.expectEqualSlices([*:0]const u8, actual, &.{});
+    }
+    {
+        const actual = parseTerminalExec(&.{ "xdg-terminal-exec", "a", "b", "c" }).?;
+        try testing.expectEqualSlices([*:0]const u8, actual, &.{ "a", "b", "c" });
+    }
+    {
+        const actual = parseTerminalExec(&.{ "xdg-terminal-exec", "-e", "a", "b", "c" }).?;
+        try testing.expectEqualSlices([*:0]const u8, actual, &.{ "a", "b", "c" });
+    }
+    {
+        const actual = parseTerminalExec(&.{ "xdg-terminal-exec", "a", "-e", "b", "c" }).?;
+        try testing.expectEqualSlices([*:0]const u8, actual, &.{ "a", "-e", "b", "c" });
     }
 }
