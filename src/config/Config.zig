@@ -1108,6 +1108,9 @@ _errors: ErrorList = .{},
 /// as loadTheme which has more details on why.
 _replay_steps: std.ArrayListUnmanaged(Replay.Step) = .{},
 
+/// Set to true if Ghostty was executed as xdg-terminal-exec on Linux.
+@"_xdg-terminal-exec": bool = false,
+
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();
     self.* = undefined;
@@ -1654,6 +1657,14 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // On Linux, we have a special case where if the executing
     // program is "xdg-terminal-exec" then we treat all CLI
     // args as if they are a command to execute.
+    //
+    // In this mode, we also behave slightly differently:
+    //
+    //   - The initial window title is set to the full command. This
+    //     can be used with window managers to modify positioning,
+    //     styling, etc. based on the command.
+    //
+    // See: https://github.com/Vladimir-csp/xdg-terminal-exec
     if (comptime builtin.os.tag == .linux) xdg: {
         if (!std.mem.eql(
             u8,
@@ -1679,6 +1690,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
             try command.append(' ');
         }
 
+        self.@"_xdg-terminal-exec" = true;
         self.command = command.items[0 .. command.items.len - 1];
         return;
     }

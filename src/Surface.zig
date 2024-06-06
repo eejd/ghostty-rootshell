@@ -513,7 +513,27 @@ pub fn init(
         };
     }
 
-    if (config.title) |title| try rt_surface.setTitle(title);
+    if (config.title) |title| {
+        try rt_surface.setTitle(title);
+    } else if ((comptime builtin.os.tag == .linux) and
+        config.@"_xdg-terminal-exec")
+    xdg: {
+        // For xdg-terminal-exec execution we special-case and set the window
+        // title to the command being executed. This allows window managers
+        // to set custom styling based on the command being executed.
+        const command = config.command orelse break :xdg;
+        if (command.len > 0) {
+            const title = alloc.dupeZ(u8, command) catch |err| {
+                log.warn(
+                    "error copying command for title, title will not be set err={}",
+                    .{err},
+                );
+                break :xdg;
+            };
+            defer alloc.free(title);
+            try rt_surface.setTitle(title);
+        }
+    }
 }
 
 pub fn deinit(self: *Surface) void {
