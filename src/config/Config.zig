@@ -1108,6 +1108,9 @@ _errors: ErrorList = .{},
 /// as loadTheme which has more details on why.
 _replay_steps: std.ArrayListUnmanaged(Replay.Step) = .{},
 
+/// Set to true if Ghostty was executed as xdg-terminal-exec on Linux.
+@"_xdg-terminal-exec": bool = false,
+
 pub fn deinit(self: *Config) void {
     if (self._arena) |arena| arena.deinit();
     self.* = undefined;
@@ -1654,33 +1657,42 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // On Linux, we have a special case where if the executing
     // program is "xdg-terminal-exec" then we treat all CLI
     // args as if they are a command to execute.
-    if (comptime builtin.os.tag == .linux) xdg: {
-        if (!std.mem.eql(
-            u8,
-            std.fs.path.basename(std.mem.sliceTo(std.os.argv[0], 0)),
-            "xdg-terminal-exec",
-        )) break :xdg;
+    //
+    // In this mode, we also behave slightly differently:
+    //
+    //   - The initial window title is set to the full command. This
+    //     can be used with window managers to modify positioning,
+    //     styling, etc. based on the command.
+    //
+    // See: https://github.com/Vladimir-csp/xdg-terminal-exec
+    if (comptime builtin.os.tag == .linux) {
+        if (internal_os.xdg.parseTerminalExec(std.os.argv)) |args| {
+            const arena_alloc = self._arena.?.allocator();
 
-        const arena_alloc = self._arena.?.allocator();
+            // First, we add an artificial "-e" so that if we
+            // replay the inputs to rebuild the config (i.e. if
+            // a theme is set) then we will get the same behavior.
+            try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
 
-        // First, we add an artificial "-e" so that if we
-        // replay the inputs to rebuild the config (i.e. if
-        // a theme is set) then we will get the same behavior.
-        try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
+            // Next, take all remaining args and use that to build up
+            // a command to execute.
+            var command = std.ArrayList(u8).init(arena_alloc);
+            errdefer command.deinit();
+            for (args) |arg_raw| {
+                const arg = std.mem.sliceTo(arg_raw, 0);
+                try self._replay_steps.append(
+                    arena_alloc,
+                    .{ .arg = try arena_alloc.dupe(u8, arg) },
+                );
 
-        // Next, take all remaining args and use that to build up
-        // a command to execute.
-        var command = std.ArrayList(u8).init(arena_alloc);
-        errdefer command.deinit();
-        for (std.os.argv[1..]) |arg_raw| {
-            const arg = std.mem.sliceTo(arg_raw, 0);
-            try self._replay_steps.append(arena_alloc, .{ .arg = try arena_alloc.dupe(u8, arg) });
-            try command.appendSlice(arg);
-            try command.append(' ');
+                try command.appendSlice(arg);
+                try command.append(' ');
+            }
+
+            self.@"_xdg-terminal-exec" = true;
+            self.command = command.items[0 .. command.items.len - 1];
+            return;
         }
-
-        self.command = command.items[0 .. command.items.len - 1];
-        return;
     }
 
     // Parse the config from the CLI args
