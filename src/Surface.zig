@@ -404,6 +404,16 @@ pub fn init(
         .renderer_wakeup = render_thread.wakeup,
         .renderer_mailbox = render_thread.mailbox,
         .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+
+        // Get the cgroup if we're on linux and have the decl. I'd love
+        // to change this from a decl to a surface options struct because
+        // then we can do memory management better (don't need to retain
+        // the string around).
+        .linux_cgroup = if (comptime builtin.os.tag == .linux and
+            @hasDecl(apprt.runtime.Surface, "cgroup"))
+            rt_surface.cgroup()
+        else
+            termio.Options.linux_cgroup_default,
     });
     errdefer io.deinit();
 

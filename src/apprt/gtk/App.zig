@@ -23,6 +23,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const build_options = @import("build_options");
 
+const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
@@ -43,6 +44,9 @@ config: Config,
 app: *c.GtkApplication,
 ctx: *c.GMainContext,
 
+/// True if the app was launched with single instance mode.
+single_instance: bool,
+
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
 
@@ -60,6 +64,11 @@ running: bool = true,
 
 /// Xkb state (X11 only). Will be null on Wayland.
 x11_xkb: ?x11.Xkb = null,
+
+/// The base path of the transient cgroup used to put all surfaces
+/// into their own cgroup. This is only set if cgroups are enabled
+/// and initialization was successful.
+transient_cgroup_base: ?[]const u8 = null,
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
@@ -263,6 +272,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .ctx = ctx,
         .cursor_none = cursor_none,
         .x11_xkb = x11_xkb,
+        .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
@@ -280,6 +290,7 @@ pub fn terminate(self: *App) void {
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
     if (self.menu) |menu| c.g_object_unref(menu);
+    if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
     self.config.deinit();
 }
@@ -373,9 +384,42 @@ pub fn wakeup(self: App) void {
 
 /// Run the event loop. This doesn't return until the app exits.
 pub fn run(self: *App) !void {
+    // Running will be false when we're not the primary instance and should
+    // exit (GTK single instance mode). If we're not running, we're done
+    // right away.
     if (!self.running) return;
 
-    // If we're not remote, then we also setup our actions and menus.
+    // If we are running, then we proceed to setup our app.
+
+    // Setup our cgroup configurations for our surfaces.
+    if (switch (self.config.@"linux-cgroup") {
+        .never => false,
+        .always => true,
+        .@"single-instance" => self.single_instance,
+    }) cgroup: {
+        const path = cgroup.init(self) catch |err| {
+            // If we can't initialize cgroups then that's okay. We
+            // want to continue to run so we just won't isolate surfaces.
+            // NOTE(mitchellh): do we want a config to force it?
+            log.warn(
+                "failed to initialize cgroups, terminals will not be isolated err={}",
+                .{err},
+            );
+
+            // If we have hard fail enabled then we exit now.
+            if (self.config.@"linux-cgroup-hard-fail") {
+                log.err("linux-cgroup-hard-fail enabled, exiting", .{});
+                return error.CgroupInitFailed;
+            }
+
+            break :cgroup;
+        };
+
+        log.info("cgroup isolation enabled base={s}", .{path});
+        self.transient_cgroup_base = path;
+    } else log.debug("cgroup isoation disabled config={}", .{self.config.@"linux-cgroup"});
+
+    // Setup our menu items
     self.initActions();
     self.initMenu();
 
