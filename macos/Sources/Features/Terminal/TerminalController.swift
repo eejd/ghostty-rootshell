@@ -269,12 +269,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
-        if (ghostty.config.macosTitlebarTabs) {
+        if (ghostty.config.macosTitlebarStyle == "tabs") {
             window.tabbingMode = .preferred
             window.titlebarTabs = true
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }
+        } else if (ghostty.config.macosTitlebarStyle == "transparent") {
+            window.transparentTabs = true
         }
         
         if window.hasStyledTabs {

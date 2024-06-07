@@ -175,16 +175,15 @@ class TerminalWindow: NSWindow {
     var hasStyledTabs: Bool {
         // If we have titlebar tabs then we always style.
         guard !titlebarTabs else { return true }
-
-        // This should never happen, but if we don't have a theme set then
-        // we just style the tabs. Either response here is probably okay.
-        guard let windowTheme else { return true }
-
-        // We only style if the window theme is auto. Any other specific
-        // window theme type will always show up as that native theme.
-        return windowTheme == .auto
+        
+        // We style the tabs if they're transparent
+        return transparentTabs
     }
-
+    
+    // Set to true if the background color should bleed through the titlebar/tab bar.
+    // This only applies to non-titlebar tabs.
+    var transparentTabs: Bool = false
+    
     var hasVeryDarkBackground: Bool {
         backgroundColor.luminance < 0.05
     }
