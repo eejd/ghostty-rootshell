@@ -61,7 +61,7 @@ fn homeUnix(buf: []u8) !?[]u8 {
 
     // If all else fails, have the shell tell us...
     fba.reset();
-    const run = try std.ChildProcess.run(.{
+    const run = try std.process.Child.run(.{
         .allocator = fba.allocator(),
         .argv = &[_][]const u8{ "/bin/sh", "-c", "cd && pwd" },
         .max_output_bytes = fba.buffer.len / 2,
