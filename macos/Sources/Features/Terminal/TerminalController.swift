@@ -166,11 +166,33 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     private func syncAppearance() {
         guard let window = self.window as? TerminalWindow else { return }
         
+        // If our window is not visible, then delay this. This is possible specifically
+        // during state restoration but probably in other scenarios as well. To delay,
+        // we just loop directly on the dispatch queue. We have to delay because some
+        // APIs such as window blur have no effect unless the window is visible.
+        guard window.isVisible else {
+            // Weak window so that if the window changes or is destroyed we aren't holding a ref
+            DispatchQueue.main.async { [weak self] in self?.syncAppearance() }
+            return
+        }
+        
         // Set the font for the window and tab titles.
         if let titleFontName = ghostty.config.windowTitleFontFamily {
             window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
         } else {
             window.titlebarFont = nil
+        }
+        
+        // If we have window transparency then set it transparent. Otherwise set it opaque.
+        if (ghostty.config.backgroundOpacity < 1) {
+            window.isOpaque = false
+            window.hasShadow = false
+            window.backgroundColor = .clear
+            ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
+        } else {
+            window.isOpaque = true
+            window.hasShadow = true
+            window.backgroundColor = .windowBackgroundColor
         }
         
         guard window.hasStyledTabs else { return }

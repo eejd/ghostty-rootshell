@@ -513,7 +513,6 @@ ghostty_surface_config_s ghostty_surface_config_new();
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
-bool ghostty_surface_transparent(ghostty_surface_t);
 bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_draw(ghostty_surface_t);
@@ -586,7 +585,7 @@ bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
 
 // APIs I'd like to get rid of eventually but are still needed for now.
 // Don't use these unless you know what you're doing.
-void ghostty_set_window_background_blur(ghostty_surface_t, void*);
+void ghostty_set_window_background_blur(ghostty_app_t, void*);
 
 #ifdef __cplusplus
 }
