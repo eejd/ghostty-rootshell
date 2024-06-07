@@ -481,10 +481,6 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     assert(y < self.pages.rows);
     defer self.assertIntegrity();
 
-    // Moving the cursor affects text run splitting (ligatures) so
-    // we must mark the old and new page dirty.
-    self.cursor.page_pin.markDirty();
-
     var page_pin = if (y < self.cursor.y)
         self.cursor.page_pin.up(self.cursor.y - y).?
     else if (y > self.cursor.y)
@@ -498,11 +494,6 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     const page_rac = page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
-
-    // Mark the new page dirty. This might be the same page as the old
-    // but this is a fairly cheap operation and cursor movement isn't
-    // super common.
-    self.cursor.page_pin.markDirty();
 }
 
 /// Reloads the cursor pointer information into the screen. This is expensive
@@ -717,6 +708,14 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
 /// page than the old AND we have a style set. In that case, we must release
 /// our old style and upsert our new style since styles are stored per-page.
 fn cursorChangePin(self: *Screen, new: Pin) void {
+    // Moving the cursor affects text run splitting (ligatures) so
+    // we must mark the old and new page dirty. We do this as long
+    // as the pins are not equal
+    if (!self.cursor.page_pin.eql(new)) {
+        self.cursor.page_pin.markDirty();
+        new.markDirty();
+    }
+
     // If we have a style set, then we need to migrate it over to the
     // new page. This is expensive so we do everything we can with cheap
     // ops to avoid it.
@@ -2983,8 +2982,8 @@ test "Screen: scrolling with a single-row screen with scrollback" {
     // Active should be dirty
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
 
-    // Our scrollback should not be dirty
-    try testing.expect(!s.pages.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    // Scrollback also dirty because cursor moved from there
+    try testing.expect(s.pages.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 
     s.scroll(.{ .delta_row = -1 });
     {

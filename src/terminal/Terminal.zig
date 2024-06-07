@@ -2621,7 +2621,8 @@ test "Terminal: input with basic wraparound dirty" {
     t.clearDirty();
     try t.print('w');
 
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    // Old row is dirty because cursor moved from there
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
@@ -2747,7 +2748,8 @@ test "Terminal: print wide char at edge creates spacer head" {
     // Our first row just had a spacer head added which does not affect
     // rendering so only the place where the wide char was printed
     // should be marked.
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    // BUT old row is dirty because cursor moved from there
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 }
 
@@ -3708,10 +3710,11 @@ test "Terminal: print right margin wrap dirty tracking" {
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
     try testing.expect(!t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
 
-    // Writing our Y should wrap and only mark the second line dirty.
+    // Writing our Y should wrap. It marks both rows dirty because the
+    // cursor moved.
     t.clearDirty();
     try t.print('Y');
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 2, .y = 1 } }));
 
     {
@@ -3769,8 +3772,8 @@ test "Terminal: print wide char at right margin does not create spacer head" {
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
     try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
 
-    // Only wrapped row should be dirty
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
+    // Both rows dirty because the cursor moved
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 4, .y = 1 } }));
 
     {
@@ -3809,9 +3812,9 @@ test "Terminal: linefeed and carriage return" {
 
     try t.linefeed();
 
-    // LF should not mark row dirty
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
+    // LF marks row dirty due to cursor movement
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
 
     for ("world") |c| try t.print(c);
     try testing.expectEqual(@as(usize, 1), t.screen.cursor.y);
@@ -3832,8 +3835,8 @@ test "Terminal: linefeed unsets pending wrap" {
     try testing.expect(t.screen.cursor.pending_wrap == true);
     t.clearDirty();
     try t.linefeed();
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
-    try testing.expect(!t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.screen.cursor.pending_wrap == false);
 }
 
@@ -5648,9 +5651,7 @@ test "Terminal: index" {
     try t.index();
     try t.print('A');
 
-    // Only the row we write to is dirty. Moving the cursor itself
-    // does not make a row dirty.
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
@@ -5673,9 +5674,7 @@ test "Terminal: index from the bottom" {
     try t.index();
     try t.print('B');
 
-    // Only the row we write to is dirty. Moving the cursor itself
-    // does not make a row dirty.
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
@@ -5726,7 +5725,7 @@ test "Terminal: index no scroll region, top of screen" {
     try t.index();
     try t.print('X');
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
@@ -5747,7 +5746,7 @@ test "Terminal: index bottom of primary screen" {
     try t.index();
     try t.print('X');
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     {
@@ -5801,7 +5800,7 @@ test "Terminal: index inside scroll region" {
     try t.index();
     try t.print('X');
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
