@@ -228,12 +228,14 @@ extension Ghostty {
             return String(cString: ptr)
         }
 
-        var macosTitlebarTabs: Bool {
-            guard let config = self.config else { return false }
-            var v = false;
-            let key = "macos-titlebar-tabs"
-            _ = ghostty_config_get(config, &v, key, UInt(key.count))
-            return v
+        var macosTitlebarStyle: String {
+            let defaultValue = "transparent"
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-titlebar-style"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return String(cString: ptr)
         }
         
         var macosWindowShadow: Bool {

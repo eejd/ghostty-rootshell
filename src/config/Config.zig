@@ -659,7 +659,7 @@ keybind: Keybinds = .{},
 ///   * `light` - Use the light theme regardless of system theme.
 ///   * `dark` - Use the dark theme regardless of system theme.
 ///
-/// On macOS, if `macos-titlebar-tabs` is set, the window theme will be
+/// On macOS, if `macos-titlebar-style` is "tabs", the window theme will be
 /// automatically set based on the luminosity of the terminal background color.
 /// This only applies to terminal windows. This setting will still apply to
 /// non-terminal windows within Ghostty.
@@ -955,23 +955,30 @@ keybind: Keybinds = .{},
 ///
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
-/// If `true`, places the tab bar in the titlebar for tabbed windows.
+/// The style of the macOS titlebar. Available values are: "native",
+/// "transparent", and "tabs".
 ///
-/// When this is true, the titlebar will also always appear even when
-/// fullscreen (native fullscreen) with only one tab. This is not considered
-/// a bug but if you'd like to improve this behavior then I'm open to it and
-/// please contribute to the project.
+/// The "native" style uses the native macOS titlebar with zero customization.
+/// The titlebar will match your window theme (see `window-theme`).
 ///
-/// This option intercepts the native tab bar view from macOS and forces it to use
-/// different positioning. Because of this, it might be buggy or break entirely if
-/// macOS changes the way its native tab bar view is constructed or managed.
-/// This has been tested on macOS 14.
+/// The "transparent" style is the same as "native" but the titlebar will
+/// be transparent and allow your window background color to come through.
+/// This makes a more seamless window appearance but looks a little less
+/// typical for a macOS application and may not work well with all themes.
 ///
-/// For macOS 13 users: saved window state will not restore tabs correctly
-/// if this is enabled. macOS 14 does not have this issue.
+/// The "tabs" style is a completely custom titlebar that integrates the
+/// tab bar into the titlebar. This titlebar always matches the background
+/// color of the terminal. There are some limitations to this style:
+/// On macOS 13 and below, saved window state will not restore tabs correctly.
+/// macOS 14 does not have this issue and any other macOS version has not
+/// been tested.
 ///
-/// This option only applies to new windows when changed.
-@"macos-titlebar-tabs": bool = false,
+/// The default value is "transparent". This is an opinionated choice
+/// but its one I think is the most aesthetically pleasing and works in
+/// most cases.
+///
+/// Changing this option at runtime only applies to new windows.
+@"macos-titlebar-style": MacTitlebarStyle = .transparent,
 
 /// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
 /// sequences expecting *Alt* to work properly, but will break Unicode input
@@ -3509,6 +3516,13 @@ pub const WindowTheme = enum {
 pub const WindowColorspace = enum {
     srgb,
     @"display-p3",
+};
+
+/// See macos-titlebar-style
+pub const MacTitlebarStyle = enum {
+    native,
+    transparent,
+    tabs,
 };
 
 /// See gtk-single-instance
