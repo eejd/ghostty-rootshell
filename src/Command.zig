@@ -1,14 +1,14 @@
 //! Command launches sub-processes. This is an alternate implementation to the
-//! Zig std.ChildProcess since at the time of authoring this, ChildProcess
+//! Zig std.process.Child since at the time of authoring this, std.process.Child
 //! didn't support the options necessary to spawn a shell attached to a pty.
 //!
-//! Consequently, I didn't implement a lot of features that std.ChildProcess
+//! Consequently, I didn't implement a lot of features that std.process.Child
 //! supports because we didn't need them. Cross-platform subprocessing is not
 //! a trivial thing to implement (I've done it in three separate languages now)
-//! so if we want to replatform onto std.ChildProcess I'd love to do that.
+//! so if we want to replatform onto std.process.Child I'd love to do that.
 //! This was just the fastest way to get something built.
 //!
-//! Issues with std.ChildProcess:
+//! Issues with std.process.Child:
 //!
 //!   * No pre_exec callback for logic after fork but before exec.
 //!   * posix_spawn is used for Mac, but doesn't support the necessary

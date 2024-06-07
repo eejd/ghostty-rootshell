@@ -18,7 +18,7 @@ pub fn isFlatpak() bool {
 ///
 /// This always spawns its own thread and maintains its own GLib event loop.
 /// This makes it easy for the command to behave synchronously similar to
-/// std.process.ChildProcess.
+/// std.process.Child.
 ///
 /// There are lots of chances for low-hanging improvements here (automatic
 /// pipes, /dev/null, etc.) but this was purpose built for my needs so
