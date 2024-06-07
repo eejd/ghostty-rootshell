@@ -985,6 +985,11 @@ keybind: Keybinds = .{},
 /// This does not work with GLFW builds.
 @"macos-option-as-alt": OptionAsAlt = .false,
 
+/// Whether to enable the macOS window shadow. The default value is true.
+/// With some window managers and window transparency settings, you may
+/// find false more visually appealing.
+@"macos-window-shadow": bool = true,
+
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///
 /// This makes it so that resource management can be done on a per-surface
