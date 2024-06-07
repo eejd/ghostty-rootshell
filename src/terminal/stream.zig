@@ -367,266 +367,254 @@ pub fn Stream(comptime Handler: type) type {
         }
 
         fn csiDispatch(self: *Self, input: Parser.Action.CSI) !void {
-            // Handles aliases first
-            const action = switch (input.final) {
-                // Alias for set cursor position
-                'f' => blk: {
-                    var copy = input;
-                    copy.final = 'H';
-                    break :blk copy;
-                },
-
-                else => input,
-            };
-
-            switch (action.final) {
+            switch (input.final) {
                 // CUU - Cursor Up
                 'A', 'k' => if (@hasDecl(T, "setCursorUp")) try self.handler.setCursorUp(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor up command: {}", .{action});
+                            log.warn("invalid cursor up command: {}", .{input});
                             return;
                         },
                     },
                     false,
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CUD - Cursor Down
                 'B' => if (@hasDecl(T, "setCursorDown")) try self.handler.setCursorDown(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor down command: {}", .{action});
+                            log.warn("invalid cursor down command: {}", .{input});
                             return;
                         },
                     },
                     false,
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CUF - Cursor Right
                 'C' => if (@hasDecl(T, "setCursorRight")) try self.handler.setCursorRight(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor right command: {}", .{action});
+                            log.warn("invalid cursor right command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CUB - Cursor Left
                 'D', 'j' => if (@hasDecl(T, "setCursorLeft")) try self.handler.setCursorLeft(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor left command: {}", .{action});
+                            log.warn("invalid cursor left command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CNL - Cursor Next Line
                 'E' => if (@hasDecl(T, "setCursorDown")) try self.handler.setCursorDown(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor up command: {}", .{action});
+                            log.warn("invalid cursor up command: {}", .{input});
                             return;
                         },
                     },
                     true,
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CPL - Cursor Previous Line
                 'F' => if (@hasDecl(T, "setCursorUp")) try self.handler.setCursorUp(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid cursor down command: {}", .{action});
+                            log.warn("invalid cursor down command: {}", .{input});
                             return;
                         },
                     },
                     true,
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // HPA - Cursor Horizontal Position Absolute
                 // TODO: test
-                'G', '`' => if (@hasDecl(T, "setCursorCol")) switch (action.params.len) {
+                'G', '`' => if (@hasDecl(T, "setCursorCol")) switch (input.params.len) {
                     0 => try self.handler.setCursorCol(1),
-                    1 => try self.handler.setCursorCol(action.params[0]),
-                    else => log.warn("invalid HPA command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    1 => try self.handler.setCursorCol(input.params[0]),
+                    else => log.warn("invalid HPA command: {}", .{input}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CUP - Set Cursor Position.
                 // TODO: test
-                'H', 'f' => if (@hasDecl(T, "setCursorPos")) switch (action.params.len) {
+                'H', 'f' => if (@hasDecl(T, "setCursorPos")) switch (input.params.len) {
                     0 => try self.handler.setCursorPos(1, 1),
-                    1 => try self.handler.setCursorPos(action.params[0], 1),
-                    2 => try self.handler.setCursorPos(action.params[0], action.params[1]),
-                    else => log.warn("invalid CUP command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    1 => try self.handler.setCursorPos(input.params[0], 1),
+                    2 => try self.handler.setCursorPos(input.params[0], input.params[1]),
+                    else => log.warn("invalid CUP command: {}", .{input}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CHT - Cursor Horizontal Tabulation
                 'I' => if (@hasDecl(T, "horizontalTab")) try self.handler.horizontalTab(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid horizontal tab command: {}", .{action});
+                            log.warn("invalid horizontal tab command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Erase Display
                 'J' => if (@hasDecl(T, "eraseDisplay")) {
-                    const protected_: ?bool = switch (action.intermediates.len) {
+                    const protected_: ?bool = switch (input.intermediates.len) {
                         0 => false,
-                        1 => if (action.intermediates[0] == '?') true else null,
+                        1 => if (input.intermediates[0] == '?') true else null,
                         else => null,
                     };
 
                     const protected = protected_ orelse {
-                        log.warn("invalid erase display command: {}", .{action});
+                        log.warn("invalid erase display command: {}", .{input});
                         return;
                     };
 
-                    const mode_: ?csi.EraseDisplay = switch (action.params.len) {
+                    const mode_: ?csi.EraseDisplay = switch (input.params.len) {
                         0 => .below,
-                        1 => if (action.params[0] <= 3)
-                            std.meta.intToEnum(csi.EraseDisplay, action.params[0]) catch null
+                        1 => if (input.params[0] <= 3)
+                            std.meta.intToEnum(csi.EraseDisplay, input.params[0]) catch null
                         else
                             null,
                         else => null,
                     };
 
                     const mode = mode_ orelse {
-                        log.warn("invalid erase display command: {}", .{action});
+                        log.warn("invalid erase display command: {}", .{input});
                         return;
                     };
 
                     try self.handler.eraseDisplay(mode, protected);
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Erase Line
                 'K' => if (@hasDecl(T, "eraseLine")) {
-                    const protected_: ?bool = switch (action.intermediates.len) {
+                    const protected_: ?bool = switch (input.intermediates.len) {
                         0 => false,
-                        1 => if (action.intermediates[0] == '?') true else null,
+                        1 => if (input.intermediates[0] == '?') true else null,
                         else => null,
                     };
 
                     const protected = protected_ orelse {
-                        log.warn("invalid erase line command: {}", .{action});
+                        log.warn("invalid erase line command: {}", .{input});
                         return;
                     };
 
-                    const mode_: ?csi.EraseLine = switch (action.params.len) {
+                    const mode_: ?csi.EraseLine = switch (input.params.len) {
                         0 => .right,
-                        1 => if (action.params[0] < 3) @enumFromInt(action.params[0]) else null,
+                        1 => if (input.params[0] < 3) @enumFromInt(input.params[0]) else null,
                         else => null,
                     };
 
                     const mode = mode_ orelse {
-                        log.warn("invalid erase line command: {}", .{action});
+                        log.warn("invalid erase line command: {}", .{input});
                         return;
                     };
 
                     try self.handler.eraseLine(mode, protected);
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // IL - Insert Lines
                 // TODO: test
-                'L' => if (@hasDecl(T, "insertLines")) switch (action.params.len) {
+                'L' => if (@hasDecl(T, "insertLines")) switch (input.params.len) {
                     0 => try self.handler.insertLines(1),
-                    1 => try self.handler.insertLines(action.params[0]),
-                    else => log.warn("invalid IL command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    1 => try self.handler.insertLines(input.params[0]),
+                    else => log.warn("invalid IL command: {}", .{input}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // DL - Delete Lines
                 // TODO: test
-                'M' => if (@hasDecl(T, "deleteLines")) switch (action.params.len) {
+                'M' => if (@hasDecl(T, "deleteLines")) switch (input.params.len) {
                     0 => try self.handler.deleteLines(1),
-                    1 => try self.handler.deleteLines(action.params[0]),
-                    else => log.warn("invalid DL command: {}", .{action}),
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    1 => try self.handler.deleteLines(input.params[0]),
+                    else => log.warn("invalid DL command: {}", .{input}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Delete Character (DCH)
                 'P' => if (@hasDecl(T, "deleteChars")) try self.handler.deleteChars(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid delete characters command: {}", .{action});
+                            log.warn("invalid delete characters command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Scroll Up (SD)
 
-                'S' => switch (action.intermediates.len) {
+                'S' => switch (input.intermediates.len) {
                     0 => if (@hasDecl(T, "scrollUp")) try self.handler.scrollUp(
-                        switch (action.params.len) {
+                        switch (input.params.len) {
                             0 => 1,
-                            1 => action.params[0],
+                            1 => input.params[0],
                             else => {
-                                log.warn("invalid scroll up command: {}", .{action});
+                                log.warn("invalid scroll up command: {}", .{input});
                                 return;
                             },
                         },
-                    ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                    ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                     else => log.warn(
                         "ignoring unimplemented CSI S with intermediates: {s}",
-                        .{action.intermediates},
+                        .{input.intermediates},
                     ),
                 },
 
                 // Scroll Down (SD)
                 'T' => if (@hasDecl(T, "scrollDown")) try self.handler.scrollDown(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid scroll down command: {}", .{action});
+                            log.warn("invalid scroll down command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Cursor Tabulation Control
                 'W' => {
-                    switch (action.params.len) {
-                        0 => if (action.intermediates.len == 1 and action.intermediates[0] == '?') {
+                    switch (input.params.len) {
+                        0 => if (input.intermediates.len == 1 and input.intermediates[0] == '?') {
                             if (@hasDecl(T, "tabReset"))
                                 try self.handler.tabReset()
                             else
-                                log.warn("unimplemented tab reset callback: {}", .{action});
+                                log.warn("unimplemented tab reset callback: {}", .{input});
                         },
 
-                        1 => switch (action.params[0]) {
+                        1 => switch (input.params[0]) {
                             0 => if (@hasDecl(T, "tabSet"))
                                 try self.handler.tabSet()
                             else
-                                log.warn("unimplemented tab set callback: {}", .{action}),
+                                log.warn("unimplemented tab set callback: {}", .{input}),
 
                             2 => if (@hasDecl(T, "tabClear"))
                                 try self.handler.tabClear(.current)
                             else
-                                log.warn("unimplemented tab clear callback: {}", .{action}),
+                                log.warn("unimplemented tab clear callback: {}", .{input}),
 
                             5 => if (@hasDecl(T, "tabClear"))
                                 try self.handler.tabClear(.all)
                             else
-                                log.warn("unimplemented tab clear callback: {}", .{action}),
+                                log.warn("unimplemented tab clear callback: {}", .{input}),
 
                             else => {},
                         },
@@ -634,188 +622,188 @@ pub fn Stream(comptime Handler: type) type {
                         else => {},
                     }
 
-                    log.warn("invalid cursor tabulation control: {}", .{action});
+                    log.warn("invalid cursor tabulation control: {}", .{input});
                     return;
                 },
 
                 // Erase Characters (ECH)
                 'X' => if (@hasDecl(T, "eraseChars")) try self.handler.eraseChars(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid erase characters command: {}", .{action});
+                            log.warn("invalid erase characters command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // CHT - Cursor Horizontal Tabulation Back
                 'Z' => if (@hasDecl(T, "horizontalTabBack")) try self.handler.horizontalTabBack(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid horizontal tab back command: {}", .{action});
+                            log.warn("invalid horizontal tab back command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // HPR - Cursor Horizontal Position Relative
                 'a' => if (@hasDecl(T, "setCursorColRelative")) try self.handler.setCursorColRelative(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid HPR command: {}", .{action});
+                            log.warn("invalid HPR command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // Repeat Previous Char (REP)
                 'b' => if (@hasDecl(T, "printRepeat")) try self.handler.printRepeat(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid print repeat command: {}", .{action});
+                            log.warn("invalid print repeat command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // c - Device Attributes (DA1)
                 'c' => if (@hasDecl(T, "deviceAttributes")) {
-                    const req: ansi.DeviceAttributeReq = switch (action.intermediates.len) {
+                    const req: ansi.DeviceAttributeReq = switch (input.intermediates.len) {
                         0 => ansi.DeviceAttributeReq.primary,
-                        1 => switch (action.intermediates[0]) {
+                        1 => switch (input.intermediates[0]) {
                             '>' => ansi.DeviceAttributeReq.secondary,
                             '=' => ansi.DeviceAttributeReq.tertiary,
                             else => null,
                         },
                         else => @as(?ansi.DeviceAttributeReq, null),
                     } orelse {
-                        log.warn("invalid device attributes command: {}", .{action});
+                        log.warn("invalid device attributes command: {}", .{input});
                         return;
                     };
 
-                    try self.handler.deviceAttributes(req, action.params);
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    try self.handler.deviceAttributes(req, input.params);
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // VPA - Cursor Vertical Position Absolute
                 'd' => if (@hasDecl(T, "setCursorRow")) try self.handler.setCursorRow(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid VPA command: {}", .{action});
+                            log.warn("invalid VPA command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // VPR - Cursor Vertical Position Relative
                 'e' => if (@hasDecl(T, "setCursorRowRelative")) try self.handler.setCursorRowRelative(
-                    switch (action.params.len) {
+                    switch (input.params.len) {
                         0 => 1,
-                        1 => action.params[0],
+                        1 => input.params[0],
                         else => {
-                            log.warn("invalid VPR command: {}", .{action});
+                            log.warn("invalid VPR command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // TBC - Tab Clear
                 // TODO: test
                 'g' => if (@hasDecl(T, "tabClear")) try self.handler.tabClear(
-                    switch (action.params.len) {
-                        1 => @enumFromInt(action.params[0]),
+                    switch (input.params.len) {
+                        1 => @enumFromInt(input.params[0]),
                         else => {
-                            log.warn("invalid tab clear command: {}", .{action});
+                            log.warn("invalid tab clear command: {}", .{input});
                             return;
                         },
                     },
-                ) else log.warn("unimplemented CSI callback: {}", .{action}),
+                ) else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // SM - Set Mode
                 'h' => if (@hasDecl(T, "setMode")) mode: {
                     const ansi_mode = ansi: {
-                        if (action.intermediates.len == 0) break :ansi true;
-                        if (action.intermediates.len == 1 and
-                            action.intermediates[0] == '?') break :ansi false;
+                        if (input.intermediates.len == 0) break :ansi true;
+                        if (input.intermediates.len == 1 and
+                            input.intermediates[0] == '?') break :ansi false;
 
-                        log.warn("invalid set mode command: {}", .{action});
+                        log.warn("invalid set mode command: {}", .{input});
                         break :mode;
                     };
 
-                    for (action.params) |mode_int| {
+                    for (input.params) |mode_int| {
                         if (modes.modeFromInt(mode_int, ansi_mode)) |mode| {
                             try self.handler.setMode(mode, true);
                         } else {
                             log.warn("unimplemented mode: {}", .{mode_int});
                         }
                     }
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // RM - Reset Mode
                 'l' => if (@hasDecl(T, "setMode")) mode: {
                     const ansi_mode = ansi: {
-                        if (action.intermediates.len == 0) break :ansi true;
-                        if (action.intermediates.len == 1 and
-                            action.intermediates[0] == '?') break :ansi false;
+                        if (input.intermediates.len == 0) break :ansi true;
+                        if (input.intermediates.len == 1 and
+                            input.intermediates[0] == '?') break :ansi false;
 
-                        log.warn("invalid set mode command: {}", .{action});
+                        log.warn("invalid set mode command: {}", .{input});
                         break :mode;
                     };
 
-                    for (action.params) |mode_int| {
+                    for (input.params) |mode_int| {
                         if (modes.modeFromInt(mode_int, ansi_mode)) |mode| {
                             try self.handler.setMode(mode, false);
                         } else {
                             log.warn("unimplemented mode: {}", .{mode_int});
                         }
                     }
-                } else log.warn("unimplemented CSI callback: {}", .{action}),
+                } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                 // SGR - Select Graphic Rendition
-                'm' => switch (action.intermediates.len) {
+                'm' => switch (input.intermediates.len) {
                     0 => if (@hasDecl(T, "setAttribute")) {
                         // log.info("parse SGR params={any}", .{action.params});
-                        var p: sgr.Parser = .{ .params = action.params, .colon = action.sep == .colon };
+                        var p: sgr.Parser = .{ .params = input.params, .colon = input.sep == .colon };
                         while (p.next()) |attr| {
                             // log.info("SGR attribute: {}", .{attr});
                             try self.handler.setAttribute(attr);
                         }
-                    } else log.warn("unimplemented CSI callback: {}", .{action}),
+                    } else log.warn("unimplemented CSI callback: {}", .{input}),
 
-                    1 => switch (action.intermediates[0]) {
+                    1 => switch (input.intermediates[0]) {
                         '>' => if (@hasDecl(T, "setModifyKeyFormat")) blk: {
-                            if (action.params.len == 0) {
+                            if (input.params.len == 0) {
                                 // Reset
                                 try self.handler.setModifyKeyFormat(.{ .legacy = {} });
                                 break :blk;
                             }
 
-                            var format: ansi.ModifyKeyFormat = switch (action.params[0]) {
+                            var format: ansi.ModifyKeyFormat = switch (input.params[0]) {
                                 0 => .{ .legacy = {} },
                                 1 => .{ .cursor_keys = {} },
                                 2 => .{ .function_keys = {} },
                                 4 => .{ .other_keys = .none },
                                 else => {
-                                    log.warn("invalid setModifyKeyFormat: {}", .{action});
+                                    log.warn("invalid setModifyKeyFormat: {}", .{input});
                                     break :blk;
                                 },
                             };
 
-                            if (action.params.len > 2) {
-                                log.warn("invalid setModifyKeyFormat: {}", .{action});
+                            if (input.params.len > 2) {
+                                log.warn("invalid setModifyKeyFormat: {}", .{input});
                                 break :blk;
                             }
 
-                            if (action.params.len == 2) {
+                            if (input.params.len == 2) {
                                 switch (format) {
                                     // We don't support any of the subparams yet for these.
                                     .legacy => {},
@@ -823,7 +811,7 @@ pub fn Stream(comptime Handler: type) type {
                                     .function_keys => {},
 
                                     // We only support the numeric form.
-                                    .other_keys => |*v| switch (action.params[1]) {
+                                    .other_keys => |*v| switch (input.params[1]) {
                                         2 => v.* = .numeric,
                                         else => v.* = .none,
                                     },
@@ -831,11 +819,11 @@ pub fn Stream(comptime Handler: type) type {
                             }
 
                             try self.handler.setModifyKeyFormat(format);
-                        } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+                        } else log.warn("unimplemented setModifyKeyFormat: {}", .{input}),
 
                         else => log.warn(
                             "unknown CSI m with intermediate: {}",
-                            .{action.intermediates[0]},
+                            .{input.intermediates[0]},
                         ),
                     },
 
@@ -848,7 +836,7 @@ pub fn Stream(comptime Handler: type) type {
                         // support yet.
                         log.warn(
                             "ignoring unimplemented CSI m with intermediates: {s}",
-                            .{action.intermediates},
+                            .{input.intermediates},
                         );
                     },
                 },
@@ -856,30 +844,30 @@ pub fn Stream(comptime Handler: type) type {
                 // TODO: test
                 'n' => {
                     // Handle deviceStatusReport first
-                    if (action.intermediates.len == 0 or
-                        action.intermediates[0] == '?')
+                    if (input.intermediates.len == 0 or
+                        input.intermediates[0] == '?')
                     {
                         if (!@hasDecl(T, "deviceStatusReport")) {
-                            log.warn("unimplemented CSI callback: {}", .{action});
+                            log.warn("unimplemented CSI callback: {}", .{input});
                             return;
                         }
 
-                        if (action.params.len != 1) {
-                            log.warn("invalid device status report command: {}", .{action});
+                        if (input.params.len != 1) {
+                            log.warn("invalid device status report command: {}", .{input});
                             return;
                         }
 
                         const question = question: {
-                            if (action.intermediates.len == 0) break :question false;
-                            if (action.intermediates.len == 1 and
-                                action.intermediates[0] == '?') break :question true;
+                            if (input.intermediates.len == 0) break :question false;
+                            if (input.intermediates.len == 1 and
+                                input.intermediates[0] == '?') break :question true;
 
-                            log.warn("invalid set mode command: {}", .{action});
+                            log.warn("invalid set mode command: {}", .{input});
                             return;
                         };
 
-                        const req = device_status.reqFromInt(action.params[0], question) orelse {
-                            log.warn("invalid device status report command: {}", .{action});
+                        const req = device_status.reqFromInt(input.params[0], question) orelse {
+                            log.warn("invalid device status report command: {}", .{input});
                             return;
                         };
 
@@ -888,89 +876,89 @@ pub fn Stream(comptime Handler: type) type {
                     }
 
                     // Handle other forms of CSI n
-                    switch (action.intermediates.len) {
+                    switch (input.intermediates.len) {
                         0 => unreachable, // handled above
 
-                        1 => switch (action.intermediates[0]) {
+                        1 => switch (input.intermediates[0]) {
                             '>' => if (@hasDecl(T, "setModifyKeyFormat")) {
                                 // This isn't strictly correct. CSI > n has parameters that
                                 // control what exactly is being disabled. However, we
                                 // only support reverting back to modify other keys in
                                 // numeric except format.
                                 try self.handler.setModifyKeyFormat(.{ .other_keys = .numeric_except });
-                            } else log.warn("unimplemented setModifyKeyFormat: {}", .{action}),
+                            } else log.warn("unimplemented setModifyKeyFormat: {}", .{input}),
 
                             else => log.warn(
                                 "unknown CSI n with intermediate: {}",
-                                .{action.intermediates[0]},
+                                .{input.intermediates[0]},
                             ),
                         },
 
                         else => log.warn(
                             "ignoring unimplemented CSI n with intermediates: {s}",
-                            .{action.intermediates},
+                            .{input.intermediates},
                         ),
                     }
                 },
 
                 // DECRQM - Request Mode
-                'p' => switch (action.intermediates.len) {
+                'p' => switch (input.intermediates.len) {
                     2 => decrqm: {
                         const ansi_mode = ansi: {
-                            switch (action.intermediates.len) {
-                                1 => if (action.intermediates[0] == '$') break :ansi true,
-                                2 => if (action.intermediates[0] == '?' and
-                                    action.intermediates[1] == '$') break :ansi false,
+                            switch (input.intermediates.len) {
+                                1 => if (input.intermediates[0] == '$') break :ansi true,
+                                2 => if (input.intermediates[0] == '?' and
+                                    input.intermediates[1] == '$') break :ansi false,
                                 else => {},
                             }
 
                             log.warn(
                                 "ignoring unimplemented CSI p with intermediates: {s}",
-                                .{action.intermediates},
+                                .{input.intermediates},
                             );
                             break :decrqm;
                         };
 
-                        if (action.params.len != 1) {
-                            log.warn("invalid DECRQM command: {}", .{action});
+                        if (input.params.len != 1) {
+                            log.warn("invalid DECRQM command: {}", .{input});
                             break :decrqm;
                         }
 
                         if (@hasDecl(T, "requestMode")) {
-                            try self.handler.requestMode(action.params[0], ansi_mode);
-                        } else log.warn("unimplemented DECRQM callback: {}", .{action});
+                            try self.handler.requestMode(input.params[0], ansi_mode);
+                        } else log.warn("unimplemented DECRQM callback: {}", .{input});
                     },
 
                     else => log.warn(
                         "ignoring unimplemented CSI p with intermediates: {s}",
-                        .{action.intermediates},
+                        .{input.intermediates},
                     ),
                 },
 
-                'q' => switch (action.intermediates.len) {
-                    1 => switch (action.intermediates[0]) {
+                'q' => switch (input.intermediates.len) {
+                    1 => switch (input.intermediates[0]) {
                         // DECSCUSR - Select Cursor Style
                         // TODO: test
                         ' ' => {
                             if (@hasDecl(T, "setCursorStyle")) try self.handler.setCursorStyle(
-                                switch (action.params.len) {
+                                switch (input.params.len) {
                                     0 => ansi.CursorStyle.default,
-                                    1 => @enumFromInt(action.params[0]),
+                                    1 => @enumFromInt(input.params[0]),
                                     else => {
-                                        log.warn("invalid set curor style command: {}", .{action});
+                                        log.warn("invalid set curor style command: {}", .{input});
                                         return;
                                     },
                                 },
-                            ) else log.warn("unimplemented CSI callback: {}", .{action});
+                            ) else log.warn("unimplemented CSI callback: {}", .{input});
                         },
 
                         // DECSCA
                         '"' => {
                             if (@hasDecl(T, "setProtectedMode")) {
-                                const mode_: ?ansi.ProtectedMode = switch (action.params.len) {
+                                const mode_: ?ansi.ProtectedMode = switch (input.params.len) {
                                     else => null,
                                     0 => .off,
-                                    1 => switch (action.params[0]) {
+                                    1 => switch (input.params[0]) {
                                         0, 2 => .off,
                                         1 => .dec,
                                         else => null,
@@ -978,12 +966,12 @@ pub fn Stream(comptime Handler: type) type {
                                 };
 
                                 const mode = mode_ orelse {
-                                    log.warn("invalid set protected mode command: {}", .{action});
+                                    log.warn("invalid set protected mode command: {}", .{input});
                                     return;
                                 };
 
                                 try self.handler.setProtectedMode(mode);
-                            } else log.warn("unimplemented CSI callback: {}", .{action});
+                            } else log.warn("unimplemented CSI callback: {}", .{input});
                         },
 
                         // XTVERSION
@@ -993,35 +981,35 @@ pub fn Stream(comptime Handler: type) type {
                         else => {
                             log.warn(
                                 "ignoring unimplemented CSI q with intermediates: {s}",
-                                .{action.intermediates},
+                                .{input.intermediates},
                             );
                         },
                     },
 
                     else => log.warn(
                         "ignoring unimplemented CSI p with intermediates: {s}",
-                        .{action.intermediates},
+                        .{input.intermediates},
                     ),
                 },
 
-                'r' => switch (action.intermediates.len) {
+                'r' => switch (input.intermediates.len) {
                     // DECSTBM - Set Top and Bottom Margins
                     0 => if (@hasDecl(T, "setTopAndBottomMargin")) {
-                        switch (action.params.len) {
+                        switch (input.params.len) {
                             0 => try self.handler.setTopAndBottomMargin(0, 0),
-                            1 => try self.handler.setTopAndBottomMargin(action.params[0], 0),
-                            2 => try self.handler.setTopAndBottomMargin(action.params[0], action.params[1]),
-                            else => log.warn("invalid DECSTBM command: {}", .{action}),
+                            1 => try self.handler.setTopAndBottomMargin(input.params[0], 0),
+                            2 => try self.handler.setTopAndBottomMargin(input.params[0], input.params[1]),
+                            else => log.warn("invalid DECSTBM command: {}", .{input}),
                         }
                     } else log.warn(
                         "unimplemented CSI callback: {}",
-                        .{action},
+                        .{input},
                     ),
 
-                    1 => switch (action.intermediates[0]) {
+                    1 => switch (input.intermediates[0]) {
                         // Restore Mode
                         '?' => if (@hasDecl(T, "restoreMode")) {
-                            for (action.params) |mode_int| {
+                            for (input.params) |mode_int| {
                                 if (modes.modeFromInt(mode_int, false)) |mode| {
                                     try self.handler.restoreMode(mode);
                                 } else {
@@ -1035,37 +1023,37 @@ pub fn Stream(comptime Handler: type) type {
 
                         else => log.warn(
                             "unknown CSI s with intermediate: {}",
-                            .{action},
+                            .{input},
                         ),
                     },
 
                     else => log.warn(
                         "ignoring unimplemented CSI s with intermediates: {s}",
-                        .{action},
+                        .{input},
                     ),
                 },
 
-                's' => switch (action.intermediates.len) {
+                's' => switch (input.intermediates.len) {
                     // DECSLRM
                     0 => if (@hasDecl(T, "setLeftAndRightMargin")) {
-                        switch (action.params.len) {
+                        switch (input.params.len) {
                             // CSI S is ambiguous with zero params so we defer
                             // to our handler to do the proper logic. If mode 69
                             // is set, then we should invoke DECSLRM, otherwise
                             // we should invoke SC.
                             0 => try self.handler.setLeftAndRightMarginAmbiguous(),
-                            1 => try self.handler.setLeftAndRightMargin(action.params[0], 0),
-                            2 => try self.handler.setLeftAndRightMargin(action.params[0], action.params[1]),
-                            else => log.warn("invalid DECSLRM command: {}", .{action}),
+                            1 => try self.handler.setLeftAndRightMargin(input.params[0], 0),
+                            2 => try self.handler.setLeftAndRightMargin(input.params[0], input.params[1]),
+                            else => log.warn("invalid DECSLRM command: {}", .{input}),
                         }
                     } else log.warn(
                         "unimplemented CSI callback: {}",
-                        .{action},
+                        .{input},
                     ),
 
-                    1 => switch (action.intermediates[0]) {
+                    1 => switch (input.intermediates[0]) {
                         '?' => if (@hasDecl(T, "saveMode")) {
-                            for (action.params) |mode_int| {
+                            for (input.params) |mode_int| {
                                 if (modes.modeFromInt(mode_int, false)) |mode| {
                                     try self.handler.saveMode(mode);
                                 } else {
@@ -1079,18 +1067,18 @@ pub fn Stream(comptime Handler: type) type {
 
                         // XTSHIFTESCAPE
                         '>' => if (@hasDecl(T, "setMouseShiftCapture")) capture: {
-                            const capture = switch (action.params.len) {
+                            const capture = switch (input.params.len) {
                                 0 => false,
-                                1 => switch (action.params[0]) {
+                                1 => switch (input.params[0]) {
                                     0 => false,
                                     1 => true,
                                     else => {
-                                        log.warn("invalid XTSHIFTESCAPE command: {}", .{action});
+                                        log.warn("invalid XTSHIFTESCAPE command: {}", .{input});
                                         break :capture;
                                     },
                                 },
                                 else => {
-                                    log.warn("invalid XTSHIFTESCAPE command: {}", .{action});
+                                    log.warn("invalid XTSHIFTESCAPE command: {}", .{input});
                                     break :capture;
                                 },
                             };
@@ -1098,37 +1086,37 @@ pub fn Stream(comptime Handler: type) type {
                             try self.handler.setMouseShiftCapture(capture);
                         } else log.warn(
                             "unimplemented CSI callback: {}",
-                            .{action},
+                            .{input},
                         ),
 
                         else => log.warn(
                             "unknown CSI s with intermediate: {}",
-                            .{action},
+                            .{input},
                         ),
                     },
 
                     else => log.warn(
                         "ignoring unimplemented CSI s with intermediates: {s}",
-                        .{action},
+                        .{input},
                     ),
                 },
 
-                'u' => switch (action.intermediates.len) {
+                'u' => switch (input.intermediates.len) {
                     0 => if (@hasDecl(T, "restoreCursor"))
                         try self.handler.restoreCursor()
                     else
-                        log.warn("unimplemented CSI callback: {}", .{action}),
+                        log.warn("unimplemented CSI callback: {}", .{input}),
 
                     // Kitty keyboard protocol
-                    1 => switch (action.intermediates[0]) {
+                    1 => switch (input.intermediates[0]) {
                         '?' => if (@hasDecl(T, "queryKittyKeyboard")) {
                             try self.handler.queryKittyKeyboard();
                         },
 
                         '>' => if (@hasDecl(T, "pushKittyKeyboard")) push: {
-                            const flags: u5 = if (action.params.len == 1)
-                                std.math.cast(u5, action.params[0]) orelse {
-                                    log.warn("invalid pushKittyKeyboard command: {}", .{action});
+                            const flags: u5 = if (input.params.len == 1)
+                                std.math.cast(u5, input.params[0]) orelse {
+                                    log.warn("invalid pushKittyKeyboard command: {}", .{input});
                                     break :push;
                                 }
                             else
@@ -1138,8 +1126,8 @@ pub fn Stream(comptime Handler: type) type {
                         },
 
                         '<' => if (@hasDecl(T, "popKittyKeyboard")) {
-                            const number: u16 = if (action.params.len == 1)
-                                action.params[0]
+                            const number: u16 = if (input.params.len == 1)
+                                input.params[0]
                             else
                                 1;
 
@@ -1147,16 +1135,16 @@ pub fn Stream(comptime Handler: type) type {
                         },
 
                         '=' => if (@hasDecl(T, "setKittyKeyboard")) set: {
-                            const flags: u5 = if (action.params.len >= 1)
-                                std.math.cast(u5, action.params[0]) orelse {
-                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                            const flags: u5 = if (input.params.len >= 1)
+                                std.math.cast(u5, input.params[0]) orelse {
+                                    log.warn("invalid setKittyKeyboard command: {}", .{input});
                                     break :set;
                                 }
                             else
                                 0;
 
-                            const number: u16 = if (action.params.len >= 2)
-                                action.params[1]
+                            const number: u16 = if (input.params.len >= 2)
+                                input.params[1]
                             else
                                 1;
 
@@ -1165,7 +1153,7 @@ pub fn Stream(comptime Handler: type) type {
                                 1 => .@"or",
                                 2 => .not,
                                 else => {
-                                    log.warn("invalid setKittyKeyboard command: {}", .{action});
+                                    log.warn("invalid setKittyKeyboard command: {}", .{input});
                                     break :set;
                                 },
                             };
@@ -1178,27 +1166,27 @@ pub fn Stream(comptime Handler: type) type {
 
                         else => log.warn(
                             "unknown CSI s with intermediate: {}",
-                            .{action},
+                            .{input},
                         ),
                     },
 
                     else => log.warn(
                         "ignoring unimplemented CSI u: {}",
-                        .{action},
+                        .{input},
                     ),
                 },
 
                 // ICH - Insert Blanks
-                '@' => switch (action.intermediates.len) {
-                    0 => if (@hasDecl(T, "insertBlanks")) switch (action.params.len) {
+                '@' => switch (input.intermediates.len) {
+                    0 => if (@hasDecl(T, "insertBlanks")) switch (input.params.len) {
                         0 => try self.handler.insertBlanks(1),
-                        1 => try self.handler.insertBlanks(action.params[0]),
-                        else => log.warn("invalid ICH command: {}", .{action}),
-                    } else log.warn("unimplemented CSI callback: {}", .{action}),
+                        1 => try self.handler.insertBlanks(input.params[0]),
+                        else => log.warn("invalid ICH command: {}", .{input}),
+                    } else log.warn("unimplemented CSI callback: {}", .{input}),
 
                     else => log.warn(
                         "ignoring unimplemented CSI @: {}",
-                        .{action},
+                        .{input},
                     ),
                 },
 
@@ -1206,24 +1194,24 @@ pub fn Stream(comptime Handler: type) type {
                 '}' => {
                     const success = decsasd: {
                         // Verify we're getting a DECSASD command
-                        if (action.intermediates.len != 1 or action.intermediates[0] != '$')
+                        if (input.intermediates.len != 1 or input.intermediates[0] != '$')
                             break :decsasd false;
-                        if (action.params.len != 1)
+                        if (input.params.len != 1)
                             break :decsasd false;
                         if (!@hasDecl(T, "setActiveStatusDisplay"))
                             break :decsasd false;
 
-                        try self.handler.setActiveStatusDisplay(@enumFromInt(action.params[0]));
+                        try self.handler.setActiveStatusDisplay(@enumFromInt(input.params[0]));
                         break :decsasd true;
                     };
 
-                    if (!success) log.warn("unimplemented CSI callback: {}", .{action});
+                    if (!success) log.warn("unimplemented CSI callback: {}", .{input});
                 },
 
                 else => if (@hasDecl(T, "csiUnimplemented"))
-                    try self.handler.csiUnimplemented(action)
+                    try self.handler.csiUnimplemented(input)
                 else
-                    log.warn("unimplemented CSI action: {}", .{action}),
+                    log.warn("unimplemented CSI action: {}", .{input}),
             }
         }
 
