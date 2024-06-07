@@ -187,7 +187,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         if (ghostty.config.backgroundOpacity < 1) {
             window.isOpaque = false
             window.hasShadow = false
-            window.backgroundColor = .clear
+            
+            // This is weird, but we don't use ".clear" because this creates a look that
+            // matches Terminal.app much more closer. This lets users transition from
+            // Terminal.app more easily.
+            window.backgroundColor = .white.withAlphaComponent(0.001)
+            
             ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
         } else {
             window.isOpaque = true
