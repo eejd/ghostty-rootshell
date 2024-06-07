@@ -1474,11 +1474,6 @@ pub const CAPI = struct {
         return surface.app;
     }
 
-    /// Returns true if the surface has transparency set.
-    export fn ghostty_surface_transparent(surface: *Surface) bool {
-        return surface.app.config.@"background-opacity" < 1.0;
-    }
-
     /// Returns true if the surface needs to confirm quitting.
     export fn ghostty_surface_needs_confirm_quit(surface: *Surface) bool {
         return surface.core_surface.needsConfirmQuit();
@@ -1850,13 +1845,13 @@ pub const CAPI = struct {
     /// This uses an undocumented, non-public API because this is what
     /// every terminal appears to use, including Terminal.app.
     export fn ghostty_set_window_background_blur(
-        ptr: *Surface,
+        app: *App,
         window: *anyopaque,
     ) void {
         // This is only supported on macOS
         if (comptime builtin.target.os.tag != .macos) return;
 
-        const config = ptr.app.config;
+        const config = app.config;
 
         // Do nothing if we don't have background transparency enabled
         if (config.@"background-opacity" >= 1.0) return;

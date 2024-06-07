@@ -236,6 +236,14 @@ extension Ghostty {
             return v
         }
         
+        var macosWindowShadow: Bool {
+            guard let config = self.config else { return false }
+            var v = false;
+            let key = "macos-window-shadow"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+        
         var backgroundColor: Color {
             var rgb: UInt32 = 0
             let bg_key = "background"
@@ -264,6 +272,14 @@ extension Ghostty {
             guard let config = self.config else { return 1 }
             var v: Double = 1
             let key = "background-opacity"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v;
+        }
+        
+        var backgroundBlurRadius: Int {
+            guard let config = self.config else { return 1 }
+            var v: Int = 0
+            let key = "background-blur-radius"
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v;
         }

@@ -342,40 +342,6 @@ extension Ghostty {
         
         // MARK: - NSView
         
-        override func viewDidMoveToWindow() {
-            // Set our background blur if requested
-            setWindowBackgroundBlur(window)
-        }
-        
-        /// This function sets the window background to blur if it is configured on the surface.
-        private func setWindowBackgroundBlur(_ targetWindow: NSWindow?) {
-            // Surface must desire transparency
-            guard let surface = self.surface,
-                  ghostty_surface_transparent(surface) else { return }
-            
-            // Our target should always be our own view window
-            guard let target = targetWindow,
-                  let window = self.window,
-                  target == window else { return }
-            
-            // If our window is not visible, then delay this. This is possible specifically
-            // during state restoration but probably in other scenarios as well. To delay,
-            // we just loop directly on the dispatch queue.
-            guard window.isVisible else {
-                // Weak window so that if the window changes or is destroyed we aren't holding a ref
-                DispatchQueue.main.async { [weak self, weak window] in self?.setWindowBackgroundBlur(window) }
-                return
-            }
-            
-            // Set the window transparency settings
-            window.isOpaque = false
-            window.hasShadow = false
-            window.backgroundColor = .clear
-
-            // If we have a blur, set the blur
-            ghostty_set_window_background_blur(surface, Unmanaged.passUnretained(window).toOpaque())
-        }
-        
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if (result) { focusDidChange(true) }
