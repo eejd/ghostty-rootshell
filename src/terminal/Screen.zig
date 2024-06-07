@@ -481,6 +481,10 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     assert(y < self.pages.rows);
     defer self.assertIntegrity();
 
+    // Moving the cursor affects text run splitting (ligatures) so
+    // we must mark the old and new page dirty.
+    self.cursor.page_pin.markDirty();
+
     var page_pin = if (y < self.cursor.y)
         self.cursor.page_pin.up(self.cursor.y - y).?
     else if (y > self.cursor.y)
@@ -494,6 +498,11 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     const page_rac = page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
+
+    // Mark the new page dirty. This might be the same page as the old
+    // but this is a fairly cheap operation and cursor movement isn't
+    // super common.
+    self.cursor.page_pin.markDirty();
 }
 
 /// Reloads the cursor pointer information into the screen. This is expensive

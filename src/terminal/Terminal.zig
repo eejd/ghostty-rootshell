@@ -4242,7 +4242,8 @@ test "Terminal: setTopAndBottomMargin top only" {
     t.clearDirty();
     t.scrollDown(1);
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // This is dirty because the cursor moves from this row
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
@@ -4907,7 +4908,8 @@ test "Terminal: scrollUp top/bottom scroll region" {
     t.clearDirty();
     t.scrollUp(1);
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // This is dirty because the cursor moves from this row
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
@@ -4985,7 +4987,8 @@ test "Terminal: scrollUp full top/bottom region" {
     t.clearDirty();
     t.scrollUp(4);
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // This is dirty because the cursor moves from this row
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
 
     {
@@ -5010,7 +5013,8 @@ test "Terminal: scrollUp full top/bottomleft/right scroll region" {
     t.clearDirty();
     t.scrollUp(4);
 
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // This is dirty because the cursor moves from this row
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     for (1..5) |y| try testing.expect(t.isDirty(.{ .active = .{
         .x = 0,
         .y = @intCast(y),
@@ -5077,7 +5081,9 @@ test "Terminal: scrollDown outside of scroll region" {
     try testing.expectEqual(cursor.y, t.screen.cursor.y);
 
     try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+
+    // This is dirty because the cursor moves from this row
+    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
