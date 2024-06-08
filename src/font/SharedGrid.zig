@@ -142,6 +142,11 @@ pub fn cellSize(self: *SharedGrid) renderer.CellSize {
 }
 
 /// Get the font index for a given codepoint. This is cached.
+///
+/// This always forces loading any deferred fonts since we assume that if
+/// you're looking up an index that the caller plans to use the font. By
+/// loading the font in this function we can ensure thread-safety on the
+/// load without complicating future calls.
 pub fn getIndex(
     self: *SharedGrid,
     alloc: Allocator,
@@ -171,6 +176,18 @@ pub fn getIndex(
     // Load a value and cache it. This even caches negative matches.
     const value = self.resolver.getIndex(alloc, cp, style, p);
     gop.value_ptr.* = value;
+
+    if (value) |idx| preload: {
+        // If the font is a sprite font then we don't need to preload
+        // because getFace doesn't work with special fonts.
+        if (idx.special() != null) break :preload;
+
+        // Load the face in case its deferred. If this fails then we would've
+        // failed to load it in the future anyways so we want to undo all
+        // the caching we did.
+        _ = try self.resolver.collection.getFace(idx);
+    }
+
     return value;
 }
 
