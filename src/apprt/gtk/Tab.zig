@@ -92,7 +92,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Add Surface to the Tab
     c.gtk_box_append(self.box, surface.primaryWidget());
 
-    try window.notebook.addTab(box_widget, "Ghostty");
+    try window.notebook.addTab(self, "Ghostty");
 
     // const notebook: *c.GtkNotebook = window.notebook.as_notebook();
 
@@ -132,11 +132,8 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
     // // Attach all events
     // _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
-    // _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     // _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&gtkTabClick), self, null, c.G_CONNECT_DEFAULT);
-
-    // // Switch to the new tab
-    // c.gtk_notebook_set_current_page(notebook, page_idx);
 
     // We need to grab focus after Surface and Tab is added to the window. When
     // creating a Tab we want to always focus on the widget.
@@ -166,15 +163,7 @@ pub fn replaceElem(self: *Tab, elem: Surface.Container.Elem) void {
 }
 
 pub fn setLabelText(self: *Tab, title: [:0]const u8) void {
-    switch (self.window.notebook) {
-        .adw_tab_view => |tab_view| {
-            const page = c.adw_tab_view_get_page(tab_view, @ptrCast(self.box));
-            c.adw_tab_page_set_title(page, title.ptr);
-        },
-        .gtk_notebook => {
-            c.gtk_label_set_text(self.label_text, title.ptr);
-        }
-    }
+    self.window.notebook.setTabLabel(self, title);
 }
 
 /// Remove this tab from the window.
