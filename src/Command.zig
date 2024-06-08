@@ -138,7 +138,7 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     else
         @compileError("missing env vars");
 
-    const pid: linux.pid_t = switch (builtin.os.tag) {
+    const pid: posix.pid_t = switch (builtin.os.tag) {
         .linux => if (self.linux_cgroup) |cgroup| try internal_os.cgroup.cloneInto(cgroup) else try posix.fork(),
         else => try posix.fork(),
     };
