@@ -19,6 +19,7 @@ const Command = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const internal_os = @import("os/main.zig");
+const termio = @import("termio.zig");
 const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
 const mem = std.mem;
@@ -31,6 +32,8 @@ const File = std.fs.File;
 const EnvMap = std.process.EnvMap;
 
 const PreExecFn = fn (*Command) void;
+
+const log = std.log.scoped(.command);
 
 /// Path to the command to run. This must be an absolute path. This
 /// library does not do PATH lookup.
@@ -60,6 +63,8 @@ stderr: ?File = null,
 /// before exec. This is useful to setup some state in the child before the
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
 pre_exec: ?*const PreExecFn = null,
+
+linux_cgroup: termio.Options.LinuxCgroup = termio.Options.linux_cgroup_default,
 
 /// If set, then the process will be created attached to this pseudo console.
 /// `stdin`, `stdout`, and `stderr` will be ignored if set.
@@ -133,8 +138,11 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     else
         @compileError("missing env vars");
 
-    // Fork
-    const pid = try posix.fork();
+    const pid: linux.pid_t = switch (builtin.os.tag) {
+        .linux => if (self.linux_cgroup) |cgroup| try internal_os.cgroup.cloneInto(cgroup) else try posix.fork(),
+        else => try posix.fork(),
+    };
+
     if (pid != 0) {
         // Parent, return immediately.
         self.pid = @intCast(pid);

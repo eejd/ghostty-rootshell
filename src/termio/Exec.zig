@@ -1315,6 +1315,7 @@ const Subprocess = struct {
                 }
             }).callback,
             .data = self,
+            .linux_cgroup = self.linux_cgroup,
         };
         try cmd.start(alloc);
         errdefer killCommand(&cmd) catch |err| {
@@ -1345,13 +1346,6 @@ const Subprocess = struct {
     fn childPreExec(self: *Subprocess) !void {
         // Setup our pty
         try self.pty.?.childPreExec();
-
-        // If we have a cgroup set, then we want to move into that cgroup.
-        if (comptime builtin.os.tag == .linux) {
-            if (self.linux_cgroup) |cgroup| {
-                try internal_os.cgroup.moveInto(cgroup, 0);
-            }
-        }
     }
 
     /// Called to notify that we exited externally so we can unset our

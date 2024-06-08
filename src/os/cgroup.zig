@@ -1,6 +1,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const linux = std.os.linux;
+const posix = std.posix;
 const Allocator = std.mem.Allocator;
+
+const log = std.log.scoped(.@"linux-cgroup");
 
 /// Returns the path to the cgroup for the given pid.
 pub fn current(alloc: Allocator, pid: std.os.linux.pid_t) !?[]const u8 {
@@ -62,6 +66,65 @@ pub fn moveInto(
     const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
     defer file.close();
     try file.writer().print("{}", .{pid});
+}
+
+/// Use clone3 to have the kernel create a new process with the correct cgroup
+/// rather than moving the process to the correct cgroup later.
+pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
+    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try std.fmt.bufPrintZ(&buf, "/sys/fs/cgroup{s}", .{cgroup});
+
+    // Get a file descriptor that refers to the cgroup directory in the cgroup
+    // sysfs to pass to the kernel in clone3.
+    const fd: linux.fd_t = fd: {
+        const rc = linux.open(path, linux.O{ .PATH = true, .DIRECTORY = true }, 0);
+        switch (posix.errno(rc)) {
+            .SUCCESS => {
+                break :fd @as(linux.fd_t, @intCast(rc));
+            },
+            else => |errno| {
+                log.err("unable to open cgroup dir {s}: {}", .{ path, errno });
+                break :fd -1;
+            },
+        }
+    };
+
+    const args: extern struct {
+        flags: u64,
+        pidfd: u64,
+        child_tid: u64,
+        parent_tid: u64,
+        exit_signal: u64,
+        stack: u64,
+        stack_size: u64,
+        tls: u64,
+        set_tid: u64,
+        set_tid_size: u64,
+        cgroup: u64,
+    } = .{
+        .flags = if (fd >= 0) linux.CLONE.INTO_CGROUP else 0,
+        .pidfd = 0,
+        .child_tid = 0,
+        .parent_tid = 0,
+        .exit_signal = linux.SIG.CHLD,
+        .stack = 0,
+        .stack_size = 0,
+        .tls = 0,
+        .set_tid = 0,
+        .set_tid_size = 0,
+        .cgroup = if (fd >= 0) @intCast(fd) else 0,
+    };
+
+    const rc = linux.syscall2(linux.SYS.clone3, @intFromPtr(&args), @sizeOf(@TypeOf(args)));
+    switch (posix.errno(rc)) {
+        .SUCCESS => {
+            return @as(posix.pid_t, @intCast(rc));
+        },
+        else => |errno| {
+            log.err("unable to clone: {}", .{errno});
+            return error.CloneError;
+        },
+    }
 }
 
 /// Returns all available cgroup controllers for the given cgroup.
