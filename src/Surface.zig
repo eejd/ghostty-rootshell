@@ -3449,11 +3449,29 @@ fn completeClipboardPaste(
         //
         // We do not do this for bracketed pastes because bracketed pastes are
         // by definition safe since they're framed.
-        if ((!self.config.clipboard_paste_bracketed_safe or !bracketed) and
-            self.config.clipboard_paste_protection and
-            !allow_unsafe and
-            !terminal.isSafePaste(data))
-        {
+        const unsafe = unsafe: {
+            // If we've disabled paste protection then we always allow the paste.
+            if (!self.config.clipboard_paste_protection) break :unsafe false;
+
+            // If we're allowed to paste unsafe data then we always allow the paste.
+            // This is set during confirmation usually.
+            if (allow_unsafe) break :unsafe false;
+
+            if (bracketed) {
+                // If we're bracketed and the paste contains and ending
+                // bracket then something naughty might be going on and we
+                // never trust it.
+                if (std.mem.indexOf(u8, data, "\x1B[201~") != null) break :unsafe true;
+
+                // If we are bracketed and configured to trust that then the
+                // paste is not unsafe.
+                if (self.config.clipboard_paste_bracketed_safe) break :unsafe false;
+            }
+
+            break :unsafe !terminal.isSafePaste(data);
+        };
+
+        if (unsafe) {
             log.info("potentially unsafe paste detected, rejecting until confirmation", .{});
             return error.UnsafePaste;
         }
