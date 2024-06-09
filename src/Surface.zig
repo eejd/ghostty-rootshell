@@ -413,7 +413,7 @@ pub fn init(
             @hasDecl(apprt.runtime.Surface, "cgroup"))
             rt_surface.cgroup()
         else
-            termio.Options.linux_cgroup_default,
+            Command.linux_cgroup_default,
     });
     errdefer io.deinit();
 
