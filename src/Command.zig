@@ -32,8 +32,6 @@ const EnvMap = std.process.EnvMap;
 
 const PreExecFn = fn (*Command) void;
 
-const log = std.log.scoped(.command);
-
 /// Path to the command to run. This must be an absolute path. This
 /// library does not do PATH lookup.
 path: []const u8,
