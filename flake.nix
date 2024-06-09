@@ -39,7 +39,7 @@
         inherit (pkgs-unstable) tracy;
         inherit (zls.packages.${system}) zls;
 
-        zig = zig.packages.${system}."0.12.1";
+        zig = zig.packages.${system}."0.13.0";
         wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
       };
 
