@@ -79,15 +79,14 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
     const fd: linux.fd_t = fd: {
         const rc = linux.open(path, linux.O{ .PATH = true, .DIRECTORY = true }, 0);
         switch (posix.errno(rc)) {
-            .SUCCESS => {
-                break :fd @as(linux.fd_t, @intCast(rc));
-            },
+            .SUCCESS => break :fd @as(linux.fd_t, @intCast(rc)),
             else => |errno| {
                 log.err("unable to open cgroup dir {s}: {}", .{ path, errno });
-                break :fd -1;
+                return error.CloneError;
             },
         }
     };
+    assert(fd >= 0);
 
     const args: extern struct {
         flags: u64,
@@ -102,7 +101,7 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
         set_tid_size: u64,
         cgroup: u64,
     } = .{
-        .flags = if (fd >= 0) linux.CLONE.INTO_CGROUP else 0,
+        .flags = linux.CLONE.INTO_CGROUP,
         .pidfd = 0,
         .child_tid = 0,
         .parent_tid = 0,
@@ -112,19 +111,17 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
         .tls = 0,
         .set_tid = 0,
         .set_tid_size = 0,
-        .cgroup = if (fd >= 0) @intCast(fd) else 0,
+        .cgroup = @intCast(fd),
     };
 
     const rc = linux.syscall2(linux.SYS.clone3, @intFromPtr(&args), @sizeOf(@TypeOf(args)));
-    switch (posix.errno(rc)) {
-        .SUCCESS => {
-            return @as(posix.pid_t, @intCast(rc));
-        },
-        else => |errno| {
+    return switch (posix.errno(rc)) {
+        .SUCCESS => @as(posix.pid_t, @intCast(rc)),
+        else => |errno| err: {
             log.err("unable to clone: {}", .{errno});
-            return error.CloneError;
+            break :err error.CloneError;
         },
-    }
+    };
 }
 
 /// Returns all available cgroup controllers for the given cgroup.

@@ -19,7 +19,6 @@ const Command = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const internal_os = @import("os/main.zig");
-const termio = @import("termio.zig");
 const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
 const mem = std.mem;
@@ -64,7 +63,7 @@ stderr: ?File = null,
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
 pre_exec: ?*const PreExecFn = null,
 
-linux_cgroup: termio.Options.LinuxCgroup = termio.Options.linux_cgroup_default,
+linux_cgroup: LinuxCgroup = linux_cgroup_default,
 
 /// If set, then the process will be created attached to this pseudo console.
 /// `stdin`, `stdout`, and `stderr` will be ignored if set.
@@ -77,6 +76,11 @@ data: ?*anyopaque = null,
 
 /// Process ID is set after start is called.
 pid: ?posix.pid_t = null,
+
+/// LinuxCGroup type depends on our target OS
+pub const LinuxCgroup = if (builtin.os.tag == .linux) ?[]const u8 else void;
+pub const linux_cgroup_default = if (LinuxCgroup == void)
+{} else null;
 
 /// The various methods a process may exit.
 pub const Exit = if (builtin.os.tag == .windows) union(enum) {
@@ -138,8 +142,13 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     else
         @compileError("missing env vars");
 
+    // Fork. If we have a cgroup specified on Linxu then we use clone
     const pid: posix.pid_t = switch (builtin.os.tag) {
-        .linux => if (self.linux_cgroup) |cgroup| try internal_os.cgroup.cloneInto(cgroup) else try posix.fork(),
+        .linux => if (self.linux_cgroup) |cgroup|
+            try internal_os.cgroup.cloneInto(cgroup)
+        else
+            try posix.fork(),
+
         else => try posix.fork(),
     };
 
