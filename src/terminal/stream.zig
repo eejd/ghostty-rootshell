@@ -1338,6 +1338,10 @@ pub fn Stream(comptime Handler: type) type {
                     _ = v;
                     @panic("TODO(osc8)");
                 },
+
+                .hyperlink_end => {
+                    @panic("TODO(osc8)");
+                },
             }
 
             // Fall through for when we don't have a handler.

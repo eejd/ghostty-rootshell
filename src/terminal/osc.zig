@@ -1,4 +1,5 @@
 //! OSC (Operating System Command) related functions and types. OSC is
+//!
 //! another set of control sequences for terminal programs that start with
 //! "ESC ]". Unlike CSI or standard ESC sequences, they may contain strings
 //! and other irregular formatting so a dedicated parser is created to handle it.
@@ -139,6 +140,9 @@ pub const Command = union(enum) {
         uri: []const u8,
     },
 
+    /// End a hyperlink (OSC 8)
+    hyperlink_end: void,
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -277,6 +281,7 @@ pub const Parser = struct {
         // Hyperlinks
         hyperlink_param_key,
         hyperlink_param_value,
+        hyperlink_uri,
 
         // Reset color palette index
         reset_color_palette_index,
@@ -582,8 +587,8 @@ pub const Parser = struct {
 
             .hyperlink_param_key => switch (c) {
                 ';' => {
-                    self.state = .string;
-                    self.temp_state = .{ .str = &self.command.hyperlink_start.uri };
+                    self.complete = true;
+                    self.state = .hyperlink_uri;
                     self.buf_start = self.buf_idx;
                 },
                 '=' => {
@@ -608,6 +613,8 @@ pub const Parser = struct {
                 },
                 else => {},
             },
+
+            .hyperlink_uri => {},
 
             .rxvt_extension => switch (c) {
                 'a'...'z' => {},
@@ -825,6 +832,22 @@ pub const Parser = struct {
         self.state = .allocable_string;
     }
 
+    fn endHyperlink(self: *Parser) void {
+        switch (self.command) {
+            .hyperlink_start => |*v| {
+                const value = self.buf[self.buf_start..self.buf_idx];
+                if (v.id == null and value.len == 0) {
+                    self.command = .{ .hyperlink_end = {} };
+                    return;
+                }
+
+                v.uri = value;
+            },
+
+            else => unreachable,
+        }
+    }
+
     fn endHyperlinkOptionValue(self: *Parser) void {
         const value = if (self.buf_start == self.buf_idx)
             ""
@@ -922,6 +945,7 @@ pub const Parser = struct {
         switch (self.state) {
             .semantic_exit_code => self.endSemanticExitCode(),
             .semantic_option_value => self.endSemanticOptionValue(),
+            .hyperlink_uri => self.endHyperlink(),
             .string => self.endString(),
             .allocable_string => self.endAllocableString(),
             else => {},
@@ -1425,4 +1449,16 @@ test "OSC: hyperlink with empty key and id" {
     try testing.expect(cmd == .hyperlink_start);
     try testing.expectEqualStrings(cmd.hyperlink_start.id.?, "foo");
     try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink end" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_end);
 }
