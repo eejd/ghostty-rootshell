@@ -34,6 +34,37 @@ const grapheme_count_default = GraphemeAlloc.bitmap_bit_size;
 const grapheme_bytes_default = grapheme_count_default * grapheme_chunk;
 const GraphemeMap = AutoOffsetHashMap(Offset(Cell), Offset(u21).Slice);
 
+/// The allocator for URIs (OSC8). We use a chunk size of 32 because
+/// URIs are usually pretty long and that let's us represent most
+/// bare domains in one chunk. This allocator is ALSO used for OSC8
+/// IDs. These are usually short but the chunk length should be good.
+const uri_chunk_len = 32;
+const uri_chunk = uri_chunk_len * @sizeOf(u8);
+const UriAlloc = BitmapAllocator(uri_chunk);
+
+/// The hyperlinks counts are shared between URI and hyperlink entries
+/// so it is a worst possible byte size. You probably don't need a large
+/// value here to accomodate many cells for typical (rare) hyperlink
+/// usage.
+const hyperlink_count_default = 1;
+const hyperlink_bytes_default = hyperlink_count_default * @max(
+    (uri_chunk * 2), // ID + URI
+    @sizeOf(HyperlinkEntry), // Entry
+);
+
+/// The hyperlink map and entry.
+const HyperlinkMap = AutoOffsetHashMap(Offset(Cell), HyperlinkEntry);
+const HyperlinkEntry = struct {
+    /// The ID for the hyperlink. This is always non-empty. We
+    /// auto-generate an ID if one is not provided by the user.
+    /// This is in UriAlloc.
+    id: Offset(u8).Slice,
+
+    /// The URI for the actual link.
+    /// This is in UriAlloc.
+    uri: Offset(u8).Slice,
+};
+
 /// A page represents a specific section of terminal screen. The primary
 /// idea of a page is that it is a fully self-contained unit that can be
 /// serialized, copied, etc. as a convenient way to represent a section
@@ -87,6 +118,14 @@ pub const Page = struct {
     /// Grapheme data is relatively rare so this is considered a slow
     /// path.
     grapheme_map: GraphemeMap,
+
+    /// The URI data for hyperlinks (URI + ID). This is relatively rare
+    /// so this defaults to a very small allocation size.
+    uri_alloc: UriAlloc,
+
+    /// The mapping of cells to the hyperlink associated with them. This
+    /// only has a value when a cell has the "hyperlink" flag set.
+    hyperlink_map: HyperlinkMap,
 
     /// The available set of styles in use on this page.
     styles: style.Set,
@@ -206,6 +245,14 @@ pub const Page = struct {
             .grapheme_map = GraphemeMap.init(
                 buf.add(l.grapheme_map_start),
                 l.grapheme_map_layout,
+            ),
+            .uri_alloc = UriAlloc.init(
+                buf.add(l.uri_alloc_start),
+                l.uri_alloc_layout,
+            ),
+            .hyperlink_map = HyperlinkMap.init(
+                buf.add(l.hyperlink_map_start),
+                l.hyperlink_map_layout,
             ),
             .size = .{ .cols = cap.cols, .rows = cap.rows },
             .capacity = cap,
@@ -977,6 +1024,10 @@ pub const Page = struct {
         grapheme_alloc_layout: GraphemeAlloc.Layout,
         grapheme_map_start: usize,
         grapheme_map_layout: GraphemeMap.Layout,
+        uri_alloc_start: usize,
+        uri_alloc_layout: UriAlloc.Layout,
+        hyperlink_map_start: usize,
+        hyperlink_map_layout: HyperlinkMap.Layout,
         capacity: Capacity,
     };
 
@@ -1015,7 +1066,16 @@ pub const Page = struct {
         const grapheme_map_start = alignForward(usize, grapheme_alloc_end, GraphemeMap.base_align);
         const grapheme_map_end = grapheme_map_start + grapheme_map_layout.total_size;
 
-        const total_size = alignForward(usize, grapheme_map_end, std.mem.page_size);
+        const uri_alloc_layout = UriAlloc.layout(cap.hyperlink_bytes);
+        const uri_alloc_start = alignForward(usize, grapheme_map_end, UriAlloc.base_align);
+        const uri_alloc_end = uri_alloc_start + uri_alloc_layout.total_size;
+
+        const hyperlink_count = @divFloor(cap.hyperlink_bytes, @sizeOf(HyperlinkEntry));
+        const hyperlink_map_layout = HyperlinkMap.layout(@intCast(hyperlink_count));
+        const hyperlink_map_start = alignForward(usize, uri_alloc_end, HyperlinkMap.base_align);
+        const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
+
+        const total_size = alignForward(usize, hyperlink_map_end, std.mem.page_size);
 
         return .{
             .total_size = total_size,
@@ -1031,6 +1091,10 @@ pub const Page = struct {
             .grapheme_alloc_layout = grapheme_alloc_layout,
             .grapheme_map_start = grapheme_map_start,
             .grapheme_map_layout = grapheme_map_layout,
+            .uri_alloc_start = uri_alloc_start,
+            .uri_alloc_layout = uri_alloc_layout,
+            .hyperlink_map_start = hyperlink_map_start,
+            .hyperlink_map_layout = hyperlink_map_layout,
             .capacity = cap,
         };
     }
@@ -1064,6 +1128,10 @@ pub const Capacity = struct {
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,
 
+    /// Number of bytes to allocate for hyperlink data. The bytes
+    /// are shared use for IDs, URIs, and hyperlink entries.
+    hyperlink_bytes: usize = hyperlink_bytes_default,
+
     pub const Adjustment = struct {
         cols: ?size.CellCountInt = null,
     };
@@ -1089,7 +1157,9 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const grapheme_map_start = alignBackward(usize, layout.total_size - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
+            const hyperlink_map_start = alignBackward(usize, layout.total_size - layout.hyperlink_map_layout.total_size, HyperlinkMap.base_align);
+            const uri_alloc_start = alignBackward(usize, hyperlink_map_start - layout.uri_alloc_layout.total_size, UriAlloc.base_align);
+            const grapheme_map_start = alignBackward(usize, uri_alloc_start - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
 
