@@ -133,6 +133,12 @@ pub const Command = union(enum) {
         body: []const u8,
     },
 
+    /// Start a hyperlink (OSC 8)
+    hyperlink_start: struct {
+        id: ?[]const u8 = null,
+        uri: []const u8,
+    },
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -239,6 +245,7 @@ pub const Parser = struct {
         @"7",
         @"77",
         @"777",
+        @"8",
         @"9",
 
         // OSC 10 is used to query or set the current foreground color.
@@ -266,6 +273,10 @@ pub const Parser = struct {
         // Get/set color palette index
         color_palette_index,
         color_palette_index_end,
+
+        // Hyperlinks
+        hyperlink_param_key,
+        hyperlink_param_value,
 
         // Reset color palette index
         reset_color_palette_index,
@@ -333,6 +344,7 @@ pub const Parser = struct {
                 '4' => self.state = .@"4",
                 '5' => self.state = .@"5",
                 '7' => self.state = .@"7",
+                '8' => self.state = .@"8",
                 '9' => self.state = .@"9",
                 else => self.state = .invalid,
             },
@@ -556,6 +568,47 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
+            .@"8" => switch (c) {
+                ';' => {
+                    self.command = .{ .hyperlink_start = .{
+                        .uri = "",
+                    } };
+
+                    self.state = .hyperlink_param_key;
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .hyperlink_param_key => switch (c) {
+                ';' => {
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.hyperlink_start.uri };
+                    self.buf_start = self.buf_idx;
+                },
+                '=' => {
+                    self.temp_state = .{ .key = self.buf[self.buf_start .. self.buf_idx - 1] };
+                    self.state = .hyperlink_param_value;
+                    self.buf_start = self.buf_idx;
+                },
+                else => {},
+            },
+
+            .hyperlink_param_value => switch (c) {
+                ':' => {
+                    self.endHyperlinkOptionValue();
+                    self.state = .hyperlink_param_key;
+                    self.buf_start = self.buf_idx;
+                },
+                ';' => {
+                    self.endHyperlinkOptionValue();
+                    self.state = .string;
+                    self.temp_state = .{ .str = &self.command.hyperlink_start.uri };
+                    self.buf_start = self.buf_idx;
+                },
+                else => {},
+            },
+
             .rxvt_extension => switch (c) {
                 'a'...'z' => {},
                 ';' => {
@@ -770,6 +823,24 @@ pub const Parser = struct {
 
         self.buf_dynamic = list;
         self.state = .allocable_string;
+    }
+
+    fn endHyperlinkOptionValue(self: *Parser) void {
+        const value = if (self.buf_start == self.buf_idx)
+            ""
+        else
+            self.buf[self.buf_start .. self.buf_idx - 1];
+
+        if (mem.eql(u8, self.temp_state.key, "id")) {
+            switch (self.command) {
+                .hyperlink_start => |*v| {
+                    // We treat empty IDs as null ids so that we can
+                    // auto-assign.
+                    if (value.len > 0) v.id = value;
+                },
+                else => {},
+            }
+        } else log.info("unknown hyperlink option: {s}", .{self.temp_state.key});
     }
 
     fn endSemanticOptionValue(self: *Parser) void {
@@ -1271,4 +1342,87 @@ test "OSC: empty param" {
 
     const cmd = p.end('\x1b');
     try testing.expect(cmd == null);
+}
+
+test "OSC: hyperlink" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink with id set" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;id=foo;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqualStrings(cmd.hyperlink_start.id.?, "foo");
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink with empty id" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;id=;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqual(null, cmd.hyperlink_start.id);
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink with incomplete key" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;id;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqual(null, cmd.hyperlink_start.id);
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink with empty key" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;=value;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqual(null, cmd.hyperlink_start.id);
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
+}
+
+test "OSC: hyperlink with empty key and id" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;=value:id=foo;http://example.com";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .hyperlink_start);
+    try testing.expectEqualStrings(cmd.hyperlink_start.id.?, "foo");
+    try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
 }

@@ -1333,6 +1333,11 @@ pub fn Stream(comptime Handler: type) type {
                         return;
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
+
+                .hyperlink_start => |v| {
+                    _ = v;
+                    @panic("TODO(osc8)");
+                },
             }
 
             // Fall through for when we don't have a handler.
