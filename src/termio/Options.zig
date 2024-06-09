@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const renderer = @import("../renderer.zig");
+const Command = @import("../Command.zig");
 const Config = @import("../config.zig").Config;
 const termio = @import("../termio.zig");
 
@@ -45,7 +46,4 @@ surface_mailbox: apprt.surface.Mailbox,
 
 /// The cgroup to apply to the started termio process, if able by
 /// the termio implementation. This only applies to Linux.
-linux_cgroup: LinuxCgroup = linux_cgroup_default,
-
-pub const LinuxCgroup = if (builtin.os.tag == .linux) ?[]const u8 else void;
-pub const linux_cgroup_default = if (LinuxCgroup == void) {} else null;
+linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,

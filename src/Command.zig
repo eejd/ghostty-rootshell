@@ -61,6 +61,8 @@ stderr: ?File = null,
 /// exec process takes over, such as signal handlers, setsid, setuid, etc.
 pre_exec: ?*const PreExecFn = null,
 
+linux_cgroup: LinuxCgroup = linux_cgroup_default,
+
 /// If set, then the process will be created attached to this pseudo console.
 /// `stdin`, `stdout`, and `stderr` will be ignored if set.
 pseudo_console: if (builtin.os.tag == .windows) ?windows.exp.HPCON else void =
@@ -72,6 +74,11 @@ data: ?*anyopaque = null,
 
 /// Process ID is set after start is called.
 pid: ?posix.pid_t = null,
+
+/// LinuxCGroup type depends on our target OS
+pub const LinuxCgroup = if (builtin.os.tag == .linux) ?[]const u8 else void;
+pub const linux_cgroup_default = if (LinuxCgroup == void)
+{} else null;
 
 /// The various methods a process may exit.
 pub const Exit = if (builtin.os.tag == .windows) union(enum) {
@@ -133,8 +140,16 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     else
         @compileError("missing env vars");
 
-    // Fork
-    const pid = try posix.fork();
+    // Fork. If we have a cgroup specified on Linxu then we use clone
+    const pid: posix.pid_t = switch (builtin.os.tag) {
+        .linux => if (self.linux_cgroup) |cgroup|
+            try internal_os.cgroup.cloneInto(cgroup)
+        else
+            try posix.fork(),
+
+        else => try posix.fork(),
+    };
+
     if (pid != 0) {
         // Parent, return immediately.
         self.pid = @intCast(pid);

@@ -897,7 +897,7 @@ const Subprocess = struct {
     pty: ?Pty = null,
     command: ?Command = null,
     flatpak_command: ?FlatpakHostCommand = null,
-    linux_cgroup: termio.Options.LinuxCgroup = termio.Options.linux_cgroup_default,
+    linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
@@ -1196,8 +1196,8 @@ const Subprocess = struct {
 
         // If we have a cgroup, then we copy that into our arena so the
         // memory remains valid when we start.
-        const linux_cgroup: termio.Options.LinuxCgroup = cgroup: {
-            const default = termio.Options.linux_cgroup_default;
+        const linux_cgroup: Command.LinuxCgroup = cgroup: {
+            const default = Command.linux_cgroup_default;
             if (comptime builtin.os.tag != .linux) break :cgroup default;
             const path = opts.linux_cgroup orelse break :cgroup default;
             break :cgroup try alloc.dupe(u8, path);
@@ -1315,6 +1315,7 @@ const Subprocess = struct {
                 }
             }).callback,
             .data = self,
+            .linux_cgroup = self.linux_cgroup,
         };
         try cmd.start(alloc);
         errdefer killCommand(&cmd) catch |err| {
@@ -1345,13 +1346,6 @@ const Subprocess = struct {
     fn childPreExec(self: *Subprocess) !void {
         // Setup our pty
         try self.pty.?.childPreExec();
-
-        // If we have a cgroup set, then we want to move into that cgroup.
-        if (comptime builtin.os.tag == .linux) {
-            if (self.linux_cgroup) |cgroup| {
-                try internal_os.cgroup.moveInto(cgroup, 0);
-            }
-        }
     }
 
     /// Called to notify that we exited externally so we can unset our
