@@ -1451,6 +1451,18 @@ test "OSC: hyperlink with empty key and id" {
     try testing.expectEqualStrings(cmd.hyperlink_start.uri, "http://example.com");
 }
 
+test "OSC: hyperlink with empty uri" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "8;id=foo;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b');
+    try testing.expect(cmd == null);
+}
+
 test "OSC: hyperlink end" {
     const testing = std.testing;
 
