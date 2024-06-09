@@ -46,7 +46,7 @@ const UriAlloc = BitmapAllocator(uri_chunk);
 /// so it is a worst possible byte size. You probably don't need a large
 /// value here to accomodate many cells for typical (rare) hyperlink
 /// usage.
-const hyperlink_count_default = 1;
+const hyperlink_count_default = 0;
 const hyperlink_bytes_default = hyperlink_count_default * @max(
     (uri_chunk * 2), // ID + URI
     @sizeOf(HyperlinkEntry), // Entry
