@@ -91,9 +91,6 @@ pub const StatusLineType = enum(u16) {
 pub const StatusDisplay = enum(u16) {
     main = 0,
     status_line = 1,
-
-    // Non-exhaustive so that @intToEnum never fails for unsupported values.
-    _,
 };
 
 /// The possible modify key formats to ESC[>{a};{b}m

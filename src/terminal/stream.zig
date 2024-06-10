@@ -16,6 +16,14 @@ const MouseShape = @import("mouse_shape.zig").MouseShape;
 
 const log = std.log.scoped(.stream);
 
+/// Flip this to true when you want verbose debug output for
+/// debugging terminal stream issues. In addition to louder
+/// output this will also disable the SIMD optimizations in
+/// order to make it easier to see every byte. So if you're
+/// debugging an issue in the SIMD code then you'll need to
+/// do something else.
+const debug = false;
+
 /// Returns a type that can process a stream of tty control characters.
 /// This will call various callback functions on type T. Type T only has to
 /// implement the callbacks it cares about; any unimplemented callbacks will
@@ -48,6 +56,12 @@ pub fn Stream(comptime Handler: type) type {
 
         /// Process a string of characters.
         pub fn nextSlice(self: *Self, input: []const u8) !void {
+            // Debug mode disables the SIMD optimizations
+            if (comptime debug) {
+                for (input) |c| try self.next(c);
+                return;
+            }
+
             // This is the maximum number of codepoints we can decode
             // at one time for this function call. This is somewhat arbitrary
             // so if someone can demonstrate a better number then we can switch.
@@ -261,10 +275,7 @@ pub fn Stream(comptime Handler: type) type {
             const actions = self.parser.next(c);
             for (actions) |action_opt| {
                 const action = action_opt orelse continue;
-
-                // if (action != .print) {
-                //     log.info("action: {}", .{action});
-                // }
+                if (comptime debug) log.info("action: {}", .{action});
 
                 // If this handler handles everything manually then we do nothing
                 // if it can be processed.
@@ -317,7 +328,7 @@ pub fn Stream(comptime Handler: type) type {
 
         pub fn execute(self: *Self, c: u8) !void {
             const c0: ansi.C0 = @enumFromInt(c);
-            // log.info("execute: {}", .{c0});
+            if (comptime debug) log.info("execute: {}", .{c0});
             switch (c0) {
                 // We ignore SOH/STX: https://github.com/microsoft/terminal/issues/10786
                 .NUL, .SOH, .STX => {},
@@ -1201,7 +1212,12 @@ pub fn Stream(comptime Handler: type) type {
                         if (!@hasDecl(T, "setActiveStatusDisplay"))
                             break :decsasd false;
 
-                        try self.handler.setActiveStatusDisplay(@enumFromInt(input.params[0]));
+                        const display = std.meta.intToEnum(
+                            ansi.StatusDisplay,
+                            input.params[0],
+                        ) catch break :decsasd false;
+
+                        try self.handler.setActiveStatusDisplay(display);
                         break :decsasd true;
                     };
 
