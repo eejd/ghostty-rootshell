@@ -197,9 +197,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.isOpaque = true
             window.backgroundColor = .windowBackgroundColor
         }
-        
+
         window.hasShadow = ghostty.config.macosWindowShadow
-        
+        window.focusFollowsMouse = ghostty.config.focusFollowsMouse
+
         guard window.hasStyledTabs else { return }
 
         // The titlebar is always updated. We don't need to worry about opacity
