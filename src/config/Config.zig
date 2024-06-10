@@ -421,6 +421,12 @@ command: ?[]const u8 = null,
 /// This is primarily useful for scripts or debugging.
 @"wait-after-command": bool = false,
 
+// If true, when there are multiple split panes, the mouse selects the pane
+// that is focused.
+//
+// Default is false.
+@"focus-follows-mouse": bool = false,
+
 /// The number of milliseconds of runtime below which we consider a process exit
 /// to be abnormal. This is used to show an error message when the process exits
 /// too quickly.
