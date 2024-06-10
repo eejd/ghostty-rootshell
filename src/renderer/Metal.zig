@@ -1877,9 +1877,11 @@ fn rebuildCells(
     color_palette: *const terminal.color.Palette,
 ) !void {
     // const start = try std.time.Instant.now();
+    // const start_micro = std.time.microTimestamp();
     // defer {
     //     const end = std.time.Instant.now() catch unreachable;
-    //     std.log.warn("rebuildCells time={}us", .{end.since(start) / std.time.ns_per_us});
+    //     // "[rebuildCells time] <START us>\t<TIME_TAKEN us>"
+    //     std.log.warn("[rebuildCells time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
     // }
 
     // Create an arena for all our temporary allocations while rebuilding
