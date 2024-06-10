@@ -113,13 +113,14 @@ pub fn init(self: *Window, app: *App) !void {
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
-    // In debug we show a warning. This is a really common issue where
-    // people build from source in debug and performance is really bad.
+    // In debug we show a warning and apply the 'devel' class to the window.
+    // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
         const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
         c.gtk_widget_set_margin_top(warning, 10);
         c.gtk_widget_set_margin_bottom(warning, 10);
         c.gtk_box_append(@ptrCast(box), warning);
+        c.gtk_widget_add_css_class(@ptrCast(gtk_window), "devel");
     }
 
     self.notebook = Notebook.create(self, box);
