@@ -1212,7 +1212,12 @@ pub fn Stream(comptime Handler: type) type {
                         if (!@hasDecl(T, "setActiveStatusDisplay"))
                             break :decsasd false;
 
-                        try self.handler.setActiveStatusDisplay(@enumFromInt(input.params[0]));
+                        const display = std.meta.intToEnum(
+                            ansi.StatusDisplay,
+                            input.params[0],
+                        ) catch break :decsasd false;
+
+                        try self.handler.setActiveStatusDisplay(display);
                         break :decsasd true;
                     };
 
