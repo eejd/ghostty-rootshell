@@ -24,7 +24,7 @@ pub const Notebook = union(enum) {
             const tab_view = c.adw_tab_view_new();
             const tab_bar = c.adw_tab_bar_new();
             c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
-            c.adw_tab_bar_set_view(tab_bar, tab_view.?);
+            c.adw_tab_bar_set_view(tab_bar, tab_view);
 
             if (window.app.config.@"gtk-wide-tabs")
                 c.adw_tab_bar_set_expand_tabs(tab_bar, @intCast(1));
@@ -113,6 +113,56 @@ pub const Notebook = union(enum) {
         return @ptrCast(@alignCast(
             c.g_object_get_data(@ptrCast(child), Tab.GHOSTTY_TAB) orelse return null,
         ));
+    }
+
+    pub fn gotoNthTab(self: Notebook, position: c_int) void {
+        switch (self) {
+            .adw_tab_view => |tab_view| {
+                if (!build_options.libadwaita) unreachable;
+                const page_to_select = c.adw_tab_view_get_nth_page(tab_view, position);
+                c.adw_tab_view_set_selected_page(tab_view, page_to_select);
+            },
+            .gtk_notebook => |notebook| c.gtk_notebook_set_current_page(notebook, position),
+        }
+    }
+
+    pub fn getTabPosition(self: Notebook, tab: *Tab) ?c_int {
+        return switch (self) {
+            .adw_tab_view => |tab_view| page_idx: {
+                if (!build_options.libadwaita) unreachable;
+                const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box)) orelse return null;
+                break :page_idx c.adw_tab_view_get_page_position(tab_view, page);
+            },
+            .gtk_notebook => |notebook| page_idx: {
+                const page = c.gtk_notebook_get_page(notebook, @ptrCast(tab.box)) orelse return null;
+                break :page_idx getNotebookPageIndex(page);
+            },
+        };
+    }
+
+    pub fn gotoPreviousTab(self: Notebook, tab: *Tab) void {
+        const page_idx = self.getTabPosition(tab) orelse return;
+
+        // The next index is the previous or we wrap around.
+        const next_idx = if (page_idx > 0) page_idx - 1 else next_idx: {
+            const max = self.nPages();
+            break :next_idx max -| 1;
+        };
+
+        // Do nothing if we have one tab
+        if (next_idx == page_idx) return;
+
+        self.gotoNthTab(next_idx);
+    }
+
+    pub fn gotoNextTab(self: Notebook, tab: *Tab) void {
+        const page_idx = self.getTabPosition(tab) orelse return;
+
+        const max = self.nPages() -| 1;
+        const next_idx = if (page_idx < max) page_idx + 1 else 0;
+        if (next_idx == page_idx) return;
+
+        self.gotoNthTab(next_idx);
     }
 
     pub fn setTabLabel(self: Notebook, tab: *Tab, title: [:0]const u8) void {

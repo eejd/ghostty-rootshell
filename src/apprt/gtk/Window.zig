@@ -211,21 +211,7 @@ pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
         return;
     };
-
-    const notebook: *c.GtkNotebook = self.notebook.gtk_notebook;
-    const page = c.gtk_notebook_get_page(notebook, @ptrCast(tab.box)) orelse return;
-    const page_idx = Notebook.getNotebookPageIndex(page);
-
-    // The next index is the previous or we wrap around.
-    const next_idx = if (page_idx > 0) page_idx - 1 else next_idx: {
-        const max = c.gtk_notebook_get_n_pages(notebook);
-        break :next_idx max -| 1;
-    };
-
-    // Do nothing if we have one tab
-    if (next_idx == page_idx) return;
-
-    c.gtk_notebook_set_current_page(notebook, next_idx);
+    self.notebook.gotoPreviousTab(tab);
     self.focusCurrentTab();
 }
 
@@ -235,15 +221,7 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
         return;
     };
-
-    const notebook: *c.GtkNotebook = self.notebook.gtk_notebook;
-    const page = c.gtk_notebook_get_page(notebook, @ptrCast(tab.box)) orelse return;
-    const page_idx = Notebook.getNotebookPageIndex(page);
-    const max = c.gtk_notebook_get_n_pages(notebook) -| 1;
-    const next_idx = if (page_idx < max) page_idx + 1 else 0;
-    if (next_idx == page_idx) return;
-
-    c.gtk_notebook_set_current_page(notebook, next_idx);
+    self.notebook.gotoNextTab(tab);
     self.focusCurrentTab();
 }
 
@@ -257,11 +235,10 @@ pub fn gotoLastTab(self: *Window) void {
 /// Go to the specific tab index.
 pub fn gotoTab(self: *Window, n: usize) void {
     if (n == 0) return;
-    const notebook: *c.GtkNotebook = self.notebook.gtk_notebook;
-    const max = c.gtk_notebook_get_n_pages(notebook);
+    const max = self.notebook.nPages();
     const page_idx = std.math.cast(c_int, n - 1) orelse return;
     if (page_idx < max) {
-        c.gtk_notebook_set_current_page(notebook, page_idx);
+        self.notebook.gotoNthTab(page_idx);
         self.focusCurrentTab();
     }
 }
@@ -523,12 +500,6 @@ fn gtkActionReset(
 /// Returns the surface to use for an action.
 fn actionSurface(self: *Window) ?*CoreSurface {
     const tab = self.notebook.currentTab() orelse return null;
-    // const notebook: *c.GtkNotebook = self.notebook.gtk_notebook;
-    // const page_idx = c.gtk_notebook_get_current_page(notebook);
-    // const page = c.gtk_notebook_get_nth_page(notebook, page_idx);
-    // const tab: *Tab = @ptrCast(@alignCast(
-    //     c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
-    // ));
     return &tab.focus_child.core_surface;
 }
 
