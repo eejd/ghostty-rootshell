@@ -26,6 +26,9 @@ pub const Notebook = union(enum) {
             c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
             c.adw_tab_bar_set_view(tab_bar, tab_view.?);
 
+            if (window.app.config.@"gtk-wide-tabs")
+                c.adw_tab_bar_set_expand_tabs(tab_bar, @intCast(1));
+
             _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
             _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
 
@@ -92,6 +95,7 @@ pub const Notebook = union(enum) {
     }
 
     pub fn currentTab(self: Notebook) ?*Tab {
+        log.info("self = {}", .{self});
         const child = switch (self) {
             .adw_tab_view => |tab_view| child: {
                 if (!build_options.libadwaita) unreachable;
@@ -128,7 +132,7 @@ pub const Notebook = union(enum) {
             .adw_tab_view => |tab_view| {
                 if (!build_options.libadwaita) unreachable;
 
-                const page = c.adw_tab_view_append(tab_view, box_widget); 
+                const page = c.adw_tab_view_append(tab_view, box_widget);
                 c.adw_tab_page_set_title(page, title.ptr);
 
                 // Switch to the new tab
@@ -138,10 +142,28 @@ pub const Notebook = union(enum) {
                 // Build the tab label
                 const label_box_widget = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
                 const label_box = @as(*c.GtkBox, @ptrCast(label_box_widget));
-                const label_text_widget = c.gtk_label_new("Ghostty");
+                const label_text_widget = c.gtk_label_new(title.ptr);
                 const label_text: *c.GtkLabel = @ptrCast(label_text_widget);
                 c.gtk_box_append(label_box, label_text_widget);
                 tab.label_text = label_text;
+
+                const window = tab.window;
+                if (window.app.config.@"gtk-wide-tabs") {
+                    c.gtk_widget_set_hexpand(label_box_widget, 1);
+                    c.gtk_widget_set_halign(label_box_widget, c.GTK_ALIGN_FILL);
+                    c.gtk_widget_set_hexpand(label_text_widget, 1);
+                    c.gtk_widget_set_halign(label_text_widget, c.GTK_ALIGN_FILL);
+
+                    // This ensures that tabs are always equal width. If they're too
+                    // long, they'll be truncated with an ellipsis.
+                    c.gtk_label_set_max_width_chars(label_text, 1);
+                    c.gtk_label_set_ellipsize(label_text, c.PANGO_ELLIPSIZE_END);
+
+                    // We need to set a minimum width so that at a certain point
+                    // the notebook will have an arrow button rather than shrinking tabs
+                    // to an unreadably small size.
+                    c.gtk_widget_set_size_request(label_text_widget, 100, 1);
+                }
 
                 // Build the close button for the tab
                 const label_close_widget = c.gtk_button_new_from_icon_name("window-close-symbolic");
@@ -157,13 +179,21 @@ pub const Notebook = union(enum) {
                     parent_page_idx,
                 );
 
+                // Clicks
+                const gesture_tab_click = c.gtk_gesture_click_new();
+                c.gtk_gesture_single_set_button(@ptrCast(gesture_tab_click), 0);
+                c.gtk_widget_add_controller(label_box_widget, @ptrCast(gesture_tab_click));
+
+                _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&Tab.gtkTabCloseClick), tab, null, c.G_CONNECT_DEFAULT);
+                _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&Tab.gtkTabClick), tab, null, c.G_CONNECT_DEFAULT);
+
                 if (self.nPages() > 1) {
                     c.gtk_notebook_set_show_tabs(notebook, 1);
                 }
 
                 // Switch to the new tab
                 c.gtk_notebook_set_current_page(notebook, page_idx);
-            }
+            },
         }
     }
 
@@ -204,7 +234,7 @@ pub const Notebook = union(enum) {
 
                 // If we have remaining tabs, we need to make sure we grab focus.
                 if (remaining > 0) tab.window.focusCurrentTab();
-            }
+            },
         }
     }
 
@@ -239,13 +269,9 @@ fn gtkPageRemoved(
     }
 }
 
-fn adwPageAttached(
-  tab_view: *AdwTabView,
-  page: *c.AdwTabPage,
-  position: c_int,
-  ud: ?*anyopaque
-) callconv(.C) void {
-    _ = position; _ = tab_view;
+fn adwPageAttached(tab_view: *AdwTabView, page: *c.AdwTabPage, position: c_int, ud: ?*anyopaque) callconv(.C) void {
+    _ = position;
+    _ = tab_view;
     const self = userdataSelf(ud.?);
 
     const child = c.adw_tab_page_get_child(page);

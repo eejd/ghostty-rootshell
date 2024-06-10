@@ -92,6 +92,8 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Add Surface to the Tab
     c.gtk_box_append(self.box, surface.primaryWidget());
 
+    // Set the userdata of the box to point to this tab.
+    c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
     try window.notebook.addTab(self, "Ghostty");
 
     // const notebook: *c.GtkNotebook = window.notebook.as_notebook();
@@ -122,18 +124,11 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     //     c.gtk_notebook_set_show_tabs(notebook, 1);
     // }
 
-    // Set the userdata of the box to point to this tab.
-    c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
 
-    // // Clicks
-    // const gesture_tab_click = c.gtk_gesture_click_new();
-    // c.gtk_gesture_single_set_button(@ptrCast(gesture_tab_click), 0);
-    // c.gtk_widget_add_controller(label_box_widget, @ptrCast(gesture_tab_click));
+    // 
 
     // // Attach all events
-    // _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&gtkTabCloseClick), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    // _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&gtkTabClick), self, null, c.G_CONNECT_DEFAULT);
 
     // We need to grab focus after Surface and Tab is added to the window. When
     // creating a Tab we want to always focus on the widget.
@@ -171,7 +166,7 @@ pub fn remove(self: *Tab) void {
     self.window.closeTab(self);
 }
 
-fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
+pub fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
     const tab: *Tab = @ptrCast(@alignCast(ud));
     const window = tab.window;
     window.closeTab(tab);
@@ -186,7 +181,7 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     tab.destroy(tab.window.app.core_app.alloc);
 }
 
-fn gtkTabClick(
+pub fn gtkTabClick(
     gesture: *c.GtkGestureClick,
     _: c.gint,
     _: c.gdouble,
