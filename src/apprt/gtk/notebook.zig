@@ -26,8 +26,8 @@ pub const Notebook = union(enum) {
             c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
             c.adw_tab_bar_set_view(tab_bar, tab_view);
 
-            if (window.app.config.@"gtk-wide-tabs")
-                c.adw_tab_bar_set_expand_tabs(tab_bar, @intCast(1));
+            if (!window.app.config.@"gtk-wide-tabs")
+                c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
 
             _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
             _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
@@ -248,6 +248,7 @@ pub const Notebook = union(enum) {
     }
 
     pub fn closeTab(self: Notebook, tab: *Tab) void {
+        const window = tab.window;
         switch (self) {
             .adw_tab_view => |tab_view| {
                 if (!build_options.libadwaita) unreachable;
@@ -265,10 +266,8 @@ pub const Notebook = union(enum) {
                 // Find page and tab which we're closing
                 const page_idx = getNotebookPageIndex(page);
 
-                log.info("page_idx = {}", .{page_idx});
-
                 // Remove the page. This will destroy the GTK widgets in the page which
-                // will trigger Tab cleanup.
+                // will trigger Tab cleanup. The `tab` variable is therefore unusable past that point.
                 c.gtk_notebook_remove_page(notebook, page_idx);
 
                 const remaining = self.nPages();
@@ -283,7 +282,7 @@ pub const Notebook = union(enum) {
                 }
 
                 // If we have remaining tabs, we need to make sure we grab focus.
-                if (remaining > 0) tab.window.focusCurrentTab();
+                if (remaining > 0) window.focusCurrentTab();
             },
         }
     }
