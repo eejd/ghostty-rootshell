@@ -480,9 +480,10 @@ extension Ghostty {
             let pos = self.convert(event.locationInWindow, from: nil)
             ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
 
-            guard let window = self.window as? TerminalWindow else { return }
-            if !self.focused && window.focusFollowsMouse {
-                Ghostty.moveFocus(to: self)
+            if let window = self.window as? TerminalWindow {
+                if !self.focused && window.focusFollowsMouse {
+                    Ghostty.moveFocus(to: self)
+                }
             }
         }
 
