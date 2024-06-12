@@ -450,6 +450,9 @@ extension Ghostty {
             guard let surface = self.surface else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+            
+            // Release pressure
+            ghostty_surface_mouse_pressure(surface, 0, 0)
         }
 
         override func otherMouseDown(with event: NSEvent) {
