@@ -124,10 +124,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     //     c.gtk_notebook_set_show_tabs(notebook, 1);
     // }
 
-
-    // 
-
-    // // Attach all events
+    // Attach all events
     _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
 
     // We need to grab focus after Surface and Tab is added to the window. When
@@ -174,7 +171,7 @@ pub fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
 
 fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     _ = v;
-    log.debug("tab box destroy", .{});
+    log.info("tab box destroy", .{});
 
     // When our box is destroyed, we want to destroy our tab, too.
     const tab: *Tab = @ptrCast(@alignCast(ud));

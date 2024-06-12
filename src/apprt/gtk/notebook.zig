@@ -20,14 +20,16 @@ pub const Notebook = union(enum) {
         const adwaita = build_options.libadwaita and app.config.@"gtk-adwaita";
 
         if (adwaita) {
-            log.warn("using adwaita", .{});
             const tab_view = c.adw_tab_view_new();
-            const tab_bar = c.adw_tab_bar_new();
-            c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
-            c.adw_tab_bar_set_view(tab_bar, tab_view);
 
-            if (!window.app.config.@"gtk-wide-tabs")
-                c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+            if (!window.app.config.@"gtk-titlebar" or c.ADW_MINOR_VERSION < 4) {
+                const tab_bar = c.adw_tab_bar_new();
+                c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
+                c.adw_tab_bar_set_view(tab_bar, tab_view);
+
+                if (!window.app.config.@"gtk-wide-tabs")
+                    c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+            }
 
             _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
             _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
@@ -357,7 +359,7 @@ fn gtkPageAdded(
 
 fn adwSelectPage(_: *c.GObject, _: *c.GParamSpec, ud: ?*anyopaque) void {
     const window = userdataSelf(ud.?);
-    const page = c.adw_tab_view_get_selected_page(window.notebook.adw_tab_view);
+    const page = c.adw_tab_view_get_selected_page(window.notebook.adw_tab_view) orelse return;
     const title = c.adw_tab_page_get_title(page);
     c.gtk_window_set_title(window.window, title);
 }

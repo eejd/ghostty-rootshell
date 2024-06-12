@@ -59,10 +59,17 @@ pub fn init(self: *Window, app: *App) !void {
         .context_menu = undefined,
     };
 
+    const adwaita = build_options.libadwaita and app.config.@"gtk-adwaita";
+
     // Create the window
-    const window = c.gtk_application_window_new(app.app);
+    const adw_window = adwaita and app.config.@"gtk-titlebar" and c.ADW_MINOR_VERSION >= 4;
+    const window: *c.GtkWidget = if (adw_window)
+        c.adw_application_window_new(app.app)
+    else
+        c.gtk_application_window_new(app.app);
+
     const gtk_window: *c.GtkWindow = @ptrCast(window);
-    errdefer c.gtk_window_destroy(gtk_window);
+    errdefer if (adw_window) c.adw_application_window_destroy(window) else c.gtk_application_window_destroy(gtk_window);
     self.window = gtk_window;
     c.gtk_window_set_title(gtk_window, "Ghostty");
     c.gtk_window_set_default_size(gtk_window, 1000, 600);
@@ -78,6 +85,8 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
+    var header: ?*c.GtkHeaderBar = null;
+
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
     const display = c.gdk_display_get_default();
@@ -88,8 +97,7 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header = c.gtk_header_bar_new();
-        c.gtk_window_set_titlebar(gtk_window, header);
+        header = @ptrCast(c.gtk_header_bar_new());
         {
             const btn = c.gtk_menu_button_new();
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
@@ -142,8 +150,24 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    // The box is our main child
-    c.gtk_window_set_child(gtk_window, box);
+    if (build_options.libadwaita and app.config.@"gtk-adwaita" and app.config.@"gtk-titlebar" and header != null and c.ADW_MINOR_VERSION >= 4) {
+        const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
+        c.adw_toolbar_view_add_top_bar(toolbar_view, @ptrCast(@alignCast(header.?)));
+
+        const tab_bar = c.adw_tab_bar_new();
+        c.adw_tab_bar_set_view(tab_bar, self.notebook.adw_tab_view);
+
+        if (!app.config.@"gtk-wide-tabs") c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+
+        c.adw_toolbar_view_add_top_bar(toolbar_view, @ptrCast(@alignCast(tab_bar)));
+        c.adw_toolbar_view_set_content(toolbar_view, box);
+
+        c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
+    } else {
+        // The box is our main child
+        c.gtk_window_set_child(gtk_window, box);
+        if (header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
+    }
 
     // Show the window
     c.gtk_widget_show(window);
