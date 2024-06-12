@@ -31,6 +31,7 @@ pub const Notebook = union(enum) {
 
             _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
             _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
+            _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
 
             return .{ .adw_tab_view = tab_view.? };
         }
@@ -354,12 +355,19 @@ fn gtkPageAdded(
     self.focusCurrentTab();
 }
 
+fn adwSelectPage(_: *c.GObject, _: *c.GParamSpec, ud: ?*anyopaque) void {
+    const window = userdataSelf(ud.?);
+    const page = c.adw_tab_view_get_selected_page(window.notebook.adw_tab_view);
+    const title = c.adw_tab_page_get_title(page);
+    c.gtk_window_set_title(window.window, title);
+}
+
 fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaque) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-    const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(self.notebook.gtk_notebook, page)));
+    const window = userdataSelf(ud.?);
+    const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(window.notebook.gtk_notebook, page)));
     const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
     const label_text = c.gtk_label_get_text(gtk_label);
-    c.gtk_window_set_title(self.window, label_text);
+    c.gtk_window_set_title(window.window, label_text);
 }
 
 fn adwTabViewCreateWindow(
