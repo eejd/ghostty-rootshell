@@ -1,3 +1,4 @@
+import QuickLookUI
 import SwiftUI
 import UserNotifications
 import GhosttyKit
@@ -72,6 +73,7 @@ extension Ghostty {
         private var markedText: NSMutableAttributedString
         private var mouseEntered: Bool = false
         private(set) var focused: Bool = true
+        private var prevPressureStage: Int = 0
         private var cursor: NSCursor = .iBeam
         private var cursorVisible: CursorVisibility = .visible
         private var appearanceObserver: NSKeyValueObservation? = nil
@@ -441,6 +443,10 @@ extension Ghostty {
         }
 
         override func mouseUp(with event: NSEvent) {
+            // Always reset our pressure when the mouse goes up
+            prevPressureStage = 0
+            
+            // If we have an active surface, report the event
             guard let surface = self.surface else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
@@ -569,6 +575,19 @@ extension Ghostty {
             mods |= Int32(momentum.rawValue) << 1
 
             ghostty_surface_mouse_scroll(surface, x, y, mods)
+        }
+        
+        override func pressureChange(with event: NSEvent) {
+            // Pressure stage 2 is force click. We only want to execute this on the
+            // initial transition to stage 2, and not for any repeated events.
+            guard self.prevPressureStage < 2 else { return }
+            prevPressureStage = event.stage
+            guard event.stage == 2 else { return }
+            
+            // If the user has force click enabled then we do a quick look. There
+            // is no public API for this as far as I can tell.
+            guard UserDefaults.standard.bool(forKey: "com.apple.trackpad.forceClick") else { return }
+            quickLook(with: event)
         }
 
         override func cursorUpdate(with event: NSEvent) {
@@ -800,7 +819,7 @@ extension Ghostty {
                 ghostty_surface_key(surface, key_ev)
             }
         }
-        
+
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, text: String) {
             guard let surface = self.surface else { return }
 
@@ -885,6 +904,31 @@ extension Ghostty {
                 Ghostty.moveFocus(to: self)
             }
         }
+        
+        // MARK: QuickLook
+        
+        private var quickLookURL: NSURL?
+        
+        override func quickLook(with event: NSEvent) {
+            /* TODO
+            guard let panel = QLPreviewPanel.shared() else { return }
+            panel.delegate = self
+            panel.dataSource = self
+            panel.makeKeyAndOrderFront(self)
+             */
+        }
+    }
+}
+    
+// MARK: QuickLook Delegates
+
+extension Ghostty.SurfaceView: QLPreviewPanelDelegate, QLPreviewPanelDataSource {
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        return quickLookURL != nil ? 1 : 0
+    }
+    
+    func  previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        return quickLookURL ?? nil
     }
 }
 
