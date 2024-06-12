@@ -173,6 +173,10 @@ const Mouse = struct {
     /// The last x/y sent for mouse reports.
     event_point: ?terminal.point.Coordinate = null,
 
+    /// The pressure stage for the mouse. This should always be none if
+    /// the mouse is not pressed.
+    pressure_stage: input.MousePressureStage = .none,
+
     /// Pending scroll amounts for high-precision scrolls
     pending_scroll_x: f64 = 0,
     pending_scroll_y: f64 = 0,
@@ -2490,6 +2494,41 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
     }
 
     return true;
+}
+
+pub fn mousePressureCallback(
+    self: *Surface,
+    stage: input.MousePressureStage,
+    pressure: f64,
+) !void {
+    // We don't currently use the pressure value for anything. In the
+    // future, we could report this to applications using new mouse
+    // events or utilize it for some custom UI.
+    _ = pressure;
+
+    // If the pressure stage is the same as what we already have do nothing
+    if (self.mouse.pressure_stage == stage) return;
+
+    // Update our pressure stage.
+    self.mouse.pressure_stage = stage;
+
+    // If our left mouse button is pressed and we're entering a deep
+    // click then we want to start a selection. We treat this as a
+    // word selection since that is typical macOS behavior.
+    const left_idx = @intFromEnum(input.MouseButton.left);
+    if (self.mouse.click_state[left_idx] == .press and
+        stage == .deep)
+    select: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // This should always be set in this state but we don't want
+        // to handle state inconsistency here.
+        const pin = self.mouse.left_click_pin orelse break :select;
+        const sel = self.io.terminal.screen.selectWord(pin.*) orelse break :select;
+        try self.setSelection(sel);
+        try self.queueRender();
+    }
 }
 
 pub fn cursorPosCallback(

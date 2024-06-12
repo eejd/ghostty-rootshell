@@ -716,6 +716,17 @@ pub const Surface = struct {
         };
     }
 
+    pub fn mousePressureCallback(
+        self: *Surface,
+        stage: input.MousePressureStage,
+        pressure: f64,
+    ) void {
+        self.core_surface.mousePressureCallback(stage, pressure) catch |err| {
+            log.err("error in mouse pressure callback err={}", .{err});
+            return;
+        };
+    }
+
     pub fn scrollCallback(
         self: *Surface,
         xoff: f64,
@@ -1646,6 +1657,25 @@ pub const CAPI = struct {
             y,
             @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
         );
+    }
+
+    export fn ghostty_surface_mouse_pressure(
+        surface: *Surface,
+        stage_raw: u32,
+        pressure: f64,
+    ) void {
+        const stage = std.meta.intToEnum(
+            input.MousePressureStage,
+            stage_raw,
+        ) catch {
+            log.warn(
+                "invalid mouse pressure stage value={}",
+                .{stage_raw},
+            );
+            return;
+        };
+
+        surface.mousePressureCallback(stage, pressure);
     }
 
     export fn ghostty_surface_ime_point(surface: *Surface, x: *f64, y: *f64) void {

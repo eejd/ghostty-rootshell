@@ -578,6 +578,13 @@ extension Ghostty {
         }
         
         override func pressureChange(with event: NSEvent) {
+            guard let surface = self.surface else { return }
+            
+            // Notify Ghostty first. We do this because this will let Ghostty handle
+            // state setup that we'll need for later pressure handling (such as
+            // QuickLook)
+            ghostty_surface_mouse_pressure(surface, UInt32(event.stage), Double(event.pressure))
+            
             // Pressure stage 2 is force click. We only want to execute this on the
             // initial transition to stage 2, and not for any repeated events.
             guard self.prevPressureStage < 2 else { return }
