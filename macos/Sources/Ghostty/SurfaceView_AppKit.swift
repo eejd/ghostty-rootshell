@@ -1,4 +1,3 @@
-import QuickLookUI
 import SwiftUI
 import UserNotifications
 import GhosttyKit
@@ -914,31 +913,6 @@ extension Ghostty {
                 Ghostty.moveFocus(to: self)
             }
         }
-        
-        // MARK: QuickLook
-        
-        private var quickLookURL: NSURL?
-        
-        override func quickLook(with event: NSEvent) {
-            /* TODO
-            guard let panel = QLPreviewPanel.shared() else { return }
-            panel.delegate = self
-            panel.dataSource = self
-            panel.makeKeyAndOrderFront(self)
-             */
-        }
-    }
-}
-    
-// MARK: QuickLook Delegates
-
-extension Ghostty.SurfaceView: QLPreviewPanelDelegate, QLPreviewPanelDataSource {
-    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
-        return quickLookURL != nil ? 1 : 0
-    }
-    
-    func  previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
-        return quickLookURL ?? nil
     }
 }
 
