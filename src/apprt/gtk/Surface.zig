@@ -1204,6 +1204,12 @@ fn gtkMouseMotion(
         .y = @floatCast(scaled.y),
     };
 
+    // If we don't have focus, and we want it, grab it.
+    const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
+    if (c.gtk_widget_has_focus(gl_widget) == 0 and self.app.config.@"focus-follows-mouse") {
+        self.grabFocus();
+    }
+
     self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
         log.err("error in cursor pos callback err={}", .{err});
         return;
