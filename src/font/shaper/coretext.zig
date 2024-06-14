@@ -31,7 +31,7 @@ const log = std.log.scoped(.font_shaper);
 ///     See: https://github.com/mitchellh/ghostty/issues/1643
 ///
 pub const Shaper = struct {
-    /// The allocated used for the feature list and cell buf.
+    /// The allocated used for the feature list, font cache, and cell buf.
     alloc: Allocator,
 
     /// The string used for shaping the current run.
@@ -48,6 +48,13 @@ pub const Shaper = struct {
     /// configurable we just use this as a cache to avoid creating
     /// and releasing many objects when shaping.
     writing_direction: *macos.foundation.Array,
+
+    /// List where we cache fonts, so we don't have to
+    /// remake them for every single shaping operation.
+    ///
+    /// Fonts are cached as attribute dictionaries to
+    /// be applied directly to attributed strings.
+    cached_fonts: std.ArrayList(?*macos.foundation.Dictionary),
 
     const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
     const CodepointList = std.ArrayListUnmanaged(Codepoint);
@@ -202,12 +209,16 @@ pub const Shaper = struct {
         };
         errdefer writing_direction.release();
 
+        const cached_fonts = std.ArrayList(?*macos.foundation.Dictionary).init(alloc);
+        errdefer cached_fonts.deinit();
+
         return Shaper{
             .alloc = alloc,
             .cell_buf = .{},
             .run_state = run_state,
             .features = feats,
             .writing_direction = writing_direction,
+            .cached_fonts = cached_fonts,
         };
     }
 
@@ -216,6 +227,18 @@ pub const Shaper = struct {
         self.run_state.deinit(self.alloc);
         self.features.deinit();
         self.writing_direction.release();
+
+        self.releaseCachedFonts();
+        self.cached_fonts.deinit();
+    }
+
+    /// Release all cached fonts.
+    pub fn releaseCachedFonts(self: *Shaper) void {
+        for (self.cached_fonts.items) |ft| {
+            if (ft) |f| {
+                f.release();
+            }
+        }
     }
 
     pub fn runIterator(
@@ -267,55 +290,7 @@ pub const Shaper = struct {
         defer arena.deinit();
         const alloc = arena.allocator();
 
-        // Get our font. We have to apply the font features we want for
-        // the font here.
-        const run_font: *macos.text.Font = font: {
-            // The CoreText shaper relies on CoreText and CoreText claims
-            // that CTFonts are threadsafe. See:
-            // https://developer.apple.com/documentation/coretext/
-            //
-            // Quote:
-            // All individual functions in Core Text are thread-safe. Font
-            // objects (CTFont, CTFontDescriptor, and associated objects) can
-            // be used simultaneously by multiple operations, work queues, or
-            // threads. However, the layout objects (CTTypesetter,
-            // CTFramesetter, CTRun, CTLine, CTFrame, and associated objects)
-            // should be used in a single operation, work queue, or thread.
-            //
-            // Because of this, we only acquire the read lock to grab the
-            // face and set it up, then release it.
-            run.grid.lock.lockShared();
-            defer run.grid.lock.unlockShared();
-
-            const face = try run.grid.resolver.collection.getFace(run.font_index);
-            const original = face.font;
-
-            const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
-            defer attrs.release();
-
-            const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);
-            defer desc.release();
-
-            const copied = try original.copyWithAttributes(0, null, desc);
-            errdefer copied.release();
-            break :font copied;
-        };
-        defer run_font.release();
-
-        // Get our font and use that get the attributes to set for the
-        // attributed string so the whole string uses the same font.
-        const attr_dict = dict: {
-            var keys = [_]?*const anyopaque{
-                macos.text.StringAttribute.font.key(),
-                macos.text.StringAttribute.writing_direction.key(),
-            };
-            var values = [_]?*const anyopaque{
-                run_font,
-                self.writing_direction,
-            };
-            break :dict try macos.foundation.Dictionary.create(&keys, &values);
-        };
-        defer attr_dict.release();
+        const attr_dict: *macos.foundation.Dictionary = try self.getFont(run.grid, run.font_index);
 
         // Create an attributed string from our string
         const attr_str = try macos.foundation.AttributedString.create(
@@ -414,6 +389,75 @@ pub const Shaper = struct {
         }
 
         return self.cell_buf.items;
+    }
+
+    /// Get an attr dict for a font from a specific index.
+    /// These items are cached, do not retain or release them.
+    fn getFont(self: *Shaper, grid: *font.SharedGrid, index: font.Collection.Index) !*macos.foundation.Dictionary {
+        const index_int = index.int();
+
+        if (self.cached_fonts.items.len <= index_int) {
+            try self.cached_fonts.ensureTotalCapacity(index_int + 1);
+            while (self.cached_fonts.items.len <= index_int) {
+                self.cached_fonts.appendAssumeCapacity(null);
+            }
+        }
+
+        if (self.cached_fonts.items[index_int]) |cached| {
+            return cached;
+        }
+
+        const run_font = font: {
+            // The CoreText shaper relies on CoreText and CoreText claims
+            // that CTFonts are threadsafe. See:
+            // https://developer.apple.com/documentation/coretext/
+            //
+            // Quote:
+            // All individual functions in Core Text are thread-safe. Font
+            // objects (CTFont, CTFontDescriptor, and associated objects) can
+            // be used simultaneously by multiple operations, work queues, or
+            // threads. However, the layout objects (CTTypesetter,
+            // CTFramesetter, CTRun, CTLine, CTFrame, and associated objects)
+            // should be used in a single operation, work queue, or thread.
+            //
+            // Because of this, we only acquire the read lock to grab the
+            // face and set it up, then release it.
+            grid.lock.lockShared();
+            defer grid.lock.unlockShared();
+
+            const face = try grid.resolver.collection.getFace(index);
+            const original = face.font;
+
+            const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
+            defer attrs.release();
+
+            const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);
+            defer desc.release();
+
+            const copied = try original.copyWithAttributes(0, null, desc);
+            errdefer copied.release();
+
+            break :font copied;
+        };
+        defer run_font.release();
+
+        // Get our font and use that get the attributes to set for the
+        // attributed string so the whole string uses the same font.
+        const attr_dict = dict: {
+            var keys = [_]?*const anyopaque{
+                macos.text.StringAttribute.font.key(),
+                macos.text.StringAttribute.writing_direction.key(),
+            };
+            var values = [_]?*const anyopaque{
+                run_font,
+                self.writing_direction,
+            };
+            break :dict try macos.foundation.Dictionary.create(&keys, &values);
+        };
+
+        self.cached_fonts.items[index_int] = attr_dict;
+
+        return attr_dict;
     }
 
     /// The hooks for RunIterator.
