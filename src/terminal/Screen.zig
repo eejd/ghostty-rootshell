@@ -100,7 +100,6 @@ pub const Cursor = struct {
     /// we change pages we need to ensure that we update that page with
     /// our style when used.
     style_id: style.Id = style.default_id,
-    style_ref: ?*size.CellCountInt = null,
 
     /// The pointers into the page list where the cursor is currently
     /// located. This makes it faster to move the cursor.
@@ -202,31 +201,6 @@ pub fn assertIntegrity(self: *const Screen) void {
         ) orelse unreachable;
         assert(self.cursor.x == pt.active.x);
         assert(self.cursor.y == pt.active.y);
-
-        if (self.cursor.style_id == style.default_id) {
-            // If our style is default, we should have no refs.
-            assert(self.cursor.style.default());
-            assert(self.cursor.style_ref == null);
-        } else {
-            // If our style is not default, we should have a ref.
-            assert(!self.cursor.style.default());
-            assert(self.cursor.style_ref != null);
-
-            // Further, the ref should be valid within the current page.
-            const page = &self.cursor.page_pin.page.data;
-            const page_style = page.styles.lookupId(
-                page.memory,
-                self.cursor.style_id,
-            ).?.*;
-            assert(self.cursor.style.eql(page_style));
-
-            // The metadata pointer should be equal to the ref.
-            const md = page.styles.upsert(
-                page.memory,
-                page_style,
-            ) catch unreachable;
-            assert(&md.ref == self.cursor.style_ref.?);
-        }
     }
 }
 
@@ -524,14 +498,6 @@ pub fn cursorReload(self: *Screen) void {
     // If we have a style, we need to ensure it is in the page because this
     // method may also be called after a page change.
     if (self.cursor.style_id != style.default_id) {
-        // We set our ref to null because manualStyleUpdate will refresh it.
-        // If we had a valid ref and it was zero before, then manualStyleUpdate
-        // will reload the same ref.
-        //
-        // We want to avoid the scenario this was non-null but the pointer
-        // is now invalid because it pointed to a page that no longer exists.
-        self.cursor.style_ref = null;
-
         self.manualStyleUpdate() catch |err| {
             // This failure should not happen because manualStyleUpdate
             // handles page splitting, overflow, and more. This should only
@@ -540,7 +506,6 @@ pub fn cursorReload(self: *Screen) void {
             log.err("failed to update style on cursor reload err={}", .{err});
             self.cursor.style = .{};
             self.cursor.style_id = 0;
-            self.cursor.style_ref = null;
         };
     }
 }
@@ -595,7 +560,6 @@ pub fn cursorDownScroll(self: *Screen) !void {
                 log.err("failed to update style on cursor scroll err={}", .{err});
                 self.cursor.style = .{};
                 self.cursor.style_id = 0;
-                self.cursor.style_ref = null;
             };
         }
     } else {
@@ -683,7 +647,6 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     // invalid.
     self.cursor.style = .{};
     self.cursor.style_id = 0;
-    self.cursor.style_ref = null;
 
     // We need to keep our old x/y because that is our cursorAbsolute
     // will fix up our pointers.
@@ -698,7 +661,6 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     // We keep the old style ref so manualStyleUpdate can clean our old style up.
     self.cursor.style = other.style;
     self.cursor.style_id = old.style_id;
-    self.cursor.style_ref = old.style_ref;
     try self.manualStyleUpdate();
 }
 
@@ -744,7 +706,6 @@ fn cursorChangePin(self: *Screen, new: Pin) void {
         log.err("failed to update style on cursor change err={}", .{err});
         self.cursor.style = .{};
         self.cursor.style_id = 0;
-        self.cursor.style_ref = null;
     };
 }
 
@@ -889,33 +850,7 @@ pub fn clearCells(
     if (row.styled) {
         for (cells) |*cell| {
             if (cell.style_id == style.default_id) continue;
-
-            // Fast-path, the style ID matches, in this case we just update
-            // our own ref and continue. We never delete because our style
-            // is still active.
-            if (page == &self.cursor.page_pin.page.data and
-                cell.style_id == self.cursor.style_id)
-            {
-                self.cursor.style_ref.?.* -= 1;
-                continue;
-            }
-
-            // Slow path: we need to lookup this style so we can decrement
-            // the ref count. Since we've already loaded everything, we also
-            // just go ahead and GC it if it reaches zero, too.
-            if (page.styles.lookupId(
-                page.memory,
-                cell.style_id,
-            )) |prev_style| {
-                // Below upsert can't fail because it should already be present
-                const md = page.styles.upsert(
-                    page.memory,
-                    prev_style.*,
-                ) catch unreachable;
-                assert(md.ref > 0);
-                md.ref -= 1;
-                if (md.ref == 0) page.styles.remove(page.memory, cell.style_id);
-            }
+            page.styles.release(page.memory, cell.style_id);
         }
 
         // If we have no left/right scroll region we can be sure that
@@ -1044,17 +979,37 @@ pub fn resizeWithoutReflow(
 }
 
 /// Resize the screen.
-// TODO: replace resize and resizeWithoutReflow with this.
 fn resizeInternal(
     self: *Screen,
     cols: size.CellCountInt,
     rows: size.CellCountInt,
     reflow: bool,
 ) !void {
+    defer self.assertIntegrity();
+
     // No matter what we mark our image state as dirty
     self.kitty_images.dirty = true;
 
-    // Perform the resize operation. This will update cursor by reference.
+    // Release the cursor style while resizing just
+    // in case the cursor ends up on a different page.
+    const cursor_style = self.cursor.style;
+    self.cursor.style = .{};
+    self.manualStyleUpdate() catch unreachable;
+    defer {
+        // Restore the cursor style.
+        self.cursor.style = cursor_style;
+        self.manualStyleUpdate() catch |err| {
+            // This failure should not happen because manualStyleUpdate
+            // handles page splitting, overflow, and more. This should only
+            // happen if we're out of RAM. In this case, we'll just degrade
+            // gracefully back to the default style.
+            log.err("failed to update style on cursor reload err={}", .{err});
+            self.cursor.style = .{};
+            self.cursor.style_id = 0;
+        };
+    }
+
+    // Perform the resize operation.
     try self.pages.resize(.{
         .rows = rows,
         .cols = cols,
@@ -1072,7 +1027,6 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
-    self.assertIntegrity();
 }
 
 /// Set a style attribute for the current cursor.
@@ -1223,21 +1177,14 @@ pub fn manualStyleUpdate(self: *Screen) !void {
 
     // std.log.warn("active styles={}", .{page.styles.count(page.memory)});
 
-    // Remove our previous style if is unused.
-    if (self.cursor.style_ref) |ref| {
-        if (ref.* == 0) {
-            page.styles.remove(page.memory, self.cursor.style_id);
-        }
-
-        // Reset our ID and ref to null since the ref is now invalid.
-        self.cursor.style_id = 0;
-        self.cursor.style_ref = null;
+    // Release our previous style if it was not default.
+    if (self.cursor.style_id != style.default_id) {
+        page.styles.release(page.memory, self.cursor.style_id);
     }
 
     // If our new style is the default, just reset to that
     if (self.cursor.style.default()) {
         self.cursor.style_id = 0;
-        self.cursor.style_ref = null;
         return;
     }
 
@@ -1251,42 +1198,29 @@ pub fn manualStyleUpdate(self: *Screen) !void {
     // if that makes a meaningful difference. Our priority is to keep print
     // fast because setting a ton of styles that do nothing is uncommon
     // and weird.
-    const md = page.styles.upsert(
+    const id = page.styles.add(
         page.memory,
         self.cursor.style,
-    ) catch |err| md: {
-        switch (err) {
-            // Our style map is full. Let's allocate a new page by doubling
-            // the size and then try again.
-            error.OutOfMemory => {
-                const node = try self.pages.adjustCapacity(
-                    self.cursor.page_pin.page,
-                    .{ .styles = page.capacity.styles * 2 },
-                );
+    ) catch id: {
+        // Our style map is full. Let's allocate a new
+        // page by doubling the size and then try again.
+        const node = try self.pages.adjustCapacity(
+            self.cursor.page_pin.page,
+            .{ .styles = page.capacity.styles * 2 },
+        );
 
-                page = &node.data;
-            },
-
-            // We've run out of style IDs. This is fixed by doing a page
-            // compaction.
-            error.Overflow => {
-                const node = try self.pages.compact(
-                    self.cursor.page_pin.page,
-                );
-                page = &node.data;
-            },
-        }
+        page = &node.data;
 
         // Since this modifies our cursor page, we need to reload
         cursor_reload = true;
 
-        break :md try page.styles.upsert(
+        break :id try page.styles.add(
             page.memory,
             self.cursor.style,
         );
     };
-    self.cursor.style_id = md.id;
-    self.cursor.style_ref = &md.ref;
+    self.cursor.style_id = id;
+
     if (cursor_reload) self.cursorReload();
     self.assertIntegrity();
 }
@@ -2271,8 +2205,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                 };
 
                 // If we have a ref-counted style, increase.
-                if (self.cursor.style_ref) |ref| {
-                    ref.* += 1;
+                if (self.cursor.style_id != style.default_id) {
+                    const page = self.cursor.page_pin.page.data;
+                    page.styles.use(page.memory, self.cursor.style_id);
                     self.cursor.page_row.styled = true;
                 }
             },
@@ -2310,6 +2245,14 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .wide = .spacer_tail,
                     .protected = self.cursor.protected,
                 };
+
+                // If we have a ref-counted style, increase twice.
+                if (self.cursor.style_id != style.default_id) {
+                    const page = self.cursor.page_pin.page.data;
+                    page.styles.use(page.memory, self.cursor.style_id);
+                    page.styles.use(page.memory, self.cursor.style_id);
+                    self.cursor.page_row.styled = true;
+                }
             },
 
             else => unreachable,
@@ -2792,10 +2735,10 @@ test "Screen: cursorDown across pages preserves style" {
     try s.setAttribute(.{ .bold = {} });
     {
         const page = &s.cursor.page_pin.page.data;
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 
@@ -2803,10 +2746,10 @@ test "Screen: cursorDown across pages preserves style" {
     s.cursorDown(1);
     {
         const page = &s.cursor.page_pin.page.data;
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 }
@@ -2835,10 +2778,10 @@ test "Screen: cursorUp across pages preserves style" {
     try s.setAttribute(.{ .bold = {} });
     {
         const page = &s.cursor.page_pin.page.data;
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 
@@ -2848,10 +2791,10 @@ test "Screen: cursorUp across pages preserves style" {
         const page = &s.cursor.page_pin.page.data;
         try testing.expect(start_page == page);
 
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 }
@@ -2880,10 +2823,10 @@ test "Screen: cursorAbsolute across pages preserves style" {
     try s.setAttribute(.{ .bold = {} });
     {
         const page = &s.cursor.page_pin.page.data;
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 
@@ -2893,10 +2836,10 @@ test "Screen: cursorAbsolute across pages preserves style" {
         const page = &s.cursor.page_pin.page.data;
         try testing.expect(start_page == page);
 
-        const styleval = page.styles.lookupId(
+        const styleval = page.styles.get(
             page.memory,
             s.cursor.style_id,
-        ).?;
+        );
         try testing.expect(styleval.flags.bold);
     }
 }
@@ -3013,10 +2956,10 @@ test "Screen: scrolling across pages preserves style" {
     const page = &s.pages.pages.last.?.data;
     try testing.expect(start_page != page);
 
-    const styleval = page.styles.lookupId(
+    const styleval = page.styles.get(
         page.memory,
         s.cursor.style_id,
-    ).?;
+    );
     try testing.expect(styleval.flags.bold);
 }
 

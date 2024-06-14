@@ -6,8 +6,11 @@ const page = @import("page.zig");
 const size = @import("size.zig");
 const Offset = size.Offset;
 const OffsetBuf = size.OffsetBuf;
-const hash_map = @import("hash_map.zig");
-const AutoOffsetHashMap = hash_map.AutoOffsetHashMap;
+
+const Wyhash = std.hash.Wyhash;
+const autoHash = std.hash.autoHash;
+
+const RefCountedSet = @import("ref_counted_set.zig").RefCountedSet;
 
 /// The unique identifier for a style. This is at most the number of cells
 /// that can fit into a terminal page.
@@ -43,11 +46,34 @@ pub const Style = struct {
         none: void,
         palette: u8,
         rgb: color.RGB,
+
+        /// Formatting to make debug logs easier to read
+        /// by only including non-default attributes.
+        pub fn format(
+            self: Color,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            switch (self) {
+                .none => {
+                    _ = try writer.write("Color.none");
+                },
+                .palette => |p| {
+                    _ = try writer.print("Color.palette{{ {} }}", .{ p });
+                },
+                .rgb => |rgb| {
+                    _ = try writer.print("Color.rgb{{ {}, {}, {} }}", .{ rgb.r, rgb.g, rgb.b });
+                }
+            }
+        }
     };
 
     /// True if the style is the default style.
     pub fn default(self: Style) bool {
-        return std.meta.eql(self, .{});
+        return self.eql(.{});
     }
 
     /// True if the style is equal to another style.
@@ -133,6 +159,83 @@ pub const Style = struct {
         };
     }
 
+    /// Formatting to make debug logs easier to read
+    /// by only including non-default attributes.
+    pub fn format(
+        self: Style,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        const dflt: Style = .{};
+
+        _ = try writer.write("Style{ ");
+
+        var started = false;
+
+        inline for (std.meta.fields(Style)) |f| {
+            if (std.mem.eql(u8, f.name, "flags")) {
+                if (started) {
+                    _ = try writer.write(", ");
+                }
+
+                _ = try writer.write("flags={ ");
+
+                started = false;
+
+                inline for (std.meta.fields(@TypeOf(self.flags))) |ff| {
+                    const v = @as(ff.type, @field(self.flags, ff.name));
+                    const d = @as(ff.type, @field(dflt.flags, ff.name));
+                    if (ff.type == bool) {
+                        if (v) {
+                            if (started) {
+                                _ = try writer.write(", ");
+                            }
+                            _ = try writer.print("{s}", .{ff.name});
+                            started = true;
+                        }
+                    } else if (!std.meta.eql(v, d)) {
+                        if (started) {
+                            _ = try writer.write(", ");
+                        }
+                        _ = try writer.print(
+                            "{s}={any}",
+                            .{ ff.name, v },
+                        );
+                        started = true;
+                    }
+                }
+                _ = try writer.write(" }");
+
+                started = true;
+                comptime continue;
+            }
+            const value = @as(f.type, @field(self, f.name));
+            const d_val = @as(f.type, @field(dflt, f.name));
+            if (!std.meta.eql(value, d_val)) {
+                if (started) {
+                    _ = try writer.write(", ");
+                }
+                _ = try writer.print(
+                    "{s}={any}",
+                    .{ f.name, value },
+                );
+                started = true;
+            }
+        }
+
+        _ = try writer.write(" }");
+    }
+
+    pub fn hash(self: *const Style) u64 {
+        var hasher = Wyhash.init(0);
+        autoHash(&hasher, self.*);
+        return hasher.final();
+    }
+
     test {
         // The size of the struct so we can be aware of changes.
         const testing = std.testing;
@@ -140,170 +243,24 @@ pub const Style = struct {
     }
 };
 
-/// A set of styles.
-///
-/// This set is created with some capacity in mind. You can determine
-/// the exact memory requirement for a capacity by calling `layout`
-/// and checking the total size.
-///
-/// When the set exceeds capacity, `error.OutOfMemory` is returned
-/// from memory-using methods. The caller is responsible for determining
-/// a path forward.
-///
-/// The general idea behind this structure is that it is optimized for
-/// the scenario common in terminals where there aren't many unique
-/// styles, and many cells are usually drawn with a single style before
-/// changing styles.
-///
-/// Callers should call `upsert` when a new style is set. This will
-/// return a stable pointer to metadata. You should use this metadata
-/// to keep a ref count of the style usage. When it falls to zero you
-/// can remove it.
-pub const Set = struct {
-    pub const base_align = @max(MetadataMap.base_align, IdMap.base_align);
-
-    /// The mapping of a style to associated metadata. This is
-    /// the map that contains the actual style definitions
-    /// (in the form of the key).
-    styles: MetadataMap,
-
-    /// The mapping from ID to style.
-    id_map: IdMap,
-
-    /// The next ID to use for a style that isn't in the set.
-    /// When this overflows we'll begin returning an IdOverflow
-    /// error and the caller must manually compact the style
-    /// set.
-    ///
-    /// Id zero is reserved and always is the default style. The
-    /// default style isn't present in the map, its dependent on
-    /// the terminal configuration.
-    next_id: Id = 1,
-
-    /// Maps a style definition to metadata about that style.
-    const MetadataMap = AutoOffsetHashMap(Style, Metadata);
-
-    /// Maps the unique style ID to the concrete style definition.
-    const IdMap = AutoOffsetHashMap(Id, Offset(Style));
-
-    /// Returns the memory layout for the given base offset and
-    /// desired capacity. The layout can be used by the caller to
-    /// determine how much memory to allocate, and the layout must
-    /// be used to initialize the set so that the set knows all
-    /// the offsets for the various buffers.
-    pub fn layout(cap: usize) Layout {
-        const md_layout = MetadataMap.layout(@intCast(cap));
-        const md_start = 0;
-        const md_end = md_start + md_layout.total_size;
-
-        const id_layout = IdMap.layout(@intCast(cap));
-        const id_start = std.mem.alignForward(usize, md_end, IdMap.base_align);
-        const id_end = id_start + id_layout.total_size;
-
-        const total_size = id_end;
-
-        return .{
-            .md_start = md_start,
-            .md_layout = md_layout,
-            .id_start = id_start,
-            .id_layout = id_layout,
-            .total_size = total_size,
-        };
+pub const StyleSetContext = struct {
+    pub fn hash(self: *StyleSetContext, style: Style) u64 {
+        _ = self;
+        return style.hash();
     }
 
-    pub const Layout = struct {
-        md_start: usize,
-        md_layout: MetadataMap.Layout,
-        id_start: usize,
-        id_layout: IdMap.Layout,
-        total_size: usize,
-    };
-
-    pub fn init(base: OffsetBuf, l: Layout) Set {
-        const styles_buf = base.add(l.md_start);
-        const id_buf = base.add(l.id_start);
-        return .{
-            .styles = MetadataMap.init(styles_buf, l.md_layout),
-            .id_map = IdMap.init(id_buf, l.id_layout),
-        };
-    }
-
-    /// Possible errors for upsert.
-    pub const UpsertError = error{
-        /// No more space in the backing buffer. Remove styles or
-        /// grow and reinitialize.
-        OutOfMemory,
-
-        /// No more available IDs. Perform a garbage collection
-        /// operation to compact ID space.
-        Overflow,
-    };
-
-    /// Upsert a style into the set and return a pointer to the metadata
-    /// for that style. The pointer is valid for the lifetime of the set
-    /// so long as the style is not removed.
-    ///
-    /// The ref count for new styles is initialized to zero and
-    /// for existing styles remains unmodified.
-    pub fn upsert(self: *Set, base: anytype, style: Style) UpsertError!*Metadata {
-        // If we already have the style in the map, this is fast.
-        var map = self.styles.map(base);
-        const gop = try map.getOrPut(style);
-        if (gop.found_existing) return gop.value_ptr;
-
-        // New style, we need to setup all the metadata. First thing,
-        // let's get the ID we'll assign, because if we're out of space
-        // we need to fail early.
-        errdefer map.removeByPtr(gop.key_ptr);
-        const id = self.next_id;
-        self.next_id = try std.math.add(Id, self.next_id, 1);
-        errdefer self.next_id -= 1;
-        gop.value_ptr.* = .{ .id = id };
-
-        // Setup our ID mapping
-        var id_map = self.id_map.map(base);
-        const id_gop = try id_map.getOrPut(id);
-        errdefer id_map.removeByPtr(id_gop.key_ptr);
-        assert(!id_gop.found_existing);
-        id_gop.value_ptr.* = size.getOffset(Style, base, gop.key_ptr);
-        return gop.value_ptr;
-    }
-
-    /// Lookup a style by its unique identifier.
-    pub fn lookupId(self: *const Set, base: anytype, id: Id) ?*Style {
-        const id_map = self.id_map.map(base);
-        const offset = id_map.get(id) orelse return null;
-        return @ptrCast(offset.ptr(base));
-    }
-
-    /// Remove a style by its id.
-    pub fn remove(self: *Set, base: anytype, id: Id) void {
-        // Lookup by ID, if it doesn't exist then we return. We use
-        // getEntry so that we can make removal faster later by using
-        // the entry's key pointer.
-        var id_map = self.id_map.map(base);
-        const id_entry = id_map.getEntry(id) orelse return;
-
-        var style_map = self.styles.map(base);
-        const style_ptr: *Style = @ptrCast(id_entry.value_ptr.ptr(base));
-
-        id_map.removeByPtr(id_entry.key_ptr);
-        style_map.removeByPtr(style_ptr);
-    }
-
-    /// Return the number of styles currently in the set.
-    pub fn count(self: *const Set, base: anytype) usize {
-        return self.id_map.map(base).count();
+    pub fn eql(self: *StyleSetContext, a: Style, b: Style) bool {
+        _ = self;
+        return a.eql(b);
     }
 };
 
-/// Metadata about a style. This is used to track the reference count
-/// and the unique identifier for a style. The unique identifier is used
-/// to track the style in the full style map.
-pub const Metadata = struct {
-    ref: size.CellCountInt = 0,
-    id: Id = 0,
-};
+pub const Set = RefCountedSet(
+    Style,
+    Id,
+    size.CellCountInt,
+    StyleSetContext,
+);
 
 test "Set basic usage" {
     const testing = std.testing;
@@ -313,29 +270,49 @@ test "Set basic usage" {
     defer alloc.free(buf);
 
     const style: Style = .{ .flags = .{ .bold = true } };
+    const style2: Style = .{ .flags = .{ .italic = true } };
 
-    var set = Set.init(OffsetBuf.init(buf), layout);
+    var set = Set.init(OffsetBuf.init(buf), layout, StyleSetContext{});
 
-    // Upsert
-    const meta = try set.upsert(buf, style);
-    try testing.expect(meta.id > 0);
+    // Add style
+    const id = try set.add(buf, style);
+    try testing.expect(id > 0);
 
-    // Second upsert should return the same metadata.
+    // Second add should return the same metadata.
     {
-        const meta2 = try set.upsert(buf, style);
-        try testing.expectEqual(meta.id, meta2.id);
+        const id2 = try set.add(buf, style);
+        try testing.expectEqual(id, id2);
     }
 
     // Look it up
     {
-        const v = set.lookupId(buf, meta.id).?;
+        const v = set.get(buf, id);
         try testing.expect(v.flags.bold);
 
-        const v2 = set.lookupId(buf, meta.id).?;
+        const v2 = set.get(buf, id);
         try testing.expectEqual(v, v2);
     }
 
-    // Removal
-    set.remove(buf, meta.id);
-    try testing.expect(set.lookupId(buf, meta.id) == null);
+    // Add a second style
+    const id2 = try set.add(buf, style2);
+
+    // Look it up
+    {
+        const v = set.get(buf, id2);
+        try testing.expect(v.flags.italic);
+    }
+
+    // Ref count
+    try testing.expect(set.refCount(buf, id) == 2);
+    try testing.expect(set.refCount(buf, id2) == 1);
+
+    // Release
+    set.release(buf, id);
+    try testing.expect(set.refCount(buf, id) == 1);
+    set.release(buf, id2);
+    try testing.expect(set.refCount(buf, id2) == 0);
+
+    // We added the first one twice, so
+    set.release(buf, id);
+    try testing.expect(set.refCount(buf, id) == 0);
 }

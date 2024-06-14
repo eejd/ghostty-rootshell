@@ -197,6 +197,7 @@ pub const Page = struct {
             .styles = style.Set.init(
                 buf.add(l.styles_start),
                 l.styles_layout,
+                style.StyleSetContext{},
             ),
             .grapheme_alloc = GraphemeAlloc.init(
                 buf.add(l.grapheme_alloc_start),
@@ -324,17 +325,11 @@ pub const Page = struct {
 
                 if (cell.style_id != style.default_id) {
                     // If a cell has a style, it must be present in the styles
-                    // set.
-                    _ = self.styles.lookupId(
+                    // set. Accessing it with `get` asserts that.
+                    _ = self.styles.get(
                         self.memory,
                         cell.style_id,
-                    ) orelse {
-                        log.warn(
-                            "page integrity violation y={} x={} style missing id={}",
-                            .{ y, x, cell.style_id },
-                        );
-                        return IntegrityError.MissingStyle;
-                    };
+                    );
 
                     if (!row.styled) {
                         log.warn(
@@ -424,12 +419,11 @@ pub const Page = struct {
         {
             var it = styles_seen.iterator();
             while (it.next()) |entry| {
-                const style_val = self.styles.lookupId(self.memory, entry.key_ptr.*).?.*;
-                const md = self.styles.upsert(self.memory, style_val) catch unreachable;
-                if (md.ref < entry.value_ptr.*) {
+                const ref_count = self.styles.refCount(self.memory, entry.key_ptr.*);
+                if (ref_count < entry.value_ptr.*) {
                     log.warn(
                         "page integrity violation style ref count mismatch id={} expected={} actual={}",
-                        .{ entry.key_ptr.*, entry.value_ptr.*, md.ref },
+                        .{ entry.key_ptr.*, entry.value_ptr.*, ref_count },
                     );
                     return IntegrityError.MismatchedStyleRef;
                 }
@@ -474,7 +468,7 @@ pub const Page = struct {
         return result;
     }
 
-    pub const CloneFromError = Allocator.Error || style.Set.UpsertError;
+    pub const CloneFromError = Allocator.Error || error{OutOfMemory};
 
     /// Clone the contents of another page into this page. The capacities
     /// can be different, but the size of the other page must fit into
@@ -586,11 +580,22 @@ pub const Page = struct {
                     for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
                 }
                 if (src_cell.style_id != style.default_id) {
-                    const other_style = other.styles.lookupId(other.memory, src_cell.style_id).?.*;
-                    const md = try self.styles.upsert(self.memory, other_style);
-                    md.ref += 1;
-                    dst_cell.style_id = md.id;
                     dst_row.styled = true;
+
+                    if (other == self) {
+                        // If it's the same page we don't have to worry about
+                        // copying the style, we can use the style ID directly.
+                        dst_cell.style_id = src_cell.style_id;
+                        self.styles.use(self.memory, dst_cell.style_id);
+                        continue;
+                    }
+
+                    // Slow path: Get the style from the other
+                    // page and add it to this page's style set.
+                    const other_style = other.styles.get(other.memory, src_cell.style_id).*;
+                    if (try self.styles.addWithId(self.memory, other_style, src_cell.style_id)) |id| {
+                        dst_cell.style_id = id;
+                    }
                 }
             }
         }
@@ -767,13 +772,7 @@ pub const Page = struct {
             for (cells) |*cell| {
                 if (cell.style_id == style.default_id) continue;
 
-                if (self.styles.lookupId(self.memory, cell.style_id)) |prev_style| {
-                    // Below upsert can't fail because it should already be present
-                    const md = self.styles.upsert(self.memory, prev_style.*) catch unreachable;
-                    assert(md.ref > 0);
-                    md.ref -= 1;
-                    if (md.ref == 0) self.styles.remove(self.memory, cell.style_id);
-                }
+                self.styles.release(self.memory, cell.style_id);
             }
 
             if (cells.len == self.size.cols) row.styled = false;
@@ -2112,7 +2111,7 @@ test "Page verifyIntegrity styles good" {
     defer page.deinit();
 
     // Upsert a style we'll use
-    const md = try page.styles.upsert(page.memory, .{ .flags = .{
+    const id = try page.styles.add(page.memory, .{ .flags = .{
         .bold = true,
     } });
 
@@ -2123,10 +2122,14 @@ test "Page verifyIntegrity styles good" {
         rac.cell.* = .{
             .content_tag = .codepoint,
             .content = .{ .codepoint = @intCast(x + 1) },
-            .style_id = md.id,
+            .style_id = id,
         };
-        md.ref += 1;
+        page.styles.use(page.memory, id);
     }
+
+    // The original style add would have incremented the
+    // ref count too, so release it to balance that out.
+    page.styles.release(page.memory, id);
 
     try page.verifyIntegrity(testing.allocator);
 }
@@ -2140,7 +2143,7 @@ test "Page verifyIntegrity styles ref count mismatch" {
     defer page.deinit();
 
     // Upsert a style we'll use
-    const md = try page.styles.upsert(page.memory, .{ .flags = .{
+    const id = try page.styles.add(page.memory, .{ .flags = .{
         .bold = true,
     } });
 
@@ -2151,13 +2154,17 @@ test "Page verifyIntegrity styles ref count mismatch" {
         rac.cell.* = .{
             .content_tag = .codepoint,
             .content = .{ .codepoint = @intCast(x + 1) },
-            .style_id = md.id,
+            .style_id = id,
         };
-        md.ref += 1;
+        page.styles.use(page.memory, id);
     }
 
+    // The original style add would have incremented the
+    // ref count too, so release it to balance that out.
+    page.styles.release(page.memory, id);
+
     // Miss a ref
-    md.ref -= 1;
+    page.styles.release(page.memory, id);
 
     try testing.expectError(
         Page.IntegrityError.MismatchedStyleRef,

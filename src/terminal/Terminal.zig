@@ -600,8 +600,19 @@ fn printCell(
         );
     }
 
-    // Keep track of the previous style so we can decrement the ref count
-    const prev_style_id = cell.style_id;
+    // We don't need to update the style refs unless the
+    // cell's new style will be different after writing.
+    const style_changed = cell.style_id != self.screen.cursor.style_id;
+
+    if (style_changed) {
+        var page = &self.screen.cursor.page_pin.page.data;
+
+        // Release the old style.
+        if (cell.style_id != style.default_id) {
+            assert(self.screen.cursor.page_row.styled);
+            page.styles.release(page.memory, cell.style_id);
+        }
+    }
 
     // Write
     cell.* = .{
@@ -612,50 +623,12 @@ fn printCell(
         .protected = self.screen.cursor.protected,
     };
 
-    if (comptime std.debug.runtime_safety) {
-        // We've had bugs around this, so let's add an assertion: every
-        // style we use should be present in the style table.
-        if (self.screen.cursor.style_id != style.default_id) {
-            const page = &self.screen.cursor.page_pin.page.data;
-            if (page.styles.lookupId(
-                page.memory,
-                self.screen.cursor.style_id,
-            ) == null) {
-                log.err("can't find style page={X} id={}", .{
-                    @intFromPtr(&self.screen.cursor.page_pin.page.data),
-                    self.screen.cursor.style_id,
-                });
-                @panic("style not found");
-            }
-        }
-    }
+    if (style_changed) {
+        var page = &self.screen.cursor.page_pin.page.data;
 
-    // Handle the style ref count handling
-    style_ref: {
-        if (prev_style_id != style.default_id) {
-            const row = self.screen.cursor.page_row;
-            assert(row.styled);
-
-            // If our previous cell had the same style ID as us currently,
-            // then we don't bother with any ref counts because we're the same.
-            if (prev_style_id == self.screen.cursor.style_id) break :style_ref;
-
-            // Slow path: we need to lookup this style so we can decrement
-            // the ref count. Since we've already loaded everything, we also
-            // just go ahead and GC it if it reaches zero, too.
-            var page = &self.screen.cursor.page_pin.page.data;
-            if (page.styles.lookupId(page.memory, prev_style_id)) |prev_style| {
-                // Below upsert can't fail because it should already be present
-                const md = page.styles.upsert(page.memory, prev_style.*) catch unreachable;
-                assert(md.ref > 0);
-                md.ref -= 1;
-                if (md.ref == 0) page.styles.remove(page.memory, prev_style_id);
-            }
-        }
-
-        // If we have a ref-counted style, increase.
-        if (self.screen.cursor.style_ref) |ref| {
-            ref.* += 1;
+        // Use the new style.
+        if (cell.style_id != style.default_id) {
+            page.styles.use(page.memory, cell.style_id);
             self.screen.cursor.page_row.styled = true;
         }
     }
@@ -2190,8 +2163,12 @@ pub fn decaln(self: *Terminal) !void {
         });
 
         // If we have a ref-counted style, increase
-        if (self.screen.cursor.style_ref) |ref| {
-            ref.* += @intCast(cells.len);
+        if (self.screen.cursor.style_id != style.default_id) {
+            page.styles.useMultiple(
+                page.memory,
+                self.screen.cursor.style_id,
+                @intCast(cells.len),
+            );
             row.styled = true;
         }
 
@@ -7066,7 +7043,8 @@ test "Terminal: bold style" {
         const cell = list_cell.cell;
         try testing.expectEqual(@as(u21, 'A'), cell.content.codepoint);
         try testing.expect(cell.style_id != 0);
-        try testing.expect(t.screen.cursor.style_ref.?.* > 0);
+        const page = t.screen.cursor.page_pin.page.data;
+        try testing.expect(page.styles.refCount(page.memory, t.screen.cursor.style_id) > 1);
     }
 }
 
