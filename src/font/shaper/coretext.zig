@@ -64,24 +64,21 @@ pub const Shaper = struct {
     };
 
     const RunState = struct {
-        str: *macos.foundation.MutableString,
         codepoints: CodepointList,
+        unichars: std.ArrayListUnmanaged(u16),
 
-        fn init() !RunState {
-            var str = try macos.foundation.MutableString.create(0);
-            errdefer str.release();
-            return .{ .str = str, .codepoints = .{} };
+        fn init() RunState {
+            return .{ .codepoints = .{}, .unichars = .{} };
         }
 
         fn deinit(self: *RunState, alloc: Allocator) void {
             self.codepoints.deinit(alloc);
-            self.str.release();
+            self.unichars.deinit(alloc);
         }
 
         fn reset(self: *RunState) !void {
             self.codepoints.clearRetainingCapacity();
-            self.str.release();
-            self.str = try macos.foundation.MutableString.create(0);
+            self.unichars.clearRetainingCapacity();
         }
     };
 
@@ -184,7 +181,7 @@ pub const Shaper = struct {
         for (hardcoded_features) |name| try feats.append(name);
         for (opts.features) |name| try feats.append(name);
 
-        var run_state = try RunState.init();
+        var run_state = RunState.init();
         errdefer run_state.deinit(alloc);
 
         // For now we only support LTR text. If we shape RTL text then
@@ -259,7 +256,14 @@ pub const Shaper = struct {
         };
     }
 
-    pub fn shape(self: *Shaper, run: font.shape.TextRun) ![]const font.shape.Cell {
+    /// Expects an ArrayList `cf_release_pool` in which `CFTypeRef`s
+    /// can be placed, which guarantees that they will be `CFRelease`d
+    /// eventually.
+    pub fn shape(
+        self: *Shaper,
+        run: font.shape.TextRun,
+        cf_release_pool: *std.ArrayList(*anyopaque),
+    ) ![]const font.shape.Cell {
         const state = &self.run_state;
 
         // {
@@ -290,18 +294,28 @@ pub const Shaper = struct {
         defer arena.deinit();
         const alloc = arena.allocator();
 
-        const attr_dict: *macos.foundation.Dictionary = try self.getFont(run.grid, run.font_index);
+        const attr_dict: *macos.foundation.Dictionary = try self.getFont(
+            run.grid,
+            run.font_index,
+            cf_release_pool,
+        );
+
+        // Make room for the attributed string and the CTLine.
+        try cf_release_pool.ensureUnusedCapacity(3);
+
+        const str = macos.foundation.String.createWithCharactersNoCopy(state.unichars.items);
+        cf_release_pool.appendAssumeCapacity(str);
 
         // Create an attributed string from our string
         const attr_str = try macos.foundation.AttributedString.create(
-            state.str.string(),
+            str,
             attr_dict,
         );
-        defer attr_str.release();
+        cf_release_pool.appendAssumeCapacity(attr_str);
 
         // We should always have one run because we do our own run splitting.
         const line = try macos.text.Line.createWithAttributedString(attr_str);
-        defer line.release();
+        cf_release_pool.appendAssumeCapacity(line);
 
         // This keeps track of the current offsets within a single cell.
         var cell_offset: struct {
@@ -393,7 +407,12 @@ pub const Shaper = struct {
 
     /// Get an attr dict for a font from a specific index.
     /// These items are cached, do not retain or release them.
-    fn getFont(self: *Shaper, grid: *font.SharedGrid, index: font.Collection.Index) !*macos.foundation.Dictionary {
+    fn getFont(
+        self: *Shaper,
+        grid: *font.SharedGrid,
+        index: font.Collection.Index,
+        cf_release_pool: *std.ArrayList(*anyopaque),
+    ) !*macos.foundation.Dictionary {
         const index_int = index.int();
 
         if (self.cached_fonts.items.len <= index_int) {
@@ -406,6 +425,8 @@ pub const Shaper = struct {
         if (self.cached_fonts.items[index_int]) |cached| {
             return cached;
         }
+
+        try cf_release_pool.ensureUnusedCapacity(3);
 
         const run_font = font: {
             // The CoreText shaper relies on CoreText and CoreText claims
@@ -429,17 +450,17 @@ pub const Shaper = struct {
             const original = face.font;
 
             const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
-            defer attrs.release();
+            cf_release_pool.appendAssumeCapacity(attrs);
 
             const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);
-            defer desc.release();
+            cf_release_pool.appendAssumeCapacity(desc);
 
             const copied = try original.copyWithAttributes(0, null, desc);
             errdefer copied.release();
 
             break :font copied;
         };
-        defer run_font.release();
+        cf_release_pool.appendAssumeCapacity(run_font);
 
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
@@ -470,15 +491,20 @@ pub const Shaper = struct {
         }
 
         pub fn addCodepoint(self: RunIteratorHook, cp: u32, cluster: u32) !void {
+            const state = &self.shaper.run_state;
+
             // Build our UTF-16 string for CoreText
-            var unichars: [2]u16 = undefined;
+            try state.unichars.ensureUnusedCapacity(self.shaper.alloc, 2);
+
+            state.unichars.appendNTimesAssumeCapacity(0, 2);
+
             const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
                 cp,
-                &unichars,
+                state.unichars.items[state.unichars.items.len-2..][0..2],
             );
-            const len: usize = if (pair) 2 else 1;
-            const state = &self.shaper.run_state;
-            state.str.appendCharacters(unichars[0..len]);
+            if (!pair) {
+                state.unichars.items.len -= 1;
+            }
 
             // Build our reverse lookup table for codepoints to clusters
             try state.codepoints.append(self.shaper.alloc, .{

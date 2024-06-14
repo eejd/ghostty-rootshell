@@ -28,6 +28,8 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
 const Health = renderer.Health;
 
+const CFReleaseThread = @import("../cf_release_thread.zig");
+
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
 const mtl_cell = @import("metal/cell.zig");
@@ -133,6 +135,12 @@ layer: objc.Object, // CAMetalLayer
 /// with the display. This is void on platforms that don't support
 /// a display link.
 display_link: ?DisplayLink = null,
+
+/// Dedicated thread for releasing CoreFoundation objects some objects,
+/// such as those produced by CoreText, have excessively slow release
+/// callback logic.
+cf_release_thread: CFReleaseThread,
+cf_release_thr: std.Thread,
 
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
@@ -590,6 +598,9 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .cursor_color = options.config.cursor_color,
         .current_background_color = options.config.background,
 
+        .cf_release_thread = undefined,
+        .cf_release_thr = undefined,
+
         // Render state
         .cells = .{},
         .uniforms = .{
@@ -687,10 +698,22 @@ pub fn loopEnter(self: *Metal, thr: *renderer.Thread) !void {
         &thr.draw_now,
     );
     display_link.start() catch {};
+
+    // Create the CF release thread.
+    self.cf_release_thread = try CFReleaseThread.init(self.alloc);
+    errdefer self.cf_release_thread.deinit();
+
+    // Start the CF release thread.
+    self.cf_release_thr = try std.Thread.spawn(
+        .{},
+        CFReleaseThread.threadMain,
+        .{&self.cf_release_thread},
+    );
+    self.cf_release_thr.setName("cf_release") catch {};
 }
 
 /// Called by renderer.Thread when it exits the main loop.
-pub fn loopExit(self: *const Metal) void {
+pub fn loopExit(self: *Metal) void {
     // If we don't support a display link we have no work to do.
     if (comptime DisplayLink == void) return;
 
@@ -699,6 +722,15 @@ pub fn loopExit(self: *const Metal) void {
     // is gone which is fine.
     const display_link = self.display_link orelse return;
     display_link.stop() catch {};
+
+    // Stop the CF release thread
+    {
+        self.cf_release_thread.stop.notify() catch |err|
+            log.err("error notifying cf release thread to stop, may stall err={}", .{err});
+        self.cf_release_thr.join();
+    }
+
+    self.cf_release_thread.deinit();
 }
 
 fn displayLinkCallback(
@@ -986,6 +1018,9 @@ pub fn updateFrame(
         if (critical.preedit) |p| p.deinit(self.alloc);
     }
 
+    var cf_release_pool = std.ArrayList(*anyopaque).init(self.alloc);
+    try cf_release_pool.ensureTotalCapacity(state.terminal.rows * 8);
+
     // Build our GPU cells
     try self.rebuildCells(
         critical.full_rebuild,
@@ -994,7 +1029,28 @@ pub fn updateFrame(
         critical.preedit,
         critical.cursor_style,
         &critical.color_palette,
+        &cf_release_pool,
     );
+
+    if (cf_release_pool.items.len > 0) {
+        const items = try cf_release_pool.toOwnedSlice();
+        if (self.cf_release_thread.mailbox.push(
+            .{ .release = .{
+                .refs = items,
+                .alloc = self.alloc,
+            } },
+            .{ .forever = {} },
+        ) != 0) {
+            try self.cf_release_thread.wakeup.notify();
+        } else {
+            for (items) |ref| {
+                macos.foundation.CFRelease(ref);
+            }
+            self.alloc.free(items);
+        }
+    } else {
+        cf_release_pool.deinit();
+    }
 
     // Update our viewport pin
     self.cells_viewport = critical.viewport_pin;
@@ -1875,6 +1931,7 @@ fn rebuildCells(
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
+    cf_release_pool: *std.ArrayList(*anyopaque),
 ) !void {
     // const start = try std.time.Instant.now();
     // const start_micro = std.time.microTimestamp();
@@ -1956,7 +2013,10 @@ fn rebuildCells(
         while (try iter.next(self.alloc)) |run| {
             // Try to read the cells from the shaping cache if we can.
             const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
-                const cells = try self.font_shaper.shape(run);
+                const cells = if (font.options.backend == .coretext)
+                    try self.font_shaper.shape(run, cf_release_pool)
+                else
+                    try self.font_shaper.shape(run);
 
                 // Try to cache them. If caching fails for any reason we continue
                 // because it is just a performance optimization, not a correctness
