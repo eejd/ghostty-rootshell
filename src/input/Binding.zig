@@ -169,6 +169,15 @@ pub const Action = union(enum) {
     /// enter after to get a new prompt.
     reset: void,
 
+    selection_navigation_left: void,
+    selection_navigation_right: void,
+    selection_navigation_up: void,
+    selection_navigation_down: void,
+    selection_navigation_page_up: void,
+    selection_navigation_page_down: void,
+    selection_natigation_home: void,
+    selection_natigation_end: void,
+
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,

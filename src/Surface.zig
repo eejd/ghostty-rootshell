@@ -1364,54 +1364,6 @@ pub fn keyCallback(
         }
     }
 
-    // Expand selection if one exists and event is shift + <arrows, home, end, pg up/down>
-    if (event.mods.shift) adjust_selection: {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        var screen = &self.io.terminal.screen;
-        const sel = if (screen.selection) |*sel| sel else break :adjust_selection;
-
-        // Silently consume key releases. We only want to process selection
-        // adjust on press.
-        if (event.action != .press and event.action != .repeat) return .consumed;
-
-        sel.adjust(screen, switch (event.key) {
-            .left => .left,
-            .right => .right,
-            .up => .up,
-            .down => .down,
-            .page_up => .page_up,
-            .page_down => .page_down,
-            .home => .home,
-            .end => .end,
-            else => break :adjust_selection,
-        });
-
-        // If the selection endpoint is outside of the current viewpoint,
-        // scroll it in to view. Note we always specifically use sel.end
-        // because that is what adjust modifies.
-        scroll: {
-            const viewport_tl = screen.pages.getTopLeft(.viewport);
-            const viewport_br = screen.pages.getBottomRight(.viewport).?;
-            if (sel.end().isBetween(viewport_tl, viewport_br))
-                break :scroll;
-
-            // Our end point is not within the viewport. If the end
-            // point is after the br then we need to adjust the end so
-            // that it is at the bottom right of the viewport.
-            const target = if (sel.end().before(viewport_tl))
-                sel.end()
-            else
-                sel.end().up(screen.pages.rows - 1) orelse sel.end();
-
-            screen.scroll(.{ .pin = target });
-        }
-
-        // Queue a render so its shown
-        try self.queueRender();
-        return .consumed;
-    }
-
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
         self.renderer_state.mutex.lock();
@@ -3535,6 +3487,47 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .quit => try self.app.setQuit(),
+
+        .selection_navigation_left, .selection_navigation_right, .selection_navigation_up, .selection_navigation_down => {
+            alter_navigation: {
+                self.renderer_state.mutex.lock();
+                defer self.renderer_state.mutex.unlock();
+                var screen = &self.io.terminal.screen;
+                const sel = if (screen.selection) |*sel| sel else break :alter_navigation;
+                sel.adjust(screen, switch (action) {
+                    .selection_navigation_left => .left,
+                    .selection_navigation_right => .right,
+                    .selection_navigation_up => .up,
+                    .selection_navigation_down => .down,
+                    .selection_navigation_page_up => .page_up,
+                    .selection_navigation_page_down => .page_down,
+                    .selection_natigation_home => .home,
+                    .selection_natigation_end => .end,
+                    else => break :alter_navigation,
+                });
+                // If the selection endpoint is outside of the current viewpoint,
+                // scroll it in to view. Note we always specifically use sel.end
+                // because that is what adjust modifies.
+                scroll: {
+                    const viewport_tl = screen.pages.getTopLeft(.viewport);
+                    const viewport_br = screen.pages.getBottomRight(.viewport).?;
+                    if (sel.end().isBetween(viewport_tl, viewport_br))
+                        break :scroll;
+
+                    // Our end point is not within the viewport. If the end
+                    // point is after the br then we need to adjust the end so
+                    // that it is at the bottom right of the viewport.
+                    const target = if (sel.end().before(viewport_tl))
+                        sel.end()
+                    else
+                        sel.end().up(screen.pages.rows - 1) orelse sel.end();
+
+                    screen.scroll(.{ .pin = target });
+                }
+            }
+            // Queue a render so its shown
+            try self.queueRender();
+        },
     }
 
     return true;

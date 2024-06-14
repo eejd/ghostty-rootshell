@@ -1494,6 +1494,48 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .{ .translated = .insert }, .mods = .{ .shift = true } },
             .{ .paste_from_selection = {} },
         );
+
+        // Selection Navigation
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .left }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_left = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .right }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_right = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .up }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_up = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .down }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_down = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .page_up }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_page_up = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .page_down }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_page_down = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .home }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_home = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .end }, .mods = .{ .shift = true } },
+            .{ .selection_navigation_end = {} },
+        );
     }
     {
         // Cmd+N for goto tab N
