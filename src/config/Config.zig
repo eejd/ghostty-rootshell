@@ -289,6 +289,12 @@ palette: Palette = .{},
 /// The color of the cursor. If this is not set, a default will be chosen.
 @"cursor-color": ?Color = null,
 
+/// Swap the foreground and background colors of the cell under the cursor. This
+/// option overrides the `cursor-color` and `cursor-text` options.
+///
+/// This is currently only supported on macOS.
+@"cursor-invert-fg-bg": bool = false,
+
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
 /// is fully opaque and a value of 0 is fully transparent. A value less than 0
 /// or greater than 1 will be clamped to the nearest valid value. Note that a
