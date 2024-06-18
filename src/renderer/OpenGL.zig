@@ -1006,7 +1006,9 @@ pub fn rebuildCells(
             const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
             for (self.cells.items[start_i..]) |cell| {
                 if (cell.grid_col == x and
-                    (cell.mode == .fg or cell.mode == .fg_color))
+                    (cell.mode == .fg or
+                    cell.mode == .fg_color or
+                    cell.mode == .fg_constrained))
                 {
                     cursor_cell = cell;
                     break;
@@ -1113,7 +1115,7 @@ pub fn rebuildCells(
 
         _ = try self.addCursor(screen, cursor_style);
         if (cursor_cell) |*cell| {
-            if (cell.mode == .fg) {
+            if (cell.mode == .fg or cell.mode == .fg_constrained) {
                 if (self.config.cursor_text) |txt| {
                     cell.r = txt.r;
                     cell.g = txt.g;
