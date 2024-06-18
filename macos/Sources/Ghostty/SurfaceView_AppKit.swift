@@ -480,6 +480,14 @@ extension Ghostty {
             let pos = self.convert(event.locationInWindow, from: nil)
             ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
 
+            // If focus follows mouse is enabled then move focus to this surface.
+            if let window = self.window as? TerminalWindow,
+               window.isKeyWindow &&
+                window.focusFollowsMouse &&
+                !self.focused
+            {
+                Ghostty.moveFocus(to: self)
+            }
         }
 
         override func mouseDragged(with event: NSEvent) {

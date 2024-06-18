@@ -747,6 +747,14 @@ keybind: Keybinds = .{},
 /// This configuration currently only works with GTK.
 @"window-new-tab-position": WindowNewTabPosition = .current,
 
+// If true, when there are multiple split panes, the mouse selects the pane
+// that is focused. This only applies to the currently focused window; i.e.
+// mousing over a split in an unfocused window will now focus that split
+// and bring the window to front.
+//
+// Default is false.
+@"focus-follows-mouse": bool = false,
+
 /// When enabled, the full GTK titlebar is displayed instead of your window
 /// manager's simple titlebar. The behavior of this option will vary with your
 /// window manager.

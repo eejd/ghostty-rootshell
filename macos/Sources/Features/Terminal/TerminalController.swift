@@ -111,6 +111,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     //MARK: - Methods
     
     func configDidReload() {
+        guard let window = window as? TerminalWindow else { return }
+        window.focusFollowsMouse = ghostty.config.focusFollowsMouse
         syncAppearance()
     }
     
@@ -197,9 +199,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.isOpaque = true
             window.backgroundColor = .windowBackgroundColor
         }
-        
+
         window.hasShadow = ghostty.config.macosWindowShadow
-        
+
         guard window.hasStyledTabs else { return }
 
         // The titlebar is always updated. We don't need to worry about opacity
@@ -341,6 +343,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 window.tabGroup?.removeWindow(window)
             }
         }
+
+        window.focusFollowsMouse = ghostty.config.focusFollowsMouse
 
         // Apply any additional appearance-related properties to the new window.
         syncAppearance()

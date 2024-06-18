@@ -369,6 +369,8 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    var focusFollowsMouse: Bool = false
+
     // Find the NSTextField responsible for displaying the titlebar's title.
     private var titlebarTextField: NSTextField? {
         guard let titlebarContainer = contentView?.superview?.subviews
