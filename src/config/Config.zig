@@ -421,12 +421,6 @@ command: ?[]const u8 = null,
 /// This is primarily useful for scripts or debugging.
 @"wait-after-command": bool = false,
 
-// If true, when there are multiple split panes, the mouse selects the pane
-// that is focused.
-//
-// Default is false.
-@"focus-follows-mouse": bool = false,
-
 /// The number of milliseconds of runtime below which we consider a process exit
 /// to be abnormal. This is used to show an error message when the process exits
 /// too quickly.
@@ -752,6 +746,14 @@ keybind: Keybinds = .{},
 ///
 /// This configuration currently only works with GTK.
 @"window-new-tab-position": WindowNewTabPosition = .current,
+
+// If true, when there are multiple split panes, the mouse selects the pane
+// that is focused. This only applies to the currently focused window; i.e.
+// mousing over a split in an unfocused window will now focus that split
+// and bring the window to front.
+//
+// Default is false.
+@"focus-follows-mouse": bool = false,
 
 /// When enabled, the full GTK titlebar is displayed instead of your window
 /// manager's simple titlebar. The behavior of this option will vary with your
