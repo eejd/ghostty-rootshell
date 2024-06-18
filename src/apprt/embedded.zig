@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const objc = @import("objc");
 const apprt = @import("../apprt.zig");
+const font = @import("../font/main.zig");
 const input = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
@@ -1769,6 +1770,37 @@ pub const CAPI = struct {
                 .{ .forever = {} },
             );
             surface.renderer_thread.wakeup.notify() catch {};
+        }
+
+        /// This returns a CTFontRef that should be used for quicklook
+        /// highlighted text. This is always the primary font in use
+        /// regardless of the selected text. If coretext is not in use
+        /// then this will return nothing.
+        export fn ghostty_surface_quicklook_font(ptr: *Surface) ?*anyopaque {
+            // For non-CoreText we just return null.
+            if (comptime font.options.backend != .coretext) {
+                return null;
+            }
+
+            // Get the shared font grid. We acquire a read lock to
+            // read the font face. It should not be deffered since
+            // we're loading the primary face.
+            const grid = ptr.core_surface.renderer.font_grid;
+            grid.lock.lockShared();
+            defer grid.lock.unlockShared();
+
+            const collection = &grid.resolver.collection;
+            const face = collection.getFace(.{}) catch return null;
+
+            // The font is not the right size by default so we need
+            // to set it to our configured window size.
+            const copy = face.font.copyWithAttributes(
+                ptr.app.config.@"font-size",
+                null,
+                null,
+            ) catch return null;
+
+            return copy;
         }
 
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {

@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 import UserNotifications
 import GhosttyKit
 
@@ -929,7 +930,13 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func selectedRange() -> NSRange {
-        return NSRange()
+        guard let surface = self.surface else { return NSRange() }
+        guard ghostty_surface_has_selection(surface) else { return NSRange() }
+        
+        // If we have a selection, we just return a non-empty range. The actual
+        // values are meaningless but the non-emptiness of it tells AppKit we
+        // have a selection.
+        return NSRange(location: 0, length: 1)
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -954,7 +961,33 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        return nil
+        // We ignore the proposed range and always return the selection from
+        // this (if we have one). This enables features like QuickLook. I don't
+        // know if this breaks anything else...
+        guard let surface = self.surface else { return nil }
+        guard ghostty_surface_has_selection(surface) else { return nil }
+        
+        // Get our selection. We cap it at 1MB for the purpose of this. This is
+        // arbitrary. If this is a good reason to increase it I'm happy to.
+        let v = String(unsafeUninitializedCapacity: 1000000) {
+            Int(ghostty_surface_selection(surface, $0.baseAddress, UInt($0.count)))
+        }
+        
+        // If we can get a font then we use the font. This should always work
+        // since we always have a primary font. The only scenario this doesn't
+        // work is if someone is using a non-CoreText build which would be
+        // unofficial.
+        var attributes: [ NSAttributedString.Key : Any ] = [:];
+        if let fontRaw = ghostty_surface_quicklook_font(surface) {
+            // Memory management here is wonky: ghostty_surface_quicklook_font
+            // will create a copy of a CTFont, Swift will auto-retain the
+            // unretained value passed into the dict, so we release the original.
+            let font = Unmanaged<CTFont>.fromOpaque(fontRaw)
+            attributes[.font] = font.takeUnretainedValue()
+            font.release()
+        }
+
+        return .init(string: v, attributes: attributes)
     }
 
     func characterIndex(for point: NSPoint) -> Int {
