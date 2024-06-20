@@ -1803,6 +1803,26 @@ pub const CAPI = struct {
             return copy;
         }
 
+        /// This returns the start and length of the current selection range
+        /// in viewport coordinates. If the selection is not visible in the
+        /// viewport completely then this will return 0,0. This rather odd
+        /// detail is due to the current usage of this in the macOS app where
+        /// selections are only meaningful if they're in the viewport. We can
+        /// change this behavior if we have something useful to do with the
+        /// selection range outside of the viewport in the future.
+        export fn ghostty_surface_selection_range(
+            ptr: *Surface,
+            start: *u32,
+            len: *u32,
+        ) void {
+            start.* = 0;
+            len.* = 0;
+
+            const range = ptr.core_surface.selectionRange() orelse return;
+            start.* = range.start;
+            len.* = range.len;
+        }
+
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
             return ptr.initMetal(objc.Object.fromId(device));
         }

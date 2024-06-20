@@ -849,6 +849,38 @@ pub fn selectionString(self: *Surface, alloc: Allocator) !?[]const u8 {
     });
 }
 
+/// This returns the selection range offset from the beginning of the
+/// viewport. If the selection is not entirely within the viewport then
+/// this will return null.
+///
+/// This is a oddly specific function that is used with macOS to enable
+/// NSTextInputClient to work properly for features such as the IME Emoji
+/// keyboard and QuickLook amongst other things.
+pub fn selectionRange(self: *Surface) ?struct {
+    start: u32,
+    len: u32,
+} {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    // Get the TL/BR pins for the selection
+    const sel = self.io.terminal.screen.selection orelse return null;
+    const tl = sel.topLeft(&self.io.terminal.screen);
+    const br = sel.bottomRight(&self.io.terminal.screen);
+
+    // Convert the pins to coordinates (x,y)
+    const tl_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, tl) orelse return null;
+    const br_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, br) orelse return null;
+    const tl_coord = tl_pt.coord();
+    const br_coord = br_pt.coord();
+
+    // Utilize viewport sizing to convert to offsets
+    const start = tl_coord.y * self.io.terminal.screen.pages.cols + tl_coord.x;
+    const end = br_coord.y * self.io.terminal.screen.pages.cols + br_coord.x;
+
+    return .{ .start = start, .len = end - start };
+}
+
 /// Returns the pwd of the terminal, if any. This is always copied because
 /// the pwd can change at any point from termio. If we are calling from the IO
 /// thread you should just check the terminal directly.

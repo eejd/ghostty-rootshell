@@ -931,12 +931,14 @@ extension Ghostty.SurfaceView: NSTextInputClient {
 
     func selectedRange() -> NSRange {
         guard let surface = self.surface else { return NSRange() }
-        guard ghostty_surface_has_selection(surface) else { return NSRange() }
         
-        // If we have a selection, we just return a non-empty range. The actual
-        // values are meaningless but the non-emptiness of it tells AppKit we
-        // have a selection.
-        return NSRange(location: 0, length: 1)
+        // Get our range from the Ghostty API. There is a race condition between getting the
+        // range and actually using it since our selection may change but there isn't a good
+        // way I can think of to solve this for AppKit.
+        var start: UInt32 = 0;
+        var len: UInt32 = 0;
+        ghostty_surface_selection_range(surface, &start, &len);
+        return NSRange(location: Int(start), length: Int(len))
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -961,11 +963,17 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        // We ignore the proposed range and always return the selection from
-        // this (if we have one). This enables features like QuickLook. I don't
-        // know if this breaks anything else...
+        Ghostty.logger.warning("pressure substring range=\(range) selectedRange=\(self.selectedRange())")
         guard let surface = self.surface else { return nil }
         guard ghostty_surface_has_selection(surface) else { return nil }
+        
+        // If the range is empty then we don't need to return anything
+        guard range.length > 0 else { return nil }
+        
+        // I used to do a bunch of testing here that the range requested matches the
+        // selection range or contains it but a lot of macOS system behaviors request
+        // bogus ranges I truly don't understand so we just always return the
+        // attributed string containing our selection which is... weird but works?
         
         // Get our selection. We cap it at 1MB for the purpose of this. This is
         // arbitrary. If this is a good reason to increase it I'm happy to.
