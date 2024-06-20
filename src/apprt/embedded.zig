@@ -1823,6 +1823,16 @@ pub const CAPI = struct {
             len.* = range.len;
         }
 
+        export fn ghostty_surface_selection_point(
+            ptr: *Surface,
+            x: *f64,
+            y: *f64,
+        ) void {
+            const point = ptr.core_surface.selectionPoint() orelse return;
+            x.* = point.x;
+            y.* = point.y;
+        }
+
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
             return ptr.initMetal(objc.Object.fromId(device));
         }

@@ -933,6 +933,53 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     return .{ .x = x, .y = y };
 }
 
+/// Returns the x/y coordinate of where the selection top-left is. This is
+/// used currently only by macOS to render the QuickLook highlight in the
+/// proper location.
+pub fn selectionPoint(self: *const Surface) ?apprt.IMEPos {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    // Get the top-left coordinate of the selection in the viewport.
+    const sel = self.io.terminal.screen.selection orelse return null;
+    const tl_pt = self.io.terminal.screen.pages.pointFromPin(
+        .viewport,
+        sel.topLeft(&self.io.terminal.screen),
+    ) orelse return null;
+    const tl_coord = tl_pt.coord();
+
+    // Our sizes are all scaled so we need to send the unscaled values back.
+    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
+
+    const x: f64 = x: {
+        // Simple x * cell width gives the top-left corner
+        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
+
+        // We want the midpoint
+        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+
+        // And scale it
+        x /= content_scale.x;
+
+        break :x x;
+    };
+
+    const y: f64 = y: {
+        // Simple x * cell width gives the top-left corner
+        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
+
+        // We want the bottom
+        y += @floatFromInt(self.cell_size.height);
+
+        // And scale it
+        y /= content_scale.y;
+
+        break :y y;
+    };
+
+    return .{ .x = x, .y = y };
+}
+
 fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) !void {
     if (self.config.clipboard_write == .deny) {
         log.info("application attempted to write clipboard, but 'clipboard-write' is set to deny", .{});

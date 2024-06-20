@@ -1006,11 +1006,21 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         guard let surface = self.surface else {
             return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
         }
-
+        
         // Ghostty will tell us where it thinks an IME keyboard should render.
         var x: Double = 0;
         var y: Double = 0;
-        ghostty_surface_ime_point(surface, &x, &y)
+        
+        // QuickLook never gives us a matching range to our selection so if we detect
+        // this then we return the top-left selection point rather than the cursor point.
+        // This is hacky but I can't think of a better way to get the right IME vs. QuickLook
+        // point right now. I'm sure I'm missing something fundamental...
+        if range.length > 0 && range != self.selectedRange() {
+            // QuickLook
+            ghostty_surface_selection_point(surface, &x, &y)
+        } else {
+            ghostty_surface_ime_point(surface, &x, &y)
+        }
 
         // Ghostty coordinates are in top-left (0, 0) so we have to convert to
         // bottom-left since that is what UIKit expects
