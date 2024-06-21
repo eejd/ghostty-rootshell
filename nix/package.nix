@@ -38,6 +38,27 @@
     zig_default_flags = "-Dcpu=baseline -Doptimize=${optimize}";
   };
 
+  # We limit source like this to try and reduce the amount of rebuilds as possible
+  # thus we only provide the source that is needed for the build
+  #
+  # NOTE: as of the current moment only linux files are provided,
+  # since darwin support is not finished
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.intersection (lib.fileset.fromSource (lib.sources.cleanSource ../.)) (
+      lib.fileset.unions [
+        ../dist/linux
+        ../conformance
+        ../images
+        ../pkg
+        ../src
+        ../vendor
+        ../build.zig
+        ../build.zig.zon
+      ]
+    );
+  };
+
   # This hash is the computation of the zigCache fixed-output derivation. This
   # allows us to use remote package dependencies without breaking the sandbox.
   #
@@ -52,42 +73,43 @@
   # derivation in your store already. If so, just update the value as above.)
   zigCacheHash = import ./zigCacheHash.nix;
 
-  zigCache = src:
-    stdenv.mkDerivation {
-      inherit src;
-      name = "ghostty-cache";
-      nativeBuildInputs = [git zig_0_12.hook];
+  zigCache = stdenv.mkDerivation {
+    inherit src;
+    name = "ghostty-cache";
+    nativeBuildInputs = [
+      git
+      zig_0_12.hook
+    ];
 
-      dontConfigure = true;
-      dontUseZigBuild = true;
-      dontUseZigInstall = true;
-      dontFixup = true;
+    dontConfigure = true;
+    dontUseZigBuild = true;
+    dontUseZigInstall = true;
+    dontFixup = true;
 
-      buildPhase = ''
-        runHook preBuild
+    buildPhase = ''
+      runHook preBuild
 
-        zig build --fetch
+      zig build --fetch
 
-        runHook postBuild
-      '';
+      runHook postBuild
+    '';
 
-      installPhase = ''
-        runHook preInstall
+    installPhase = ''
+      runHook preInstall
 
-        cp -r --reflink=auto $ZIG_GLOBAL_CACHE_DIR $out
+      cp -r --reflink=auto $ZIG_GLOBAL_CACHE_DIR $out
 
-        runHook postInstall
-      '';
+      runHook postInstall
+    '';
 
-      outputHashMode = "recursive";
-      outputHash = zigCacheHash;
-    };
+    outputHashMode = "recursive";
+    outputHash = zigCacheHash;
+  };
 in
   stdenv.mkDerivation (finalAttrs: {
     pname = "ghostty";
     version = "0.1.0";
-
-    src = ./..;
+    inherit src;
 
     nativeBuildInputs = [
       git
@@ -129,7 +151,7 @@ in
 
     preBuild = ''
       rm -rf $ZIG_GLOBAL_CACHE_DIR
-      cp -r --reflink=auto ${zigCache finalAttrs.src} $ZIG_GLOBAL_CACHE_DIR
+      cp -r --reflink=auto ${zigCache} $ZIG_GLOBAL_CACHE_DIR
       chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
     '';
 
@@ -159,9 +181,9 @@ in
       patchelf --add-rpath "${lib.makeLibraryPath [libX11]}" "$out/bin/.ghostty-wrapped"
     '';
 
-    meta = with lib; {
+    meta = {
       homepage = "https://github.com/ghostty-org/ghostty";
-      license = licenses.mit;
+      license = lib.licenses.mit;
       platforms = ["x86_64-linux" "aarch64-linux"];
       mainProgram = "ghostty";
     };
