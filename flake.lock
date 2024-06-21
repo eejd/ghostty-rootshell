@@ -16,22 +16,6 @@
         "type": "github"
       }
     },
-    "flake-compat_2": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1696426674,
-        "narHash": "sha256-kvjfFW7WAETZlt09AgDn1MrtKzP7t90Vf7vypd3OL1U=",
-        "owner": "edolstra",
-        "repo": "flake-compat",
-        "rev": "0f9255e01c2351cc7d116c072cb317785dd33b33",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edolstra",
-        "repo": "flake-compat",
-        "type": "github"
-      }
-    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -121,11 +105,11 @@
     },
     "nixpkgs-stable": {
       "locked": {
-        "lastModified": 1718955215,
-        "narHash": "sha256-3vNXv4zrblZFobrxz1P3RwLpHl6X3/GzfArdTxq0+nI=",
+        "lastModified": 1718988271,
+        "narHash": "sha256-LEQinrNUICRIgRK+K3d1VViiz8Oy4Kai1PtE0DIH1t0=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "201ed88e66f7f34d5c74e46d2e4399cc4bea1501",
+        "rev": "1079d9fdfb621446fe7d4b3d4be0b23deb622503",
         "type": "github"
       },
       "original": {
@@ -206,18 +190,18 @@
     },
     "zig": {
       "inputs": {
-        "flake-compat": "flake-compat",
+        "flake-compat": [],
         "flake-utils": "flake-utils",
         "nixpkgs": [
           "nixpkgs-stable"
         ]
       },
       "locked": {
-        "lastModified": 1718929454,
-        "narHash": "sha256-lh7877nXtLucRmiJFrgJsND9iduZEX1I0HZ8VUHhGYA=",
+        "lastModified": 1718971763,
+        "narHash": "sha256-lovKLcKVxpTq7Io6HQQI8WRc2spIzt1pMB9I3OVqQWA=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "16b1b7e06642c9fa72f978e4c7e8561466f06ca8",
+        "rev": "72a8b67f1a9e9dec6e67328ef2d689e816d0e65a",
         "type": "github"
       },
       "original": {
@@ -228,7 +212,7 @@
     },
     "zig-overlay": {
       "inputs": {
-        "flake-compat": "flake-compat_2",
+        "flake-compat": "flake-compat",
         "flake-utils": "flake-utils_3",
         "nixpkgs": [
           "zls",

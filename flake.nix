@@ -11,7 +11,10 @@
 
     zig = {
       url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs-stable";
+      inputs = {
+        nixpkgs.follows = "nixpkgs-stable";
+        flake-compat.follows = "";
+      };
     };
 
     zls = {

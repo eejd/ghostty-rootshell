@@ -50,6 +50,7 @@
         ../dist/linux
         ../conformance
         ../images
+        ../include
         ../pkg
         ../src
         ../vendor
