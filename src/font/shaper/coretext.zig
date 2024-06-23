@@ -57,7 +57,7 @@ pub const Shaper = struct {
     ///
     /// Fonts are cached as attribute dictionaries to be applied directly to
     /// attributed strings.
-    cached_fonts: std.ArrayList(?*macos.foundation.Dictionary),
+    cached_fonts: std.ArrayListUnmanaged(?*macos.foundation.Dictionary),
 
     /// The list of CoreFoundation objects to release on the dedicated
     /// release thread. This is built up over the course of shaping and
@@ -220,9 +220,6 @@ pub const Shaper = struct {
         };
         errdefer writing_direction.release();
 
-        const cached_fonts = std.ArrayList(?*macos.foundation.Dictionary).init(alloc);
-        errdefer cached_fonts.deinit();
-
         // Create the CF release thread.
         var cf_release_thread = try alloc.create(CFReleaseThread);
         errdefer alloc.destroy(cf_release_thread);
@@ -243,7 +240,7 @@ pub const Shaper = struct {
             .run_state = run_state,
             .features = feats,
             .writing_direction = writing_direction,
-            .cached_fonts = cached_fonts,
+            .cached_fonts = .{},
             .cf_release_pool = .{},
             .cf_release_thread = cf_release_thread,
             .cf_release_thr = cf_release_thr,
@@ -256,8 +253,12 @@ pub const Shaper = struct {
         self.features.deinit();
         self.writing_direction.release();
 
-        self.releaseCachedFonts();
-        self.cached_fonts.deinit();
+        {
+            for (self.cached_fonts.items) |ft| {
+                if (ft) |f| f.release();
+            }
+            self.cached_fonts.deinit(self.alloc);
+        }
 
         if (self.cf_release_pool.items.len > 0) {
             for (self.cf_release_pool.items) |ref| macos.foundation.CFRelease(ref);
@@ -280,15 +281,6 @@ pub const Shaper = struct {
         }
         self.cf_release_thread.deinit();
         self.alloc.destroy(self.cf_release_thread);
-    }
-
-    /// Release all cached fonts.
-    pub fn releaseCachedFonts(self: *Shaper) void {
-        for (self.cached_fonts.items) |ft| {
-            if (ft) |f| {
-                f.release();
-            }
-        }
     }
 
     pub fn endFrame(self: *Shaper) void {
@@ -497,16 +489,18 @@ pub const Shaper = struct {
     ) !*macos.foundation.Dictionary {
         const index_int = index.int();
 
+        // The cached fonts are indexed directly by the font index, since
+        // this number is usually low. Therefore, we set any index we haven't
+        // seen to null.
         if (self.cached_fonts.items.len <= index_int) {
-            try self.cached_fonts.ensureTotalCapacity(index_int + 1);
+            try self.cached_fonts.ensureTotalCapacity(self.alloc, index_int + 1);
             while (self.cached_fonts.items.len <= index_int) {
                 self.cached_fonts.appendAssumeCapacity(null);
             }
         }
 
-        if (self.cached_fonts.items[index_int]) |cached| {
-            return cached;
-        }
+        // If we have it, return the cached attr dict.
+        if (self.cached_fonts.items[index_int]) |cached| return cached;
 
         // Features dictionary, font descriptor, font
         try self.cf_release_pool.ensureUnusedCapacity(self.alloc, 3);
@@ -560,7 +554,6 @@ pub const Shaper = struct {
         };
 
         self.cached_fonts.items[index_int] = attr_dict;
-
         return attr_dict;
     }
 
