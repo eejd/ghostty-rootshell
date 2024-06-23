@@ -45,7 +45,7 @@
 
       packages.${system} = let
         mkArgs = optimize: {
-          inherit (pkgs-unstable) zig_0_12;
+          inherit (pkgs-unstable) zig_0_12 lib;
           inherit optimize;
 
           revision = self.shortRev or self.dirtyShortRev or "dirty";
