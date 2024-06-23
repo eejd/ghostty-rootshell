@@ -55,6 +55,7 @@ pub fn CacheTable(
 
         comptime {
             assert(std.math.isPowerOfTwo(bucket_count));
+            assert(bucket_count <= std.math.maxInt(usize));
         }
 
         /// `bucket_count` buckets containing `bucket_size` KV pairs each.
@@ -79,7 +80,7 @@ pub fn CacheTable(
         /// make room then it is returned in a struct with its key and value.
         pub fn put(self: *Self, key: K, value: V) ?KV {
             const kv: KV = .{ .key = key, .value = value };
-            const idx: u64 = self.context.hash(key) % bucket_count;
+            const idx: usize = @intCast(self.context.hash(key) % bucket_count);
 
             // If we have space available in the bucket then we just append
             if (self.lengths[idx] < bucket_size) {
@@ -105,8 +106,7 @@ pub fn CacheTable(
         ///
         /// Returns null if no item is found with the provided key.
         pub fn get(self: *Self, key: K) ?V {
-            const idx = self.context.hash(key) % bucket_count;
-
+            const idx: usize = @intCast(self.context.hash(key) % bucket_count);
             const len = self.lengths[idx];
             var i: usize = len;
             while (i > 0) {
