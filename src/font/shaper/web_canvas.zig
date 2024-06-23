@@ -52,6 +52,10 @@ pub const Shaper = struct {
         self.* = undefined;
     }
 
+    pub fn endFrame(self: *const Shaper) void {
+        _ = self;
+    }
+
     /// Returns an iterator that returns one text run at a time for the
     /// given terminal row. Note that text runs are are only valid one at a time
     /// for a Shaper struct since they share state.
