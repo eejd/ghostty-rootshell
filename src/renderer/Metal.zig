@@ -136,12 +136,6 @@ layer: objc.Object, // CAMetalLayer
 /// a display link.
 display_link: ?DisplayLink = null,
 
-/// Dedicated thread for releasing CoreFoundation objects some objects,
-/// such as those produced by CoreText, have excessively slow release
-/// callback logic.
-cf_release_thread: CFReleaseThread,
-cf_release_thr: std.Thread,
-
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
 
@@ -598,9 +592,6 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .cursor_color = options.config.cursor_color,
         .current_background_color = options.config.background,
 
-        .cf_release_thread = undefined,
-        .cf_release_thr = undefined,
-
         // Render state
         .cells = .{},
         .uniforms = .{
@@ -698,18 +689,6 @@ pub fn loopEnter(self: *Metal, thr: *renderer.Thread) !void {
         &thr.draw_now,
     );
     display_link.start() catch {};
-
-    // Create the CF release thread.
-    self.cf_release_thread = try CFReleaseThread.init(self.alloc);
-    errdefer self.cf_release_thread.deinit();
-
-    // Start the CF release thread.
-    self.cf_release_thr = try std.Thread.spawn(
-        .{},
-        CFReleaseThread.threadMain,
-        .{&self.cf_release_thread},
-    );
-    self.cf_release_thr.setName("cf_release") catch {};
 }
 
 /// Called by renderer.Thread when it exits the main loop.
@@ -722,15 +701,6 @@ pub fn loopExit(self: *Metal) void {
     // is gone which is fine.
     const display_link = self.display_link orelse return;
     display_link.stop() catch {};
-
-    // Stop the CF release thread
-    {
-        self.cf_release_thread.stop.notify() catch |err|
-            log.err("error notifying cf release thread to stop, may stall err={}", .{err});
-        self.cf_release_thr.join();
-    }
-
-    self.cf_release_thread.deinit();
 }
 
 fn displayLinkCallback(
@@ -1028,22 +998,9 @@ pub fn updateFrame(
         &critical.color_palette,
     );
 
-    if (self.font_shaper.cf_release_pool.items.len > 0) {
-        const alloc = self.font_shaper.alloc;
-        const items = try self.font_shaper.cf_release_pool.toOwnedSlice(alloc);
-        if (self.cf_release_thread.mailbox.push(
-            .{ .release = .{
-                .refs = items,
-                .alloc = alloc,
-            } },
-            .{ .forever = {} },
-        ) != 0) {
-            try self.cf_release_thread.wakeup.notify();
-        } else {
-            for (items) |ref| macos.foundation.CFRelease(ref);
-            alloc.free(items);
-        }
-    }
+    // Notify our shaper we're done for the frame. For some shapers like
+    // CoreText this triggers off-thread cleanup logic.
+    self.font_shaper.endFrame();
 
     // Update our viewport pin
     self.cells_viewport = critical.viewport_pin;

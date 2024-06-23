@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const trace = @import("tracy").trace;
 const font = @import("../main.zig");
+const os = @import("../../os/main.zig");
+const terminal = @import("../../terminal/main.zig");
 const Face = font.Face;
 const Collection = font.Collection;
 const DeferredFace = font.DeferredFace;
@@ -14,7 +16,7 @@ const Library = font.Library;
 const SharedGrid = font.SharedGrid;
 const Style = font.Style;
 const Presentation = font.Presentation;
-const terminal = @import("../../terminal/main.zig");
+const CFReleaseThread = os.CFReleaseThread;
 
 const log = std.log.scoped(.font_shaper);
 
@@ -61,6 +63,12 @@ pub const Shaper = struct {
     /// release thread. This is built up over the course of shaping and
     /// sent to the release thread when endFrame is called.
     cf_release_pool: std.ArrayListUnmanaged(*anyopaque),
+
+    /// Dedicated thread for releasing CoreFoundation objects. Some objects,
+    /// such as those produced by CoreText, have excessively slow release
+    /// callback logic.
+    cf_release_thread: *CFReleaseThread,
+    cf_release_thr: std.Thread,
 
     const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
     const CodepointList = std.ArrayListUnmanaged(Codepoint);
@@ -215,6 +223,20 @@ pub const Shaper = struct {
         const cached_fonts = std.ArrayList(?*macos.foundation.Dictionary).init(alloc);
         errdefer cached_fonts.deinit();
 
+        // Create the CF release thread.
+        var cf_release_thread = try alloc.create(CFReleaseThread);
+        errdefer alloc.destroy(cf_release_thread);
+        cf_release_thread.* = try CFReleaseThread.init(alloc);
+        errdefer cf_release_thread.deinit();
+
+        // Start the CF release thread.
+        var cf_release_thr = try std.Thread.spawn(
+            .{},
+            CFReleaseThread.threadMain,
+            .{cf_release_thread},
+        );
+        cf_release_thr.setName("cf_release") catch {};
+
         return .{
             .alloc = alloc,
             .cell_buf = .{},
@@ -223,6 +245,8 @@ pub const Shaper = struct {
             .writing_direction = writing_direction,
             .cached_fonts = cached_fonts,
             .cf_release_pool = .{},
+            .cf_release_thread = cf_release_thread,
+            .cf_release_thr = cf_release_thr,
         };
     }
 
@@ -247,6 +271,15 @@ pub const Shaper = struct {
             );
         }
         self.cf_release_pool.deinit(self.alloc);
+
+        // Stop the CF release thread
+        {
+            self.cf_release_thread.stop.notify() catch |err|
+                log.err("error notifying cf release thread to stop, may stall err={}", .{err});
+            self.cf_release_thr.join();
+        }
+        self.cf_release_thread.deinit();
+        self.alloc.destroy(self.cf_release_thread);
     }
 
     /// Release all cached fonts.
@@ -256,6 +289,38 @@ pub const Shaper = struct {
                 f.release();
             }
         }
+    }
+
+    pub fn endFrame(self: *Shaper) void {
+        if (self.cf_release_pool.items.len == 0) return;
+
+        // Get all the items in the pool as an owned slice so we can
+        // send it to the dedicated release thread.
+        const items = self.cf_release_pool.toOwnedSlice(self.alloc) catch |err| {
+            log.warn("error converting release pool to owned slice, slow release err={}", .{err});
+            for (self.cf_release_pool.items) |ref| macos.foundation.CFRelease(ref);
+            self.cf_release_pool.clearRetainingCapacity();
+            return;
+        };
+
+        // Send the items. If the send succeeds then we wake up the
+        // thread to process the items. If the send fails then do a manual
+        // cleanup.
+        if (self.cf_release_thread.mailbox.push(.{ .release = .{
+            .refs = items,
+            .alloc = self.alloc,
+        } }, .{ .forever = {} }) != 0) {
+            self.cf_release_thread.wakeup.notify() catch |err| {
+                log.warn(
+                    "error notifying cf release thread to wake up, may stall err={}",
+                    .{err},
+                );
+            };
+            return;
+        }
+
+        for (items) |ref| macos.foundation.CFRelease(ref);
+        self.alloc.free(items);
     }
 
     pub fn runIterator(

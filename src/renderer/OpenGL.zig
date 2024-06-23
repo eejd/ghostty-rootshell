@@ -732,6 +732,10 @@ pub fn updateFrame(
             critical.cursor_style,
             &critical.color_palette,
         );
+
+        // Notify our shaper we're done for the frame. For some shapers like
+        // CoreText this triggers off-thread cleanup logic.
+        self.font_shaper.endFrame();
     }
 }
 
