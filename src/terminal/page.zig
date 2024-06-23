@@ -197,7 +197,7 @@ pub const Page = struct {
             .styles = style.Set.init(
                 buf.add(l.styles_start),
                 l.styles_layout,
-                style.StyleSetContext{},
+                .{},
             ),
             .grapheme_alloc = GraphemeAlloc.init(
                 buf.add(l.grapheme_alloc_start),

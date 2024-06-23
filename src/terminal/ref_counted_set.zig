@@ -1,11 +1,11 @@
+const std = @import("std");
+const assert = std.debug.assert;
+
 const size = @import("size.zig");
 const Offset = size.Offset;
 const OffsetBuf = size.OffsetBuf;
 
 const fastmem = @import("../fastmem.zig");
-
-const std = @import("std");
-const assert = std.debug.assert;
 
 /// A reference counted set.
 ///
@@ -40,19 +40,18 @@ const assert = std.debug.assert;
 ///   A type containing methods to define behaviors.
 ///   - `fn hash(*Context, T) u64`    - Return a hash for an item.
 ///   - `fn eql(*Context, T, T) bool` - Check two items for equality.
-///
 ///   - `fn deleted(*Context, T) void` - [OPTIONAL] Deletion callback.
 ///     If present, called whenever an item is finally deleted.
 ///     Useful if the item has memory that needs to be freed.
 ///
 pub fn RefCountedSet(
     comptime T: type,
-    comptime Id: type,
+    comptime IdT: type,
     comptime RefCountInt: type,
-    comptime Context: type,
+    comptime ContextT: type,
 ) type {
     return struct {
-        const Self = RefCountedSet(T, Id, RefCountInt, Context);
+        const Self = @This();
 
         pub const base_align = @max(
             @alignOf(Context),
@@ -65,6 +64,7 @@ pub fn RefCountedSet(
         pub const Item = struct {
             /// The value this item represents.
             value: T = undefined,
+
             /// Metadata for this item.
             meta: Metadata = .{},
 
@@ -82,6 +82,10 @@ pub fn RefCountedSet(
                 ref: RefCountInt = 0,
             };
         };
+
+        // Re-export these types so they can be referenced by the caller.
+        pub const Id = IdT;
+        pub const Context = ContextT;
 
         /// A hash table of item indices
         table: Offset(Id),
@@ -178,47 +182,37 @@ pub fn RefCountedSet(
             };
         }
 
-        /// Add an item to the set if not present
-        /// and increment its reference count.
+        /// Add an item to the set if not present and increment its ref count.
         ///
         /// Returns the item's ID.
         ///
-        /// If the set has no more room, then an
-        /// OutOfMemory error is returned instead.
+        /// If the set has no more room, then an OutOfMemory error is returned.
         pub fn add(self: *Self, base: anytype, value: T) error{OutOfMemory}!Id {
             const items = self.items.ptr(base);
 
             // Trim dead items from the end of the list.
             while (self.next_id > 1 and items[self.next_id - 1].meta.ref == 0) {
                 self.next_id -= 1;
-
                 self.deleteItem(base, self.next_id);
             }
 
             // If we still don't have an available ID, we're out of memory.
-            if (self.next_id >= self.layout.cap) {
-                return error.OutOfMemory;
-            }
+            if (self.next_id >= self.layout.cap) return error.OutOfMemory;
 
             const id = self.upsert(base, value, self.next_id);
             items[id].meta.ref += 1;
 
-            if (id == self.next_id) {
-                self.next_id += 1;
-            }
+            if (id == self.next_id) self.next_id += 1;
 
             return id;
         }
 
-        /// Add an item to the set if not present
-        /// and increment its reference count.
-        /// If possible, use the provided ID.
+        /// Add an item to the set if not present and increment its
+        /// ref count. If possible, use the provided ID.
         ///
-        /// Returns the item's ID, or null
-        /// if the provided ID was used.
+        /// Returns the item's ID, or null if the provided ID was used.
         ///
-        /// If the set has no more room, then an
-        /// OutOfMemory error is returned instead.
+        /// If the set has no more room, then an OutOfMemory error is returned.
         pub fn addWithId(self: *Self, base: anytype, value: T, id: Id) error{OutOfMemory}!?Id {
             const items = self.items.ptr(base);
 
@@ -371,11 +365,6 @@ pub fn RefCountedSet(
             return tb_ct;
         }
 
-        //================================================//
-        // The functions below are all internal functions //
-        // for performing operations on the hash table.   //
-        //================================================//
-
         /// Delete an item, removing any references from
         /// the table, and freeing its ID to be re-used.
         fn deleteItem(self: *Self, base: anytype, id: Id) void {
@@ -384,13 +373,9 @@ pub fn RefCountedSet(
 
             const item = items[id];
 
-            if (item.meta.bucket > self.layout.table_cap) {
-                return;
-            }
+            if (item.meta.bucket > self.layout.table_cap) return;
 
-            if (table[item.meta.bucket] != id) {
-                return;
-            }
+            if (table[item.meta.bucket] != id) return;
 
             if (comptime @hasDecl(Context, "deleted")) {
                 // Inform the context struct that we're
@@ -471,12 +456,11 @@ pub fn RefCountedSet(
 
         /// Find the provided value in the hash table, or add a new item
         /// for it if not present. If a new item is added, `new_id` will
-        /// be used as the ID.
+        /// be used as the ID. If an existing item is found, the `new_id`
+        /// is ignored and the existing item's ID is returned.
         fn upsert(self: *Self, base: anytype, value: T, new_id: Id) Id {
             // If the item already exists, return it.
-            if (self.lookup(base, value)) |id| {
-                return id;
-            }
+            if (self.lookup(base, value)) |id| return id;
 
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
@@ -484,10 +468,7 @@ pub fn RefCountedSet(
             // The new item that we'll put in to the table.
             var new_item: Item = .{
                 .value = value,
-                .meta = .{
-                    .psl = 0,
-                    .ref = 0,
-                },
+                .meta = .{ .psl = 0, .ref = 0 },
             };
 
             const hash: u64 = self.context.hash(value);
@@ -508,7 +489,6 @@ pub fn RefCountedSet(
                     held_item.meta.bucket = p;
                     self.psl_stats[held_item.meta.psl] += 1;
                     self.max_psl = @max(self.max_psl, held_item.meta.psl);
-
                     break;
                 }
 

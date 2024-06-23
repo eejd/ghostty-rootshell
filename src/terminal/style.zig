@@ -62,11 +62,11 @@ pub const Style = struct {
                     _ = try writer.write("Color.none");
                 },
                 .palette => |p| {
-                    _ = try writer.print("Color.palette{{ {} }}", .{ p });
+                    _ = try writer.print("Color.palette{{ {} }}", .{p});
                 },
                 .rgb => |rgb| {
                     _ = try writer.print("Color.rgb{{ {}, {}, {} }}", .{ rgb.r, rgb.g, rgb.b });
-                }
+                },
             }
         }
     };
@@ -243,23 +243,21 @@ pub const Style = struct {
     }
 };
 
-pub const StyleSetContext = struct {
-    pub fn hash(self: *StyleSetContext, style: Style) u64 {
-        _ = self;
-        return style.hash();
-    }
-
-    pub fn eql(self: *StyleSetContext, a: Style, b: Style) bool {
-        _ = self;
-        return a.eql(b);
-    }
-};
-
 pub const Set = RefCountedSet(
     Style,
     Id,
     size.CellCountInt,
-    StyleSetContext,
+    struct {
+        pub fn hash(self: *const @This(), style: Style) u64 {
+            _ = self;
+            return style.hash();
+        }
+
+        pub fn eql(self: *const @This(), a: Style, b: Style) bool {
+            _ = self;
+            return a.eql(b);
+        }
+    },
 );
 
 test "Set basic usage" {
@@ -272,7 +270,7 @@ test "Set basic usage" {
     const style: Style = .{ .flags = .{ .bold = true } };
     const style2: Style = .{ .flags = .{ .italic = true } };
 
-    var set = Set.init(OffsetBuf.init(buf), layout, StyleSetContext{});
+    var set = Set.init(OffsetBuf.init(buf), layout, .{});
 
     // Add style
     const id = try set.add(buf, style);

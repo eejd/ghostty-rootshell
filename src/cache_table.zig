@@ -46,7 +46,7 @@ pub fn CacheTable(
     comptime bucket_size: u8,
 ) type {
     return struct {
-        const Self = CacheTable(K, V, Context, bucket_count, bucket_size);
+        const Self = @This();
 
         const KV = struct {
             key: K,
