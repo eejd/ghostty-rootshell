@@ -1018,9 +1018,6 @@ pub fn updateFrame(
         if (critical.preedit) |p| p.deinit(self.alloc);
     }
 
-    var cf_release_pool = std.ArrayList(*anyopaque).init(self.alloc);
-    try cf_release_pool.ensureTotalCapacity(state.terminal.rows * 8);
-
     // Build our GPU cells
     try self.rebuildCells(
         critical.full_rebuild,
@@ -1029,27 +1026,23 @@ pub fn updateFrame(
         critical.preedit,
         critical.cursor_style,
         &critical.color_palette,
-        &cf_release_pool,
     );
 
-    if (cf_release_pool.items.len > 0) {
-        const items = try cf_release_pool.toOwnedSlice();
+    if (self.font_shaper.cf_release_pool.items.len > 0) {
+        const alloc = self.font_shaper.alloc;
+        const items = try self.font_shaper.cf_release_pool.toOwnedSlice(alloc);
         if (self.cf_release_thread.mailbox.push(
             .{ .release = .{
                 .refs = items,
-                .alloc = self.alloc,
+                .alloc = alloc,
             } },
             .{ .forever = {} },
         ) != 0) {
             try self.cf_release_thread.wakeup.notify();
         } else {
-            for (items) |ref| {
-                macos.foundation.CFRelease(ref);
-            }
-            self.alloc.free(items);
+            for (items) |ref| macos.foundation.CFRelease(ref);
+            alloc.free(items);
         }
-    } else {
-        cf_release_pool.deinit();
     }
 
     // Update our viewport pin
@@ -1931,7 +1924,6 @@ fn rebuildCells(
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
-    cf_release_pool: *std.ArrayList(*anyopaque),
 ) !void {
     // const start = try std.time.Instant.now();
     // const start_micro = std.time.microTimestamp();
@@ -2013,10 +2005,7 @@ fn rebuildCells(
         while (try iter.next(self.alloc)) |run| {
             // Try to read the cells from the shaping cache if we can.
             const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
-                const cells = if (font.options.backend == .coretext)
-                    try self.font_shaper.shape(run, cf_release_pool)
-                else
-                    try self.font_shaper.shape(run);
+                const cells = try self.font_shaper.shape(run);
 
                 // Try to cache them. If caching fails for any reason we continue
                 // because it is just a performance optimization, not a correctness

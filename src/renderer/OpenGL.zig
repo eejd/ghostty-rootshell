@@ -1025,16 +1025,7 @@ pub fn rebuildCells(
         while (try iter.next(self.alloc)) |run| {
             // Try to read the cells from the shaping cache if we can.
             const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
-                const cells = if (font.options.backend == .coretext) ct: {
-                    var cf_release_pool = std.ArrayList(*anyopaque).init(self.alloc);
-                    defer {
-                        for (cf_release_pool.items) |ref| {
-                            @import("macos").foundation.CFRelease(ref);
-                        }
-                        cf_release_pool.deinit();
-                    }
-                    break :ct try self.font_shaper.shape(run, &cf_release_pool);
-                } else try self.font_shaper.shape(run);
+                const cells = try self.font_shaper.shape(run);
 
                 // Try to cache them. If caching fails for any reason we continue
                 // because it is just a performance optimization, not a correctness

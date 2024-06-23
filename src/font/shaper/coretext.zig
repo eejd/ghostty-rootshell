@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const macos = @import("macos");
@@ -49,12 +50,17 @@ pub const Shaper = struct {
     /// and releasing many objects when shaping.
     writing_direction: *macos.foundation.Array,
 
-    /// List where we cache fonts, so we don't have to
-    /// remake them for every single shaping operation.
+    /// List where we cache fonts, so we don't have to remake them for
+    /// every single shaping operation.
     ///
-    /// Fonts are cached as attribute dictionaries to
-    /// be applied directly to attributed strings.
+    /// Fonts are cached as attribute dictionaries to be applied directly to
+    /// attributed strings.
     cached_fonts: std.ArrayList(?*macos.foundation.Dictionary),
+
+    /// The list of CoreFoundation objects to release on the dedicated
+    /// release thread. This is built up over the course of shaping and
+    /// sent to the release thread when endFrame is called.
+    cf_release_pool: std.ArrayListUnmanaged(*anyopaque),
 
     const CellBuf = std.ArrayListUnmanaged(font.shape.Cell);
     const CodepointList = std.ArrayListUnmanaged(Codepoint);
@@ -209,13 +215,14 @@ pub const Shaper = struct {
         const cached_fonts = std.ArrayList(?*macos.foundation.Dictionary).init(alloc);
         errdefer cached_fonts.deinit();
 
-        return Shaper{
+        return .{
             .alloc = alloc,
             .cell_buf = .{},
             .run_state = run_state,
             .features = feats,
             .writing_direction = writing_direction,
             .cached_fonts = cached_fonts,
+            .cf_release_pool = .{},
         };
     }
 
@@ -227,6 +234,19 @@ pub const Shaper = struct {
 
         self.releaseCachedFonts();
         self.cached_fonts.deinit();
+
+        if (self.cf_release_pool.items.len > 0) {
+            for (self.cf_release_pool.items) |ref| macos.foundation.CFRelease(ref);
+
+            // For tests this logic is normal because we don't want to
+            // wait for a release thread. But in production this is a bug
+            // and we should warn.
+            if (comptime !builtin.is_test) log.warn(
+                "BUG: CFRelease pool was not empty, releasing remaining objects",
+                .{},
+            );
+        }
+        self.cf_release_pool.deinit(self.alloc);
     }
 
     /// Release all cached fonts.
@@ -256,13 +276,12 @@ pub const Shaper = struct {
         };
     }
 
-    /// Expects an ArrayList `cf_release_pool` in which `CFTypeRef`s
-    /// can be placed, which guarantees that they will be `CFRelease`d
-    /// eventually.
+    /// Note that this will accumulate garbage in the release pool. The
+    /// caller must ensure you're properly calling endFrame to release
+    /// all the objects.
     pub fn shape(
         self: *Shaper,
         run: font.shape.TextRun,
-        cf_release_pool: *std.ArrayList(*anyopaque),
     ) ![]const font.shape.Cell {
         const state = &self.run_state;
 
@@ -297,25 +316,24 @@ pub const Shaper = struct {
         const attr_dict: *macos.foundation.Dictionary = try self.getFont(
             run.grid,
             run.font_index,
-            cf_release_pool,
         );
 
         // Make room for the attributed string and the CTLine.
-        try cf_release_pool.ensureUnusedCapacity(3);
+        try self.cf_release_pool.ensureUnusedCapacity(self.alloc, 3);
 
         const str = macos.foundation.String.createWithCharactersNoCopy(state.unichars.items);
-        cf_release_pool.appendAssumeCapacity(str);
+        self.cf_release_pool.appendAssumeCapacity(str);
 
         // Create an attributed string from our string
         const attr_str = try macos.foundation.AttributedString.create(
             str,
             attr_dict,
         );
-        cf_release_pool.appendAssumeCapacity(attr_str);
+        self.cf_release_pool.appendAssumeCapacity(attr_str);
 
         // We should always have one run because we do our own run splitting.
         const line = try macos.text.Line.createWithAttributedString(attr_str);
-        cf_release_pool.appendAssumeCapacity(line);
+        self.cf_release_pool.appendAssumeCapacity(line);
 
         // This keeps track of the current offsets within a single cell.
         var cell_offset: struct {
@@ -411,7 +429,6 @@ pub const Shaper = struct {
         self: *Shaper,
         grid: *font.SharedGrid,
         index: font.Collection.Index,
-        cf_release_pool: *std.ArrayList(*anyopaque),
     ) !*macos.foundation.Dictionary {
         const index_int = index.int();
 
@@ -426,7 +443,8 @@ pub const Shaper = struct {
             return cached;
         }
 
-        try cf_release_pool.ensureUnusedCapacity(3);
+        // Features dictionary, font descriptor, font
+        try self.cf_release_pool.ensureUnusedCapacity(self.alloc, 3);
 
         const run_font = font: {
             // The CoreText shaper relies on CoreText and CoreText claims
@@ -450,17 +468,17 @@ pub const Shaper = struct {
             const original = face.font;
 
             const attrs = try self.features.attrsDict(face.quirks_disable_default_font_features);
-            cf_release_pool.appendAssumeCapacity(attrs);
+            self.cf_release_pool.appendAssumeCapacity(attrs);
 
             const desc = try macos.text.FontDescriptor.createWithAttributes(attrs);
-            cf_release_pool.appendAssumeCapacity(desc);
+            self.cf_release_pool.appendAssumeCapacity(desc);
 
             const copied = try original.copyWithAttributes(0, null, desc);
             errdefer copied.release();
 
             break :font copied;
         };
-        cf_release_pool.appendAssumeCapacity(run_font);
+        self.cf_release_pool.appendAssumeCapacity(run_font);
 
         // Get our font and use that get the attributes to set for the
         // attributed string so the whole string uses the same font.
@@ -500,7 +518,7 @@ pub const Shaper = struct {
 
             const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
                 cp,
-                state.unichars.items[state.unichars.items.len-2..][0..2],
+                state.unichars.items[state.unichars.items.len - 2 ..][0..2],
             );
             if (!pair) {
                 state.unichars.items.len -= 1;
@@ -599,14 +617,6 @@ test "run iterator: empty cells with background set" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
-
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
 
@@ -646,7 +656,7 @@ test "run iterator: empty cells with background set" {
         );
         {
             const run = (try it.next(alloc)).?;
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 3), cells.len);
         }
         try testing.expect(try it.next(alloc) == null);
@@ -656,14 +666,6 @@ test "run iterator: empty cells with background set" {
 test "shape" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -691,7 +693,7 @@ test "shape" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        _ = try shaper.shape(run, &cf_release_pool);
+        _ = try shaper.shape(run);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -699,14 +701,6 @@ test "shape" {
 test "shape nerd fonts" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaperWithFont(alloc, .nerd_font);
     defer testdata.deinit();
@@ -734,7 +728,7 @@ test "shape nerd fonts" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        _ = try shaper.shape(run, &cf_release_pool);
+        _ = try shaper.shape(run);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -742,14 +736,6 @@ test "shape nerd fonts" {
 test "shape inconsolata ligs" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -771,7 +757,7 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 2), cells.len);
             try testing.expect(cells[0].glyph_index != null);
             try testing.expect(cells[1].glyph_index == null);
@@ -796,7 +782,7 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 3), cells.len);
             try testing.expect(cells[0].glyph_index != null);
             try testing.expect(cells[1].glyph_index == null);
@@ -809,14 +795,6 @@ test "shape inconsolata ligs" {
 test "shape monaspace ligs" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaperWithFont(alloc, .monaspace_neon);
     defer testdata.deinit();
@@ -838,7 +816,7 @@ test "shape monaspace ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 3), cells.len);
             try testing.expect(cells[0].glyph_index != null);
             try testing.expect(cells[1].glyph_index == null);
@@ -852,14 +830,6 @@ test "shape monaspace ligs" {
 test "shape left-replaced lig in last run" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaperWithFont(alloc, .geist_mono);
     defer testdata.deinit();
@@ -881,7 +851,7 @@ test "shape left-replaced lig in last run" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 3), cells.len);
             try testing.expect(cells[0].glyph_index != null);
             try testing.expect(cells[1].glyph_index == null);
@@ -895,14 +865,6 @@ test "shape left-replaced lig in last run" {
 test "shape left-replaced lig in early run" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaperWithFont(alloc, .geist_mono);
     defer testdata.deinit();
@@ -922,7 +884,7 @@ test "shape left-replaced lig in early run" {
         );
 
         const run = (try it.next(alloc)).?;
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 4), cells.len);
         try testing.expect(cells[0].glyph_index != null);
         try testing.expect(cells[1].glyph_index == null);
@@ -935,14 +897,6 @@ test "shape left-replaced lig in early run" {
 test "shape U+3C9 with JB Mono" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaperWithFont(alloc, .jetbrains_mono);
     defer testdata.deinit();
@@ -965,7 +919,7 @@ test "shape U+3C9 with JB Mono" {
         var cell_count: usize = 0;
         while (try it.next(alloc)) |run| {
             run_count += 1;
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             cell_count += cells.len;
         }
         try testing.expectEqual(@as(usize, 1), run_count);
@@ -976,14 +930,6 @@ test "shape U+3C9 with JB Mono" {
 test "shape emoji width" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1005,7 +951,7 @@ test "shape emoji width" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
-            const cells = try shaper.shape(run, &cf_release_pool);
+            const cells = try shaper.shape(run);
             try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
@@ -1015,14 +961,6 @@ test "shape emoji width" {
 test "shape emoji width long" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1052,7 +990,7 @@ test "shape emoji width long" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
 
         // screen.testWriteString isn't grapheme aware, otherwise this is one
         try testing.expectEqual(@as(usize, 5), cells.len);
@@ -1063,14 +1001,6 @@ test "shape emoji width long" {
 test "shape variation selector VS15" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1097,7 +1027,7 @@ test "shape variation selector VS15" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
@@ -1106,14 +1036,6 @@ test "shape variation selector VS15" {
 test "shape variation selector VS16" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1140,7 +1062,7 @@ test "shape variation selector VS16" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
@@ -1149,14 +1071,6 @@ test "shape variation selector VS16" {
 test "shape with empty cells in between" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1181,7 +1095,7 @@ test "shape with empty cells in between" {
     while (try it.next(alloc)) |run| {
         count += 1;
 
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 1), count);
         try testing.expectEqual(@as(usize, 7), cells.len);
     }
@@ -1190,14 +1104,6 @@ test "shape with empty cells in between" {
 test "shape Chinese characters" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1227,7 +1133,7 @@ test "shape Chinese characters" {
     while (try it.next(alloc)) |run| {
         count += 1;
 
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 4), cells.len);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
         try testing.expectEqual(@as(u16, 0), cells[1].x);
@@ -1240,14 +1146,6 @@ test "shape Chinese characters" {
 test "shape box glyphs" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1274,7 +1172,7 @@ test "shape box glyphs" {
     var count: usize = 0;
     while (try it.next(alloc)) |run| {
         count += 1;
-        const cells = try shaper.shape(run, &cf_release_pool);
+        const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 2), cells.len);
         try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index.?);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
@@ -1287,14 +1185,6 @@ test "shape box glyphs" {
 test "shape selection boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1322,7 +1212,7 @@ test "shape selection boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1345,7 +1235,7 @@ test "shape selection boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1368,7 +1258,7 @@ test "shape selection boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1391,7 +1281,7 @@ test "shape selection boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 3), count);
     }
@@ -1414,7 +1304,7 @@ test "shape selection boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 3), count);
     }
@@ -1423,14 +1313,6 @@ test "shape selection boundary" {
 test "shape cursor boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1454,7 +1336,7 @@ test "shape cursor boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1473,7 +1355,7 @@ test "shape cursor boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1492,7 +1374,7 @@ test "shape cursor boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 3), count);
     }
@@ -1511,7 +1393,7 @@ test "shape cursor boundary" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1520,14 +1402,6 @@ test "shape cursor boundary" {
 test "shape cursor boundary and colored emoji" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1551,7 +1425,7 @@ test "shape cursor boundary and colored emoji" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1570,7 +1444,7 @@ test "shape cursor boundary and colored emoji" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1587,7 +1461,7 @@ test "shape cursor boundary and colored emoji" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1596,14 +1470,6 @@ test "shape cursor boundary and colored emoji" {
 test "shape cell attribute change" {
     const testing = std.testing;
     const alloc = testing.allocator;
-
-    var cf_release_pool = std.ArrayList(*anyopaque).init(alloc);
-    defer {
-        for (cf_release_pool.items) |ref| {
-            macos.foundation.CFRelease(ref);
-        }
-        cf_release_pool.deinit();
-    }
 
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
@@ -1625,7 +1491,7 @@ test "shape cell attribute change" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1649,7 +1515,7 @@ test "shape cell attribute change" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1674,7 +1540,7 @@ test "shape cell attribute change" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 2), count);
     }
@@ -1699,7 +1565,7 @@ test "shape cell attribute change" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -1723,7 +1589,7 @@ test "shape cell attribute change" {
         var count: usize = 0;
         while (try it.next(alloc)) |run| {
             count += 1;
-            _ = try shaper.shape(run, &cf_release_pool);
+            _ = try shaper.shape(run);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
