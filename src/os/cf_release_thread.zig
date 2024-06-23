@@ -9,15 +9,15 @@ const builtin = @import("builtin");
 const xev = @import("xev");
 const macos = @import("macos");
 
-const BlockingQueue = @import("./blocking_queue.zig").BlockingQueue;
+const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.cf_release_thread);
 
 pub const Message = union(enum) {
-    /// Release a slice of CFTypeRefs. Uses alloc to
-    /// free the slice after releasing all the refs.
-    release: struct{
+    /// Release a slice of CFTypeRefs. Uses alloc to free the slice after
+    /// releasing all the refs.
+    release: struct {
         refs: []*anyopaque,
         alloc: Allocator,
     },
@@ -142,12 +142,10 @@ fn drainMailbox(self: *Thread) !void {
         // log.debug("mailbox message={}", .{message});
         switch (message) {
             .release => |msg| {
-                for (msg.refs) |ref| {
-                    macos.foundation.CFRelease(ref);
-                }
+                for (msg.refs) |ref| macos.foundation.CFRelease(ref);
                 // log.debug("Released {} CFTypeRefs.", .{ msg.refs.len });
                 msg.alloc.free(msg.refs);
-            }
+            },
         }
     }
 }

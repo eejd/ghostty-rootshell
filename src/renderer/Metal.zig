@@ -15,6 +15,7 @@ const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
+const os = @import("../os/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
@@ -25,10 +26,9 @@ const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const CFReleaseThread = os.CFReleaseThread;
 const Terminal = terminal.Terminal;
 const Health = renderer.Health;
-
-const CFReleaseThread = @import("../cf_release_thread.zig");
 
 const mtl = @import("metal/api.zig");
 const mtl_buffer = @import("metal/buffer.zig");
