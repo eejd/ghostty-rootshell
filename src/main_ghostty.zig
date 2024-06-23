@@ -319,6 +319,7 @@ test {
 
     // TODO
     _ = @import("blocking_queue.zig");
+    _ = @import("cache_table.zig");
     _ = @import("config.zig");
     _ = @import("lru.zig");
 }

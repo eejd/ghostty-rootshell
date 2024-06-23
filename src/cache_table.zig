@@ -29,9 +29,9 @@ const assert = std.debug.assert;
 ///
 /// `bucket_count`
 ///   Should ideally be close to the median number of important items that
-///   you expect to be cached at any given point.
-///
-///   Performance will suffer if this is not a power of 2.
+///   you expect to be cached at any given point. This is required to be a
+///   power of 2 since performance suffers if it's not and there's no good
+///   reason to allow it to be anything else.
 ///
 /// `bucket_size`
 ///   should be larger if you expect a large number of unimportant items to
@@ -52,6 +52,10 @@ pub fn CacheTable(
             key: K,
             value: V,
         };
+
+        comptime {
+            assert(std.math.isPowerOfTwo(bucket_count));
+        }
 
         /// `bucket_count` buckets containing `bucket_size` KV pairs each.
         ///
@@ -74,26 +78,25 @@ pub fn CacheTable(
         /// Adds an item to the cache table. If an old value was removed to
         /// make room then it is returned in a struct with its key and value.
         pub fn put(self: *Self, key: K, value: V) ?KV {
+            const kv: KV = .{ .key = key, .value = value };
             const idx: u64 = self.context.hash(key) % bucket_count;
 
-            const kv = .{
-                .key = key,
-                .value = value,
-            };
-
+            // If we have space available in the bucket then we just append
             if (self.lengths[idx] < bucket_size) {
                 self.buckets[idx][self.lengths[idx]] = kv;
                 self.lengths[idx] += 1;
                 return null;
             }
-
             assert(self.lengths[idx] == bucket_size);
 
+            // Append our new item and return the oldest
             const evicted = fastmem.rotateIn(KV, &self.buckets[idx], kv);
 
-            if (comptime @hasDecl(Context, "evicted")) {
-                self.context.evicted(evicted.key, evicted.value);
-            }
+            // The Context is allowed to register an eviction hook.
+            if (comptime @hasDecl(Context, "evicted")) self.context.evicted(
+                evicted.key,
+                evicted.value,
+            );
 
             return evicted;
         }
@@ -129,7 +132,50 @@ pub fn CacheTable(
                     }
                 }
             }
+
             @memset(&self.lengths, 0);
         }
     };
+}
+
+/// Creates a Context automatically for the given key type. This uses the
+/// same logic as std.hash_map.AutoContext today since the API matches.
+fn AutoContext(comptime K: type) type {
+    return std.hash_map.AutoContext(K);
+}
+
+test CacheTable {
+    const testing = std.testing;
+
+    // Construct a table that purposely has a predictable hash so we can
+    // test all edge cases.
+    const T = CacheTable(u32, u32, struct {
+        pub fn hash(self: *const @This(), key: u32) u64 {
+            _ = self;
+            return @intCast(key);
+        }
+
+        pub fn eql(self: *const @This(), a: u32, b: u32) bool {
+            _ = self;
+            return a == b;
+        }
+    }, 2, 2);
+    var t: T = .{ .context = .{} };
+
+    // Fill the table
+    try testing.expect(t.put(0, 0) == null);
+    try testing.expect(t.put(1, 0) == null);
+    try testing.expect(t.put(2, 0) == null);
+    try testing.expect(t.put(3, 0) == null);
+
+    // It should now be full, so any insert should evict the oldest item.
+    // NOTE: For the sake of this test, we're assuming that the first item
+    // is evicted but we don't need to promise this.
+    try testing.expectEqual(T.KV{
+        .key = 0,
+        .value = 0,
+    }, t.put(4, 0).?);
+
+    // The first item should now be gone
+    try testing.expect(t.get(0) == null);
 }
