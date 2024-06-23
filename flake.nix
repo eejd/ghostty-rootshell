@@ -11,7 +11,10 @@
 
     zig = {
       url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs-stable";
+      inputs = {
+        nixpkgs.follows = "nixpkgs-stable";
+        flake-compat.follows = "";
+      };
     };
 
     zls = {
@@ -42,7 +45,7 @@
 
       packages.${system} = let
         mkArgs = optimize: {
-          inherit (pkgs-unstable) zig_0_12;
+          inherit (pkgs-unstable) zig_0_12 lib;
           inherit optimize;
 
           revision = self.shortRev or self.dirtyShortRev or "dirty";
