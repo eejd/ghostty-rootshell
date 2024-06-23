@@ -19,6 +19,17 @@ pub const String = opaque {
         )))) orelse Allocator.Error.OutOfMemory;
     }
 
+    pub fn createWithCharactersNoCopy(
+        unichars: []const u16,
+    ) *String {
+        return @as(*String, @ptrFromInt(@intFromPtr(c.CFStringCreateWithCharactersNoCopy(
+            null,
+            @ptrCast(unichars.ptr),
+            @intCast(unichars.len),
+            foundation.c.kCFAllocatorNull,
+        ))));
+    }
+
     pub fn release(self: *String) void {
         c.CFRelease(self);
     }

@@ -14,55 +14,57 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
-const lru = @import("../../lru.zig");
+const CacheTable = @import("../../cache_table.zig").CacheTable;
 
 const log = std.log.scoped(.font_shaper_cache);
 
-/// Our LRU is the run hash to the shaped cells.
-const LRU = lru.AutoHashMap(u64, []font.shape.Cell);
+/// Context for cache table.
+const CellCacheTableContext = struct {
+    pub fn hash(self: *const CellCacheTableContext, key: u64) u64 {
+        _ = self;
+        return key;
+    }
+    pub fn eql(self: *const CellCacheTableContext, a: u64, b: u64) bool {
+        _ = self;
+        return a == b;
+    }
+};
 
-/// This is the threshold of evictions at which point we reset
-/// the LRU completely. This is a workaround for the issue that
-/// Zig stdlib hashmap gets slower over time
-/// (https://github.com/ziglang/zig/issues/17851).
-///
-/// The value is based on naive measuring on my local machine.
-/// If someone has a better idea of what this value should be,
-/// please let me know.
-const evictions_threshold = 8192;
+/// Cache table for run hash -> shaped cells.
+const CellCacheTable = CacheTable(
+    u64,
+    []font.shape.Cell,
+    CellCacheTableContext,
 
-/// The cache of shaped cells.
-map: LRU,
+    // Capacity is slightly arbitrary. These numbers are guesses.
+    //
+    // I'd expect then an average of 256 frequently cached runs is a
+    // safe guess most terminal screens.
+    256,
+    // 8 items per bucket to give decent resilliency to important runs.
+    8,
+);
 
-/// Keep track of the number of evictions. We use this to workaround
-/// the issue that Zig stdlib hashmap gets slower over time
-/// (https://github.com/ziglang/zig/issues/17851). When evictions
-/// reaches a certain threshold, we reset the LRU.
-evictions: std.math.IntFittingRange(0, evictions_threshold) = 0,
+/// The cache table of shaped cells.
+map: CellCacheTable,
 
 pub fn init() Cache {
-    // Note: this is very arbitrary. Increasing this number will increase
-    // the cache hit rate, but also increase the memory usage. We should do
-    // some more empirical testing to see what the best value is.
-    const capacity = 1024;
-
-    return .{ .map = LRU.init(capacity) };
+    return .{ .map = .{ .context = .{} } };
 }
 
 pub fn deinit(self: *Cache, alloc: Allocator) void {
-    var it = self.map.map.iterator();
-    while (it.next()) |entry| alloc.free(entry.value_ptr.*.data.value);
-    self.map.deinit(alloc);
+    self.clear(alloc);
 }
 
-/// Get the shaped cells for the given text run or null if they are not
-/// in the cache.
-pub fn get(self: *const Cache, run: font.shape.TextRun) ?[]const font.shape.Cell {
+/// Get the shaped cells for the given text run,
+/// or null if they are not in the cache.
+pub fn get(self: *Cache, run: font.shape.TextRun) ?[]const font.shape.Cell {
     return self.map.get(run.hash);
 }
 
-/// Insert the shaped cells for the given text run into the cache. The
-/// cells will be duplicated.
+/// Insert the shaped cells for the given text run into the cache.
+///
+/// The cells will be duplicated.
 pub fn put(
     self: *Cache,
     alloc: Allocator,
@@ -70,33 +72,19 @@ pub fn put(
     cells: []const font.shape.Cell,
 ) Allocator.Error!void {
     const copy = try alloc.dupe(font.shape.Cell, cells);
-    const gop = try self.map.getOrPut(alloc, run.hash);
-    if (gop.evicted) |evicted| {
-        alloc.free(evicted.value);
-
-        // See the doc comment on evictions_threshold for why we do this.
-        self.evictions += 1;
-        if (self.evictions >= evictions_threshold) {
-            log.debug("resetting cache due to too many evictions", .{});
-            // We need to put our value here so deinit can free
-            gop.value_ptr.* = copy;
-            self.clear(alloc);
-
-            // We need to call put again because self is now a
-            // different pointer value so our gop pointers are invalid.
-            return try self.put(alloc, run, cells);
-        }
+    const evicted = self.map.put(run.hash, copy);
+    if (evicted) |kv| {
+        alloc.free(kv.value);
     }
-    gop.value_ptr.* = copy;
-}
-
-pub fn count(self: *const Cache) usize {
-    return self.map.map.count();
 }
 
 fn clear(self: *Cache, alloc: Allocator) void {
-    self.deinit(alloc);
-    self.* = init();
+    for (self.map.buckets, self.map.lengths) |b, l| {
+        for (b[0..l]) |kv| {
+            alloc.free(kv.value);
+        }
+    }
+    self.map.clear();
 }
 
 test Cache {

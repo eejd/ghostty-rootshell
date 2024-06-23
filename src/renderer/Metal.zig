@@ -15,6 +15,7 @@ const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
+const os = @import("../os/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
@@ -25,6 +26,7 @@ const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const CFReleaseThread = os.CFReleaseThread;
 const Terminal = terminal.Terminal;
 const Health = renderer.Health;
 
@@ -690,7 +692,7 @@ pub fn loopEnter(self: *Metal, thr: *renderer.Thread) !void {
 }
 
 /// Called by renderer.Thread when it exits the main loop.
-pub fn loopExit(self: *const Metal) void {
+pub fn loopExit(self: *Metal) void {
     // If we don't support a display link we have no work to do.
     if (comptime DisplayLink == void) return;
 
@@ -995,6 +997,10 @@ pub fn updateFrame(
         critical.cursor_style,
         &critical.color_palette,
     );
+
+    // Notify our shaper we're done for the frame. For some shapers like
+    // CoreText this triggers off-thread cleanup logic.
+    self.font_shaper.endFrame();
 
     // Update our viewport pin
     self.cells_viewport = critical.viewport_pin;
@@ -1877,9 +1883,11 @@ fn rebuildCells(
     color_palette: *const terminal.color.Palette,
 ) !void {
     // const start = try std.time.Instant.now();
+    // const start_micro = std.time.microTimestamp();
     // defer {
     //     const end = std.time.Instant.now() catch unreachable;
-    //     std.log.warn("rebuildCells time={}us", .{end.since(start) / std.time.ns_per_us});
+    //     // "[rebuildCells time] <START us>\t<TIME_TAKEN us>"
+    //     std.log.warn("[rebuildCells time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
     // }
 
     // Create an arena for all our temporary allocations while rebuilding

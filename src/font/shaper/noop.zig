@@ -64,6 +64,10 @@ pub const Shaper = struct {
         self.run_state.deinit(self.alloc);
     }
 
+    pub fn endFrame(self: *const Shaper) void {
+        _ = self;
+    }
+
     pub fn runIterator(
         self: *Shaper,
         grid: *SharedGrid,

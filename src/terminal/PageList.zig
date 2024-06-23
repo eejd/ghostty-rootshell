@@ -1158,17 +1158,17 @@ fn reflowPage(
 
                         // If the source cell has a style, we need to copy it.
                         if (src_cursor.page_cell.style_id != stylepkg.default_id) {
-                            const src_style = src_cursor.page.styles.lookupId(
+                            const src_style = src_cursor.page.styles.get(
                                 src_cursor.page.memory,
                                 src_cursor.page_cell.style_id,
-                            ).?.*;
-
-                            const dst_md = try dst_cursor.page.styles.upsert(
+                            ).*;
+                            if (try dst_cursor.page.styles.addWithId(
                                 dst_cursor.page.memory,
                                 src_style,
-                            );
-                            dst_md.ref += 1;
-                            dst_cursor.page_cell.style_id = dst_md.id;
+                                src_cursor.page_cell.style_id,
+                            )) |id| {
+                                dst_cursor.page_cell.style_id = id;
+                            }
                             dst_cursor.page_row.styled = true;
                         }
                     }
@@ -1903,18 +1903,6 @@ pub fn adjustCapacity(
 
     new_page.data.assertIntegrity();
     return new_page;
-}
-
-/// Compact a page, reallocating to minimize the amount of memory
-/// required for the page. This is useful when we've overflowed ID
-/// spaces, are archiving a page, etc.
-///
-/// Note today: this doesn't minimize the memory usage, but it does
-/// fix style ID overflow. A future update can shrink the memory
-/// allocation.
-pub fn compact(self: *PageList, page: *List.Node) !*List.Node {
-    // Adjusting capacity with no adjustments forces a reallocation.
-    return try self.adjustCapacity(page, .{});
 }
 
 /// Create a new page node. This does not add it to the list and this
@@ -3039,10 +3027,10 @@ pub const Pin = struct {
     /// Returns the style for the given cell in this pin.
     pub fn style(self: Pin, cell: *pagepkg.Cell) stylepkg.Style {
         if (cell.style_id == stylepkg.default_id) return .{};
-        return self.page.data.styles.lookupId(
+        return self.page.data.styles.get(
             self.page.data.memory,
             cell.style_id,
-        ).?.*;
+        ).*;
     }
 
     /// Check if this pin is dirty.
@@ -3302,10 +3290,10 @@ const Cell = struct {
     /// Not meant for non-test usage since this is inefficient.
     pub fn style(self: Cell) stylepkg.Style {
         if (self.cell.style_id == stylepkg.default_id) return .{};
-        return self.page.data.styles.lookupId(
+        return self.page.data.styles.get(
             self.page.data.memory,
             self.cell.style_id,
-        ).?.*;
+        ).*;
     }
 
     /// Gets the screen point for the given cell.
@@ -7363,18 +7351,20 @@ test "PageList resize reflow less cols copy style" {
 
         // Create a style
         const style: stylepkg.Style = .{ .flags = .{ .bold = true } };
-        const style_md = try page.styles.upsert(page.memory, style);
+        const style_id = try page.styles.add(page.memory, style);
 
         for (0..s.cols - 1) |x| {
             const rac = page.getRowAndCell(x, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
                 .content = .{ .codepoint = @intCast(x) },
-                .style_id = style_md.id,
+                .style_id = style_id,
             };
-
-            style_md.ref += 1;
+            page.styles.use(page.memory, style_id);
         }
+
+        // We're over-counted by 1 because `add` implies `use`.
+        page.styles.release(page.memory, style_id);
     }
 
     // Resize
@@ -7391,10 +7381,10 @@ test "PageList resize reflow less cols copy style" {
             const style_id = rac.cell.style_id;
             try testing.expect(style_id != 0);
 
-            const style = offset.page.data.styles.lookupId(
+            const style = offset.page.data.styles.get(
                 offset.page.data.memory,
                 style_id,
-            ).?;
+            );
             try testing.expect(style.flags.bold);
 
             const row = rac.row;
