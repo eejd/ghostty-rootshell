@@ -19,7 +19,9 @@ pub fn build(b: *std.Build) !void {
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
-    try flags.appendSlice(&.{});
+    // Zig 0.13 bug: https://github.com/ziglang/zig/issues/20414
+    // (See root Ghostty build.zig on why we do this)
+    try flags.appendSlice(&.{"-DSIMDUTF_IMPLEMENTATION_ICELAKE=0"});
 
     lib.addCSourceFiles(.{
         .flags = flags.items,
