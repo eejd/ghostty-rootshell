@@ -1017,7 +1017,7 @@ fn addDeps(
     // on x86_64.
     if (step.rootModuleTarget().os.tag == .linux) {
         const triple = try step.rootModuleTarget().linuxTriple(b.allocator);
-        step.addLibraryPath(.{ .path = b.fmt("/usr/lib/{s}", .{triple}) });
+        step.addLibraryPath(.{ .cwd_relative = b.fmt("/usr/lib/{s}", .{triple}) });
     }
 
     // C files
@@ -1028,11 +1028,31 @@ fn addDeps(
     // C++ files
     step.linkLibCpp();
     step.addIncludePath(b.path("src"));
-    step.addCSourceFiles(.{ .files = &.{
-        "src/simd/codepoint_width.cpp",
-        "src/simd/index_of.cpp",
-        "src/simd/vt.cpp",
-    } });
+    {
+        // From hwy/detect_targets.h
+        const HWY_AVX3_SPR: c_int = 1 << 4;
+        const HWY_AVX3_ZEN4: c_int = 1 << 6;
+        const HWY_AVX3_DL: c_int = 1 << 7;
+        const HWY_AVX3: c_int = 1 << 8;
+
+        // Zig 0.13 bug: https://github.com/ziglang/zig/issues/20414
+        // To workaround this we just disable AVX512 support completely.
+        // The performance difference between AVX2 and AVX512 is not
+        // significant for our use case and AVX512 is very rare on consumer
+        // hardware anyways.
+        const HWY_DISABLED_TARGETS: c_int = HWY_AVX3_SPR | HWY_AVX3_ZEN4 | HWY_AVX3_DL | HWY_AVX3;
+
+        step.addCSourceFiles(.{
+            .files = &.{
+                "src/simd/codepoint_width.cpp",
+                "src/simd/index_of.cpp",
+                "src/simd/vt.cpp",
+            },
+            .flags = if (step.rootModuleTarget().cpu.arch == .x86_64) &.{
+                b.fmt("-DHWY_DISABLED_TARGETS={}", .{HWY_DISABLED_TARGETS}),
+            } else &.{},
+        });
+    }
 
     // If we're building a lib we have some different deps
     const lib = step.kind == .lib;
@@ -1485,7 +1505,7 @@ fn root() []const u8 {
 }
 
 /// ANSI escape codes for colored log output
-const color_map = std.ComptimeStringMap([]const u8, .{
+const color_map = std.StaticStringMap([]const u8).initComptime(.{
     &.{ "black", "30m" },
     &.{ "blue", "34m" },
     &.{ "b", "1m" },

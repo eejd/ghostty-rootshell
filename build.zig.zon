@@ -5,25 +5,25 @@
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/efde8a170836334901ed2d59c98bf832eb48ae3a.tar.gz",
-            .hash = "1220bf10f4fc109ca0b50520075e2e730900956e220adee616a01f3f91bc8a802695",
+            .url = "https://github.com/mitchellh/libxev/archive/a42b74ae8139738a14148f94543c659ec2d5b92b.tar.gz",
+            .hash = "1220ff99305b4072365c5b1dfada4ba2fa3dc51b38118f39365cdc63469953840365",
         },
         .mach_glfw = .{
-            .url = "https://github.com/mitchellh/mach-glfw/archive/20c773d86df269722d8926f98bc8af26ebd90999.tar.gz",
-            .hash = "1220d6df7eb57501616e86ed812854164ff02d2f4a0eaa06b8301f32950d8d3e89df",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/37c2995f31abcf7e8378fba68ddcf4a3faa02de0.tar.gz",
+            .hash = "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a62",
             .lazy = true,
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/9e2174ed9b5a2c11bf1779cf6c819260c8091888.tar.gz",
-            .hash = "1220014cd3774aa0b18320e6527ed7b3270412c70958ab16a3c55070ffb7f2042f87",
+            .url = "https://github.com/mitchellh/zig-objc/archive/fe5ac419530cf800294369d996133fe9cd067aec.tar.gz",
+            .hash = "122034b3e15d582d8d101a7713e5f13c872b8b8eb6d9cb47515b8e34ee75e122630d",
         },
         .zig_js = .{
-            .url = "https://github.com/mitchellh/zig-js/archive/d4edb682733aef8dc3933683272bdf7c8b9fe658.tar.gz",
-            .hash = "1220df81f0e65cc9ccd3628572c611e6f267a71f1bff1be19d50f4ac49ee2a83c324",
+            .url = "https://github.com/mitchellh/zig-js/archive/d0b8b0a57c52fbc89f9d9fecba75ca29da7dd7d1.tar.gz",
+            .hash = "12205a66d423259567764fa0fc60c82be35365c21aeb76c5a7dc99698401f4f6fefc",
         },
         .ziglyph = .{
-            .url = "https://deps.files.ghostty.dev/ziglyph-0e17bd36a4e882b194a87c283bd78562ea215116.tar.gz",
-            .hash = "12208553f3f47e51494e187f4c0e6f6b3844e3993436cad4a0e8c4db4e99645967b5",
+            .url = "https://deps.files.ghostty.dev/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz",
+            .hash = "12207831bce7d4abce57b5a98e8f3635811cfefd160bca022eb91fe905d36a02cf25",
         },
 
         // C libs

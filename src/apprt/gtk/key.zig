@@ -72,7 +72,7 @@ test "accelFromTrigger" {
 
     try testing.expectEqualStrings("<Super>q", (try accelFromTrigger(&buf, .{
         .mods = .{ .super = true },
-        .key = .q,
+        .key = .{ .translated = .q },
     })).?);
 }
 

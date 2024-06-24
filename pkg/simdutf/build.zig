@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     lib.linkLibCpp();
-    lib.addIncludePath(.{ .path = "vendor" });
+    lib.addIncludePath(b.path("vendor"));
 
     if (target.result.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
@@ -19,7 +19,9 @@ pub fn build(b: *std.Build) !void {
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
-    try flags.appendSlice(&.{});
+    // Zig 0.13 bug: https://github.com/ziglang/zig/issues/20414
+    // (See root Ghostty build.zig on why we do this)
+    try flags.appendSlice(&.{"-DSIMDUTF_IMPLEMENTATION_ICELAKE=0"});
 
     lib.addCSourceFiles(.{
         .flags = flags.items,
@@ -28,7 +30,7 @@ pub fn build(b: *std.Build) !void {
         },
     });
     lib.installHeadersDirectory(
-        .{ .path = "vendor" },
+        b.path("vendor"),
         "",
         .{ .include_extensions = &.{".h"} },
     );

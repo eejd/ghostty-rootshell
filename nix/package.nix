@@ -22,7 +22,7 @@
   git,
   ncurses,
   pkg-config,
-  zig_0_12,
+  zig_0_13,
   pandoc,
   revision ? "dirty",
   optimize ? "Debug",
@@ -34,7 +34,7 @@
   # https://github.com/ziglang/zig/issues/14281#issuecomment-1624220653 is
   # ultimately acted on and has made its way to a nixpkgs implementation, this
   # can probably be removed in favor of that.
-  zig012Hook = zig_0_12.hook.overrideAttrs {
+  zig012Hook = zig_0_13.hook.overrideAttrs {
     zig_default_flags = "-Dcpu=baseline -Doptimize=${optimize}";
   };
 
@@ -79,7 +79,7 @@
     name = "ghostty-cache";
     nativeBuildInputs = [
       git
-      zig_0_12.hook
+      zig_0_13.hook
     ];
 
     dontConfigure = true;
