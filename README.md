@@ -257,14 +257,21 @@ is launched within Ghostty and (2) to find the shell-integration.
 For example, for bash, you'd put this _at the top_ of your `~/.bashrc`:
 
 ```bash
-# Ghostty shell integration
-if [ -n "$GHOSTTY_RESOURCES_DIR" ]; then
+# Ghostty shell integration for Bash. This must be at the top of your
+# bashrc!
+if [ -n "${GHOSTTY_RESOURCES_DIR}" ]; then
     builtin source "${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash"
 fi
 ```
 
-**This must be at the top of your bashrc, not the bottom.** The same
-goes for any other shell.
+Each shell integration's installation instructions are documented inline:
+
+| Shell  | Integration
+| ------ | -----------
+| `bash` | `${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash`
+| `fish` | `${GHOSTTY_RESOURCES_DIR}/shell-integration/fish/vendor_conf.d/ghostty-shell-integration.fish`
+| `zsh`  | `${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration`
+
 
 ### Terminfo
 
