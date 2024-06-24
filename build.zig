@@ -24,7 +24,7 @@ const Command = @import("src/Command.zig");
 // Zig version. We don't check a maximum so that devs can try newer
 // versions but this is the only version we guarantee to work.
 comptime {
-    const required_zig = "0.12.0";
+    const required_zig = "0.13.0";
     const current_zig = builtin.zig_version;
     const min_zig = std.SemanticVersion.parse(required_zig) catch unreachable;
     if (current_zig.order(min_zig) == .lt) {
