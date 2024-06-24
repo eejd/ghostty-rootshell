@@ -141,10 +141,12 @@ pub fn RefCountedSet(
             const items_cap: Id = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
 
             const table_start = 0;
-            const table_end = table_start + table_cap * @sizeOf(Id);
+            const table_cap_usize: usize = @intCast(table_cap);
+            const table_end = table_start + table_cap_usize * @sizeOf(Id);
 
             const items_start = std.mem.alignForward(usize, table_end, @alignOf(Item));
-            const items_end = items_start + items_cap * @sizeOf(Item);
+            const items_cap_usize: usize = @intCast(items_cap);
+            const items_end = items_start + items_cap_usize * @sizeOf(Item);
 
             const total_size = items_end;
 

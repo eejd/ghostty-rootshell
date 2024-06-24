@@ -314,3 +314,8 @@ test "Set basic usage" {
     set.release(buf, id);
     try testing.expect(set.refCount(buf, id) == 0);
 }
+
+test "Set capacities" {
+    // We want to support at least this many styles without overflowing.
+    _ = Set.layout(16384);
+}
