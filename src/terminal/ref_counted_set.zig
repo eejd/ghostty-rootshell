@@ -374,7 +374,7 @@ pub fn RefCountedSet(
         }
 
         /// Get the current number of non-dead items in the set.
-        pub fn count(self: *Self) usize {
+        pub fn count(self: *const Self) usize {
             return self.living;
         }
 
