@@ -237,6 +237,7 @@ pub const Page = struct {
         MissingStyle,
         UnmarkedStyleRow,
         MismatchedStyleRef,
+        ZombieStyles,
         InvalidStyleCount,
         InvalidSpacerTailLocation,
         InvalidSpacerHeadLocation,
@@ -427,6 +428,37 @@ pub const Page = struct {
                     );
                     return IntegrityError.MismatchedStyleRef;
                 }
+            }
+        }
+
+        // Verify there are no zombie styles, that is, styles in the
+        // set with ref counts > 0, which are not present in the page.
+        {
+            const styles_table = self.styles.table.ptr(self.memory)[0..self.styles.layout.table_cap];
+            const styles_items = self.styles.items.ptr(self.memory)[0..self.styles.layout.cap];
+
+            var zombies: usize = 0;
+
+            for (styles_table) |id| {
+                if (id == 0) continue;
+                const item = styles_items[id];
+                if (item.meta.ref == 0) continue;
+
+                const expected = styles_seen.get(id) orelse 0;
+                if (expected > 0) continue;
+
+                if (item.meta.ref > expected) {
+                    zombies += 1;
+                }
+            }
+
+            // Just 1 zombie style might be the cursor style, so ignore it.
+            if (zombies > 1) {
+                log.warn(
+                    "page integrity violation zombie styles count={}",
+                    .{zombies},
+                );
+                return IntegrityError.ZombieStyles;
             }
         }
     }
