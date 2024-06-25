@@ -401,7 +401,7 @@ pub fn RefCountedSet(
             items[id] = .{};
 
             var p: Id = item.meta.bucket;
-            var n: Id = @addWithOverflow(p, 1)[0] & self.layout.table_mask;
+            var n: Id = (p +% 1) & self.layout.table_mask;
 
             while (table[n] != 0 and items[table[n]].meta.psl > 0) {
                 items[table[n]].meta.bucket = p;
@@ -410,7 +410,7 @@ pub fn RefCountedSet(
                 self.psl_stats[items[table[n]].meta.psl] += 1;
                 table[p] = table[n];
                 p = n;
-                n = @addWithOverflow(n, 1)[0] & self.layout.table_mask;
+                n = (p +% 1) & self.layout.table_mask;
             }
 
             while (self.max_psl > 0 and self.psl_stats[self.max_psl] == 0) {
