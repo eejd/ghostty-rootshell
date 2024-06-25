@@ -313,12 +313,21 @@ pub fn clonePool(
         };
 
         const start_pin = pin_remap.get(ordered.tl) orelse start: {
-
             // No start means it is outside the cloned area. We change it
-            // to the top-left. If we have no end pin then our whole
-            // selection is outside the cloned area so we can just set it
-            // as null.
-            if (pin_remap.get(ordered.br) == null) break :sel null;
+            // to the top-left.
+
+            // If we have no end pin then either
+            // (1) our whole selection is outside the cloned area or
+            // (2) our cloned area is within the selection
+            if (pin_remap.get(ordered.br) == null) {
+                // If our tl is before the cloned area and br is after
+                // the cloned area then the whole screen is selected.
+                // This detection is somewhat more expensive so we try
+                // to avoid it if possible so its nested in this if.
+                const clone_top = self.pages.pin(top) orelse break :sel null;
+                if (!sel.contains(self, clone_top)) break :sel null;
+            }
+
             break :start try pages.trackPin(.{ .page = pages.pages.first.? });
         };
 
@@ -3672,6 +3681,43 @@ test "Screen: clone contains selection end cutoff reversed" {
         try testing.expectEqual(point.Point{ .active = .{
             .x = s2.pages.cols - 1,
             .y = 2,
+        } }, s2.pages.pointFromPin(.active, sel.end()).?);
+    }
+}
+
+test "Screen: clone contains subset of selection" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 4, 1);
+    defer s.deinit();
+    try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n4ABCD");
+
+    // Select the full screen
+    try s.select(Selection.init(
+        s.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
+        s.pages.pin(.{ .active = .{ .x = 0, .y = 3 } }).?,
+        false,
+    ));
+
+    // Clone
+    var s2 = try s.clone(
+        alloc,
+        .{ .active = .{ .y = 1 } },
+        .{ .active = .{ .y = 2 } },
+    );
+    defer s2.deinit();
+
+    // Our selection should remain valid
+    {
+        const sel = s2.selection.?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 0,
+            .y = 0,
+        } }, s2.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = s2.pages.cols - 1,
+            .y = 3,
         } }, s2.pages.pointFromPin(.active, sel.end()).?);
     }
 }
