@@ -719,7 +719,7 @@ You can also test the build of the nix package at any time by running `nix build
 #### Updating the Zig Cache Fixed-Output Derivation Hash
 
 The Nix package depends on a [fixed-output
-derivation](https://nixos.org/manual/nix/stable/language/advanced-attributes.html#adv-attr-outputHash)
+derivation](https://nix.dev/manual/nix/stable/language/advanced-attributes.html#adv-attr-outputHash)
 that manages the Zig package cache. This allows the package to be built in the
 Nix sandbox.
 
