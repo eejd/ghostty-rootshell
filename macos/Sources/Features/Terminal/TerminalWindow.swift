@@ -194,7 +194,9 @@ class TerminalWindow: NSWindow {
         newTabButtonImageLayer = nil
         effectViewIsHidden = false
 
-        if titlebarTabs {
+        // We can only update titlebar tabs if there is a titlebar. Without the
+        // styleMask check the app will crash (issue #1876)
+        if titlebarTabs && styleMask.contains(.titled) {
             guard let tabBarAccessoryViewController = titlebarAccessoryViewControllers.first(where: { $0.identifier == Self.TabBarController}) else { return }
 
             tabBarAccessoryViewController.layoutAttribute = .right
