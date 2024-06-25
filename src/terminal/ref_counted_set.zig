@@ -339,10 +339,7 @@ pub fn RefCountedSet(
 
             assert(item.meta.ref > 0);
             item.meta.ref -= 1;
-
-            if (item.meta.ref == 0) {
-                self.living -= 1;
-            }
+            if (item.meta.ref == 0) self.living -= 1;
         }
 
         /// Release a specified number of references to an item by its ID.
