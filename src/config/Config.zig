@@ -1199,18 +1199,21 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
     }
 
-    // Fonts
-    try result.keybind.set.put(
-        alloc,
-        .{ .key = .{ .translated = .equal }, .mods = inputpkg.ctrlOrSuper(.{}) },
-        .{ .increase_font_size = 1 },
-    );
     // Increase font size mapping for keyboards with dedicated plus keys (like german)
+    // Note: this order matters below because the C API will only return
+    // the last keybinding for a given action. The macOS app uses this to
+    // set the expected keybind for the menu.
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .plus }, .mods = inputpkg.ctrlOrSuper(.{}) },
         .{ .increase_font_size = 1 },
     );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .equal }, .mods = inputpkg.ctrlOrSuper(.{}) },
+        .{ .increase_font_size = 1 },
+    );
+
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .minus }, .mods = inputpkg.ctrlOrSuper(.{}) },
