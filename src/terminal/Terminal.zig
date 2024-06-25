@@ -2826,8 +2826,8 @@ test "Terminal: print over wide char with bold" {
     try t.print(0x1F600); // Smiley face
     // verify we have styles in our style map
     {
-        const page = t.screen.cursor.page_pin.page.data;
-        try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+        const page = &t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 1), page.styles.count());
     }
 
     // Go back and overwrite with no style
@@ -2837,8 +2837,8 @@ test "Terminal: print over wide char with bold" {
 
     // verify our style is gone
     {
-        const page = t.screen.cursor.page_pin.page.data;
-        try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+        const page = &t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 0), page.styles.count());
     }
 
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
@@ -2856,8 +2856,8 @@ test "Terminal: print over wide char with bg color" {
     try t.print(0x1F600); // Smiley face
     // verify we have styles in our style map
     {
-        const page = t.screen.cursor.page_pin.page.data;
-        try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+        const page = &t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 1), page.styles.count());
     }
 
     // Go back and overwrite with no style
@@ -2867,8 +2867,8 @@ test "Terminal: print over wide char with bg color" {
 
     // verify our style is gone
     {
-        const page = t.screen.cursor.page_pin.page.data;
-        try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+        const page = &t.screen.cursor.page_pin.page.data;
+        try testing.expectEqual(@as(usize, 0), page.styles.count());
     }
 
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
@@ -3322,7 +3322,7 @@ test "Terminal: overwrite multicodepoint grapheme clears grapheme data" {
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
 
     // We should have one cell with graphemes
-    const page = t.screen.cursor.page_pin.page.data;
+    const page = &t.screen.cursor.page_pin.page.data;
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     // Move back and overwrite wide
@@ -3362,7 +3362,7 @@ test "Terminal: overwrite multicodepoint grapheme tail clears grapheme data" {
     try testing.expectEqual(@as(usize, 2), t.screen.cursor.x);
 
     // We should have one cell with graphemes
-    const page = t.screen.cursor.page_pin.page.data;
+    const page = &t.screen.cursor.page_pin.page.data;
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     // Move back and overwrite wide
@@ -4534,8 +4534,8 @@ test "Terminal: insertLines handles style refs" {
     try t.setAttribute(.{ .unset = {} });
 
     // verify we have styles in our style map
-    const page = t.screen.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    const page = &t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 
     t.setCursorPos(2, 2);
     t.insertLines(1);
@@ -4547,7 +4547,7 @@ test "Terminal: insertLines handles style refs" {
     }
 
     // verify we have no styles in our style map
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Terminal: insertLines outside of scroll region" {
@@ -5336,14 +5336,14 @@ test "Terminal: eraseChars handles refcounted styles" {
     try t.print('C');
 
     // verify we have styles in our style map
-    const page = t.screen.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    const page = &t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 
     t.setCursorPos(1, 1);
     t.eraseChars(2);
 
     // verify we have no styles in our style map
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Terminal: eraseChars protected attributes respected with iso" {
@@ -7043,7 +7043,7 @@ test "Terminal: bold style" {
         const cell = list_cell.cell;
         try testing.expectEqual(@as(u21, 'A'), cell.content.codepoint);
         try testing.expect(cell.style_id != 0);
-        const page = t.screen.cursor.page_pin.page.data;
+        const page = &t.screen.cursor.page_pin.page.data;
         try testing.expect(page.styles.refCount(page.memory, t.screen.cursor.style_id) > 1);
     }
 }
@@ -7067,8 +7067,8 @@ test "Terminal: garbage collect overwritten" {
     }
 
     // verify we have no styles in our style map
-    const page = t.screen.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    const page = &t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Terminal: do not garbage collect old styles in use" {
@@ -7089,8 +7089,8 @@ test "Terminal: do not garbage collect old styles in use" {
     }
 
     // verify we have no styles in our style map
-    const page = t.screen.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    const page = &t.screen.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 }
 
 test "Terminal: print with style marks the row as styled" {
@@ -7425,7 +7425,7 @@ test "Terminal: insertBlanks deleting graphemes" {
     try t.print(0x1F467);
 
     // We should have one cell with graphemes
-    const page = t.screen.cursor.page_pin.page.data;
+    const page = &t.screen.cursor.page_pin.page.data;
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);
@@ -7461,7 +7461,7 @@ test "Terminal: insertBlanks shift graphemes" {
     try t.print(0x1F467);
 
     // We should have one cell with graphemes
-    const page = t.screen.cursor.page_pin.page.data;
+    const page = &t.screen.cursor.page_pin.page.data;
     try testing.expectEqual(@as(usize, 1), page.graphemeCount());
 
     t.setCursorPos(1, 1);

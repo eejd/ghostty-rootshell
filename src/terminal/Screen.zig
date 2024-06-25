@@ -1175,7 +1175,7 @@ pub fn setAttribute(self: *Screen, attr: sgr.Attribute) !void {
 pub fn manualStyleUpdate(self: *Screen) !void {
     var page = &self.cursor.page_pin.page.data;
 
-    // std.log.warn("active styles={}", .{page.styles.count(page.memory)});
+    // std.log.warn("active styles={}", .{page.styles.count()});
 
     // Release our previous style if it was not default.
     if (self.cursor.style_id != style.default_id) {
@@ -1201,12 +1201,17 @@ pub fn manualStyleUpdate(self: *Screen) !void {
     const id = page.styles.add(
         page.memory,
         self.cursor.style,
-    ) catch id: {
-        // Our style map is full. Let's allocate a new
-        // page by doubling the size and then try again.
+    ) catch |err| id: {
+        // Our style map is full or needs to be rehashed,
+        // so we allocate a new page, which will rehash,
+        // and double the style capacity for it if it was
+        // full.
         const node = try self.pages.adjustCapacity(
             self.cursor.page_pin.page,
-            .{ .styles = page.capacity.styles * 2 },
+            switch (err) {
+                error.OutOfMemory => .{ .styles = page.capacity.styles * 2 },
+                error.NeedsRehash => .{},
+            },
         );
 
         page = &node.data;
@@ -2388,17 +2393,17 @@ test "Screen cursorCopy style deref" {
 
     var s2 = try Screen.init(alloc, 10, 10, 0);
     defer s2.deinit();
-    const page = s2.cursor.page_pin.page.data;
+    const page = &s2.cursor.page_pin.page.data;
 
     // Bold should create our style
     try s2.setAttribute(.{ .bold = {} });
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
     try testing.expect(s2.cursor.style.flags.bold);
 
     // Copy default style, should release our style
     try s2.cursorCopy(s.cursor);
     try testing.expect(!s2.cursor.style.flags.bold);
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Screen cursorCopy style copy" {
@@ -2411,10 +2416,10 @@ test "Screen cursorCopy style copy" {
 
     var s2 = try Screen.init(alloc, 10, 10, 0);
     defer s2.deinit();
-    const page = s2.cursor.page_pin.page.data;
+    const page = &s2.cursor.page_pin.page.data;
     try s2.cursorCopy(s.cursor);
     try testing.expect(s2.cursor.style.flags.bold);
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 }
 
 test "Screen style basics" {
@@ -2423,19 +2428,19 @@ test "Screen style basics" {
 
     var s = try Screen.init(alloc, 80, 24, 1000);
     defer s.deinit();
-    const page = s.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    const page = &s.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 
     // Set a new style
     try s.setAttribute(.{ .bold = {} });
     try testing.expect(s.cursor.style_id != 0);
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
     try testing.expect(s.cursor.style.flags.bold);
 
     // Set another style, we should still only have one since it was unused
     try s.setAttribute(.{ .italic = {} });
     try testing.expect(s.cursor.style_id != 0);
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
     try testing.expect(s.cursor.style.flags.italic);
 }
 
@@ -2445,18 +2450,18 @@ test "Screen style reset to default" {
 
     var s = try Screen.init(alloc, 80, 24, 1000);
     defer s.deinit();
-    const page = s.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    const page = &s.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 
     // Set a new style
     try s.setAttribute(.{ .bold = {} });
     try testing.expect(s.cursor.style_id != 0);
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 
     // Reset to default
     try s.setAttribute(.{ .reset_bold = {} });
     try testing.expect(s.cursor.style_id == 0);
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Screen style reset with unset" {
@@ -2465,18 +2470,18 @@ test "Screen style reset with unset" {
 
     var s = try Screen.init(alloc, 80, 24, 1000);
     defer s.deinit();
-    const page = s.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    const page = &s.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 
     // Set a new style
     try s.setAttribute(.{ .bold = {} });
     try testing.expect(s.cursor.style_id != 0);
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 
     // Reset to default
     try s.setAttribute(.{ .unset = {} });
     try testing.expect(s.cursor.style_id == 0);
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
 test "Screen clearRows active one line" {
@@ -2522,13 +2527,13 @@ test "Screen clearRows active styled line" {
     try s.setAttribute(.{ .unset = {} });
 
     // We should have one style
-    const page = s.cursor.page_pin.page.data;
-    try testing.expectEqual(@as(usize, 1), page.styles.count(page.memory));
+    const page = &s.cursor.page_pin.page.data;
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
 
     s.clearRows(.{ .active = .{} }, null, false);
 
     // We should have none because active cleared it
-    try testing.expectEqual(@as(usize, 0), page.styles.count(page.memory));
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
 
     const str = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
     defer alloc.free(str);

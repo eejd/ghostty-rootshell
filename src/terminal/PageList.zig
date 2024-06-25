@@ -490,6 +490,12 @@ pub fn clone(
             src.* = old_dst;
             dirty.setValue(i, dirty.isSet(i + chunk.start));
         }
+
+        // We need to clear the rows we're about to truncate.
+        for (len..page.data.size.rows) |i| {
+            page.data.clearCells(&rows[i], 0, page.data.size.cols);
+        }
+
         page.data.size.rows = @intCast(len);
         total_rows += len;
 
@@ -1839,7 +1845,7 @@ pub const AdjustCapacity = struct {
     /// Adjust the number of styles in the page. This may be
     /// rounded up if necessary to fit alignment requirements,
     /// but it will never be rounded down.
-    styles: ?u16 = null,
+    styles: ?usize = null,
 
     /// Adjust the number of available grapheme bytes in the page.
     grapheme_bytes: ?usize = null,
@@ -1871,7 +1877,7 @@ pub fn adjustCapacity(
     var cap = page.data.capacity;
 
     if (adjustment.styles) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(u16, v);
+        const aligned = try std.math.ceilPowerOfTwo(usize, v);
         cap.styles = @max(cap.styles, aligned);
     }
     if (adjustment.grapheme_bytes) |v| {
@@ -4757,6 +4763,56 @@ test "PageList clone partial trimmed left" {
     });
     defer s2.deinit();
     try testing.expectEqual(@as(usize, 40), s2.totalRows());
+}
+
+test "PageList clone partial trimmed left reclaims styles" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 20, null);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, s.rows), s.totalRows());
+    try s.growRows(30);
+
+    // Style the rows we're trimming
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        const style: stylepkg.Style = .{ .flags = .{ .bold = true } };
+        const style_id = try page.styles.add(page.memory, style);
+
+        var it = s.rowIterator(.left_up, .{ .screen = .{} }, .{ .screen = .{ .y = 9 } });
+        while (it.next()) |p| {
+            const rac = p.rowAndCell();
+            rac.row.styled = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 'A' },
+                .style_id = style_id,
+            };
+            page.styles.use(page.memory, style_id);
+        }
+
+        // We're over-counted by 1 because `add` implies `use`.
+        page.styles.release(page.memory, style_id);
+
+        // Expect to have one style
+        try testing.expectEqual(1, page.styles.count());
+    }
+
+    var s2 = try s.clone(.{
+        .top = .{ .screen = .{ .y = 10 } },
+        .memory = .{ .alloc = alloc },
+    });
+    defer s2.deinit();
+    try testing.expectEqual(@as(usize, 40), s2.totalRows());
+
+    {
+        try testing.expect(s2.pages.first == s2.pages.last);
+        const page = &s2.pages.first.?.data;
+        try testing.expectEqual(0, page.styles.count());
+    }
 }
 
 test "PageList clone partial trimmed both" {

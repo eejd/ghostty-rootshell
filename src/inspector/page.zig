@@ -37,7 +37,7 @@ pub fn render(page: *const terminal.Page) void {
         }
         {
             _ = cimgui.c.igTableSetColumnIndex(1);
-            cimgui.c.igText("%d", page.styles.count(page.memory));
+            cimgui.c.igText("%d", page.styles.count());
         }
     }
     {

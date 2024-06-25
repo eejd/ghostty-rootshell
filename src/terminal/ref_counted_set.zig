@@ -13,9 +13,9 @@ const fastmem = @import("../fastmem.zig");
 /// the exact memory requirement of a given capacity by calling `layout`
 /// and checking the total size.
 ///
-/// When the set exceeds capacity, `error.OutOfMemory` is returned from
-/// any memory-using methods. The caller is responsible for determining
-/// a path forward.
+/// When the set exceeds capacity, an `OutOfMemory` or `NeedsRehash` error
+/// is returned from any memory-using methods. The caller is responsible
+/// for determining a path forward.
 ///
 /// This set is reference counted. Each item in the set has an associated
 /// reference count. The caller is responsible for calling release for an
@@ -108,6 +108,9 @@ pub fn RefCountedSet(
         /// The backing store of items
         items: Offset(Item),
 
+        /// The number of living items currently stored in the set.
+        living: Id = 0,
+
         /// The next index to store an item at.
         /// Id 0 is reserved for unused items.
         next_id: Id = 1,
@@ -132,21 +135,22 @@ pub fn RefCountedSet(
         ///
         /// The returned layout `cap` property will be 1 more than the number
         /// of items that the set can actually store, since ID 0 is reserved.
-        pub fn layout(cap: Id) Layout {
+        pub fn layout(cap: usize) Layout {
             // Experimentally, this load factor works quite well.
             const load_factor = 0.8125;
 
-            const table_cap: Id = std.math.ceilPowerOfTwoAssert(Id, cap);
-            const table_mask: Id = (@as(Id, 1) << std.math.log2_int(Id, table_cap)) - 1;
-            const items_cap: Id = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
+            assert(cap <= @as(usize, @intCast(std.math.maxInt(Id))) + 1);
+
+            const table_cap: usize = std.math.ceilPowerOfTwoAssert(usize, cap);
+            const items_cap: usize = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
+
+            const table_mask: Id = @intCast((@as(usize, 1) << std.math.log2_int(usize, table_cap)) - 1);
 
             const table_start = 0;
-            const table_cap_usize: usize = @intCast(table_cap);
-            const table_end = table_start + table_cap_usize * @sizeOf(Id);
+            const table_end = table_start + table_cap * @sizeOf(Id);
 
             const items_start = std.mem.alignForward(usize, table_end, @alignOf(Item));
-            const items_cap_usize: usize = @intCast(items_cap);
-            const items_end = items_start + items_cap_usize * @sizeOf(Item);
+            const items_end = items_start + items_cap * @sizeOf(Item);
 
             const total_size = items_end;
 
@@ -161,8 +165,8 @@ pub fn RefCountedSet(
         }
 
         pub const Layout = struct {
-            cap: Id,
-            table_cap: Id,
+            cap: usize,
+            table_cap: usize,
             table_mask: Id,
             table_start: usize,
             items_start: usize,
@@ -184,12 +188,23 @@ pub fn RefCountedSet(
             };
         }
 
+        /// Possible errors for `add` and `addWithId`.
+        pub const AddError = error{
+            /// There is not enough memory to add a new item.
+            /// Remove items or grow and reinitialize.
+            OutOfMemory,
+
+            /// The set needs to be rehashed, as there are many dead
+            /// items with lower IDs which are inaccessible for re-use.
+            NeedsRehash,
+        };
+
         /// Add an item to the set if not present and increment its ref count.
         ///
         /// Returns the item's ID.
         ///
         /// If the set has no more room, then an OutOfMemory error is returned.
-        pub fn add(self: *Self, base: anytype, value: T) error{OutOfMemory}!Id {
+        pub fn add(self: *Self, base: anytype, value: T) AddError!Id {
             const items = self.items.ptr(base);
 
             // Trim dead items from the end of the list.
@@ -198,13 +213,33 @@ pub fn RefCountedSet(
                 self.deleteItem(base, self.next_id);
             }
 
-            // If we still don't have an available ID, we're out of memory.
-            if (self.next_id >= self.layout.cap) return error.OutOfMemory;
+            // If we still don't have an available ID, we can't continue.
+            if (self.next_id >= self.layout.cap) {
+                // Arbitrarily chosen, threshold for rehashing.
+                // If less than 90% of currently allocated IDs
+                // correspond to living items, we should rehash.
+                // Otherwise, claim we're out of memory because
+                // we assume that we'll end up running out of
+                // memory or rehashing again very soon if we
+                // rehash with only a few IDs left.
+                const rehash_threshold = 0.9;
+                if (self.living < @as(Id, @intFromFloat(@as(f64, @floatFromInt(self.layout.cap)) * rehash_threshold))) {
+                    return AddError.NeedsRehash;
+                }
+
+                // If we don't have at least 10% dead items then
+                // we claim we're out of memory.
+                return AddError.OutOfMemory;
+            }
 
             const id = self.upsert(base, value, self.next_id);
             items[id].meta.ref += 1;
 
             if (id == self.next_id) self.next_id += 1;
+
+            if (items[id].meta.ref == 1) {
+                self.living += 1;
+            }
 
             return id;
         }
@@ -215,7 +250,7 @@ pub fn RefCountedSet(
         /// Returns the item's ID, or null if the provided ID was used.
         ///
         /// If the set has no more room, then an OutOfMemory error is returned.
-        pub fn addWithId(self: *Self, base: anytype, value: T, id: Id) error{OutOfMemory}!?Id {
+        pub fn addWithId(self: *Self, base: anytype, value: T, id: Id) AddError!?Id {
             const items = self.items.ptr(base);
 
             if (id < self.next_id) {
@@ -225,6 +260,8 @@ pub fn RefCountedSet(
                     const added_id = self.upsert(base, value, id);
 
                     items[added_id].meta.ref += 1;
+
+                    self.living += 1;
 
                     return if (added_id == id) null else added_id;
                 } else if (self.context.eql(value, items[id].value)) {
@@ -302,6 +339,7 @@ pub fn RefCountedSet(
 
             assert(item.meta.ref > 0);
             item.meta.ref -= 1;
+            if (item.meta.ref == 0) self.living -= 1;
         }
 
         /// Release a specified number of references to an item by its ID.
@@ -316,6 +354,10 @@ pub fn RefCountedSet(
 
             assert(item.meta.ref >= n);
             item.meta.ref -= n;
+
+            if (item.meta.ref == 0) {
+                self.living -= 1;
+            }
         }
 
         /// Get the ref count for an item by its ID.
@@ -329,42 +371,8 @@ pub fn RefCountedSet(
         }
 
         /// Get the current number of non-dead items in the set.
-        ///
-        /// NOT DESIGNED TO BE USED OUTSIDE OF TESTING, this is a very slow
-        /// operation, since it traverses the entire structure to count.
-        ///
-        /// Additionally, because this is a testing method, it does extra
-        /// work to verify the integrity of the structure when called.
-        pub fn count(self: *const Self, base: anytype) usize {
-            const table = self.table.ptr(base);
-            const items = self.items.ptr(base);
-
-            // The number of items accessible through the table.
-            var tb_ct: usize = 0;
-
-            for (table[0..self.layout.table_cap]) |id| {
-                if (id != 0) {
-                    const item = items[id];
-                    if (item.meta.ref > 0) {
-                        tb_ct += 1;
-                    }
-                }
-            }
-
-            // The number of items accessible through the backing store.
-            // The two counts should always match- it shouldn't be possible
-            // to have untracked items in the backing store.
-            var it_ct: usize = 0;
-
-            for (items[0..self.layout.cap]) |it| {
-                if (it.meta.ref > 0) {
-                    it_ct += 1;
-                }
-            }
-
-            assert(tb_ct == it_ct);
-
-            return tb_ct;
+        pub fn count(self: *const Self) usize {
+            return self.living;
         }
 
         /// Delete an item, removing any references from
@@ -390,7 +398,7 @@ pub fn RefCountedSet(
             items[id] = .{};
 
             var p: Id = item.meta.bucket;
-            var n: Id = (p + 1) & self.layout.table_mask;
+            var n: Id = (p +% 1) & self.layout.table_mask;
 
             while (table[n] != 0 and items[table[n]].meta.psl > 0) {
                 items[table[n]].meta.bucket = p;
@@ -399,7 +407,7 @@ pub fn RefCountedSet(
                 self.psl_stats[items[table[n]].meta.psl] += 1;
                 table[p] = table[n];
                 p = n;
-                n = (n + 1) & self.layout.table_mask;
+                n = (p +% 1) & self.layout.table_mask;
             }
 
             while (self.max_psl > 0 and self.psl_stats[self.max_psl] == 0) {
@@ -508,6 +516,7 @@ pub fn RefCountedSet(
                     chosen_id = id;
 
                     held_item.meta.bucket = p;
+                    self.psl_stats[item.meta.psl] -= 1;
                     self.psl_stats[held_item.meta.psl] += 1;
                     self.max_psl = @max(self.max_psl, held_item.meta.psl);
 
