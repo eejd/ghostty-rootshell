@@ -490,6 +490,12 @@ pub fn clone(
             src.* = old_dst;
             dirty.setValue(i, dirty.isSet(i + chunk.start));
         }
+
+        // We need to clear the rows we're about to truncate.
+        for (len..page.data.size.rows) |i| {
+            page.data.clearCells(&rows[i], 0, page.data.size.cols);
+        }
+
         page.data.size.rows = @intCast(len);
         total_rows += len;
 
