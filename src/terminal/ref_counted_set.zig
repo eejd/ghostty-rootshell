@@ -132,21 +132,22 @@ pub fn RefCountedSet(
         ///
         /// The returned layout `cap` property will be 1 more than the number
         /// of items that the set can actually store, since ID 0 is reserved.
-        pub fn layout(cap: Id) Layout {
+        pub fn layout(cap: usize) Layout {
             // Experimentally, this load factor works quite well.
             const load_factor = 0.8125;
 
-            const table_cap: Id = std.math.ceilPowerOfTwoAssert(Id, cap);
-            const table_mask: Id = (@as(Id, 1) << std.math.log2_int(Id, table_cap)) - 1;
-            const items_cap: Id = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
+            assert(cap <= @as(usize, @intCast(std.math.maxInt(Id))) + 1);
+
+            const table_cap: usize = std.math.ceilPowerOfTwoAssert(usize, cap);
+            const items_cap: usize = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
+
+            const table_mask: Id = @intCast((@as(usize, 1) << std.math.log2_int(usize, table_cap)) - 1);
 
             const table_start = 0;
-            const table_cap_usize: usize = @intCast(table_cap);
-            const table_end = table_start + table_cap_usize * @sizeOf(Id);
+            const table_end = table_start + table_cap * @sizeOf(Id);
 
             const items_start = std.mem.alignForward(usize, table_end, @alignOf(Item));
-            const items_cap_usize: usize = @intCast(items_cap);
-            const items_end = items_start + items_cap_usize * @sizeOf(Item);
+            const items_end = items_start + items_cap * @sizeOf(Item);
 
             const total_size = items_end;
 
@@ -161,8 +162,8 @@ pub fn RefCountedSet(
         }
 
         pub const Layout = struct {
-            cap: Id,
-            table_cap: Id,
+            cap: usize,
+            table_cap: usize,
             table_mask: Id,
             table_start: usize,
             items_start: usize,
@@ -390,7 +391,7 @@ pub fn RefCountedSet(
             items[id] = .{};
 
             var p: Id = item.meta.bucket;
-            var n: Id = (p + 1) & self.layout.table_mask;
+            var n: Id = @addWithOverflow(p, 1)[0] & self.layout.table_mask;
 
             while (table[n] != 0 and items[table[n]].meta.psl > 0) {
                 items[table[n]].meta.bucket = p;
@@ -399,7 +400,7 @@ pub fn RefCountedSet(
                 self.psl_stats[items[table[n]].meta.psl] += 1;
                 table[p] = table[n];
                 p = n;
-                n = (n + 1) & self.layout.table_mask;
+                n = @addWithOverflow(n, 1)[0] & self.layout.table_mask;
             }
 
             while (self.max_psl > 0 and self.psl_stats[self.max_psl] == 0) {

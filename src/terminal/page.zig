@@ -1027,7 +1027,7 @@ pub const Capacity = struct {
     rows: size.CellCountInt,
 
     /// Number of unique styles that can be used on this page.
-    styles: u16 = 16,
+    styles: usize = 16,
 
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,

@@ -1845,7 +1845,7 @@ pub const AdjustCapacity = struct {
     /// Adjust the number of styles in the page. This may be
     /// rounded up if necessary to fit alignment requirements,
     /// but it will never be rounded down.
-    styles: ?u16 = null,
+    styles: ?usize = null,
 
     /// Adjust the number of available grapheme bytes in the page.
     grapheme_bytes: ?usize = null,
@@ -1877,7 +1877,7 @@ pub fn adjustCapacity(
     var cap = page.data.capacity;
 
     if (adjustment.styles) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(u16, v);
+        const aligned = try std.math.ceilPowerOfTwo(usize, v);
         cap.styles = @max(cap.styles, aligned);
     }
     if (adjustment.grapheme_bytes) |v| {
