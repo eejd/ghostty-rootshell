@@ -289,7 +289,7 @@ palette: Palette = .{},
 /// make it difficult to find the cursor.
 @"cursor-opacity": f64 = 1.0,
 
-/// The style of the cursor. This sets the default style. A running programn can
+/// The style of the cursor. This sets the default style. A running program can
 /// still request an explicit cursor style using escape sequences (such as `CSI
 /// q`). Shell configurations will often request specific cursor styles.
 ///
