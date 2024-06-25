@@ -500,7 +500,7 @@ pub const Page = struct {
         return result;
     }
 
-    pub const CloneFromError = Allocator.Error || error{OutOfMemory};
+    pub const CloneFromError = Allocator.Error || style.Set.AddError;
 
     /// Clone the contents of another page into this page. The capacities
     /// can be different, but the size of the other page must fit into
