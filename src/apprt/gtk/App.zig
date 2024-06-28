@@ -81,6 +81,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
     _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
 
+    // We need to export GSK_RENDERER to opengl because GTK uses ngl by default after 4.14
+    _ = internal_os.setenv("GSK_RENDERER", "opengl");
+
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
