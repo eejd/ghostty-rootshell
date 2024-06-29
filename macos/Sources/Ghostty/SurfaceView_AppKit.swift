@@ -1018,8 +1018,10 @@ extension Ghostty.SurfaceView: NSTextInputClient {
             // QuickLook
             var sel: ghostty_selection_s = ghostty_selection_s();
             if ghostty_surface_selection_info(surface, &sel) {
-                x = sel.tl_px_x;
-                y = sel.tl_px_y;
+                // The -2/+2 here is subjective. QuickLook seems to offset the rectangle
+                // a bit and I think these small adjustments make it look more natural.
+                x = sel.tl_px_x - 2;
+                y = sel.tl_px_y + 2;
             } else {
                 ghostty_surface_ime_point(surface, &x, &y)
             }
