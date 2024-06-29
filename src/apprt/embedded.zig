@@ -1799,6 +1799,9 @@ pub const CAPI = struct {
             const collection = &grid.resolver.collection;
             const face = collection.getFace(.{}) catch return null;
 
+            // TODO(pressure-click): the font size below only does
+            // the initial font size and not the current font size.
+
             // The font is not the right size by default so we need
             // to set it to our configured window size.
             const copy = face.font.copyWithAttributes(
