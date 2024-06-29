@@ -2567,10 +2567,12 @@ pub fn cursorPosCallback(
 
         // If our y is negative, we're above the window. In this case, we scroll
         // up. The amount we scroll up is dependent on how negative we are.
+        // We allow for a 1 pixel buffer at the top and bottom to detect
+        // scroll even in full screen windows.
         // Note: one day, we can change this from distance to time based if we want.
         //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
         const max_y: f32 = @floatFromInt(self.screen_size.height);
-        if (pos.y < 0 or pos.y > max_y) {
+        if (pos.y <= 1 or pos.y > max_y - 1) {
             const delta: isize = if (pos.y < 0) -1 else 1;
             try self.io.terminal.scrollViewport(.{ .delta = delta });
 
