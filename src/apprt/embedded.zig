@@ -1789,6 +1789,9 @@ pub const CAPI = struct {
                 return null;
             }
 
+            // We'll need content scale so fail early if we can't get it.
+            const content_scale = ptr.getContentScale() catch return null;
+
             // Get the shared font grid. We acquire a read lock to
             // read the font face. It should not be deffered since
             // we're loading the primary face.
@@ -1799,13 +1802,20 @@ pub const CAPI = struct {
             const collection = &grid.resolver.collection;
             const face = collection.getFace(.{}) catch return null;
 
-            // TODO(pressure-click): the font size below only does
-            // the initial font size and not the current font size.
+            // We need to unscale the content scale. We apply the
+            // content scale to our font stack because we are rendering
+            // at 1x but callers of this should be using scaled or apply
+            // scale themselves.
+            const size: f32 = size: {
+                const num = face.font.copyAttribute(.size);
+                defer num.release();
+                var v: f32 = 12;
+                _ = num.getValue(.float, &v);
+                break :size v;
+            };
 
-            // The font is not the right size by default so we need
-            // to set it to our configured window size.
             const copy = face.font.copyWithAttributes(
-                ptr.app.config.@"font-size",
+                size / content_scale.y,
                 null,
                 null,
             ) catch return null;
