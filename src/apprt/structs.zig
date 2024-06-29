@@ -74,3 +74,18 @@ pub const ColorScheme = enum(u2) {
     light = 0,
     dark = 1,
 };
+
+/// Selection information
+pub const Selection = struct {
+    /// Top-left point of the selection in the viewport in scaled
+    /// window pixels. (0,0) is the top-left of the window.
+    tl_x_px: f64,
+    tl_y_px: f64,
+
+    /// The offset of the selection start in cells from the top-left
+    /// of the viewport.
+    ///
+    /// This is a strange metric but its used by macOS.
+    offset_start: u32,
+    offset_len: u32,
+};

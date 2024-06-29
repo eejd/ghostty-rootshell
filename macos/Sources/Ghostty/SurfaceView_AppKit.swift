@@ -935,10 +935,9 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // Get our range from the Ghostty API. There is a race condition between getting the
         // range and actually using it since our selection may change but there isn't a good
         // way I can think of to solve this for AppKit.
-        var start: UInt32 = 0;
-        var len: UInt32 = 0;
-        ghostty_surface_selection_range(surface, &start, &len);
-        return NSRange(location: Int(start), length: Int(len))
+        var sel: ghostty_selection_s = ghostty_selection_s();
+        guard ghostty_surface_selection_info(surface, &sel) else { return NSRange() }
+        return NSRange(location: Int(sel.offset_start), length: Int(sel.offset_len))
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -1017,7 +1016,13 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // point right now. I'm sure I'm missing something fundamental...
         if range.length > 0 && range != self.selectedRange() {
             // QuickLook
-            ghostty_surface_selection_point(surface, &x, &y)
+            var sel: ghostty_selection_s = ghostty_selection_s();
+            if ghostty_surface_selection_info(surface, &sel) {
+                x = sel.tl_px_x;
+                y = sel.tl_px_y;
+            } else {
+                ghostty_surface_ime_point(surface, &x, &y)
+            }
         } else {
             ghostty_surface_ime_point(surface, &x, &y)
         }

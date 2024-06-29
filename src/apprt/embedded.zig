@@ -1376,6 +1376,13 @@ pub const CAPI = struct {
         }
     };
 
+    const Selection = extern struct {
+        tl_x_px: f64,
+        tl_y_px: f64,
+        offset_start: u32,
+        offset_len: u32,
+    };
+
     /// Create a new app.
     export fn ghostty_app_new(
         opts: *const apprt.runtime.App.Options,
@@ -1803,34 +1810,24 @@ pub const CAPI = struct {
             return copy;
         }
 
-        /// This returns the start and length of the current selection range
-        /// in viewport coordinates. If the selection is not visible in the
-        /// viewport completely then this will return 0,0. This rather odd
-        /// detail is due to the current usage of this in the macOS app where
-        /// selections are only meaningful if they're in the viewport. We can
-        /// change this behavior if we have something useful to do with the
-        /// selection range outside of the viewport in the future.
-        export fn ghostty_surface_selection_range(
+        /// This returns the selection metadata for the current selection.
+        /// This will return false if there is no selection or the
+        /// selection is not fully contained in the viewport (since the
+        /// metadata is all about that).
+        export fn ghostty_surface_selection_info(
             ptr: *Surface,
-            start: *u32,
-            len: *u32,
-        ) void {
-            start.* = 0;
-            len.* = 0;
+            info: *Selection,
+        ) bool {
+            const sel = ptr.core_surface.selectionInfo() orelse
+                return false;
 
-            const range = ptr.core_surface.selectionRange() orelse return;
-            start.* = range.start;
-            len.* = range.len;
-        }
-
-        export fn ghostty_surface_selection_point(
-            ptr: *Surface,
-            x: *f64,
-            y: *f64,
-        ) void {
-            const point = ptr.core_surface.selectionPoint() orelse return;
-            x.* = point.x;
-            y.* = point.y;
+            info.* = .{
+                .tl_x_px = sel.tl_x_px,
+                .tl_y_px = sel.tl_y_px,
+                .offset_start = sel.offset_start,
+                .offset_len = sel.offset_len,
+            };
+            return true;
         }
 
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {

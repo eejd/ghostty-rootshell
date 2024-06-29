@@ -849,26 +849,23 @@ pub fn selectionString(self: *Surface, alloc: Allocator) !?[]const u8 {
     });
 }
 
-/// This returns the selection range offset from the beginning of the
-/// viewport. If the selection is not entirely within the viewport then
-/// this will return null.
+/// Return the apprt selection metadata used by apprt's for implementing
+/// things like contextual information on right click and so on.
 ///
-/// This is a oddly specific function that is used with macOS to enable
-/// NSTextInputClient to work properly for features such as the IME Emoji
-/// keyboard and QuickLook amongst other things.
-pub fn selectionRange(self: *Surface) ?struct {
-    start: u32,
-    len: u32,
-} {
+/// This only returns non-null if the selection is fully contained within
+/// the viewport. The use case for this function at the time of authoring
+/// it is for apprt's to implement right-click contextual menus and
+/// those only make sense for selections fully contained within the
+/// viewport. We don't handle the case where you right click a word-wrapped
+/// word at the end of the viewport yet.
+pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-
-    // Get the TL/BR pins for the selection
     const sel = self.io.terminal.screen.selection orelse return null;
+
+    // Get the TL/BR pins for the selection and convert to viewport.
     const tl = sel.topLeft(&self.io.terminal.screen);
     const br = sel.bottomRight(&self.io.terminal.screen);
-
-    // Convert the pins to coordinates (x,y)
     const tl_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, tl) orelse return null;
     const br_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, br) orelse return null;
     const tl_coord = tl_pt.coord();
@@ -878,7 +875,41 @@ pub fn selectionRange(self: *Surface) ?struct {
     const start = tl_coord.y * self.io.terminal.screen.pages.cols + tl_coord.x;
     const end = br_coord.y * self.io.terminal.screen.pages.cols + br_coord.x;
 
-    return .{ .start = start, .len = end - start };
+    // Our sizes are all scaled so we need to send the unscaled values back.
+    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
+
+    const x: f64 = x: {
+        // Simple x * cell width gives the top-left corner
+        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
+
+        // We want the midpoint
+        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+
+        // And scale it
+        x /= content_scale.x;
+
+        break :x x;
+    };
+
+    const y: f64 = y: {
+        // Simple x * cell width gives the top-left corner
+        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
+
+        // We want the bottom
+        y += @floatFromInt(self.cell_size.height);
+
+        // And scale it
+        y /= content_scale.y;
+
+        break :y y;
+    };
+
+    return .{
+        .tl_x_px = x,
+        .tl_y_px = y,
+        .offset_start = start,
+        .offset_len = end - start,
+    };
 }
 
 /// Returns the pwd of the terminal, if any. This is always copied because
@@ -920,53 +951,6 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     const y: f64 = y: {
         // Simple x * cell width gives the top-left corner
         var y: f64 = @floatFromInt(cursor.y * self.cell_size.height);
-
-        // We want the bottom
-        y += @floatFromInt(self.cell_size.height);
-
-        // And scale it
-        y /= content_scale.y;
-
-        break :y y;
-    };
-
-    return .{ .x = x, .y = y };
-}
-
-/// Returns the x/y coordinate of where the selection top-left is. This is
-/// used currently only by macOS to render the QuickLook highlight in the
-/// proper location.
-pub fn selectionPoint(self: *const Surface) ?apprt.IMEPos {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-
-    // Get the top-left coordinate of the selection in the viewport.
-    const sel = self.io.terminal.screen.selection orelse return null;
-    const tl_pt = self.io.terminal.screen.pages.pointFromPin(
-        .viewport,
-        sel.topLeft(&self.io.terminal.screen),
-    ) orelse return null;
-    const tl_coord = tl_pt.coord();
-
-    // Our sizes are all scaled so we need to send the unscaled values back.
-    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
-
-    const x: f64 = x: {
-        // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
-
-        // We want the midpoint
-        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
-
-        // And scale it
-        x /= content_scale.x;
-
-        break :x x;
-    };
-
-    const y: f64 = y: {
-        // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
 
         // We want the bottom
         y += @floatFromInt(self.cell_size.height);
