@@ -868,10 +868,26 @@ extension Ghostty {
         }
         
         override func menu(for event: NSEvent) -> NSMenu? {
-            Ghostty.logger.warning("menu: event!")
-            return nil
-        }
+            // We only support right-click menus
+            guard event.type == .rightMouseDown else { return nil }
+            
+            // We need a surface
+            guard let surface = self.surface else { return nil }
+            
+            let menu = NSMenu()
+            
+            // If we have a selection, add copy
+            if ghostty_surface_has_selection(surface) {
+                menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            }
+            menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+            
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
 
+            return menu
+        }
+            
         // MARK: Menu Handlers
 
         @IBAction func copy(_ sender: Any?) {
