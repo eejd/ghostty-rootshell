@@ -389,11 +389,11 @@ palette: Palette = .{},
 /// valid value.
 @"unfocused-split-opacity": f64 = 0.7,
 
-// The color to dim the unfocused split. Unfocused splits are dimmed by
-// rendering a semi-transparent rectangle over the split. This sets the color of
-// that rectangle and can be used to carefully control the dimming effect.
-//
-// This will default to the background color.
+/// The color to dim the unfocused split. Unfocused splits are dimmed by
+/// rendering a semi-transparent rectangle over the split. This sets the color of
+/// that rectangle and can be used to carefully control the dimming effect.
+///
+/// This will default to the background color.
 @"unfocused-split-fill": ?Color = null,
 
 /// The command to run, usually a shell. If this is not an absolute path, it'll
