@@ -871,18 +871,23 @@ extension Ghostty {
             // We only support right-click menus
             guard event.type == .rightMouseDown else { return nil }
             
-            // We need a surface
-            guard let surface = self.surface else { return nil }
-            
             let menu = NSMenu()
+
+            // Windowing
+            menu.addItem(withTitle: "New Window", action: #selector(TerminalController.newWindow(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "New Tab", action: #selector(TerminalController.newTab(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Right", action: #selector(TerminalController.splitRight(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Down", action: #selector(TerminalController.splitDown(_:)), keyEquivalent: "")
+            menu.addItem(.separator())
+
             
             // If we have a selection, add copy
-            if ghostty_surface_has_selection(surface) {
+            if self.selectedRange().length > 0 {
                 menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
             }
             menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
             
-            menu.addItem(NSMenuItem.separator())
+            menu.addItem(.separator())
             menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
 
             return menu
