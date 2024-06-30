@@ -872,14 +872,6 @@ extension Ghostty {
             guard event.type == .rightMouseDown else { return nil }
             
             let menu = NSMenu()
-
-            // Windowing
-            menu.addItem(withTitle: "New Window", action: #selector(TerminalController.newWindow(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "New Tab", action: #selector(TerminalController.newTab(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Split Right", action: #selector(TerminalController.splitRight(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Split Down", action: #selector(TerminalController.splitDown(_:)), keyEquivalent: "")
-            menu.addItem(.separator())
-
             
             // If we have a selection, add copy
             if self.selectedRange().length > 0 {
