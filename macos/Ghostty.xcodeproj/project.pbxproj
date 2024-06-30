@@ -50,6 +50,8 @@
 		A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309F2AEF6AEB00D64628 /* TerminalManager.swift */; };
 		A59630A22AF0415000D64628 /* Ghostty.TerminalSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59630A12AF0415000D64628 /* Ghostty.TerminalSplit.swift */; };
 		A59630A42AF059BB00D64628 /* Ghostty.SplitNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59630A32AF059BB00D64628 /* Ghostty.SplitNode.swift */; };
+		A5985CD72C320C4500C57AD3 /* String+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5985CD62C320C4500C57AD3 /* String+Extension.swift */; };
+		A5985CD82C320C4500C57AD3 /* String+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5985CD62C320C4500C57AD3 /* String+Extension.swift */; };
 		A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */; };
 		A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5D02AE0DEA7009128F3 /* MetalView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
@@ -111,6 +113,7 @@
 		A596309F2AEF6AEB00D64628 /* TerminalManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalManager.swift; sourceTree = "<group>"; };
 		A59630A12AF0415000D64628 /* Ghostty.TerminalSplit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.TerminalSplit.swift; sourceTree = "<group>"; };
 		A59630A32AF059BB00D64628 /* Ghostty.SplitNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.SplitNode.swift; sourceTree = "<group>"; };
+		A5985CD62C320C4500C57AD3 /* String+Extension.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "String+Extension.swift"; sourceTree = "<group>"; };
 		A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		A59FB5D02AE0DEA7009128F3 /* MetalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalView.swift; sourceTree = "<group>"; };
 		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
@@ -205,6 +208,7 @@
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
+				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
 				C1F26EE72B76CBFC00404083 /* VibrantLayer.h */,
 				C1F26EE82B76CBFC00404083 /* VibrantLayer.m */,
 				A5CEAFDA29B8005900646FDA /* SplitView */,
@@ -503,6 +507,7 @@
 				A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
+				A5985CD72C320C4500C57AD3 /* String+Extension.swift in Sources */,
 				A59630A22AF0415000D64628 /* Ghostty.TerminalSplit.swift in Sources */,
 				A5FEB3002ABB69450068369E /* main.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
@@ -537,6 +542,7 @@
 				A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */,
 				A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */,
 				A5333E242B5A22D9008AEFF7 /* Ghostty.Shell.swift in Sources */,
+				A5985CD82C320C4500C57AD3 /* String+Extension.swift in Sources */,
 				C159E89D2B69A2EF00FDFE9C /* OSColor+Extension.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
