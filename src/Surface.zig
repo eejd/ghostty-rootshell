@@ -173,6 +173,10 @@ const Mouse = struct {
     /// The last x/y sent for mouse reports.
     event_point: ?terminal.point.Coordinate = null,
 
+    /// The pressure stage for the mouse. This should always be none if
+    /// the mouse is not pressed.
+    pressure_stage: input.MousePressureStage = .none,
+
     /// Pending scroll amounts for high-precision scrolls
     pending_scroll_x: f64 = 0,
     pending_scroll_y: f64 = 0,
@@ -843,6 +847,69 @@ pub fn selectionString(self: *Surface, alloc: Allocator) !?[]const u8 {
         .sel = sel,
         .trim = false,
     });
+}
+
+/// Return the apprt selection metadata used by apprt's for implementing
+/// things like contextual information on right click and so on.
+///
+/// This only returns non-null if the selection is fully contained within
+/// the viewport. The use case for this function at the time of authoring
+/// it is for apprt's to implement right-click contextual menus and
+/// those only make sense for selections fully contained within the
+/// viewport. We don't handle the case where you right click a word-wrapped
+/// word at the end of the viewport yet.
+pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const sel = self.io.terminal.screen.selection orelse return null;
+
+    // Get the TL/BR pins for the selection and convert to viewport.
+    const tl = sel.topLeft(&self.io.terminal.screen);
+    const br = sel.bottomRight(&self.io.terminal.screen);
+    const tl_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, tl) orelse return null;
+    const br_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, br) orelse return null;
+    const tl_coord = tl_pt.coord();
+    const br_coord = br_pt.coord();
+
+    // Utilize viewport sizing to convert to offsets
+    const start = tl_coord.y * self.io.terminal.screen.pages.cols + tl_coord.x;
+    const end = br_coord.y * self.io.terminal.screen.pages.cols + br_coord.x;
+
+    // Our sizes are all scaled so we need to send the unscaled values back.
+    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
+
+    const x: f64 = x: {
+        // Simple x * cell width gives the top-left corner
+        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
+
+        // We want the midpoint
+        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+
+        // And scale it
+        x /= content_scale.x;
+
+        break :x x;
+    };
+
+    const y: f64 = y: {
+        // Simple x * cell width gives the top-left corner
+        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
+
+        // We want the bottom
+        y += @floatFromInt(self.cell_size.height);
+
+        // And scale it
+        y /= content_scale.y;
+
+        break :y y;
+    };
+
+    return .{
+        .tl_x_px = x,
+        .tl_y_px = y,
+        .offset_start = start,
+        .offset_len = end - start,
+    };
 }
 
 /// Returns the pwd of the terminal, if any. This is always copied because
@@ -2490,6 +2557,41 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
     }
 
     return true;
+}
+
+pub fn mousePressureCallback(
+    self: *Surface,
+    stage: input.MousePressureStage,
+    pressure: f64,
+) !void {
+    // We don't currently use the pressure value for anything. In the
+    // future, we could report this to applications using new mouse
+    // events or utilize it for some custom UI.
+    _ = pressure;
+
+    // If the pressure stage is the same as what we already have do nothing
+    if (self.mouse.pressure_stage == stage) return;
+
+    // Update our pressure stage.
+    self.mouse.pressure_stage = stage;
+
+    // If our left mouse button is pressed and we're entering a deep
+    // click then we want to start a selection. We treat this as a
+    // word selection since that is typical macOS behavior.
+    const left_idx = @intFromEnum(input.MouseButton.left);
+    if (self.mouse.click_state[left_idx] == .press and
+        stage == .deep)
+    select: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // This should always be set in this state but we don't want
+        // to handle state inconsistency here.
+        const pin = self.mouse.left_click_pin orelse break :select;
+        const sel = self.io.terminal.screen.selectWord(pin.*) orelse break :select;
+        try self.setSelection(sel);
+        try self.queueRender();
+    }
 }
 
 pub fn cursorPosCallback(

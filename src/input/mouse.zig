@@ -63,6 +63,22 @@ pub const MouseMomentum = enum(u3) {
     may_begin = 6,
 };
 
+/// The pressure stage of a pressure-sensitive input device.
+///
+/// This currently only supports the stages that macOS supports.
+pub const MousePressureStage = enum(u2) {
+    /// The input device is unpressed.
+    none = 0,
+
+    /// The input device is pressed a normal amount. On macOS trackpads,
+    /// this is after a "click".
+    normal = 1,
+
+    /// The input device is pressed a deep amount. On macOS trackpads,
+    /// this is after a "force click".
+    deep = 2,
+};
+
 /// The bitmask for mods for scroll events.
 pub const ScrollMods = packed struct(u8) {
     /// True if this is a high-precision scroll event. For example, Apple

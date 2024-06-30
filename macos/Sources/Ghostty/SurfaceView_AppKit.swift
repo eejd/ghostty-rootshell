@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 import UserNotifications
 import GhosttyKit
 
@@ -72,6 +73,7 @@ extension Ghostty {
         private var markedText: NSMutableAttributedString
         private var mouseEntered: Bool = false
         private(set) var focused: Bool = true
+        private var prevPressureStage: Int = 0
         private var cursor: NSCursor = .iBeam
         private var cursorVisible: CursorVisibility = .visible
         private var appearanceObserver: NSKeyValueObservation? = nil
@@ -441,9 +443,16 @@ extension Ghostty {
         }
 
         override func mouseUp(with event: NSEvent) {
+            // Always reset our pressure when the mouse goes up
+            prevPressureStage = 0
+            
+            // If we have an active surface, report the event
             guard let surface = self.surface else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+            
+            // Release pressure
+            ghostty_surface_mouse_pressure(surface, 0, 0)
         }
 
         override func otherMouseDown(with event: NSEvent) {
@@ -569,6 +578,26 @@ extension Ghostty {
             mods |= Int32(momentum.rawValue) << 1
 
             ghostty_surface_mouse_scroll(surface, x, y, mods)
+        }
+        
+        override func pressureChange(with event: NSEvent) {
+            guard let surface = self.surface else { return }
+            
+            // Notify Ghostty first. We do this because this will let Ghostty handle
+            // state setup that we'll need for later pressure handling (such as
+            // QuickLook)
+            ghostty_surface_mouse_pressure(surface, UInt32(event.stage), Double(event.pressure))
+            
+            // Pressure stage 2 is force click. We only want to execute this on the
+            // initial transition to stage 2, and not for any repeated events.
+            guard self.prevPressureStage < 2 else { return }
+            prevPressureStage = event.stage
+            guard event.stage == 2 else { return }
+            
+            // If the user has force click enabled then we do a quick look. There
+            // is no public API for this as far as I can tell.
+            guard UserDefaults.standard.bool(forKey: "com.apple.trackpad.forceClick") else { return }
+            quickLook(with: event)
         }
 
         override func cursorUpdate(with event: NSEvent) {
@@ -800,7 +829,7 @@ extension Ghostty {
                 ghostty_surface_key(surface, key_ev)
             }
         }
-        
+
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, text: String) {
             guard let surface = self.surface else { return }
 
@@ -901,7 +930,14 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func selectedRange() -> NSRange {
-        return NSRange()
+        guard let surface = self.surface else { return NSRange() }
+        
+        // Get our range from the Ghostty API. There is a race condition between getting the
+        // range and actually using it since our selection may change but there isn't a good
+        // way I can think of to solve this for AppKit.
+        var sel: ghostty_selection_s = ghostty_selection_s();
+        guard ghostty_surface_selection_info(surface, &sel) else { return NSRange() }
+        return NSRange(location: Int(sel.offset_start), length: Int(sel.offset_len))
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -926,7 +962,39 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        return nil
+        // Ghostty.logger.warning("pressure substring range=\(range) selectedRange=\(self.selectedRange())")
+        guard let surface = self.surface else { return nil }
+        guard ghostty_surface_has_selection(surface) else { return nil }
+        
+        // If the range is empty then we don't need to return anything
+        guard range.length > 0 else { return nil }
+        
+        // I used to do a bunch of testing here that the range requested matches the
+        // selection range or contains it but a lot of macOS system behaviors request
+        // bogus ranges I truly don't understand so we just always return the
+        // attributed string containing our selection which is... weird but works?
+        
+        // Get our selection. We cap it at 1MB for the purpose of this. This is
+        // arbitrary. If this is a good reason to increase it I'm happy to.
+        let v = String(unsafeUninitializedCapacity: 1000000) {
+            Int(ghostty_surface_selection(surface, $0.baseAddress, UInt($0.count)))
+        }
+        
+        // If we can get a font then we use the font. This should always work
+        // since we always have a primary font. The only scenario this doesn't
+        // work is if someone is using a non-CoreText build which would be
+        // unofficial.
+        var attributes: [ NSAttributedString.Key : Any ] = [:];
+        if let fontRaw = ghostty_surface_quicklook_font(surface) {
+            // Memory management here is wonky: ghostty_surface_quicklook_font
+            // will create a copy of a CTFont, Swift will auto-retain the
+            // unretained value passed into the dict, so we release the original.
+            let font = Unmanaged<CTFont>.fromOpaque(fontRaw)
+            attributes[.font] = font.takeUnretainedValue()
+            font.release()
+        }
+
+        return .init(string: v, attributes: attributes)
     }
 
     func characterIndex(for point: NSPoint) -> Int {
@@ -937,11 +1005,29 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         guard let surface = self.surface else {
             return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
         }
-
+        
         // Ghostty will tell us where it thinks an IME keyboard should render.
         var x: Double = 0;
         var y: Double = 0;
-        ghostty_surface_ime_point(surface, &x, &y)
+        
+        // QuickLook never gives us a matching range to our selection so if we detect
+        // this then we return the top-left selection point rather than the cursor point.
+        // This is hacky but I can't think of a better way to get the right IME vs. QuickLook
+        // point right now. I'm sure I'm missing something fundamental...
+        if range.length > 0 && range != self.selectedRange() {
+            // QuickLook
+            var sel: ghostty_selection_s = ghostty_selection_s();
+            if ghostty_surface_selection_info(surface, &sel) {
+                // The -2/+2 here is subjective. QuickLook seems to offset the rectangle
+                // a bit and I think these small adjustments make it look more natural.
+                x = sel.tl_px_x - 2;
+                y = sel.tl_px_y + 2;
+            } else {
+                ghostty_surface_ime_point(surface, &x, &y)
+            }
+        } else {
+            ghostty_surface_ime_point(surface, &x, &y)
+        }
 
         // Ghostty coordinates are in top-left (0, 0) so we have to convert to
         // bottom-left since that is what UIKit expects

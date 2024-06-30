@@ -374,6 +374,13 @@ typedef struct {
 } ghostty_error_s;
 
 typedef struct {
+  double tl_px_x;
+  double tl_px_y;
+  uint32_t offset_start;
+  uint32_t offset_len;
+} ghostty_selection_s;
+
+typedef struct {
   void* nsview;
 } ghostty_platform_macos_s;
 
@@ -535,6 +542,7 @@ void ghostty_surface_mouse_scroll(ghostty_surface_t,
                                   double,
                                   double,
                                   ghostty_input_scroll_mods_t);
+void ghostty_surface_mouse_pressure(ghostty_surface_t, uint32_t, double);
 void ghostty_surface_ime_point(ghostty_surface_t, double*, double*);
 void ghostty_surface_request_close(ghostty_surface_t);
 void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
@@ -555,6 +563,8 @@ uintptr_t ghostty_surface_selection(ghostty_surface_t, char*, uintptr_t);
 
 #ifdef __APPLE__
 void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
+void* ghostty_surface_quicklook_font(ghostty_surface_t);
+bool ghostty_surface_selection_info(ghostty_surface_t, ghostty_selection_s*);
 #endif
 
 ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);

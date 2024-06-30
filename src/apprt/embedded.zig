@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const objc = @import("objc");
 const apprt = @import("../apprt.zig");
+const font = @import("../font/main.zig");
 const input = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
@@ -716,6 +717,17 @@ pub const Surface = struct {
         };
     }
 
+    pub fn mousePressureCallback(
+        self: *Surface,
+        stage: input.MousePressureStage,
+        pressure: f64,
+    ) void {
+        self.core_surface.mousePressureCallback(stage, pressure) catch |err| {
+            log.err("error in mouse pressure callback err={}", .{err});
+            return;
+        };
+    }
+
     pub fn scrollCallback(
         self: *Surface,
         xoff: f64,
@@ -1364,6 +1376,13 @@ pub const CAPI = struct {
         }
     };
 
+    const Selection = extern struct {
+        tl_x_px: f64,
+        tl_y_px: f64,
+        offset_start: u32,
+        offset_len: u32,
+    };
+
     /// Create a new app.
     export fn ghostty_app_new(
         opts: *const apprt.runtime.App.Options,
@@ -1648,6 +1667,25 @@ pub const CAPI = struct {
         );
     }
 
+    export fn ghostty_surface_mouse_pressure(
+        surface: *Surface,
+        stage_raw: u32,
+        pressure: f64,
+    ) void {
+        const stage = std.meta.intToEnum(
+            input.MousePressureStage,
+            stage_raw,
+        ) catch {
+            log.warn(
+                "invalid mouse pressure stage value={}",
+                .{stage_raw},
+            );
+            return;
+        };
+
+        surface.mousePressureCallback(stage, pressure);
+    }
+
     export fn ghostty_surface_ime_point(surface: *Surface, x: *f64, y: *f64) void {
         const pos = surface.core_surface.imePoint();
         x.* = pos.x;
@@ -1739,6 +1777,70 @@ pub const CAPI = struct {
                 .{ .forever = {} },
             );
             surface.renderer_thread.wakeup.notify() catch {};
+        }
+
+        /// This returns a CTFontRef that should be used for quicklook
+        /// highlighted text. This is always the primary font in use
+        /// regardless of the selected text. If coretext is not in use
+        /// then this will return nothing.
+        export fn ghostty_surface_quicklook_font(ptr: *Surface) ?*anyopaque {
+            // For non-CoreText we just return null.
+            if (comptime font.options.backend != .coretext) {
+                return null;
+            }
+
+            // We'll need content scale so fail early if we can't get it.
+            const content_scale = ptr.getContentScale() catch return null;
+
+            // Get the shared font grid. We acquire a read lock to
+            // read the font face. It should not be deffered since
+            // we're loading the primary face.
+            const grid = ptr.core_surface.renderer.font_grid;
+            grid.lock.lockShared();
+            defer grid.lock.unlockShared();
+
+            const collection = &grid.resolver.collection;
+            const face = collection.getFace(.{}) catch return null;
+
+            // We need to unscale the content scale. We apply the
+            // content scale to our font stack because we are rendering
+            // at 1x but callers of this should be using scaled or apply
+            // scale themselves.
+            const size: f32 = size: {
+                const num = face.font.copyAttribute(.size);
+                defer num.release();
+                var v: f32 = 12;
+                _ = num.getValue(.float, &v);
+                break :size v;
+            };
+
+            const copy = face.font.copyWithAttributes(
+                size / content_scale.y,
+                null,
+                null,
+            ) catch return null;
+
+            return copy;
+        }
+
+        /// This returns the selection metadata for the current selection.
+        /// This will return false if there is no selection or the
+        /// selection is not fully contained in the viewport (since the
+        /// metadata is all about that).
+        export fn ghostty_surface_selection_info(
+            ptr: *Surface,
+            info: *Selection,
+        ) bool {
+            const sel = ptr.core_surface.selectionInfo() orelse
+                return false;
+
+            info.* = .{
+                .tl_x_px = sel.tl_x_px,
+                .tl_y_px = sel.tl_y_px,
+                .offset_start = sel.offset_start,
+                .offset_len = sel.offset_len,
+            };
+            return true;
         }
 
         export fn ghostty_inspector_metal_init(ptr: *Inspector, device: objc.c.id) bool {
