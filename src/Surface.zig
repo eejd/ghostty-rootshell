@@ -2402,6 +2402,42 @@ pub fn mouseButtonCallback(
         }
     }
 
+    // Right-click down selects word for context menus. If the apprt
+    // doesn't implement context menus this can be a bit weird but they
+    // are supported by our two main apprts so we always do this. If we
+    // want to be careful in the future we can add a function to apprts
+    // that let's us know.
+    if (button == .right and action == .press) sel: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // Get our viewport pin
+        const screen = &self.renderer_state.terminal.screen;
+        const pin = pin: {
+            const pos = try self.rt_surface.getCursorPos();
+            const pt_viewport = self.posToViewport(pos.x, pos.y);
+            const pin = screen.pages.pin(.{
+                .viewport = .{
+                    .x = pt_viewport.x,
+                    .y = pt_viewport.y,
+                },
+            }) orelse {
+                // Weird... our viewport x/y that we just converted isn't
+                // found in our pages. This is probably a bug but we don't
+                // want to crash in releases because its harmless. So, we
+                // only assert in debug mode.
+                if (comptime std.debug.runtime_safety) unreachable;
+                break :sel;
+            };
+
+            break :pin pin;
+        };
+
+        const sel = screen.selectWord(pin) orelse break :sel;
+        try self.setSelection(sel);
+        try self.queueRender();
+    }
+
     return false;
 }
 
