@@ -962,7 +962,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        Ghostty.logger.warning("pressure substring range=\(range) selectedRange=\(self.selectedRange())")
+        // Ghostty.logger.warning("pressure substring range=\(range) selectedRange=\(self.selectedRange())")
         guard let surface = self.surface else { return nil }
         guard ghostty_surface_has_selection(surface) else { return nil }
         
