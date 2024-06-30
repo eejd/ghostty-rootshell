@@ -2433,6 +2433,15 @@ pub fn mouseButtonCallback(
             break :pin pin;
         };
 
+        // If we already have a selection and the selection contains
+        // where we clicked then we don't want to modify the selection.
+        if (self.io.terminal.screen.selection) |prev_sel| {
+            if (prev_sel.contains(screen, pin)) break :sel;
+
+            // The selection doesn't contain our pin, so we create a new
+            // word selection where we clicked.
+        }
+
         const sel = screen.selectWord(pin) orelse break :sel;
         try self.setSelection(sel);
         try self.queueRender();
