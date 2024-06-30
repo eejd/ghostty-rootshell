@@ -2129,12 +2129,15 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
     };
 }
 
+/// Called for mouse button press/release events. This will return true
+/// if the mouse event was consumed in some way (i.e. the program is capturing
+/// mouse events). If the event was not consumed, then false is returned.
 pub fn mouseButtonCallback(
     self: *Surface,
     action: input.MouseButtonState,
     button: input.MouseButton,
     mods: input.Mods,
-) !void {
+) !bool {
     // log.debug("mouse action={} button={} mods={}", .{ action, button, mods });
 
     // If we have an inspector, we always queue a render
@@ -2155,7 +2158,7 @@ pub fn mouseButtonCallback(
             const screen = &self.renderer_state.terminal.screen;
             const p = screen.pages.pin(.{ .viewport = point }) orelse {
                 log.warn("failed to get pin for clicked point", .{});
-                return;
+                return false;
             };
 
             insp.cell.select(
@@ -2166,7 +2169,7 @@ pub fn mouseButtonCallback(
             ) catch |err| {
                 log.warn("error selecting cell for inspector err={}", .{err});
             };
-            return;
+            return false;
         }
     }
 
@@ -2205,7 +2208,7 @@ pub fn mouseButtonCallback(
             if (selection) {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.cursorPosCallback(pos);
-                return;
+                return true;
             }
         }
     }
@@ -2216,7 +2219,7 @@ pub fn mouseButtonCallback(
     if (button == .left and action == .release and self.mouse.over_link) {
         const pos = try self.rt_surface.getCursorPos();
         if (self.processLinks(pos)) |processed| {
-            if (processed) return;
+            if (processed) return true;
         } else |err| {
             log.warn("error processing links err={}", .{err});
         }
@@ -2257,7 +2260,7 @@ pub fn mouseButtonCallback(
 
             // If we're doing mouse reporting, we do not support any other
             // selection or highlighting.
-            return;
+            return true;
         }
     }
 
@@ -2269,7 +2272,7 @@ pub fn mouseButtonCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         try self.clickMoveCursor(pin.*);
-        return;
+        return true;
     }
 
     // For left button clicks we always record some information for
@@ -2398,6 +2401,8 @@ pub fn mouseButtonCallback(
             try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
+
+    return false;
 }
 
 /// Performs the "click-to-move" logic to move the cursor to the given

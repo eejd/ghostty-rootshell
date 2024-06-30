@@ -471,15 +471,39 @@ extension Ghostty {
 
 
         override func rightMouseDown(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surface = self.surface else { return super.rightMouseDown(with: event) }
+            
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
+            if (ghostty_surface_mouse_button(
+                surface,
+                GHOSTTY_MOUSE_PRESS,
+                GHOSTTY_MOUSE_RIGHT,
+                mods
+            )) {
+                // Consumed
+                return
+            }
+            
+            // Mouse event not consumed
+            super.rightMouseDown(with: event)
         }
 
         override func rightMouseUp(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surface = self.surface else { return super.rightMouseUp(with: event) }
+            
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
+            if (ghostty_surface_mouse_button(
+                surface,
+                GHOSTTY_MOUSE_RELEASE,
+                GHOSTTY_MOUSE_RIGHT,
+                mods
+            )) {
+                // Handled
+                return
+            }
+            
+            // Mouse event not consumed
+            super.rightMouseUp(with: event)
         }
         
         override func mouseMoved(with event: NSEvent) {
@@ -841,6 +865,11 @@ extension Ghostty {
                 key_ev.text = ptr
                 ghostty_surface_key(surface, key_ev)
             }
+        }
+        
+        override func menu(for event: NSEvent) -> NSMenu? {
+            Ghostty.logger.warning("menu: event!")
+            return nil
         }
 
         // MARK: Menu Handlers

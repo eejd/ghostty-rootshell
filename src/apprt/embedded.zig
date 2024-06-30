@@ -710,10 +710,10 @@ pub const Surface = struct {
         action: input.MouseButtonState,
         button: input.MouseButton,
         mods: input.Mods,
-    ) void {
-        self.core_surface.mouseButtonCallback(action, button, mods) catch |err| {
+    ) bool {
+        return self.core_surface.mouseButtonCallback(action, button, mods) catch |err| {
             log.err("error in mouse button callback err={}", .{err});
-            return;
+            return false;
         };
     }
 
@@ -1638,8 +1638,8 @@ pub const CAPI = struct {
         action: input.MouseButtonState,
         button: input.MouseButton,
         mods: c_int,
-    ) void {
-        surface.mouseButtonCallback(
+    ) bool {
+        return surface.mouseButtonCallback(
             action,
             button,
             @bitCast(@as(
