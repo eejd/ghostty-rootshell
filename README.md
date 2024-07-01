@@ -127,8 +127,8 @@ of many Ghostty users for examples and inspiration.
 > [!NOTE]
 >
 > Configuration can be reloaded on the fly with the `reload_config`
->command. Not all configuration options can  change without restarting Ghostty.
->Any options that require a restart should  be documented.
+> command. Not all configuration options can change without restarting Ghostty.
+> Any options that require a restart should be documented.
 
 #### Configuration Errors
 
