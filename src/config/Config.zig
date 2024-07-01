@@ -320,6 +320,7 @@ palette: Palette = .{},
 ///
 /// Valid values are:
 ///
+///   * `` (blank)
 ///   * `true`
 ///   * `false`
 ///
