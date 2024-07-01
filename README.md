@@ -124,6 +124,12 @@ documented in the comments. You also can search for the
 [public config files](https://github.com/search?q=path%3Aghostty%2Fconfig&type=code)
 of many Ghostty users for examples and inspiration.
 
+> [!NOTE]
+>
+> Configuration can be reloaded on the fly with the `reload_config`
+> command. Not all configuration options can change without restarting Ghostty.
+> Any options that require a restart should be documented.
+
 #### Configuration Errors
 
 If your configuration file has any errors, Ghostty does its best to ignore
