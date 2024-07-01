@@ -3061,7 +3061,7 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     if (report) try self.reportColorScheme();
 }
 
-fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
+pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
     // xpos/ypos need to be adjusted for window padding
     // (i.e. "window-padding-*" settings.
     const pad = if (self.config.window_padding_balance)
