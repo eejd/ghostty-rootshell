@@ -869,7 +869,41 @@ extension Ghostty {
         
         override func menu(for event: NSEvent) -> NSMenu? {
             // We only support right-click menus
-            guard event.type == .rightMouseDown else { return nil }
+            switch event.type {
+            case .rightMouseDown:
+                // Good
+                break
+                
+            case .leftMouseDown:
+                if !event.modifierFlags.contains(.control) {
+                    return nil
+                }
+                
+                // In this case, AppKit calls menu BEFORE calling any mouse events.
+                // If mouse capturing is enabled then we never show the context menu
+                // so that we can handle ctrl+left-click in the terminal app.
+                guard let surface = self.surface else { return nil }
+                if ghostty_surface_mouse_captured(surface) {
+                    return nil
+                }
+                
+                // If we return a non-nil menu then mouse events will never be
+                // processed by the core, so we need to manually send a right
+                // mouse down event.
+                //
+                // Note this never sounds a right mouse up event but that's the
+                // same as normal right-click with capturing disabled from AppKit.
+                let mods = Ghostty.ghosttyMods(event.modifierFlags)
+                ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_PRESS,
+                    GHOSTTY_MOUSE_RIGHT,
+                    mods
+                )
+                
+            default:
+                return nil
+            }
             
             let menu = NSMenu()
             

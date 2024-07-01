@@ -1632,6 +1632,12 @@ pub const CAPI = struct {
         surface.textCallback(ptr[0..len]);
     }
 
+    /// Returns true if the surface currently has mouse capturing
+    /// enabled.
+    export fn ghostty_surface_mouse_captured(surface: *Surface) bool {
+        return surface.core_surface.mouseCaptured();
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_mouse_button(
         surface: *Surface,
