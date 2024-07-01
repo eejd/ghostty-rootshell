@@ -21,7 +21,7 @@ for configuration files.
 
 # BUGS
 
-See GitHub issues: <https://github.com/mitchellh/ghostty/issues>
+See GitHub issues: <https://github.com/ghostty-org/ghostty/issues>
 
 # AUTHOR
 
