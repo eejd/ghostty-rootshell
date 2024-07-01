@@ -297,6 +297,13 @@ palette: Palette = .{},
 /// a prompt, regardless of this configuration. You can disable that behavior
 /// by specifying `shell-integration-features = no-cursor` or disabling shell
 /// integration entirely.
+///
+/// Valid values are:
+///
+///   * `block`
+///   * `bar`
+///   * `underline`
+///
 @"cursor-style": terminal.CursorStyle = .block,
 
 /// Sets the default blinking state of the cursor. This is just the default
@@ -310,6 +317,13 @@ palette: Palette = .{},
 /// (AT&T cursor blink) as an alternate approach to turning blinking on/off. If
 /// this is set to any value other than null, DEC mode 12 will be ignored but
 /// `DECSCUSR` will still be respected.
+///
+/// Valid values are:
+///
+///   * `` (blank)
+///   * `true`
+///   * `false`
+///
 @"cursor-style-blink": ?bool = null,
 
 /// The color of the text under the cursor. If this is not set, a default will
@@ -354,6 +368,14 @@ palette: Palette = .{},
 ///
 /// If you always want shift to extend mouse selection even if the program
 /// requests otherwise, set this to `never`.
+///
+/// Valid values are:
+///
+///   * `true`
+///   * `false`
+///   * `always`
+///   * `never`
+///
 @"mouse-shift-capture": MouseShiftCapture = .false,
 
 /// Multiplier for scrolling distance with the mouse wheel. Any value less
@@ -769,6 +791,13 @@ keybind: Keybinds = .{},
 /// Whether to allow programs running in the terminal to read/write to the
 /// system clipboard (OSC 52, for googling). The default is to allow clipboard
 /// reading after prompting the user and allow writing unconditionally.
+///
+/// Valid values are:
+///
+///   * `ask`
+///   * `allow`
+///   * `deny`
+///
 @"clipboard-read": ClipboardAccess = .ask,
 @"clipboard-write": ClipboardAccess = .allow,
 
