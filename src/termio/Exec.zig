@@ -1014,6 +1014,12 @@ const Subprocess = struct {
             env.remove("GHOSTTY_MAC_APP");
         }
 
+        // Don't leak these environment variables to child processes.
+        if (comptime build_config.app_runtime == .gtk) {
+            env.remove("GDK_DEBUG");
+            env.remove("GSK_RENDERER");
+        }
+
         // Setup our shell integration, if we can.
         const integrated_shell: ?shell_integration.Shell, const shell_command: []const u8 = shell: {
             const default_shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
