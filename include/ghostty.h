@@ -565,6 +565,10 @@ uintptr_t ghostty_surface_selection(ghostty_surface_t, char*, uintptr_t);
 #ifdef __APPLE__
 void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
 void* ghostty_surface_quicklook_font(ghostty_surface_t);
+uintptr_t ghostty_surface_quicklook_word(ghostty_surface_t,
+                                         char*,
+                                         uintptr_t,
+                                         ghostty_selection_s*);
 bool ghostty_surface_selection_info(ghostty_surface_t, ghostty_selection_s*);
 #endif
 

@@ -1829,6 +1829,61 @@ pub const CAPI = struct {
             return copy;
         }
 
+        /// This returns the selected word for quicklook. This will populate
+        /// the buffer with the word under the cursor and the selection
+        /// info so that quicklook can be rendered.
+        ///
+        /// This does not modify the selection active on the surface (if any).
+        export fn ghostty_surface_quicklook_word(
+            ptr: *Surface,
+            buf: [*]u8,
+            cap: usize,
+            info: *Selection,
+        ) usize {
+            const surface = &ptr.core_surface;
+            surface.renderer_state.mutex.lock();
+            defer surface.renderer_state.mutex.unlock();
+
+            // To make everything in this function easier, we modify the
+            // selection to be the word under the cursor and call normal APIs.
+            // We restore the old selection so it isn't ever changed. Since we hold
+            // the renderer mutex it'll never show up in a frame.
+            const prev = surface.io.terminal.screen.selection;
+            defer surface.io.terminal.screen.selection = prev;
+
+            // Get our word selection
+            const sel = sel: {
+                const screen = &surface.renderer_state.terminal.screen;
+                const pos = try ptr.getCursorPos();
+                const pt_viewport = surface.posToViewport(pos.x, pos.y);
+                const pin = screen.pages.pin(.{
+                    .viewport = .{
+                        .x = pt_viewport.x,
+                        .y = pt_viewport.y,
+                    },
+                }) orelse {
+                    if (comptime std.debug.runtime_safety) unreachable;
+                    return 0;
+                };
+                break :sel surface.io.terminal.screen.selectWord(pin) orelse return 0;
+            };
+
+            // Set the selection
+            surface.io.terminal.screen.selection = sel;
+
+            // No we call normal functions. These require that the lock
+            // is unlocked. This may cause a frame flicker with the fake
+            // selection but I think the lack of new complexity is worth it
+            // for now.
+            {
+                surface.renderer_state.mutex.unlock();
+                defer surface.renderer_state.mutex.lock();
+                const len = ghostty_surface_selection(ptr, buf, cap);
+                if (!ghostty_surface_selection_info(ptr, info)) return 0;
+                return len;
+            }
+        }
+
         /// This returns the selection metadata for the current selection.
         /// This will return false if there is no selection or the
         /// selection is not fully contained in the viewport (since the

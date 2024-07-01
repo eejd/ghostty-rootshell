@@ -623,7 +623,7 @@ extension Ghostty {
             guard UserDefaults.standard.bool(forKey: "com.apple.trackpad.forceClick") else { return }
             quickLook(with: event)
         }
-
+        
         override func cursorUpdate(with event: NSEvent) {
             switch (cursorVisible) {
             case .visible, .hidden:
@@ -865,6 +865,36 @@ extension Ghostty {
                 key_ev.text = ptr
                 ghostty_surface_key(surface, key_ev)
             }
+        }
+        
+        override func quickLook(with event: NSEvent) {
+            guard let surface = self.surface else { return super.quickLook(with: event) }
+            
+            // Grab the text under the cursor
+            var info: ghostty_selection_s = ghostty_selection_s();
+            let text = String(unsafeUninitializedCapacity: 1000000) {
+                Int(ghostty_surface_quicklook_word(surface, $0.baseAddress, UInt($0.count), &info))
+            }
+            guard !text.isEmpty  else { return super.quickLook(with: event) }
+            
+            // If we can get a font then we use the font. This should always work
+            // since we always have a primary font. The only scenario this doesn't
+            // work is if someone is using a non-CoreText build which would be
+            // unofficial.
+            var attributes: [ NSAttributedString.Key : Any ] = [:];
+            if let fontRaw = ghostty_surface_quicklook_font(surface) {
+                // Memory management here is wonky: ghostty_surface_quicklook_font
+                // will create a copy of a CTFont, Swift will auto-retain the
+                // unretained value passed into the dict, so we release the original.
+                let font = Unmanaged<CTFont>.fromOpaque(fontRaw)
+                attributes[.font] = font.takeUnretainedValue()
+                font.release()
+            }
+            
+            // Ghostty coordinate system is top-left, conver to bottom-left for AppKit
+            let pt = NSMakePoint(info.tl_px_x - 2, frame.size.height - info.tl_px_y + 2)
+            let str = NSAttributedString.init(string: text, attributes: attributes)
+            self.showDefinition(for: str, at: pt);
         }
         
         override func menu(for event: NSEvent) -> NSMenu? {
