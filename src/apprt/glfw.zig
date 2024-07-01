@@ -1048,7 +1048,7 @@ pub const Surface = struct {
             else => unreachable,
         };
 
-        core_win.mouseButtonCallback(action, button, mods) catch |err| {
+        _ = core_win.mouseButtonCallback(action, button, mods) catch |err| {
             log.err("error in scroll callback err={}", .{err});
             return;
         };

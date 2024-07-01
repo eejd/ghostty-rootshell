@@ -533,7 +533,8 @@ ghostty_input_mods_e ghostty_surface_key_translation_mods(ghostty_surface_t,
                                                           ghostty_input_mods_e);
 void ghostty_surface_key(ghostty_surface_t, ghostty_input_key_s);
 void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t);
-void ghostty_surface_mouse_button(ghostty_surface_t,
+bool ghostty_surface_mouse_captured(ghostty_surface_t);
+bool ghostty_surface_mouse_button(ghostty_surface_t,
                                   ghostty_input_mouse_state_e,
                                   ghostty_input_mouse_button_e,
                                   ghostty_input_mods_e);

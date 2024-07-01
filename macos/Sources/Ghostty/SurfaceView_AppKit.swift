@@ -471,15 +471,39 @@ extension Ghostty {
 
 
         override func rightMouseDown(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surface = self.surface else { return super.rightMouseDown(with: event) }
+            
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods)
+            if (ghostty_surface_mouse_button(
+                surface,
+                GHOSTTY_MOUSE_PRESS,
+                GHOSTTY_MOUSE_RIGHT,
+                mods
+            )) {
+                // Consumed
+                return
+            }
+            
+            // Mouse event not consumed
+            super.rightMouseDown(with: event)
         }
 
         override func rightMouseUp(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surface = self.surface else { return super.rightMouseUp(with: event) }
+            
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
+            if (ghostty_surface_mouse_button(
+                surface,
+                GHOSTTY_MOUSE_RELEASE,
+                GHOSTTY_MOUSE_RIGHT,
+                mods
+            )) {
+                // Handled
+                return
+            }
+            
+            // Mouse event not consumed
+            super.rightMouseUp(with: event)
         }
         
         override func mouseMoved(with event: NSEvent) {
@@ -842,7 +866,59 @@ extension Ghostty {
                 ghostty_surface_key(surface, key_ev)
             }
         }
+        
+        override func menu(for event: NSEvent) -> NSMenu? {
+            // We only support right-click menus
+            switch event.type {
+            case .rightMouseDown:
+                // Good
+                break
+                
+            case .leftMouseDown:
+                if !event.modifierFlags.contains(.control) {
+                    return nil
+                }
+                
+                // In this case, AppKit calls menu BEFORE calling any mouse events.
+                // If mouse capturing is enabled then we never show the context menu
+                // so that we can handle ctrl+left-click in the terminal app.
+                guard let surface = self.surface else { return nil }
+                if ghostty_surface_mouse_captured(surface) {
+                    return nil
+                }
+                
+                // If we return a non-nil menu then mouse events will never be
+                // processed by the core, so we need to manually send a right
+                // mouse down event.
+                //
+                // Note this never sounds a right mouse up event but that's the
+                // same as normal right-click with capturing disabled from AppKit.
+                let mods = Ghostty.ghosttyMods(event.modifierFlags)
+                ghostty_surface_mouse_button(
+                    surface,
+                    GHOSTTY_MOUSE_PRESS,
+                    GHOSTTY_MOUSE_RIGHT,
+                    mods
+                )
+                
+            default:
+                return nil
+            }
+            
+            let menu = NSMenu()
+            
+            // If we have a selection, add copy
+            if self.selectedRange().length > 0 {
+                menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            }
+            menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+            
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
 
+            return menu
+        }
+            
         // MARK: Menu Handlers
 
         @IBAction func copy(_ sender: Any?) {

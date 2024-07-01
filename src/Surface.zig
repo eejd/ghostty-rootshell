@@ -2129,12 +2129,23 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
     };
 }
 
+/// Returns true if the mouse is currently captured by the terminal
+/// (i.e. reporting events).
+pub fn mouseCaptured(self: *Surface) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    return self.io.terminal.flags.mouse_event != .none;
+}
+
+/// Called for mouse button press/release events. This will return true
+/// if the mouse event was consumed in some way (i.e. the program is capturing
+/// mouse events). If the event was not consumed, then false is returned.
 pub fn mouseButtonCallback(
     self: *Surface,
     action: input.MouseButtonState,
     button: input.MouseButton,
     mods: input.Mods,
-) !void {
+) !bool {
     // log.debug("mouse action={} button={} mods={}", .{ action, button, mods });
 
     // If we have an inspector, we always queue a render
@@ -2155,7 +2166,7 @@ pub fn mouseButtonCallback(
             const screen = &self.renderer_state.terminal.screen;
             const p = screen.pages.pin(.{ .viewport = point }) orelse {
                 log.warn("failed to get pin for clicked point", .{});
-                return;
+                return false;
             };
 
             insp.cell.select(
@@ -2166,7 +2177,7 @@ pub fn mouseButtonCallback(
             ) catch |err| {
                 log.warn("error selecting cell for inspector err={}", .{err});
             };
-            return;
+            return false;
         }
     }
 
@@ -2205,7 +2216,7 @@ pub fn mouseButtonCallback(
             if (selection) {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.cursorPosCallback(pos);
-                return;
+                return true;
             }
         }
     }
@@ -2216,7 +2227,7 @@ pub fn mouseButtonCallback(
     if (button == .left and action == .release and self.mouse.over_link) {
         const pos = try self.rt_surface.getCursorPos();
         if (self.processLinks(pos)) |processed| {
-            if (processed) return;
+            if (processed) return true;
         } else |err| {
             log.warn("error processing links err={}", .{err});
         }
@@ -2257,7 +2268,7 @@ pub fn mouseButtonCallback(
 
             // If we're doing mouse reporting, we do not support any other
             // selection or highlighting.
-            return;
+            return true;
         }
     }
 
@@ -2269,7 +2280,7 @@ pub fn mouseButtonCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         try self.clickMoveCursor(pin.*);
-        return;
+        return true;
     }
 
     // For left button clicks we always record some information for
@@ -2398,6 +2409,53 @@ pub fn mouseButtonCallback(
             try self.startClipboardRequest(clipboard, .{ .paste = {} });
         }
     }
+
+    // Right-click down selects word for context menus. If the apprt
+    // doesn't implement context menus this can be a bit weird but they
+    // are supported by our two main apprts so we always do this. If we
+    // want to be careful in the future we can add a function to apprts
+    // that let's us know.
+    if (button == .right and action == .press) sel: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // Get our viewport pin
+        const screen = &self.renderer_state.terminal.screen;
+        const pin = pin: {
+            const pos = try self.rt_surface.getCursorPos();
+            const pt_viewport = self.posToViewport(pos.x, pos.y);
+            const pin = screen.pages.pin(.{
+                .viewport = .{
+                    .x = pt_viewport.x,
+                    .y = pt_viewport.y,
+                },
+            }) orelse {
+                // Weird... our viewport x/y that we just converted isn't
+                // found in our pages. This is probably a bug but we don't
+                // want to crash in releases because its harmless. So, we
+                // only assert in debug mode.
+                if (comptime std.debug.runtime_safety) unreachable;
+                break :sel;
+            };
+
+            break :pin pin;
+        };
+
+        // If we already have a selection and the selection contains
+        // where we clicked then we don't want to modify the selection.
+        if (self.io.terminal.screen.selection) |prev_sel| {
+            if (prev_sel.contains(screen, pin)) break :sel;
+
+            // The selection doesn't contain our pin, so we create a new
+            // word selection where we clicked.
+        }
+
+        const sel = screen.selectWord(pin) orelse break :sel;
+        try self.setSelection(sel);
+        try self.queueRender();
+    }
+
+    return false;
 }
 
 /// Performs the "click-to-move" logic to move the cursor to the given

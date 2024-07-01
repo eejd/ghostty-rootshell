@@ -1164,7 +1164,7 @@ fn gtkMouseDown(
         self.grabFocus();
     }
 
-    self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
+    _ = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
@@ -1184,7 +1184,7 @@ fn gtkMouseUp(
     const mods = translateMods(gtk_mods);
 
     const self = userdataSelf(ud.?);
-    self.core_surface.mouseButtonCallback(.release, button, mods) catch |err| {
+    _ = self.core_surface.mouseButtonCallback(.release, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
