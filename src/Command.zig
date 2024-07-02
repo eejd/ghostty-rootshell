@@ -159,12 +159,21 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     // We are the child.
 
     // Setup our file descriptors for std streams.
-    if (self.stdin) |f| try setupFd(f.handle, posix.STDIN_FILENO);
-    if (self.stdout) |f| try setupFd(f.handle, posix.STDOUT_FILENO);
-    if (self.stderr) |f| try setupFd(f.handle, posix.STDERR_FILENO);
+    if (self.stdin) |f| setupFd(f.handle, posix.STDIN_FILENO) catch
+        return error.ExecFailedInChild;
+    if (self.stdout) |f| setupFd(f.handle, posix.STDOUT_FILENO) catch
+        return error.ExecFailedInChild;
+    if (self.stderr) |f| setupFd(f.handle, posix.STDERR_FILENO) catch
+        return error.ExecFailedInChild;
 
     // Setup our working directory
-    if (self.cwd) |cwd| try posix.chdir(cwd);
+    if (self.cwd) |cwd| posix.chdir(cwd) catch {
+        // This can fail if we don't have permission to go to
+        // this directory or if due to race conditions it doesn't
+        // exist or any various other reasons. We don't want to
+        // crash the entire process if this fails so we ignore it.
+        // We don't log because that'll show up in the output.
+    };
 
     // If the user requested a pre exec callback, call it now.
     if (self.pre_exec) |f| f(self);
