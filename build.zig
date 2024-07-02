@@ -446,7 +446,17 @@ pub fn build(b: *std.Build) !void {
     }
 
     // Documenation
-    if (emit_docs) try buildDocumentation(b, config);
+    if (emit_docs) {
+        try buildDocumentation(b, config);
+    } else {
+        // We need to create the zig-out/share/man directory so that
+        // macOS builds continue to work even if emit-docs doesn't
+        // work.
+        var wf = b.addWriteFiles();
+        const path = "share/man/.placeholder";
+        const placeholder = wf.add(path, "emit-docs not true so no man pages");
+        b.getInstallStep().dependOn(&b.addInstallFile(placeholder, path).step);
+    }
 
     // App (Linux)
     if (target.result.os.tag == .linux and config.app_runtime != .none) {
