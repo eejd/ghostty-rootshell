@@ -168,6 +168,16 @@ class TerminalWindow: NSWindow {
             hideTitleBarSeparators()
         }
     }
+    
+    override func mergeAllWindows(_ sender: Any?) {
+        super.mergeAllWindows(sender)
+        
+        if let controller = self.windowController as? TerminalController {
+            // It takes an event loop cycle to merge all the windows so we set a
+            // short timer to relabel the tabs (issue #1902)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { controller.relabelTabs() }
+        }
+    }
 
     // MARK: - Tab Bar Styling
 
