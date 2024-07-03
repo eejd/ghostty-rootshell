@@ -34,6 +34,24 @@ const grapheme_count_default = GraphemeAlloc.bitmap_bit_size;
 const grapheme_bytes_default = grapheme_count_default * grapheme_chunk;
 const GraphemeMap = AutoOffsetHashMap(Offset(Cell), Offset(u21).Slice);
 
+/// The allocator used for shared utf8-encoded strings within a page.
+/// Note the chunk size below is the minimum size of a single allocation
+/// and requires a single bit of metadata in our bitmap allocator. Therefore
+/// it should be tuned carefully (too small and we waste metadata, too large
+/// and we have fragmentation). We can probably use a better allocation
+/// strategy in the future.
+///
+/// At the time of writing this, the strings table is only used for OSC8
+/// IDs and URIs. IDs are usually short and URIs are usually longer. I chose
+/// 32 bytes as a compromise between these two since it represents single
+/// domain links quite well and is not too wasteful for short IDs. We can
+/// continue to tune this as we see how it's used.
+const string_chunk_len = 32;
+const string_chunk = string_chunk_len * @sizeOf(u8);
+const StringAlloc = BitmapAllocator(string_chunk);
+const string_count_default = StringAlloc.bitmap_bit_size;
+const string_bytes_default = string_count_default * string_chunk;
+
 /// A page represents a specific section of terminal screen. The primary
 /// idea of a page is that it is a fully self-contained unit that can be
 /// serialized, copied, etc. as a convenient way to represent a section
@@ -74,6 +92,11 @@ pub const Page = struct {
     /// to row, you must use the `rows` field. From the pointer to the
     /// first column, all cells in that row are laid out in column order.
     cells: Offset(Cell),
+
+    /// The string allocator for this page used for shared utf-8 encoded
+    /// strings. Liveness of strings and memory management is deferred to
+    /// the individual use case.
+    string_alloc: StringAlloc,
 
     /// The multi-codepoint grapheme data for this page. This is where
     /// any cell that has more than one codepoint will be stored. This is
@@ -198,6 +221,10 @@ pub const Page = struct {
                 buf.add(l.styles_start),
                 l.styles_layout,
                 .{},
+            ),
+            .string_alloc = StringAlloc.init(
+                buf.add(l.string_alloc_start),
+                l.string_alloc_layout,
             ),
             .grapheme_alloc = GraphemeAlloc.init(
                 buf.add(l.grapheme_alloc_start),
@@ -977,6 +1004,8 @@ pub const Page = struct {
         grapheme_alloc_layout: GraphemeAlloc.Layout,
         grapheme_map_start: usize,
         grapheme_map_layout: GraphemeMap.Layout,
+        string_alloc_start: usize,
+        string_alloc_layout: StringAlloc.Layout,
         capacity: Capacity,
     };
 
@@ -1015,7 +1044,11 @@ pub const Page = struct {
         const grapheme_map_start = alignForward(usize, grapheme_alloc_end, GraphemeMap.base_align);
         const grapheme_map_end = grapheme_map_start + grapheme_map_layout.total_size;
 
-        const total_size = alignForward(usize, grapheme_map_end, std.mem.page_size);
+        const string_layout = StringAlloc.layout(cap.string_bytes);
+        const string_start = alignForward(usize, grapheme_map_end, StringAlloc.base_align);
+        const string_end = string_start + string_layout.total_size;
+
+        const total_size = alignForward(usize, string_end, std.mem.page_size);
 
         return .{
             .total_size = total_size,
@@ -1031,6 +1064,8 @@ pub const Page = struct {
             .grapheme_alloc_layout = grapheme_alloc_layout,
             .grapheme_map_start = grapheme_map_start,
             .grapheme_map_layout = grapheme_map_layout,
+            .string_alloc_start = string_start,
+            .string_alloc_layout = string_layout,
             .capacity = cap,
         };
     }
@@ -1038,12 +1073,15 @@ pub const Page = struct {
 
 /// The standard capacity for a page that doesn't have special
 /// requirements. This is enough to support a very large number of cells.
-/// The standard capacity is chosen as the fast-path for allocation.
+/// The standard capacity is chosen as the fast-path for allocation since
+/// pages of standard capacity use a pooled allocator instead of single-use
+/// mmaps.
 pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
     .styles = 128,
     .grapheme_bytes = 8192,
+    .string_bytes = 2048,
 };
 
 /// The size of this page.
@@ -1063,6 +1101,9 @@ pub const Capacity = struct {
 
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,
+
+    /// Number of bytes to allocate for strings.
+    string_bytes: usize = string_bytes_default,
 
     pub const Adjustment = struct {
         cols: ?size.CellCountInt = null,
@@ -1089,7 +1130,8 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const grapheme_map_start = alignBackward(usize, layout.total_size - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
+            const string_alloc_start = alignBackward(usize, layout.total_size, StringAlloc.base_align);
+            const grapheme_map_start = alignBackward(usize, string_alloc_start - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
 

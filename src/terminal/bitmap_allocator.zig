@@ -65,6 +65,9 @@ pub fn BitmapAllocator(comptime chunk_size: comptime_int) type {
 
         /// Allocate n elements of type T. This will return error.OutOfMemory
         /// if there isn't enough space in the backing buffer.
+        ///
+        /// Use (size.zig).getOffset to get the base offset from the backing
+        /// memory for portable storage.
         pub fn alloc(
             self: *Self,
             comptime T: type,

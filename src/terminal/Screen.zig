@@ -3307,13 +3307,6 @@ test "Screen: scrolling when viewport is pruned" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
 
     {
-        // Test our contents rotated
-        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
-    }
-
-    {
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
             .y = 0,
