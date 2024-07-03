@@ -991,6 +991,26 @@ const Subprocess = struct {
             }
         }
 
+        // Add the man pages from our application bundle to MANPATH.
+        if (comptime builtin.target.isDarwin()) {
+            if (opts.resources_dir) |resources_dir| {
+                var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                const dir = try std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir});
+
+                if (env.get("MANPATH")) |manpath| {
+                    // Append to the existing MANPATH. It's very unlikely that our bundle's
+                    // resources directory already appears here so we don't spend the time
+                    // searching for it.
+                    try env.put(
+                        "MANPATH",
+                        try internal_os.appendEnv(alloc, manpath, dir),
+                    );
+                } else {
+                    try env.put("MANPATH", dir);
+                }
+            }
+        }
+
         // Set environment variables used by some programs (such as neovim) to detect
         // which terminal emulator and version they're running under.
         try env.put("TERM_PROGRAM", "ghostty");
