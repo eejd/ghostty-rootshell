@@ -992,9 +992,12 @@ const Subprocess = struct {
 
         // Add the man pages from our application bundle to MANPATH.
         if (comptime builtin.target.isDarwin()) {
-            if (opts.resources_dir) |resources_dir| {
+            if (opts.resources_dir) |resources_dir| man: {
                 var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-                const dir = try std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir});
+                const dir = std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir}) catch |err| {
+                    log.warn("error building manpath, man pages may not be available err={}", .{err});
+                    break :man;
+                };
 
                 if (env.get("MANPATH")) |manpath| {
                     // Append to the existing MANPATH. It's very unlikely that our bundle's
