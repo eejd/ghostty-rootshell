@@ -923,10 +923,9 @@ const Subprocess = struct {
         errdefer env.deinit();
 
         // If we have a resources dir then set our env var
-        const resources_key = "GHOSTTY_RESOURCES_DIR";
         if (opts.resources_dir) |dir| {
             log.info("found Ghostty resources dir: {s}", .{dir});
-            try env.put(resources_key, dir);
+            try env.put("GHOSTTY_RESOURCES_DIR", dir);
         }
 
         // Set our TERM var. This is a bit complicated because we want to use
@@ -988,6 +987,29 @@ const Subprocess = struct {
                 );
             } else {
                 try env.put("PATH", exe_dir);
+            }
+        }
+
+        // Add the man pages from our application bundle to MANPATH.
+        if (comptime builtin.target.isDarwin()) {
+            if (opts.resources_dir) |resources_dir| man: {
+                var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                const dir = std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir}) catch |err| {
+                    log.warn("error building manpath, man pages may not be available err={}", .{err});
+                    break :man;
+                };
+
+                if (env.get("MANPATH")) |manpath| {
+                    // Append to the existing MANPATH. It's very unlikely that our bundle's
+                    // resources directory already appears here so we don't spend the time
+                    // searching for it.
+                    try env.put(
+                        "MANPATH",
+                        try internal_os.appendEnv(alloc, manpath, dir),
+                    );
+                } else {
+                    try env.put("MANPATH", dir);
+                }
             }
         }
 
