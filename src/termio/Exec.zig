@@ -923,10 +923,9 @@ const Subprocess = struct {
         errdefer env.deinit();
 
         // If we have a resources dir then set our env var
-        const resources_key = "GHOSTTY_RESOURCES_DIR";
         if (opts.resources_dir) |dir| {
             log.info("found Ghostty resources dir: {s}", .{dir});
-            try env.put(resources_key, dir);
+            try env.put("GHOSTTY_RESOURCES_DIR", dir);
         }
 
         // Set our TERM var. This is a bit complicated because we want to use
