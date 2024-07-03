@@ -6,11 +6,10 @@ const page = @import("page.zig");
 const size = @import("size.zig");
 const Offset = size.Offset;
 const OffsetBuf = size.OffsetBuf;
+const RefCountedSet = @import("ref_counted_set.zig").RefCountedSet;
 
 const Wyhash = std.hash.Wyhash;
 const autoHash = std.hash.autoHash;
-
-const RefCountedSet = @import("ref_counted_set.zig").RefCountedSet;
 
 /// The unique identifier for a style. This is at most the number of cells
 /// that can fit into a terminal page.

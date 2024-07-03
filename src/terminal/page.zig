@@ -7,6 +7,7 @@ const testing = std.testing;
 const posix = std.posix;
 const fastmem = @import("../fastmem.zig");
 const color = @import("color.zig");
+const hyperlink = @import("hyperlink.zig");
 const sgr = @import("sgr.zig");
 const style = @import("style.zig");
 const size = @import("size.zig");
@@ -113,6 +114,13 @@ pub const Page = struct {
 
     /// The available set of styles in use on this page.
     styles: style.Set,
+
+    /// The structures used for tracking hyperlinks within the page.
+    /// The map maps cell offsets to hyperlink IDs and the IDs are in
+    /// the ref counted set. The strings within the hyperlink structures
+    /// are allocated in the string allocator.
+    hyperlink_map: hyperlink.Map,
+    hyperlink_set: hyperlink.Set,
 
     /// The offset to the first mask of dirty bits in the page.
     ///
@@ -233,6 +241,15 @@ pub const Page = struct {
             .grapheme_map = GraphemeMap.init(
                 buf.add(l.grapheme_map_start),
                 l.grapheme_map_layout,
+            ),
+            .hyperlink_map = hyperlink.Map.init(
+                buf.add(l.hyperlink_map_start),
+                l.hyperlink_map_layout,
+            ),
+            .hyperlink_set = hyperlink.Set.init(
+                buf.add(l.hyperlink_set_start),
+                l.hyperlink_set_layout,
+                .{},
             ),
             .size = .{ .cols = cap.cols, .rows = cap.rows },
             .capacity = cap,
@@ -1006,6 +1023,10 @@ pub const Page = struct {
         grapheme_map_layout: GraphemeMap.Layout,
         string_alloc_start: usize,
         string_alloc_layout: StringAlloc.Layout,
+        hyperlink_map_start: usize,
+        hyperlink_map_layout: hyperlink.Map.Layout,
+        hyperlink_set_start: usize,
+        hyperlink_set_layout: hyperlink.Set.Layout,
         capacity: Capacity,
     };
 
@@ -1048,7 +1069,15 @@ pub const Page = struct {
         const string_start = alignForward(usize, grapheme_map_end, StringAlloc.base_align);
         const string_end = string_start + string_layout.total_size;
 
-        const total_size = alignForward(usize, string_end, std.mem.page_size);
+        const hyperlink_map_layout = hyperlink.Map.layout(@intCast(cap.hyperlink_cells));
+        const hyperlink_map_start = alignForward(usize, string_end, hyperlink.Map.base_align);
+        const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
+
+        const hyperlink_set_layout = hyperlink.Set.layout(@intCast(cap.hyperlink_entries));
+        const hyperlink_set_start = alignForward(usize, hyperlink_map_end, hyperlink.Set.base_align);
+        const hyperlink_set_end = hyperlink_set_start + hyperlink_set_layout.total_size;
+
+        const total_size = alignForward(usize, hyperlink_set_end, std.mem.page_size);
 
         return .{
             .total_size = total_size,
@@ -1066,6 +1095,10 @@ pub const Page = struct {
             .grapheme_map_layout = grapheme_map_layout,
             .string_alloc_start = string_start,
             .string_alloc_layout = string_layout,
+            .hyperlink_map_start = hyperlink_map_start,
+            .hyperlink_map_layout = hyperlink_map_layout,
+            .hyperlink_set_start = hyperlink_set_start,
+            .hyperlink_set_layout = hyperlink_set_layout,
             .capacity = cap,
         };
     }
@@ -1080,6 +1113,8 @@ pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
     .styles = 128,
+    .hyperlink_cells = 32, // TODO: think about these numbers
+    .hyperlink_entries = 4,
     .grapheme_bytes = 8192,
     .string_bytes = 2048,
 };
@@ -1098,6 +1133,12 @@ pub const Capacity = struct {
 
     /// Number of unique styles that can be used on this page.
     styles: usize = 16,
+
+    /// The cells is the number of cells in the terminal that can have
+    /// a hyperlink and the entries is the number of unique hyperlinks
+    /// itself.
+    hyperlink_cells: usize = 32,
+    hyperlink_entries: usize = 4,
 
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,
@@ -1130,7 +1171,9 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const string_alloc_start = alignBackward(usize, layout.total_size, StringAlloc.base_align);
+            const hyperlink_set_start = alignBackward(usize, layout.total_size - layout.hyperlink_set_layout.total_size, hyperlink.Set.base_align);
+            const hyperlink_map_start = alignBackward(usize, hyperlink_set_start - layout.hyperlink_map_layout.total_size, hyperlink.Map.base_align);
+            const string_alloc_start = alignBackward(usize, hyperlink_map_start - layout.string_alloc_layout.total_size, StringAlloc.base_align);
             const grapheme_map_start = alignBackward(usize, string_alloc_start - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
