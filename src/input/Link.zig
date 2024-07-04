@@ -23,6 +23,10 @@ pub const Action = union(enum) {
     /// Open the full matched value using the default open program.
     /// For example, on macOS this is "open" and on Linux this is "xdg-open".
     open: void,
+
+    /// Open the OSC8 hyperlink under the mouse position. _-prefixed means
+    /// this can't be user-specified, it's only used internally.
+    _open_osc8: void,
 };
 
 pub const Highlight = union(enum) {

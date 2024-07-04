@@ -2519,16 +2519,15 @@ fn clickMoveCursor(self: *Surface, to: terminal.Pin) !void {
 }
 
 /// Returns the link at the given cursor position, if any.
+///
+/// Requires the renderer mutex is held.
 fn linkAtPos(
     self: *Surface,
     pos: apprt.CursorPos,
 ) !?struct {
-    DerivedConfig.Link,
+    input.Link.Action,
     terminal.Selection,
 } {
-    // If we have no configured links we can save a lot of work
-    if (self.config.links.len == 0) return null;
-
     // Convert our cursor position to a screen point.
     const screen = &self.renderer_state.terminal.screen;
     const mouse_pin: terminal.Pin = mouse_pin: {
@@ -2542,6 +2541,19 @@ fn linkAtPos(
 
     // Get our comparison mods
     const mouse_mods = self.mouseModsWithCapture(self.mouse.mods);
+
+    // If we have the proper modifiers set then we can check for OSC8 links.
+    if (mouse_mods.equal(input.ctrlOrSuper(.{}))) hyperlink: {
+        const rac = mouse_pin.rowAndCell();
+        const cell = rac.cell;
+        if (!cell.hyperlink) break :hyperlink;
+        const sel = terminal.Selection.init(mouse_pin, mouse_pin, false);
+        return .{ ._open_osc8, sel };
+    }
+
+    // If we have no OSC8 links then we fallback to regex-based URL detection.
+    // If we have no configured links we can save a lot of work going forward.
+    if (self.config.links.len == 0) return null;
 
     // Get the line we're hovering over.
     const line = screen.selectLine(.{
@@ -2571,7 +2583,7 @@ fn linkAtPos(
             defer match.deinit();
             const sel = match.selection();
             if (!sel.contains(screen, mouse_pin)) continue;
-            return .{ link, sel };
+            return .{ link.action, sel };
         }
     }
 
@@ -2602,8 +2614,8 @@ fn mouseModsWithCapture(self: *Surface, mods: input.Mods) input.Mods {
 ///
 /// Requires the renderer state mutex is held.
 fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
-    const link, const sel = try self.linkAtPos(pos) orelse return false;
-    switch (link.action) {
+    const action, const sel = try self.linkAtPos(pos) orelse return false;
+    switch (action) {
         .open => {
             const str = try self.io.terminal.screen.selectionString(self.alloc, .{
                 .sel = sel,
@@ -2611,6 +2623,20 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
             });
             defer self.alloc.free(str);
             try internal_os.open(self.alloc, str);
+        },
+
+        ._open_osc8 => {
+            // Note: we probably want to put this into a helper on page.
+            const pin = sel.start();
+            const page = &pin.page.data;
+            const cell = pin.rowAndCell().cell;
+            const link_id = page.lookupHyperlink(cell) orelse {
+                log.warn("failed to find hyperlink for cell", .{});
+                return false;
+            };
+            const link = page.hyperlink_set.get(page.memory, link_id);
+            const uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            try internal_os.open(self.alloc, uri);
         },
     }
 
