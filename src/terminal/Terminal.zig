@@ -5018,6 +5018,94 @@ test "Terminal: scrollUp simple" {
     }
 }
 
+test "Terminal: scrollUp moves hyperlink" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    try t.printString("ABC");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("DEF");
+    t.screen.endHyperlink();
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    t.scrollUp(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("DEF\nGHI", str);
+    }
+
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+        const page = &list_cell.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+            .x = @intCast(x),
+            .y = 1,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell);
+        try testing.expect(id == null);
+    }
+}
+
+test "Terminal: scrollUp clears hyperlink" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("ABC");
+    t.screen.endHyperlink();
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("DEF");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI");
+    t.setCursorPos(2, 2);
+    t.scrollUp(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("DEF\nGHI", str);
+    }
+
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell);
+        try testing.expect(id == null);
+    }
+}
+
 test "Terminal: scrollUp top/bottom scroll region" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .rows = 5, .cols = 5 });
@@ -5078,6 +5166,112 @@ test "Terminal: scrollUp left/right scroll region" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("AEF423\nDHI756\nG   89", str);
+    }
+}
+
+test "Terminal: scrollUp left/right scroll region hyperlink" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(alloc);
+
+    try t.printString("ABC123");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("DEF456");
+    t.screen.endHyperlink();
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("GHI789");
+    t.scrolling_region.left = 1;
+    t.scrolling_region.right = 3;
+    t.setCursorPos(2, 2);
+    t.scrollUp(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AEF423\nDHI756\nG   89", str);
+    }
+
+    // First row gets some hyperlinks
+    {
+        for (0..1) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
+            const cell = list_cell.cell;
+            try testing.expect(!cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell);
+            try testing.expect(id == null);
+        }
+        for (1..4) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
+            const row = list_cell.row;
+            try testing.expect(row.hyperlink);
+            const cell = list_cell.cell;
+            try testing.expect(cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell).?;
+            try testing.expectEqual(@as(hyperlink.Id, 1), id);
+            const page = &list_cell.page.data;
+            try testing.expectEqual(1, page.hyperlink_set.count());
+        }
+        for (4..6) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 0,
+            } }).?;
+            const cell = list_cell.cell;
+            try testing.expect(!cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell);
+            try testing.expect(id == null);
+        }
+    }
+
+    // Second row preserves hyperlink where we didn't scroll
+    {
+        for (0..1) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 1,
+            } }).?;
+            const row = list_cell.row;
+            try testing.expect(row.hyperlink);
+            const cell = list_cell.cell;
+            try testing.expect(cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell).?;
+            try testing.expectEqual(@as(hyperlink.Id, 1), id);
+            const page = &list_cell.page.data;
+            try testing.expectEqual(1, page.hyperlink_set.count());
+        }
+        for (1..4) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 1,
+            } }).?;
+            const cell = list_cell.cell;
+            try testing.expect(!cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell);
+            try testing.expect(id == null);
+        }
+        for (4..6) |x| {
+            const list_cell = t.screen.pages.getCell(.{ .viewport = .{
+                .x = @intCast(x),
+                .y = 1,
+            } }).?;
+            const row = list_cell.row;
+            try testing.expect(row.hyperlink);
+            const cell = list_cell.cell;
+            try testing.expect(cell.hyperlink);
+            const id = list_cell.page.data.lookupHyperlink(cell).?;
+            try testing.expectEqual(@as(hyperlink.Id, 1), id);
+            const page = &list_cell.page.data;
+            try testing.expectEqual(1, page.hyperlink_set.count());
+        }
     }
 }
 
