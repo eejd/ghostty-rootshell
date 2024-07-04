@@ -476,6 +476,8 @@ pub fn RefCountedSet(
         /// is ignored and the existing item's ID is returned.
         fn upsert(self: *Self, base: anytype, value: T, new_id: Id, ctx: Context) Id {
             // If the item already exists, return it.
+            // TODO: we should probably call deleted here on value since
+            // we're using the value already in the map
             if (self.lookup(base, value, ctx)) |id| return id;
 
             const table = self.table.ptr(base);

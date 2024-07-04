@@ -2,10 +2,15 @@ const std = @import("std");
 const assert = std.debug.assert;
 const hash_map = @import("hash_map.zig");
 const AutoOffsetHashMap = hash_map.AutoOffsetHashMap;
+const pagepkg = @import("page.zig");
 const size = @import("size.zig");
 const Offset = size.Offset;
-const Cell = @import("page.zig").Cell;
+const Cell = pagepkg.Cell;
+const Page = pagepkg.Page;
 const RefCountedSet = @import("ref_counted_set.zig").RefCountedSet;
+const Wyhash = std.hash.Wyhash;
+const autoHash = std.hash.autoHash;
+const autoHashStrat = std.hash.autoHashStrat;
 
 /// The unique identifier for a hyperlink. This is at most the number of cells
 /// that can fit in a single terminal page.
@@ -18,17 +23,58 @@ pub const Map = AutoOffsetHashMap(Offset(Cell), Id);
 
 /// The main entry for hyperlinks.
 pub const Hyperlink = struct {
-    id: union(enum) {
+    id: Hyperlink.Id,
+    uri: Offset(u8).Slice,
+
+    pub const Id = union(enum) {
         /// An explicitly provided ID via the OSC8 sequence.
         explicit: Offset(u8).Slice,
 
         /// No ID was provided so we auto-generate the ID based on an
-        /// incrementing counter. TODO: implement the counter
+        /// incrementing counter attached to the screen.
         implicit: size.OffsetInt,
-    },
+    };
 
-    /// The URI for the actual link.
-    uri: Offset(u8).Slice,
+    pub fn hash(self: *const Hyperlink, base: anytype) u64 {
+        var hasher = Wyhash.init(0);
+        autoHash(&hasher, std.meta.activeTag(self.id));
+        switch (self.id) {
+            .implicit => |v| autoHash(&hasher, v),
+            .explicit => |slice| autoHashStrat(
+                &hasher,
+                slice.offset.ptr(base)[0..slice.len],
+                .Deep,
+            ),
+        }
+        autoHashStrat(
+            &hasher,
+            self.uri.offset.ptr(base)[0..self.uri.len],
+            .Deep,
+        );
+        return hasher.final();
+    }
+
+    pub fn eql(self: *const Hyperlink, base: anytype, other: *const Hyperlink) bool {
+        if (std.meta.activeTag(self.id) != std.meta.activeTag(other.id)) return false;
+        switch (self.id) {
+            .implicit => if (self.id.implicit != other.id.implicit) return false,
+            .explicit => {
+                const self_ptr = self.id.explicit.offset.ptr(base);
+                const other_ptr = other.id.explicit.offset.ptr(base);
+                if (!std.mem.eql(
+                    u8,
+                    self_ptr[0..self.id.explicit.len],
+                    other_ptr[0..other.id.explicit.len],
+                )) return false;
+            },
+        }
+
+        return std.mem.eql(
+            u8,
+            self.uri.offset.ptr(base)[0..self.uri.len],
+            other.uri.offset.ptr(base)[0..other.uri.len],
+        );
+    }
 };
 
 /// The set of hyperlinks. This is ref-counted so that a set of cells
@@ -38,14 +84,14 @@ pub const Set = RefCountedSet(
     Id,
     size.CellCountInt,
     struct {
+        page: ?*Page = null,
+
         pub fn hash(self: *const @This(), link: Hyperlink) u64 {
-            _ = self;
-            return link.hash();
+            return link.hash(self.page.?.memory);
         }
 
         pub fn eql(self: *const @This(), a: Hyperlink, b: Hyperlink) bool {
-            _ = self;
-            return a.eql(b);
+            return a.eql(self.page.?.memory, &b);
         }
     },
 );
