@@ -764,31 +764,28 @@ pub const Page = struct {
         // Clear our destination now matter what
         self.clearCells(dst_row, dst_left, dst_left + len);
 
-        // If src has no graphemes, this is very fast because we can
-        // just copy the cells directly because every other attribute
-        // is position-independent.
-        const src_grapheme = src_row.grapheme or grapheme: {
-            for (src_cells) |c| if (c.hasGrapheme()) break :grapheme true;
-            break :grapheme false;
-        };
-        if (!src_grapheme) {
+        // If src has no managed memory, this is very fast.
+        if (!src_row.managedMemory()) {
             fastmem.copy(Cell, dst_cells, src_cells);
         } else {
-            // Source has graphemes, meaning we have to do a slower
-            // cell by cell copy.
+            // Source has graphemes or hyperlinks...
             for (src_cells, dst_cells) |*src, *dst| {
                 dst.* = src.*;
-                if (!src.hasGrapheme()) continue;
-
-                // Required for moveGrapheme assertions
-                dst.content_tag = .codepoint;
-                self.moveGrapheme(src, dst);
-                src.content_tag = .codepoint;
-                dst.content_tag = .codepoint_grapheme;
+                if (src.hasGrapheme()) {
+                    // Required for moveGrapheme assertions
+                    dst.content_tag = .codepoint;
+                    self.moveGrapheme(src, dst);
+                    src.content_tag = .codepoint;
+                    dst.content_tag = .codepoint_grapheme;
+                    dst_row.grapheme = true;
+                }
+                if (src.hyperlink) {
+                    dst.hyperlink = false;
+                    self.moveHyperlink(src, dst);
+                    dst.hyperlink = true;
+                    dst_row.hyperlink = true;
+                }
             }
-
-            // The destination row must be marked
-            dst_row.grapheme = true;
         }
 
         // The destination row has styles if any of the cells are styled
@@ -805,6 +802,7 @@ pub const Page = struct {
         @memset(@as([]u64, @ptrCast(src_cells)), 0);
         if (src_cells.len == self.size.cols) {
             src_row.grapheme = false;
+            src_row.hyperlink = false;
             src_row.styled = false;
         }
     }
@@ -888,7 +886,6 @@ pub const Page = struct {
         }
 
         if (row.hyperlink) {
-            row.hyperlink = false;
             for (cells) |*cell| {
                 if (cell.hyperlink) self.clearHyperlink(row, cell);
             }
