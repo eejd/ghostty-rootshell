@@ -2541,6 +2541,7 @@ pub fn fullReset(self: *Terminal) void {
         log.warn("restore cursor on primary screen failed err={}", .{err});
     };
 
+    self.screen.endHyperlink();
     self.screen.charset = .{};
     self.modes = .{};
     self.flags = .{};
@@ -9957,6 +9958,15 @@ test "Terminal: fullReset with a non-empty pen" {
     }
 
     try testing.expectEqual(@as(style.Id, 0), t.screen.cursor.style_id);
+}
+
+test "Terminal: fullReset hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    try t.screen.startHyperlink("http://example.com", null);
+    t.fullReset();
+    try testing.expectEqual(0, t.screen.cursor.hyperlink_id);
 }
 
 test "Terminal: fullReset with a non-empty saved cursor" {
