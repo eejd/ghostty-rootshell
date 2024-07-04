@@ -14,6 +14,7 @@ const ansi = @import("ansi.zig");
 const modes = @import("modes.zig");
 const charsets = @import("charsets.zig");
 const csi = @import("csi.zig");
+const hyperlink = @import("hyperlink.zig");
 const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const sgr = @import("sgr.zig");
@@ -600,10 +601,26 @@ fn printCell(
         );
     }
 
+    // We check for an active hyperlink first because setHyperlink
+    // handles clearing the old hyperlink and an optimization if we're
+    // overwriting the same hyperlink.
+    if (self.screen.cursor.hyperlink_id > 0) {
+        // If we have a hyperlink configured, apply it to this cell
+        var page = &self.screen.cursor.page_pin.page.data;
+        page.setHyperlink(cell, self.screen.cursor.hyperlink_id) catch |err| {
+            // TODO: an error can only happen if our page is out of space
+            // so realloc the page here.
+            log.err("failed to set hyperlink, ignoring err={}", .{err});
+        };
+    } else if (cell.hyperlink) {
+        // If the previous cell had a hyperlink then we need to clear it.
+        var page = &self.screen.cursor.page_pin.page.data;
+        page.clearHyperlink(cell);
+    }
+
     // We don't need to update the style refs unless the
     // cell's new style will be different after writing.
     const style_changed = cell.style_id != self.screen.cursor.style_id;
-
     if (style_changed) {
         var page = &self.screen.cursor.page_pin.page.data;
 
@@ -621,6 +638,7 @@ fn printCell(
         .style_id = self.screen.cursor.style_id,
         .wide = wide,
         .protected = self.screen.cursor.protected,
+        .hyperlink = self.screen.cursor.hyperlink_id > 0,
     };
 
     if (style_changed) {
@@ -3773,6 +3791,97 @@ test "Terminal: print wide char at right margin does not create spacer head" {
         const cell = list_cell.cell;
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
+}
+
+test "Terminal: print with hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Setup our hyperlink and print
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("123456");
+
+    // Verify all our cells have a hyperlink
+    for (0..6) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
+test "Terminal: print and end hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Setup our hyperlink and print
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("123");
+    t.screen.endHyperlink();
+    try t.printString("456");
+
+    // Verify all our cells have a hyperlink
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+    }
+    for (3..6) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
+test "Terminal: print and change hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Setup our hyperlink and print
+    try t.screen.startHyperlink("http://one.example.com", null);
+    try t.printString("123");
+    try t.screen.startHyperlink("http://two.example.com", null);
+    try t.printString("456");
+
+    // Verify all our cells have a hyperlink
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+    }
+    for (3..6) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 2), id);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: linefeed and carriage return" {

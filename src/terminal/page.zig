@@ -859,6 +859,53 @@ pub const Page = struct {
         @memset(@as([]u64, @ptrCast(cells)), 0);
     }
 
+    /// Returns the hyperlink ID for the given cell.
+    pub fn lookupHyperlink(self: *const Page, cell: *Cell) ?hyperlink.Id {
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        const map = self.hyperlink_map.map(self.memory);
+        return map.get(cell_offset);
+    }
+
+    /// Clear the hyperlink from the given cell.
+    pub fn clearHyperlink(self: *Page, cell: *Cell) void {
+        defer self.assertIntegrity();
+
+        // Get our ID
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.hyperlink_map.map(self.memory);
+        const entry = map.getEntry(cell_offset) orelse return;
+
+        // Release our usage of this
+        self.hyperlink_set.release(self.memory, entry.value_ptr.*);
+
+        // Free the memory
+        map.removeByPtr(entry.key_ptr);
+    }
+
+    /// Set the hyperlink for the given cell. If the cell already has a
+    /// hyperlink, then this will handle memory management for the prior
+    /// hyperlink.
+    pub fn setHyperlink(self: *Page, cell: *Cell, id: hyperlink.Id) !void {
+        defer self.assertIntegrity();
+
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.hyperlink_map.map(self.memory);
+        const gop = try map.getOrPut(cell_offset);
+
+        if (gop.found_existing) {
+            // If the hyperlink matches then we don't need to do anything.
+            if (gop.value_ptr.* == id) return;
+
+            // Different hyperlink, we need to release the old one
+            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
+        }
+
+        // Increase ref count for our new hyperlink and set it
+        self.hyperlink_set.use(self.memory, id);
+        gop.value_ptr.* = id;
+        cell.hyperlink = true;
+    }
+
     /// Append a codepoint to the given cell as a grapheme.
     pub fn appendGrapheme(self: *Page, row: *Row, cell: *Cell, cp: u21) Allocator.Error!void {
         defer self.assertIntegrity();
@@ -1297,7 +1344,12 @@ pub const Cell = packed struct(u64) {
     /// Whether this was written with the protection flag set.
     protected: bool = false,
 
-    _padding: u19 = 0,
+    /// Whether this cell is a hyperlink. If this is true then you must
+    /// look up the hyperlink ID in the page hyperlink_map and the ID in
+    /// the hyperlink_set to get the actual hyperlink data.
+    hyperlink: bool = false,
+
+    _padding: u18 = 0,
 
     pub const ContentTag = enum(u2) {
         /// A single codepoint, could be zero to be empty cell.
