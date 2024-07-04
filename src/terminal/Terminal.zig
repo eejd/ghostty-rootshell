@@ -8306,6 +8306,19 @@ test "Terminal: saveCursor protected pen" {
     try testing.expect(t.screen.cursor.protected);
 }
 
+test "Terminal: saveCursor doesn't modify hyperlink state" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 3, .rows = 3 });
+    defer t.deinit(alloc);
+
+    try t.screen.startHyperlink("http://example.com", null);
+    const id = t.screen.cursor.hyperlink_id;
+    t.saveCursor();
+    try testing.expectEqual(id, t.screen.cursor.hyperlink_id);
+    try t.restoreCursor();
+    try testing.expectEqual(id, t.screen.cursor.hyperlink_id);
+}
+
 test "Terminal: setProtectedMode" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 3, .rows = 3 });
