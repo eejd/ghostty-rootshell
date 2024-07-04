@@ -816,6 +816,26 @@ pub const Page = struct {
             }
         }
 
+        // Hyperlinks are keyed by cell offset.
+        if (src.hyperlink or dst.hyperlink) {
+            if (src.hyperlink and !dst.hyperlink) {
+                self.moveHyperlink(src, dst);
+            } else if (!src.hyperlink and dst.hyperlink) {
+                self.moveHyperlink(dst, src);
+            } else {
+                // Both had hyperlinks, so we have to manually swap
+                const src_offset = getOffset(Cell, self.memory, src);
+                const dst_offset = getOffset(Cell, self.memory, dst);
+                var map = self.hyperlink_map.map(self.memory);
+                const src_entry = map.getEntry(src_offset).?;
+                const dst_entry = map.getEntry(dst_offset).?;
+                const src_value = src_entry.value_ptr.*;
+                const dst_value = dst_entry.value_ptr.*;
+                src_entry.value_ptr.* = dst_value;
+                dst_entry.value_ptr.* = src_value;
+            }
+        }
+
         // Copy the metadata. Note that we do NOT have to worry about
         // styles because styles are keyed by ID and we're preserving the
         // exact ref count and row state here.
@@ -918,6 +938,24 @@ pub const Page = struct {
         gop.value_ptr.* = id;
         cell.hyperlink = true;
         row.hyperlink = true;
+    }
+
+    /// Move the hyperlink from one cell to another. This can't fail
+    /// because we avoid any allocations since we're just moving data.
+    /// Destination must NOT have a hyperlink.
+    fn moveHyperlink(self: *Page, src: *Cell, dst: *Cell) void {
+        if (comptime std.debug.runtime_safety) {
+            assert(src.hyperlink);
+            assert(!dst.hyperlink);
+        }
+
+        const src_offset = getOffset(Cell, self.memory, src);
+        const dst_offset = getOffset(Cell, self.memory, dst);
+        var map = self.hyperlink_map.map(self.memory);
+        const entry = map.getEntry(src_offset).?;
+        const value = entry.value_ptr.*;
+        map.removeByPtr(entry.key_ptr);
+        map.putAssumeCapacity(dst_offset, value);
     }
 
     /// Append a codepoint to the given cell as a grapheme.

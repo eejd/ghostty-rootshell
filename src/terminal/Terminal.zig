@@ -7643,6 +7643,85 @@ test "Terminal: insertBlanks split multi-cell character from tail" {
     }
 }
 
+test "Terminal: insertBlanks shifts hyperlinks" {
+    // osc "8;;http://example.com"
+    // printf "link"
+    // printf "\r"
+    // csi "3@"
+    // echo
+    //
+    // link should be preserved, blanks should not be linked
+
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 10, .rows = 2 });
+    defer t.deinit(alloc);
+
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("ABC");
+    t.setCursorPos(1, 1);
+    t.insertBlanks(2);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  ABC", str);
+    }
+
+    // Verify all our cells have a hyperlink
+    for (2..5) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+    }
+    for (0..2) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell);
+        try testing.expect(id == null);
+    }
+}
+
+test "Terminal: insertBlanks pushes hyperlink off end completely" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 3, .rows = 2 });
+    defer t.deinit(alloc);
+
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("ABC");
+    t.setCursorPos(1, 1);
+    t.insertBlanks(3);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(!row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell);
+        try testing.expect(id == null);
+    }
+}
+
 test "Terminal: insert mode with space" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 10, .rows = 2 });

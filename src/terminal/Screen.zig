@@ -949,6 +949,13 @@ pub fn clearCells(
         }
     }
 
+    // If we have hyperlinks, we need to clear those.
+    if (row.hyperlink) {
+        for (cells) |*cell| {
+            if (cell.hyperlink) page.clearHyperlink(row, cell);
+        }
+    }
+
     if (row.styled) {
         for (cells) |*cell| {
             if (cell.style_id == style.default_id) continue;
