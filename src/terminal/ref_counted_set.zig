@@ -270,7 +270,7 @@ pub fn RefCountedSet(
                     self.living += 1;
 
                     return if (added_id == id) null else added_id;
-                } else if (ctx.eql(base, value, items[id].value)) {
+                } else if (ctx.eql(value, items[id].value)) {
                     items[id].meta.ref += 1;
 
                     return null;
@@ -396,7 +396,7 @@ pub fn RefCountedSet(
             if (comptime @hasDecl(Context, "deleted")) {
                 // Inform the context struct that we're
                 // deleting the dead item's value for good.
-                ctx.deleted(base, item.value);
+                ctx.deleted(item.value);
             }
 
             self.psl_stats[item.meta.psl] -= 1;
@@ -429,7 +429,7 @@ pub fn RefCountedSet(
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
 
-            const hash: u64 = ctx.hash(base, value);
+            const hash: u64 = ctx.hash(value);
 
             for (0..self.max_psl + 1) |i| {
                 const p: usize = @intCast((hash + i) & self.layout.table_mask);
@@ -461,7 +461,7 @@ pub fn RefCountedSet(
                 // If the item is a part of the same probe sequence,
                 // we check if it matches the value we're looking for.
                 if (item.meta.psl == i and
-                    ctx.eql(base, value, item.value))
+                    ctx.eql(value, item.value))
                 {
                     return id;
                 }
@@ -487,7 +487,7 @@ pub fn RefCountedSet(
                 .meta = .{ .psl = 0, .ref = 0 },
             };
 
-            const hash: u64 = ctx.hash(base, value);
+            const hash: u64 = ctx.hash(value);
 
             var held_id: Id = new_id;
             var held_item: *Item = &new_item;
@@ -516,7 +516,7 @@ pub fn RefCountedSet(
                     if (comptime @hasDecl(Context, "deleted")) {
                         // Inform the context struct that we're
                         // deleting the dead item's value for good.
-                        ctx.deleted(base, item.value);
+                        ctx.deleted(item.value);
                     }
 
                     chosen_id = id;

@@ -247,15 +247,13 @@ pub const Set = RefCountedSet(
     Id,
     size.CellCountInt,
     struct {
-        pub fn hash(self: *const @This(), base: anytype, style: Style) u64 {
+        pub fn hash(self: *const @This(), style: Style) u64 {
             _ = self;
-            _ = base;
             return style.hash();
         }
 
-        pub fn eql(self: *const @This(), base: anytype, a: Style, b: Style) bool {
+        pub fn eql(self: *const @This(), a: Style, b: Style) bool {
             _ = self;
-            _ = base;
             return a.eql(b);
         }
     },
