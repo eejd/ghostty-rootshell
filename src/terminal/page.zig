@@ -838,9 +838,17 @@ pub const Page = struct {
         defer self.assertIntegrity();
 
         const cells = row.cells.ptr(self.memory)[left..end];
+
         if (row.grapheme) {
             for (cells) |*cell| {
                 if (cell.hasGrapheme()) self.clearGrapheme(row, cell);
+            }
+        }
+
+        if (row.hyperlink) {
+            row.hyperlink = false;
+            for (cells) |*cell| {
+                if (cell.hyperlink) self.clearHyperlink(row, cell);
             }
         }
 
@@ -867,7 +875,7 @@ pub const Page = struct {
     }
 
     /// Clear the hyperlink from the given cell.
-    pub fn clearHyperlink(self: *Page, cell: *Cell) void {
+    pub fn clearHyperlink(self: *Page, row: *Row, cell: *Cell) void {
         defer self.assertIntegrity();
 
         // Get our ID
@@ -875,17 +883,22 @@ pub const Page = struct {
         var map = self.hyperlink_map.map(self.memory);
         const entry = map.getEntry(cell_offset) orelse return;
 
-        // Release our usage of this
+        // Release our usage of this, free memory, unset flag
         self.hyperlink_set.release(self.memory, entry.value_ptr.*);
-
-        // Free the memory
         map.removeByPtr(entry.key_ptr);
+        cell.hyperlink = false;
+
+        // Mark that we no longer have graphemes, also search the row
+        // to make sure its state is correct.
+        const cells = row.cells.ptr(self.memory)[0..self.size.cols];
+        for (cells) |c| if (c.hyperlink) return;
+        row.hyperlink = false;
     }
 
     /// Set the hyperlink for the given cell. If the cell already has a
     /// hyperlink, then this will handle memory management for the prior
     /// hyperlink.
-    pub fn setHyperlink(self: *Page, cell: *Cell, id: hyperlink.Id) !void {
+    pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) !void {
         defer self.assertIntegrity();
 
         const cell_offset = getOffset(Cell, self.memory, cell);
@@ -904,6 +917,7 @@ pub const Page = struct {
         self.hyperlink_set.use(self.memory, id);
         gop.value_ptr.* = id;
         cell.hyperlink = true;
+        row.hyperlink = true;
     }
 
     /// Append a codepoint to the given cell as a grapheme.
@@ -1280,11 +1294,16 @@ pub const Row = packed struct(u64) {
     /// At the time of writing this, the speed difference is around 4x.
     styled: bool = false,
 
+    /// True if any of the cells in this row are part of a hyperlink.
+    /// This is similar to styled: it can have false positives but never
+    /// false negatives. This is used to optimize hyperlink operations.
+    hyperlink: bool = false,
+
     /// The semantic prompt type for this row as specified by the
     /// running program, or "unknown" if it was never set.
     semantic_prompt: SemanticPrompt = .unknown,
 
-    _padding: u25 = 0,
+    _padding: u24 = 0,
 
     /// Semantic prompt type.
     pub const SemanticPrompt = enum(u3) {

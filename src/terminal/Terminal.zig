@@ -607,7 +607,11 @@ fn printCell(
     if (self.screen.cursor.hyperlink_id > 0) {
         // If we have a hyperlink configured, apply it to this cell
         var page = &self.screen.cursor.page_pin.page.data;
-        page.setHyperlink(cell, self.screen.cursor.hyperlink_id) catch |err| {
+        page.setHyperlink(
+            self.screen.cursor.page_row,
+            cell,
+            self.screen.cursor.hyperlink_id,
+        ) catch |err| {
             // TODO: an error can only happen if our page is out of space
             // so realloc the page here.
             log.err("failed to set hyperlink, ignoring err={}", .{err});
@@ -615,7 +619,7 @@ fn printCell(
     } else if (cell.hyperlink) {
         // If the previous cell had a hyperlink then we need to clear it.
         var page = &self.screen.cursor.page_pin.page.data;
-        page.clearHyperlink(cell);
+        page.clearHyperlink(self.screen.cursor.page_row, cell);
     }
 
     // We don't need to update the style refs unless the
@@ -3807,6 +3811,8 @@ test "Terminal: print with hyperlink" {
             .x = @intCast(x),
             .y = 0,
         } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
         const cell = list_cell.cell;
         try testing.expect(cell.hyperlink);
         const id = list_cell.page.data.lookupHyperlink(cell).?;
@@ -3832,6 +3838,8 @@ test "Terminal: print and end hyperlink" {
             .x = @intCast(x),
             .y = 0,
         } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
         const cell = list_cell.cell;
         try testing.expect(cell.hyperlink);
         const id = list_cell.page.data.lookupHyperlink(cell).?;
@@ -3842,6 +3850,8 @@ test "Terminal: print and end hyperlink" {
             .x = @intCast(x),
             .y = 0,
         } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
         const cell = list_cell.cell;
         try testing.expect(!cell.hyperlink);
     }
@@ -3879,6 +3889,35 @@ test "Terminal: print and change hyperlink" {
         try testing.expect(cell.hyperlink);
         const id = list_cell.page.data.lookupHyperlink(cell).?;
         try testing.expectEqual(@as(hyperlink.Id, 2), id);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
+test "Terminal: overwrite hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Setup our hyperlink and print
+    try t.screen.startHyperlink("http://one.example.com", null);
+    try t.printString("123");
+    t.setCursorPos(1, 1);
+    t.screen.endHyperlink();
+    try t.printString("456");
+
+    // Verify all our cells have a hyperlink
+    for (0..3) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const page = &list_cell.page.data;
+        const row = list_cell.row;
+        try testing.expect(!row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(!cell.hyperlink);
+        try testing.expect(page.lookupHyperlink(cell) == null);
+        try testing.expectEqual(0, page.hyperlink_set.count());
     }
 
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
