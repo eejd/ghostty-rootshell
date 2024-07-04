@@ -205,12 +205,15 @@ pub fn RefCountedSet(
         ///
         /// If the set has no more room, then an OutOfMemory error is returned.
         pub fn add(self: *Self, base: anytype, value: T) AddError!Id {
+            return try self.addContext(base, value, self.context);
+        }
+        pub fn addContext(self: *Self, base: anytype, value: T, ctx: Context) AddError!Id {
             const items = self.items.ptr(base);
 
             // Trim dead items from the end of the list.
             while (self.next_id > 1 and items[self.next_id - 1].meta.ref == 0) {
                 self.next_id -= 1;
-                self.deleteItem(base, self.next_id);
+                self.deleteItem(base, self.next_id, ctx);
             }
 
             // If we still don't have an available ID, we can't continue.
@@ -232,7 +235,7 @@ pub fn RefCountedSet(
                 return AddError.OutOfMemory;
             }
 
-            const id = self.upsert(base, value, self.next_id);
+            const id = self.upsert(base, value, self.next_id, ctx);
             items[id].meta.ref += 1;
 
             if (id == self.next_id) self.next_id += 1;
@@ -251,27 +254,30 @@ pub fn RefCountedSet(
         ///
         /// If the set has no more room, then an OutOfMemory error is returned.
         pub fn addWithId(self: *Self, base: anytype, value: T, id: Id) AddError!?Id {
+            return try self.addWithIdContext(base, value, id, self.context);
+        }
+        pub fn addWithIdContext(self: *Self, base: anytype, value: T, id: Id, ctx: Context) AddError!?Id {
             const items = self.items.ptr(base);
 
             if (id < self.next_id) {
                 if (items[id].meta.ref == 0) {
-                    self.deleteItem(base, id);
+                    self.deleteItem(base, id, ctx);
 
-                    const added_id = self.upsert(base, value, id);
+                    const added_id = self.upsert(base, value, id, ctx);
 
                     items[added_id].meta.ref += 1;
 
                     self.living += 1;
 
                     return if (added_id == id) null else added_id;
-                } else if (self.context.eql(base, value, items[id].value)) {
+                } else if (ctx.eql(base, value, items[id].value)) {
                     items[id].meta.ref += 1;
 
                     return null;
                 }
             }
 
-            return try self.add(base, value);
+            return try self.addContext(base, value, ctx);
         }
 
         /// Increment an item's reference count by 1.
@@ -377,7 +383,7 @@ pub fn RefCountedSet(
 
         /// Delete an item, removing any references from
         /// the table, and freeing its ID to be re-used.
-        fn deleteItem(self: *Self, base: anytype, id: Id) void {
+        fn deleteItem(self: *Self, base: anytype, id: Id, ctx: Context) void {
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
 
@@ -390,7 +396,7 @@ pub fn RefCountedSet(
             if (comptime @hasDecl(Context, "deleted")) {
                 // Inform the context struct that we're
                 // deleting the dead item's value for good.
-                self.context.deleted(base, item.value);
+                ctx.deleted(base, item.value);
             }
 
             self.psl_stats[item.meta.psl] -= 1;
@@ -419,11 +425,11 @@ pub fn RefCountedSet(
 
         /// Find an item in the table and return its ID.
         /// If the item does not exist in the table, null is returned.
-        fn lookup(self: *Self, base: anytype, value: T) ?Id {
+        fn lookup(self: *Self, base: anytype, value: T, ctx: Context) ?Id {
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
 
-            const hash: u64 = self.context.hash(base, value);
+            const hash: u64 = ctx.hash(base, value);
 
             for (0..self.max_psl + 1) |i| {
                 const p: usize = @intCast((hash + i) & self.layout.table_mask);
@@ -455,7 +461,7 @@ pub fn RefCountedSet(
                 // If the item is a part of the same probe sequence,
                 // we check if it matches the value we're looking for.
                 if (item.meta.psl == i and
-                    self.context.eql(base, value, item.value))
+                    ctx.eql(base, value, item.value))
                 {
                     return id;
                 }
@@ -468,9 +474,9 @@ pub fn RefCountedSet(
         /// for it if not present. If a new item is added, `new_id` will
         /// be used as the ID. If an existing item is found, the `new_id`
         /// is ignored and the existing item's ID is returned.
-        fn upsert(self: *Self, base: anytype, value: T, new_id: Id) Id {
+        fn upsert(self: *Self, base: anytype, value: T, new_id: Id, ctx: Context) Id {
             // If the item already exists, return it.
-            if (self.lookup(base, value)) |id| return id;
+            if (self.lookup(base, value, ctx)) |id| return id;
 
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
@@ -481,7 +487,7 @@ pub fn RefCountedSet(
                 .meta = .{ .psl = 0, .ref = 0 },
             };
 
-            const hash: u64 = self.context.hash(base, value);
+            const hash: u64 = ctx.hash(base, value);
 
             var held_id: Id = new_id;
             var held_item: *Item = &new_item;
@@ -510,7 +516,7 @@ pub fn RefCountedSet(
                     if (comptime @hasDecl(Context, "deleted")) {
                         // Inform the context struct that we're
                         // deleting the dead item's value for good.
-                        self.context.deleted(base, item.value);
+                        ctx.deleted(base, item.value);
                     }
 
                     chosen_id = id;
