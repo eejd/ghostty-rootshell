@@ -141,6 +141,16 @@ pub fn RefCountedSet(
 
             assert(cap <= @as(usize, @intCast(std.math.maxInt(Id))) + 1);
 
+            // Zero-cap set is valid, return special case
+            if (cap == 0) return .{
+                .cap = 0,
+                .table_cap = 0,
+                .table_mask = 0,
+                .table_start = 0,
+                .items_start = 0,
+                .total_size = 0,
+            };
+
             const table_cap: usize = std.math.ceilPowerOfTwoAssert(usize, cap);
             const items_cap: usize = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
 

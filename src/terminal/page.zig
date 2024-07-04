@@ -53,6 +53,15 @@ const StringAlloc = BitmapAllocator(string_chunk);
 const string_count_default = StringAlloc.bitmap_bit_size;
 const string_bytes_default = string_count_default * string_chunk;
 
+/// Default number of hyperlinks we support.
+///
+/// The cell multiplier is the number of cells per hyperlink entry that
+/// we support. A hyperlink can be longer than this multiplier; the multiplier
+/// just sets the total capacity to simplify adjustable size metrics.
+const hyperlink_count_default = 32;
+const hyperlink_bytes_default = hyperlink_count_default * @sizeOf(hyperlink.Set.Item);
+const hyperlink_cell_multiplier = 16;
+
 /// A page represents a specific section of terminal screen. The primary
 /// idea of a page is that it is a fully self-contained unit that can be
 /// serialized, copied, etc. as a convenient way to represent a section
@@ -1187,15 +1196,24 @@ pub const Page = struct {
         const string_start = alignForward(usize, grapheme_map_end, StringAlloc.base_align);
         const string_end = string_start + string_layout.total_size;
 
-        const hyperlink_map_layout = hyperlink.Map.layout(@intCast(cap.hyperlink_cells));
-        const hyperlink_map_start = alignForward(usize, string_end, hyperlink.Map.base_align);
-        const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
-
-        const hyperlink_set_layout = hyperlink.Set.layout(@intCast(cap.hyperlink_entries));
-        const hyperlink_set_start = alignForward(usize, hyperlink_map_end, hyperlink.Set.base_align);
+        const hyperlink_count = @divFloor(cap.hyperlink_bytes, @sizeOf(hyperlink.Set.Item));
+        const hyperlink_set_layout = hyperlink.Set.layout(@intCast(hyperlink_count));
+        const hyperlink_set_start = alignForward(usize, string_end, hyperlink.Set.base_align);
         const hyperlink_set_end = hyperlink_set_start + hyperlink_set_layout.total_size;
 
-        const total_size = alignForward(usize, hyperlink_set_end, std.mem.page_size);
+        const hyperlink_map_count: u32 = count: {
+            if (hyperlink_count == 0) break :count 0;
+            const mult = std.math.cast(
+                u32,
+                hyperlink_count * hyperlink_cell_multiplier,
+            ) orelse break :count std.math.maxInt(u32);
+            break :count std.math.ceilPowerOfTwoAssert(u32, mult);
+        };
+        const hyperlink_map_layout = hyperlink.Map.layout(hyperlink_map_count);
+        const hyperlink_map_start = alignForward(usize, hyperlink_set_end, hyperlink.Map.base_align);
+        const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
+
+        const total_size = alignForward(usize, hyperlink_map_end, std.mem.page_size);
 
         return .{
             .total_size = total_size,
@@ -1231,10 +1249,7 @@ pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
     .styles = 128,
-    .hyperlink_cells = 64, // TODO: think about these numbers
-    .hyperlink_entries = 32,
     .grapheme_bytes = 8192,
-    .string_bytes = 2048,
 };
 
 /// The size of this page.
@@ -1252,11 +1267,11 @@ pub const Capacity = struct {
     /// Number of unique styles that can be used on this page.
     styles: usize = 16,
 
-    /// The cells is the number of cells in the terminal that can have
-    /// a hyperlink and the entries is the number of unique hyperlinks
-    /// itself.
-    hyperlink_cells: usize = 32,
-    hyperlink_entries: usize = 4,
+    /// Number of bytes to allocate for hyperlink data. Note that the
+    /// amount of data used for hyperlinks in total is more than this because
+    /// hyperlinks use string data as well as a small amount of lookup metadata.
+    /// This number is a rough approximation.
+    hyperlink_bytes: usize = hyperlink_bytes_default,
 
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,
@@ -1289,9 +1304,9 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const hyperlink_set_start = alignBackward(usize, layout.total_size - layout.hyperlink_set_layout.total_size, hyperlink.Set.base_align);
-            const hyperlink_map_start = alignBackward(usize, hyperlink_set_start - layout.hyperlink_map_layout.total_size, hyperlink.Map.base_align);
-            const string_alloc_start = alignBackward(usize, hyperlink_map_start - layout.string_alloc_layout.total_size, StringAlloc.base_align);
+            const hyperlink_map_start = alignBackward(usize, layout.total_size - layout.hyperlink_map_layout.total_size, hyperlink.Map.base_align);
+            const hyperlink_set_start = alignBackward(usize, hyperlink_map_start - layout.hyperlink_set_layout.total_size, hyperlink.Set.base_align);
+            const string_alloc_start = alignBackward(usize, hyperlink_set_start - layout.string_alloc_layout.total_size, StringAlloc.base_align);
             const grapheme_map_start = alignBackward(usize, string_alloc_start - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
