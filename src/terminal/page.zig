@@ -615,9 +615,7 @@ pub const Page = struct {
 
         // If our destination has styles or graphemes then we need to
         // clear some state.
-        if (dst_row.grapheme or dst_row.styled) {
-            self.clearCells(dst_row, x_start, x_end);
-        }
+        if (dst_row.managedMemory()) self.clearCells(dst_row, x_start, x_end);
 
         // Copy all the row metadata but keep our cells offset
         dst_row.* = copy: {
@@ -640,7 +638,7 @@ pub const Page = struct {
 
         // If we have no managed memory in the source, then we can just
         // copy it directly.
-        if (!src_row.grapheme and !src_row.styled) {
+        if (!src_row.managedMemory()) {
             fastmem.copy(Cell, cells, other_cells);
         } else {
             // We have managed memory, so we have to do a slower copy to
@@ -655,6 +653,26 @@ pub const Page = struct {
                     const cps = other.lookupGrapheme(src_cell).?;
                     for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
                 }
+                if (src_cell.hyperlink) hyperlink: {
+                    dst_row.hyperlink = true;
+
+                    // Fast-path: same page we can move it directly
+                    if (other == self) {
+                        self.moveHyperlink(src_cell, dst_cell);
+                        break :hyperlink;
+                    }
+
+                    // Slow-path: get the hyperlink from the other page,
+                    // add it, and migrate.
+                    const id = other.lookupHyperlink(src_cell).?;
+                    const other_link = other.hyperlink_set.get(other.memory, id);
+                    const dst_id = try self.hyperlink_set.addContext(
+                        self.memory,
+                        other_link.*,
+                        .{ .page = self },
+                    );
+                    try self.setHyperlink(dst_row, dst_cell, dst_id);
+                }
                 if (src_cell.style_id != style.default_id) {
                     dst_row.styled = true;
 
@@ -668,8 +686,12 @@ pub const Page = struct {
 
                     // Slow path: Get the style from the other
                     // page and add it to this page's style set.
-                    const other_style = other.styles.get(other.memory, src_cell.style_id).*;
-                    if (try self.styles.addWithId(self.memory, other_style, src_cell.style_id)) |id| {
+                    const other_style = other.styles.get(other.memory, src_cell.style_id);
+                    if (try self.styles.addWithId(
+                        self.memory,
+                        other_style.*,
+                        src_cell.style_id,
+                    )) |id| {
                         dst_cell.style_id = id;
                     }
                 }
@@ -1365,6 +1387,12 @@ pub const Row = packed struct(u64) {
             return self == .prompt or self == .prompt_continuation or self == .input;
         }
     };
+
+    /// Returns true if this row has any managed memory outside of the
+    /// row structure (graphemes, styles, etc.)
+    fn managedMemory(self: Row) bool {
+        return self.grapheme or self.styled or self.hyperlink;
+    }
 };
 
 /// A cell represents a single terminal grid cell.
