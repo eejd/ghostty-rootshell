@@ -93,5 +93,21 @@ pub const Set = RefCountedSet(
         pub fn eql(self: *const @This(), a: Hyperlink, b: Hyperlink) bool {
             return a.eql(self.page.?.memory, &b);
         }
+
+        pub fn deleted(self: *const @This(), link: Hyperlink) void {
+            const page = self.page.?;
+            const alloc = &page.string_alloc;
+            switch (link.id) {
+                .implicit => {},
+                .explicit => |v| alloc.free(
+                    page.memory,
+                    v.offset.ptr(page.memory)[0..v.len],
+                ),
+            }
+            alloc.free(
+                page.memory,
+                link.uri.offset.ptr(page.memory)[0..link.uri.len],
+            );
+        }
     },
 );
