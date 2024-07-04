@@ -58,7 +58,7 @@ const string_bytes_default = string_count_default * string_chunk;
 /// The cell multiplier is the number of cells per hyperlink entry that
 /// we support. A hyperlink can be longer than this multiplier; the multiplier
 /// just sets the total capacity to simplify adjustable size metrics.
-const hyperlink_count_default = 32;
+const hyperlink_count_default = 4;
 const hyperlink_bytes_default = hyperlink_count_default * @sizeOf(hyperlink.Set.Item);
 const hyperlink_cell_multiplier = 16;
 
@@ -681,6 +681,8 @@ pub const Page = struct {
                         .{ .page = self },
                     );
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
+
+                    // TODO: copy the strings
                 }
                 if (src_cell.style_id != style.default_id) {
                     dst_row.styled = true;

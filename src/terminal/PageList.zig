@@ -1849,6 +1849,12 @@ pub const AdjustCapacity = struct {
 
     /// Adjust the number of available grapheme bytes in the page.
     grapheme_bytes: ?usize = null,
+
+    /// Adjust the number of available hyperlink bytes in the page.
+    hyperlink_bytes: ?usize = null,
+
+    /// Adjust the number of available string bytes in the page.
+    string_bytes: ?usize = null,
 };
 
 /// Adjust the capcaity of the given page in the list. This should
@@ -1883,6 +1889,14 @@ pub fn adjustCapacity(
     if (adjustment.grapheme_bytes) |v| {
         const aligned = try std.math.ceilPowerOfTwo(usize, v);
         cap.grapheme_bytes = @max(cap.grapheme_bytes, aligned);
+    }
+    if (adjustment.hyperlink_bytes) |v| {
+        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        cap.hyperlink_bytes = @max(cap.hyperlink_bytes, aligned);
+    }
+    if (adjustment.string_bytes) |v| {
+        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        cap.string_bytes = @max(cap.string_bytes, aligned);
     }
 
     log.info("adjusting page capacity={}", .{cap});
@@ -4023,6 +4037,49 @@ test "PageList adjustCapacity to increase graphemes" {
     _ = try s.adjustCapacity(
         s.pages.first.?,
         .{ .grapheme_bytes = std_capacity.grapheme_bytes * 2 },
+    );
+
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+        for (0..s.rows) |y| {
+            for (0..s.cols) |x| {
+                const rac = page.getRowAndCell(x, y);
+                try testing.expectEqual(
+                    @as(u21, @intCast(x)),
+                    rac.cell.content.codepoint,
+                );
+            }
+        }
+    }
+}
+
+test "PageList adjustCapacity to increase hyperlinks" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 2, 0);
+    defer s.deinit();
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        // Write all our data so we can assert its the same after
+        for (0..s.rows) |y| {
+            for (0..s.cols) |x| {
+                const rac = page.getRowAndCell(x, y);
+                rac.cell.* = .{
+                    .content_tag = .codepoint,
+                    .content = .{ .codepoint = @intCast(x) },
+                };
+            }
+        }
+    }
+
+    // Increase our graphemes
+    _ = try s.adjustCapacity(
+        s.pages.first.?,
+        .{ .hyperlink_bytes = @max(std_capacity.hyperlink_bytes * 2, 2048) },
     );
 
     {

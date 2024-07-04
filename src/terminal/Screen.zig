@@ -1381,18 +1381,64 @@ pub fn startHyperlink(
     uri: []const u8,
     id_: ?[]const u8,
 ) !void {
+    // Loop until we have enough page memory to add the hyperlink
+    while (true) {
+        if (self.startHyperlinkOnce(uri, id_)) {
+            return;
+        } else |err| switch (err) {
+            // An actual self.alloc OOM is a fatal error.
+            error.RealOutOfMemory => return error.OutOfMemory,
+
+            // strings table is out of memory, adjust it up
+            error.StringsOutOfMemory => _ = try self.pages.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .string_bytes = self.cursor.page_pin.page.data.capacity.string_bytes * 2 },
+            ),
+
+            // hyperlink set is out of memory, adjust it up
+            error.SetOutOfMemory => _ = try self.pages.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .hyperlink_bytes = self.cursor.page_pin.page.data.capacity.hyperlink_bytes * 2 },
+            ),
+
+            // hyperlink set is too full, rehash it
+            error.SetNeedsRehash => _ = try self.pages.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{},
+            ),
+        }
+
+        // If we get here, we adjusted capacity so our page has changed
+        // so we need to reload the cursor pins.
+        self.cursorReload();
+        self.assertIntegrity();
+    }
+}
+
+/// This is like startHyperlink but if we have to adjust page capacities
+/// this returns error.PageAdjusted. This is useful so that we unwind
+/// all the previous state and try again.
+fn startHyperlinkOnce(
+    self: *Screen,
+    uri: []const u8,
+    id_: ?[]const u8,
+) !void {
     // End any prior hyperlink
     self.endHyperlink();
 
     // Create our hyperlink state.
-    const link = try Hyperlink.create(self.alloc, uri, id_);
+    const link = Hyperlink.create(self.alloc, uri, id_) catch |err| switch (err) {
+        error.OutOfMemory => return error.RealOutOfMemory,
+    };
     errdefer link.destroy(self.alloc);
 
     // Copy our URI into the page memory.
     var page = &self.cursor.page_pin.page.data;
     const string_alloc = &page.string_alloc;
     const page_uri: Offset(u8).Slice = uri: {
-        const buf = try string_alloc.alloc(u8, page.memory, uri.len);
+        const buf = string_alloc.alloc(u8, page.memory, uri.len) catch |err| switch (err) {
+            error.OutOfMemory => return error.StringsOutOfMemory,
+        };
         errdefer string_alloc.free(page.memory, buf);
         @memcpy(buf, uri);
 
@@ -1408,7 +1454,9 @@ pub fn startHyperlink(
 
     // Copy our ID into page memory or create an implicit ID via the counter
     const page_id: hyperlink.Hyperlink.Id = if (id_) |id| explicit: {
-        const buf = try string_alloc.alloc(u8, page.memory, id.len);
+        const buf = string_alloc.alloc(u8, page.memory, id.len) catch |err| switch (err) {
+            error.OutOfMemory => return error.StringsOutOfMemory,
+        };
         errdefer string_alloc.free(page.memory, buf);
         @memcpy(buf, id);
 
@@ -1431,11 +1479,14 @@ pub fn startHyperlink(
     };
 
     // Put our hyperlink into the hyperlink set to get an ID
-    const id = try page.hyperlink_set.addContext(
+    const id = page.hyperlink_set.addContext(
         page.memory,
         .{ .id = page_id, .uri = page_uri },
         .{ .page = page },
-    );
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.SetOutOfMemory,
+        error.NeedsRehash => return error.SetNeedsRehash,
+    };
     errdefer page.hyperlink_set.release(page.memory, id);
 
     // Save it all
