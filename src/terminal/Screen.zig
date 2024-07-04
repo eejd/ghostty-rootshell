@@ -1381,8 +1381,6 @@ pub fn startHyperlink(
     const link = try Hyperlink.create(self.alloc, uri, id_);
     errdefer link.destroy(self.alloc);
 
-    // TODO: look for previous hyperlink that matches this.
-
     // Copy our URI into the page memory.
     var page = &self.cursor.page_pin.page.data;
     const string_alloc = &page.string_alloc;
@@ -7426,6 +7424,40 @@ test "Screen: hyperlink start/end" {
 
     try s.startHyperlink("http://example.com", null);
     try testing.expect(s.cursor.hyperlink_id != 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+
+    s.endHyperlink();
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+}
+
+test "Screen: hyperlink reuse" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+
+    // Use it for the first time
+    try s.startHyperlink("http://example.com", null);
+    try testing.expect(s.cursor.hyperlink_id != 0);
+    const id = s.cursor.hyperlink_id;
+
+    // Reuse the same hyperlink, expect we have the same ID
+    try s.startHyperlink("http://example.com", null);
+    try testing.expectEqual(id, s.cursor.hyperlink_id);
     {
         const page = &s.cursor.page_pin.page.data;
         try testing.expectEqual(1, page.hyperlink_set.count());
