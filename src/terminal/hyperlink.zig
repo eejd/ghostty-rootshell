@@ -35,6 +35,52 @@ pub const Hyperlink = struct {
         implicit: size.OffsetInt,
     };
 
+    /// Duplicate this hyperlink from one page to another.
+    pub fn dupe(self: *const Hyperlink, self_page: *const Page, dst_page: *Page) !Hyperlink {
+        var copy = self.*;
+
+        // If the pages are the same then we can return a shallow copy.
+        if (self_page == dst_page) return copy;
+
+        // Copy the URI
+        {
+            const uri = self.uri.offset.ptr(self_page.memory)[0..self.uri.len];
+            const buf = try dst_page.string_alloc.alloc(u8, dst_page.memory, uri.len);
+            @memcpy(buf, uri);
+            copy.uri = .{
+                .offset = size.getOffset(u8, dst_page.memory, &buf[0]),
+                .len = uri.len,
+            };
+        }
+        errdefer dst_page.string_alloc.free(
+            dst_page.memory,
+            copy.uri.offset.ptr(dst_page.memory)[0..copy.uri.len],
+        );
+
+        // Copy the ID
+        switch (copy.id) {
+            .implicit => {}, // Shallow is fine
+            .explicit => |slice| {
+                const id = slice.offset.ptr(self_page.memory)[0..slice.len];
+                const buf = try dst_page.string_alloc.alloc(u8, dst_page.memory, id.len);
+                @memcpy(buf, id);
+                copy.id = .{ .explicit = .{
+                    .offset = size.getOffset(u8, dst_page.memory, &buf[0]),
+                    .len = id.len,
+                } };
+            },
+        }
+        errdefer switch (copy.id) {
+            .implicit => {},
+            .explicit => |v| dst_page.string_alloc.free(
+                dst_page.memory,
+                v.offset.ptr(dst_page.memory)[0..v.len],
+            ),
+        };
+
+        return copy;
+    }
+
     pub fn hash(self: *const Hyperlink, base: anytype) u64 {
         var hasher = Wyhash.init(0);
         autoHash(&hasher, std.meta.activeTag(self.id));

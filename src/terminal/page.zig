@@ -677,12 +677,10 @@ pub const Page = struct {
                     const other_link = other.hyperlink_set.get(other.memory, id);
                     const dst_id = try self.hyperlink_set.addContext(
                         self.memory,
-                        other_link.*,
+                        try other_link.dupe(other, self),
                         .{ .page = self },
                     );
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
-
-                    // TODO: copy the strings
                 }
                 if (src_cell.style_id != style.default_id) {
                     dst_row.styled = true;
