@@ -1335,12 +1335,17 @@ pub fn Stream(comptime Handler: type) type {
                 },
 
                 .hyperlink_start => |v| {
-                    _ = v;
-                    @panic("TODO(osc8)");
+                    if (@hasDecl(T, "startHyperlink")) {
+                        try self.handler.startHyperlink(v.uri, v.id);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
                 .hyperlink_end => {
-                    @panic("TODO(osc8)");
+                    if (@hasDecl(T, "endHyperlink")) {
+                        try self.handler.endHyperlink();
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
             }
 
