@@ -1231,8 +1231,8 @@ pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
     .styles = 128,
-    .hyperlink_cells = 32, // TODO: think about these numbers
-    .hyperlink_entries = 4,
+    .hyperlink_cells = 64, // TODO: think about these numbers
+    .hyperlink_entries = 32,
     .grapheme_bytes = 8192,
     .string_bytes = 2048,
 };
