@@ -616,6 +616,13 @@ pub const Page = struct {
         x_start: usize,
         x_end_req: usize,
     ) CloneFromError!void {
+        // This whole operation breaks integrity until the end.
+        self.pauseIntegrityChecks(true);
+        defer {
+            self.pauseIntegrityChecks(false);
+            self.assertIntegrity();
+        }
+
         const cell_len = @min(self.size.cols, other.size.cols);
         const x_end = @min(x_end_req, cell_len);
         assert(x_start <= x_end);
@@ -715,9 +722,6 @@ pub const Page = struct {
                 last.wide = .narrow;
             }
         }
-
-        // The final page should remain consistent
-        self.assertIntegrity();
     }
 
     /// Get a single row. y must be valid.
