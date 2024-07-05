@@ -2473,6 +2473,9 @@ pub fn alternateScreen(
         log.warn("cursor copy failed entering alt screen err={}", .{err});
     };
 
+    // We always end hyperlink state
+    self.screen.endHyperlink();
+
     if (options.clear_on_enter) {
         self.eraseDisplay(.complete, false);
     }
@@ -2505,6 +2508,9 @@ pub fn primaryScreen(
 
     // Mark our terminal as dirty
     self.flags.dirty.clear = true;
+
+    // We always end hyperlink state
+    self.screen.endHyperlink();
 
     // Restore the cursor from the primary screen. This should not
     // fail because we should not have to allocate memory since swapping
