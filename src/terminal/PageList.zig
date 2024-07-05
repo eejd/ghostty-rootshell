@@ -1162,6 +1162,24 @@ fn reflowPage(
                             },
                         }
 
+                        // If the source cell has a hyperlink we need to copy it
+                        if (src_cursor.page_cell.hyperlink) {
+                            const src_page = src_cursor.page;
+                            const dst_page = dst_cursor.page;
+                            const id = src_page.lookupHyperlink(src_cursor.page_cell).?;
+                            const src_link = src_page.hyperlink_set.get(src_page.memory, id);
+                            const dst_id = try dst_page.hyperlink_set.addContext(
+                                dst_page.memory,
+                                try src_link.dupe(src_page, dst_page),
+                                .{ .page = dst_page },
+                            );
+                            try dst_page.setHyperlink(
+                                dst_cursor.page_row,
+                                dst_cursor.page_cell,
+                                dst_id,
+                            );
+                        }
+
                         // If the source cell has a style, we need to copy it.
                         if (src_cursor.page_cell.style_id != stylepkg.default_id) {
                             const src_style = src_cursor.page.styles.get(
