@@ -2795,16 +2795,7 @@ pub fn cursorPosCallback(
     if (self.mouse.link_point) |last_vp| {
         // Mark the link's row as dirty.
         if (over_link) {
-            // TODO: This doesn't handle soft-wrapped links. Ideally this would
-            // be storing the link's start and end points and marking all rows
-            // between and including those as dirty, instead of just the row
-            // containing the part the cursor is hovering. This can result in
-            // a bit of jank.
-            if (self.renderer_state.terminal.screen.pages.pin(.{
-                .viewport = last_vp,
-            })) |pin| {
-                pin.markDirty();
-            }
+            self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
         }
 
         // If our last link viewport point is unchanged, then don't process
