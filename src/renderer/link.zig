@@ -274,6 +274,21 @@ pub const MatchSet = struct {
         alloc.free(self.matches);
     }
 
+    /// Checks if the matchset contains the given pin. This is slower than
+    /// orderedContains but is stateless and more flexible since it doesn't
+    /// require the points to be in order.
+    pub fn contains(
+        self: *MatchSet,
+        screen: *const Screen,
+        pin: terminal.Pin,
+    ) bool {
+        for (self.matches) |sel| {
+            if (sel.contains(screen, pin)) return true;
+        }
+
+        return false;
+    }
+
     /// Checks if the matchset contains the given pt. The points must be
     /// given in left-to-right top-to-bottom order. This is a stateful
     /// operation and giving a point out of order can cause invalid

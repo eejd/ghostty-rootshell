@@ -2825,10 +2825,7 @@ pub fn cursorPosCallback(
     if (try self.linkAtPos(pos)) |_| {
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
-        // Mark the new link's row as dirty.
-        if (self.renderer_state.terminal.screen.pages.pin(.{ .viewport = pos_vp })) |pin| {
-            pin.markDirty();
-        }
+        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
         try self.rt_surface.setMouseShape(.pointer);
         try self.queueRender();
     } else if (over_link) {

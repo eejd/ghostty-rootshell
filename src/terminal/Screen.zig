@@ -72,6 +72,10 @@ pub const Dirty = packed struct {
     /// Set when the selection is set or unset, regardless of if the
     /// selection is changed or not.
     selection: bool = false,
+
+    /// When an OSC8 hyperlink is hovered, we set the full screen as dirty
+    /// because links can span multiple lines.
+    hyperlink_hover: bool = false,
 };
 
 /// The cursor position.
