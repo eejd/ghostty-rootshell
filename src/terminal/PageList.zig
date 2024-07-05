@@ -1166,6 +1166,12 @@ fn reflowPage(
                         if (src_cursor.page_cell.hyperlink) {
                             const src_page = src_cursor.page;
                             const dst_page = dst_cursor.page;
+
+                            // Pause integrity checks because setHyperlink
+                            // calls them but we're not ready yet.
+                            dst_page.pauseIntegrityChecks(true);
+                            defer dst_page.pauseIntegrityChecks(false);
+
                             const id = src_page.lookupHyperlink(src_cursor.page_cell).?;
                             const src_link = src_page.hyperlink_set.get(src_page.memory, id);
                             const dst_id = try dst_page.hyperlink_set.addContext(
