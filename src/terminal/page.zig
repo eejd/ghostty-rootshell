@@ -643,6 +643,7 @@ pub const Page = struct {
                 copy.wrap = dst_row.wrap;
                 copy.wrap_continuation = dst_row.wrap_continuation;
                 copy.grapheme = dst_row.grapheme;
+                copy.hyperlink = dst_row.hyperlink;
                 copy.styled = dst_row.styled;
             }
 
