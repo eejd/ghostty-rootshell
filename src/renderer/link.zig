@@ -113,7 +113,6 @@ pub const Set = struct {
         mouse_mods: inputpkg.Mods,
     ) !void {
         _ = alloc;
-        _ = self;
 
         // If the right mods aren't pressed, then we can't match.
         if (!mouse_mods.equal(inputpkg.ctrlOrSuper(.{}))) return;
@@ -128,6 +127,19 @@ pub const Set = struct {
             log.warn("failed to find hyperlink for cell", .{});
             return;
         };
+        const link = page.hyperlink_set.get(page.memory, link_id);
+
+        // If our link has an implicit ID (no ID set explicitly via OSC8)
+        // then we use an alternate matching technique that iterates forward
+        // and backward until it finds boundaries.
+        if (link.id == .implicit) {
+            const uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            return try self.matchSetFromOSC8Implicit(
+                matches,
+                mouse_pin,
+                uri,
+            );
+        }
 
         // Go through every row and find matching hyperlinks for the given ID.
         // Note the link ID is not the same as the OSC8 ID parameter. But
@@ -184,6 +196,75 @@ pub const Set = struct {
                 }
             }
         }
+    }
+
+    /// Match OSC8 links around the mouse pin for an OSC8 link with an
+    /// implicit ID. This only matches cells with the same URI directly
+    /// around the mouse pin.
+    fn matchSetFromOSC8Implicit(
+        self: *const Set,
+        matches: *std.ArrayList(terminal.Selection),
+        mouse_pin: terminal.Pin,
+        uri: []const u8,
+    ) !void {
+        _ = self;
+
+        // Our selection starts with just our pin.
+        var sel = terminal.Selection.init(mouse_pin, mouse_pin, false);
+
+        // Expand it to the left.
+        var it = mouse_pin.cellIterator(.left_up, null);
+        while (it.next()) |cell_pin| {
+            const page = &cell_pin.page.data;
+            const rac = cell_pin.rowAndCell();
+            const cell = rac.cell;
+
+            // If this cell isn't a hyperlink then we've found a boundary
+            if (!cell.hyperlink) break;
+
+            const link_id = page.lookupHyperlink(cell) orelse {
+                log.warn("failed to find hyperlink for cell", .{});
+                break;
+            };
+            const link = page.hyperlink_set.get(page.memory, link_id);
+
+            // If this link has an explicit ID then we found a boundary
+            if (link.id != .implicit) break;
+
+            // If this link has a different URI then we found a boundary
+            const cell_uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            if (!std.mem.eql(u8, uri, cell_uri)) break;
+
+            sel.startPtr().* = cell_pin;
+        }
+
+        // Expand it to the right
+        it = mouse_pin.cellIterator(.right_down, null);
+        while (it.next()) |cell_pin| {
+            const page = &cell_pin.page.data;
+            const rac = cell_pin.rowAndCell();
+            const cell = rac.cell;
+
+            // If this cell isn't a hyperlink then we've found a boundary
+            if (!cell.hyperlink) break;
+
+            const link_id = page.lookupHyperlink(cell) orelse {
+                log.warn("failed to find hyperlink for cell", .{});
+                break;
+            };
+            const link = page.hyperlink_set.get(page.memory, link_id);
+
+            // If this link has an explicit ID then we found a boundary
+            if (link.id != .implicit) break;
+
+            // If this link has a different URI then we found a boundary
+            const cell_uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            if (!std.mem.eql(u8, uri, cell_uri)) break;
+
+            sel.endPtr().* = cell_pin;
+        }
+
+        try matches.append(sel);
     }
 
     /// Fills matches with the matches from regex link matches.
