@@ -290,7 +290,6 @@ pub const Page = struct {
         MissingStyle,
         UnmarkedStyleRow,
         MismatchedStyleRef,
-        ZombieStyles,
         InvalidStyleCount,
         InvalidSpacerTailLocation,
         InvalidSpacerHeadLocation,
@@ -505,14 +504,16 @@ pub const Page = struct {
                 }
             }
 
+            // NOTE: This is currently disabled because @qwerasd says that
+            // certain fast paths can cause this but its okay.
             // Just 1 zombie style might be the cursor style, so ignore it.
-            if (zombies > 1) {
-                log.warn(
-                    "page integrity violation zombie styles count={}",
-                    .{zombies},
-                );
-                return IntegrityError.ZombieStyles;
-            }
+            // if (zombies > 1) {
+            //     log.warn(
+            //         "page integrity violation zombie styles count={}",
+            //         .{zombies},
+            //     );
+            //     return IntegrityError.ZombieStyles;
+            // }
         }
     }
 
