@@ -916,7 +916,7 @@ pub const Page = struct {
     }
 
     /// Returns the hyperlink ID for the given cell.
-    pub fn lookupHyperlink(self: *const Page, cell: *Cell) ?hyperlink.Id {
+    pub fn lookupHyperlink(self: *const Page, cell: *const Cell) ?hyperlink.Id {
         const cell_offset = getOffset(Cell, self.memory, cell);
         const map = self.hyperlink_map.map(self.memory);
         return map.get(cell_offset);
