@@ -226,7 +226,17 @@ pub fn RefCountedSet(
                 self.deleteItem(base, self.next_id, ctx);
             }
 
-            // If we still don't have an available ID, we can't continue.
+            // If the item already exists, return it.
+            if (self.lookup(base, value, ctx)) |id| {
+                // Notify the context that the value is "deleted" because
+                // we're reusing the existing value in the set. This allows
+                // callers to clean up any resources associated with the value.
+                if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
+                items[id].meta.ref += 1;
+                return id;
+            }
+
+            // If the item doesn't exist, we need an available ID.
             if (self.next_id >= self.layout.cap) {
                 // Arbitrarily chosen, threshold for rehashing.
                 // If less than 90% of currently allocated IDs
@@ -245,14 +255,14 @@ pub fn RefCountedSet(
                 return AddError.OutOfMemory;
             }
 
-            const id = self.upsert(base, value, self.next_id, ctx);
+            const id = self.insert(base, value, self.next_id, ctx);
             items[id].meta.ref += 1;
+            assert(items[id].meta.ref == 1);
+            self.living += 1;
 
+            // Its possible insert returns a different ID by reusing a
+            // dead item so we only need to update next id if we used it.
             if (id == self.next_id) self.next_id += 1;
-
-            if (items[id].meta.ref == 1) {
-                self.living += 1;
-            }
 
             return id;
         }
@@ -493,6 +503,14 @@ pub fn RefCountedSet(
                 if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
                 return id;
             }
+
+            return self.insert(base, value, new_id, ctx);
+        }
+
+        /// Insert the given value into the hash table with the given ID.
+        /// asserts that the value is not already present in the table.
+        fn insert(self: *Self, base: anytype, value: T, new_id: Id, ctx: Context) Id {
+            assert(self.lookup(base, value, ctx) == null);
 
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
