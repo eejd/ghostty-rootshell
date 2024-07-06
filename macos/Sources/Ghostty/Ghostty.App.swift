@@ -291,6 +291,7 @@ extension Ghostty {
         static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {}
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {}
         static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
+        static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {}
         #endif
         
         #if os(macOS)
