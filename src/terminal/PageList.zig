@@ -30,7 +30,7 @@ const page_preheat = 4;
 /// The list of pages in the screen. These are expected to be in order
 /// where the first page is the topmost page (scrollback) and the last is
 /// the bottommost page (the current active page).
-const List = std.DoublyLinkedList(Page);
+pub const List = std.DoublyLinkedList(Page);
 
 /// The memory pool we get page nodes from.
 const NodePool = std.heap.MemoryPool(List.Node);
