@@ -145,6 +145,23 @@ extension Ghostty {
                 }
                 .ghosttySurfaceView(surfaceView)
                 
+                // If we have a URL from hovering a link, we show that.
+                // TODO
+                if (false) {
+                    let padding: CGFloat = 3
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Spacer()
+                            
+                            Text(verbatim: "http://example.com")
+                                .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                .background(.background)
+                        }
+                        
+                        Spacer()
+                    }
+                }
+                
                 // If our surface is not healthy, then we render an error view over it.
                 if (!surfaceView.healthy) {
                     Rectangle().fill(ghostty.config.backgroundColor)
