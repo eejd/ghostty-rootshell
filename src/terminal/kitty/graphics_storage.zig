@@ -267,12 +267,17 @@ pub const ImageStorage = struct {
             },
 
             .intersect_cell => |v| intersect_cell: {
+                if (v.x <= 0 or v.y <= 0) {
+                    log.warn("delete intersect cell coords must be at least 1", .{});
+                    break :intersect_cell;
+                }
+
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell,
-                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell,
+                        .x = std.math.cast(size.CellCountInt, v.x - 1) orelse break :intersect_cell,
+                        .y = std.math.cast(size.CellCountInt, v.y - 1) orelse break :intersect_cell,
                     } },
                     v.delete,
                     {},
@@ -281,12 +286,17 @@ pub const ImageStorage = struct {
             },
 
             .intersect_cell_z => |v| intersect_cell_z: {
+                if (v.x <= 0 or v.y <= 0) {
+                    log.warn("delete intersect cell coords must be at least 1", .{});
+                    break :intersect_cell_z;
+                }
+
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell_z,
-                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell_z,
+                        .x = std.math.cast(size.CellCountInt, v.x - 1) orelse break :intersect_cell_z,
+                        .y = std.math.cast(size.CellCountInt, v.y - 1) orelse break :intersect_cell_z,
                     } },
                     v.delete,
                     v.z,
@@ -298,12 +308,18 @@ pub const ImageStorage = struct {
                 );
             },
 
-            .column => |v| {
+            .column => |v| column: {
+                if (v.x <= 0) {
+                    log.warn("delete column must be greater than zero", .{});
+                    break :column;
+                }
+
+                const x = v.x - 1;
                 var it = self.placements.iterator();
                 while (it.next()) |entry| {
                     const img = self.imageById(entry.key_ptr.image_id) orelse continue;
                     const rect = entry.value_ptr.rect(img, t);
-                    if (rect.top_left.x <= v.x and rect.bottom_right.x >= v.x) {
+                    if (rect.top_left.x <= x and rect.bottom_right.x >= x) {
                         entry.value_ptr.deinit(&t.screen);
                         self.placements.removeByPtr(entry.key_ptr);
                         if (v.delete) self.deleteIfUnused(alloc, img.id);
@@ -315,10 +331,15 @@ pub const ImageStorage = struct {
             },
 
             .row => |v| row: {
+                if (v.y <= 0) {
+                    log.warn("delete row must be greater than zero", .{});
+                    break :row;
+                }
+
                 // v.y is in active coords so we want to convert it to a pin
                 // so we can compare by page offsets.
                 const target_pin = t.screen.pages.pin(.{ .active = .{
-                    .y = std.math.cast(size.CellCountInt, v.y) orelse break :row,
+                    .y = std.math.cast(size.CellCountInt, v.y - 1) orelse break :row,
                 } }) orelse break :row;
 
                 var it = self.placements.iterator();
@@ -629,11 +650,17 @@ pub const ImageStorage = struct {
         ) Rect {
             const grid_size = self.gridSize(image, t);
 
-            var br = switch (self.pin.downOverflow(grid_size.rows)) {
+            var br = switch (self.pin.downOverflow(grid_size.rows - 1)) {
                 .offset => |v| v,
                 .overflow => |v| v.end,
             };
-            br.x = @min(self.pin.x + grid_size.cols, t.cols - 1);
+            br.x = @min(
+                // We need to sub one here because the x value is
+                // one width already. So if the image is width "1"
+                // then we add zero to X because X itelf is width 1.
+                self.pin.x + (grid_size.cols - 1),
+                t.cols - 1,
+            );
 
             return .{
                 .top_left = self.pin.*,
@@ -950,6 +977,39 @@ test "storage: delete by column" {
     }) != null);
 }
 
+test "storage: delete by column 1x1" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 100, .cols = 100 });
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1, .width = 1, .height = 1 });
+    try s.addPlacement(alloc, 1, 1, .{ .pin = try trackPin(&t, .{ .x = 0, .y = 0 }) });
+    try s.addPlacement(alloc, 1, 2, .{ .pin = try trackPin(&t, .{ .x = 1, .y = 0 }) });
+    try s.addPlacement(alloc, 1, 3, .{ .pin = try trackPin(&t, .{ .x = 2, .y = 0 }) });
+
+    s.delete(alloc, &t, .{ .column = .{
+        .delete = false,
+        .x = 2,
+    } });
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+    try testing.expectEqual(@as(usize, 1), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 1 },
+    }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 3 },
+    }) != null);
+}
+
 test "storage: delete by row" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -980,5 +1040,38 @@ test "storage: delete by row" {
     try testing.expect(s.placements.get(.{
         .image_id = 1,
         .placement_id = .{ .tag = .external, .id = 1 },
+    }) != null);
+}
+
+test "storage: delete by row 1x1" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 100, .cols = 100 });
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1, .width = 1, .height = 1 });
+    try s.addPlacement(alloc, 1, 1, .{ .pin = try trackPin(&t, .{ .y = 0 }) });
+    try s.addPlacement(alloc, 1, 2, .{ .pin = try trackPin(&t, .{ .y = 1 }) });
+    try s.addPlacement(alloc, 1, 3, .{ .pin = try trackPin(&t, .{ .y = 2 }) });
+
+    s.delete(alloc, &t, .{ .row = .{
+        .delete = false,
+        .y = 2,
+    } });
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+    try testing.expectEqual(@as(usize, 1), s.images.count());
+
+    // verify the placement is what we expect
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 1 },
+    }) != null);
+    try testing.expect(s.placements.get(.{
+        .image_id = 1,
+        .placement_id = .{ .tag = .external, .id = 3 },
     }) != null);
 }
