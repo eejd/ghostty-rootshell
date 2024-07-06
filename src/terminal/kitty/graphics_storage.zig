@@ -267,12 +267,17 @@ pub const ImageStorage = struct {
             },
 
             .intersect_cell => |v| intersect_cell: {
+                if (v.x <= 0 or v.y <= 0) {
+                    log.warn("delete intersect cell coords must be at least 1", .{});
+                    break :intersect_cell;
+                }
+
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell,
-                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell,
+                        .x = std.math.cast(size.CellCountInt, v.x - 1) orelse break :intersect_cell,
+                        .y = std.math.cast(size.CellCountInt, v.y - 1) orelse break :intersect_cell,
                     } },
                     v.delete,
                     {},
@@ -281,12 +286,17 @@ pub const ImageStorage = struct {
             },
 
             .intersect_cell_z => |v| intersect_cell_z: {
+                if (v.x <= 0 or v.y <= 0) {
+                    log.warn("delete intersect cell coords must be at least 1", .{});
+                    break :intersect_cell_z;
+                }
+
                 self.deleteIntersecting(
                     alloc,
                     t,
                     .{ .active = .{
-                        .x = std.math.cast(size.CellCountInt, v.x) orelse break :intersect_cell_z,
-                        .y = std.math.cast(size.CellCountInt, v.y) orelse break :intersect_cell_z,
+                        .x = std.math.cast(size.CellCountInt, v.x - 1) orelse break :intersect_cell_z,
+                        .y = std.math.cast(size.CellCountInt, v.y - 1) orelse break :intersect_cell_z,
                     } },
                     v.delete,
                     v.z,
