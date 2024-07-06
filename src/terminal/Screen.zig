@@ -1524,6 +1524,35 @@ pub fn endHyperlink(self: *Screen) void {
     self.cursor.hyperlink = null;
 }
 
+/// Set the current hyperlink state on the current cell.
+pub fn cursorSetHyperlink(self: *Screen) !void {
+    assert(self.cursor.hyperlink_id != 0);
+
+    var page = &self.cursor.page_pin.page.data;
+    if (page.setHyperlink(
+        self.cursor.page_row,
+        self.cursor.page_cell,
+        self.cursor.hyperlink_id,
+    )) {
+        // Success!
+        return;
+    } else |err| switch (err) {
+        // hyperlink_map is out of space, realloc the page to be larger
+        error.OutOfMemory => {
+            _ = try self.pages.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .hyperlink_bytes = page.capacity.hyperlink_bytes * 2 },
+            );
+
+            // Reload cursor since our cursor page has changed.
+            self.cursorReload();
+
+            // Retry
+            return try self.cursorSetHyperlink();
+        },
+    }
+}
+
 /// Set the selection to the given selection. If this is a tracked selection
 /// then the screen will take overnship of the selection. If this is untracked
 /// then the screen will convert it to tracked internally. This will automatically

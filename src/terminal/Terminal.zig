@@ -601,27 +601,6 @@ fn printCell(
         );
     }
 
-    // We check for an active hyperlink first because setHyperlink
-    // handles clearing the old hyperlink and an optimization if we're
-    // overwriting the same hyperlink.
-    if (self.screen.cursor.hyperlink_id > 0) {
-        // If we have a hyperlink configured, apply it to this cell
-        var page = &self.screen.cursor.page_pin.page.data;
-        page.setHyperlink(
-            self.screen.cursor.page_row,
-            cell,
-            self.screen.cursor.hyperlink_id,
-        ) catch |err| {
-            // TODO: an error can only happen if our page is out of space
-            // so realloc the page here.
-            log.err("failed to set hyperlink, ignoring err={}", .{err});
-        };
-    } else if (cell.hyperlink) {
-        // If the previous cell had a hyperlink then we need to clear it.
-        var page = &self.screen.cursor.page_pin.page.data;
-        page.clearHyperlink(self.screen.cursor.page_row, cell);
-    }
-
     // We don't need to update the style refs unless the
     // cell's new style will be different after writing.
     const style_changed = cell.style_id != self.screen.cursor.style_id;
@@ -635,6 +614,9 @@ fn printCell(
         }
     }
 
+    // Keep track if we had a hyperlink so we can unset it.
+    const had_hyperlink = cell.hyperlink;
+
     // Write
     cell.* = .{
         .content_tag = .codepoint,
@@ -642,7 +624,6 @@ fn printCell(
         .style_id = self.screen.cursor.style_id,
         .wide = wide,
         .protected = self.screen.cursor.protected,
-        .hyperlink = self.screen.cursor.hyperlink_id > 0,
     };
 
     if (style_changed) {
@@ -653,6 +634,20 @@ fn printCell(
             page.styles.use(page.memory, cell.style_id);
             self.screen.cursor.page_row.styled = true;
         }
+    }
+
+    // We check for an active hyperlink first because setHyperlink
+    // handles clearing the old hyperlink and an optimization if we're
+    // overwriting the same hyperlink.
+    if (self.screen.cursor.hyperlink_id > 0) {
+        self.screen.cursorSetHyperlink() catch |err| {
+            log.warn("error reallocating for more hyperlink space, ignoring hyperlink err={}", .{err});
+            assert(!cell.hyperlink);
+        };
+    } else if (had_hyperlink) {
+        // If the previous cell had a hyperlink then we need to clear it.
+        var page = &self.screen.cursor.page_pin.page.data;
+        page.clearHyperlink(self.screen.cursor.page_row, cell);
     }
 }
 
