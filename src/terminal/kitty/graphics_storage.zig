@@ -629,11 +629,17 @@ pub const ImageStorage = struct {
         ) Rect {
             const grid_size = self.gridSize(image, t);
 
-            var br = switch (self.pin.downOverflow(grid_size.rows)) {
+            var br = switch (self.pin.downOverflow(grid_size.rows - 1)) {
                 .offset => |v| v,
                 .overflow => |v| v.end,
             };
-            br.x = @min(self.pin.x + grid_size.cols, t.cols - 1);
+            br.x = @min(
+                // We need to sub one here because the x value is
+                // one width already. So if the image is width "1"
+                // then we add zero to X because X itelf is width 1.
+                self.pin.x + (grid_size.cols - 1),
+                t.cols - 1,
+            );
 
             return .{
                 .top_left = self.pin.*,
