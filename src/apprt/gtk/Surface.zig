@@ -879,6 +879,12 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
     c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.app.cursor_none);
 }
 
+pub fn mouseOverLink(self: *Surface, uri: ?[]const u8) void {
+    // TODO: GTK
+    _ = self;
+    _ = uri;
+}
+
 pub fn clipboardRequest(
     self: *Surface,
     clipboard_type: apprt.Clipboard,

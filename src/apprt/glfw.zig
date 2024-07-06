@@ -649,6 +649,12 @@ pub const Surface = struct {
         self.cursor = new;
     }
 
+    pub fn mouseOverLink(self: *Surface, uri: ?[]const u8) void {
+        // We don't do anything in GLFW.
+        _ = self;
+        _ = uri;
+    }
+
     /// Set the visibility of the mouse cursor.
     pub fn setMouseVisibility(self: *Surface, visible: bool) void {
         self.window.setInputModeCursor(if (visible) .normal else .hidden);
