@@ -147,13 +147,13 @@ extension Ghostty {
                 
                 // If we have a URL from hovering a link, we show that.
                 // TODO
-                if (false) {
+                if let url = surfaceView.hoverUrl {
                     let padding: CGFloat = 3
                     HStack {
                         VStack(alignment: .leading) {
                             Spacer()
                             
-                            Text(verbatim: "http://example.com")
+                            Text(verbatim: url)
                                 .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                 .background(.background)
                         }

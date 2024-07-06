@@ -2813,14 +2813,34 @@ pub fn cursorPosCallback(
     }
     self.mouse.link_point = pos_vp;
 
-    if (try self.linkAtPos(pos)) |_| {
+    if (try self.linkAtPos(pos)) |link| {
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
         self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
         try self.rt_surface.setMouseShape(.pointer);
+
+        switch (link[0]) {
+            .open => {},
+
+            ._open_osc8 => link: {
+                // Show the URL in the status bar
+                const pin = link[1].start();
+                const page = &pin.page.data;
+                const cell = pin.rowAndCell().cell;
+                const link_id = page.lookupHyperlink(cell) orelse {
+                    log.warn("failed to find hyperlink for cell", .{});
+                    break :link;
+                };
+                const entry = page.hyperlink_set.get(page.memory, link_id);
+                const uri = entry.uri.offset.ptr(page.memory)[0..entry.uri.len];
+                self.rt_surface.mouseOverLink(uri);
+            },
+        }
+
         try self.queueRender();
     } else if (over_link) {
         try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
+        self.rt_surface.mouseOverLink(null);
         try self.queueRender();
     }
 }

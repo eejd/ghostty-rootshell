@@ -128,6 +128,11 @@ pub const App = struct {
 
         /// Called when the health of the renderer changes.
         update_renderer_health: ?*const fn (SurfaceUD, renderer.Health) void = null,
+
+        /// Called when the mouse goes over a link. The link target is the
+        /// parameter. The link target will be null if the mouse is no longer
+        /// over a link.
+        mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
     };
 
     /// Special values for the goto_tab callback.
@@ -1100,6 +1105,19 @@ pub const Surface = struct {
         };
 
         func(self.userdata, health);
+    }
+
+    pub fn mouseOverLink(self: *const Surface, uri: ?[]const u8) void {
+        const func = self.app.opts.mouse_over_link orelse {
+            log.info("runtime embedder does not support over_link", .{});
+            return;
+        };
+
+        if (uri) |v| {
+            func(self.userdata, v.ptr, v.len);
+        } else {
+            func(self.userdata, null, 0);
+        }
     }
 };
 

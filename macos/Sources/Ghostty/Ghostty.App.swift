@@ -93,7 +93,8 @@ extension Ghostty {
                 set_cell_size_cb: { userdata, width, height in App.setCellSize(userdata, width: width, height: height) },
                 show_desktop_notification_cb: { userdata, title, body in
                     App.showUserNotification(userdata, title: title, body: body) },
-                update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) }
+                update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) },
+                mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) }
             )
             
             // Create the ghostty app.
@@ -522,6 +523,17 @@ extension Ghostty {
             let surfaceView = self.surfaceUserdata(from: userdata)
             let backingSize = NSSize(width: Double(width), height: Double(height))
             surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
+        }
+        
+        static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {
+            let surfaceView = self.surfaceUserdata(from: userdata)
+            guard len > 0 else {
+                surfaceView.hoverUrl = nil
+                return
+            }
+            
+            let buffer = Data(bytes: uri!, count: len)
+            surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
         }
 
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {
