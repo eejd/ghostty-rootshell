@@ -72,7 +72,7 @@ pub const Container = union(enum) {
         /// element
         pub fn widget(self: Elem) *c.GtkWidget {
             return switch (self) {
-                .surface => |s| @ptrCast(s.gl_area),
+                .surface => |s| s.primaryWidget(),
                 .split => |s| @ptrCast(@alignCast(s.paned)),
             };
         }
@@ -223,8 +223,14 @@ container: Container = .{ .none = {} },
 /// The app we're part of
 app: *App,
 
+/// The overlay, this is the primary widget
+overlay: *c.GtkOverlay,
+
 /// Our GTK area
 gl_area: *c.GtkGLArea,
+
+/// If non-null this is the widget on the overlay that shows the URL.
+url_widget: ?*c.GtkWidget = null,
 
 /// Any active cursor we may have
 cursor: ?*c.GdkCursor = null,
@@ -271,15 +277,19 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     const widget: *c.GtkWidget = c.gtk_gl_area_new();
     const gl_area: *c.GtkGLArea = @ptrCast(widget);
 
-    // We grab the floating reference to GL area. This lets the
-    // GL area be moved around i.e. between a split, a tab, etc.
+    // Create an overlay so we can layer the GL area with other widgets.
+    const overlay: *c.GtkOverlay = @ptrCast(c.gtk_overlay_new());
+    c.gtk_overlay_set_child(@ptrCast(overlay), widget);
+
+    // We grab the floating reference to the primary widget. This allows the
+    // widget tree to be moved around i.e. between a split, a tab, etc.
     // without having to be really careful about ordering to
     // prevent a destroy.
     //
     // This is unref'd in the unref() method that's called by the
     // self.container through Elem.deinit.
-    _ = c.g_object_ref_sink(@ptrCast(gl_area));
-    errdefer c.g_object_unref(@ptrCast(gl_area));
+    _ = c.g_object_ref_sink(@ptrCast(overlay));
+    errdefer c.g_object_unref(@ptrCast(overlay));
 
     // We want the gl area to expand to fill the parent container.
     c.gtk_widget_set_hexpand(widget, 1);
@@ -381,6 +391,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .container = .{ .none = {} },
+        .overlay = overlay,
         .gl_area = gl_area,
         .title_text = null,
         .core_surface = undefined,
@@ -488,12 +499,16 @@ pub fn deinit(self: *Surface) void {
 // unref removes the long-held reference to the gl_area and kicks off the
 // deinit/destroy process for this surface.
 pub fn unref(self: *Surface) void {
-    c.g_object_unref(self.gl_area);
+    c.g_object_unref(self.overlay);
 }
 
 pub fn destroy(self: *Surface, alloc: Allocator) void {
     self.deinit();
     alloc.destroy(self);
+}
+
+pub fn primaryWidget(self: *Surface) *c.GtkWidget {
+    return @ptrCast(@alignCast(self.overlay));
 }
 
 fn render(self: *Surface) !void {
@@ -879,10 +894,34 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
     c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.app.cursor_none);
 }
 
-pub fn mouseOverLink(self: *Surface, uri: ?[]const u8) void {
-    // TODO: GTK
-    _ = self;
-    _ = uri;
+pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
+    const uri = uri_ orelse {
+        if (self.url_widget) |widget| {
+            c.gtk_overlay_remove_overlay(@ptrCast(self.overlay), widget);
+            self.url_widget = null;
+        }
+
+        return;
+    };
+
+    // We need a null-terminated string
+    const alloc = self.app.core_app.alloc;
+    const uriZ = alloc.dupeZ(u8, uri) catch return;
+    defer alloc.free(uriZ);
+
+    // If we have a URL widget already just change the text.
+    if (self.url_widget) |widget| {
+        c.gtk_label_set_text(@ptrCast(widget), uriZ.ptr);
+        return;
+    }
+
+    // Create the widget
+    const label = c.gtk_label_new(uriZ.ptr);
+    c.gtk_widget_set_halign(label, c.GTK_ALIGN_START);
+    c.gtk_widget_set_valign(label, c.GTK_ALIGN_END);
+    c.gtk_widget_set_margin_bottom(label, 2);
+    c.gtk_overlay_add_overlay(@ptrCast(self.overlay), label);
+    self.url_widget = label;
 }
 
 pub fn clipboardRequest(
