@@ -451,6 +451,19 @@ fn adjustCapacity(
         ) catch unreachable;
     }
 
+    // Re-add the hyperlink
+    if (self.cursor.hyperlink) |link| {
+        // So we don't attempt to free any memory in the replaced page.
+        self.cursor.hyperlink_id = 0;
+        self.cursor.hyperlink = null;
+
+        // Re-add
+        self.startHyperlinkOnce(link.uri, link.id) catch unreachable;
+
+        // Remove our old link
+        link.destroy(self.alloc);
+    }
+
     // Reload the cursor information because the pin changed.
     // So our page row/cell and so on are all off.
     self.cursorReload();
@@ -1394,27 +1407,24 @@ pub fn startHyperlink(
             error.RealOutOfMemory => return error.OutOfMemory,
 
             // strings table is out of memory, adjust it up
-            error.StringsOutOfMemory => _ = try self.pages.adjustCapacity(
+            error.StringsOutOfMemory => _ = try self.adjustCapacity(
                 self.cursor.page_pin.page,
                 .{ .string_bytes = self.cursor.page_pin.page.data.capacity.string_bytes * 2 },
             ),
 
             // hyperlink set is out of memory, adjust it up
-            error.SetOutOfMemory => _ = try self.pages.adjustCapacity(
+            error.SetOutOfMemory => _ = try self.adjustCapacity(
                 self.cursor.page_pin.page,
                 .{ .hyperlink_bytes = self.cursor.page_pin.page.data.capacity.hyperlink_bytes * 2 },
             ),
 
             // hyperlink set is too full, rehash it
-            error.SetNeedsRehash => _ = try self.pages.adjustCapacity(
+            error.SetNeedsRehash => _ = try self.adjustCapacity(
                 self.cursor.page_pin.page,
                 .{},
             ),
         }
 
-        // If we get here, we adjusted capacity so our page has changed
-        // so we need to reload the cursor pins.
-        self.cursorReload();
         self.assertIntegrity();
     }
 }
