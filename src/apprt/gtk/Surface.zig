@@ -917,6 +917,8 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
 
     // Create the widget
     const label = c.gtk_label_new(uriZ.ptr);
+    c.gtk_widget_add_css_class(@ptrCast(label), "view");
+    c.gtk_widget_add_css_class(@ptrCast(label), "url-overlay");
     c.gtk_widget_set_halign(label, c.GTK_ALIGN_START);
     c.gtk_widget_set_valign(label, c.GTK_ALIGN_END);
     c.gtk_widget_set_margin_bottom(label, 2);
