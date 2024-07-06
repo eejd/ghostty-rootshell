@@ -2626,21 +2626,26 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
         },
 
         ._open_osc8 => {
-            // Note: we probably want to put this into a helper on page.
-            const pin = sel.start();
-            const page = &pin.page.data;
-            const cell = pin.rowAndCell().cell;
-            const link_id = page.lookupHyperlink(cell) orelse {
-                log.warn("failed to find hyperlink for cell", .{});
+            const uri = self.osc8URI(sel.start()) orelse {
+                log.warn("failed to get URI for OSC8 hyperlink", .{});
                 return false;
             };
-            const link = page.hyperlink_set.get(page.memory, link_id);
-            const uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
             try internal_os.open(self.alloc, uri);
         },
     }
 
     return true;
+}
+
+/// Return the URI for an OSC8 hyperlink at the given position or null
+/// if there is no hyperlink.
+fn osc8URI(self: *Surface, pin: terminal.Pin) ?[]const u8 {
+    _ = self;
+    const page = &pin.page.data;
+    const cell = pin.rowAndCell().cell;
+    const link_id = page.lookupHyperlink(cell) orelse return null;
+    const entry = page.hyperlink_set.get(page.memory, link_id);
+    return entry.uri.offset.ptr(page.memory)[0..entry.uri.len];
 }
 
 pub fn mousePressureCallback(
@@ -2825,14 +2830,10 @@ pub fn cursorPosCallback(
             ._open_osc8 => link: {
                 // Show the URL in the status bar
                 const pin = link[1].start();
-                const page = &pin.page.data;
-                const cell = pin.rowAndCell().cell;
-                const link_id = page.lookupHyperlink(cell) orelse {
-                    log.warn("failed to find hyperlink for cell", .{});
+                const uri = self.osc8URI(pin) orelse {
+                    log.warn("failed to get URI for OSC8 hyperlink", .{});
                     break :link;
                 };
-                const entry = page.hyperlink_set.get(page.memory, link_id);
-                const uri = entry.uri.offset.ptr(page.memory)[0..entry.uri.len];
                 self.rt_surface.mouseOverLink(uri);
             },
         }
