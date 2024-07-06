@@ -1549,13 +1549,10 @@ pub fn cursorSetHyperlink(self: *Screen) !void {
     } else |err| switch (err) {
         // hyperlink_map is out of space, realloc the page to be larger
         error.OutOfMemory => {
-            _ = try self.pages.adjustCapacity(
+            _ = try self.adjustCapacity(
                 self.cursor.page_pin.page,
                 .{ .hyperlink_bytes = page.capacity.hyperlink_bytes * 2 },
             );
-
-            // Reload cursor since our cursor page has changed.
-            self.cursorReload();
 
             // Retry
             return try self.cursorSetHyperlink();
