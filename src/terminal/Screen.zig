@@ -361,6 +361,46 @@ pub fn clonePool(
     return result;
 }
 
+/// Adjust the capacity of a page within the pagelist of this screen.
+/// This handles some accounting if the page being modified is the
+/// cursor page.
+fn adjustCapacity(
+    self: *Screen,
+    page: *PageList.List.Node,
+    adjustment: PageList.AdjustCapacity,
+) !*PageList.List.Node {
+    // If the page being modified isn't our cursor page then
+    // this is a quick operation because we have no additional
+    // accounting.
+    if (page != self.cursor.page_pin.page) {
+        return try self.pages.adjustCapacity(page, adjustment);
+    }
+
+    // We're modifying the cursor page. When we adjust the
+    // capacity below it will be short the ref count on our
+    // current style and hyperlink, so we need to init those.
+    const node = try self.pages.adjustCapacity(page, adjustment);
+    const new_page = &node.data;
+
+    // All additions below have unreachable catches because when
+    // we adjust cap we should have enough memory to fit the
+    // existing data.
+
+    // Re-add the style
+    if (self.cursor.style_id != 0) {
+        self.cursor.style_id = new_page.styles.add(
+            new_page.memory,
+            self.cursor.style,
+        ) catch unreachable;
+    }
+
+    // Reload the cursor information because the pin changed.
+    // So our page row/cell and so on are all off.
+    self.cursorReload();
+
+    return node;
+}
+
 pub fn cursorCellRight(self: *Screen, n: size.CellCountInt) *pagepkg.Cell {
     assert(self.cursor.x + n < self.pages.cols);
     const cell: [*]pagepkg.Cell = @ptrCast(self.cursor.page_cell);
@@ -1197,11 +1237,6 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         return;
     }
 
-    // From here on out, we may need to reload the cursor if we adjust
-    // the pages to account for space errors below... flag this to true
-    // in that case.
-    var cursor_reload = false;
-
     // After setting the style, we need to update our style map.
     // Note that we COULD lazily do this in print. We should look into
     // if that makes a meaningful difference. Our priority is to keep print
@@ -1215,7 +1250,7 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         // so we allocate a new page, which will rehash,
         // and double the style capacity for it if it was
         // full.
-        const node = try self.pages.adjustCapacity(
+        const node = try self.adjustCapacity(
             self.cursor.page_pin.page,
             switch (err) {
                 error.OutOfMemory => .{ .styles = page.capacity.styles * 2 },
@@ -1224,18 +1259,12 @@ pub fn manualStyleUpdate(self: *Screen) !void {
         );
 
         page = &node.data;
-
-        // Since this modifies our cursor page, we need to reload
-        cursor_reload = true;
-
         break :id try page.styles.add(
             page.memory,
             self.cursor.style,
         );
     };
     self.cursor.style_id = id;
-
-    if (cursor_reload) self.cursorReload();
     self.assertIntegrity();
 }
 
@@ -1262,8 +1291,10 @@ pub fn appendGrapheme(self: *Screen, cell: *Cell, cp: u21) !void {
             // force us to reload.
             const original_node = self.cursor.page_pin.page;
             const new_bytes = original_node.data.capacity.grapheme_bytes * 2;
-            _ = try self.pages.adjustCapacity(original_node, .{ .grapheme_bytes = new_bytes });
-            self.cursorReload();
+            _ = try self.adjustCapacity(
+                original_node,
+                .{ .grapheme_bytes = new_bytes },
+            );
 
             // The cell pointer is now invalid, so we need to get it from
             // the reloaded cursor pointers.
@@ -7235,4 +7266,37 @@ test "Screen: lineIterator soft wrap" {
         try testing.expectEqualStrings("3ABCD", actual);
     }
     // try testing.expect(iter.next() == null);
+}
+
+test "Screen: adjustCapacity cursor style ref count" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try s.setAttribute(.{ .bold = {} });
+    try s.testWriteString("1ABCD");
+
+    {
+        const page = &s.pages.pages.last.?.data;
+        try testing.expectEqual(
+            6, // All chars + cursor
+            page.styles.refCount(page.memory, s.cursor.style_id),
+        );
+    }
+
+    // This forces the page to change.
+    _ = try s.adjustCapacity(
+        s.cursor.page_pin.page,
+        .{ .grapheme_bytes = s.cursor.page_pin.page.data.capacity.grapheme_bytes * 2 },
+    );
+
+    // Our ref counts should still be the same
+    {
+        const page = &s.pages.pages.last.?.data;
+        try testing.expectEqual(
+            6, // All chars + cursor
+            page.styles.refCount(page.memory, s.cursor.style_id),
+        );
+    }
 }
