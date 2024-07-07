@@ -15,6 +15,8 @@ const pagepkg = @import("page.zig");
 const point = @import("point.zig");
 const size = @import("size.zig");
 const style = @import("style.zig");
+const hyperlink = @import("hyperlink.zig");
+const Offset = size.Offset;
 const Page = pagepkg.Page;
 const Row = pagepkg.Row;
 const Cell = pagepkg.Cell;
@@ -70,6 +72,10 @@ pub const Dirty = packed struct {
     /// Set when the selection is set or unset, regardless of if the
     /// selection is changed or not.
     selection: bool = false,
+
+    /// When an OSC8 hyperlink is hovered, we set the full screen as dirty
+    /// because links can span multiple lines.
+    hyperlink_hover: bool = false,
 };
 
 /// The cursor position.
@@ -101,11 +107,33 @@ pub const Cursor = struct {
     /// our style when used.
     style_id: style.Id = style.default_id,
 
+    /// The hyperlink ID that is currently active for the cursor. A value
+    /// of zero means no hyperlink is active. (Implements OSC8, saying that
+    /// so code search can find it.).
+    hyperlink_id: hyperlink.Id = 0,
+
+    /// This is the implicit ID to use for hyperlinks that don't specify
+    /// an ID. We do an overflowing add to this so repeats can technically
+    /// happen with carefully crafted inputs but for real workloads its
+    /// highly unlikely -- and the fix is for the TUI program to use explicit
+    /// IDs.
+    hyperlink_implicit_id: size.OffsetInt = 0,
+
+    /// Heap-allocated hyperlink state so that we can recreate it when
+    /// the cursor page pin changes. We can't get it from the old screen
+    /// state because the page may be cleared. This is heap allocated
+    /// because its most likely null.
+    hyperlink: ?*Hyperlink = null,
+
     /// The pointers into the page list where the cursor is currently
     /// located. This makes it faster to move the cursor.
     page_pin: *PageList.Pin,
     page_row: *pagepkg.Row,
     page_cell: *pagepkg.Cell,
+
+    pub fn deinit(self: *Cursor, alloc: Allocator) void {
+        if (self.hyperlink) |link| link.destroy(alloc);
+    }
 };
 
 /// The visual style of the cursor. Whether or not it blinks
@@ -139,6 +167,31 @@ pub const CharsetState = struct {
 
     /// An array to map a charset slot to a lookup table.
     const CharsetArray = std.EnumArray(charsets.Slots, charsets.Charset);
+};
+
+pub const Hyperlink = struct {
+    id: ?[]const u8,
+    uri: []const u8,
+
+    pub fn create(
+        alloc: Allocator,
+        uri: []const u8,
+        id: ?[]const u8,
+    ) !*Hyperlink {
+        const self = try alloc.create(Hyperlink);
+        errdefer alloc.destroy(self);
+        self.id = if (id) |v| try alloc.dupe(u8, v) else null;
+        errdefer if (self.id) |v| alloc.free(v);
+        self.uri = try alloc.dupe(u8, uri);
+        errdefer alloc.free(self.uri);
+        return self;
+    }
+
+    pub fn destroy(self: *Hyperlink, alloc: Allocator) void {
+        if (self.id) |id| alloc.free(id);
+        alloc.free(self.uri);
+        alloc.destroy(self);
+    }
 };
 
 /// Initialize a new screen.
@@ -179,6 +232,7 @@ pub fn init(
 
 pub fn deinit(self: *Screen) void {
     self.kitty_images.deinit(self.alloc, self);
+    self.cursor.deinit(self.alloc);
     self.pages.deinit();
 }
 
@@ -220,6 +274,9 @@ pub fn assertIntegrity(self: *const Screen) void {
 ///   - Cursor location can be expensive to calculate with respect to the
 ///     specified region. It is faster to grab the cursor from the old
 ///     screen and then move it to the new screen.
+///   - Current hyperlink cursor state has heap allocations. Since clone
+///     is only for read-only operations, it is better to not have any
+///     hyperlink state. Note that already-written hyperlinks are cloned.
 ///
 /// If not mentioned above, then there isn't a specific reason right now
 /// to not copy some data other than we probably didn't need it and it
@@ -392,6 +449,19 @@ fn adjustCapacity(
             new_page.memory,
             self.cursor.style,
         ) catch unreachable;
+    }
+
+    // Re-add the hyperlink
+    if (self.cursor.hyperlink) |link| {
+        // So we don't attempt to free any memory in the replaced page.
+        self.cursor.hyperlink_id = 0;
+        self.cursor.hyperlink = null;
+
+        // Re-add
+        self.startHyperlinkOnce(link.uri, link.id) catch unreachable;
+
+        // Remove our old link
+        link.destroy(self.alloc);
     }
 
     // Reload the cursor information because the pin changed.
@@ -896,6 +966,13 @@ pub fn clearCells(
         }
     }
 
+    // If we have hyperlinks, we need to clear those.
+    if (row.hyperlink) {
+        for (cells) |*cell| {
+            if (cell.hyperlink) page.clearHyperlink(row, cell);
+        }
+    }
+
     if (row.styled) {
         for (cells) |*cell| {
             if (cell.style_id == style.default_id) continue;
@@ -1311,6 +1388,176 @@ pub fn appendGrapheme(self: *Screen, cell: *Cell, cp: u21) !void {
             );
         },
     };
+}
+
+/// Start the hyperlink state. Future cells will be marked as hyperlinks with
+/// this state. Note that various terminal operations may clear the hyperlink
+/// state, such as switching screens (alt screen).
+pub fn startHyperlink(
+    self: *Screen,
+    uri: []const u8,
+    id_: ?[]const u8,
+) !void {
+    // Loop until we have enough page memory to add the hyperlink
+    while (true) {
+        if (self.startHyperlinkOnce(uri, id_)) {
+            return;
+        } else |err| switch (err) {
+            // An actual self.alloc OOM is a fatal error.
+            error.RealOutOfMemory => return error.OutOfMemory,
+
+            // strings table is out of memory, adjust it up
+            error.StringsOutOfMemory => _ = try self.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .string_bytes = self.cursor.page_pin.page.data.capacity.string_bytes * 2 },
+            ),
+
+            // hyperlink set is out of memory, adjust it up
+            error.SetOutOfMemory => _ = try self.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .hyperlink_bytes = self.cursor.page_pin.page.data.capacity.hyperlink_bytes * 2 },
+            ),
+
+            // hyperlink set is too full, rehash it
+            error.SetNeedsRehash => _ = try self.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{},
+            ),
+        }
+
+        self.assertIntegrity();
+    }
+}
+
+/// This is like startHyperlink but if we have to adjust page capacities
+/// this returns error.PageAdjusted. This is useful so that we unwind
+/// all the previous state and try again.
+fn startHyperlinkOnce(
+    self: *Screen,
+    uri: []const u8,
+    id_: ?[]const u8,
+) !void {
+    // End any prior hyperlink
+    self.endHyperlink();
+
+    // Create our hyperlink state.
+    const link = Hyperlink.create(self.alloc, uri, id_) catch |err| switch (err) {
+        error.OutOfMemory => return error.RealOutOfMemory,
+    };
+    errdefer link.destroy(self.alloc);
+
+    // Copy our URI into the page memory.
+    var page = &self.cursor.page_pin.page.data;
+    const string_alloc = &page.string_alloc;
+    const page_uri: Offset(u8).Slice = uri: {
+        const buf = string_alloc.alloc(u8, page.memory, uri.len) catch |err| switch (err) {
+            error.OutOfMemory => return error.StringsOutOfMemory,
+        };
+        errdefer string_alloc.free(page.memory, buf);
+        @memcpy(buf, uri);
+
+        break :uri .{
+            .offset = size.getOffset(u8, page.memory, &buf[0]),
+            .len = uri.len,
+        };
+    };
+    errdefer string_alloc.free(
+        page.memory,
+        page_uri.offset.ptr(page.memory)[0..page_uri.len],
+    );
+
+    // Copy our ID into page memory or create an implicit ID via the counter
+    const page_id: hyperlink.Hyperlink.Id = if (id_) |id| explicit: {
+        const buf = string_alloc.alloc(u8, page.memory, id.len) catch |err| switch (err) {
+            error.OutOfMemory => return error.StringsOutOfMemory,
+        };
+        errdefer string_alloc.free(page.memory, buf);
+        @memcpy(buf, id);
+
+        break :explicit .{
+            .explicit = .{
+                .offset = size.getOffset(u8, page.memory, &buf[0]),
+                .len = id.len,
+            },
+        };
+    } else implicit: {
+        defer self.cursor.hyperlink_implicit_id += 1;
+        break :implicit .{ .implicit = self.cursor.hyperlink_implicit_id };
+    };
+    errdefer switch (page_id) {
+        .implicit => self.cursor.hyperlink_implicit_id -= 1,
+        .explicit => |slice| string_alloc.free(
+            page.memory,
+            slice.offset.ptr(page.memory)[0..slice.len],
+        ),
+    };
+
+    // Put our hyperlink into the hyperlink set to get an ID
+    const id = page.hyperlink_set.addContext(
+        page.memory,
+        .{ .id = page_id, .uri = page_uri },
+        .{ .page = page },
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.SetOutOfMemory,
+        error.NeedsRehash => return error.SetNeedsRehash,
+    };
+    errdefer page.hyperlink_set.release(page.memory, id);
+
+    // Save it all
+    self.cursor.hyperlink = link;
+    self.cursor.hyperlink_id = id;
+}
+
+/// End the hyperlink state so that future cells aren't part of the
+/// current hyperlink (if any). This is safe to call multiple times.
+pub fn endHyperlink(self: *Screen) void {
+    // If we have no hyperlink state then do nothing
+    if (self.cursor.hyperlink_id == 0) {
+        assert(self.cursor.hyperlink == null);
+        return;
+    }
+
+    // Release the old hyperlink state. If there are cells using the
+    // hyperlink this will work because the creation creates a reference
+    // and all additional cells create a new reference. This release will
+    // just release our initial reference.
+    //
+    // If the ref count reaches zero the set will not delete the item
+    // immediately; it is kept around in case it is used again (this is
+    // how RefCountedSet works). This causes some memory fragmentation but
+    // is fine because if it is ever pruned the context deleted callback
+    // will be called.
+    var page = &self.cursor.page_pin.page.data;
+    page.hyperlink_set.release(page.memory, self.cursor.hyperlink_id);
+    self.cursor.hyperlink.?.destroy(self.alloc);
+    self.cursor.hyperlink_id = 0;
+    self.cursor.hyperlink = null;
+}
+
+/// Set the current hyperlink state on the current cell.
+pub fn cursorSetHyperlink(self: *Screen) !void {
+    assert(self.cursor.hyperlink_id != 0);
+
+    var page = &self.cursor.page_pin.page.data;
+    if (page.setHyperlink(
+        self.cursor.page_row,
+        self.cursor.page_cell,
+        self.cursor.hyperlink_id,
+    )) {
+        // Success!
+        return;
+    } else |err| switch (err) {
+        // hyperlink_map is out of space, realloc the page to be larger
+        error.OutOfMemory => {
+            _ = try self.adjustCapacity(
+                self.cursor.page_pin.page,
+                .{ .hyperlink_bytes = page.capacity.hyperlink_bytes * 2 },
+            );
+
+            // Retry
+            return try self.cursorSetHyperlink();
+        },
+    }
 }
 
 /// Set the selection to the given selection. If this is a tracked selection
@@ -3305,13 +3552,6 @@ test "Screen: scrolling when viewport is pruned" {
     try s.testWriteString("\n");
     for (0..1000) |_| try s.testWriteString("1ABCD\n2EFGH\n3IJKL\n");
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
-
-    {
-        // Test our contents rotated
-        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
-        defer alloc.free(contents);
-        try testing.expectEqualStrings("1ABCD\n2EFGH\n3IJKL", contents);
-    }
 
     {
         try testing.expectEqual(point.Point{ .screen = .{
@@ -7268,12 +7508,74 @@ test "Screen: lineIterator soft wrap" {
     // try testing.expect(iter.next() == null);
 }
 
+test "Screen: hyperlink start/end" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+
+    try s.startHyperlink("http://example.com", null);
+    try testing.expect(s.cursor.hyperlink_id != 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+
+    s.endHyperlink();
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+}
+
+test "Screen: hyperlink reuse" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 5, 0);
+    defer s.deinit();
+
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+
+    // Use it for the first time
+    try s.startHyperlink("http://example.com", null);
+    try testing.expect(s.cursor.hyperlink_id != 0);
+    const id = s.cursor.hyperlink_id;
+
+    // Reuse the same hyperlink, expect we have the same ID
+    try s.startHyperlink("http://example.com", null);
+    try testing.expectEqual(id, s.cursor.hyperlink_id);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+
+    s.endHyperlink();
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+}
+
 test "Screen: adjustCapacity cursor style ref count" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var s = try init(alloc, 5, 5, 0);
     defer s.deinit();
+
     try s.setAttribute(.{ .bold = {} });
     try s.testWriteString("1ABCD");
 

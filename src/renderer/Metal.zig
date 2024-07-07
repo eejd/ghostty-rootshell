@@ -2005,7 +2005,7 @@ fn rebuildCells(
                 if (self.updateCell(
                     screen,
                     cell,
-                    if (link_match_set.orderedContains(screen, cell))
+                    if (link_match_set.contains(screen, cell))
                         .single
                     else
                         null,

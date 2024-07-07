@@ -25,6 +25,9 @@ extension Ghostty {
         // Any error while initializing the surface.
         @Published var error: Error? = nil
         
+        // The hovered URL
+        @Published var hoverUrl: String? = nil
+        
         private(set) var surface: ghostty_surface_t?
         
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {

@@ -2519,16 +2519,15 @@ fn clickMoveCursor(self: *Surface, to: terminal.Pin) !void {
 }
 
 /// Returns the link at the given cursor position, if any.
+///
+/// Requires the renderer mutex is held.
 fn linkAtPos(
     self: *Surface,
     pos: apprt.CursorPos,
 ) !?struct {
-    DerivedConfig.Link,
+    input.Link.Action,
     terminal.Selection,
 } {
-    // If we have no configured links we can save a lot of work
-    if (self.config.links.len == 0) return null;
-
     // Convert our cursor position to a screen point.
     const screen = &self.renderer_state.terminal.screen;
     const mouse_pin: terminal.Pin = mouse_pin: {
@@ -2542,6 +2541,19 @@ fn linkAtPos(
 
     // Get our comparison mods
     const mouse_mods = self.mouseModsWithCapture(self.mouse.mods);
+
+    // If we have the proper modifiers set then we can check for OSC8 links.
+    if (mouse_mods.equal(input.ctrlOrSuper(.{}))) hyperlink: {
+        const rac = mouse_pin.rowAndCell();
+        const cell = rac.cell;
+        if (!cell.hyperlink) break :hyperlink;
+        const sel = terminal.Selection.init(mouse_pin, mouse_pin, false);
+        return .{ ._open_osc8, sel };
+    }
+
+    // If we have no OSC8 links then we fallback to regex-based URL detection.
+    // If we have no configured links we can save a lot of work going forward.
+    if (self.config.links.len == 0) return null;
 
     // Get the line we're hovering over.
     const line = screen.selectLine(.{
@@ -2571,7 +2583,7 @@ fn linkAtPos(
             defer match.deinit();
             const sel = match.selection();
             if (!sel.contains(screen, mouse_pin)) continue;
-            return .{ link, sel };
+            return .{ link.action, sel };
         }
     }
 
@@ -2602,8 +2614,8 @@ fn mouseModsWithCapture(self: *Surface, mods: input.Mods) input.Mods {
 ///
 /// Requires the renderer state mutex is held.
 fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
-    const link, const sel = try self.linkAtPos(pos) orelse return false;
-    switch (link.action) {
+    const action, const sel = try self.linkAtPos(pos) orelse return false;
+    switch (action) {
         .open => {
             const str = try self.io.terminal.screen.selectionString(self.alloc, .{
                 .sel = sel,
@@ -2612,9 +2624,28 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
             defer self.alloc.free(str);
             try internal_os.open(self.alloc, str);
         },
+
+        ._open_osc8 => {
+            const uri = self.osc8URI(sel.start()) orelse {
+                log.warn("failed to get URI for OSC8 hyperlink", .{});
+                return false;
+            };
+            try internal_os.open(self.alloc, uri);
+        },
     }
 
     return true;
+}
+
+/// Return the URI for an OSC8 hyperlink at the given position or null
+/// if there is no hyperlink.
+fn osc8URI(self: *Surface, pin: terminal.Pin) ?[]const u8 {
+    _ = self;
+    const page = &pin.page.data;
+    const cell = pin.rowAndCell().cell;
+    const link_id = page.lookupHyperlink(cell) orelse return null;
+    const entry = page.hyperlink_set.get(page.memory, link_id);
+    return entry.uri.offset.ptr(page.memory)[0..entry.uri.len];
 }
 
 pub fn mousePressureCallback(
@@ -2705,9 +2736,13 @@ pub fn cursorPosCallback(
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
 
-        // If we were previously over a link, we need to queue a
-        // render to undo the link state.
-        if (over_link) try self.queueRender();
+        // If we were previously over a link, we need to undo the link state.
+        // We also queue a render so the renderer can undo the rendered link
+        // state.
+        if (over_link) {
+            self.rt_surface.mouseOverLink(null);
+            try self.queueRender();
+        }
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
@@ -2769,16 +2804,7 @@ pub fn cursorPosCallback(
     if (self.mouse.link_point) |last_vp| {
         // Mark the link's row as dirty.
         if (over_link) {
-            // TODO: This doesn't handle soft-wrapped links. Ideally this would
-            // be storing the link's start and end points and marking all rows
-            // between and including those as dirty, instead of just the row
-            // containing the part the cursor is hovering. This can result in
-            // a bit of jank.
-            if (self.renderer_state.terminal.screen.pages.pin(.{
-                .viewport = last_vp,
-            })) |pin| {
-                pin.markDirty();
-            }
+            self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
         }
 
         // If our last link viewport point is unchanged, then don't process
@@ -2796,17 +2822,37 @@ pub fn cursorPosCallback(
     }
     self.mouse.link_point = pos_vp;
 
-    if (try self.linkAtPos(pos)) |_| {
+    if (try self.linkAtPos(pos)) |link| {
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
-        // Mark the new link's row as dirty.
-        if (self.renderer_state.terminal.screen.pages.pin(.{ .viewport = pos_vp })) |pin| {
-            pin.markDirty();
-        }
+        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
         try self.rt_surface.setMouseShape(.pointer);
+
+        switch (link[0]) {
+            .open => {
+                const str = try self.io.terminal.screen.selectionString(self.alloc, .{
+                    .sel = link[1],
+                    .trim = false,
+                });
+                defer self.alloc.free(str);
+                self.rt_surface.mouseOverLink(str);
+            },
+
+            ._open_osc8 => link: {
+                // Show the URL in the status bar
+                const pin = link[1].start();
+                const uri = self.osc8URI(pin) orelse {
+                    log.warn("failed to get URI for OSC8 hyperlink", .{});
+                    break :link;
+                };
+                self.rt_surface.mouseOverLink(uri);
+            },
+        }
+
         try self.queueRender();
     } else if (over_link) {
         try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
+        self.rt_surface.mouseOverLink(null);
         try self.queueRender();
     }
 }

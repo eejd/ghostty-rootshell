@@ -6,6 +6,7 @@ const inputpkg = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const point = terminal.point;
 const Screen = terminal.Screen;
+const Terminal = terminal.Terminal;
 
 const log = std.log.scoped(.renderer_link);
 
@@ -79,10 +80,206 @@ pub const Set = struct {
         var matches = std.ArrayList(terminal.Selection).init(alloc);
         defer matches.deinit();
 
+        // If our mouse is over an OSC8 link, then we can skip the regex
+        // matches below since OSC8 takes priority.
+        try self.matchSetFromOSC8(
+            alloc,
+            &matches,
+            screen,
+            mouse_pin,
+            mouse_mods,
+        );
+
+        // If we have no matches then we can try the regex matches.
+        if (matches.items.len == 0) {
+            try self.matchSetFromLinks(
+                alloc,
+                &matches,
+                screen,
+                mouse_pin,
+                mouse_mods,
+            );
+        }
+
+        return .{ .matches = try matches.toOwnedSlice() };
+    }
+
+    fn matchSetFromOSC8(
+        self: *const Set,
+        alloc: Allocator,
+        matches: *std.ArrayList(terminal.Selection),
+        screen: *Screen,
+        mouse_pin: terminal.Pin,
+        mouse_mods: inputpkg.Mods,
+    ) !void {
+        _ = alloc;
+
+        // If the right mods aren't pressed, then we can't match.
+        if (!mouse_mods.equal(inputpkg.ctrlOrSuper(.{}))) return;
+
+        // Check if the cell the mouse is over is an OSC8 hyperlink
+        const mouse_cell = mouse_pin.rowAndCell().cell;
+        if (!mouse_cell.hyperlink) return;
+
+        // Get our hyperlink entry
+        const page = &mouse_pin.page.data;
+        const link_id = page.lookupHyperlink(mouse_cell) orelse {
+            log.warn("failed to find hyperlink for cell", .{});
+            return;
+        };
+        const link = page.hyperlink_set.get(page.memory, link_id);
+
+        // If our link has an implicit ID (no ID set explicitly via OSC8)
+        // then we use an alternate matching technique that iterates forward
+        // and backward until it finds boundaries.
+        if (link.id == .implicit) {
+            const uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            return try self.matchSetFromOSC8Implicit(
+                matches,
+                mouse_pin,
+                uri,
+            );
+        }
+
+        // Go through every row and find matching hyperlinks for the given ID.
+        // Note the link ID is not the same as the OSC8 ID parameter. But
+        // we hash hyperlinks by their contents which should achieve the same
+        // thing so we can use the ID as a key.
+        var current: ?terminal.Selection = null;
+        var row_it = screen.pages.getTopLeft(.viewport).rowIterator(.right_down, null);
+        while (row_it.next()) |row_pin| {
+            const row = row_pin.rowAndCell().row;
+
+            // If the row doesn't have any hyperlinks then we're done
+            // building our matching selection.
+            if (!row.hyperlink) {
+                if (current) |sel| {
+                    try matches.append(sel);
+                    current = null;
+                }
+
+                continue;
+            }
+
+            // We have hyperlinks, look for our own matching hyperlink.
+            for (row_pin.cells(.right), 0..) |*cell, x| {
+                const match = match: {
+                    if (cell.hyperlink) {
+                        if (row_pin.page.data.lookupHyperlink(cell)) |cell_link_id| {
+                            break :match cell_link_id == link_id;
+                        }
+                    }
+                    break :match false;
+                };
+
+                // If we have a match, extend our selection or start a new
+                // selection.
+                if (match) {
+                    const cell_pin = row_pin.right(x);
+                    if (current) |*sel| {
+                        sel.endPtr().* = cell_pin;
+                    } else {
+                        current = terminal.Selection.init(
+                            cell_pin,
+                            cell_pin,
+                            false,
+                        );
+                    }
+
+                    continue;
+                }
+
+                // No match, if we have a current selection then complete it.
+                if (current) |sel| {
+                    try matches.append(sel);
+                    current = null;
+                }
+            }
+        }
+    }
+
+    /// Match OSC8 links around the mouse pin for an OSC8 link with an
+    /// implicit ID. This only matches cells with the same URI directly
+    /// around the mouse pin.
+    fn matchSetFromOSC8Implicit(
+        self: *const Set,
+        matches: *std.ArrayList(terminal.Selection),
+        mouse_pin: terminal.Pin,
+        uri: []const u8,
+    ) !void {
+        _ = self;
+
+        // Our selection starts with just our pin.
+        var sel = terminal.Selection.init(mouse_pin, mouse_pin, false);
+
+        // Expand it to the left.
+        var it = mouse_pin.cellIterator(.left_up, null);
+        while (it.next()) |cell_pin| {
+            const page = &cell_pin.page.data;
+            const rac = cell_pin.rowAndCell();
+            const cell = rac.cell;
+
+            // If this cell isn't a hyperlink then we've found a boundary
+            if (!cell.hyperlink) break;
+
+            const link_id = page.lookupHyperlink(cell) orelse {
+                log.warn("failed to find hyperlink for cell", .{});
+                break;
+            };
+            const link = page.hyperlink_set.get(page.memory, link_id);
+
+            // If this link has an explicit ID then we found a boundary
+            if (link.id != .implicit) break;
+
+            // If this link has a different URI then we found a boundary
+            const cell_uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            if (!std.mem.eql(u8, uri, cell_uri)) break;
+
+            sel.startPtr().* = cell_pin;
+        }
+
+        // Expand it to the right
+        it = mouse_pin.cellIterator(.right_down, null);
+        while (it.next()) |cell_pin| {
+            const page = &cell_pin.page.data;
+            const rac = cell_pin.rowAndCell();
+            const cell = rac.cell;
+
+            // If this cell isn't a hyperlink then we've found a boundary
+            if (!cell.hyperlink) break;
+
+            const link_id = page.lookupHyperlink(cell) orelse {
+                log.warn("failed to find hyperlink for cell", .{});
+                break;
+            };
+            const link = page.hyperlink_set.get(page.memory, link_id);
+
+            // If this link has an explicit ID then we found a boundary
+            if (link.id != .implicit) break;
+
+            // If this link has a different URI then we found a boundary
+            const cell_uri = link.uri.offset.ptr(page.memory)[0..link.uri.len];
+            if (!std.mem.eql(u8, uri, cell_uri)) break;
+
+            sel.endPtr().* = cell_pin;
+        }
+
+        try matches.append(sel);
+    }
+
+    /// Fills matches with the matches from regex link matches.
+    fn matchSetFromLinks(
+        self: *const Set,
+        alloc: Allocator,
+        matches: *std.ArrayList(terminal.Selection),
+        screen: *Screen,
+        mouse_pin: terminal.Pin,
+        mouse_mods: inputpkg.Mods,
+    ) !void {
         // Iterate over all the visible lines.
         var lineIter = screen.lineIterator(screen.pages.pin(.{
             .viewport = .{},
-        }) orelse return .{});
+        }) orelse return);
         while (lineIter.next()) |line_sel| {
             const strmap: terminal.StringMap = strmap: {
                 var strmap: terminal.StringMap = undefined;
@@ -141,8 +338,6 @@ pub const Set = struct {
                 }
             }
         }
-
-        return .{ .matches = try matches.toOwnedSlice() };
     }
 };
 
@@ -158,6 +353,21 @@ pub const MatchSet = struct {
 
     pub fn deinit(self: *MatchSet, alloc: Allocator) void {
         alloc.free(self.matches);
+    }
+
+    /// Checks if the matchset contains the given pin. This is slower than
+    /// orderedContains but is stateless and more flexible since it doesn't
+    /// require the points to be in order.
+    pub fn contains(
+        self: *MatchSet,
+        screen: *const Screen,
+        pin: terminal.Pin,
+    ) bool {
+        for (self.matches) |sel| {
+            if (sel.contains(screen, pin)) return true;
+        }
+
+        return false;
     }
 
     /// Checks if the matchset contains the given pt. The points must be
@@ -389,5 +599,68 @@ test "matchset mods no match" {
     try testing.expect(!match.orderedContains(&s, s.pages.pin(.{ .screen = .{
         .x = 1,
         .y = 2,
+    } }).?));
+}
+
+test "matchset osc8" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Initialize our terminal
+    var t = try Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(alloc);
+    const s = &t.screen;
+
+    try t.printString("ABC");
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("123");
+    t.screen.endHyperlink();
+
+    // Get a set
+    var set = try Set.fromConfig(alloc, &.{});
+    defer set.deinit(alloc);
+
+    // No matches over the non-link
+    {
+        var match = try set.matchSet(
+            alloc,
+            &t.screen,
+            .{ .x = 2, .y = 0 },
+            inputpkg.ctrlOrSuper(.{}),
+        );
+        defer match.deinit(alloc);
+        try testing.expectEqual(@as(usize, 0), match.matches.len);
+    }
+
+    // Match over link
+    var match = try set.matchSet(
+        alloc,
+        &t.screen,
+        .{ .x = 3, .y = 0 },
+        inputpkg.ctrlOrSuper(.{}),
+    );
+    defer match.deinit(alloc);
+    try testing.expectEqual(@as(usize, 1), match.matches.len);
+
+    // Test our matches
+    try testing.expect(!match.orderedContains(s, s.pages.pin(.{ .screen = .{
+        .x = 2,
+        .y = 0,
+    } }).?));
+    try testing.expect(match.orderedContains(s, s.pages.pin(.{ .screen = .{
+        .x = 3,
+        .y = 0,
+    } }).?));
+    try testing.expect(match.orderedContains(s, s.pages.pin(.{ .screen = .{
+        .x = 4,
+        .y = 0,
+    } }).?));
+    try testing.expect(match.orderedContains(s, s.pages.pin(.{ .screen = .{
+        .x = 5,
+        .y = 0,
+    } }).?));
+    try testing.expect(!match.orderedContains(s, s.pages.pin(.{ .screen = .{
+        .x = 6,
+        .y = 0,
     } }).?));
 }

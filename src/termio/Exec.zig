@@ -2358,6 +2358,14 @@ const StreamHandler = struct {
         }
     }
 
+    pub fn startHyperlink(self: *StreamHandler, uri: []const u8, id: ?[]const u8) !void {
+        try self.terminal.screen.startHyperlink(uri, id);
+    }
+
+    pub fn endHyperlink(self: *StreamHandler) !void {
+        self.terminal.screen.endHyperlink();
+    }
+
     pub fn deviceAttributes(
         self: *StreamHandler,
         req: terminal.DeviceAttributeReq,

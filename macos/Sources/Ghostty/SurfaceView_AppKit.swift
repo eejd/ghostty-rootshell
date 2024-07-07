@@ -26,6 +26,9 @@ extension Ghostty {
         
         // Any error while initializing the surface.
         @Published var error: Error? = nil
+        
+        // The hovered URL string
+        @Published var hoverUrl: String? = nil
 
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.

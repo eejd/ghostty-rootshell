@@ -6,6 +6,7 @@ const charsets = @import("charsets.zig");
 const stream = @import("stream.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
+const hyperlink = @import("hyperlink.zig");
 const sgr = @import("sgr.zig");
 const style = @import("style.zig");
 pub const apc = @import("apc.zig");
@@ -60,5 +61,6 @@ test {
     // Internals
     _ = @import("bitmap_allocator.zig");
     _ = @import("hash_map.zig");
+    _ = @import("ref_counted_set.zig");
     _ = @import("size.zig");
 }

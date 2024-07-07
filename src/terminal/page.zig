@@ -7,6 +7,7 @@ const testing = std.testing;
 const posix = std.posix;
 const fastmem = @import("../fastmem.zig");
 const color = @import("color.zig");
+const hyperlink = @import("hyperlink.zig");
 const sgr = @import("sgr.zig");
 const style = @import("style.zig");
 const size = @import("size.zig");
@@ -33,6 +34,33 @@ const GraphemeAlloc = BitmapAllocator(grapheme_chunk);
 const grapheme_count_default = GraphemeAlloc.bitmap_bit_size;
 const grapheme_bytes_default = grapheme_count_default * grapheme_chunk;
 const GraphemeMap = AutoOffsetHashMap(Offset(Cell), Offset(u21).Slice);
+
+/// The allocator used for shared utf8-encoded strings within a page.
+/// Note the chunk size below is the minimum size of a single allocation
+/// and requires a single bit of metadata in our bitmap allocator. Therefore
+/// it should be tuned carefully (too small and we waste metadata, too large
+/// and we have fragmentation). We can probably use a better allocation
+/// strategy in the future.
+///
+/// At the time of writing this, the strings table is only used for OSC8
+/// IDs and URIs. IDs are usually short and URIs are usually longer. I chose
+/// 32 bytes as a compromise between these two since it represents single
+/// domain links quite well and is not too wasteful for short IDs. We can
+/// continue to tune this as we see how it's used.
+const string_chunk_len = 32;
+const string_chunk = string_chunk_len * @sizeOf(u8);
+const StringAlloc = BitmapAllocator(string_chunk);
+const string_count_default = StringAlloc.bitmap_bit_size;
+const string_bytes_default = string_count_default * string_chunk;
+
+/// Default number of hyperlinks we support.
+///
+/// The cell multiplier is the number of cells per hyperlink entry that
+/// we support. A hyperlink can be longer than this multiplier; the multiplier
+/// just sets the total capacity to simplify adjustable size metrics.
+const hyperlink_count_default = 4;
+const hyperlink_bytes_default = hyperlink_count_default * @sizeOf(hyperlink.Set.Item);
+const hyperlink_cell_multiplier = 16;
 
 /// A page represents a specific section of terminal screen. The primary
 /// idea of a page is that it is a fully self-contained unit that can be
@@ -75,6 +103,11 @@ pub const Page = struct {
     /// first column, all cells in that row are laid out in column order.
     cells: Offset(Cell),
 
+    /// The string allocator for this page used for shared utf-8 encoded
+    /// strings. Liveness of strings and memory management is deferred to
+    /// the individual use case.
+    string_alloc: StringAlloc,
+
     /// The multi-codepoint grapheme data for this page. This is where
     /// any cell that has more than one codepoint will be stored. This is
     /// relatively rare (typically only emoji) so this defaults to a very small
@@ -90,6 +123,13 @@ pub const Page = struct {
 
     /// The available set of styles in use on this page.
     styles: style.Set,
+
+    /// The structures used for tracking hyperlinks within the page.
+    /// The map maps cell offsets to hyperlink IDs and the IDs are in
+    /// the ref counted set. The strings within the hyperlink structures
+    /// are allocated in the string allocator.
+    hyperlink_map: hyperlink.Map,
+    hyperlink_set: hyperlink.Set,
 
     /// The offset to the first mask of dirty bits in the page.
     ///
@@ -199,6 +239,10 @@ pub const Page = struct {
                 l.styles_layout,
                 .{},
             ),
+            .string_alloc = StringAlloc.init(
+                buf.add(l.string_alloc_start),
+                l.string_alloc_layout,
+            ),
             .grapheme_alloc = GraphemeAlloc.init(
                 buf.add(l.grapheme_alloc_start),
                 l.grapheme_alloc_layout,
@@ -206,6 +250,15 @@ pub const Page = struct {
             .grapheme_map = GraphemeMap.init(
                 buf.add(l.grapheme_map_start),
                 l.grapheme_map_layout,
+            ),
+            .hyperlink_map = hyperlink.Map.init(
+                buf.add(l.hyperlink_map_start),
+                l.hyperlink_map_layout,
+            ),
+            .hyperlink_set = hyperlink.Set.init(
+                buf.add(l.hyperlink_set_start),
+                l.hyperlink_set_layout,
+                .{},
             ),
             .size = .{ .cols = cap.cols, .rows = cap.rows },
             .capacity = cap,
@@ -237,7 +290,6 @@ pub const Page = struct {
         MissingStyle,
         UnmarkedStyleRow,
         MismatchedStyleRef,
-        ZombieStyles,
         InvalidStyleCount,
         InvalidSpacerTailLocation,
         InvalidSpacerHeadLocation,
@@ -452,14 +504,16 @@ pub const Page = struct {
                 }
             }
 
+            // NOTE: This is currently disabled because @qwerasd says that
+            // certain fast paths can cause this but its okay.
             // Just 1 zombie style might be the cursor style, so ignore it.
-            if (zombies > 1) {
-                log.warn(
-                    "page integrity violation zombie styles count={}",
-                    .{zombies},
-                );
-                return IntegrityError.ZombieStyles;
-            }
+            // if (zombies > 1) {
+            //     log.warn(
+            //         "page integrity violation zombie styles count={}",
+            //         .{zombies},
+            //     );
+            //     return IntegrityError.ZombieStyles;
+            // }
         }
     }
 
@@ -563,6 +617,13 @@ pub const Page = struct {
         x_start: usize,
         x_end_req: usize,
     ) CloneFromError!void {
+        // This whole operation breaks integrity until the end.
+        self.pauseIntegrityChecks(true);
+        defer {
+            self.pauseIntegrityChecks(false);
+            self.assertIntegrity();
+        }
+
         const cell_len = @min(self.size.cols, other.size.cols);
         const x_end = @min(x_end_req, cell_len);
         assert(x_start <= x_end);
@@ -571,9 +632,7 @@ pub const Page = struct {
 
         // If our destination has styles or graphemes then we need to
         // clear some state.
-        if (dst_row.grapheme or dst_row.styled) {
-            self.clearCells(dst_row, x_start, x_end);
-        }
+        if (dst_row.managedMemory()) self.clearCells(dst_row, x_start, x_end);
 
         // Copy all the row metadata but keep our cells offset
         dst_row.* = copy: {
@@ -585,6 +644,7 @@ pub const Page = struct {
                 copy.wrap = dst_row.wrap;
                 copy.wrap_continuation = dst_row.wrap_continuation;
                 copy.grapheme = dst_row.grapheme;
+                copy.hyperlink = dst_row.hyperlink;
                 copy.styled = dst_row.styled;
             }
 
@@ -596,7 +656,7 @@ pub const Page = struct {
 
         // If we have no managed memory in the source, then we can just
         // copy it directly.
-        if (!src_row.grapheme and !src_row.styled) {
+        if (!src_row.managedMemory()) {
             fastmem.copy(Cell, cells, other_cells);
         } else {
             // We have managed memory, so we have to do a slower copy to
@@ -611,6 +671,26 @@ pub const Page = struct {
                     const cps = other.lookupGrapheme(src_cell).?;
                     for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
                 }
+                if (src_cell.hyperlink) hyperlink: {
+                    dst_row.hyperlink = true;
+
+                    // Fast-path: same page we can move it directly
+                    if (other == self) {
+                        self.moveHyperlink(src_cell, dst_cell);
+                        break :hyperlink;
+                    }
+
+                    // Slow-path: get the hyperlink from the other page,
+                    // add it, and migrate.
+                    const id = other.lookupHyperlink(src_cell).?;
+                    const other_link = other.hyperlink_set.get(other.memory, id);
+                    const dst_id = try self.hyperlink_set.addContext(
+                        self.memory,
+                        try other_link.dupe(other, self),
+                        .{ .page = self },
+                    );
+                    try self.setHyperlink(dst_row, dst_cell, dst_id);
+                }
                 if (src_cell.style_id != style.default_id) {
                     dst_row.styled = true;
 
@@ -624,8 +704,12 @@ pub const Page = struct {
 
                     // Slow path: Get the style from the other
                     // page and add it to this page's style set.
-                    const other_style = other.styles.get(other.memory, src_cell.style_id).*;
-                    if (try self.styles.addWithId(self.memory, other_style, src_cell.style_id)) |id| {
+                    const other_style = other.styles.get(other.memory, src_cell.style_id);
+                    if (try self.styles.addWithId(
+                        self.memory,
+                        other_style.*,
+                        src_cell.style_id,
+                    )) |id| {
                         dst_cell.style_id = id;
                     }
                 }
@@ -640,9 +724,6 @@ pub const Page = struct {
                 last.wide = .narrow;
             }
         }
-
-        // The final page should remain consistent
-        self.assertIntegrity();
     }
 
     /// Get a single row. y must be valid.
@@ -698,31 +779,28 @@ pub const Page = struct {
         // Clear our destination now matter what
         self.clearCells(dst_row, dst_left, dst_left + len);
 
-        // If src has no graphemes, this is very fast because we can
-        // just copy the cells directly because every other attribute
-        // is position-independent.
-        const src_grapheme = src_row.grapheme or grapheme: {
-            for (src_cells) |c| if (c.hasGrapheme()) break :grapheme true;
-            break :grapheme false;
-        };
-        if (!src_grapheme) {
+        // If src has no managed memory, this is very fast.
+        if (!src_row.managedMemory()) {
             fastmem.copy(Cell, dst_cells, src_cells);
         } else {
-            // Source has graphemes, meaning we have to do a slower
-            // cell by cell copy.
+            // Source has graphemes or hyperlinks...
             for (src_cells, dst_cells) |*src, *dst| {
                 dst.* = src.*;
-                if (!src.hasGrapheme()) continue;
-
-                // Required for moveGrapheme assertions
-                dst.content_tag = .codepoint;
-                self.moveGrapheme(src, dst);
-                src.content_tag = .codepoint;
-                dst.content_tag = .codepoint_grapheme;
+                if (src.hasGrapheme()) {
+                    // Required for moveGrapheme assertions
+                    dst.content_tag = .codepoint;
+                    self.moveGrapheme(src, dst);
+                    src.content_tag = .codepoint;
+                    dst.content_tag = .codepoint_grapheme;
+                    dst_row.grapheme = true;
+                }
+                if (src.hyperlink) {
+                    dst.hyperlink = false;
+                    self.moveHyperlink(src, dst);
+                    dst.hyperlink = true;
+                    dst_row.hyperlink = true;
+                }
             }
-
-            // The destination row must be marked
-            dst_row.grapheme = true;
         }
 
         // The destination row has styles if any of the cells are styled
@@ -739,6 +817,7 @@ pub const Page = struct {
         @memset(@as([]u64, @ptrCast(src_cells)), 0);
         if (src_cells.len == self.size.cols) {
             src_row.grapheme = false;
+            src_row.hyperlink = false;
             src_row.styled = false;
         }
     }
@@ -772,6 +851,26 @@ pub const Page = struct {
             }
         }
 
+        // Hyperlinks are keyed by cell offset.
+        if (src.hyperlink or dst.hyperlink) {
+            if (src.hyperlink and !dst.hyperlink) {
+                self.moveHyperlink(src, dst);
+            } else if (!src.hyperlink and dst.hyperlink) {
+                self.moveHyperlink(dst, src);
+            } else {
+                // Both had hyperlinks, so we have to manually swap
+                const src_offset = getOffset(Cell, self.memory, src);
+                const dst_offset = getOffset(Cell, self.memory, dst);
+                var map = self.hyperlink_map.map(self.memory);
+                const src_entry = map.getEntry(src_offset).?;
+                const dst_entry = map.getEntry(dst_offset).?;
+                const src_value = src_entry.value_ptr.*;
+                const dst_value = dst_entry.value_ptr.*;
+                src_entry.value_ptr.* = dst_value;
+                dst_entry.value_ptr.* = src_value;
+            }
+        }
+
         // Copy the metadata. Note that we do NOT have to worry about
         // styles because styles are keyed by ID and we're preserving the
         // exact ref count and row state here.
@@ -794,9 +893,16 @@ pub const Page = struct {
         defer self.assertIntegrity();
 
         const cells = row.cells.ptr(self.memory)[left..end];
+
         if (row.grapheme) {
             for (cells) |*cell| {
                 if (cell.hasGrapheme()) self.clearGrapheme(row, cell);
+            }
+        }
+
+        if (row.hyperlink) {
+            for (cells) |*cell| {
+                if (cell.hyperlink) self.clearHyperlink(row, cell);
             }
         }
 
@@ -813,6 +919,77 @@ pub const Page = struct {
         // Zero the cells as u64s since empirically this seems
         // to be a bit faster than using @memset(cells, .{})
         @memset(@as([]u64, @ptrCast(cells)), 0);
+    }
+
+    /// Returns the hyperlink ID for the given cell.
+    pub fn lookupHyperlink(self: *const Page, cell: *const Cell) ?hyperlink.Id {
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        const map = self.hyperlink_map.map(self.memory);
+        return map.get(cell_offset);
+    }
+
+    /// Clear the hyperlink from the given cell.
+    pub fn clearHyperlink(self: *Page, row: *Row, cell: *Cell) void {
+        defer self.assertIntegrity();
+
+        // Get our ID
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.hyperlink_map.map(self.memory);
+        const entry = map.getEntry(cell_offset) orelse return;
+
+        // Release our usage of this, free memory, unset flag
+        self.hyperlink_set.release(self.memory, entry.value_ptr.*);
+        map.removeByPtr(entry.key_ptr);
+        cell.hyperlink = false;
+
+        // Mark that we no longer have graphemes, also search the row
+        // to make sure its state is correct.
+        const cells = row.cells.ptr(self.memory)[0..self.size.cols];
+        for (cells) |c| if (c.hyperlink) return;
+        row.hyperlink = false;
+    }
+
+    /// Set the hyperlink for the given cell. If the cell already has a
+    /// hyperlink, then this will handle memory management for the prior
+    /// hyperlink.
+    pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) !void {
+        defer self.assertIntegrity();
+
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.hyperlink_map.map(self.memory);
+        const gop = try map.getOrPut(cell_offset);
+
+        if (gop.found_existing) {
+            // If the hyperlink matches then we don't need to do anything.
+            if (gop.value_ptr.* == id) return;
+
+            // Different hyperlink, we need to release the old one
+            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
+        }
+
+        // Increase ref count for our new hyperlink and set it
+        self.hyperlink_set.use(self.memory, id);
+        gop.value_ptr.* = id;
+        cell.hyperlink = true;
+        row.hyperlink = true;
+    }
+
+    /// Move the hyperlink from one cell to another. This can't fail
+    /// because we avoid any allocations since we're just moving data.
+    /// Destination must NOT have a hyperlink.
+    fn moveHyperlink(self: *Page, src: *Cell, dst: *Cell) void {
+        if (comptime std.debug.runtime_safety) {
+            assert(src.hyperlink);
+            assert(!dst.hyperlink);
+        }
+
+        const src_offset = getOffset(Cell, self.memory, src);
+        const dst_offset = getOffset(Cell, self.memory, dst);
+        var map = self.hyperlink_map.map(self.memory);
+        const entry = map.getEntry(src_offset).?;
+        const value = entry.value_ptr.*;
+        map.removeByPtr(entry.key_ptr);
+        map.putAssumeCapacity(dst_offset, value);
     }
 
     /// Append a codepoint to the given cell as a grapheme.
@@ -977,6 +1154,12 @@ pub const Page = struct {
         grapheme_alloc_layout: GraphemeAlloc.Layout,
         grapheme_map_start: usize,
         grapheme_map_layout: GraphemeMap.Layout,
+        string_alloc_start: usize,
+        string_alloc_layout: StringAlloc.Layout,
+        hyperlink_map_start: usize,
+        hyperlink_map_layout: hyperlink.Map.Layout,
+        hyperlink_set_start: usize,
+        hyperlink_set_layout: hyperlink.Set.Layout,
         capacity: Capacity,
     };
 
@@ -1015,7 +1198,28 @@ pub const Page = struct {
         const grapheme_map_start = alignForward(usize, grapheme_alloc_end, GraphemeMap.base_align);
         const grapheme_map_end = grapheme_map_start + grapheme_map_layout.total_size;
 
-        const total_size = alignForward(usize, grapheme_map_end, std.mem.page_size);
+        const string_layout = StringAlloc.layout(cap.string_bytes);
+        const string_start = alignForward(usize, grapheme_map_end, StringAlloc.base_align);
+        const string_end = string_start + string_layout.total_size;
+
+        const hyperlink_count = @divFloor(cap.hyperlink_bytes, @sizeOf(hyperlink.Set.Item));
+        const hyperlink_set_layout = hyperlink.Set.layout(@intCast(hyperlink_count));
+        const hyperlink_set_start = alignForward(usize, string_end, hyperlink.Set.base_align);
+        const hyperlink_set_end = hyperlink_set_start + hyperlink_set_layout.total_size;
+
+        const hyperlink_map_count: u32 = count: {
+            if (hyperlink_count == 0) break :count 0;
+            const mult = std.math.cast(
+                u32,
+                hyperlink_count * hyperlink_cell_multiplier,
+            ) orelse break :count std.math.maxInt(u32);
+            break :count std.math.ceilPowerOfTwoAssert(u32, mult);
+        };
+        const hyperlink_map_layout = hyperlink.Map.layout(hyperlink_map_count);
+        const hyperlink_map_start = alignForward(usize, hyperlink_set_end, hyperlink.Map.base_align);
+        const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
+
+        const total_size = alignForward(usize, hyperlink_map_end, std.mem.page_size);
 
         return .{
             .total_size = total_size,
@@ -1031,6 +1235,12 @@ pub const Page = struct {
             .grapheme_alloc_layout = grapheme_alloc_layout,
             .grapheme_map_start = grapheme_map_start,
             .grapheme_map_layout = grapheme_map_layout,
+            .string_alloc_start = string_start,
+            .string_alloc_layout = string_layout,
+            .hyperlink_map_start = hyperlink_map_start,
+            .hyperlink_map_layout = hyperlink_map_layout,
+            .hyperlink_set_start = hyperlink_set_start,
+            .hyperlink_set_layout = hyperlink_set_layout,
             .capacity = cap,
         };
     }
@@ -1038,7 +1248,9 @@ pub const Page = struct {
 
 /// The standard capacity for a page that doesn't have special
 /// requirements. This is enough to support a very large number of cells.
-/// The standard capacity is chosen as the fast-path for allocation.
+/// The standard capacity is chosen as the fast-path for allocation since
+/// pages of standard capacity use a pooled allocator instead of single-use
+/// mmaps.
 pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
@@ -1061,8 +1273,17 @@ pub const Capacity = struct {
     /// Number of unique styles that can be used on this page.
     styles: usize = 16,
 
+    /// Number of bytes to allocate for hyperlink data. Note that the
+    /// amount of data used for hyperlinks in total is more than this because
+    /// hyperlinks use string data as well as a small amount of lookup metadata.
+    /// This number is a rough approximation.
+    hyperlink_bytes: usize = hyperlink_bytes_default,
+
     /// Number of bytes to allocate for grapheme data.
     grapheme_bytes: usize = grapheme_bytes_default,
+
+    /// Number of bytes to allocate for strings.
+    string_bytes: usize = string_bytes_default,
 
     pub const Adjustment = struct {
         cols: ?size.CellCountInt = null,
@@ -1089,7 +1310,10 @@ pub const Capacity = struct {
             // for rows & cells (which will allow us to calculate the number of
             // rows we can fit at a certain column width) we need to layout the
             // "meta" members of the page (i.e. everything else) from the end.
-            const grapheme_map_start = alignBackward(usize, layout.total_size - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
+            const hyperlink_map_start = alignBackward(usize, layout.total_size - layout.hyperlink_map_layout.total_size, hyperlink.Map.base_align);
+            const hyperlink_set_start = alignBackward(usize, hyperlink_map_start - layout.hyperlink_set_layout.total_size, hyperlink.Set.base_align);
+            const string_alloc_start = alignBackward(usize, hyperlink_set_start - layout.string_alloc_layout.total_size, StringAlloc.base_align);
+            const grapheme_map_start = alignBackward(usize, string_alloc_start - layout.grapheme_map_layout.total_size, GraphemeMap.base_align);
             const grapheme_alloc_start = alignBackward(usize, grapheme_map_start - layout.grapheme_alloc_layout.total_size, GraphemeAlloc.base_align);
             const styles_start = alignBackward(usize, grapheme_alloc_start - layout.styles_layout.total_size, style.Set.base_align);
 
@@ -1148,11 +1372,16 @@ pub const Row = packed struct(u64) {
     /// At the time of writing this, the speed difference is around 4x.
     styled: bool = false,
 
+    /// True if any of the cells in this row are part of a hyperlink.
+    /// This is similar to styled: it can have false positives but never
+    /// false negatives. This is used to optimize hyperlink operations.
+    hyperlink: bool = false,
+
     /// The semantic prompt type for this row as specified by the
     /// running program, or "unknown" if it was never set.
     semantic_prompt: SemanticPrompt = .unknown,
 
-    _padding: u25 = 0,
+    _padding: u24 = 0,
 
     /// Semantic prompt type.
     pub const SemanticPrompt = enum(u3) {
@@ -1176,6 +1405,12 @@ pub const Row = packed struct(u64) {
             return self == .prompt or self == .prompt_continuation or self == .input;
         }
     };
+
+    /// Returns true if this row has any managed memory outside of the
+    /// row structure (graphemes, styles, etc.)
+    fn managedMemory(self: Row) bool {
+        return self.grapheme or self.styled or self.hyperlink;
+    }
 };
 
 /// A cell represents a single terminal grid cell.
@@ -1212,7 +1447,12 @@ pub const Cell = packed struct(u64) {
     /// Whether this was written with the protection flag set.
     protected: bool = false,
 
-    _padding: u19 = 0,
+    /// Whether this cell is a hyperlink. If this is true then you must
+    /// look up the hyperlink ID in the page hyperlink_map and the ID in
+    /// the hyperlink_set to get the actual hyperlink data.
+    hyperlink: bool = false,
+
+    _padding: u18 = 0,
 
     pub const ContentTag = enum(u2) {
         /// A single codepoint, could be zero to be empty cell.

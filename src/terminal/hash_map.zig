@@ -857,7 +857,7 @@ fn HashMapUnmanaged(
         /// because capacity is rounded up to the next power of two. This is
         /// a design requirement for this hash map implementation.
         pub fn layoutForCapacity(new_capacity: Size) Layout {
-            assert(std.math.isPowerOfTwo(new_capacity));
+            assert(new_capacity == 0 or std.math.isPowerOfTwo(new_capacity));
 
             // Pack our metadata, keys, and values.
             const meta_start = @sizeOf(Header);
