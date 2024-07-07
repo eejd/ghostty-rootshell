@@ -2736,9 +2736,13 @@ pub fn cursorPosCallback(
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
 
-        // If we were previously over a link, we need to queue a
-        // render to undo the link state.
-        if (over_link) try self.queueRender();
+        // If we were previously over a link, we need to undo the link state.
+        // We also queue a render so the renderer can undo the rendered link
+        // state.
+        if (over_link) {
+            self.rt_surface.mouseOverLink(null);
+            try self.queueRender();
+        }
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
