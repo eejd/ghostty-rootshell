@@ -1,3 +1,11 @@
 label.url-overlay {
   padding: 2px;
 }
+
+label.url-overlay:hover {
+  opacity: 0;
+}
+
+label.url-overlay.hidden {
+  opacity: 0;
+}

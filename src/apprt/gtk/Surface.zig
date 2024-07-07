@@ -208,6 +208,92 @@ pub const Container = union(enum) {
     }
 };
 
+/// Represents the URL hover widgets that show the hovered URL.
+/// To explain a bit how this all works since its split across a few places:
+/// We create a left/right pair of labels. The left label is shown by default,
+/// and the right label is hidden. When the mouse enters the left label, we
+/// show the right label. When the mouse leaves the left label, we hide the
+/// right label.
+///
+/// The hover and styling is done with a combination of GTK event controllers
+/// and CSS in style.css.
+pub const URLWidget = struct {
+    left: *c.GtkWidget,
+    right: *c.GtkWidget,
+
+    pub fn init(overlay: *c.GtkOverlay, str: [:0]const u8) URLWidget {
+        // Create the left
+        const left = c.gtk_label_new(str.ptr);
+        c.gtk_widget_add_css_class(@ptrCast(left), "view");
+        c.gtk_widget_add_css_class(@ptrCast(left), "url-overlay");
+        c.gtk_widget_set_halign(left, c.GTK_ALIGN_START);
+        c.gtk_widget_set_valign(left, c.GTK_ALIGN_END);
+        c.gtk_widget_set_margin_bottom(left, 2);
+
+        // Create the right
+        const right = c.gtk_label_new(str.ptr);
+        c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
+        c.gtk_widget_add_css_class(@ptrCast(right), "view");
+        c.gtk_widget_add_css_class(@ptrCast(right), "url-overlay");
+        c.gtk_widget_set_halign(right, c.GTK_ALIGN_END);
+        c.gtk_widget_set_valign(right, c.GTK_ALIGN_END);
+        c.gtk_widget_set_margin_bottom(right, 2);
+
+        // Setup our mouse hover event for the left
+        const ec_motion = c.gtk_event_controller_motion_new();
+        errdefer c.g_object_unref(ec_motion);
+        c.gtk_widget_add_controller(@ptrCast(left), ec_motion);
+        _ = c.g_signal_connect_data(
+            ec_motion,
+            "enter",
+            c.G_CALLBACK(&gtkLeftEnter),
+            right,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        _ = c.g_signal_connect_data(
+            ec_motion,
+            "leave",
+            c.G_CALLBACK(&gtkLeftLeave),
+            right,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+
+        // Show it
+        c.gtk_overlay_add_overlay(@ptrCast(overlay), left);
+        c.gtk_overlay_add_overlay(@ptrCast(overlay), right);
+
+        return .{
+            .left = left,
+            .right = right,
+        };
+    }
+
+    pub fn setText(self: *const URLWidget, str: [:0]const u8) void {
+        c.gtk_label_set_text(@ptrCast(self.left), str.ptr);
+        c.gtk_label_set_text(@ptrCast(self.right), str.ptr);
+    }
+
+    fn gtkLeftEnter(
+        _: *c.GtkEventControllerMotion,
+        _: c.gdouble,
+        _: c.gdouble,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const right: *c.GtkWidget = @ptrCast(@alignCast(ud orelse return));
+        c.gtk_widget_remove_css_class(@ptrCast(right), "hidden");
+    }
+
+    fn gtkLeftLeave(
+        _: *c.GtkEventControllerMotion,
+        ud: ?*anyopaque,
+    ) callconv(.C) void {
+        const right: *c.GtkWidget = @ptrCast(@alignCast(ud orelse return));
+        c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
+    }
+};
+
 /// Whether the surface has been realized or not yet. When a surface is
 /// "realized" it means that the OpenGL context is ready and the core
 /// surface has been initialized.
@@ -230,7 +316,7 @@ overlay: *c.GtkOverlay,
 gl_area: *c.GtkGLArea,
 
 /// If non-null this is the widget on the overlay that shows the URL.
-url_widget: ?*c.GtkWidget = null,
+url_widget: ?URLWidget = null,
 
 /// Any active cursor we may have
 cursor: ?*c.GdkCursor = null,
@@ -896,8 +982,9 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
 
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
     const uri = uri_ orelse {
+        if (true) return;
         if (self.url_widget) |widget| {
-            c.gtk_overlay_remove_overlay(@ptrCast(self.overlay), widget);
+            widget.deinit(self.overlay);
             self.url_widget = null;
         }
 
@@ -911,19 +998,11 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
 
     // If we have a URL widget already just change the text.
     if (self.url_widget) |widget| {
-        c.gtk_label_set_text(@ptrCast(widget), uriZ.ptr);
+        widget.setText(uriZ);
         return;
     }
 
-    // Create the widget
-    const label = c.gtk_label_new(uriZ.ptr);
-    c.gtk_widget_add_css_class(@ptrCast(label), "view");
-    c.gtk_widget_add_css_class(@ptrCast(label), "url-overlay");
-    c.gtk_widget_set_halign(label, c.GTK_ALIGN_START);
-    c.gtk_widget_set_valign(label, c.GTK_ALIGN_END);
-    c.gtk_widget_set_margin_bottom(label, 2);
-    c.gtk_overlay_add_overlay(@ptrCast(self.overlay), label);
-    self.url_widget = label;
+    self.url_widget = URLWidget.init(self.overlay, uriZ);
 }
 
 pub fn clipboardRequest(
