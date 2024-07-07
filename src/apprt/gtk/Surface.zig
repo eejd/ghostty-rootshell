@@ -221,7 +221,7 @@ pub const URLWidget = struct {
     left: *c.GtkWidget,
     right: *c.GtkWidget,
 
-    pub fn init(overlay: *c.GtkOverlay, str: [:0]const u8) URLWidget {
+    pub fn init(surface: *const Surface, str: [:0]const u8) URLWidget {
         // Create the left
         const left = c.gtk_label_new(str.ptr);
         c.gtk_widget_add_css_class(@ptrCast(left), "view");
@@ -261,8 +261,8 @@ pub const URLWidget = struct {
         );
 
         // Show it
-        c.gtk_overlay_add_overlay(@ptrCast(overlay), left);
-        c.gtk_overlay_add_overlay(@ptrCast(overlay), right);
+        c.gtk_overlay_add_overlay(@ptrCast(surface.overlay), left);
+        c.gtk_overlay_add_overlay(@ptrCast(surface.overlay), right);
 
         return .{
             .left = left,
@@ -365,12 +365,15 @@ pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
 }
 
 pub fn init(self: *Surface, app: *App, opts: Options) !void {
-    const widget: *c.GtkWidget = c.gtk_gl_area_new();
-    const gl_area: *c.GtkGLArea = @ptrCast(widget);
+    const gl_area = c.gtk_gl_area_new();
 
     // Create an overlay so we can layer the GL area with other widgets.
-    const overlay: *c.GtkOverlay = @ptrCast(c.gtk_overlay_new());
-    c.gtk_overlay_set_child(@ptrCast(overlay), widget);
+    const overlay = c.gtk_overlay_new();
+    c.gtk_overlay_set_child(@ptrCast(overlay), gl_area);
+
+    // Overlay is not focusable, but the GL area is.
+    c.gtk_widget_set_focusable(@ptrCast(overlay), 0);
+    c.gtk_widget_set_focus_on_click(@ptrCast(overlay), 0);
 
     // We grab the floating reference to the primary widget. This allows the
     // widget tree to be moved around i.e. between a split, a tab, etc.
@@ -383,45 +386,45 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     errdefer c.g_object_unref(@ptrCast(overlay));
 
     // We want the gl area to expand to fill the parent container.
-    c.gtk_widget_set_hexpand(widget, 1);
-    c.gtk_widget_set_vexpand(widget, 1);
+    c.gtk_widget_set_hexpand(gl_area, 1);
+    c.gtk_widget_set_vexpand(gl_area, 1);
 
     // Various other GL properties
-    c.gtk_widget_set_cursor_from_name(@ptrCast(gl_area), "text");
-    c.gtk_gl_area_set_required_version(gl_area, 3, 3);
-    c.gtk_gl_area_set_has_stencil_buffer(gl_area, 0);
-    c.gtk_gl_area_set_has_depth_buffer(gl_area, 0);
-    c.gtk_gl_area_set_use_es(gl_area, 0);
+    c.gtk_widget_set_cursor_from_name(@ptrCast(overlay), "text");
+    c.gtk_gl_area_set_required_version(@ptrCast(gl_area), 3, 3);
+    c.gtk_gl_area_set_has_stencil_buffer(@ptrCast(gl_area), 0);
+    c.gtk_gl_area_set_has_depth_buffer(@ptrCast(gl_area), 0);
+    c.gtk_gl_area_set_use_es(@ptrCast(gl_area), 0);
 
     // Key event controller will tell us about raw keypress events.
     const ec_key = c.gtk_event_controller_key_new();
     errdefer c.g_object_unref(ec_key);
-    c.gtk_widget_add_controller(widget, ec_key);
-    errdefer c.gtk_widget_remove_controller(widget, ec_key);
+    c.gtk_widget_add_controller(@ptrCast(overlay), ec_key);
+    errdefer c.gtk_widget_remove_controller(@ptrCast(overlay), ec_key);
 
     // Focus controller will tell us about focus enter/exit events
     const ec_focus = c.gtk_event_controller_focus_new();
     errdefer c.g_object_unref(ec_focus);
-    c.gtk_widget_add_controller(widget, ec_focus);
-    errdefer c.gtk_widget_remove_controller(widget, ec_focus);
+    c.gtk_widget_add_controller(@ptrCast(overlay), ec_focus);
+    errdefer c.gtk_widget_remove_controller(@ptrCast(overlay), ec_focus);
 
     // Create a second key controller so we can receive the raw
     // key-press events BEFORE the input method gets them.
     const ec_key_press = c.gtk_event_controller_key_new();
     errdefer c.g_object_unref(ec_key_press);
-    c.gtk_widget_add_controller(widget, ec_key_press);
-    errdefer c.gtk_widget_remove_controller(widget, ec_key_press);
+    c.gtk_widget_add_controller(@ptrCast(overlay), ec_key_press);
+    errdefer c.gtk_widget_remove_controller(@ptrCast(overlay), ec_key_press);
 
     // Clicks
     const gesture_click = c.gtk_gesture_click_new();
     errdefer c.g_object_unref(gesture_click);
     c.gtk_gesture_single_set_button(@ptrCast(gesture_click), 0);
-    c.gtk_widget_add_controller(widget, @ptrCast(gesture_click));
+    c.gtk_widget_add_controller(@ptrCast(@alignCast(overlay)), @ptrCast(gesture_click));
 
     // Mouse movement
     const ec_motion = c.gtk_event_controller_motion_new();
     errdefer c.g_object_unref(ec_motion);
-    c.gtk_widget_add_controller(widget, ec_motion);
+    c.gtk_widget_add_controller(@ptrCast(@alignCast(overlay)), ec_motion);
 
     // Scroll events
     const ec_scroll = c.gtk_event_controller_scroll_new(
@@ -429,7 +432,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
             c.GTK_EVENT_CONTROLLER_SCROLL_DISCRETE,
     );
     errdefer c.g_object_unref(ec_scroll);
-    c.gtk_widget_add_controller(widget, ec_scroll);
+    c.gtk_widget_add_controller(@ptrCast(overlay), ec_scroll);
 
     // The input method context that we use to translate key events into
     // characters. This doesn't have an event key controller attached because
@@ -438,8 +441,8 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     errdefer c.g_object_unref(im_context);
 
     // The GL area has to be focusable so that it can receive events
-    c.gtk_widget_set_focusable(widget, 1);
-    c.gtk_widget_set_focus_on_click(widget, 1);
+    c.gtk_widget_set_focusable(gl_area, 1);
+    c.gtk_widget_set_focus_on_click(gl_area, 1);
 
     // Inherit the parent's font size if we have a parent.
     const font_size: ?font.face.DesiredSize = font_size: {
@@ -482,8 +485,8 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     self.* = .{
         .app = app,
         .container = .{ .none = {} },
-        .overlay = overlay,
-        .gl_area = gl_area,
+        .overlay = @ptrCast(overlay),
+        .gl_area = @ptrCast(gl_area),
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
@@ -961,8 +964,9 @@ pub fn setMouseShape(
     // Set our new cursor. We only do this if the cursor we currently
     // have is NOT set to "none" because setting the cursor causes it
     // to become visible again.
-    if (c.gtk_widget_get_cursor(@ptrCast(self.gl_area)) != self.app.cursor_none) {
-        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), cursor);
+    const overlay_widget: *c.GtkWidget = @ptrCast(@alignCast(self.overlay));
+    if (c.gtk_widget_get_cursor(overlay_widget) != self.app.cursor_none) {
+        c.gtk_widget_set_cursor(overlay_widget, cursor);
     }
 
     // Free our existing cursor
@@ -975,18 +979,20 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
     // Note in there that self.cursor or cursor_none may be null. That's
     // not a problem because NULL is a valid argument for set cursor
     // which means to just use the parent value.
+    const overlay_widget: *c.GtkWidget = @ptrCast(@alignCast(self.overlay));
 
     if (visible) {
-        c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.cursor);
+        c.gtk_widget_set_cursor(overlay_widget, self.cursor);
         return;
     }
 
     // Set our new cursor to the app "none" cursor
-    c.gtk_widget_set_cursor(@ptrCast(self.gl_area), self.app.cursor_none);
+    c.gtk_widget_set_cursor(overlay_widget, self.app.cursor_none);
 }
 
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
     const uri = uri_ orelse {
+        if (true) return;
         if (self.url_widget) |*widget| {
             widget.deinit(self.overlay);
             self.url_widget = null;
@@ -1006,7 +1012,7 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
         return;
     }
 
-    self.url_widget = URLWidget.init(self.overlay, uriZ);
+    self.url_widget = URLWidget.init(self, uriZ);
 }
 
 pub fn clipboardRequest(
@@ -1166,7 +1172,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     // When we have a realized surface, we also attach our input method context.
     // We do this here instead of init because this allows us to relase the ref
     // to the GLArea when we unrealized.
-    c.gtk_im_context_set_client_widget(self.im_context, @ptrCast(self.gl_area));
+    c.gtk_im_context_set_client_widget(self.im_context, @ptrCast(@alignCast(self.overlay)));
 }
 
 /// This is called when the underlying OpenGL resources must be released.
