@@ -2825,7 +2825,14 @@ pub fn cursorPosCallback(
         try self.rt_surface.setMouseShape(.pointer);
 
         switch (link[0]) {
-            .open => {},
+            .open => {
+                const str = try self.io.terminal.screen.selectionString(self.alloc, .{
+                    .sel = link[1],
+                    .trim = false,
+                });
+                defer self.alloc.free(str);
+                self.rt_surface.mouseOverLink(str);
+            },
 
             ._open_osc8 => link: {
                 // Show the URL in the status bar
