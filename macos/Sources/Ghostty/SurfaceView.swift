@@ -48,9 +48,12 @@ extension Ghostty {
 
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
-
+        
+        // True if we're hovering over the left URL view, so we can show it on the right.
+        @State private var isHoveringURLLeft: Bool = false
+        
         @EnvironmentObject private var ghostty: Ghostty.App
-
+        
         var body: some View {
             let center = NotificationCenter.default
             
@@ -146,19 +149,35 @@ extension Ghostty {
                 .ghosttySurfaceView(surfaceView)
                 
                 // If we have a URL from hovering a link, we show that.
-                // TODO
                 if let url = surfaceView.hoverUrl {
                     let padding: CGFloat = 3
-                    HStack {
-                        VStack(alignment: .leading) {
+                    ZStack {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Spacer()
+                                
+                                Text(verbatim: url)
+                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                    .background(.background)
+                                    .opacity(isHoveringURLLeft ? 0 : 1)
+                                    .onHover(perform: { hovering in
+                                        isHoveringURLLeft = hovering
+                                    })
+                            }
                             Spacer()
-                            
-                            Text(verbatim: url)
-                                .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                .background(.background)
                         }
                         
-                        Spacer()
+                        HStack {
+                            Spacer()
+                            VStack(alignment: .leading) {
+                                Spacer()
+                                
+                                Text(verbatim: url)
+                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                    .background(.background)
+                                    .opacity(isHoveringURLLeft ? 1 : 0)
+                            }
+                        }
                     }
                 }
                 
