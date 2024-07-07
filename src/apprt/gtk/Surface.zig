@@ -982,7 +982,6 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
 
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
     const uri = uri_ orelse {
-        if (true) return;
         if (self.url_widget) |widget| {
             widget.deinit(self.overlay);
             self.url_widget = null;
