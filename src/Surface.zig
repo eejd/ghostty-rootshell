@@ -2378,7 +2378,7 @@ pub fn mouseButtonCallback(
 
             // Triple click, select the line under our mouse
             3 => {
-                const sel_ = if (mods.ctrl)
+                const sel_ = if (mods.ctrlOrSuper())
                     self.io.terminal.screen.selectOutput(pin.*)
                 else
                     self.io.terminal.screen.selectLine(.{ .pin = pin.* });
