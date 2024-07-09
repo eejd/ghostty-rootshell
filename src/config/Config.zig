@@ -668,7 +668,7 @@ keybind: Keybinds = .{},
 ///
 ///   * `true`
 ///   * `false` - windows won't have native decorations, i.e. titlebar and
-///      borders. On MacOS this also disabled tabs and tab overview.
+///      borders. On MacOS this also disables tabs and tab overview.
 
 @"window-decoration": bool = true,
 
