@@ -240,20 +240,28 @@ fn findFreeChunks(bitmaps: []u64, n: usize) ?usize {
     assert(n <= @bitSizeOf(u64));
     for (bitmaps, 0..) |*bitmap, idx| {
         // Shift the bitmap to find `n` sequential free chunks.
+        // EXAMPLE:
+        // n = 4
+        // shifted = 001111001011110010
+        //         & 000111100101111001
+        //         & 000011110010111100
+        //         & 000001111001011110
+        //         = 000001000000010000
+        //                ^       ^
+        // In this example there are 2 places with at least 4 sequential 1s.
         var shifted: u64 = bitmap.*;
         for (1..n) |i| shifted &= bitmap.* >> @intCast(i);
 
         // If we have zero then we have no matches
         if (shifted == 0) continue;
 
-        // Trailing zeroes gets us the bit 1-indexed
+        // Trailing zeroes gets us the index of the first bit index with at
+        // least `n` sequential 1s. In the example above, that would be `4`.
         const bit = @ctz(shifted);
 
         // Calculate the mask so we can mark it as used
-        for (0..n) |i| {
-            const mask = @as(u64, 1) << @intCast(bit + i);
-            bitmap.* ^= mask;
-        }
+        const mask = (@as(u64, std.math.maxInt(u64)) >> @intCast(64 - n)) << @intCast(bit);
+        bitmap.* ^= mask;
 
         return (idx * 64) + bit;
     }
