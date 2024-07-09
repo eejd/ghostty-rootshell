@@ -343,7 +343,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                         if (self.screen.cursor.x == right_limit - 1) {
                             if (!self.modes.get(.wraparound)) return;
                             self.printCell(
-                                ' ',
+                                0,
                                 if (right_limit == self.cols) .spacer_head else .narrow,
                             );
                             try self.printWrap();
@@ -353,7 +353,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
                         // Write our spacer
                         self.screen.cursorRight(1);
-                        self.printCell(' ', .spacer_tail);
+                        self.printCell(0, .spacer_tail);
 
                         // Move the cursor again so we're beyond our spacer
                         if (self.screen.cursor.x == right_limit - 1) {
@@ -478,19 +478,19 @@ pub fn print(self: *Terminal, c: u21) !void {
                 // We only create a spacer head if we're at the real edge
                 // of the screen. Otherwise, we clear the space with a narrow.
                 // This allows soft wrapping to work correctly.
-                self.printCell(' ', if (right_limit == self.cols) .spacer_head else .narrow);
+                self.printCell(0, if (right_limit == self.cols) .spacer_head else .narrow);
                 try self.printWrap();
             }
 
             self.screen.cursorMarkDirty();
             self.printCell(c, .wide);
             self.screen.cursorRight(1);
-            self.printCell(' ', .spacer_tail);
+            self.printCell(0, .spacer_tail);
         } else {
             // This is pretty broken, terminals should never be only 1-wide.
             // We sould prevent this downstream.
             self.screen.cursorMarkDirty();
-            self.printCell(' ', .narrow);
+            self.printCell(0, .narrow);
         },
 
         else => unreachable,
@@ -2777,7 +2777,7 @@ test "Terminal: print wide char in single-width terminal" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
 
@@ -2928,7 +2928,7 @@ test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
         try testing.expect(list_cell.page.data.lookupGrapheme(cell) == null);
@@ -2945,7 +2945,7 @@ test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 3, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
         try testing.expect(list_cell.page.data.lookupGrapheme(cell) == null);
@@ -2961,7 +2961,7 @@ test "Terminal: print multicodepoint grapheme, disabled mode 2027" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 5, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
         try testing.expect(list_cell.page.data.lookupGrapheme(cell) == null);
@@ -3091,7 +3091,7 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
@@ -3780,7 +3780,7 @@ test "Terminal: print wide char at right margin does not create spacer head" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 4, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.narrow, cell.wide);
 
         const row = list_cell.row;
@@ -7431,8 +7431,8 @@ test "Terminal: deleteLines wide character spacer head" {
         defer testing.allocator.free(str);
         const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
         defer testing.allocator.free(unwrapped_str);
-        try testing.expectEqualStrings("BBBB \n\u{1F600}CCC", str);
-        try testing.expectEqualStrings("BBBB \n\u{1F600}CCC", unwrapped_str);
+        try testing.expectEqualStrings("BBBB\n\u{1F600}CCC", str);
+        try testing.expectEqualStrings("BBBB\n\u{1F600}CCC", unwrapped_str);
     }
 }
 
@@ -7472,7 +7472,7 @@ test "Terminal: deleteLines wide character spacer head left scroll margin" {
         defer testing.allocator.free(str);
         const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
         defer testing.allocator.free(unwrapped_str);
-        try testing.expectEqualStrings("AABB \nBBCCC\n\u{1F600}", str);
+        try testing.expectEqualStrings("AABB\nBBCCC\n\u{1F600}", str);
         try testing.expectEqualStrings("AABB BBCCC\u{1F600}", unwrapped_str);
     }
 }
@@ -7513,7 +7513,7 @@ test "Terminal: deleteLines wide character spacer head right scroll margin" {
         defer testing.allocator.free(str);
         const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
         defer testing.allocator.free(unwrapped_str);
-        try testing.expectEqualStrings("BBBBA\n\u{1F600}CC \n    C", str);
+        try testing.expectEqualStrings("BBBBA\n\u{1F600}CC\n    C", str);
         try testing.expectEqualStrings("BBBBA\u{1F600}CC     C", unwrapped_str);
     }
 }
@@ -7597,7 +7597,7 @@ test "Terminal: deleteLines wide character spacer head left (< 2) and right scro
         defer testing.allocator.free(str);
         const unwrapped_str = try t.plainStringUnwrapped(testing.allocator);
         defer testing.allocator.free(unwrapped_str);
-        try testing.expectEqualStrings("ABBBA\nB CC \n    C", str);
+        try testing.expectEqualStrings("ABBBA\nB CC\n    C", str);
         try testing.expectEqualStrings("ABBBAB CC     C", unwrapped_str);
     }
 }
@@ -7633,7 +7633,7 @@ test "Terminal: deleteLines wide characters split by left/right scroll region bo
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("A B A\n     ", str);
+        try testing.expectEqualStrings("A B A", str);
     }
 }
 
@@ -8600,7 +8600,7 @@ test "Terminal: deleteChars split wide character from end" {
     {
         const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
         const cell = list_cell.cell;
-        try testing.expectEqual(@as(u21, ' '), cell.content.codepoint);
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
     }
 }

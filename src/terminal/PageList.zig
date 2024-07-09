@@ -5554,7 +5554,7 @@ test "PageList resize (no reflow) more cols with spacer head" {
             const rac = page.getRowAndCell(1, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_head,
             };
         }
@@ -5570,7 +5570,7 @@ test "PageList resize (no reflow) more cols with spacer head" {
             const rac = page.getRowAndCell(1, 1);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -5593,7 +5593,7 @@ test "PageList resize (no reflow) more cols with spacer head" {
         }
         {
             const rac = page.getRowAndCell(1, 0);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.narrow, rac.cell.wide);
         }
         {
@@ -6465,12 +6465,13 @@ test "PageList resize reflow more cols unwrap wide spacer head" {
             const rac = page.getRowAndCell(1, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_head,
             };
         }
         {
             const rac = page.getRowAndCell(0, 1);
+            rac.row.wrap_continuation = true;
             rac.cell.* = .{
                 .content_tag = .codepoint,
                 .content = .{ .codepoint = '😀' },
@@ -6481,7 +6482,7 @@ test "PageList resize reflow more cols unwrap wide spacer head" {
             const rac = page.getRowAndCell(1, 1);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -6509,7 +6510,7 @@ test "PageList resize reflow more cols unwrap wide spacer head" {
         }
         {
             const rac = page.getRowAndCell(2, 0);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_tail, rac.cell.wide);
         }
     }
@@ -6542,6 +6543,7 @@ test "PageList resize reflow more cols unwrap wide spacer head across two rows" 
         }
         {
             const rac = page.getRowAndCell(0, 1);
+            rac.row.wrap_continuation = true;
             rac.row.wrap = true;
             rac.cell.* = .{
                 .content_tag = .codepoint,
@@ -6552,12 +6554,13 @@ test "PageList resize reflow more cols unwrap wide spacer head across two rows" 
             const rac = page.getRowAndCell(1, 1);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_head,
             };
         }
         {
             const rac = page.getRowAndCell(0, 2);
+            rac.row.wrap_continuation = true;
             rac.cell.* = .{
                 .content_tag = .codepoint,
                 .content = .{ .codepoint = '😀' },
@@ -6568,7 +6571,7 @@ test "PageList resize reflow more cols unwrap wide spacer head across two rows" 
             const rac = page.getRowAndCell(1, 2);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -6601,7 +6604,7 @@ test "PageList resize reflow more cols unwrap wide spacer head across two rows" 
         }
         {
             const rac = page.getRowAndCell(3, 0);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_head, rac.cell.wide);
         }
         {
@@ -6611,7 +6614,7 @@ test "PageList resize reflow more cols unwrap wide spacer head across two rows" 
         }
         {
             const rac = page.getRowAndCell(1, 1);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_tail, rac.cell.wide);
         }
     }
@@ -6644,6 +6647,7 @@ test "PageList resize reflow more cols unwrap still requires wide spacer head" {
         }
         {
             const rac = page.getRowAndCell(0, 1);
+            rac.row.wrap_continuation = true;
             rac.cell.* = .{
                 .content_tag = .codepoint,
                 .content = .{ .codepoint = '😀' },
@@ -6654,7 +6658,7 @@ test "PageList resize reflow more cols unwrap still requires wide spacer head" {
             const rac = page.getRowAndCell(1, 1);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -6692,7 +6696,7 @@ test "PageList resize reflow more cols unwrap still requires wide spacer head" {
         }
         {
             const rac = page.getRowAndCell(1, 1);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_tail, rac.cell.wide);
         }
     }
@@ -7054,12 +7058,13 @@ test "PageList resize reflow less cols wraps spacer head" {
             const rac = page.getRowAndCell(3, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_head,
             };
         }
         {
             const rac = page.getRowAndCell(0, 1);
+            rac.row.wrap_continuation = true;
             rac.cell.* = .{
                 .content_tag = .codepoint,
                 .content = .{ .codepoint = '😀' },
@@ -7070,7 +7075,7 @@ test "PageList resize reflow less cols wraps spacer head" {
             const rac = page.getRowAndCell(1, 1);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -7108,7 +7113,7 @@ test "PageList resize reflow less cols wraps spacer head" {
         }
         {
             const rac = page.getRowAndCell(1, 1);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_tail, rac.cell.wide);
         }
     }
@@ -7552,7 +7557,7 @@ test "PageList resize reflow less cols to eliminate a wide char" {
             const rac = page.getRowAndCell(1, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -7604,7 +7609,7 @@ test "PageList resize reflow less cols to wrap a wide char" {
             const rac = page.getRowAndCell(2, 0);
             rac.cell.* = .{
                 .content_tag = .codepoint,
-                .content = .{ .codepoint = ' ' },
+                .content = .{ .codepoint = 0 },
                 .wide = .spacer_tail,
             };
         }
@@ -7637,7 +7642,7 @@ test "PageList resize reflow less cols to wrap a wide char" {
         }
         {
             const rac = page.getRowAndCell(1, 1);
-            try testing.expectEqual(@as(u21, ' '), rac.cell.content.codepoint);
+            try testing.expectEqual(@as(u21, 0), rac.cell.content.codepoint);
             try testing.expectEqual(pagepkg.Cell.Wide.spacer_tail, rac.cell.wide);
         }
     }
