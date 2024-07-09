@@ -1003,6 +1003,33 @@ pub const Page = struct {
         return self.hyperlink_map.map(self.memory).capacity();
     }
 
+    /// Set the graphemes for the given cell. This asserts that the cell
+    /// has no graphemes set, and only contains a single codepoint.
+    pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) Allocator.Error!void {
+        defer self.assertIntegrity();
+
+        assert(cell.hasText());
+        assert(cell.content_tag == .codepoint);
+
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.grapheme_map.map(self.memory);
+
+        const slice = try self.grapheme_alloc.alloc(u21, self.memory, cps.len);
+        errdefer self.grapheme_alloc.free(self.memory, slice);
+        @memcpy(slice, cps);
+
+        try map.putNoClobber(cell_offset, .{
+            .offset = getOffset(u21, self.memory, @ptrCast(slice.ptr)),
+            .len = slice.len,
+        });
+        errdefer map.remove(cell_offset);
+
+        cell.content_tag = .codepoint_grapheme;
+        row.grapheme = true;
+
+        return;
+    }
+
     /// Append a codepoint to the given cell as a grapheme.
     pub fn appendGrapheme(self: *Page, row: *Row, cell: *Cell, cp: u21) Allocator.Error!void {
         defer self.assertIntegrity();
