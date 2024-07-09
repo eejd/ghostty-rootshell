@@ -2548,6 +2548,213 @@ pub fn getCell(self: *const PageList, pt: point.Point) ?Cell {
     };
 }
 
+/// Log a debug diagram of the page list to the provided writer.
+///
+/// EXAMPLE:
+///
+///      +-----+ = PAGE 0
+///  ... |     |
+///   50 | foo |
+///  ... |     |
+///     +--------+ ACTIVE
+///  124 |     | | 0
+///  125 |Text | | 1
+///      :  ^  : : = PIN 0
+///  126 |Wrapp… | 2
+///      +-----+ :
+///      +-----+ : = PAGE 1
+///    0 …ed   | | 3
+///    1 | etc.| | 4
+///      +-----+ :
+///     +--------+
+pub fn diagram(self: *const PageList, writer: anytype) !void {
+    const active_pin = self.getTopLeft(.active);
+
+    var active = false;
+    var active_index: usize = 0;
+
+    var page_index: usize = 0;
+    var cols: usize = 0;
+
+    var it = self.pageIterator(.right_down, .{ .screen = .{} }, null);
+    while (it.next()) |chunk| : (page_index += 1) {
+        cols = chunk.page.data.size.cols;
+
+        // Whether we've just skipped some number of rows and drawn
+        // an ellipsis row (this is reset when a row is not skipped).
+        var skipped = false;
+
+        for (0..chunk.page.data.size.rows) |y| {
+            // Active header
+            if (!active and
+                chunk.page == active_pin.page and
+                active_pin.y == y)
+            {
+                active = true;
+                try writer.writeAll("     +-");
+                try writer.writeByteNTimes('-', cols);
+                try writer.writeAll("--+ ACTIVE");
+                try writer.writeByte('\n');
+            }
+
+            // Page header
+            if (y == 0) {
+                try writer.writeAll("      +");
+                try writer.writeByteNTimes('-', cols);
+                try writer.writeByte('+');
+                if (active) try writer.writeAll(" :");
+                try writer.print(" = PAGE {}", .{page_index});
+                try writer.writeByte('\n');
+            }
+
+            // Row contents
+            {
+                const row = chunk.page.data.getRow(y);
+                const cells = chunk.page.data.getCells(row)[0..cols];
+
+                var row_has_content = false;
+
+                for (cells) |cell| {
+                    if (cell.hasText()) {
+                        row_has_content = true;
+                        break;
+                    }
+                }
+
+                // We don't want to print this row's contents
+                // unless it has text or is in the active area.
+                if (!active and !row_has_content) {
+                    // If we haven't, draw an ellipsis row.
+                    if (!skipped) {
+                        try writer.writeAll("  ... :");
+                        try writer.writeByteNTimes(' ', cols);
+                        try writer.writeByte(':');
+                        if (active) try writer.writeAll(" :");
+                        try writer.writeByte('\n');
+                    }
+                    skipped = true;
+                    continue;
+                }
+
+                skipped = false;
+
+                // Left pad row number to 5 wide
+                const y_digits = if (y == 0) 0 else std.math.log10_int(y);
+                try writer.writeByteNTimes(' ', 4 - y_digits);
+                try writer.print("{} ", .{y});
+
+                // Left edge or wrap continuation marker
+                try writer.writeAll(if (row.wrap_continuation) "…" else "|");
+
+                // Row text
+                if (row_has_content) {
+                    for (cells) |*cell| {
+                        // Skip spacer tails, since wide cells are, well, wide.
+                        if (cell.wide == .spacer_tail) continue;
+
+                        // Write non-printing bytes as base36, for convenience.
+                        if (cell.codepoint() < ' ') {
+                            try writer.writeByte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[cell.codepoint()]);
+                            continue;
+                        }
+                        try writer.print("{u}", .{cell.codepoint()});
+                        if (cell.hasGrapheme()) {
+                            const grapheme = chunk.page.data.lookupGrapheme(cell).?;
+                            for (grapheme) |cp| {
+                                try writer.print("{u}", .{cp});
+                            }
+                        }
+                    }
+                } else {
+                    try writer.writeByteNTimes(' ', cols);
+                }
+
+                // Right edge or wrap marker
+                try writer.writeAll(if (row.wrap) "…" else "|");
+                if (active) {
+                    try writer.print(" | {}", .{active_index});
+                    active_index += 1;
+                }
+
+                try writer.writeByte('\n');
+            }
+
+            // Tracked pin marker(s)
+            pins: {
+                // If we have more than 16 tracked pins in a row, oh well,
+                // don't wanna bother making this function allocating.
+                var pin_buf: [16]*Pin = undefined;
+                var pin_count: usize = 0;
+                var pin_it = self.tracked_pins.keyIterator();
+                while (pin_it.next()) |p_ptr| {
+                    const p = p_ptr.*;
+                    if (p.page != chunk.page) continue;
+                    if (p.y != y) continue;
+                    pin_buf[pin_count] = p;
+                    pin_count += 1;
+                    if (pin_count >= pin_buf.len) return error.TooManyTrackedPinsInRow;
+                }
+
+                if (pin_count == 0) break :pins;
+
+                const pins = pin_buf[0..pin_count];
+                std.mem.sort(
+                    *Pin,
+                    pins,
+                    {},
+                    struct {
+                        fn lt(_: void, a: *Pin, b: *Pin) bool {
+                            return a.x < b.x;
+                        }
+                    }.lt,
+                );
+
+                try writer.writeAll("      :");
+                var x: usize = 0;
+
+                for (pins) |p| {
+                    if (x > p.x) continue;
+                    try writer.writeByteNTimes(' ', p.x - x);
+                    try writer.writeByte('^');
+                    x = p.x + 1;
+                }
+
+                try writer.writeByteNTimes(' ', cols - x);
+                try writer.writeByte(':');
+
+                if (active) try writer.writeAll(" :");
+
+                try writer.print(" = PIN{s}", .{if (pin_count > 1) "S" else ""});
+
+                x = pins[0].x;
+                for (pins, 0..) |p, i| {
+                    if (p.x != x) try writer.writeByte(',');
+                    try writer.print(" {}", .{i});
+                }
+
+                try writer.writeByte('\n');
+            }
+        }
+
+        // Page footer
+        {
+            try writer.writeAll("      +");
+            try writer.writeByteNTimes('-', cols);
+            try writer.writeByte('+');
+            if (active) try writer.writeAll(" :");
+            try writer.writeByte('\n');
+        }
+    }
+
+    // Active footer
+    {
+        try writer.writeAll("     +-");
+        try writer.writeByteNTimes('-', cols);
+        try writer.writeAll("--+");
+        try writer.writeByte('\n');
+    }
+}
+
 /// Direction that iterators can move.
 pub const Direction = enum { left_up, right_down };
 
