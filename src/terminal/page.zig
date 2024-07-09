@@ -684,11 +684,12 @@ pub const Page = struct {
                     // add it, and migrate.
                     const id = other.lookupHyperlink(src_cell).?;
                     const other_link = other.hyperlink_set.get(other.memory, id);
-                    const dst_id = try self.hyperlink_set.addContext(
+                    const dst_id = try self.hyperlink_set.addWithIdContext(
                         self.memory,
                         try other_link.dupe(other, self),
+                        id,
                         .{ .page = self },
-                    );
+                    ) orelse id;
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
                 }
                 if (src_cell.style_id != style.default_id) {
@@ -705,13 +706,11 @@ pub const Page = struct {
                     // Slow path: Get the style from the other
                     // page and add it to this page's style set.
                     const other_style = other.styles.get(other.memory, src_cell.style_id);
-                    if (try self.styles.addWithId(
+                    dst_cell.style_id = try self.styles.addWithId(
                         self.memory,
                         other_style.*,
                         src_cell.style_id,
-                    )) |id| {
-                        dst_cell.style_id = id;
-                    }
+                    ) orelse src_cell.style_id;
                 }
             }
         }
