@@ -285,6 +285,17 @@ fn parsePackedStruct(comptime T: type, v: []const u8) !T {
 
     var result: T = .{};
 
+    // Allow standalone boolean values like "true" and "false" to
+    // turn on or off all of the struct's fields.
+    bools: {
+        const b = parseBool(v) catch break :bools;
+        inline for (info.fields) |field| {
+            assert(field.type == bool);
+            @field(result, field.name) = b;
+        }
+        return result;
+    }
+
     // We split each value by ","
     var iter = std.mem.splitSequence(u8, v, ",");
     loop: while (iter.next()) |part_raw| {
@@ -584,6 +595,34 @@ test "parseIntoField: packed struct negation" {
     try parseIntoField(@TypeOf(data), alloc, &data, "v", "a,no-b");
     try testing.expect(data.v.a);
     try testing.expect(!data.v.b);
+}
+
+test "parseIntoField: packed struct true/false" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Field = packed struct {
+        a: bool = false,
+        b: bool = true,
+    };
+    var data: struct {
+        v: Field,
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", "true");
+    try testing.expect(data.v.a);
+    try testing.expect(data.v.b);
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "v", "false");
+    try testing.expect(!data.v.a);
+    try testing.expect(!data.v.b);
+
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "v", "true,a"),
+    );
 }
 
 test "parseIntoField: packed struct whitespace" {
