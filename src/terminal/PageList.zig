@@ -6243,19 +6243,74 @@ test "PageList resize reflow more cols wrap across page boundary" {
         }
     }
 
-    // We expect one extra row since we unwrapped a row we need to resize
-    // to make our active area.
-    const end_rows = s.totalRows();
+    // PageList.diagram ->
+    //
+    //       +--+ = PAGE 0
+    //   ... :  :
+    //      +-----+ ACTIVE
+    // 15744 |  | | 0
+    // 15745 |  | | 1
+    // 15746 |  | | 2
+    // 15747 |  | | 3
+    // 15748 |  | | 4
+    // 15749 |  | | 5
+    // 15750 |  | | 6
+    // 15751 |  | | 7
+    // 15752 |01… | 8
+    //       +--+ :
+    //       +--+ : = PAGE 1
+    //     0 …01| | 9
+    //       +--+ :
+    //      +-----+
+
+    // We expect one fewer rows since we unwrapped a row.
+    const end_rows = s.totalRows() - 1;
 
     // Resize
     try s.resize(.{ .cols = 4, .reflow = true });
     try testing.expectEqual(@as(usize, 4), s.cols);
     try testing.expectEqual(@as(usize, end_rows), s.totalRows());
 
+    // PageList.diagram ->
+    //
+    //      +----+ = PAGE 0
+    //  ... :    :
+    //      +----+
+    //      +----+ = PAGE 1
+    //  ... :    :
+    //     +-------+ ACTIVE
+    // 6272 |    | | 0
+    // 6273 |    | | 1
+    // 6274 |    | | 2
+    // 6275 |    | | 3
+    // 6276 |    | | 4
+    // 6277 |    | | 5
+    // 6278 |    | | 6
+    // 6279 |    | | 7
+    // 6280 |    | | 8
+    // 6281 |0101| | 9
+    //      +----+ :
+    //     +-------+
+
     {
+        // PAGE 1 ROW 6280, ACTIVE 8
+        const p = s.pin(.{ .active = .{ .y = 8 } }).?;
+        const row = p.rowAndCell().row;
+        try testing.expect(!row.wrap);
+        try testing.expect(!row.wrap_continuation);
+
+        const cells = p.cells(.all);
+        try testing.expect(!cells[0].hasText());
+        try testing.expect(!cells[1].hasText());
+        try testing.expect(!cells[2].hasText());
+        try testing.expect(!cells[3].hasText());
+    }
+    {
+        // PAGE 1 ROW 6281, ACTIVE 9
         const p = s.pin(.{ .active = .{ .y = 9 } }).?;
         const row = p.rowAndCell().row;
         try testing.expect(!row.wrap);
+        try testing.expect(!row.wrap_continuation);
 
         const cells = p.cells(.all);
         try testing.expectEqual(@as(u21, 0), cells[0].content.codepoint);
@@ -6322,9 +6377,8 @@ test "PageList resize reflow more cols wrap across page boundary cursor in secon
     defer s.untrackPin(p);
     try testing.expect(p.page == s.pages.last.?);
 
-    // We expect one extra row since we unwrapped a row we need to resize
-    // to make our active area.
-    const end_rows = s.totalRows();
+    // We expect one fewer rows since we unwrapped a row.
+    const end_rows = s.totalRows() - 1;
 
     // Resize
     try s.resize(.{ .cols = 4, .reflow = true });
@@ -6408,6 +6462,27 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
     try testing.expect(p.page == s.pages.last.?);
     try testing.expect(p.y == 0);
 
+    // PageList.diagram ->
+    //
+    //      +-----+ = PAGE 0
+    //  ... :     :
+    //     +--------+ ACTIVE
+    // 7892 |     | | 0
+    // 7893 |     | | 1
+    // 7894 |     | | 2
+    // 7895 |     | | 3
+    // 7896 |01234… | 4
+    //      +-----+ :
+    //      +-----+ : = PAGE 1
+    //    0 …01234| | 5
+    //      :  ^  : : = PIN 0
+    //    1 |     | | 6
+    //    2 |     | | 7
+    //    3 |     | | 8
+    //    4 |     | | 9
+    //      +-----+ :
+    //     +--------+
+
     // Resize
     try s.resize(.{
         .cols = 4,
@@ -6416,14 +6491,47 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
     });
     try testing.expectEqual(@as(usize, 4), s.cols);
 
+    // PageList.diagram ->
+    //
+    //      +----+ = PAGE 0
+    //  ... :    :
+    //     +-------+ ACTIVE
+    // 7892 |    | | 0
+    // 7893 |    | | 1
+    // 7894 |    | | 2
+    // 7895 |    | | 3
+    // 7896 |0123… | 4
+    // 7897 …4012… | 5
+    //      :   ^: : = PIN 0
+    // 7898 …3400| | 6
+    // 7899 |    | | 7
+    // 7900 |    | | 8
+    // 7901 |    | | 9
+    //      +----+ :
+    //     +-------+
+
     // Our cursor should remain on the same cell
     try testing.expectEqual(point.Point{ .active = .{
         .x = 3,
-        .y = 6,
+        .y = 5,
     } }, s.pointFromPin(.active, p.*).?);
 
     {
-        const p2 = s.pin(.{ .active = .{ .y = 5 } }).?;
+        // PAGE 0 ROW 7895, ACTIVE 3
+        const p2 = s.pin(.{ .active = .{ .y = 3 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(!row.wrap);
+        try testing.expect(!row.wrap_continuation);
+
+        const cells = p2.cells(.all);
+        try testing.expect(!cells[0].hasText());
+        try testing.expect(!cells[1].hasText());
+        try testing.expect(!cells[2].hasText());
+        try testing.expect(!cells[3].hasText());
+    }
+    {
+        // PAGE 0 ROW 7896, ACTIVE 4
+        const p2 = s.pin(.{ .active = .{ .y = 4 } }).?;
         const row = p2.rowAndCell().row;
         try testing.expect(row.wrap);
         try testing.expect(!row.wrap_continuation);
@@ -6435,7 +6543,8 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
         try testing.expectEqual(@as(u21, 3), cells[3].content.codepoint);
     }
     {
-        const p2 = s.pin(.{ .active = .{ .y = 6 } }).?;
+        // PAGE 0 ROW 7897, ACTIVE 5
+        const p2 = s.pin(.{ .active = .{ .y = 5 } }).?;
         const row = p2.rowAndCell().row;
         try testing.expect(row.wrap);
         try testing.expect(row.wrap_continuation);
@@ -6447,7 +6556,8 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
         try testing.expectEqual(@as(u21, 2), cells[3].content.codepoint);
     }
     {
-        const p2 = s.pin(.{ .active = .{ .y = 7 } }).?;
+        // PAGE 0 ROW 7898, ACTIVE 6
+        const p2 = s.pin(.{ .active = .{ .y = 6 } }).?;
         const row = p2.rowAndCell().row;
         try testing.expect(!row.wrap);
         try testing.expect(row.wrap_continuation);
@@ -6455,6 +6565,19 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
         const cells = p2.cells(.all);
         try testing.expectEqual(@as(u21, 3), cells[0].content.codepoint);
         try testing.expectEqual(@as(u21, 4), cells[1].content.codepoint);
+    }
+    {
+        // PAGE 0 ROW 7899, ACTIVE 7
+        const p2 = s.pin(.{ .active = .{ .y = 7 } }).?;
+        const row = p2.rowAndCell().row;
+        try testing.expect(!row.wrap);
+        try testing.expect(!row.wrap_continuation);
+
+        const cells = p2.cells(.all);
+        try testing.expect(!cells[0].hasText());
+        try testing.expect(!cells[1].hasText());
+        try testing.expect(!cells[2].hasText());
+        try testing.expect(!cells[3].hasText());
     }
 }
 test "PageList resize reflow more cols cursor in wrapped row" {
