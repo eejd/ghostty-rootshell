@@ -668,8 +668,12 @@ keybind: Keybinds = .{},
 /// configuration `font-size` will be used.
 @"window-inherit-font-size": bool = true,
 
-/// If false, windows won't have native decorations, i.e. titlebar and
-/// borders.
+/// Valid values:
+///
+///   * `true`
+///   * `false` - windows won't have native decorations, i.e. titlebar and
+///      borders. On MacOS this also disables tabs and tab overview.
+
 @"window-decoration": bool = true,
 
 /// The font that will be used for the application's window and tab titles.
