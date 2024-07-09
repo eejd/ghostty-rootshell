@@ -159,6 +159,8 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(.background)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                                     .opacity(isHoveringURLLeft ? 0 : 1)
                                     .onHover(perform: { hovering in
                                         isHoveringURLLeft = hovering
@@ -175,6 +177,8 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(.background)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                                     .opacity(isHoveringURLLeft ? 1 : 0)
                             }
                         }
