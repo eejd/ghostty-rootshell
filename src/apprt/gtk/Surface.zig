@@ -224,6 +224,7 @@ pub const URLWidget = struct {
     pub fn init(surface: *const Surface, str: [:0]const u8) URLWidget {
         // Create the left
         const left = c.gtk_label_new(str.ptr);
+        c.gtk_label_set_ellipsize(@ptrCast(left), c.PANGO_ELLIPSIZE_MIDDLE);
         c.gtk_widget_add_css_class(@ptrCast(left), "view");
         c.gtk_widget_add_css_class(@ptrCast(left), "url-overlay");
         c.gtk_widget_set_halign(left, c.GTK_ALIGN_START);
@@ -232,6 +233,7 @@ pub const URLWidget = struct {
 
         // Create the right
         const right = c.gtk_label_new(str.ptr);
+        c.gtk_label_set_ellipsize(@ptrCast(right), c.PANGO_ELLIPSIZE_MIDDLE);
         c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
         c.gtk_widget_add_css_class(@ptrCast(right), "view");
         c.gtk_widget_add_css_class(@ptrCast(right), "url-overlay");

@@ -153,30 +153,34 @@ extension Ghostty {
                     let padding: CGFloat = 3
                     ZStack {
                         HStack {
+                            Spacer()
                             VStack(alignment: .leading) {
                                 Spacer()
                                 
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(.background)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .opacity(isHoveringURLLeft ? 1 : 0)
+                            }
+                        }
+                        
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Spacer()
+                                
+                                Text(verbatim: url)
+                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                    .background(.background)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                                     .opacity(isHoveringURLLeft ? 0 : 1)
                                     .onHover(perform: { hovering in
                                         isHoveringURLLeft = hovering
                                     })
                             }
                             Spacer()
-                        }
-                        
-                        HStack {
-                            Spacer()
-                            VStack(alignment: .leading) {
-                                Spacer()
-                                
-                                Text(verbatim: url)
-                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                    .background(.background)
-                                    .opacity(isHoveringURLLeft ? 1 : 0)
-                            }
                         }
                     }
                 }
