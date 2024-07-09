@@ -894,7 +894,7 @@ keybind: Keybinds = .{},
 /// The format of this is a list of features to enable separated by commas. If
 /// you prefix a feature with `no-` then it is disabled. If you omit a feature,
 /// its default value is used, so you must explicitly disable features you don't
-/// want.
+/// want. You can also use `true` or `false` to turn all features on or off.
 ///
 /// Available features:
 ///
