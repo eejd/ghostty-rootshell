@@ -1753,7 +1753,7 @@ pub fn scrollCallback(
         };
     };
 
-    log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x.delta });
+    // log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x.delta });
 
     {
         self.renderer_state.mutex.lock();
