@@ -2337,6 +2337,7 @@ pub fn dumpString(
     opts: DumpString,
 ) !void {
     var blank_rows: usize = 0;
+    var blank_cells: usize = 0;
 
     var iter = opts.tl.rowIterator(.right_down, opts.br);
     while (iter.next()) |row_offset| {
@@ -2363,7 +2364,12 @@ pub fn dumpString(
             blank_rows += 1;
         }
 
-        var blank_cells: usize = 0;
+        if (!row.wrap_continuation or !opts.unwrap) {
+            // We should also reset blank cell counts at the start of each row
+            // unless we're unwrapping and this row is a wrap continuation.
+            blank_cells = 0;
+        }
+
         for (cells) |*cell| {
             // Skip spacers
             switch (cell.wide) {
@@ -2379,7 +2385,7 @@ pub fn dumpString(
                 continue;
             }
             if (blank_cells > 0) {
-                for (0..blank_cells) |_| try writer.writeByte(' ');
+                try writer.writeByteNTimes(' ', blank_cells);
                 blank_cells = 0;
             }
 
