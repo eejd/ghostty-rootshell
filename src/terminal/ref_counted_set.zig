@@ -237,11 +237,6 @@ pub fn RefCountedSet(
                 return id;
             }
 
-            // Notify the context that the value is "deleted" if we return an
-            // error. This allows callers to clean up any resources associated
-            // with the value.
-            errdefer if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
-
             // If the item doesn't exist, we need an available ID.
             if (self.next_id >= self.layout.cap) {
                 // Arbitrarily chosen, threshold for rehashing.
