@@ -684,11 +684,12 @@ pub const Page = struct {
                     // add it, and migrate.
                     const id = other.lookupHyperlink(src_cell).?;
                     const other_link = other.hyperlink_set.get(other.memory, id);
-                    const dst_id = try self.hyperlink_set.addContext(
+                    const dst_id = try self.hyperlink_set.addWithIdContext(
                         self.memory,
                         try other_link.dupe(other, self),
+                        id,
                         .{ .page = self },
-                    );
+                    ) orelse id;
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
                 }
                 if (src_cell.style_id != style.default_id) {
@@ -705,13 +706,11 @@ pub const Page = struct {
                     // Slow path: Get the style from the other
                     // page and add it to this page's style set.
                     const other_style = other.styles.get(other.memory, src_cell.style_id);
-                    if (try self.styles.addWithId(
+                    dst_cell.style_id = try self.styles.addWithId(
                         self.memory,
                         other_style.*,
                         src_cell.style_id,
-                    )) |id| {
-                        dst_cell.style_id = id;
-                    }
+                    ) orelse src_cell.style_id;
                 }
             }
         }
@@ -942,7 +941,7 @@ pub const Page = struct {
         map.removeByPtr(entry.key_ptr);
         cell.hyperlink = false;
 
-        // Mark that we no longer have graphemes, also search the row
+        // Mark that we no longer have hyperlinks, also search the row
         // to make sure its state is correct.
         const cells = row.cells.ptr(self.memory)[0..self.size.cols];
         for (cells) |c| if (c.hyperlink) return;
@@ -990,6 +989,45 @@ pub const Page = struct {
         const value = entry.value_ptr.*;
         map.removeByPtr(entry.key_ptr);
         map.putAssumeCapacity(dst_offset, value);
+    }
+
+    /// Returns the number of hyperlinks in the page. This isn't the byte
+    /// size but the total number of unique cells that have hyperlink data.
+    pub fn hyperlinkCount(self: *const Page) usize {
+        return self.hyperlink_map.map(self.memory).count();
+    }
+
+    /// Returns the hyperlink capacity for the page. This isn't the byte
+    /// size but the number of unique cells that can have hyperlink data.
+    pub fn hyperlinkCapacity(self: *const Page) usize {
+        return self.hyperlink_map.map(self.memory).capacity();
+    }
+
+    /// Set the graphemes for the given cell. This asserts that the cell
+    /// has no graphemes set, and only contains a single codepoint.
+    pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) Allocator.Error!void {
+        defer self.assertIntegrity();
+
+        assert(cell.hasText());
+        assert(cell.content_tag == .codepoint);
+
+        const cell_offset = getOffset(Cell, self.memory, cell);
+        var map = self.grapheme_map.map(self.memory);
+
+        const slice = try self.grapheme_alloc.alloc(u21, self.memory, cps.len);
+        errdefer self.grapheme_alloc.free(self.memory, slice);
+        @memcpy(slice, cps);
+
+        try map.putNoClobber(cell_offset, .{
+            .offset = getOffset(u21, self.memory, @ptrCast(slice.ptr)),
+            .len = slice.len,
+        });
+        errdefer map.remove(cell_offset);
+
+        cell.content_tag = .codepoint_grapheme;
+        row.grapheme = true;
+
+        return;
     }
 
     /// Append a codepoint to the given cell as a grapheme.
@@ -1112,6 +1150,12 @@ pub const Page = struct {
     /// size but the total number of unique cells that have grapheme data.
     pub fn graphemeCount(self: *const Page) usize {
         return self.grapheme_map.map(self.memory).count();
+    }
+
+    /// Returns the grapheme capacity for the page. This isn't the byte
+    /// size but the number of unique cells that can have grapheme data.
+    pub fn graphemeCapacity(self: *const Page) usize {
+        return self.grapheme_map.map(self.memory).capacity();
     }
 
     /// Returns the bitset for the dirty bits on this page.

@@ -232,6 +232,7 @@ pub fn RefCountedSet(
                 // we're reusing the existing value in the set. This allows
                 // callers to clean up any resources associated with the value.
                 if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
+
                 items[id].meta.ref += 1;
                 return id;
             }
@@ -279,6 +280,8 @@ pub fn RefCountedSet(
         pub fn addWithIdContext(self: *Self, base: anytype, value: T, id: Id, ctx: Context) AddError!?Id {
             const items = self.items.ptr(base);
 
+            assert(id > 0);
+
             if (id < self.next_id) {
                 if (items[id].meta.ref == 0) {
                     self.deleteItem(base, id, ctx);
@@ -291,6 +294,11 @@ pub fn RefCountedSet(
 
                     return if (added_id == id) null else added_id;
                 } else if (ctx.eql(value, items[id].value)) {
+                    // Notify the context that the value is "deleted" because
+                    // we're reusing the existing value in the set. This allows
+                    // callers to clean up any resources associated with the value.
+                    if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
+
                     items[id].meta.ref += 1;
 
                     return null;
@@ -501,6 +509,7 @@ pub fn RefCountedSet(
                 // we're reusing the existing value in the set. This allows
                 // callers to clean up any resources associated with the value.
                 if (comptime @hasDecl(Context, "deleted")) ctx.deleted(value);
+
                 return id;
             }
 
