@@ -945,7 +945,11 @@ extension Ghostty {
                 menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
             }
             menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
-            
+
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Split Right", action: #selector(TerminalController.splitRight(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Down", action: #selector(TerminalController.splitDown(_:)), keyEquivalent: "")
+
             menu.addItem(.separator())
             menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
 
