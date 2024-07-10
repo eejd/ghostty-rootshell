@@ -70,9 +70,8 @@ x11_xkb: ?x11.Xkb = null,
 /// and initialization was successful.
 transient_cgroup_base: ?[]const u8 = null,
 
-/// True if we have initialized runtime CSS. We only need to do this once for the application, but
-/// we can't perform the intialization until we have created a window
-runtime_css_intialized: bool = false,
+/// CSS Provider for any styles based on ghostty configuration values
+css_provider: *c.GtkCssProvider,
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
@@ -272,6 +271,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         );
     }
 
+    const css_provider = c.gtk_css_provider_new();
+    try loadRuntimeCss(&config, css_provider);
+
     return .{
         .core_app = core_app,
         .app = app,
@@ -284,6 +286,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
         .running = c.g_application_get_is_remote(gapp) == 0,
+        .css_provider = css_provider,
     };
 }
 
@@ -331,6 +334,7 @@ pub fn reloadConfig(self: *App) !?*const Config {
 fn syncConfigChanges(self: *App) !void {
     try self.updateConfigErrors();
     try self.syncActionAccelerators();
+    try loadRuntimeCss(&self.config, self.css_provider);
 }
 
 /// This should be called whenever the configuration changes to update
@@ -381,6 +385,23 @@ fn syncActionAccelerator(
         gtk_action.ptr,
         &accels,
     );
+}
+
+fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
+    const fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
+    var css_buf: [128]u8 = undefined;
+    const css = try std.fmt.bufPrintZ(
+        &css_buf,
+        "widget.unfocused-split {{ opacity: {d:.2}; }}\n.ghostty-surface>stack {{ background-color: rgb({d},{d},{d});}}",
+        .{
+            config.@"unfocused-split-opacity",
+            fill.r,
+            fill.g,
+            fill.b,
+        },
+    );
+    // Clears any previously loaded CSS from this provider
+    c.gtk_css_provider_load_from_string(provider, css);
 }
 
 /// Called by CoreApp to wake up the event loop.
