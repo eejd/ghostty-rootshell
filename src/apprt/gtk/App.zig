@@ -70,6 +70,10 @@ x11_xkb: ?x11.Xkb = null,
 /// and initialization was successful.
 transient_cgroup_base: ?[]const u8 = null,
 
+/// True if we have initialized runtime CSS. We only need to do this once for the application, but
+/// we can't perform the intialization until we have created a window
+runtime_css_intialized: bool = false,
+
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 

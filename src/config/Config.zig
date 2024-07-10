@@ -409,8 +409,6 @@ palette: Palette = .{},
 /// is 0.15. This value still looks weird but you can at least see what's going
 /// on. A value outside of the range 0.15 to 1 will be clamped to the nearest
 /// valid value.
-///
-/// This is only supported on macOS.
 @"unfocused-split-opacity": f64 = 0.7,
 
 /// The color to dim the unfocused split. Unfocused splits are dimmed by
@@ -418,8 +416,6 @@ palette: Palette = .{},
 /// that rectangle and can be used to carefully control the dimming effect.
 ///
 /// This will default to the background color.
-///
-/// This is only supported on macOS.
 @"unfocused-split-fill": ?Color = null,
 
 /// The command to run, usually a shell. If this is not an absolute path, it'll

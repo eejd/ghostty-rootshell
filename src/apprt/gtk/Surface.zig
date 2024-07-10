@@ -1809,6 +1809,9 @@ fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_in(self.im_context);
 
+    // Unconditionally remove the unfocused split css class
+    c.gtk_widget_remove_css_class(@ptrCast(@alignCast(self.gl_area)), "unfocused-split");
+
     // Notify our surface
     self.core_surface.focusCallback(true) catch |err| {
         log.err("error in focus callback err={}", .{err});
@@ -1822,6 +1825,14 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
 
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
+
+    // We only add the unfocused-split class if we are actually a split
+    switch (self.container) {
+        .split_br,
+        .split_tl,
+        => c.gtk_widget_add_css_class(@ptrCast(@alignCast(self.gl_area)), "unfocused-split"),
+        else => {},
+    }
 
     self.core_surface.focusCallback(false) catch |err| {
         log.err("error in focus callback err={}", .{err});

@@ -16,6 +16,7 @@ const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig");
@@ -69,6 +70,35 @@ pub fn init(self: *Window, app: *App) !void {
     // Apply background opacity if we have it
     if (app.config.@"background-opacity" < 1) {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
+    }
+
+    if (!app.runtime_css_intialized) {
+        // Intialize runtime CSS. This CSS requires ghostty configuration values so we don't set it
+        // in style.css. We also have to have a window in order to add a style_context to a display,
+        // so we intialize after creation of our first window
+        app.runtime_css_intialized = true;
+
+        const display = c.gdk_display_get_default();
+        const provider = c.gtk_css_provider_new();
+        defer c.g_object_unref(provider);
+        const fill: Color = app.config.@"unfocused-split-fill" orelse app.config.background;
+        var css_buf: [128]u8 = undefined;
+
+        // We will add the unfocused-split class in our focus callbacks. We unconditionally add the
+        // background-color to the notebook stack because it only comes into play if we have an
+        // unfocused split
+        const css = try std.fmt.bufPrintZ(
+            &css_buf,
+            "widget.unfocused-split {{ opacity: {d:.2}; }}\nstack {{ background-color: rgb({d},{d},{d});}}",
+            .{
+                app.config.@"unfocused-split-opacity",
+                fill.r,
+                fill.g,
+                fill.b,
+            },
+        );
+        c.gtk_css_provider_load_from_string(provider, css);
+        c.gtk_style_context_add_provider_for_display(display, @ptrCast(provider), c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
     // Use the new GTK4 header bar. We only create a header bar if we have
