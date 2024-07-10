@@ -389,10 +389,22 @@ fn syncActionAccelerator(
 
 fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
     const fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
-    var css_buf: [128]u8 = undefined;
+    const fmt =
+        \\widget.unfocused-split {{
+        \\ opacity: {d:.2};
+        \\}}
+        \\.ghostty-surface>stack {{
+        \\ background-color: rgb({d},{d},{d});
+        \\}}"
+    ;
+    // The length required is always less than the length of the pre-formatted string:
+    // -> '{d:.2}' gets replaced with max 4 bytes (0.00)
+    // -> each {d} could be replaced with max 3 bytes
+    var css_buf: [fmt.len]u8 = undefined;
+
     const css = try std.fmt.bufPrintZ(
         &css_buf,
-        "widget.unfocused-split {{ opacity: {d:.2}; }}\n.ghostty-surface>stack {{ background-color: rgb({d},{d},{d});}}",
+        fmt,
         .{
             config.@"unfocused-split-opacity",
             fill.r,
