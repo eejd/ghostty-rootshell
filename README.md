@@ -51,6 +51,7 @@ beta users using Ghostty as their primary terminal. See more in
 | macOS              | [Tip ("Nightly")](https://github.com/ghostty-org/ghostty/releases/tag/tip) | MacOS 12+ Universal Binary |
 | Linux              | [Build from Source](#developing-ghostty)                                   |                            |
 | Linux (NixOS/Nix)  | [Use the Flake](#nix-package)                                              |                            |
+| Linux (Arch)       | [Use the AUR package](https://aur.archlinux.org/packages/ghostty-git)      |                            |
 | Windows            | [Build from Source](#developing-ghostty)                                   | [Notes](#windows-notes)    |
 
 ### Configuration
