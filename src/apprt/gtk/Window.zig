@@ -107,7 +107,6 @@ pub fn init(self: *Window, app: *App) !void {
 
     // Create a notebook to hold our tabs.
     const notebook_widget = c.gtk_notebook_new();
-    c.gtk_widget_add_css_class(notebook_widget, "ghostty-surface");
     const notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
     self.notebook = notebook;
     const notebook_tab_pos: c_uint = switch (app.config.@"gtk-tabs-location") {
