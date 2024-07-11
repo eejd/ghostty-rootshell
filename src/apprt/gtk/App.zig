@@ -392,10 +392,8 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
     const fmt =
         \\widget.unfocused-split {{
         \\ opacity: {d:.2};
-        \\}}
-        \\.ghostty-surface>stack {{
         \\ background-color: rgb({d},{d},{d});
-        \\}}"
+        \\}}
     ;
     // The length required is always less than the length of the pre-formatted string:
     // -> '{d:.2}' gets replaced with max 4 bytes (0.00)
@@ -413,7 +411,7 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         },
     );
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_string(provider, css);
+    c.gtk_css_provider_load_from_data(provider, css, @intCast(css.len));
 }
 
 /// Called by CoreApp to wake up the event loop.
