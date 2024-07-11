@@ -1836,16 +1836,11 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
 
-    // We only add the unfocused-split widget if we are actually a split
+    // We only dim the surface if we are a split
     switch (self.container) {
         .split_br,
         .split_tl,
-        => blk: {
-            if (self.unfocused_widget != null) break :blk;
-            self.unfocused_widget = c.gtk_drawing_area_new();
-            c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
-            c.gtk_overlay_add_overlay(self.overlay, self.unfocused_widget.?);
-        },
+        => self.dimSurface(),
         else => {},
     }
 
@@ -1853,6 +1848,15 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
         log.err("error in focus callback err={}", .{err});
         return;
     };
+}
+
+/// Adds the unfocused_widget to the overlay. If the unfocused_widget has already been added, this
+/// is a no-op
+pub fn dimSurface(self: *Surface) void {
+    if (self.unfocused_widget != null) return;
+    self.unfocused_widget = c.gtk_drawing_area_new();
+    c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
+    c.gtk_overlay_add_overlay(self.overlay, self.unfocused_widget.?);
 }
 
 fn gtkCloseConfirmation(
