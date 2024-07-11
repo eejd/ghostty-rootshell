@@ -1245,8 +1245,7 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
 }
 
 /// Called for any key events. This handles keybindings, encoding and
-/// sending to the termianl, etc. The return value is true if the key
-/// was handled and false if it was not.
+/// sending to the termianl, etc.
 pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
