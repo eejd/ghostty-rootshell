@@ -28,7 +28,7 @@ pub const Handler = struct {
         self.state = .{ .ignore = {} };
 
         // Try to parse the hook.
-        const hk_ = tryHook(alloc, dcs) catch |err| {
+        const hk_ = self.tryHook(alloc, dcs) catch |err| {
             log.info("error initializing DCS hook, will ignore hook err={}", .{err});
             return null;
         };
@@ -46,7 +46,7 @@ pub const Handler = struct {
         command: ?Command = null,
     };
 
-    fn tryHook(alloc: Allocator, dcs: DCS) !?Hook {
+    fn tryHook(self: Handler, alloc: Allocator, dcs: DCS) !?Hook {
         return switch (dcs.intermediates.len) {
             0 => switch (dcs.final) {
                 // Tmux control mode
@@ -57,6 +57,7 @@ pub const Handler = struct {
                     break :tmux .{
                         .state = .{
                             .tmux = .{
+                                .max_bytes = self.max_bytes,
                                 .buffer = try std.ArrayList(u8).initCapacity(
                                     alloc,
                                     128, // Arbitrary choice to limit initial reallocs
@@ -120,7 +121,9 @@ pub const Handler = struct {
             .ignore,
             => {},
 
-            .tmux => |*tmux| return try tmux.put(byte, self.max_bytes),
+            .tmux => |*tmux| return .{
+                .tmux = (try tmux.put(byte)) orelse return null,
+            },
 
             .xtgettcap => |*list| {
                 if (list.items.len >= self.max_bytes) {
@@ -195,7 +198,7 @@ pub const Command = union(enum) {
     decrqss: DECRQSS,
 
     /// Tmux control mode
-    tmux: Tmux,
+    tmux: terminal.tmux.Notification,
 
     pub fn deinit(self: Command) void {
         switch (self) {
@@ -261,7 +264,7 @@ const State = union(enum) {
     },
 
     /// Tmux control mode: https://github.com/tmux/tmux/wiki/Control-Mode
-    tmux: TmuxState,
+    tmux: terminal.tmux.Client,
 
     pub fn deinit(self: *State) void {
         switch (self.*) {
@@ -273,128 +276,6 @@ const State = union(enum) {
             .decrqss => {},
             .tmux => |*v| v.deinit(),
         }
-    }
-};
-
-const TmuxState = struct {
-    tag: Tag = .idle,
-    buffer: std.ArrayList(u8),
-
-    const Tag = enum {
-        /// Outside of any active command. This should drop any output
-        /// unless it is '%' on the first byte of a line.
-        idle,
-
-        /// We experienced unexpected input and are in a broken state
-        /// so we cannot continue processing.
-        broken,
-
-        /// Inside an active command (started with '%').
-        command,
-
-        /// Inside a begin/end block.
-        block,
-    };
-
-    pub fn deinit(self: *TmuxState) void {
-        self.buffer.deinit();
-    }
-
-    // Handle a byte of input.
-    pub fn put(self: *TmuxState, byte: u8, max_bytes: usize) !?Command {
-        if (self.buffer.items.len >= max_bytes) {
-            self.broken();
-            return error.OutOfMemory;
-        }
-
-        switch (self.tag) {
-            // Drop because we're in a broken state.
-            .broken => return null,
-
-            // Waiting for a command so if the byte is not '%' then
-            // we're in a broken state. Return an exit command.
-            .idle => if (byte != '%') {
-                self.broken();
-                return .{ .tmux = .{ .exit = {} } };
-            } else {
-                self.tag = .command;
-            },
-
-            // If we're in a command and its not a newline then
-            // we accumulate. If it is a newline then we have a
-            // complete command we need to parse.
-            .command => if (byte == '\n') {
-                // We have a complete command, parse it.
-                return try self.parseCommand();
-            },
-
-            // If we're ina block then we accumulate until we see a newline
-            // and then we check to see if that line ended the block.
-            .block => if (byte == '\n') {
-                const idx = if (std.mem.lastIndexOfScalar(
-                    u8,
-                    self.buffer.items,
-                    '\n',
-                )) |v| v + 1 else 0;
-                const line = self.buffer.items[idx..];
-                if (std.mem.startsWith(u8, line, "%end") or
-                    std.mem.startsWith(u8, line, "%error"))
-                {
-                    // If it is an error then log it.
-                    if (std.mem.startsWith(u8, line, "%error")) {
-                        const output = self.buffer.items[0..idx];
-                        log.warn("tmux control mode error={s}", .{output});
-                    }
-
-                    // We ignore the rest of the line, see %begin for why.
-                    self.tag = .idle;
-                    self.buffer.clearRetainingCapacity();
-                    return null;
-                }
-            },
-        }
-
-        try self.buffer.append(byte);
-
-        return null;
-    }
-
-    fn parseCommand(self: *TmuxState) !?Command {
-        assert(self.tag == .command);
-
-        var it = std.mem.tokenizeScalar(u8, self.buffer.items, ' ');
-
-        // The command MUST exist because we guard entering the command
-        // state on seeing at least a '%'.
-        const cmd = it.next().?;
-        if (std.mem.eql(u8, cmd, "%begin")) {
-            // We don't use the rest of the tokens for now because tmux
-            // claims to guarantee that begin/end are always in order and
-            // never intermixed. In the future, we should probably validate
-            // this.
-            // TODO(tmuxcc): do this before merge?
-
-            // Move to block state because we expect a corresponding end/error
-            // and want to accumulate the data.
-            self.tag = .block;
-            self.buffer.clearRetainingCapacity();
-            return null;
-        } else {
-            // Unknown command, log it and return to idle state.
-            log.warn("unknown tmux control mode command={s}", .{cmd});
-        }
-
-        // Successful exit, revert to idle state.
-        self.buffer.clearRetainingCapacity();
-        self.tag = .idle;
-
-        return null;
-    }
-
-    // Mark the tmux state as broken.
-    fn broken(self: *TmuxState) void {
-        self.tag = .broken;
-        self.buffer.clearAndFree();
     }
 };
 
