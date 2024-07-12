@@ -55,7 +55,14 @@ pub const Handler = struct {
                     if (dcs.params.len != 1 or dcs.params[0] != 1000) break :tmux null;
 
                     break :tmux .{
-                        .state = .{ .tmux = {} },
+                        .state = .{
+                            .tmux = .{
+                                .buffer = try std.ArrayList(u8).initCapacity(
+                                    alloc,
+                                    128, // Arbitrary choice to limit initial reallocs
+                                ),
+                            },
+                        },
                         .command = .{ .tmux = .{ .enter = {} } },
                     };
                 },
@@ -113,7 +120,7 @@ pub const Handler = struct {
             .ignore,
             => {},
 
-            .tmux => {},
+            .tmux => |*tmux| return try tmux.put(byte, self.max_bytes),
 
             .xtgettcap => |*list| {
                 if (list.items.len >= self.max_bytes) {
@@ -147,7 +154,10 @@ pub const Handler = struct {
             .ignore,
             => null,
 
-            .tmux => .{ .tmux = .{ .exit = {} } },
+            .tmux => tmux: {
+                self.state.deinit();
+                break :tmux .{ .tmux = .{ .exit = {} } };
+            },
 
             .xtgettcap => |list| .{ .xtgettcap = .{ .data = list } },
 
@@ -251,18 +261,140 @@ const State = union(enum) {
     },
 
     /// Tmux control mode: https://github.com/tmux/tmux/wiki/Control-Mode
-    tmux: void,
+    tmux: TmuxState,
 
-    pub fn deinit(self: State) void {
-        switch (self) {
+    pub fn deinit(self: *State) void {
+        switch (self.*) {
             .inactive,
             .ignore,
             => {},
 
             .xtgettcap => |*v| v.deinit(),
             .decrqss => {},
-            .tmux => {},
+            .tmux => |*v| v.deinit(),
         }
+    }
+};
+
+const TmuxState = struct {
+    tag: Tag = .idle,
+    buffer: std.ArrayList(u8),
+
+    const Tag = enum {
+        /// Outside of any active command. This should drop any output
+        /// unless it is '%' on the first byte of a line.
+        idle,
+
+        /// We experienced unexpected input and are in a broken state
+        /// so we cannot continue processing.
+        broken,
+
+        /// Inside an active command (started with '%').
+        command,
+
+        /// Inside a begin/end block.
+        block,
+    };
+
+    pub fn deinit(self: *TmuxState) void {
+        self.buffer.deinit();
+    }
+
+    // Handle a byte of input.
+    pub fn put(self: *TmuxState, byte: u8, max_bytes: usize) !?Command {
+        if (self.buffer.items.len >= max_bytes) {
+            self.broken();
+            return error.OutOfMemory;
+        }
+
+        switch (self.tag) {
+            // Drop because we're in a broken state.
+            .broken => return null,
+
+            // Waiting for a command so if the byte is not '%' then
+            // we're in a broken state. Return an exit command.
+            .idle => if (byte != '%') {
+                self.broken();
+                return .{ .tmux = .{ .exit = {} } };
+            } else {
+                self.tag = .command;
+            },
+
+            // If we're in a command and its not a newline then
+            // we accumulate. If it is a newline then we have a
+            // complete command we need to parse.
+            .command => if (byte == '\n') {
+                // We have a complete command, parse it.
+                return try self.parseCommand();
+            },
+
+            // If we're ina block then we accumulate until we see a newline
+            // and then we check to see if that line ended the block.
+            .block => if (byte == '\n') {
+                const idx = if (std.mem.lastIndexOfScalar(
+                    u8,
+                    self.buffer.items,
+                    '\n',
+                )) |v| v + 1 else 0;
+                const line = self.buffer.items[idx..];
+                if (std.mem.startsWith(u8, line, "%end") or
+                    std.mem.startsWith(u8, line, "%error"))
+                {
+                    // If it is an error then log it.
+                    if (std.mem.startsWith(u8, line, "%error")) {
+                        const output = self.buffer.items[0..idx];
+                        log.warn("tmux control mode error={s}", .{output});
+                    }
+
+                    // We ignore the rest of the line, see %begin for why.
+                    self.tag = .idle;
+                    self.buffer.clearRetainingCapacity();
+                    return null;
+                }
+            },
+        }
+
+        try self.buffer.append(byte);
+
+        return null;
+    }
+
+    fn parseCommand(self: *TmuxState) !?Command {
+        assert(self.tag == .command);
+
+        var it = std.mem.tokenizeScalar(u8, self.buffer.items, ' ');
+
+        // The command MUST exist because we guard entering the command
+        // state on seeing at least a '%'.
+        const cmd = it.next().?;
+        if (std.mem.eql(u8, cmd, "%begin")) {
+            // We don't use the rest of the tokens for now because tmux
+            // claims to guarantee that begin/end are always in order and
+            // never intermixed. In the future, we should probably validate
+            // this.
+            // TODO(tmuxcc): do this before merge?
+
+            // Move to block state because we expect a corresponding end/error
+            // and want to accumulate the data.
+            self.tag = .block;
+            self.buffer.clearRetainingCapacity();
+            return null;
+        } else {
+            // Unknown command, log it and return to idle state.
+            log.warn("unknown tmux control mode command={s}", .{cmd});
+        }
+
+        // Successful exit, revert to idle state.
+        self.buffer.clearRetainingCapacity();
+        self.tag = .idle;
+
+        return null;
+    }
+
+    // Mark the tmux state as broken.
+    fn broken(self: *TmuxState) void {
+        self.tag = .broken;
+        self.buffer.clearAndFree();
     }
 };
 
@@ -381,4 +513,26 @@ test "tmux enter and implicit exit" {
         try testing.expect(cmd == .tmux);
         try testing.expect(cmd.tmux == .exit);
     }
+}
+
+test "tmux begin/end empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+    h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?.deinit();
+    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
+    for ("%end 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
+}
+
+test "tmux begin/error empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+    h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?.deinit();
+    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
+    for ("%error 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
 }
