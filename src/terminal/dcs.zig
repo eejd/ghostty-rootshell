@@ -98,6 +98,8 @@ pub const Handler = struct {
             .ignore,
             => {},
 
+            .tmux => {},
+
             .xtgettcap => |*list| {
                 if (list.items.len >= self.max_bytes) {
                     return error.OutOfMemory;
@@ -125,6 +127,8 @@ pub const Handler = struct {
             .inactive,
             .ignore,
             => null,
+
+            .tmux => null,
 
             .xtgettcap => |list| .{ .xtgettcap = .{ .data = list } },
 
@@ -157,6 +161,8 @@ pub const Handler = struct {
             .xtgettcap => |*list| list.deinit(),
 
             .decrqss => {},
+
+            .tmux => {},
         }
 
         self.state = .{ .inactive = {} };
@@ -170,10 +176,14 @@ pub const Command = union(enum) {
     /// DECRQSS
     decrqss: DECRQSS,
 
+    /// Tmux control mode
+    tmux: Tmux,
+
     pub fn deinit(self: Command) void {
         switch (self) {
             .xtgettcap => |*v| v.data.deinit(),
             .decrqss => {},
+            .tmux => {},
         }
     }
 
@@ -207,6 +217,12 @@ pub const Command = union(enum) {
         decstbm,
         decslrm,
     };
+
+    /// Tmux control mode
+    pub const Tmux = union(enum) {
+        enter: void,
+        exit: void,
+    };
 };
 
 const State = union(enum) {
@@ -225,6 +241,9 @@ const State = union(enum) {
         data: [2]u8 = undefined,
         len: u2 = 0,
     },
+
+    /// Tmux control mode: https://github.com/tmux/tmux/wiki/Control-Mode
+    tmux: void,
 };
 
 test "unknown DCS command" {

@@ -1880,6 +1880,11 @@ const StreamHandler = struct {
     fn dcsCommand(self: *StreamHandler, cmd: *terminal.dcs.Command) !void {
         // log.warn("DCS command: {}", .{cmd});
         switch (cmd.*) {
+            .tmux => |tmux| {
+                // TODO: process it
+                log.warn("tmux control mode event unimplemented cmd={}", .{tmux});
+            },
+
             .xtgettcap => |*gettcap| {
                 const map = comptime terminfo.ghostty.xtgettcapMap();
                 while (gettcap.next()) |key| {
@@ -1887,6 +1892,7 @@ const StreamHandler = struct {
                     self.messageWriter(.{ .write_stable = response });
                 }
             },
+
             .decrqss => |decrqss| {
                 var response: [128]u8 = undefined;
                 var stream = std.io.fixedBufferStream(&response);
