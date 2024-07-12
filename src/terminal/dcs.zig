@@ -69,16 +69,19 @@ pub const Handler = struct {
         };
     }
 
-    pub fn put(self: *Handler, byte: u8) void {
-        self.tryPut(byte) catch |err| {
+    /// Put a byte into the DCS handler. This will return a command
+    /// if a command needs to be executed.
+    pub fn put(self: *Handler, byte: u8) ?Command {
+        return self.tryPut(byte) catch |err| {
             // On error we just discard our state and ignore the rest
             log.info("error putting byte into DCS handler err={}", .{err});
             self.discard();
             self.state = .{ .ignore = {} };
+            return null;
         };
     }
 
-    fn tryPut(self: *Handler, byte: u8) !void {
+    fn tryPut(self: *Handler, byte: u8) !?Command {
         switch (self.state) {
             .inactive,
             .ignore,
@@ -101,6 +104,8 @@ pub const Handler = struct {
                 buffer.len += 1;
             },
         }
+
+        return null;
     }
 
     pub fn unhook(self: *Handler) ?Command {
@@ -156,9 +161,7 @@ pub const Command = union(enum) {
 
     pub fn deinit(self: Command) void {
         switch (self) {
-            .xtgettcap => |*v| {
-                v.data.deinit();
-            },
+            .xtgettcap => |*v| v.data.deinit(),
             .decrqss => {},
         }
     }
@@ -232,7 +235,7 @@ test "XTGETTCAP command" {
     var h: Handler = .{};
     defer h.deinit();
     h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
-    for ("536D756C78") |byte| h.put(byte);
+    for ("536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
@@ -247,7 +250,7 @@ test "XTGETTCAP command multiple keys" {
     var h: Handler = .{};
     defer h.deinit();
     h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
-    for ("536D756C78;536D756C78") |byte| h.put(byte);
+    for ("536D756C78;536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
@@ -263,7 +266,7 @@ test "XTGETTCAP command invalid data" {
     var h: Handler = .{};
     defer h.deinit();
     h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
-    for ("who;536D756C78") |byte| h.put(byte);
+    for ("who;536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .xtgettcap);
@@ -279,7 +282,7 @@ test "DECRQSS command" {
     var h: Handler = .{};
     defer h.deinit();
     h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
-    h.put('m');
+    _ = h.put('m');
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .decrqss);
@@ -293,7 +296,7 @@ test "DECRQSS invalid command" {
     var h: Handler = .{};
     defer h.deinit();
     h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
-    h.put('z');
+    _ = h.put('z');
     var cmd = h.unhook().?;
     defer cmd.deinit();
     try testing.expect(cmd == .decrqss);
@@ -302,8 +305,8 @@ test "DECRQSS invalid command" {
     h.discard();
 
     h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
-    h.put('"');
-    h.put(' ');
-    h.put('q');
+    _ = h.put('"');
+    _ = h.put(' ');
+    _ = h.put('q');
     try testing.expect(h.unhook() == null);
 }

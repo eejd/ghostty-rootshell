@@ -1864,15 +1864,20 @@ const StreamHandler = struct {
     }
 
     pub fn dcsPut(self: *StreamHandler, byte: u8) !void {
-        self.dcs.put(byte);
+        var cmd = self.dcs.put(byte) orelse return;
+        defer cmd.deinit();
+        try self.dcsCommand(&cmd);
     }
 
     pub fn dcsUnhook(self: *StreamHandler) !void {
         var cmd = self.dcs.unhook() orelse return;
         defer cmd.deinit();
+        try self.dcsCommand(&cmd);
+    }
 
+    fn dcsCommand(self: *StreamHandler, cmd: *terminal.dcs.Command) !void {
         // log.warn("DCS command: {}", .{cmd});
-        switch (cmd) {
+        switch (cmd.*) {
             .xtgettcap => |*gettcap| {
                 const map = comptime terminfo.ghostty.xtgettcapMap();
                 while (gettcap.next()) |key| {
