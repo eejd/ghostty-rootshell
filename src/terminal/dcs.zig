@@ -48,6 +48,21 @@ pub const Handler = struct {
 
     fn tryHook(alloc: Allocator, dcs: DCS) !?Hook {
         return switch (dcs.intermediates.len) {
+            0 => switch (dcs.final) {
+                // Tmux control mode
+                'p' => tmux: {
+                    // Tmux control mode must start with ESC P 1000 p
+                    if (dcs.params.len != 1 or dcs.params[0] != 1000) break :tmux null;
+
+                    break :tmux .{
+                        .state = .{ .tmux = {} },
+                        .command = .{ .tmux = .{ .enter = {} } },
+                    };
+                },
+
+                else => null,
+            },
+
             1 => switch (dcs.intermediates[0]) {
                 '+' => switch (dcs.final) {
                     // XTGETTCAP
@@ -128,7 +143,7 @@ pub const Handler = struct {
             .ignore,
             => null,
 
-            .tmux => null,
+            .tmux => .{ .tmux = .{ .exit = {} } },
 
             .xtgettcap => |list| .{ .xtgettcap = .{ .data = list } },
 
@@ -339,4 +354,26 @@ test "DECRQSS invalid command" {
     _ = h.put(' ');
     _ = h.put('q');
     try testing.expect(h.unhook() == null);
+}
+
+test "tmux enter and implicit exit" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd == .tmux);
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    {
+        var cmd = h.unhook().?;
+        defer cmd.deinit();
+        try testing.expect(cmd == .tmux);
+        try testing.expect(cmd.tmux == .exit);
+    }
 }
