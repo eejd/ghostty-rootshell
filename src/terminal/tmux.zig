@@ -91,16 +91,16 @@ pub const Client = struct {
                 if (std.mem.startsWith(u8, line, "%end") or
                     std.mem.startsWith(u8, line, "%error"))
                 {
-                    // If it is an error then log it.
-                    if (std.mem.startsWith(u8, line, "%error")) {
-                        const output = self.buffer.items[0..idx];
-                        log.warn("tmux control mode error={s}", .{output});
-                    }
+                    const err = std.mem.startsWith(u8, line, "%error");
+                    const output = std.mem.trimRight(u8, self.buffer.items[0..idx], "\r\n");
 
-                    // We ignore the rest of the line, see %begin for why.
+                    // If it is an error then log it.
+                    if (err) log.warn("tmux control mode error={s}", .{output});
+
+                    // Important: do not clear buffer since the notification
+                    // contains it.
                     self.state = .idle;
-                    self.buffer.clearRetainingCapacity();
-                    return null;
+                    return if (err) .{ .block_err = output } else .{ .block_end = output };
                 }
 
                 // Didn't end the block, continue accumulating.
@@ -284,6 +284,9 @@ pub const Notification = union(enum) {
     enter: void,
     exit: void,
 
+    block_end: []const u8,
+    block_err: []const u8,
+
     output: struct {
         pane_id: usize,
         data: []const u8, // unescaped
@@ -313,7 +316,10 @@ test "tmux begin/end empty" {
     var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
     defer c.deinit();
     for ("%begin 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
-    for ("%end 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("", n.block_end);
 }
 
 test "tmux begin/error empty" {
@@ -323,7 +329,24 @@ test "tmux begin/error empty" {
     var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
     defer c.deinit();
     for ("%begin 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
-    for ("%error 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%error 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_err);
+    try testing.expectEqualStrings("", n.block_err);
+}
+
+test "tmux begin/end data" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("hello\nworld\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("hello\nworld", n.block_end);
 }
 
 test "tmux output" {

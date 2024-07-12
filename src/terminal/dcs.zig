@@ -395,25 +395,3 @@ test "tmux enter and implicit exit" {
         try testing.expect(cmd.tmux == .exit);
     }
 }
-
-test "tmux begin/end empty" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var h: Handler = .{};
-    defer h.deinit();
-    h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?.deinit();
-    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
-    for ("%end 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
-}
-
-test "tmux begin/error empty" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var h: Handler = .{};
-    defer h.deinit();
-    h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?.deinit();
-    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
-    for ("%error 1578922740 269 1\n") |byte| try testing.expect(h.put(byte) == null);
-}
