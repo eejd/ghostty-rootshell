@@ -325,6 +325,9 @@ gl_area: *c.GtkGLArea,
 /// If non-null this is the widget on the overlay that shows the URL.
 url_widget: ?URLWidget = null,
 
+/// If non-null this is the widget on the overlay which dims the surface when it is unfocused
+unfocused_widget: ?*c.GtkWidget = null,
+
 /// Any active cursor we may have
 cursor: ?*c.GdkCursor = null,
 
@@ -590,6 +593,10 @@ pub fn deinit(self: *Surface) void {
     // Free all our GTK stuff
     c.g_object_unref(self.im_context);
     if (self.cursor) |cursor| c.g_object_unref(cursor);
+    if (self.unfocused_widget) |widget| {
+        c.gtk_overlay_remove_overlay(self.overlay, widget);
+        self.unfocused_widget = null;
+    }
 }
 
 // unref removes the long-held reference to the gl_area and kicks off the
@@ -1809,6 +1816,12 @@ fn gtkFocusEnter(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_in(self.im_context);
 
+    // Remove the unfocused widget overlay, if we have one
+    if (self.unfocused_widget) |widget| {
+        c.gtk_overlay_remove_overlay(self.overlay, widget);
+        self.unfocused_widget = null;
+    }
+
     // Notify our surface
     self.core_surface.focusCallback(true) catch |err| {
         log.err("error in focus callback err={}", .{err});
@@ -1823,10 +1836,27 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
 
+    // We only dim the surface if we are a split
+    switch (self.container) {
+        .split_br,
+        .split_tl,
+        => self.dimSurface(),
+        else => {},
+    }
+
     self.core_surface.focusCallback(false) catch |err| {
         log.err("error in focus callback err={}", .{err});
         return;
     };
+}
+
+/// Adds the unfocused_widget to the overlay. If the unfocused_widget has already been added, this
+/// is a no-op
+pub fn dimSurface(self: *Surface) void {
+    if (self.unfocused_widget != null) return;
+    self.unfocused_widget = c.gtk_drawing_area_new();
+    c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
+    c.gtk_overlay_add_overlay(self.overlay, self.unfocused_widget.?);
 }
 
 fn gtkCloseConfirmation(

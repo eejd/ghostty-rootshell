@@ -77,6 +77,7 @@ pub fn init(
         .parent = &sibling.core_surface,
     });
     errdefer surface.destroy(alloc);
+    sibling.dimSurface();
 
     // Create the actual GTKPaned, attach the proper children.
     const orientation: c_uint = switch (direction) {

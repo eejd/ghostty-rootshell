@@ -16,6 +16,7 @@ const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig");
@@ -70,6 +71,11 @@ pub fn init(self: *Window, app: *App) !void {
     if (app.config.@"background-opacity" < 1) {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
+
+    // Internally, GTK ensures that only one instance of this provider exists in the provider list
+    // for the display.
+    const display = c.gdk_display_get_default();
+    c.gtk_style_context_add_provider_for_display(display, @ptrCast(app.css_provider), c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // Use the new GTK4 header bar. We only create a header bar if we have
     // window decorations.
