@@ -800,7 +800,31 @@ test "csi: too many params" {
     }
 }
 
-test "dcs" {
+test "dcs: XTGETTCAP" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("P+") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('q');
+        try testing.expect(p.state == .dcs_passthrough);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2].? == .dcs_hook);
+
+        const hook = a[2].?.dcs_hook;
+        try testing.expectEqualSlices(u8, &[_]u8{'+'}, hook.intermediates);
+        try testing.expectEqualSlices(u16, &[_]u16{}, hook.params);
+        try testing.expectEqual('q', hook.final);
+    }
+}
+
+test "dcs: params" {
     var p = init();
     _ = p.next(0x1B);
     for ("P1000") |c| {

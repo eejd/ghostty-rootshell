@@ -1860,19 +1860,31 @@ const StreamHandler = struct {
     }
 
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
-        self.dcs.hook(self.alloc, dcs);
+        var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
+        defer cmd.deinit();
+        try self.dcsCommand(&cmd);
     }
 
     pub fn dcsPut(self: *StreamHandler, byte: u8) !void {
-        self.dcs.put(byte);
+        var cmd = self.dcs.put(byte) orelse return;
+        defer cmd.deinit();
+        try self.dcsCommand(&cmd);
     }
 
     pub fn dcsUnhook(self: *StreamHandler) !void {
         var cmd = self.dcs.unhook() orelse return;
         defer cmd.deinit();
+        try self.dcsCommand(&cmd);
+    }
 
+    fn dcsCommand(self: *StreamHandler, cmd: *terminal.dcs.Command) !void {
         // log.warn("DCS command: {}", .{cmd});
-        switch (cmd) {
+        switch (cmd.*) {
+            .tmux => |tmux| {
+                // TODO: process it
+                log.warn("tmux control mode event unimplemented cmd={}", .{tmux});
+            },
+
             .xtgettcap => |*gettcap| {
                 const map = comptime terminfo.ghostty.xtgettcapMap();
                 while (gettcap.next()) |key| {
@@ -1880,6 +1892,7 @@ const StreamHandler = struct {
                     self.messageWriter(.{ .write_stable = response });
                 }
             },
+
             .decrqss => |decrqss| {
                 var response: [128]u8 = undefined;
                 var stream = std.io.fixedBufferStream(&response);
