@@ -1860,7 +1860,9 @@ const StreamHandler = struct {
     }
 
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
-        self.dcs.hook(self.alloc, dcs);
+        var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
+        defer cmd.deinit();
+        try self.dcsCommand(&cmd);
     }
 
     pub fn dcsPut(self: *StreamHandler, byte: u8) !void {

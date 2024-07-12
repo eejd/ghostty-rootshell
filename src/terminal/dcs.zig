@@ -21,33 +21,44 @@ pub const Handler = struct {
         self.discard();
     }
 
-    pub fn hook(self: *Handler, alloc: Allocator, dcs: DCS) void {
+    pub fn hook(self: *Handler, alloc: Allocator, dcs: DCS) ?Command {
         assert(self.state == .inactive);
-        self.state = if (tryHook(alloc, dcs)) |state_| state: {
-            if (state_) |state| break :state state else {
-                log.info("unknown DCS hook: {}", .{dcs});
-                break :state .{ .ignore = {} };
-            }
-        } else |err| state: {
-            log.info(
-                "error initializing DCS hook, will ignore hook err={}",
-                .{err},
-            );
-            break :state .{ .ignore = {} };
+
+        // Initialize our state to ignore in case of error
+        self.state = .{ .ignore = {} };
+
+        // Try to parse the hook.
+        const hk_ = tryHook(alloc, dcs) catch |err| {
+            log.info("error initializing DCS hook, will ignore hook err={}", .{err});
+            return null;
         };
+        const hk = hk_ orelse {
+            log.info("unknown DCS hook: {}", .{dcs});
+            return null;
+        };
+
+        self.state = hk.state;
+        return hk.command;
     }
 
-    fn tryHook(alloc: Allocator, dcs: DCS) !?State {
+    const Hook = struct {
+        state: State,
+        command: ?Command = null,
+    };
+
+    fn tryHook(alloc: Allocator, dcs: DCS) !?Hook {
         return switch (dcs.intermediates.len) {
             1 => switch (dcs.intermediates[0]) {
                 '+' => switch (dcs.final) {
                     // XTGETTCAP
                     // https://github.com/mitchellh/ghostty/issues/517
                     'q' => .{
-                        .xtgettcap = try std.ArrayList(u8).initCapacity(
-                            alloc,
-                            128, // Arbitrary choice
-                        ),
+                        .state = .{
+                            .xtgettcap = try std.ArrayList(u8).initCapacity(
+                                alloc,
+                                128, // Arbitrary choice
+                            ),
+                        },
                     },
 
                     else => null,
@@ -55,9 +66,9 @@ pub const Handler = struct {
 
                 '$' => switch (dcs.final) {
                     // DECRQSS
-                    'q' => .{
+                    'q' => .{ .state = .{
                         .decrqss = .{},
-                    },
+                    } },
 
                     else => null,
                 },
@@ -222,7 +233,7 @@ test "unknown DCS command" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .final = 'A' });
+    try testing.expect(h.hook(alloc, .{ .final = 'A' }) == null);
     try testing.expect(h.state == .ignore);
     try testing.expect(h.unhook() == null);
     try testing.expect(h.state == .inactive);
@@ -234,7 +245,7 @@ test "XTGETTCAP command" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "+", .final = 'q' }) == null);
     for ("536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
@@ -249,7 +260,7 @@ test "XTGETTCAP command multiple keys" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "+", .final = 'q' }) == null);
     for ("536D756C78;536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
@@ -265,7 +276,7 @@ test "XTGETTCAP command invalid data" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .intermediates = "+", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "+", .final = 'q' }) == null);
     for ("who;536D756C78") |byte| _ = h.put(byte);
     var cmd = h.unhook().?;
     defer cmd.deinit();
@@ -281,7 +292,7 @@ test "DECRQSS command" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "$", .final = 'q' }) == null);
     _ = h.put('m');
     var cmd = h.unhook().?;
     defer cmd.deinit();
@@ -295,7 +306,7 @@ test "DECRQSS invalid command" {
 
     var h: Handler = .{};
     defer h.deinit();
-    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "$", .final = 'q' }) == null);
     _ = h.put('z');
     var cmd = h.unhook().?;
     defer cmd.deinit();
@@ -304,7 +315,7 @@ test "DECRQSS invalid command" {
 
     h.discard();
 
-    h.hook(alloc, .{ .intermediates = "$", .final = 'q' });
+    try testing.expect(h.hook(alloc, .{ .intermediates = "$", .final = 'q' }) == null);
     _ = h.put('"');
     _ = h.put(' ');
     _ = h.put('q');
