@@ -266,12 +266,19 @@ pub fn next(self: *Parser, c: u8) [3]?Action {
                 self.osc_parser.reset();
                 break :osc_string null;
             },
-            .dcs_passthrough => Action{
-                .dcs_hook = .{
-                    .intermediates = self.intermediates[0..self.intermediates_idx],
-                    .params = self.params[0..self.params_idx],
-                    .final = c,
-                },
+            .dcs_passthrough => dcs_hook: {
+                // Finalize parameters
+                if (self.param_acc_idx > 0) {
+                    self.params[self.params_idx] = self.param_acc;
+                    self.params_idx += 1;
+                }
+                break :dcs_hook .{
+                    .dcs_hook = .{
+                        .intermediates = self.intermediates[0..self.intermediates_idx],
+                        .params = self.params[0..self.params_idx],
+                        .final = c,
+                    },
+                };
             },
             .sos_pm_apc_string => Action{ .apc_start = {} },
             else => null,
@@ -790,5 +797,28 @@ test "csi: too many params" {
         try testing.expect(a[0] == null);
         try testing.expect(a[1] == null);
         try testing.expect(a[2] == null);
+    }
+}
+
+test "dcs" {
+    var p = init();
+    _ = p.next(0x1B);
+    for ("P1000") |c| {
+        const a = p.next(c);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+
+    {
+        const a = p.next('p');
+        try testing.expect(p.state == .dcs_passthrough);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2].? == .dcs_hook);
+
+        const hook = a[2].?.dcs_hook;
+        try testing.expectEqualSlices(u16, &[_]u16{1000}, hook.params);
+        try testing.expectEqual('p', hook.final);
     }
 }
