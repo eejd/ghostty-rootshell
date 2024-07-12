@@ -137,7 +137,11 @@ pub const Handler = struct {
     }
 
     pub fn unhook(self: *Handler) ?Command {
+        // Note: we do NOT call deinit here on purpose because some commands
+        // transfer memory ownership. If state needs cleanup, the switch
+        // prong below should handle it.
         defer self.state = .{ .inactive = {} };
+
         return switch (self.state) {
             .inactive,
             .ignore,
@@ -168,18 +172,7 @@ pub const Handler = struct {
     }
 
     fn discard(self: *Handler) void {
-        switch (self.state) {
-            .inactive,
-            .ignore,
-            => {},
-
-            .xtgettcap => |*list| list.deinit(),
-
-            .decrqss => {},
-
-            .tmux => {},
-        }
-
+        self.state.deinit();
         self.state = .{ .inactive = {} };
     }
 };
@@ -259,6 +252,18 @@ const State = union(enum) {
 
     /// Tmux control mode: https://github.com/tmux/tmux/wiki/Control-Mode
     tmux: void,
+
+    pub fn deinit(self: State) void {
+        switch (self) {
+            .inactive,
+            .ignore,
+            => {},
+
+            .xtgettcap => |*v| v.deinit(),
+            .decrqss => {},
+            .tmux => {},
+        }
+    }
 };
 
 test "unknown DCS command" {
