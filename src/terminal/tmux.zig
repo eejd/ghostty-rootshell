@@ -115,12 +115,18 @@ pub const Client = struct {
     fn parseNotification(self: *Client) !?Notification {
         assert(self.state == .notification);
 
-        const line = self.buffer.items;
-        var it = std.mem.tokenizeScalar(u8, line, ' ');
+        const line = line: {
+            var line = self.buffer.items;
+            if (line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+            break :line line;
+        };
+        const cmd = cmd: {
+            const idx = std.mem.indexOfScalar(u8, line, ' ') orelse line.len;
+            break :cmd line[0..idx];
+        };
 
         // The notification MUST exist because we guard entering the notification
         // state on seeing at least a '%'.
-        const cmd = it.next().?;
         if (std.mem.eql(u8, cmd, "%begin")) {
             // We don't use the rest of the tokens for now because tmux
             // claims to guarantee that begin/end are always in order and
@@ -133,6 +139,34 @@ pub const Client = struct {
             self.state = .block;
             self.buffer.clearRetainingCapacity();
             return null;
+        } else if (std.mem.eql(u8, cmd, "%output")) cmd: {
+            var re = try oni.Regex.init(
+                "^%output %([0-9]+) (.+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            );
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+            const data = line[@intCast(starts[2])..@intCast(ends[2])];
+
+            // Important: do not clear buffer here since name points to it
+            self.state = .idle;
+            return .{ .output = .{ .pane_id = id, .data = data } };
         } else if (std.mem.eql(u8, cmd, "%session-changed")) cmd: {
             var re = try oni.Regex.init(
                 "^%session-changed \\$([0-9]+) (.+)$",
@@ -144,7 +178,7 @@ pub const Client = struct {
             defer re.deinit();
 
             var region = re.search(line, .{}) catch |err| {
-                log.warn("failed to match notification cmd={s} err={}", .{ cmd, err });
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
                 break :cmd;
             };
             defer region.deinit();
@@ -161,6 +195,70 @@ pub const Client = struct {
             // Important: do not clear buffer here since name points to it
             self.state = .idle;
             return .{ .session_changed = .{ .id = id, .name = name } };
+        } else if (std.mem.eql(u8, cmd, "%sessions-changed")) cmd: {
+            if (!std.mem.eql(u8, line, "%sessions-changed")) {
+                log.warn("failed to match notification cmd={s} line=\"{s}\"", .{ cmd, line });
+                break :cmd;
+            }
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .sessions_changed = {} };
+        } else if (std.mem.eql(u8, cmd, "%window-add")) cmd: {
+            var re = try oni.Regex.init(
+                "^%window-add @([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            );
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .window_add = .{ .id = id } };
+        } else if (std.mem.eql(u8, cmd, "%window-renamed")) cmd: {
+            var re = try oni.Regex.init(
+                "^%window-renamed @([0-9]+) (.+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            );
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+            const name = line[@intCast(starts[2])..@intCast(ends[2])];
+
+            // Important: do not clear buffer here since name points to it
+            self.state = .idle;
+            return .{ .window_renamed = .{ .id = id, .name = name } };
         } else {
             // Unknown notification, log it and return to idle state.
             log.warn("unknown tmux control mode notification={s}", .{cmd});
@@ -186,7 +284,23 @@ pub const Notification = union(enum) {
     enter: void,
     exit: void,
 
+    output: struct {
+        pane_id: usize,
+        data: []const u8, // unescaped
+    },
+
     session_changed: struct {
+        id: usize,
+        name: []const u8,
+    },
+
+    sessions_changed: void,
+
+    window_add: struct {
+        id: usize,
+    },
+
+    window_renamed: struct {
         id: usize,
         name: []const u8,
     },
@@ -212,6 +326,19 @@ test "tmux begin/error empty" {
     for ("%error 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
 }
 
+test "tmux output" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%output %42 foo bar baz") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .output);
+    try testing.expectEqual(42, n.output.pane_id);
+    try testing.expectEqualStrings("foo bar baz", n.output.data);
+}
+
 test "tmux session-changed" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -223,4 +350,51 @@ test "tmux session-changed" {
     try testing.expect(n == .session_changed);
     try testing.expectEqual(42, n.session_changed.id);
     try testing.expectEqualStrings("foo", n.session_changed.name);
+}
+
+test "tmux sessions-changed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%sessions-changed") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .sessions_changed);
+}
+
+test "tmux sessions-changed carriage return" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%sessions-changed\r") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .sessions_changed);
+}
+
+test "tmux window-add" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%window-add @14") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .window_add);
+    try testing.expectEqual(14, n.window_add.id);
+}
+
+test "tmux window-renamed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Client = .{ .buffer = std.ArrayList(u8).init(alloc) };
+    defer c.deinit();
+    for ("%window-renamed @42 bar") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .window_renamed);
+    try testing.expectEqual(42, n.window_renamed.id);
+    try testing.expectEqualStrings("bar", n.window_renamed.name);
 }
