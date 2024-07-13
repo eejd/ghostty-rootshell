@@ -33,7 +33,7 @@ pub const Message = union(enum) {
     /// is allocated via the allocator and is expected to be freed when done.
     change_config: struct {
         alloc: Allocator,
-        ptr: *termio.Impl.DerivedConfig,
+        ptr: *termio.Termio.DerivedConfig,
     },
 
     /// Activate or deactivate the inspector.

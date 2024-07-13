@@ -101,7 +101,7 @@ color_scheme: apprt.ColorScheme = .light,
 last_binding_trigger: u64 = 0,
 
 /// The terminal IO handler.
-io: termio.Impl,
+io: termio.Termio,
 io_thread: termio.Thread,
 io_thr: std.Thread,
 
@@ -397,12 +397,12 @@ pub fn init(
     errdefer render_thread.deinit();
 
     // Start our IO implementation
-    var io = try termio.Impl.init(alloc, .{
+    var io = try termio.Termio.init(alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
         .padding = padding,
         .full_config = config,
-        .config = try termio.Impl.DerivedConfig.init(alloc, config),
+        .config = try termio.Termio.DerivedConfig.init(alloc, config),
         .resources_dir = main.state.resources_dir,
         .renderer_state = &self.renderer_state,
         .renderer_wakeup = render_thread.wakeup,
@@ -809,9 +809,9 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     // our messages aren't huge.
     var renderer_message = try renderer.Message.initChangeConfig(self.alloc, config);
     errdefer renderer_message.deinit();
-    var termio_config_ptr = try self.alloc.create(termio.Impl.DerivedConfig);
+    var termio_config_ptr = try self.alloc.create(termio.Termio.DerivedConfig);
     errdefer self.alloc.destroy(termio_config_ptr);
-    termio_config_ptr.* = try termio.Impl.DerivedConfig.init(self.alloc, config);
+    termio_config_ptr.* = try termio.Termio.DerivedConfig.init(self.alloc, config);
     errdefer termio_config_ptr.deinit();
 
     _ = self.renderer_thread.mailbox.push(renderer_message, .{ .forever = {} });

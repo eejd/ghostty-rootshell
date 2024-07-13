@@ -23,7 +23,7 @@ padding: renderer.Padding,
 full_config: *const Config,
 
 /// The derived configuration for this termio implementation.
-config: termio.Impl.DerivedConfig,
+config: termio.Termio.DerivedConfig,
 
 /// The application resources directory.
 resources_dir: ?[]const u8,

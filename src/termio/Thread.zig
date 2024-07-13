@@ -58,8 +58,8 @@ sync_reset: xev.Timer,
 sync_reset_c: xev.Completion = .{},
 sync_reset_cancel_c: xev.Completion = .{},
 
-/// The underlying IO implementation.
-impl: *termio.Impl,
+/// The main termio state.
+termio: *termio.Termio,
 
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
@@ -83,7 +83,7 @@ flags: packed struct {
 /// is up to the caller to start the thread with the threadMain entrypoint.
 pub fn init(
     alloc: Allocator,
-    impl: *termio.Impl,
+    t: *termio.Termio,
 ) !Thread {
     // Create our event loop.
     var loop = try xev.Loop.init(.{});
@@ -116,7 +116,7 @@ pub fn init(
         .stop = stop_h,
         .coalesce = coalesce_h,
         .sync_reset = sync_reset_h,
-        .impl = impl,
+        .termio = t,
         .mailbox = mailbox,
     };
 }
@@ -150,9 +150,9 @@ pub fn threadMain(self: *Thread) void {
         // the error to the surface thread and let the apprt deal with it
         // in some way but this works for now. Without this, the user would
         // just see a blank terminal window.
-        self.impl.renderer_state.mutex.lock();
-        defer self.impl.renderer_state.mutex.unlock();
-        const t = self.impl.renderer_state.terminal;
+        self.termio.renderer_state.mutex.lock();
+        defer self.termio.renderer_state.mutex.unlock();
+        const t = self.termio.renderer_state.terminal;
 
         // Hide the cursor
         t.modes.set(.cursor_visible, false);
@@ -226,9 +226,9 @@ fn threadMain_(self: *Thread) !void {
 
     // Run our thread start/end callbacks. This allows the implementation
     // to hook into the event loop as needed.
-    var data = try self.impl.threadEnter(self);
+    var data = try self.termio.threadEnter(self);
     defer data.deinit();
-    defer self.impl.threadExit(data);
+    defer self.termio.threadExit(data);
 
     // Run
     log.debug("starting IO thread", .{});
@@ -256,21 +256,21 @@ fn drainMailbox(self: *Thread) !void {
         switch (message) {
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);
-                try self.impl.changeConfig(config.ptr);
+                try self.termio.changeConfig(config.ptr);
             },
             .inspector => |v| self.flags.has_inspector = v,
             .resize => |v| self.handleResize(v),
-            .clear_screen => |v| try self.impl.clearScreen(v.history),
-            .scroll_viewport => |v| try self.impl.scrollViewport(v),
-            .jump_to_prompt => |v| try self.impl.jumpToPrompt(v),
+            .clear_screen => |v| try self.termio.clearScreen(v.history),
+            .scroll_viewport => |v| try self.termio.scrollViewport(v),
+            .jump_to_prompt => |v| try self.termio.jumpToPrompt(v),
             .start_synchronized_output => self.startSynchronizedOutput(),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
-            .child_exited_abnormally => |v| try self.impl.childExitedAbnormally(v.exit_code, v.runtime_ms),
-            .write_small => |v| try self.impl.queueWrite(v.data[0..v.len], self.flags.linefeed_mode),
-            .write_stable => |v| try self.impl.queueWrite(v, self.flags.linefeed_mode),
+            .child_exited_abnormally => |v| try self.termio.childExitedAbnormally(v.exit_code, v.runtime_ms),
+            .write_small => |v| try self.termio.queueWrite(v.data[0..v.len], self.flags.linefeed_mode),
+            .write_stable => |v| try self.termio.queueWrite(v, self.flags.linefeed_mode),
             .write_alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.impl.queueWrite(v.data, self.flags.linefeed_mode);
+                try self.termio.queueWrite(v.data, self.flags.linefeed_mode);
             },
         }
     }
@@ -278,7 +278,7 @@ fn drainMailbox(self: *Thread) !void {
     // Trigger a redraw after we've drained so we don't waste cyces
     // messaging a redraw.
     if (redraw) {
-        try self.impl.renderer_wakeup.notify();
+        try self.termio.renderer_wakeup.notify();
     }
 }
 
@@ -328,7 +328,7 @@ fn syncResetCallback(
     };
 
     const self = self_ orelse return .disarm;
-    self.impl.resetSynchronizedOutput();
+    self.termio.resetSynchronizedOutput();
     return .disarm;
 }
 
@@ -350,7 +350,7 @@ fn coalesceCallback(
 
     if (self.coalesce_data.resize) |v| {
         self.coalesce_data.resize = null;
-        self.impl.resize(v.grid_size, v.screen_size, v.padding) catch |err| {
+        self.termio.resize(v.grid_size, v.screen_size, v.padding) catch |err| {
             log.warn("error during resize err={}", .{err});
         };
     }
