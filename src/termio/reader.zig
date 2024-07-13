@@ -57,6 +57,9 @@ pub const ThreadData = union(Kind) {
         /// The data stream is the main IO for the pty.
         write_stream: xev.Stream,
 
+        /// The process watcher
+        process: xev.Process,
+
         /// This is the pool of available (unused) write requests. If you grab
         /// one from the pool, you must put it back when you're done!
         write_req_pool: SegmentedPool(xev.Stream.WriteRequest, WRITE_REQ_PREALLOC) = .{},
@@ -66,6 +69,10 @@ pub const ThreadData = union(Kind) {
 
         /// The write queue for the data stream.
         write_queue: xev.Stream.WriteQueue = .{},
+
+        /// This is used for both waiting for the process to exit and then
+        /// subsequently to wait for the data_stream to close.
+        process_wait_c: xev.Completion = .{},
     };
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
@@ -77,6 +84,9 @@ pub const ThreadData = union(Kind) {
                 // drop this.
                 exec.write_req_pool.deinit(alloc);
                 exec.write_buf_pool.deinit(alloc);
+
+                // Stop our process watcher
+                exec.process.deinit();
 
                 // Stop our write stream
                 exec.write_stream.deinit();

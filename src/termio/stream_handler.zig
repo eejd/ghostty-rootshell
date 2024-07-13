@@ -104,7 +104,7 @@ pub const StreamHandler = struct {
     /// This queues a render operation with the renderer thread. The render
     /// isn't guaranteed to happen immediately but it will happen as soon as
     /// practical.
-    inline fn queueRender(self: *StreamHandler) !void {
+    pub inline fn queueRender(self: *StreamHandler) !void {
         try self.renderer_wakeup.notify();
     }
 
