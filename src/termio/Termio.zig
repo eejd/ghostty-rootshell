@@ -70,9 +70,6 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
-/// The data associated with the currently running thread.
-data: ?*EventData,
-
 /// The configuration for this IO that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
@@ -194,7 +191,6 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Termio {
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
-        .data = null,
     };
 }
 
@@ -205,7 +201,6 @@ pub fn deinit(self: *Termio) void {
 }
 
 pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !void {
-    assert(self.data == null);
     const alloc = self.alloc;
 
     // Start our subprocess
@@ -284,10 +279,6 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
     };
     errdefer ev_data_ptr.deinit(self.alloc);
 
-    // Store our data so our callbacks can access it
-    self.data = ev_data_ptr;
-    errdefer self.data = null;
-
     // Start our process watcher
     process.wait(
         ev_data_ptr.loop,
@@ -341,9 +332,6 @@ fn execFailedInChild(self: *Termio) !void {
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
-    // Clear out our data since we're not active anymore.
-    self.data = null;
-
     // Stop our reader
     switch (data.reader) {
         .manual => {},
