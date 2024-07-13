@@ -1,10 +1,18 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const posix = std.posix;
 const xev = @import("xev");
+const build_config = @import("../build_config.zig");
 const configpkg = @import("../config.zig");
+const internal_os = @import("../os/main.zig");
+const renderer = @import("../renderer.zig");
+const shell_integration = @import("shell_integration.zig");
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
+const Pty = @import("../pty.zig").Pty;
 
 // The preallocation size for the write request pool. This should be big
 // enough to satisfy most write requests. It must be a power of 2.
@@ -22,7 +30,7 @@ pub const Config = union(enum) {
     manual: void,
 
     /// Exec uses posix exec to run a command with a pty.
-    exec: Exec,
+    exec: Config.Exec,
 
     pub const Exec = struct {
         command: ?[]const u8 = null,
@@ -36,7 +44,7 @@ pub const Config = union(enum) {
 /// Termio thread data. See termio.ThreadData for docs.
 pub const ThreadData = union(Kind) {
     manual: void,
-    exec: Exec,
+    exec: ThreadData.Exec,
 
     pub const Exec = struct {
         /// Process start time and boolean of whether its already exited.
