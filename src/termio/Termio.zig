@@ -378,13 +378,7 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // renderer mutex so this is safe to do despite being executed
     // from another thread.
     td.ev.terminal_stream.handler.changeConfig(&self.config);
-    switch (td.reader) {
-        .manual => {},
-        .exec => |*exec| {
-            exec.abnormal_runtime_threshold_ms = config.abnormal_runtime_threshold_ms;
-            exec.wait_after_command = config.wait_after_command;
-        },
-    }
+    td.reader.changeConfig(&self.config);
 
     // Update the configuration that we know about.
     //

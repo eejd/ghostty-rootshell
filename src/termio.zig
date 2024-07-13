@@ -7,6 +7,7 @@ pub const reader = @import("termio/reader.zig");
 pub const Options = @import("termio/Options.zig");
 pub const Termio = @import("termio/Termio.zig");
 pub const Thread = @import("termio/Thread.zig");
+pub const DerivedConfig = Termio.DerivedConfig;
 pub const Mailbox = Thread.Mailbox;
 
 test {

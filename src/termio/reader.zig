@@ -1,5 +1,6 @@
 const std = @import("std");
 const configpkg = @import("../config.zig");
+const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 
 /// The kinds of readers.
@@ -45,4 +46,14 @@ pub const ThreadData = union(Kind) {
         /// to close the surface.
         wait_after_command: bool,
     },
+
+    pub fn changeConfig(self: *ThreadData, config: *termio.DerivedConfig) void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| {
+                exec.abnormal_runtime_threshold_ms = config.abnormal_runtime_threshold_ms;
+                exec.wait_after_command = config.wait_after_command;
+            },
+        }
+    }
 };
