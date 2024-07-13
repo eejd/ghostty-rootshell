@@ -219,16 +219,21 @@ pub fn threadMain(self: *Thread) void {
 fn threadMain_(self: *Thread) !void {
     defer log.debug("IO thread exited", .{});
 
-    // Start the async handlers. We start these first so that they're
-    // registered even if anything below fails so we can drain the mailbox.
-    self.wakeup.wait(&self.loop, &self.wakeup_c, Thread, self, wakeupCallback);
-    self.stop.wait(&self.loop, &self.stop_c, Thread, self, stopCallback);
+    // This is the data sent to xev callbacks. We want a pointer to both
+    // ourselves and the thread data so we can thread that through (pun intended).
+    var cb: CallbackData = .{ .self = self };
 
     // Run our thread start/end callbacks. This allows the implementation
-    // to hook into the event loop as needed.
-    var data = try self.termio.threadEnter(self);
-    defer data.deinit();
-    defer self.termio.threadExit(data);
+    // to hook into the event loop as needed. The thread data is created
+    // on the stack here so that it has a stable pointer throughout the
+    // lifetime of the thread.
+    try self.termio.threadEnter(self, &cb.data);
+    defer cb.data.deinit();
+    defer self.termio.threadExit(&cb.data);
+
+    // Start the async handlers.
+    self.wakeup.wait(&self.loop, &self.wakeup_c, CallbackData, &cb, wakeupCallback);
+    self.stop.wait(&self.loop, &self.stop_c, CallbackData, &cb, stopCallback);
 
     // Run
     log.debug("starting IO thread", .{});
@@ -236,8 +241,14 @@ fn threadMain_(self: *Thread) !void {
     try self.loop.run(.until_done);
 }
 
+/// This is the data passed to xev callbacks on the thread.
+const CallbackData = struct {
+    self: *Thread,
+    data: termio.Termio.ThreadData = undefined,
+};
+
 /// Drain the mailbox, handling all the messages in our terminal implementation.
-fn drainMailbox(self: *Thread) !void {
+fn drainMailbox(self: *Thread, data: *termio.Termio.ThreadData) !void {
     // If we're draining, we just drain the mailbox and return.
     if (self.flags.drain) {
         while (self.mailbox.pop()) |_| {}
@@ -256,21 +267,33 @@ fn drainMailbox(self: *Thread) !void {
         switch (message) {
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);
-                try self.termio.changeConfig(config.ptr);
+                try self.termio.changeConfig(data, config.ptr);
             },
             .inspector => |v| self.flags.has_inspector = v,
             .resize => |v| self.handleResize(v),
-            .clear_screen => |v| try self.termio.clearScreen(v.history),
+            .clear_screen => |v| try self.termio.clearScreen(data, v.history),
             .scroll_viewport => |v| try self.termio.scrollViewport(v),
             .jump_to_prompt => |v| try self.termio.jumpToPrompt(v),
             .start_synchronized_output => self.startSynchronizedOutput(),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .child_exited_abnormally => |v| try self.termio.childExitedAbnormally(v.exit_code, v.runtime_ms),
-            .write_small => |v| try self.termio.queueWrite(v.data[0..v.len], self.flags.linefeed_mode),
-            .write_stable => |v| try self.termio.queueWrite(v, self.flags.linefeed_mode),
+            .write_small => |v| try self.termio.queueWrite(
+                data,
+                v.data[0..v.len],
+                self.flags.linefeed_mode,
+            ),
+            .write_stable => |v| try self.termio.queueWrite(
+                data,
+                v,
+                self.flags.linefeed_mode,
+            ),
             .write_alloc => |v| {
                 defer v.alloc.free(v.data);
-                try self.termio.queueWrite(v.data, self.flags.linefeed_mode);
+                try self.termio.queueWrite(
+                    data,
+                    v.data,
+                    self.flags.linefeed_mode,
+                );
             },
         }
     }
@@ -359,7 +382,7 @@ fn coalesceCallback(
 }
 
 fn wakeupCallback(
-    self_: ?*Thread,
+    cb_: ?*CallbackData,
     _: *xev.Loop,
     _: *xev.Completion,
     r: xev.Async.WaitError!void,
@@ -369,23 +392,23 @@ fn wakeupCallback(
         return .rearm;
     };
 
-    const t = self_.?;
+    const cb = cb_ orelse return .rearm;
 
     // When we wake up, we check the mailbox. Mailbox producers should
     // wake up our thread after publishing.
-    t.drainMailbox() catch |err|
+    cb.self.drainMailbox(&cb.data) catch |err|
         log.err("error draining mailbox err={}", .{err});
 
     return .rearm;
 }
 
 fn stopCallback(
-    self_: ?*Thread,
+    cb_: ?*CallbackData,
     _: *xev.Loop,
     _: *xev.Completion,
     r: xev.Async.WaitError!void,
 ) xev.CallbackAction {
     _ = r catch unreachable;
-    self_.?.loop.stop();
+    cb_.?.self.loop.stop();
     return .disarm;
 }
