@@ -1237,7 +1237,7 @@ pub const ReadThread = struct {
         }
     }
 
-    fn threadMainWindows(fd: posix.fd_t, ev: *termio.Termio.ReadData, quit: posix.fd_t) void {
+    fn threadMainWindows(fd: posix.fd_t, io: *termio.Termio, quit: posix.fd_t) void {
         // Always close our end of the pipe when we exit.
         defer posix.close(quit);
 
@@ -1258,7 +1258,7 @@ pub const ReadThread = struct {
                     }
                 }
 
-                @call(.always_inline, termio.Termio.processOutputReadData, .{ ev, buf[0..n] });
+                @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
             }
 
             var quit_bytes: windows.DWORD = 0;
