@@ -100,7 +100,7 @@ pub const Writer = union(enum) {
     /// on the writer type.
     pub fn notify(self: *Writer) void {
         switch (self.*) {
-            .mailbox => |v| v.wakeup.notify() catch |err| {
+            .mailbox => |*v| v.wakeup.notify() catch |err| {
                 log.warn("failed to notify writer, data will be dropped err={}", .{err});
             },
         }
