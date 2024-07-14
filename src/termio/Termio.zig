@@ -231,7 +231,6 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .renderer_state = self.renderer_state,
         .renderer_wakeup = self.renderer_wakeup,
         .renderer_mailbox = self.renderer_mailbox,
-        .loop = &thread.loop,
         .terminal_stream = .{
             .handler = handler,
             .parser = .{
@@ -482,12 +481,19 @@ fn processOutputLocked(rd: *ReadData, buf: []const u8) void {
     // non-blink state so it is rendered if visible. If we're under
     // HEAVY read load, we don't want to send a ton of these so we
     // use a timer under the covers
-    const now = rd.loop.now();
-    if (now - rd.last_cursor_reset > 500) {
+    if (std.time.Instant.now()) |now| cursor_reset: {
+        if (rd.last_cursor_reset) |last| {
+            if (now.since(last) <= (500 / std.time.ns_per_ms)) {
+                break :cursor_reset;
+            }
+        }
+
         rd.last_cursor_reset = now;
         _ = rd.renderer_mailbox.push(.{
             .reset_cursor_blink = {},
-        }, .{ .forever = {} });
+        }, .{ .instant = {} });
+    } else |err| {
+        log.warn("failed to get current time err={}", .{err});
     }
 
     // If we have an inspector, we enter SLOW MODE because we need to
@@ -569,12 +575,9 @@ pub const ReadData = struct {
     /// The mailbox for notifying the renderer of things.
     renderer_mailbox: *renderer.Thread.Mailbox,
 
-    /// The event loop,
-    loop: *xev.Loop,
-
     /// Last time the cursor was reset. This is used to prevent message
     /// flooding with cursor resets.
-    last_cursor_reset: i64 = 0,
+    last_cursor_reset: ?std.time.Instant = null,
 
     pub fn deinit(self: *ReadData) void {
         // Clear any StreamHandler state
