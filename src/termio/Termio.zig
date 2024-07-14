@@ -71,6 +71,10 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
+/// The pointer to the read data. This is only valid while the termio thread
+/// is alive. This is protected by the renderer state lock.
+read_data: ?*ReadData = null,
+
 /// The configuration for this IO that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
@@ -709,28 +713,40 @@ fn queueWriteExec(
     }
 }
 
-fn readInternal(
-    ev: *ReadData,
-    buf: []const u8,
-) void {
-    // log.info("DATA: {d}", .{n});
-    // log.info("DATA: {any}", .{buf[0..@intCast(usize, n)]});
+/// Process output from the pty. This is the manual API that users can
+/// call with pty data but it is also called by the read thread when using
+/// an exec subprocess.
+pub fn processOutput(self: *Termio, buf: []const u8) !void {
+    // We are modifying terminal state from here on out and we need
+    // the lock to grab our read data.
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
 
-    // We are modifying terminal state from here on out
-    ev.renderer_state.mutex.lock();
-    defer ev.renderer_state.mutex.unlock();
+    // If we don't have read data, we can't process it.
+    const rd = self.read_data orelse return error.ReadDataNull;
+    processOutputLocked(rd, buf);
+}
 
+/// Process output when you ahve the read data pointer.
+pub fn processOutputReadData(rd: *ReadData, buf: []const u8) void {
+    rd.renderer_state.mutex.lock();
+    defer rd.renderer_state.mutex.unlock();
+    processOutputLocked(rd, buf);
+}
+
+/// Process output from readdata but the lock is already held.
+fn processOutputLocked(rd: *ReadData, buf: []const u8) void {
     // Schedule a render. We can call this first because we have the lock.
-    ev.terminal_stream.handler.queueRender() catch unreachable;
+    rd.terminal_stream.handler.queueRender() catch unreachable;
 
     // Whenever a character is typed, we ensure the cursor is in the
     // non-blink state so it is rendered if visible. If we're under
     // HEAVY read load, we don't want to send a ton of these so we
     // use a timer under the covers
-    const now = ev.loop.now();
-    if (now - ev.last_cursor_reset > 500) {
-        ev.last_cursor_reset = now;
-        _ = ev.renderer_mailbox.push(.{
+    const now = rd.loop.now();
+    if (now - rd.last_cursor_reset > 500) {
+        rd.last_cursor_reset = now;
+        _ = rd.renderer_mailbox.push(.{
             .reset_cursor_blink = {},
         }, .{ .forever = {} });
     }
@@ -739,26 +755,26 @@ fn readInternal(
     // process a byte at a time alternating between the inspector handler
     // and the termio handler. This is very slow compared to our optimizations
     // below but at least users only pay for it if they're using the inspector.
-    if (ev.renderer_state.inspector) |insp| {
+    if (rd.renderer_state.inspector) |insp| {
         for (buf, 0..) |byte, i| {
             insp.recordPtyRead(buf[i .. i + 1]) catch |err| {
                 log.err("error recording pty read in inspector err={}", .{err});
             };
 
-            ev.terminal_stream.next(byte) catch |err|
+            rd.terminal_stream.next(byte) catch |err|
                 log.err("error processing terminal data: {}", .{err});
         }
     } else {
-        ev.terminal_stream.nextSlice(buf) catch |err|
+        rd.terminal_stream.nextSlice(buf) catch |err|
             log.err("error processing terminal data: {}", .{err});
     }
 
     // If our stream handling caused messages to be sent to the writer
     // thread, then we need to wake it up so that it processes them.
-    if (ev.terminal_stream.handler.writer_messaged) {
-        ev.terminal_stream.handler.writer_messaged = false;
+    if (rd.terminal_stream.handler.writer_messaged) {
+        rd.terminal_stream.handler.writer_messaged = false;
         // TODO
-        // ev.writer_wakeup.notify() catch |err| {
+        // rd.writer_wakeup.notify() catch |err| {
         //     log.warn("failed to wake up writer thread err={}", .{err});
         // };
     }
@@ -804,7 +820,7 @@ pub const ThreadData = struct {
     }
 };
 
-/// Thread local data for the reader thread.
+/// The data required for the read thread.
 pub const ReadData = struct {
     /// The stream parser. This parses the stream of escape codes and so on
     /// from the child process and calls callbacks in the stream handler.
@@ -1022,7 +1038,7 @@ const ReadThread = struct {
                 if (n == 0) break;
 
                 // log.info("DATA: {d}", .{n});
-                @call(.always_inline, readInternal, .{ ev, buf[0..n] });
+                @call(.always_inline, processOutputReadData, .{ ev, buf[0..n] });
             }
 
             // Wait for data.
@@ -1060,7 +1076,7 @@ const ReadThread = struct {
                     }
                 }
 
-                @call(.always_inline, readInternal, .{ ev, buf[0..n] });
+                @call(.always_inline, processOutputReadData, .{ ev, buf[0..n] });
             }
 
             var quit_bytes: windows.DWORD = 0;
