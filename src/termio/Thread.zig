@@ -21,11 +21,6 @@ const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.io_thread);
 
-/// The type used for sending messages to the IO thread. For now this is
-/// hardcoded with a capacity. We can make this a comptime parameter in
-/// the future if we want it configurable.
-pub const Mailbox = BlockingQueue(termio.Message, 64);
-
 /// This stores the information that is coalesced.
 const Coalesce = struct {
     /// The number of milliseconds to coalesce certain messages like resize for.
@@ -47,8 +42,8 @@ alloc: std.mem.Allocator,
 /// so that users of the loop always have an allocator.
 loop: xev.Loop,
 
-/// This can be used to wake up the thread.
-wakeup: xev.Async,
+/// The completion to use for the wakeup async handle that is present
+/// on the termio.Writer.
 wakeup_c: xev.Completion = .{},
 
 /// This can be used to stop the thread on the next loop iteration.
@@ -66,10 +61,6 @@ coalesce_data: Coalesce = .{},
 sync_reset: xev.Timer,
 sync_reset_c: xev.Completion = .{},
 sync_reset_cancel_c: xev.Completion = .{},
-
-/// The mailbox that can be used to send this thread messages. Note
-/// this is a blocking queue so if it is full you will get errors (or block).
-mailbox: *Mailbox,
 
 flags: packed struct {
     /// This is set to true only when an abnormal exit is detected. It
@@ -94,10 +85,6 @@ pub fn init(
     var loop = try xev.Loop.init(.{});
     errdefer loop.deinit();
 
-    // This async handle is used to "wake up" the renderer and force a render.
-    var wakeup_h = try xev.Async.init();
-    errdefer wakeup_h.deinit();
-
     // This async handle is used to stop the loop and force the thread to end.
     var stop_h = try xev.Async.init();
     errdefer stop_h.deinit();
@@ -110,18 +97,12 @@ pub fn init(
     var sync_reset_h = try xev.Timer.init();
     errdefer sync_reset_h.deinit();
 
-    // The mailbox for messaging this thread
-    var mailbox = try Mailbox.create(alloc);
-    errdefer mailbox.destroy(alloc);
-
     return Thread{
         .alloc = alloc,
         .loop = loop,
-        .wakeup = wakeup_h,
         .stop = stop_h,
         .coalesce = coalesce_h,
         .sync_reset = sync_reset_h,
-        .mailbox = mailbox,
     };
 }
 
@@ -131,11 +112,7 @@ pub fn deinit(self: *Thread) void {
     self.coalesce.deinit();
     self.sync_reset.deinit();
     self.stop.deinit();
-    self.wakeup.deinit();
     self.loop.deinit();
-
-    // Nothing can possibly access the mailbox anymore, destroy it.
-    self.mailbox.destroy(self.alloc);
 }
 
 /// The main entrypoint for the thread.
@@ -223,6 +200,12 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
 fn threadMain_(self: *Thread, io: *termio.Termio) !void {
     defer log.debug("IO thread exited", .{});
 
+    // Get the writer. This must be a mailbox writer for threading.
+    const writer = switch (io.writer) {
+        .mailbox => |v| v,
+        // else => return error.TermioUnsupportedWriter,
+    };
+
     // This is the data sent to xev callbacks. We want a pointer to both
     // ourselves and the thread data so we can thread that through (pun intended).
     var cb: CallbackData = .{ .self = self, .io = io };
@@ -236,7 +219,7 @@ fn threadMain_(self: *Thread, io: *termio.Termio) !void {
     defer io.threadExit(&cb.data);
 
     // Start the async handlers.
-    self.wakeup.wait(&self.loop, &self.wakeup_c, CallbackData, &cb, wakeupCallback);
+    writer.wakeup.wait(&self.loop, &self.wakeup_c, CallbackData, &cb, wakeupCallback);
     self.stop.wait(&self.loop, &self.stop_c, CallbackData, &cb, stopCallback);
 
     // Run
@@ -257,20 +240,22 @@ fn drainMailbox(
     self: *Thread,
     cb: *CallbackData,
 ) !void {
-    // If we're draining, we just drain the mailbox and return.
-    if (self.flags.drain) {
-        while (self.mailbox.pop()) |_| {}
-        return;
-    }
-
+    // We assert when starting the thread that this is the state
+    const mailbox = cb.io.writer.mailbox.mailbox;
     const io = cb.io;
     const data = &cb.data;
+
+    // If we're draining, we just drain the mailbox and return.
+    if (self.flags.drain) {
+        while (mailbox.pop()) |_| {}
+        return;
+    }
 
     // This holds the mailbox lock for the duration of the drain. The
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.
     var redraw: bool = false;
-    while (self.mailbox.pop()) |message| {
+    while (mailbox.pop()) |message| {
         // If we have a message we always redraw
         redraw = true;
 

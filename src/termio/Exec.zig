@@ -308,13 +308,13 @@ fn processExit(
 
         // Notify our main writer thread which has access to more
         // information so it can show a better error message.
-        _ = td.writer_mailbox.push(.{
+        td.writer.send(.{
             .child_exited_abnormally = .{
                 .exit_code = exit_code,
                 .runtime_ms = runtime,
             },
-        }, .{ .forever = {} });
-        td.writer_wakeup.notify() catch break :runtime;
+        }, null);
+        td.writer.notify();
 
         return .disarm;
     }

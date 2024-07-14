@@ -25,6 +25,10 @@ full_config: *const Config,
 /// The derived configuration for this termio implementation.
 config: termio.Termio.DerivedConfig,
 
+/// The writer for the terminal. This is how messages are delivered.
+/// If you're using termio.Thread this MUST be "mailbox".
+writer: termio.Writer,
+
 /// The application resources directory.
 resources_dir: ?[]const u8,
 

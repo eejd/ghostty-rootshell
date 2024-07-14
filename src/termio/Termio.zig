@@ -60,6 +60,9 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
+/// The writer implementation to use.
+writer: termio.Writer,
+
 /// The pointer to the read data. This is only valid while the termio thread
 /// is alive. This is protected by the renderer state lock.
 read_data: ?*ReadData = null,
@@ -176,6 +179,7 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Termio {
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
+        .writer = opts.writer,
     };
 }
 
@@ -183,6 +187,7 @@ pub fn deinit(self: *Termio) void {
     self.subprocess.deinit();
     self.terminal.deinit(self.alloc);
     self.config.deinit();
+    self.writer.deinit(self.alloc);
 }
 
 pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !void {
@@ -205,8 +210,7 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
 
         break :handler .{
             .alloc = self.alloc,
-            .writer_mailbox = thread.mailbox,
-            .writer_wakeup = thread.wakeup,
+            .writer = &self.writer,
             .surface_mailbox = self.surface_mailbox,
             .renderer_state = self.renderer_state,
             .renderer_wakeup = self.renderer_wakeup,
@@ -250,9 +254,8 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .loop = &thread.loop,
         .renderer_state = self.renderer_state,
         .surface_mailbox = self.surface_mailbox,
-        .writer_mailbox = thread.mailbox,
-        .writer_wakeup = thread.wakeup,
         .read_data = read_data_ptr,
+        .writer = &self.writer,
 
         // Placeholder until setup below
         .reader = .{ .manual = {} },
@@ -274,6 +277,40 @@ pub fn threadExit(self: *Termio, data: *ThreadData) void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     self.read_data = null;
+}
+
+/// Send a message using the writer. Depending on the writer type in
+/// use this may process now or it may just enqueue and process later.
+///
+/// This will also notify the writer thread to process the message. If
+/// you're sending a lot of messages, it may be more efficient to use
+/// the writer directly and then call notify separately.
+pub fn queueMessage(
+    self: *Termio,
+    msg: termio.Message,
+    mutex: enum { locked, unlocked },
+) void {
+    self.writer.send(msg, switch (mutex) {
+        .locked => self.renderer_state.mutex,
+        .unlocked => null,
+    });
+    self.writer.notify();
+}
+
+/// Queue a write directly to the pty.
+///
+/// If you're using termio.Thread, this must ONLY be called from the
+/// writer thread. If you're not on the thread, use queueMessage with
+/// writer messages instead.
+///
+/// If you're not using termio.Thread, this is not threadsafe.
+pub inline fn queueWrite(
+    self: *Termio,
+    td: *ThreadData,
+    data: []const u8,
+    linefeed: bool,
+) !void {
+    try self.subprocess.queueWrite(self.alloc, td, data, linefeed);
 }
 
 /// Update the configuration.
@@ -442,15 +479,6 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
     try self.subprocess.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
 }
 
-pub inline fn queueWrite(
-    self: *Termio,
-    td: *ThreadData,
-    data: []const u8,
-    linefeed: bool,
-) !void {
-    try self.subprocess.queueWrite(self.alloc, td, data, linefeed);
-}
-
 /// Process output from the pty. This is the manual API that users can
 /// call with pty data but it is also called by the read thread when using
 /// an exec subprocess.
@@ -544,12 +572,11 @@ pub const ThreadData = struct {
 
     /// Mailboxes for different threads
     surface_mailbox: apprt.surface.Mailbox,
-    writer_mailbox: *termio.Mailbox,
-    writer_wakeup: xev.Async,
 
     /// Data associated with the reader implementation (i.e. pty/exec state)
     reader: termio.reader.ThreadData,
     read_data: *ReadData,
+    writer: *termio.Writer,
 
     pub fn deinit(self: *ThreadData) void {
         self.reader.deinit(self.alloc);
