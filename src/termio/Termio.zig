@@ -491,7 +491,7 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
     // use a timer under the covers
     if (std.time.Instant.now()) |now| cursor_reset: {
         if (self.last_cursor_reset) |last| {
-            if (now.since(last) <= (500 / std.time.ns_per_ms)) {
+            if (now.since(last) <= (500 * std.time.ns_per_ms)) {
                 break :cursor_reset;
             }
         }
