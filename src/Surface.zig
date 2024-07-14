@@ -422,7 +422,7 @@ pub fn init(
     errdefer io.deinit();
 
     // Create the IO thread
-    var io_thread = try termio.Thread.init(alloc, &self.io);
+    var io_thread = try termio.Thread.init(alloc);
     errdefer io_thread.deinit();
 
     self.* = .{
@@ -483,7 +483,7 @@ pub fn init(
     self.io_thr = try std.Thread.spawn(
         .{},
         termio.Thread.threadMain,
-        .{&self.io_thread},
+        .{ &self.io_thread, &self.io },
     );
     self.io_thr.setName("io") catch {};
 
