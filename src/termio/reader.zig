@@ -44,61 +44,12 @@ pub const Config = union(enum) {
 /// Termio thread data. See termio.ThreadData for docs.
 pub const ThreadData = union(Kind) {
     manual: void,
-    exec: ThreadData.Exec,
-
-    pub const Exec = struct {
-        /// Process start time and boolean of whether its already exited.
-        start: std.time.Instant,
-        exited: bool = false,
-
-        /// The number of milliseconds below which we consider a process
-        /// exit to be abnormal. This is used to show an error message
-        /// when the process exits too quickly.
-        abnormal_runtime_threshold_ms: u32,
-
-        /// If true, do not immediately send a child exited message to the
-        /// surface to close the surface when the command exits. If this is
-        /// false we'll show a process exited message and wait for user input
-        /// to close the surface.
-        wait_after_command: bool,
-
-        /// The data stream is the main IO for the pty.
-        write_stream: xev.Stream,
-
-        /// The process watcher
-        process: xev.Process,
-
-        /// This is the pool of available (unused) write requests. If you grab
-        /// one from the pool, you must put it back when you're done!
-        write_req_pool: SegmentedPool(xev.Stream.WriteRequest, WRITE_REQ_PREALLOC) = .{},
-
-        /// The pool of available buffers for writing to the pty.
-        write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
-
-        /// The write queue for the data stream.
-        write_queue: xev.Stream.WriteQueue = .{},
-
-        /// This is used for both waiting for the process to exit and then
-        /// subsequently to wait for the data_stream to close.
-        process_wait_c: xev.Completion = .{},
-    };
+    exec: termio.Exec.ThreadData,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         switch (self.*) {
             .manual => {},
-            .exec => |*exec| {
-                // Clear our write pools. We know we aren't ever going to do
-                // any more IO since we stop our data stream below so we can just
-                // drop this.
-                exec.write_req_pool.deinit(alloc);
-                exec.write_buf_pool.deinit(alloc);
-
-                // Stop our process watcher
-                exec.process.deinit();
-
-                // Stop our write stream
-                exec.write_stream.deinit();
-            },
+            .exec => |*exec| exec.deinit(alloc),
         }
     }
 
