@@ -67,6 +67,14 @@ writer: termio.Writer,
 /// is alive. This is protected by the renderer state lock.
 read_data: ?*ReadData = null,
 
+/// The stream parser. This parses the stream of escape codes and so on
+/// from the child process and calls callbacks in the stream handler.
+terminal_stream: terminal.Stream(StreamHandler),
+
+/// Last time the cursor was reset. This is used to prevent message
+/// flooding with cursor resets.
+last_cursor_reset: ?std.time.Instant = null,
+
 /// The configuration for this IO that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
@@ -125,7 +133,7 @@ pub const DerivedConfig = struct {
 ///
 /// This will also start the child process if the termio is configured
 /// to run a child process.
-pub fn init(alloc: Allocator, opts: termio.Options) !Termio {
+pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Create our terminal
     var term = try terminal.Terminal.init(alloc, .{
         .cols = opts.grid_size.columns,
@@ -169,7 +177,37 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Termio {
     var subprocess = try termio.Exec.init(alloc, opts, &term);
     errdefer subprocess.deinit();
 
-    return .{
+    // Create our stream handler. This points to memory in self so it
+    // isn't safe to use until self.* is set.
+    const handler: StreamHandler = handler: {
+        const default_cursor_color = if (opts.config.cursor_color) |col|
+            col.toTerminalRGB()
+        else
+            null;
+
+        break :handler .{
+            .alloc = alloc,
+            .writer = &self.writer,
+            .surface_mailbox = opts.surface_mailbox,
+            .renderer_state = opts.renderer_state,
+            .renderer_wakeup = opts.renderer_wakeup,
+            .renderer_mailbox = opts.renderer_mailbox,
+            .grid_size = &self.grid_size,
+            .terminal = &self.terminal,
+            .osc_color_report_format = opts.config.osc_color_report_format,
+            .enquiry_response = opts.config.enquiry_response,
+            .default_foreground_color = opts.config.foreground.toTerminalRGB(),
+            .default_background_color = opts.config.background.toTerminalRGB(),
+            .default_cursor_style = opts.config.cursor_style,
+            .default_cursor_blink = opts.config.cursor_blink,
+            .default_cursor_color = default_cursor_color,
+            .cursor_color = default_cursor_color,
+            .foreground_color = opts.config.foreground.toTerminalRGB(),
+            .background_color = opts.config.background.toTerminalRGB(),
+        };
+    };
+
+    self.* = .{
         .alloc = alloc,
         .terminal = term,
         .subprocess = subprocess,
@@ -180,6 +218,16 @@ pub fn init(alloc: Allocator, opts: termio.Options) !Termio {
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
         .writer = opts.writer,
+        .terminal_stream = .{
+            .handler = handler,
+            .parser = .{
+                .osc_parser = .{
+                    // Populate the OSC parser allocator (optional) because
+                    // we want to support large OSC payloads such as OSC 52.
+                    .alloc = alloc,
+                },
+            },
+        },
     };
 }
 
@@ -188,65 +236,18 @@ pub fn deinit(self: *Termio) void {
     self.terminal.deinit(self.alloc);
     self.config.deinit();
     self.writer.deinit(self.alloc);
+
+    // Clear any StreamHandler state
+    self.terminal_stream.handler.deinit();
+    self.terminal_stream.deinit();
 }
 
 pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !void {
     const alloc = self.alloc;
 
-    // Setup our data that is used for callbacks
-    var read_data_ptr = try alloc.create(ReadData);
-    errdefer alloc.destroy(read_data_ptr);
-
     // Wakeup watcher for the writer thread.
     var wakeup = try xev.Async.init();
     errdefer wakeup.deinit();
-
-    // Create our stream handler
-    const handler: StreamHandler = handler: {
-        const default_cursor_color = if (self.config.cursor_color) |col|
-            col.toTerminalRGB()
-        else
-            null;
-
-        break :handler .{
-            .alloc = self.alloc,
-            .writer = &self.writer,
-            .surface_mailbox = self.surface_mailbox,
-            .renderer_state = self.renderer_state,
-            .renderer_wakeup = self.renderer_wakeup,
-            .renderer_mailbox = self.renderer_mailbox,
-            .grid_size = &self.grid_size,
-            .terminal = &self.terminal,
-            .osc_color_report_format = self.config.osc_color_report_format,
-            .enquiry_response = self.config.enquiry_response,
-            .default_foreground_color = self.config.foreground.toTerminalRGB(),
-            .default_background_color = self.config.background.toTerminalRGB(),
-            .default_cursor_style = self.config.cursor_style,
-            .default_cursor_blink = self.config.cursor_blink,
-            .default_cursor_color = default_cursor_color,
-            .cursor_color = default_cursor_color,
-            .foreground_color = self.config.foreground.toTerminalRGB(),
-            .background_color = self.config.background.toTerminalRGB(),
-        };
-    };
-
-    // Setup our event data before we start
-    read_data_ptr.* = .{
-        .renderer_state = self.renderer_state,
-        .renderer_wakeup = self.renderer_wakeup,
-        .renderer_mailbox = self.renderer_mailbox,
-        .terminal_stream = .{
-            .handler = handler,
-            .parser = .{
-                .osc_parser = .{
-                    // Populate the OSC parser allocator (optional) because
-                    // we want to support large OSC payloads such as OSC 52.
-                    .alloc = self.alloc,
-                },
-            },
-        },
-    };
-    errdefer read_data_ptr.deinit();
 
     // Setup our thread data
     data.* = .{
@@ -254,7 +255,6 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .loop = &thread.loop,
         .renderer_state = self.renderer_state,
         .surface_mailbox = self.surface_mailbox,
-        .read_data = read_data_ptr,
         .writer = &self.writer,
 
         // Placeholder until setup below
@@ -263,20 +263,10 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
 
     // Setup our reader
     try self.subprocess.threadEnter(alloc, self, data);
-
-    // Store our read data pointer
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-    self.read_data = read_data_ptr;
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
     self.subprocess.threadExit(data);
-
-    // Clear our read data pointer
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-    self.read_data = null;
 }
 
 /// Send a message using the writer. Depending on the writer type in
@@ -329,7 +319,7 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // Update our stream handler. The stream handler uses the same
     // renderer mutex so this is safe to do despite being executed
     // from another thread.
-    td.read_data.terminal_stream.handler.changeConfig(&self.config);
+    self.terminal_stream.handler.changeConfig(&self.config);
     td.reader.changeConfig(&self.config);
 
     // Update the configuration that we know about.
@@ -482,42 +472,32 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
 /// Process output from the pty. This is the manual API that users can
 /// call with pty data but it is also called by the read thread when using
 /// an exec subprocess.
-pub fn processOutput(self: *Termio, buf: []const u8) !void {
+pub fn processOutput(self: *Termio, buf: []const u8) void {
     // We are modifying terminal state from here on out and we need
     // the lock to grab our read data.
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-
-    // If we don't have read data, we can't process it.
-    const rd = self.read_data orelse return error.ReadDataNull;
-    processOutputLocked(rd, buf);
-}
-
-/// Process output when you ahve the read data pointer.
-pub fn processOutputReadData(rd: *ReadData, buf: []const u8) void {
-    rd.renderer_state.mutex.lock();
-    defer rd.renderer_state.mutex.unlock();
-    processOutputLocked(rd, buf);
+    self.processOutputLocked(buf);
 }
 
 /// Process output from readdata but the lock is already held.
-fn processOutputLocked(rd: *ReadData, buf: []const u8) void {
+fn processOutputLocked(self: *Termio, buf: []const u8) void {
     // Schedule a render. We can call this first because we have the lock.
-    rd.terminal_stream.handler.queueRender() catch unreachable;
+    self.terminal_stream.handler.queueRender() catch unreachable;
 
     // Whenever a character is typed, we ensure the cursor is in the
     // non-blink state so it is rendered if visible. If we're under
     // HEAVY read load, we don't want to send a ton of these so we
     // use a timer under the covers
     if (std.time.Instant.now()) |now| cursor_reset: {
-        if (rd.last_cursor_reset) |last| {
+        if (self.last_cursor_reset) |last| {
             if (now.since(last) <= (500 / std.time.ns_per_ms)) {
                 break :cursor_reset;
             }
         }
 
-        rd.last_cursor_reset = now;
-        _ = rd.renderer_mailbox.push(.{
+        self.last_cursor_reset = now;
+        _ = self.renderer_mailbox.push(.{
             .reset_cursor_blink = {},
         }, .{ .instant = {} });
     } else |err| {
@@ -528,28 +508,25 @@ fn processOutputLocked(rd: *ReadData, buf: []const u8) void {
     // process a byte at a time alternating between the inspector handler
     // and the termio handler. This is very slow compared to our optimizations
     // below but at least users only pay for it if they're using the inspector.
-    if (rd.renderer_state.inspector) |insp| {
+    if (self.renderer_state.inspector) |insp| {
         for (buf, 0..) |byte, i| {
             insp.recordPtyRead(buf[i .. i + 1]) catch |err| {
                 log.err("error recording pty read in inspector err={}", .{err});
             };
 
-            rd.terminal_stream.next(byte) catch |err|
+            self.terminal_stream.next(byte) catch |err|
                 log.err("error processing terminal data: {}", .{err});
         }
     } else {
-        rd.terminal_stream.nextSlice(buf) catch |err|
+        self.terminal_stream.nextSlice(buf) catch |err|
             log.err("error processing terminal data: {}", .{err});
     }
 
     // If our stream handling caused messages to be sent to the writer
     // thread, then we need to wake it up so that it processes them.
-    if (rd.terminal_stream.handler.writer_messaged) {
-        rd.terminal_stream.handler.writer_messaged = false;
-        // TODO
-        // rd.writer_wakeup.notify() catch |err| {
-        //     log.warn("failed to wake up writer thread err={}", .{err});
-        // };
+    if (self.terminal_stream.handler.writer_messaged) {
+        self.terminal_stream.handler.writer_messaged = false;
+        self.writer.notify();
     }
 }
 
@@ -575,13 +552,10 @@ pub const ThreadData = struct {
 
     /// Data associated with the reader implementation (i.e. pty/exec state)
     reader: termio.reader.ThreadData,
-    read_data: *ReadData,
     writer: *termio.Writer,
 
     pub fn deinit(self: *ThreadData) void {
         self.reader.deinit(self.alloc);
-        self.read_data.deinit();
-        self.alloc.destroy(self.read_data);
         self.* = undefined;
     }
 };

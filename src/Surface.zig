@@ -396,10 +396,39 @@ pub fn init(
     );
     errdefer render_thread.deinit();
 
+    // Create the IO thread
+    var io_thread = try termio.Thread.init(alloc);
+    errdefer io_thread.deinit();
+
+    self.* = .{
+        .alloc = alloc,
+        .app = app,
+        .rt_app = rt_app,
+        .rt_surface = rt_surface,
+        .font_grid_key = font_grid_key,
+        .font_size = font_size,
+        .renderer = renderer_impl,
+        .renderer_thread = render_thread,
+        .renderer_state = .{
+            .mutex = mutex,
+            .terminal = &self.io.terminal,
+        },
+        .renderer_thr = undefined,
+        .mouse = .{},
+        .io = undefined,
+        .io_thread = io_thread,
+        .io_thr = undefined,
+        .screen_size = .{ .width = 0, .height = 0 },
+        .grid_size = .{},
+        .cell_size = cell_size,
+        .padding = padding,
+        .config = derived_config,
+    };
+
     // Start our IO implementation
     var io_writer = try termio.Writer.initMailbox(alloc);
     errdefer io_writer.deinit(alloc);
-    var io = try termio.Termio.init(alloc, .{
+    try termio.Termio.init(&self.io, alloc, .{
         .grid_size = grid_size,
         .screen_size = screen_size,
         .padding = padding,
@@ -422,36 +451,7 @@ pub fn init(
         else
             Command.linux_cgroup_default,
     });
-    errdefer io.deinit();
-
-    // Create the IO thread
-    var io_thread = try termio.Thread.init(alloc);
-    errdefer io_thread.deinit();
-
-    self.* = .{
-        .alloc = alloc,
-        .app = app,
-        .rt_app = rt_app,
-        .rt_surface = rt_surface,
-        .font_grid_key = font_grid_key,
-        .font_size = font_size,
-        .renderer = renderer_impl,
-        .renderer_thread = render_thread,
-        .renderer_state = .{
-            .mutex = mutex,
-            .terminal = &self.io.terminal,
-        },
-        .renderer_thr = undefined,
-        .mouse = .{},
-        .io = io,
-        .io_thread = io_thread,
-        .io_thr = undefined,
-        .screen_size = .{ .width = 0, .height = 0 },
-        .grid_size = .{},
-        .cell_size = cell_size,
-        .padding = padding,
-        .config = derived_config,
-    };
+    errdefer self.io.deinit();
 
     // Report initial cell size on surface creation
     try rt_surface.setCellSize(cell_size.width, cell_size.height);

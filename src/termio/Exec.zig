@@ -106,7 +106,7 @@ pub fn threadEnter(
     const read_thread = try std.Thread.spawn(
         .{},
         if (builtin.os.tag == .windows) ReadThread.threadMainWindows else ReadThread.threadMainPosix,
-        .{ pty_fds.read, td.read_data, pipe[0] },
+        .{ pty_fds.read, io, pipe[0] },
     );
     read_thread.setName("io-reader") catch {};
 
@@ -1156,7 +1156,7 @@ const Subprocess = struct {
 /// fds and this is still much faster and lower overhead than any async
 /// mechanism.
 pub const ReadThread = struct {
-    fn threadMainPosix(fd: posix.fd_t, ev: *termio.Termio.ReadData, quit: posix.fd_t) void {
+    fn threadMainPosix(fd: posix.fd_t, io: *termio.Termio, quit: posix.fd_t) void {
         // Always close our end of the pipe when we exit.
         defer posix.close(quit);
 
@@ -1220,7 +1220,7 @@ pub const ReadThread = struct {
                 if (n == 0) break;
 
                 // log.info("DATA: {d}", .{n});
-                @call(.always_inline, termio.Termio.processOutputReadData, .{ ev, buf[0..n] });
+                @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
             }
 
             // Wait for data.
