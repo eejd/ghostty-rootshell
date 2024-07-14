@@ -30,17 +30,6 @@ const shell_integration = @import("shell_integration.zig");
 
 const log = std.log.scoped(.io_exec);
 
-const c = @cImport({
-    @cInclude("errno.h");
-    @cInclude("signal.h");
-    @cInclude("unistd.h");
-});
-
-/// True if we should disable the kitty keyboard protocol. We have to
-/// disable this on GLFW because GLFW input events don't support the
-/// correct granularity of events.
-const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
-
 /// Allocator
 alloc: Allocator,
 
@@ -272,30 +261,20 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
 
     // Setup our reader
     try self.subprocess.threadEnter(alloc, self, data);
-}
 
-/// This outputs an error message when exec failed and we are the
-/// child process. This returns so the caller should probably exit
-/// after calling this.
-///
-/// Note that this usually is only called under very very rare
-/// circumstances because we wrap our command execution in login
-/// (macOS) or /bin/sh (Linux). So this output can be pretty crude
-/// because it should never happen. Notably, this is not the error
-/// users see when `command` is invalid.
-fn execFailedInChild(self: *Termio) !void {
-    _ = self;
-    const stderr = std.io.getStdErr().writer();
-    try stderr.writeAll("exec failed\n");
-    try stderr.writeAll("press any key to exit\n");
-
-    var buf: [1]u8 = undefined;
-    var reader = std.io.getStdIn().reader();
-    _ = try reader.read(&buf);
+    // Store our read data pointer
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.read_data = read_data_ptr;
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
     self.subprocess.threadExit(data);
+
+    // Clear our read data pointer
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    self.read_data = null;
 }
 
 /// Update the configuration.
