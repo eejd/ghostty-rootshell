@@ -63,10 +63,6 @@ grid_size: renderer.GridSize,
 /// The writer implementation to use.
 writer: termio.Writer,
 
-/// The pointer to the read data. This is only valid while the termio thread
-/// is alive. This is protected by the renderer state lock.
-read_data: ?*ReadData = null,
-
 /// The stream parser. This parses the stream of escape codes and so on
 /// from the child process and calls callbacks in the stream handler.
 terminal_stream: terminal.Stream(StreamHandler),
@@ -557,32 +553,5 @@ pub const ThreadData = struct {
     pub fn deinit(self: *ThreadData) void {
         self.reader.deinit(self.alloc);
         self.* = undefined;
-    }
-};
-
-/// The data required for the read thread.
-pub const ReadData = struct {
-    /// The stream parser. This parses the stream of escape codes and so on
-    /// from the child process and calls callbacks in the stream handler.
-    terminal_stream: terminal.Stream(StreamHandler),
-
-    /// The shared render state
-    renderer_state: *renderer.State,
-
-    /// A handle to wake up the renderer. This hints to the renderer that that
-    /// a repaint should happen.
-    renderer_wakeup: xev.Async,
-
-    /// The mailbox for notifying the renderer of things.
-    renderer_mailbox: *renderer.Thread.Mailbox,
-
-    /// Last time the cursor was reset. This is used to prevent message
-    /// flooding with cursor resets.
-    last_cursor_reset: ?std.time.Instant = null,
-
-    pub fn deinit(self: *ReadData) void {
-        // Clear any StreamHandler state
-        self.terminal_stream.handler.deinit();
-        self.terminal_stream.deinit();
     }
 };
