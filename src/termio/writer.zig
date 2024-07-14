@@ -66,7 +66,7 @@ pub const Writer = union(enum) {
         mutex: ?*std.Thread.Mutex,
     ) void {
         switch (self.*) {
-            .mailbox => |mb| send: {
+            .mailbox => |*mb| send: {
                 // Try to write to the mailbox with an instant timeout. This is the
                 // fast path because we can queue without a lock.
                 if (mb.mailbox.push(msg, .{ .instant = {} }) > 0) break :send;
