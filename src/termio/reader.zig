@@ -9,6 +9,7 @@ const configpkg = @import("../config.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const shell_integration = @import("shell_integration.zig");
+const terminal = @import("../terminal/main.zig");
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
@@ -42,6 +43,74 @@ pub const Reader = union(Kind) {
         switch (self.*) {
             .manual => {},
             .exec => |*exec| exec.deinit(),
+        }
+    }
+
+    pub fn initTerminal(self: *Reader, t: *terminal.Terminal) void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| exec.initTerminal(t),
+        }
+    }
+
+    pub fn threadEnter(
+        self: *Reader,
+        alloc: Allocator,
+        io: *termio.Termio,
+        td: *termio.Termio.ThreadData,
+    ) !void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| try exec.threadEnter(alloc, io, td),
+        }
+    }
+
+    pub fn threadExit(self: *Reader, td: *termio.Termio.ThreadData) void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| exec.threadExit(td),
+        }
+    }
+
+    pub fn resize(
+        self: *Reader,
+        grid_size: renderer.GridSize,
+        screen_size: renderer.ScreenSize,
+    ) !void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| try exec.resize(grid_size, screen_size),
+        }
+    }
+
+    pub fn queueWrite(
+        self: *Reader,
+        alloc: Allocator,
+        td: *termio.Termio.ThreadData,
+        data: []const u8,
+        linefeed: bool,
+    ) !void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| try exec.queueWrite(alloc, td, data, linefeed),
+        }
+    }
+
+    pub fn childExitedAbnormally(
+        self: *Reader,
+        gpa: Allocator,
+        t: *terminal.Terminal,
+        exit_code: u32,
+        runtime_ms: u64,
+    ) !void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| try exec.childExitedAbnormally(
+                gpa,
+                t,
+                exit_code,
+                runtime_ms,
+            ),
         }
     }
 };

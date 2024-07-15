@@ -25,6 +25,9 @@ full_config: *const Config,
 /// The derived configuration for this termio implementation.
 config: termio.Termio.DerivedConfig,
 
+/// The reader for the terminal.
+reader: termio.Reader,
+
 /// The writer for the terminal. This is how messages are delivered.
 /// If you're using termio.Thread this MUST be "mailbox".
 writer: termio.Writer,

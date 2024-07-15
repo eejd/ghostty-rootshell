@@ -13,6 +13,7 @@ pub const Termio = @import("termio/Termio.zig");
 pub const Thread = @import("termio/Thread.zig");
 pub const DerivedConfig = Termio.DerivedConfig;
 pub const Mailbox = writer.Mailbox;
+pub const Reader = reader.Reader;
 pub const StreamHandler = stream_handler.StreamHandler;
 pub const Writer = writer.Writer;
 

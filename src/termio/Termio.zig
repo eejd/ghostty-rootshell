@@ -33,8 +33,8 @@ const log = std.log.scoped(.io_exec);
 /// Allocator
 alloc: Allocator,
 
-/// This is the pty fd created for the subcommand.
-subprocess: termio.Exec,
+/// This is the implementation responsible for io.
+reader: termio.Reader,
 
 /// The derived configuration for this termio implementation.
 config: DerivedConfig,
@@ -169,18 +169,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     term.screen.cursor.cursor_style = opts.config.cursor_style;
 
     // Setup our reader.
-    // TODO: for manual, we need to set the terminal width/height
-    var subprocess = try termio.Exec.init(alloc, .{
-        .command = opts.full_config.command,
-        .shell_integration = opts.full_config.@"shell-integration",
-        .shell_integration_features = opts.full_config.@"shell-integration-features",
-        .working_directory = opts.full_config.@"working-directory",
-        .resources_dir = opts.resources_dir,
-        .term = opts.config.term,
-        .linux_cgroup = opts.linux_cgroup,
-    });
-    errdefer subprocess.deinit();
-    subprocess.initTerminal(&term);
+    var reader = opts.reader;
+    reader.initTerminal(&term);
 
     // Setup our terminal size in pixels for certain requests.
     const screen_size = opts.screen_size.subPadding(opts.padding);
@@ -220,13 +210,13 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     self.* = .{
         .alloc = alloc,
         .terminal = term,
-        .subprocess = subprocess,
         .config = opts.config,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
+        .reader = opts.reader,
         .writer = opts.writer,
         .terminal_stream = .{
             .handler = handler,
@@ -242,7 +232,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 }
 
 pub fn deinit(self: *Termio) void {
-    self.subprocess.deinit();
+    self.reader.deinit();
     self.terminal.deinit(self.alloc);
     self.config.deinit();
     self.writer.deinit(self.alloc);
@@ -272,11 +262,11 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
     };
 
     // Setup our reader
-    try self.subprocess.threadEnter(alloc, self, data);
+    try self.reader.threadEnter(alloc, self, data);
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
-    self.subprocess.threadExit(data);
+    self.reader.threadExit(data);
 }
 
 /// Send a message using the writer. Depending on the writer type in
@@ -310,7 +300,7 @@ pub inline fn queueWrite(
     data: []const u8,
     linefeed: bool,
 ) !void {
-    try self.subprocess.queueWrite(self.alloc, td, data, linefeed);
+    try self.reader.queueWrite(self.alloc, td, data, linefeed);
 }
 
 /// Update the configuration.
@@ -373,7 +363,7 @@ pub fn resize(
 ) !void {
     // Update the size of our pty.
     const padded_size = screen_size.subPadding(padding);
-    try self.subprocess.resize(grid_size, padded_size);
+    try self.reader.resize(grid_size, padded_size);
 
     // Update our cached grid size
     self.grid_size = grid_size;
@@ -476,7 +466,7 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const t = self.renderer_state.terminal;
-    try self.subprocess.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
+    try self.reader.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
 }
 
 /// Process output from the pty. This is the manual API that users can
