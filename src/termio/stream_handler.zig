@@ -27,8 +27,8 @@ pub const StreamHandler = struct {
     grid_size: *renderer.GridSize,
     terminal: *terminal.Terminal,
 
-    /// Mailbox for data to the writer thread.
-    writer: *termio.Writer,
+    /// Mailbox for data to the termio thread.
+    termio_mailbox: *termio.Mailbox,
 
     /// Mailbox for the surface.
     surface_mailbox: apprt.surface.Mailbox,
@@ -86,10 +86,10 @@ pub const StreamHandler = struct {
     /// such as XTGETTCAP.
     dcs: terminal.dcs.Handler = .{},
 
-    /// This is set to true when a message was written to the writer
+    /// This is set to true when a message was written to the termio
     /// mailbox. This can be used by callers to determine if they need
-    /// to wake up the writer.
-    writer_messaged: bool = false,
+    /// to wake up the termio thread.
+    termio_messaged: bool = false,
 
     /// This is set to true when we've seen a title escape sequence. We use
     /// this to determine if we need to default the window title.
@@ -140,8 +140,8 @@ pub const StreamHandler = struct {
     }
 
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
-        self.writer.send(msg, self.renderer_state.mutex);
-        self.writer_messaged = true;
+        self.termio_mailbox.send(msg, self.renderer_state.mutex);
+        self.termio_messaged = true;
     }
 
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {

@@ -60,8 +60,8 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
-/// The writer implementation to use.
-writer: termio.Writer,
+/// The mailbox implementation to use.
+mailbox: termio.Mailbox,
 
 /// The stream parser. This parses the stream of escape codes and so on
 /// from the child process and calls callbacks in the stream handler.
@@ -187,7 +187,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 
         break :handler .{
             .alloc = alloc,
-            .writer = &self.writer,
+            .termio_mailbox = &self.mailbox,
             .surface_mailbox = opts.surface_mailbox,
             .renderer_state = opts.renderer_state,
             .renderer_wakeup = opts.renderer_wakeup,
@@ -217,7 +217,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
         .backend = opts.backend,
-        .writer = opts.writer,
+        .mailbox = opts.mailbox,
         .terminal_stream = .{
             .handler = handler,
             .parser = .{
@@ -235,7 +235,7 @@ pub fn deinit(self: *Termio) void {
     self.backend.deinit();
     self.terminal.deinit(self.alloc);
     self.config.deinit();
-    self.writer.deinit(self.alloc);
+    self.mailbox.deinit(self.alloc);
 
     // Clear any StreamHandler state
     self.terminal_stream.handler.deinit();
@@ -255,7 +255,7 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .loop = &thread.loop,
         .renderer_state = self.renderer_state,
         .surface_mailbox = self.surface_mailbox,
-        .writer = &self.writer,
+        .mailbox = &self.mailbox,
 
         // Placeholder until setup below
         .backend = .{ .manual = {} },
@@ -269,29 +269,29 @@ pub fn threadExit(self: *Termio, data: *ThreadData) void {
     self.backend.threadExit(data);
 }
 
-/// Send a message using the writer. Depending on the writer type in
+/// Send a message to the the mailbox. Depending on the mailbox type in
 /// use this may process now or it may just enqueue and process later.
 ///
-/// This will also notify the writer thread to process the message. If
+/// This will also notify the mailbox thread to process the message. If
 /// you're sending a lot of messages, it may be more efficient to use
-/// the writer directly and then call notify separately.
+/// the mailbox directly and then call notify separately.
 pub fn queueMessage(
     self: *Termio,
     msg: termio.Message,
     mutex: enum { locked, unlocked },
 ) void {
-    self.writer.send(msg, switch (mutex) {
+    self.mailbox.send(msg, switch (mutex) {
         .locked => self.renderer_state.mutex,
         .unlocked => null,
     });
-    self.writer.notify();
+    self.mailbox.notify();
 }
 
 /// Queue a write directly to the pty.
 ///
 /// If you're using termio.Thread, this must ONLY be called from the
-/// writer thread. If you're not on the thread, use queueMessage with
-/// writer messages instead.
+/// mailbox thread. If you're not on the thread, use queueMessage with
+/// mailbox messages instead.
 ///
 /// If you're not using termio.Thread, this is not threadsafe.
 pub inline fn queueWrite(
@@ -522,11 +522,11 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
             log.err("error processing terminal data: {}", .{err});
     }
 
-    // If our stream handling caused messages to be sent to the writer
+    // If our stream handling caused messages to be sent to the mailbox
     // thread, then we need to wake it up so that it processes them.
-    if (self.terminal_stream.handler.writer_messaged) {
-        self.terminal_stream.handler.writer_messaged = false;
-        self.writer.notify();
+    if (self.terminal_stream.handler.termio_messaged) {
+        self.terminal_stream.handler.termio_messaged = false;
+        self.mailbox.notify();
     }
 }
 
@@ -552,7 +552,7 @@ pub const ThreadData = struct {
 
     /// Data associated with the backend implementation (i.e. pty/exec state)
     backend: termio.backend.ThreadData,
-    writer: *termio.Writer,
+    mailbox: *termio.Mailbox,
 
     pub fn deinit(self: *ThreadData) void {
         self.backend.deinit(self.alloc);

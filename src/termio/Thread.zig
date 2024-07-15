@@ -200,10 +200,10 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
 fn threadMain_(self: *Thread, io: *termio.Termio) !void {
     defer log.debug("IO thread exited", .{});
 
-    // Get the writer. This must be a mailbox writer for threading.
-    const writer = switch (io.writer) {
-        .mailbox => |*v| v,
-        // else => return error.TermioUnsupportedWriter,
+    // Get the mailbox. This must be an SPSC mailbox for threading.
+    const mailbox = switch (io.mailbox) {
+        .spsc => |*v| v,
+        // else => return error.TermioUnsupportedMailbox,
     };
 
     // This is the data sent to xev callbacks. We want a pointer to both
@@ -219,7 +219,7 @@ fn threadMain_(self: *Thread, io: *termio.Termio) !void {
     defer io.threadExit(&cb.data);
 
     // Start the async handlers.
-    writer.wakeup.wait(&self.loop, &self.wakeup_c, CallbackData, &cb, wakeupCallback);
+    mailbox.wakeup.wait(&self.loop, &self.wakeup_c, CallbackData, &cb, wakeupCallback);
     self.stop.wait(&self.loop, &self.stop_c, CallbackData, &cb, stopCallback);
 
     // Run
@@ -241,7 +241,7 @@ fn drainMailbox(
     cb: *CallbackData,
 ) !void {
     // We assert when starting the thread that this is the state
-    const mailbox = cb.io.writer.mailbox.mailbox;
+    const mailbox = cb.io.mailbox.spsc.queue;
     const io = cb.io;
     const data = &cb.data;
 

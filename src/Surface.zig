@@ -450,9 +450,9 @@ pub fn init(
         });
         errdefer io_exec.deinit();
 
-        // Initialize our IO writer
-        var io_writer = try termio.Writer.initMailbox(alloc);
-        errdefer io_writer.deinit(alloc);
+        // Initialize our IO mailbox
+        var io_mailbox = try termio.Mailbox.initSPSC(alloc);
+        errdefer io_mailbox.deinit(alloc);
 
         try termio.Termio.init(&self.io, alloc, .{
             .grid_size = grid_size,
@@ -461,7 +461,7 @@ pub fn init(
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
             .backend = .{ .exec = io_exec },
-            .writer = io_writer,
+            .mailbox = io_mailbox,
             .renderer_state = &self.renderer_state,
             .renderer_wakeup = render_thread.wakeup,
             .renderer_mailbox = render_thread.mailbox,

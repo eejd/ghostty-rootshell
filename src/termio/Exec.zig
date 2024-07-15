@@ -319,13 +319,13 @@ fn processExit(
 
         // Notify our main writer thread which has access to more
         // information so it can show a better error message.
-        td.writer.send(.{
+        td.mailbox.send(.{
             .child_exited_abnormally = .{
                 .exit_code = exit_code,
                 .runtime_ms = runtime,
             },
         }, null);
-        td.writer.notify();
+        td.mailbox.notify();
 
         return .disarm;
     }

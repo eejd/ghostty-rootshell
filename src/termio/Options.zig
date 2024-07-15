@@ -28,9 +28,9 @@ config: termio.Termio.DerivedConfig,
 /// The backend for termio that implements where reads/writes are sourced.
 backend: termio.Backend,
 
-/// The writer for the terminal. This is how messages are delivered.
+/// The mailbox for the terminal. This is how messages are delivered.
 /// If you're using termio.Thread this MUST be "mailbox".
-writer: termio.Writer,
+mailbox: termio.Mailbox,
 
 /// The render state. The IO implementation can modify anything here. The
 /// surface thread will setup the initial "terminal" pointer but the IO impl
