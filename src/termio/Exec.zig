@@ -33,28 +33,39 @@ subprocess: Subprocess,
 /// up the internal state necessary to start it later.
 pub fn init(
     alloc: Allocator,
-    opts: termio.Options,
-    term: *terminal.Terminal,
+    cfg: Config,
 ) !Exec {
-    var subprocess = try Subprocess.init(alloc, opts);
+    var subprocess = try Subprocess.init(alloc, cfg);
     errdefer subprocess.deinit();
-
-    // If we have an initial pwd requested by the subprocess, then we
-    // set that on the terminal now. This allows rapidly initializing
-    // new surfaces to use the proper pwd.
-    if (subprocess.cwd) |cwd| term.setPwd(cwd) catch |err| {
-        log.warn("error setting initial pwd err={}", .{err});
-    };
-
-    // Initial width/height based on subprocess
-    term.width_px = subprocess.screen_size.width;
-    term.height_px = subprocess.screen_size.height;
 
     return .{ .subprocess = subprocess };
 }
 
 pub fn deinit(self: *Exec) void {
     self.subprocess.deinit();
+}
+
+/// Call to initialize the terminal state as necessary for this reader.
+/// This is called before any termio begins. This should not be called
+/// after termio begins because it may put the internal terminal state
+/// into a bad state.
+pub fn initTerminal(self: *Exec, term: *terminal.Terminal) void {
+    // If we have an initial pwd requested by the subprocess, then we
+    // set that on the terminal now. This allows rapidly initializing
+    // new surfaces to use the proper pwd.
+    if (self.subprocess.cwd) |cwd| term.setPwd(cwd) catch |err| {
+        log.warn("error setting initial pwd err={}", .{err});
+    };
+
+    // Setup our initial grid/screen size from the terminal. This
+    // can't fail because the pty should not exist at this point.
+    self.resize(.{
+        .columns = term.cols,
+        .rows = term.rows,
+    }, .{
+        .width = term.width_px,
+        .height = term.height_px,
+    }) catch unreachable;
 }
 
 pub fn threadEnter(
@@ -505,6 +516,16 @@ pub const ThreadData = struct {
     }
 };
 
+pub const Config = struct {
+    command: ?[]const u8 = null,
+    shell_integration: configpkg.Config.ShellIntegration = .detect,
+    shell_integration_features: configpkg.Config.ShellIntegrationFeatures = .{},
+    working_directory: ?[]const u8 = null,
+    resources_dir: ?[]const u8,
+    term: []const u8,
+    linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,
+};
+
 const Subprocess = struct {
     /// If we build with flatpak support then we have to keep track of
     /// a potential execution on the host.
@@ -529,7 +550,7 @@ const Subprocess = struct {
 
     /// Initialize the subprocess. This will NOT start it, this only sets
     /// up the internal state necessary to start it later.
-    pub fn init(gpa: Allocator, opts: termio.Options) !Subprocess {
+    pub fn init(gpa: Allocator, cfg: Config) !Subprocess {
         // We have a lot of maybe-allocations that all share the same lifetime
         // so use an arena so we don't end up in an accounting nightmare.
         var arena = std.heap.ArenaAllocator.init(gpa);
@@ -551,7 +572,7 @@ const Subprocess = struct {
         errdefer env.deinit();
 
         // If we have a resources dir then set our env var
-        if (opts.resources_dir) |dir| {
+        if (cfg.resources_dir) |dir| {
             log.info("found Ghostty resources dir: {s}", .{dir});
             try env.put("GHOSTTY_RESOURCES_DIR", dir);
         }
@@ -562,8 +583,8 @@ const Subprocess = struct {
         //
         // For now, we just look up a bundled dir but in the future we should
         // also load the terminfo database and look for it.
-        if (opts.resources_dir) |base| {
-            try env.put("TERM", opts.config.term);
+        if (cfg.resources_dir) |base| {
+            try env.put("TERM", cfg.term);
             try env.put("COLORTERM", "truecolor");
 
             // Assume that the resources directory is adjacent to the terminfo
@@ -620,7 +641,7 @@ const Subprocess = struct {
 
         // Add the man pages from our application bundle to MANPATH.
         if (comptime builtin.target.isDarwin()) {
-            if (opts.resources_dir) |resources_dir| man: {
+            if (cfg.resources_dir) |resources_dir| man: {
                 var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
                 const dir = std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir}) catch |err| {
                     log.warn("error building manpath, man pages may not be available err={}", .{err});
@@ -672,12 +693,12 @@ const Subprocess = struct {
 
         // Setup our shell integration, if we can.
         const integrated_shell: ?shell_integration.Shell, const shell_command: []const u8 = shell: {
-            const default_shell_command = opts.full_config.command orelse switch (builtin.os.tag) {
+            const default_shell_command = cfg.command orelse switch (builtin.os.tag) {
                 .windows => "cmd.exe",
                 else => "sh",
             };
 
-            const force: ?shell_integration.Shell = switch (opts.full_config.@"shell-integration") {
+            const force: ?shell_integration.Shell = switch (cfg.shell_integration) {
                 .none => break :shell .{ null, default_shell_command },
                 .detect => null,
                 .bash => .bash,
@@ -686,7 +707,7 @@ const Subprocess = struct {
                 .zsh => .zsh,
             };
 
-            const dir = opts.resources_dir orelse break :shell .{
+            const dir = cfg.resources_dir orelse break :shell .{
                 null,
                 default_shell_command,
             };
@@ -697,7 +718,7 @@ const Subprocess = struct {
                 default_shell_command,
                 &env,
                 force,
-                opts.full_config.@"shell-integration-features",
+                cfg.shell_integration_features,
             ) orelse break :shell .{ null, default_shell_command };
 
             break :shell .{ integration.shell, integration.command };
@@ -708,7 +729,7 @@ const Subprocess = struct {
                 "shell integration automatically injected shell={}",
                 .{shell},
             );
-        } else if (opts.full_config.@"shell-integration" != .none) {
+        } else if (cfg.shell_integration != .none) {
             log.warn("shell could not be detected, no automatic shell integration will be injected", .{});
         }
 
@@ -845,7 +866,7 @@ const Subprocess = struct {
 
         // We have to copy the cwd because there is no guarantee that
         // pointers in full_config remain valid.
-        const cwd: ?[]u8 = if (opts.full_config.@"working-directory") |cwd|
+        const cwd: ?[]u8 = if (cfg.working_directory) |cwd|
             try alloc.dupe(u8, cwd)
         else
             null;
@@ -855,21 +876,20 @@ const Subprocess = struct {
         const linux_cgroup: Command.LinuxCgroup = cgroup: {
             const default = Command.linux_cgroup_default;
             if (comptime builtin.os.tag != .linux) break :cgroup default;
-            const path = opts.linux_cgroup orelse break :cgroup default;
+            const path = cfg.linux_cgroup orelse break :cgroup default;
             break :cgroup try alloc.dupe(u8, path);
         };
-
-        // Our screen size should be our padded size
-        const padded_size = opts.screen_size.subPadding(opts.padding);
 
         return .{
             .arena = arena,
             .env = env,
             .cwd = cwd,
             .args = args,
-            .grid_size = opts.grid_size,
-            .screen_size = padded_size,
             .linux_cgroup = linux_cgroup,
+
+            // Should be initialized with initTerminal call.
+            .grid_size = .{},
+            .screen_size = .{ .width = 1, .height = 1 },
         };
     }
 

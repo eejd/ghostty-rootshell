@@ -19,10 +19,10 @@ const Pty = @import("../pty.zig").Pty;
 const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 /// The kinds of readers.
-pub const Kind = std.meta.Tag(Config);
+pub const Kind = enum { manual, exec };
 
 /// Configuration for the various reader types.
-pub const Config = union(enum) {
+pub const Config = union(Kind) {
     /// Manual means that the termio caller will handle reading input
     /// and passing it to the termio implementation. Note that even if you
     /// select a different reader, you can always still manually provide input;
@@ -30,15 +30,20 @@ pub const Config = union(enum) {
     manual: void,
 
     /// Exec uses posix exec to run a command with a pty.
-    exec: Config.Exec,
+    exec: termio.Exec.Config,
+};
 
-    pub const Exec = struct {
-        command: ?[]const u8 = null,
-        shell_integration: configpkg.Config.ShellIntegration = .detect,
-        shell_integration_features: configpkg.Config.ShellIntegrationFeatures = .{},
-        working_directory: ?[]const u8 = null,
-        linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,
-    };
+/// Reader implementations
+pub const Reader = union(Kind) {
+    manual: void,
+    exec: termio.Exec,
+
+    pub fn deinit(self: *Reader) void {
+        switch (self.*) {
+            .manual => {},
+            .exec => |*exec| exec.deinit(),
+        }
+    }
 };
 
 /// Termio thread data. See termio.ThreadData for docs.

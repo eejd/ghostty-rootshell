@@ -170,8 +170,22 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 
     // Setup our reader.
     // TODO: for manual, we need to set the terminal width/height
-    var subprocess = try termio.Exec.init(alloc, opts, &term);
+    var subprocess = try termio.Exec.init(alloc, .{
+        .command = opts.full_config.command,
+        .shell_integration = opts.full_config.@"shell-integration",
+        .shell_integration_features = opts.full_config.@"shell-integration-features",
+        .working_directory = opts.full_config.@"working-directory",
+        .resources_dir = opts.resources_dir,
+        .term = opts.config.term,
+        .linux_cgroup = opts.linux_cgroup,
+    });
     errdefer subprocess.deinit();
+    subprocess.initTerminal(&term);
+
+    // Setup our terminal size in pixels for certain requests.
+    const screen_size = opts.screen_size.subPadding(opts.padding);
+    term.width_px = screen_size.width;
+    term.height_px = screen_size.height;
 
     // Create our stream handler. This points to memory in self so it
     // isn't safe to use until self.* is set.
