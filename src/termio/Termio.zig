@@ -85,8 +85,6 @@ pub const DerivedConfig = struct {
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
-    term: []const u8,
-    grapheme_width_method: configpkg.Config.GraphemeWidthMethod,
     abnormal_runtime_threshold_ms: u32,
     wait_after_command: bool,
     enquiry_response: []const u8,
@@ -108,8 +106,6 @@ pub const DerivedConfig = struct {
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
-            .term = try alloc.dupe(u8, config.term),
-            .grapheme_width_method = config.@"grapheme-width-method",
             .abnormal_runtime_threshold_ms = config.@"abnormal-command-exit-runtime",
             .wait_after_command = config.@"wait-after-command",
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
@@ -142,7 +138,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 
     // Setup our initial grapheme cluster support if enabled. We use a
     // switch to ensure we get a compiler error if more cases are added.
-    switch (opts.config.grapheme_width_method) {
+    switch (opts.full_config.@"grapheme-width-method") {
         .unicode => term.modes.set(.grapheme_cluster, true),
         .legacy => {},
     }
