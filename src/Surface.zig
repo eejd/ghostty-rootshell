@@ -460,7 +460,7 @@ pub fn init(
             .padding = padding,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
-            .reader = .{ .exec = io_exec },
+            .backend = .{ .exec = io_exec },
             .writer = io_writer,
             .renderer_state = &self.renderer_state,
             .renderer_wakeup = render_thread.wakeup,

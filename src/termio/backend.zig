@@ -34,19 +34,20 @@ pub const Config = union(Kind) {
     exec: termio.Exec.Config,
 };
 
-/// Reader implementations
-pub const Reader = union(Kind) {
+/// Backend implementations. A backend is responsible for owning the pty
+/// behavior and providing read/write capabilities.
+pub const Backend = union(Kind) {
     manual: void,
     exec: termio.Exec,
 
-    pub fn deinit(self: *Reader) void {
+    pub fn deinit(self: *Backend) void {
         switch (self.*) {
             .manual => {},
             .exec => |*exec| exec.deinit(),
         }
     }
 
-    pub fn initTerminal(self: *Reader, t: *terminal.Terminal) void {
+    pub fn initTerminal(self: *Backend, t: *terminal.Terminal) void {
         switch (self.*) {
             .manual => {},
             .exec => |*exec| exec.initTerminal(t),
@@ -54,7 +55,7 @@ pub const Reader = union(Kind) {
     }
 
     pub fn threadEnter(
-        self: *Reader,
+        self: *Backend,
         alloc: Allocator,
         io: *termio.Termio,
         td: *termio.Termio.ThreadData,
@@ -65,7 +66,7 @@ pub const Reader = union(Kind) {
         }
     }
 
-    pub fn threadExit(self: *Reader, td: *termio.Termio.ThreadData) void {
+    pub fn threadExit(self: *Backend, td: *termio.Termio.ThreadData) void {
         switch (self.*) {
             .manual => {},
             .exec => |*exec| exec.threadExit(td),
@@ -73,7 +74,7 @@ pub const Reader = union(Kind) {
     }
 
     pub fn resize(
-        self: *Reader,
+        self: *Backend,
         grid_size: renderer.GridSize,
         screen_size: renderer.ScreenSize,
     ) !void {
@@ -84,7 +85,7 @@ pub const Reader = union(Kind) {
     }
 
     pub fn queueWrite(
-        self: *Reader,
+        self: *Backend,
         alloc: Allocator,
         td: *termio.Termio.ThreadData,
         data: []const u8,
@@ -97,7 +98,7 @@ pub const Reader = union(Kind) {
     }
 
     pub fn childExitedAbnormally(
-        self: *Reader,
+        self: *Backend,
         gpa: Allocator,
         t: *terminal.Terminal,
         exit_code: u32,

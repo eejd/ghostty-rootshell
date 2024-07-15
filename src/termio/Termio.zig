@@ -34,7 +34,7 @@ const log = std.log.scoped(.io_exec);
 alloc: Allocator,
 
 /// This is the implementation responsible for io.
-reader: termio.Reader,
+backend: termio.Backend,
 
 /// The derived configuration for this termio implementation.
 config: DerivedConfig,
@@ -168,9 +168,9 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Set our default cursor style
     term.screen.cursor.cursor_style = opts.config.cursor_style;
 
-    // Setup our reader.
-    var reader = opts.reader;
-    reader.initTerminal(&term);
+    // Setup our backend.
+    var backend = opts.backend;
+    backend.initTerminal(&term);
 
     // Setup our terminal size in pixels for certain requests.
     const screen_size = opts.screen_size.subPadding(opts.padding);
@@ -216,7 +216,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
-        .reader = opts.reader,
+        .backend = opts.backend,
         .writer = opts.writer,
         .terminal_stream = .{
             .handler = handler,
@@ -232,7 +232,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 }
 
 pub fn deinit(self: *Termio) void {
-    self.reader.deinit();
+    self.backend.deinit();
     self.terminal.deinit(self.alloc);
     self.config.deinit();
     self.writer.deinit(self.alloc);
@@ -258,15 +258,15 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .writer = &self.writer,
 
         // Placeholder until setup below
-        .reader = .{ .manual = {} },
+        .backend = .{ .manual = {} },
     };
 
-    // Setup our reader
-    try self.reader.threadEnter(alloc, self, data);
+    // Setup our backend
+    try self.backend.threadEnter(alloc, self, data);
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
-    self.reader.threadExit(data);
+    self.backend.threadExit(data);
 }
 
 /// Send a message using the writer. Depending on the writer type in
@@ -300,7 +300,7 @@ pub inline fn queueWrite(
     data: []const u8,
     linefeed: bool,
 ) !void {
-    try self.reader.queueWrite(self.alloc, td, data, linefeed);
+    try self.backend.queueWrite(self.alloc, td, data, linefeed);
 }
 
 /// Update the configuration.
@@ -320,7 +320,7 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // renderer mutex so this is safe to do despite being executed
     // from another thread.
     self.terminal_stream.handler.changeConfig(&self.config);
-    td.reader.changeConfig(&self.config);
+    td.backend.changeConfig(&self.config);
 
     // Update the configuration that we know about.
     //
@@ -363,7 +363,7 @@ pub fn resize(
 ) !void {
     // Update the size of our pty.
     const padded_size = screen_size.subPadding(padding);
-    try self.reader.resize(grid_size, padded_size);
+    try self.backend.resize(grid_size, padded_size);
 
     // Update our cached grid size
     self.grid_size = grid_size;
@@ -466,7 +466,7 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const t = self.renderer_state.terminal;
-    try self.reader.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
+    try self.backend.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
 }
 
 /// Process output from the pty. This is the manual API that users can
@@ -550,12 +550,12 @@ pub const ThreadData = struct {
     /// Mailboxes for different threads
     surface_mailbox: apprt.surface.Mailbox,
 
-    /// Data associated with the reader implementation (i.e. pty/exec state)
-    reader: termio.reader.ThreadData,
+    /// Data associated with the backend implementation (i.e. pty/exec state)
+    backend: termio.backend.ThreadData,
     writer: *termio.Writer,
 
     pub fn deinit(self: *ThreadData) void {
-        self.reader.deinit(self.alloc);
+        self.backend.deinit(self.alloc);
         self.* = undefined;
     }
 };

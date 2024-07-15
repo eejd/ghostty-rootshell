@@ -26,7 +26,7 @@ const windows = internal_os.windows;
 
 const log = std.log.scoped(.io_exec);
 
-/// The subprocess state for our exec reader.
+/// The subprocess state for our exec backend.
 subprocess: Subprocess,
 
 /// Initialize the exec state. This will NOT start it, this only sets
@@ -45,7 +45,7 @@ pub fn deinit(self: *Exec) void {
     self.subprocess.deinit();
 }
 
-/// Call to initialize the terminal state as necessary for this reader.
+/// Call to initialize the terminal state as necessary for this backend.
 /// This is called before any termio begins. This should not be called
 /// after termio begins because it may put the internal terminal state
 /// into a bad state.
@@ -121,8 +121,8 @@ pub fn threadEnter(
     );
     read_thread.setName("io-reader") catch {};
 
-    // Setup our threadata reader state to be our own
-    td.reader = .{ .exec = .{
+    // Setup our threadata backend state to be our own
+    td.backend = .{ .exec = .{
         .start = process_start,
         .abnormal_runtime_threshold_ms = io.config.abnormal_runtime_threshold_ms,
         .wait_after_command = io.config.wait_after_command,
@@ -136,7 +136,7 @@ pub fn threadEnter(
     // Start our process watcher
     process.wait(
         td.loop,
-        &td.reader.exec.process_wait_c,
+        &td.backend.exec.process_wait_c,
         termio.Termio.ThreadData,
         td,
         processExit,
@@ -144,8 +144,8 @@ pub fn threadEnter(
 }
 
 pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
-    assert(td.reader == .exec);
-    const exec = &td.reader.exec;
+    assert(td.backend == .exec);
+    const exec = &td.backend.exec;
 
     if (exec.exited) self.subprocess.externalExit();
     self.subprocess.stop();
@@ -282,8 +282,8 @@ fn processExit(
     const exit_code = r catch unreachable;
 
     const td = td_.?;
-    assert(td.reader == .exec);
-    const execdata = &td.reader.exec;
+    assert(td.backend == .exec);
+    const execdata = &td.backend.exec;
     execdata.exited = true;
 
     // Determine how long the process was running for.
@@ -366,7 +366,7 @@ pub fn queueWrite(
     linefeed: bool,
 ) !void {
     _ = self;
-    const exec = &td.reader.exec;
+    const exec = &td.backend.exec;
 
     // If our process is exited then we send our surface a message
     // about it but we don't queue any more writes.
