@@ -256,9 +256,7 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
         .renderer_state = self.renderer_state,
         .surface_mailbox = self.surface_mailbox,
         .mailbox = &self.mailbox,
-
-        // Placeholder until setup below
-        .backend = .{ .manual = {} },
+        .backend = undefined, // Backend must replace this on threadEnter
     };
 
     // Setup our backend
