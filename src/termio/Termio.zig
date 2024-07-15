@@ -239,15 +239,8 @@ pub fn deinit(self: *Termio) void {
 }
 
 pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !void {
-    const alloc = self.alloc;
-
-    // Wakeup watcher for the writer thread.
-    var wakeup = try xev.Async.init();
-    errdefer wakeup.deinit();
-
-    // Setup our thread data
     data.* = .{
-        .alloc = alloc,
+        .alloc = self.alloc,
         .loop = &thread.loop,
         .renderer_state = self.renderer_state,
         .surface_mailbox = self.surface_mailbox,
@@ -256,7 +249,7 @@ pub fn threadEnter(self: *Termio, thread: *termio.Thread, data: *ThreadData) !vo
     };
 
     // Setup our backend
-    try self.backend.threadEnter(alloc, self, data);
+    try self.backend.threadEnter(self.alloc, self, data);
 }
 
 pub fn threadExit(self: *Termio, data: *ThreadData) void {
