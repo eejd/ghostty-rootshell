@@ -23,10 +23,14 @@ padding: renderer.Padding,
 full_config: *const Config,
 
 /// The derived configuration for this termio implementation.
-config: termio.Impl.DerivedConfig,
+config: termio.Termio.DerivedConfig,
 
-/// The application resources directory.
-resources_dir: ?[]const u8,
+/// The backend for termio that implements where reads/writes are sourced.
+backend: termio.Backend,
+
+/// The mailbox for the terminal. This is how messages are delivered.
+/// If you're using termio.Thread this MUST be "mailbox".
+mailbox: termio.Mailbox,
 
 /// The render state. The IO implementation can modify anything here. The
 /// surface thread will setup the initial "terminal" pointer but the IO impl
@@ -43,7 +47,3 @@ renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for sending the surface messages.
 surface_mailbox: apprt.surface.Mailbox,
-
-/// The cgroup to apply to the started termio process, if able by
-/// the termio implementation. This only applies to Linux.
-linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,

@@ -101,7 +101,7 @@ color_scheme: apprt.ColorScheme = .light,
 last_binding_trigger: u64 = 0,
 
 /// The terminal IO handler.
-io: termio.Impl,
+io: termio.Termio,
 io_thread: termio.Thread,
 io_thr: std.Thread,
 
@@ -396,33 +396,8 @@ pub fn init(
     );
     errdefer render_thread.deinit();
 
-    // Start our IO implementation
-    var io = try termio.Impl.init(alloc, .{
-        .grid_size = grid_size,
-        .screen_size = screen_size,
-        .padding = padding,
-        .full_config = config,
-        .config = try termio.Impl.DerivedConfig.init(alloc, config),
-        .resources_dir = main.state.resources_dir,
-        .renderer_state = &self.renderer_state,
-        .renderer_wakeup = render_thread.wakeup,
-        .renderer_mailbox = render_thread.mailbox,
-        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
-
-        // Get the cgroup if we're on linux and have the decl. I'd love
-        // to change this from a decl to a surface options struct because
-        // then we can do memory management better (don't need to retain
-        // the string around).
-        .linux_cgroup = if (comptime builtin.os.tag == .linux and
-            @hasDecl(apprt.runtime.Surface, "cgroup"))
-            rt_surface.cgroup()
-        else
-            Command.linux_cgroup_default,
-    });
-    errdefer io.deinit();
-
     // Create the IO thread
-    var io_thread = try termio.Thread.init(alloc, &self.io);
+    var io_thread = try termio.Thread.init(alloc);
     errdefer io_thread.deinit();
 
     self.* = .{
@@ -440,7 +415,7 @@ pub fn init(
         },
         .renderer_thr = undefined,
         .mouse = .{},
-        .io = io,
+        .io = undefined,
         .io_thread = io_thread,
         .io_thr = undefined,
         .screen_size = .{ .width = 0, .height = 0 },
@@ -449,6 +424,53 @@ pub fn init(
         .padding = padding,
         .config = derived_config,
     };
+
+    // Start our IO implementation
+    // This separate block ({}) is important because our errdefers must
+    // be scoped here to be valid.
+    {
+        // Initialize our IO backend
+        var io_exec = try termio.Exec.init(alloc, .{
+            .command = config.command,
+            .shell_integration = config.@"shell-integration",
+            .shell_integration_features = config.@"shell-integration-features",
+            .working_directory = config.@"working-directory",
+            .resources_dir = main.state.resources_dir,
+            .term = config.term,
+
+            // Get the cgroup if we're on linux and have the decl. I'd love
+            // to change this from a decl to a surface options struct because
+            // then we can do memory management better (don't need to retain
+            // the string around).
+            .linux_cgroup = if (comptime builtin.os.tag == .linux and
+                @hasDecl(apprt.runtime.Surface, "cgroup"))
+                rt_surface.cgroup()
+            else
+                Command.linux_cgroup_default,
+        });
+        errdefer io_exec.deinit();
+
+        // Initialize our IO mailbox
+        var io_mailbox = try termio.Mailbox.initSPSC(alloc);
+        errdefer io_mailbox.deinit(alloc);
+
+        try termio.Termio.init(&self.io, alloc, .{
+            .grid_size = grid_size,
+            .screen_size = screen_size,
+            .padding = padding,
+            .full_config = config,
+            .config = try termio.Termio.DerivedConfig.init(alloc, config),
+            .backend = .{ .exec = io_exec },
+            .mailbox = io_mailbox,
+            .renderer_state = &self.renderer_state,
+            .renderer_wakeup = render_thread.wakeup,
+            .renderer_mailbox = render_thread.mailbox,
+            .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+        });
+    }
+    // Outside the block, IO has now taken ownership of our temporary state
+    // so we can just defer this and not the subcomponents.
+    errdefer self.io.deinit();
 
     // Report initial cell size on surface creation
     try rt_surface.setCellSize(cell_size.width, cell_size.height);
@@ -483,7 +505,7 @@ pub fn init(
     self.io_thr = try std.Thread.spawn(
         .{},
         termio.Thread.threadMain,
-        .{&self.io_thread},
+        .{ &self.io_thread, &self.io },
     );
     self.io_thr.setName("io") catch {};
 
@@ -616,7 +638,7 @@ pub fn activateInspector(self: *Surface) !void {
 
     // Notify our components we have an inspector active
     _ = self.renderer_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
-    _ = self.io_thread.mailbox.push(.{ .inspector = true }, .{ .forever = {} });
+    self.io.queueMessage(.{ .inspector = true }, .unlocked);
 }
 
 /// Deactivate the inspector and stop collecting any information.
@@ -633,7 +655,7 @@ pub fn deactivateInspector(self: *Surface) void {
 
     // Notify our components we have deactivated inspector
     _ = self.renderer_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
-    _ = self.io_thread.mailbox.push(.{ .inspector = false }, .{ .forever = {} });
+    self.io.queueMessage(.{ .inspector = false }, .unlocked);
 
     // Deinit the inspector
     insp.deinit();
@@ -733,8 +755,7 @@ fn reportColorScheme(self: *Surface) !void {
         .dark => "\x1B[?997;1n",
     };
 
-    _ = self.io_thread.mailbox.push(.{ .write_stable = output }, .{ .forever = {} });
-    try self.io_thread.wakeup.notify();
+    self.io.queueMessage(.{ .write_stable = output }, .unlocked);
 }
 
 /// Call this when modifiers change. This is safe to call even if modifiers
@@ -809,25 +830,22 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     // our messages aren't huge.
     var renderer_message = try renderer.Message.initChangeConfig(self.alloc, config);
     errdefer renderer_message.deinit();
-    var termio_config_ptr = try self.alloc.create(termio.Impl.DerivedConfig);
+    var termio_config_ptr = try self.alloc.create(termio.Termio.DerivedConfig);
     errdefer self.alloc.destroy(termio_config_ptr);
-    termio_config_ptr.* = try termio.Impl.DerivedConfig.init(self.alloc, config);
+    termio_config_ptr.* = try termio.Termio.DerivedConfig.init(self.alloc, config);
     errdefer termio_config_ptr.deinit();
 
     _ = self.renderer_thread.mailbox.push(renderer_message, .{ .forever = {} });
-    _ = self.io_thread.mailbox.push(.{
+    self.io.queueMessage(.{
         .change_config = .{
             .alloc = self.alloc,
             .ptr = termio_config_ptr,
         },
-    }, .{ .forever = {} });
+    }, .unlocked);
 
     // With mailbox messages sent, we have to wake them up so they process it.
     self.queueRender() catch |err| {
         log.warn("failed to notify renderer of config change err={}", .{err});
-    };
-    self.io_thread.wakeup.notify() catch |err| {
-        log.warn("failed to notify io thread of config change err={}", .{err});
     };
 }
 
@@ -1066,14 +1084,13 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     );
 
     // Notify the terminal
-    _ = self.io_thread.mailbox.push(.{
+    self.io.queueMessage(.{
         .resize = .{
             .grid_size = self.grid_size,
             .screen_size = self.screen_size,
             .padding = self.padding,
         },
-    }, .{ .forever = {} });
-    self.io_thread.wakeup.notify() catch {};
+    }, .unlocked);
 
     // Notify the window
     try self.rt_surface.setCellSize(size.width, size.height);
@@ -1169,14 +1186,13 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     }
 
     // Mail the IO thread
-    _ = self.io_thread.mailbox.push(.{
+    self.io.queueMessage(.{
         .resize = .{
             .grid_size = self.grid_size,
             .screen_size = self.screen_size,
             .padding = self.padding,
         },
-    }, .{ .forever = {} });
-    try self.io_thread.wakeup.notify();
+    }, .unlocked);
 }
 
 /// Called to set the preedit state for character input. Preedit is used
@@ -1542,12 +1558,11 @@ pub fn keyCallback(
         ev.pty = copy;
     }
 
-    _ = self.io_thread.mailbox.push(switch (write_req) {
+    self.io.queueMessage(switch (write_req) {
         .small => |v| .{ .write_small = v },
         .stable => |v| .{ .write_stable = v },
         .alloc => |v| .{ .write_alloc = v },
-    }, .{ .forever = {} });
-    try self.io_thread.wakeup.notify();
+    }, .unlocked);
 
     // If our event is any keypress that isn't a modifier and we generated
     // some data to send to the pty, then we move the viewport down to the
@@ -1647,11 +1662,7 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
 
         if (focus_event) {
             const seq = if (focused) "\x1b[I" else "\x1b[O";
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = seq,
-            }, .{ .forever = {} });
-
-            try self.io_thread.wakeup.notify();
+            self.io.queueMessage(.{ .write_stable = seq }, .unlocked);
         }
     }
 }
@@ -1786,14 +1797,10 @@ pub fn scrollCallback(
                     break :seq if (y.delta < 0) "\x1b[A" else "\x1b[B";
                 };
                 for (0..y.delta_unsigned) |_| {
-                    _ = self.io_thread.mailbox.push(.{
-                        .write_stable = seq,
-                    }, .{ .instant = {} });
+                    self.io.queueMessage(.{ .write_stable = seq }, .locked);
                 }
             }
 
-            // After sending all our messages we have to notify our IO thread
-            try self.io_thread.wakeup.notify();
             return;
         }
 
@@ -1995,12 +2002,10 @@ fn mouseReport(
             data[5] = 32 + @as(u8, @intCast(viewport_point.y)) + 1;
 
             // Ask our IO thread to write the data
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = 6,
-                },
-            }, .{ .forever = {} });
+            self.io.queueMessage(.{ .write_small = .{
+                .data = data,
+                .len = 6,
+            } }, .locked);
         },
 
         .utf8 => {
@@ -2020,12 +2025,10 @@ fn mouseReport(
             i += try std.unicode.utf8Encode(@intCast(32 + viewport_point.y + 1), data[i..]);
 
             // Ask our IO thread to write the data
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = @intCast(i),
-                },
-            }, .{ .forever = {} });
+            self.io.queueMessage(.{ .write_small = .{
+                .data = data,
+                .len = @intCast(i),
+            } }, .locked);
         },
 
         .sgr => {
@@ -2043,12 +2046,10 @@ fn mouseReport(
             });
 
             // Ask our IO thread to write the data
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = @intCast(resp.len),
-                },
-            }, .{ .forever = {} });
+            self.io.queueMessage(.{ .write_small = .{
+                .data = data,
+                .len = @intCast(resp.len),
+            } }, .locked);
         },
 
         .urxvt => {
@@ -2062,12 +2063,10 @@ fn mouseReport(
             });
 
             // Ask our IO thread to write the data
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = @intCast(resp.len),
-                },
-            }, .{ .forever = {} });
+            self.io.queueMessage(.{ .write_small = .{
+                .data = data,
+                .len = @intCast(resp.len),
+            } }, .locked);
         },
 
         .sgr_pixels => {
@@ -2085,17 +2084,12 @@ fn mouseReport(
             });
 
             // Ask our IO thread to write the data
-            _ = self.io_thread.mailbox.push(.{
-                .write_small = .{
-                    .data = data,
-                    .len = @intCast(resp.len),
-                },
-            }, .{ .forever = {} });
+            self.io.queueMessage(.{ .write_small = .{
+                .data = data,
+                .len = @intCast(resp.len),
+            } }, .locked);
         },
     }
-
-    // After sending all our messages we have to notify our IO thread
-    try self.io_thread.wakeup.notify();
 }
 
 /// Returns true if the shift modifier is allowed to be captured by modifier
@@ -2496,9 +2490,7 @@ fn clickMoveCursor(self: *Surface, to: terminal.Pin) !void {
             break :arrow if (t.modes.get(.cursor_keys)) "\x1bOB" else "\x1b[B";
         };
         for (0..@abs(path.y)) |_| {
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = arrow,
-            }, .{ .instant = {} });
+            self.io.queueMessage(.{ .write_stable = arrow }, .locked);
         }
     }
     if (path.x != 0) {
@@ -2508,13 +2500,9 @@ fn clickMoveCursor(self: *Surface, to: terminal.Pin) !void {
             break :arrow if (t.modes.get(.cursor_keys)) "\x1bOC" else "\x1b[C";
         };
         for (0..@abs(path.x)) |_| {
-            _ = self.io_thread.mailbox.push(.{
-                .write_stable = arrow,
-            }, .{ .instant = {} });
+            self.io.queueMessage(.{ .write_stable = arrow }, .locked);
         }
     }
-
-    try self.io_thread.wakeup.notify();
 }
 
 /// Returns the link at the given cursor position, if any.
@@ -3188,11 +3176,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 .esc => try std.fmt.bufPrint(&buf, "\x1b{s}", .{data}),
                 else => unreachable,
             };
-            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.io.queueMessage(try termio.Message.writeReq(
                 self.alloc,
                 full_data,
-            ), .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            ), .unlocked);
 
             // CSI/ESC triggers a scroll.
             {
@@ -3216,11 +3203,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 );
                 return true;
             };
-            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.io.queueMessage(try termio.Message.writeReq(
                 self.alloc,
                 text,
-            ), .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            ), .unlocked);
 
             // Text triggers a scroll.
             {
@@ -3250,16 +3236,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             };
 
             if (normal) {
-                _ = self.io_thread.mailbox.push(.{
-                    .write_stable = ck.normal,
-                }, .{ .forever = {} });
+                self.io.queueMessage(.{ .write_stable = ck.normal }, .unlocked);
             } else {
-                _ = self.io_thread.mailbox.push(.{
-                    .write_stable = ck.application,
-                }, .{ .forever = {} });
+                self.io.queueMessage(.{ .write_stable = ck.application }, .unlocked);
             }
-
-            try self.io_thread.wakeup.notify();
         },
 
         .reset => {
@@ -3341,63 +3321,55 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 if (self.io.terminal.active_screen == .alternate) return false;
             }
 
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .clear_screen = .{ .history = true },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_to_top => {
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .top = {} },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_to_bottom => {
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .bottom = {} },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_page_up => {
             const rows: isize = @intCast(self.grid_size.rows);
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = -1 * rows },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_page_down => {
             const rows: isize = @intCast(self.grid_size.rows);
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = rows },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_page_fractional => |fraction| {
             const rows: f32 = @floatFromInt(self.grid_size.rows);
             const delta: isize = @intFromFloat(@floor(fraction * rows));
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = delta },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .scroll_page_lines => |lines| {
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = lines },
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .jump_to_prompt => |delta| {
-            _ = self.io_thread.mailbox.push(.{
+            self.io.queueMessage(.{
                 .jump_to_prompt = @intCast(delta),
-            }, .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            }, .unlocked);
         },
 
         .write_scrollback_file => write_scrollback_file: {
@@ -3441,11 +3413,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
             const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
 
-            _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+            self.io.queueMessage(try termio.Message.writeReq(
                 self.alloc,
                 path,
-            ), .{ .forever = {} });
-            try self.io_thread.wakeup.notify();
+            ), .unlocked);
         },
 
         .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
@@ -3700,16 +3671,16 @@ fn completeClipboardPaste(
     if (critical.bracketed) {
         // If we're bracketd we write the data as-is to the terminal with
         // the bracketed paste escape codes around it.
-        _ = self.io_thread.mailbox.push(.{
+        self.io.queueMessage(.{
             .write_stable = "\x1B[200~",
-        }, .{ .forever = {} });
-        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+        }, .unlocked);
+        self.io.queueMessage(try termio.Message.writeReq(
             self.alloc,
             data,
-        ), .{ .forever = {} });
-        _ = self.io_thread.mailbox.push(.{
+        ), .unlocked);
+        self.io.queueMessage(.{
             .write_stable = "\x1B[201~",
-        }, .{ .forever = {} });
+        }, .unlocked);
     } else {
         // If its not bracketed the input bytes are indistinguishable from
         // keystrokes, so we must be careful. For example, we must replace
@@ -3736,13 +3707,11 @@ fn completeClipboardPaste(
             len += 1;
         }
 
-        _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+        self.io.queueMessage(try termio.Message.writeReq(
             self.alloc,
             buf[0..len],
-        ), .{ .forever = {} });
+        ), .unlocked);
     }
-
-    try self.io_thread.wakeup.notify();
 }
 
 fn completeClipboardReadOSC52(
@@ -3784,11 +3753,10 @@ fn completeClipboardReadOSC52(
     const encoded = enc.encode(buf[prefix.len..], data);
     assert(encoded.len == size);
 
-    _ = self.io_thread.mailbox.push(try termio.Message.writeReq(
+    self.io.queueMessage(try termio.Message.writeReq(
         self.alloc,
         buf,
-    ), .{ .forever = {} });
-    self.io_thread.wakeup.notify() catch {};
+    ), .unlocked);
 }
 
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
