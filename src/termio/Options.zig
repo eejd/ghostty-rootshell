@@ -32,9 +32,6 @@ reader: termio.Reader,
 /// If you're using termio.Thread this MUST be "mailbox".
 writer: termio.Writer,
 
-/// The application resources directory.
-resources_dir: ?[]const u8,
-
 /// The render state. The IO implementation can modify anything here. The
 /// surface thread will setup the initial "terminal" pointer but the IO impl
 /// is free to change that if that is useful (i.e. doing some sort of dual
@@ -50,7 +47,3 @@ renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for sending the surface messages.
 surface_mailbox: apprt.surface.Mailbox,
-
-/// The cgroup to apply to the started termio process, if able by
-/// the termio implementation. This only applies to Linux.
-linux_cgroup: Command.LinuxCgroup = Command.linux_cgroup_default,

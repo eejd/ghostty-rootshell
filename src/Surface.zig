@@ -426,51 +426,50 @@ pub fn init(
     };
 
     // Start our IO implementation
-    var io_exec = try termio.Exec.init(alloc, .{
-        .command = config.command,
-        .shell_integration = config.@"shell-integration",
-        .shell_integration_features = config.@"shell-integration-features",
-        .working_directory = config.@"working-directory",
-        .resources_dir = main.state.resources_dir,
-        .term = config.term,
+    // This separate block ({}) is important because our errdefers must
+    // be scoped here to be valid.
+    {
+        // Initialize our IO backend
+        var io_exec = try termio.Exec.init(alloc, .{
+            .command = config.command,
+            .shell_integration = config.@"shell-integration",
+            .shell_integration_features = config.@"shell-integration-features",
+            .working_directory = config.@"working-directory",
+            .resources_dir = main.state.resources_dir,
+            .term = config.term,
 
-        // Get the cgroup if we're on linux and have the decl. I'd love
-        // to change this from a decl to a surface options struct because
-        // then we can do memory management better (don't need to retain
-        // the string around).
-        .linux_cgroup = if (comptime builtin.os.tag == .linux and
-            @hasDecl(apprt.runtime.Surface, "cgroup"))
-            rt_surface.cgroup()
-        else
-            Command.linux_cgroup_default,
-    });
-    errdefer io_exec.deinit();
-    var io_writer = try termio.Writer.initMailbox(alloc);
-    errdefer io_writer.deinit(alloc);
-    try termio.Termio.init(&self.io, alloc, .{
-        .grid_size = grid_size,
-        .screen_size = screen_size,
-        .padding = padding,
-        .full_config = config,
-        .config = try termio.Termio.DerivedConfig.init(alloc, config),
-        .reader = .{ .exec = io_exec },
-        .writer = io_writer,
-        .resources_dir = main.state.resources_dir,
-        .renderer_state = &self.renderer_state,
-        .renderer_wakeup = render_thread.wakeup,
-        .renderer_mailbox = render_thread.mailbox,
-        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+            // Get the cgroup if we're on linux and have the decl. I'd love
+            // to change this from a decl to a surface options struct because
+            // then we can do memory management better (don't need to retain
+            // the string around).
+            .linux_cgroup = if (comptime builtin.os.tag == .linux and
+                @hasDecl(apprt.runtime.Surface, "cgroup"))
+                rt_surface.cgroup()
+            else
+                Command.linux_cgroup_default,
+        });
+        errdefer io_exec.deinit();
 
-        // Get the cgroup if we're on linux and have the decl. I'd love
-        // to change this from a decl to a surface options struct because
-        // then we can do memory management better (don't need to retain
-        // the string around).
-        .linux_cgroup = if (comptime builtin.os.tag == .linux and
-            @hasDecl(apprt.runtime.Surface, "cgroup"))
-            rt_surface.cgroup()
-        else
-            Command.linux_cgroup_default,
-    });
+        // Initialize our IO writer
+        var io_writer = try termio.Writer.initMailbox(alloc);
+        errdefer io_writer.deinit(alloc);
+
+        try termio.Termio.init(&self.io, alloc, .{
+            .grid_size = grid_size,
+            .screen_size = screen_size,
+            .padding = padding,
+            .full_config = config,
+            .config = try termio.Termio.DerivedConfig.init(alloc, config),
+            .reader = .{ .exec = io_exec },
+            .writer = io_writer,
+            .renderer_state = &self.renderer_state,
+            .renderer_wakeup = render_thread.wakeup,
+            .renderer_mailbox = render_thread.mailbox,
+            .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+        });
+    }
+    // Outside the block, IO has now taken ownership of our temporary state
+    // so we can just defer this and not the subcomponents.
     errdefer self.io.deinit();
 
     // Report initial cell size on surface creation
