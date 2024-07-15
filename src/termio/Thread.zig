@@ -202,7 +202,7 @@ fn threadMain_(self: *Thread, io: *termio.Termio) !void {
 
     // Get the writer. This must be a mailbox writer for threading.
     const writer = switch (io.writer) {
-        .mailbox => |v| v,
+        .mailbox => |*v| v,
         // else => return error.TermioUnsupportedWriter,
     };
 
