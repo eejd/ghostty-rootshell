@@ -3504,6 +3504,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleFullscreen", .{});
         },
 
+        .toggle_window_decorations => {
+            if (@hasDecl(apprt.Surface, "toggleWindowDecorations")) {
+                self.rt_surface.toggleWindowDecorations();
+            } else log.warn("runtime doesn't implement toggleWindowDecorations", .{});
+        },
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {
