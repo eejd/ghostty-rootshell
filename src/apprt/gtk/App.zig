@@ -358,6 +358,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
     try self.syncActionAccelerator("app.open_config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
+    try self.syncActionAccelerator("win.open_scrollback", .{ .write_scrollback_file = .open });
     try self.syncActionAccelerator("win.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
@@ -772,6 +773,7 @@ fn initMenu(self: *App) void {
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+        c.g_menu_append(section, "Open Scrollback", "win.open_scrollback");
         c.g_menu_append(section, "Open Configuration", "app.open_config");
         c.g_menu_append(section, "Reload Configuration", "app.reload_config");
         c.g_menu_append(section, "About Ghostty", "win.about");

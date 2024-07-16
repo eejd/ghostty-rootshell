@@ -173,6 +173,7 @@ fn initActions(self: *Window) void {
         .{ "split_right", &gtkActionSplitRight },
         .{ "split_down", &gtkActionSplitDown },
         .{ "toggle_inspector", &gtkActionToggleInspector },
+        .{ "open_scrollback", &gtkActionOpenScrollback },
     };
 
     inline for (actions) |entry| {
@@ -575,6 +576,19 @@ fn gtkActionToggleInspector(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionOpenScrollback(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .write_scrollback_file = .open }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
