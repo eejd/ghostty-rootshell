@@ -205,7 +205,7 @@ pub const Action = union(enum) {
 
     /// Write the entire scrollback into a temporary file and write the path to
     /// the file to the tty.
-    write_scrollback_file: void,
+    write_scrollback_file: WriteScrollbackAction,
 
     /// Open a new window.
     new_window: void,
@@ -290,6 +290,11 @@ pub const Action = union(enum) {
         page_down,
         home,
         end,
+    };
+
+    pub const WriteScrollbackAction = enum {
+        paste,
+        open,
     };
 
     pub const SplitDirection = enum {

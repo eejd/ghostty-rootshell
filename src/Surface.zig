@@ -3324,7 +3324,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             }, .unlocked);
         },
 
-        .write_scrollback_file => write_scrollback_file: {
+        .write_scrollback_file => |scrollback_action| write_scrollback_file: {
             // Create a temporary directory to store our scrollback.
             var tmp_dir = try internal_os.TempDir.init();
             errdefer tmp_dir.deinit();
@@ -3365,10 +3365,18 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
             const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
 
-            self.io.queueMessage(try termio.Message.writeReq(
-                self.alloc,
-                path,
-            ), .unlocked);
+            switch (scrollback_action) {
+                .paste => {
+                    self.io.queueMessage(try termio.Message.writeReq(
+                        self.alloc,
+                        path,
+                    ), .unlocked);
+                },
+                .open => {
+                    log.debug("opening scrollback file: {s}", .{path});
+                    try internal_os.open(self.alloc, path);
+                },
+            }
         },
 
         .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
