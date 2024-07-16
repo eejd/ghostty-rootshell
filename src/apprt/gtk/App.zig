@@ -358,7 +358,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
     try self.syncActionAccelerator("app.open_config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
-    try self.syncActionAccelerator("app.toggle_inspector", .{ .inspector = .toggle });
+    try self.syncActionAccelerator("win.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
     try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
