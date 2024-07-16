@@ -266,6 +266,9 @@ pub const Action = union(enum) {
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,
 
+    /// Toggle window decorations on and off. This only works on Linux.
+    toggle_window_decorations: void,
+
     /// Quit ghostty.
     quit: void,
 

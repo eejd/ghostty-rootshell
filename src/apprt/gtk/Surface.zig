@@ -721,6 +721,18 @@ pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFulls
     window.toggleFullscreen(mac_non_native);
 }
 
+pub fn toggleWindowDecorations(self: *Surface) void {
+    const window = self.container.window() orelse {
+        log.info(
+            "toggleWindowDecorations invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    window.toggleWindowDecorations();
+}
+
 pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
     switch (self.title) {
         .none => return null,

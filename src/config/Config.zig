@@ -571,6 +571,11 @@ class: ?[:0]const u8 = null,
 ///
 ///   * only a single key input is allowed, `ctrl+a+b` is invalid.
 ///
+///   * the key input can be prefixed with `physical:` to specify a
+///     physical key mapping rather than a logical one. A physical key
+///     mapping responds to the hardware keycode and not the keycode
+///     translated by any system keyboard layouts. Example: "ctrl+physical:a"
+///
 /// Valid modifiers are `shift`, `ctrl` (alias: `control`), `alt` (alias: `opt`,
 /// `option`), and `super` (alias: `cmd`, `command`). You may use the modifier
 /// or the alias. When debugging keybinds, the non-aliased modifier will always
@@ -608,6 +613,12 @@ class: ?[:0]const u8 = null,
 ///   * `keybind=clear` will clear all set keybindings. Warning: this
 ///     removes ALL keybindings up to this point, including the default
 ///     keybindings.
+///
+/// A keybind by default causes the input to be consumed. This means that the
+/// associated encoding (if any) will not be sent to the running program
+/// in the terminal. If you wish to send the encoded value to the program,
+/// specify the "unconsumed:" prefix before the entire keybind. For example:
+/// "unconsumed:ctrl+a=reload_config"
 keybind: Keybinds = .{},
 
 /// Window padding. This applies padding between the terminal cells and the
@@ -669,7 +680,12 @@ keybind: Keybinds = .{},
 ///   * `true`
 ///   * `false` - windows won't have native decorations, i.e. titlebar and
 ///      borders. On MacOS this also disables tabs and tab overview.
-
+///
+/// The "toggle_window_decoration" keybind action can be used to create
+/// a keybinding to toggle this setting at runtime.
+///
+/// Changing this configuration in your configuration and reloading will
+/// only affect new windows. Existing windows will not be affected.
 @"window-decoration": bool = true,
 
 /// The font that will be used for the application's window and tab titles.
@@ -780,17 +796,6 @@ keybind: Keybinds = .{},
 //
 // Default is false.
 @"focus-follows-mouse": bool = false,
-
-/// When enabled, the full GTK titlebar is displayed instead of your window
-/// manager's simple titlebar. The behavior of this option will vary with your
-/// window manager.
-///
-/// This option does nothing when `window-decoration` is false or when running
-/// under macOS.
-///
-/// Changing this value at runtime and reloading the configuration will only
-/// affect new windows.
-@"gtk-titlebar": bool = true,
 
 /// Whether to allow programs running in the terminal to read/write to the
 /// system clipboard (OSC 52, for googling). The default is to allow clipboard
@@ -1101,6 +1106,17 @@ keybind: Keybinds = .{},
 /// Note that debug builds of Ghostty have a separate single-instance ID
 /// so you can test single instance without conflicting with release builds.
 @"gtk-single-instance": GtkSingleInstance = .desktop,
+
+/// When enabled, the full GTK titlebar is displayed instead of your window
+/// manager's simple titlebar. The behavior of this option will vary with your
+/// window manager.
+///
+/// This option does nothing when `window-decoration` is false or when running
+/// under macOS.
+///
+/// Changing this value at runtime and reloading the configuration will only
+/// affect new windows.
+@"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
 /// Top, bottom, left, and right are supported. The default is top.
