@@ -33,26 +33,19 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     const stdout = std.io.getStdOut().writer();
 
-    // If a config path is passed, validate it, otherwise validate usual config options
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+
+    // If a config path is passed, validate it, otherwise validate default configs
     if (opts.@"config-file") |config_path| {
-        const cwd = std.fs.cwd();
+        try cfg.loadFile(alloc, config_path);
 
-        if (cwd.openFile(config_path, .{})) |file| {
-            defer file.close();
-
-            var cfg = try Config.default(alloc);
-            defer cfg.deinit();
-
-            var buf_reader = std.io.bufferedReader(file.reader());
-            var iter = cli.args.lineIterator(buf_reader.reader());
-            try cfg.loadIter(alloc, &iter);
-            try cfg.loadRecursiveFiles(alloc);
-            try cfg.finalize();
-        } else |err| {
-            try stdout.print("{any}", .{err});
+        if (!cfg._errors.empty()) {
+            try stdout.print("Config is not valid path={s}", .{config_path});
+            return 1;
         }
     } else {
-        _ = try Config.load(alloc);
+        try cfg.loadDefaultFiles(alloc);
     }
 
     return 0;
