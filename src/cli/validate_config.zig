@@ -42,14 +42,17 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
         const abs_path = try std.fs.cwd().realpath(config_path, &buf);
 
         try cfg.loadFile(alloc, abs_path);
-
-        if (!cfg._errors.empty()) {
-            try stdout.print("Config is not valid path={s}", .{config_path});
-            return 1;
-        }
     } else {
         try cfg.loadDefaultFiles(alloc);
     }
 
-    return 0;
+    if (!cfg._errors.empty()) {
+        for (cfg._errors.list.items) |err| {
+            try stdout.print("{s}\n", .{err.message});
+        }
+
+        return 1;
+    }
+
+    return 1;
 }
