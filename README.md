@@ -170,7 +170,7 @@ theme = Solarized Dark - Patched
 You can find a list of built-in themes using the `+list-themes` action:
 
 ```
-$ ghostty +list-themes
+ghostty +list-themes
 ...
 ```
 
@@ -314,7 +314,7 @@ The following one-liner will export the terminfo entry from your host and
 import it on the remote machine:
 
 ```shell-session
-$ infocmp -x | ssh YOUR-SERVER -- tic -x -
+infocmp -x | ssh YOUR-SERVER -- tic -x -
 ```
 
 > [!NOTE]
@@ -470,10 +470,10 @@ With Zig and necessary dependencies installed, a binary can be built using
 `zig build`:
 
 ```shell-session
-$ zig build
+zig build
 ...
 
-$ zig-out/bin/ghostty
+zig-out/bin/ghostty
 ```
 
 This will build a binary for the currently running system (if supported).
@@ -503,7 +503,7 @@ normal operation of the terminal (by as much as 100x). If you are building
 a terminal for day to day usage, build a release version:
 
 ```shell-session
-$ zig build -Doptimize=ReleaseFast
+zig build -Doptimize=ReleaseFast
 ...
 ```
 
@@ -526,7 +526,7 @@ before building it. Typically, these are only gtk4 and libadwaita (unless
 building with `-Dstatic=false`). On Ubuntu and Debian, use
 
 ```
-$ sudo apt install libgtk-4-dev libadwaita-1-dev git
+sudo apt install libgtk-4-dev libadwaita-1-dev git
 ```
 
 > [!NOTE]
@@ -549,7 +549,7 @@ $ sudo apt install libgtk-4-dev libadwaita-1-dev git
 On Arch Linux, use
 
 ```
-$ sudo pacman -S gtk4 libadwaita
+sudo pacman -S gtk4 libadwaita
 ```
 
 If you're planning to use a build from source as your daily driver,
@@ -559,7 +559,7 @@ that ensures features such as shell integration, icons, GTK shortcuts, etc.
 all work.
 
 ```
-$ zig build -p $HOME/.local -Doptimize=ReleaseFast
+zig build -p $HOME/.local -Doptimize=ReleaseFast
 ...
 ```
 
@@ -588,10 +588,10 @@ directory pointing to it. If you're not sure that's the case, check the
 output of `xcode-select --print-path`:
 
 ```shell-session
-$ xcode-select --print-path
+xcode-select --print-path
 /Library/Developer/CommandLineTools        # <-- BAD
-$ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-$ xcode-select --print-path
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+xcode-select --print-path
 /Applications/Xcode.app/Contents/Developer # <-- GOOD
 ```
 
@@ -601,8 +601,8 @@ iOS SDKs installed (from inside Xcode → Settings → Platforms), and let's mov
 on to building Ghostty:
 
 ```shell-session
-$ zig build -Doptimize=ReleaseFast
-$ cd macos && xcodebuild
+zig build -Doptimize=ReleaseFast
+cd macos && xcodebuild
 ```
 
 > [!NOTE]
@@ -627,7 +627,7 @@ When running the app, logs are available via macOS unified logging such
 as `Console.app`. The easiest way I've found to view these is to just use the CLI:
 
 ```sh
-$ sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
+sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
 ...
 ```
 
