@@ -952,6 +952,7 @@ extension Ghostty {
 
             menu.addItem(.separator())
             menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Open Scrollback", action: #selector(TerminalController.openScrollback(_:)), keyEquivalent: "")
 
             return menu
         }

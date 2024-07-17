@@ -30,6 +30,7 @@
                 <outlet property="menuNewWindow" destination="Was-JA-tGl" id="lK7-3I-CPG"/>
                 <outlet property="menuNextSplit" destination="bD7-ei-wKU" id="LeT-xw-eh4"/>
                 <outlet property="menuOpenConfig" destination="BOF-NM-1cW" id="Nze-Go-glw"/>
+                <outlet property="menuOpenScrollback" destination="p4o-jY-u18" id="Vs5-LJ-5Jf"/>
                 <outlet property="menuPaste" destination="i27-pK-umN" id="ICc-X2-gV3"/>
                 <outlet property="menuPreviousSplit" destination="Lic-px-1wg" id="Rto-CG-yRe"/>
                 <outlet property="menuQuit" destination="4sb-4s-VLi" id="qYN-S1-6UW"/>
@@ -213,6 +214,12 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="toggleTerminalInspector:" target="-1" id="87m-3R-fQl"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Open Scrollback" id="p4o-jY-u18">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="openScrollback:" target="-1" id="6xl-Py-iOg"/>
                                 </connections>
                             </menuItem>
                         </items>

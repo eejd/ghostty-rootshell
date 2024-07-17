@@ -49,6 +49,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
     @IBOutlet private var menuResetFontSize: NSMenuItem?
     @IBOutlet private var menuTerminalInspector: NSMenuItem?
+    @IBOutlet private var menuOpenScrollback: NSMenuItem?
 
     @IBOutlet private var menuEqualizeSplits: NSMenuItem?
     @IBOutlet private var menuMoveSplitDividerUp: NSMenuItem?
@@ -281,6 +282,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
+        syncMenuShortcut(action: "write_scrollback_file:open", menuItem: self.menuOpenScrollback)
         
         // This menu item is NOT synced with the configuration because it disables macOS
         // global fullscreen keyboard shortcut. The shortcut in the Ghostty config will continue

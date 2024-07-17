@@ -240,6 +240,13 @@ extension Ghostty {
                 logger.warning("action failed action=\(action)")
             }
         }
+
+        func openScrollback(surface: ghostty_surface_t) {
+            let action = "write_scrollback_file:open"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                logger.warning("action failed action=\(action)")
+            }
+        }
         
         #if os(iOS)
         // MARK: Ghostty Callbacks (iOS)
