@@ -38,7 +38,10 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     // If a config path is passed, validate it, otherwise validate default configs
     if (opts.@"config-file") |config_path| {
-        try cfg.loadFile(alloc, config_path);
+        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        const abs_path = try std.fs.cwd().realpath(config_path, &buf);
+
+        try cfg.loadFile(alloc, abs_path);
 
         if (!cfg._errors.empty()) {
             try stdout.print("Config is not valid path={s}", .{config_path});

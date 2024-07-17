@@ -1687,9 +1687,7 @@ pub fn loadIter(
 }
 
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
-    const cwd = std.fs.cwd();
-
-    var file = try cwd.openFile(path, .{});
+    var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     std.log.info("reading configuration file path={s}", .{path});
