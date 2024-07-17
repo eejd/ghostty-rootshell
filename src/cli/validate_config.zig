@@ -42,17 +42,20 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
         const abs_path = try std.fs.cwd().realpath(config_path, &buf);
 
         try cfg.loadFile(alloc, abs_path);
+        try cfg.loadRecursiveFiles(alloc);
     } else {
-        try cfg.loadDefaultFiles(alloc);
+        cfg = try Config.load(alloc);
     }
+
+    try cfg.finalize();
 
     if (!cfg._errors.empty()) {
         for (cfg._errors.list.items) |err| {
             try stdout.print("{s}\n", .{err.message});
         }
 
-        return 1;
+        return 65;
     }
 
-    return 1;
+    return 0;
 }
