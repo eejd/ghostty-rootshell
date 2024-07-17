@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const simd = @import("../../simd/main.zig");
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -179,29 +180,24 @@ pub const CommandParser = struct {
             return "";
         }
 
-        const Base64Decoder = std.base64.standard_no_pad.Decoder;
-
-        // We remove any padding, since it's optional, and decode without it.
-        while (self.data.items[self.data.items.len - 1] == '=') {
-            self.data.items.len -= 1;
-        }
-
-        const size = Base64Decoder.calcSizeForSlice(self.data.items) catch |err| {
-            log.warn("failed to calculate base64 size for payload: {}", .{err});
-            return error.InvalidData;
-        };
+        const max_len = simd.base64.maxLen(self.data.items);
+        assert(max_len <= self.data.items.len);
 
         // This is kinda cursed, but we can decode the base64 on top of
         // itself, since it's guaranteed that the encoded size is larger,
         // and any bytes in areas that are written to will have already
         // been used (assuming scalar decoding).
-        Base64Decoder.decode(self.data.items[0..size], self.data.items) catch |err| {
+        const decoded = simd.base64.decode(
+            self.data.items,
+            self.data.items[0..max_len],
+        ) catch |err| {
             log.warn("failed to decode base64 payload data: {}", .{err});
             return error.InvalidData;
         };
+        assert(decoded.len <= max_len);
 
         // Remove the extra bytes.
-        self.data.items.len = size;
+        self.data.items.len = decoded.len;
 
         return try self.data.toOwnedSlice();
     }
