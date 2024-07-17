@@ -432,7 +432,9 @@ palette: Palette = .{},
 ///
 /// If you're using the `ghostty` CLI there is also a shortcut to run a command
 /// with arguments directly: you can use the `-e` flag. For example: `ghostty -e
-/// fish --with --custom --args`.
+/// fish --with --custom --args`. The `-e` flag also automatically sets
+/// `gtk-single-instance = false` (no matter what) to ensure that a new
+/// instance is launched and the CLI args are respected.
 command: ?[]const u8 = null,
 
 /// If true, keep the terminal open after the command exits. Normally, the
@@ -2094,6 +2096,11 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         }
 
         self.command = command.items[0 .. command.items.len - 1];
+
+        // When "-e" is used on the command line then we always disabled
+        // single instance mode because single instance mode is incompatible
+        // with CLI flags.
+        self.@"gtk-single-instance" = .false;
 
         // Do not continue, we consumed everything.
         return false;
