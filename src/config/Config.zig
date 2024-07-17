@@ -56,6 +56,13 @@ const c = @cImport({
 ///     font-family = ""
 ///     font-family = "My Favorite Font"
 ///
+/// Setting any of these as CLI arguments will automatically clear the
+/// values set in configuration files so you don't need to specify
+/// `--font-family=""` before setting a new value. You only need to specify
+/// this within config files if you want to clear previously set values in
+/// configuration files or on the CLI if you want to clear values set on the
+/// CLI.
+///
 /// Changing this configuration at runtime will only affect new terminals, i.e.
 /// new windows, tabs, etc.
 @"font-family": RepeatableString = .{},
@@ -1198,8 +1205,44 @@ pub fn load(alloc_gpa: Allocator) !Config {
     // If we have a configuration file in our home directory, parse that first.
     try result.loadDefaultFiles(alloc_gpa);
 
-    // Parse the config from the CLI args
-    try result.loadCliArgs(alloc_gpa);
+    // Parse the config from the CLI args. If the font families change from
+    // the CLI, we clear the font families set in the configuration file.
+    // This avoids a UX oddity where on the CLI you have to specify
+    // `font-family=""` to clear the font families before setting a new one.
+    {
+        const fields = &[_][]const u8{
+            "font-family",
+            "font-family-bold",
+            "font-family-italic",
+            "font-family-bold-italic",
+        };
+
+        // Build our initial counts
+        var counter: [fields.len]usize = undefined;
+        inline for (fields, 0..) |field, i| {
+            counter[i] = @field(result, field).list.items.len;
+        }
+
+        try result.loadCliArgs(alloc_gpa);
+
+        // If any of our font family settings were changed, then we
+        // replace the entire list with the new list.
+        inline for (fields, 0..) |field, i| {
+            const v = &@field(result, field);
+            const len = v.list.items.len - counter[i];
+            if (len > 0) {
+                // Note: we don't have to worry about freeing the memory
+                // that we overwrite or cut off here because its all in
+                // an arena.
+                v.list.replaceRangeAssumeCapacity(
+                    0,
+                    len,
+                    v.list.items[counter[i]..],
+                );
+                v.list.items.len = len;
+            }
+        }
+    }
 
     // Parse the config files that were added from our file and CLI args.
     try result.loadRecursiveFiles(alloc_gpa);
