@@ -2984,6 +2984,34 @@ test "Screen: clearPrompt" {
     }
 }
 
+test "Screen: clearPrompt continuation" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 4, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL\n4MNOP";
+    try s.testWriteString(str);
+
+    // Set one of the rows to be a prompt followed by a continuation row
+    {
+        s.cursorAbsolute(0, 1);
+        s.cursor.page_row.semantic_prompt = .prompt;
+        s.cursorAbsolute(0, 2);
+        s.cursor.page_row.semantic_prompt = .prompt_continuation;
+        s.cursorAbsolute(0, 3);
+        s.cursor.page_row.semantic_prompt = .input;
+    }
+
+    s.clearPrompt();
+
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH", contents);
+    }
+}
+
 test "Screen: clearPrompt no prompt" {
     const testing = std.testing;
     const alloc = testing.allocator;
