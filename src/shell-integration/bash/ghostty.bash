@@ -140,7 +140,8 @@ function __ghostty_precmd() {
       fi
     fi
 
-    if test "$_ghostty_executing" != "0"; then
+    if test "$_ghostty_executing" != ""; then
+      # End of current command. Report its status.
       builtin printf "\033]133;D;%s;aid=%s\007" "$ret" "$BASHPID"
     fi
 
@@ -152,6 +153,7 @@ function __ghostty_precmd() {
       builtin printf "\e]7;kitty-shell-cwd://%s%s\a" "$HOSTNAME" "$PWD"
     fi
 
+    # Fresh line and start of prompt.
     builtin printf "\033]133;A;aid=%s\007" "$BASHPID"
     _ghostty_executing=0
 }
