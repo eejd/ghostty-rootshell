@@ -648,17 +648,14 @@ const Subprocess = struct {
                     break :man;
                 };
 
-                if (env.get("MANPATH")) |manpath| {
-                    // Append to the existing MANPATH. It's very unlikely that our bundle's
-                    // resources directory already appears here so we don't spend the time
-                    // searching for it.
-                    try env.put(
-                        "MANPATH",
-                        try internal_os.appendEnv(alloc, manpath, dir),
-                    );
-                } else {
-                    try env.put("MANPATH", dir);
-                }
+                const manpath = env.get("MANPATH") orelse "";
+                // Always append with colon in front, as it mean that if
+                // `MANPATH` is empty, then it should be treated as an extra
+                // path instead of overriding all paths set by OS.
+                try env.put(
+                    "MANPATH",
+                    try internal_os.appendEnvAlways(alloc, manpath, dir),
+                );
             }
         }
 
