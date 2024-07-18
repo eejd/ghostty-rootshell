@@ -395,7 +395,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     c.gtk_widget_set_vexpand(gl_area, 1);
 
     // Various other GL properties
-    c.gtk_widget_set_cursor_from_name(@ptrCast(overlay), "text");
+    c.gtk_widget_set_cursor_from_name(@ptrCast(gl_area), "text");
     c.gtk_gl_area_set_required_version(@ptrCast(gl_area), 3, 3);
     c.gtk_gl_area_set_has_stencil_buffer(@ptrCast(gl_area), 0);
     c.gtk_gl_area_set_has_depth_buffer(@ptrCast(gl_area), 0);
@@ -985,9 +985,9 @@ pub fn setMouseShape(
     // Set our new cursor. We only do this if the cursor we currently
     // have is NOT set to "none" because setting the cursor causes it
     // to become visible again.
-    const overlay_widget: *c.GtkWidget = @ptrCast(@alignCast(self.overlay));
-    if (c.gtk_widget_get_cursor(overlay_widget) != self.app.cursor_none) {
-        c.gtk_widget_set_cursor(overlay_widget, cursor);
+    const gl_area_widget: *c.GtkWidget = @ptrCast(@alignCast(self.gl_area));
+    if (c.gtk_widget_get_cursor(gl_area_widget) != self.app.cursor_none) {
+        c.gtk_widget_set_cursor(gl_area_widget, cursor);
     }
 
     // Free our existing cursor
@@ -1000,15 +1000,15 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
     // Note in there that self.cursor or cursor_none may be null. That's
     // not a problem because NULL is a valid argument for set cursor
     // which means to just use the parent value.
-    const overlay_widget: *c.GtkWidget = @ptrCast(@alignCast(self.overlay));
+    const gl_area_widget: *c.GtkWidget = @ptrCast(@alignCast(self.gl_area));
 
     if (visible) {
-        c.gtk_widget_set_cursor(overlay_widget, self.cursor);
+        c.gtk_widget_set_cursor(gl_area_widget, self.cursor);
         return;
     }
 
     // Set our new cursor to the app "none" cursor
-    c.gtk_widget_set_cursor(overlay_widget, self.app.cursor_none);
+    c.gtk_widget_set_cursor(gl_area_widget, self.app.cursor_none);
 }
 
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
