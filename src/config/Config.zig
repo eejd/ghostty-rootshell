@@ -1686,6 +1686,7 @@ pub fn loadIter(
     try cli.args.parse(Config, alloc, self, iter);
 }
 
+/// Load configuration from the target config file at `path`.
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
