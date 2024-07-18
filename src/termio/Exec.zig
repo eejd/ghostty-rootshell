@@ -648,13 +648,16 @@ const Subprocess = struct {
                     break :man;
                 };
 
-                const manpath = env.get("MANPATH") orelse "";
                 // Always append with colon in front, as it mean that if
                 // `MANPATH` is empty, then it should be treated as an extra
                 // path instead of overriding all paths set by OS.
                 try env.put(
                     "MANPATH",
-                    try internal_os.appendEnvAlways(alloc, manpath, dir),
+                    try internal_os.appendEnvAlways(
+                        alloc,
+                        env.get("MATHPATH") orelse "",
+                        dir,
+                    ),
                 );
             }
         }

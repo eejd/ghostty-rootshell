@@ -24,6 +24,9 @@ pub fn appendEnv(
 }
 
 /// Always append value to environment, even when it is empty.
+/// This is useful because some env vars (like MANPATH) want there
+/// to be an empty prefix to preserve existing values.
+///
 /// The returned value is always allocated so it must be freed.
 pub fn appendEnvAlways(
     alloc: Allocator,
