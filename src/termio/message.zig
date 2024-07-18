@@ -42,6 +42,10 @@ pub const Message = union(enum) {
     /// Resize the window.
     resize: Resize,
 
+    /// Request a size report is sent to the pty (in-band size report,
+    /// mode 2048: https://gist.github.com/rockorager/e695fb2924d36b2bcf1fff4a3704bd83)
+    size_report: void,
+
     /// Clear the screen.
     clear_screen: struct {
         /// Include clearing the history

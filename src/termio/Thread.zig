@@ -267,6 +267,7 @@ fn drainMailbox(
             },
             .inspector => |v| self.flags.has_inspector = v,
             .resize => |v| self.handleResize(cb, v),
+            .size_report => try io.sizeReport(data),
             .clear_screen => |v| try io.clearScreen(data, v.history),
             .scroll_viewport => |v| try io.scrollViewport(v),
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
@@ -369,7 +370,12 @@ fn coalesceCallback(
 
     if (cb.self.coalesce_data.resize) |v| {
         cb.self.coalesce_data.resize = null;
-        cb.io.resize(v.grid_size, v.screen_size, v.padding) catch |err| {
+        cb.io.resize(
+            &cb.data,
+            v.grid_size,
+            v.screen_size,
+            v.padding,
+        ) catch |err| {
             log.warn("error during resize err={}", .{err});
         };
     }

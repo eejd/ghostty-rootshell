@@ -344,6 +344,7 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
 /// Resize the terminal.
 pub fn resize(
     self: *Termio,
+    td: *ThreadData,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
@@ -377,7 +378,37 @@ pub fn resize(
 
         // Wake up our renderer so any changes will be shown asap
         self.renderer_wakeup.notify() catch {};
+
+        // If we have size reporting enabled we need to send a report.
+        if (self.terminal.modes.get(.in_band_size_reports)) {
+            try self.sizeReportLocked(td);
+        }
     }
+}
+
+/// Make a mode 2048 in-band size report.
+pub fn sizeReport(self: *Termio, td: *ThreadData) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    try self.sizeReportLocked(td);
+}
+
+fn sizeReportLocked(self: *Termio, td: *ThreadData) !void {
+    // 1024 bytes should be enough for size report since report
+    // in columns and pixels.
+    var buf: [1024]u8 = undefined;
+    const message = try std.fmt.bufPrint(
+        &buf,
+        "\x1B[48;{};{};{};{}t",
+        .{
+            self.grid_size.rows,
+            self.grid_size.columns,
+            self.terminal.height_px,
+            self.terminal.width_px,
+        },
+    );
+
+    try self.queueWrite(td, message, false);
 }
 
 /// Reset the synchronized output mode. This is usually called by timer

@@ -597,6 +597,10 @@ pub const StreamHandler = struct {
                 self.messageWriter(.{ .linefeed_mode = enabled });
             },
 
+            .in_band_size_reports => if (enabled) self.messageWriter(.{
+                .size_report = {},
+            }),
+
             .mouse_event_x10 => {
                 if (enabled) {
                     self.terminal.flags.mouse_event = .x10;
