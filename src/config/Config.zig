@@ -1329,42 +1329,42 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .left }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .left },
+        .{ .adjust_selection = .left },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .right }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .right },
+        .{ .adjust_selection = .right },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .up }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .up },
+        .{ .adjust_selection = .up },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .down }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .down },
+        .{ .adjust_selection = .down },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .page_up }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .page_up },
+        .{ .adjust_selection = .page_up },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .page_down }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .page_down },
+        .{ .adjust_selection = .page_down },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .home }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .home },
+        .{ .adjust_selection = .home },
     );
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .end }, .mods = .{ .shift = true } },
-        .{ .expand_selection = .end },
+        .{ .adjust_selection = .end },
     );
 
     // Windowing

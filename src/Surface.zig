@@ -3488,12 +3488,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .quit => try self.app.setQuit(),
 
-        .expand_selection => |direction| expand_selection: {
+        .adjust_selection => |direction| adjust_selection: {
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
 
             const screen = &self.io.terminal.screen;
-            const sel = if (screen.selection) |*sel| sel else break :expand_selection;
+            const sel = if (screen.selection) |*sel| sel else break :adjust_selection;
             sel.adjust(screen, switch (direction) {
                 .left => .left,
                 .right => .right,

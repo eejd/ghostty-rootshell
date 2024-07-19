@@ -195,9 +195,9 @@ pub const Action = union(enum) {
     scroll_page_fractional: f32,
     scroll_page_lines: i16,
 
-    /// Expand an existing selection in a given direction. This action
+    /// Adjust an existing selection in a given direction. This action
     /// does nothing if there is no active selection.
-    expand_selection: ExpandSelection,
+    adjust_selection: AdjustSelection,
 
     /// Jump the viewport forward or back by prompt. Positive number is the
     /// number of prompts to jump forward, negative is backwards.
@@ -281,7 +281,7 @@ pub const Action = union(enum) {
         application: []const u8,
     };
 
-    pub const ExpandSelection = enum {
+    pub const AdjustSelection = enum {
         left,
         right,
         up,
