@@ -1325,6 +1325,48 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         .{ .write_scrollback_file = {} },
     );
 
+    // Expand Selection
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .left }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .left },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .right }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .right },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .up }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .up },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .down }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .down },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .page_up }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .page_up },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .page_down }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .page_down },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .home }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .home },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .end }, .mods = .{ .shift = true } },
+        .{ .adjust_selection = .end },
+    );
+
     // Windowing
     if (comptime !builtin.target.isDarwin()) {
         try result.keybind.set.put(

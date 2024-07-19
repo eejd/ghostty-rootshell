@@ -195,6 +195,10 @@ pub const Action = union(enum) {
     scroll_page_fractional: f32,
     scroll_page_lines: i16,
 
+    /// Adjust an existing selection in a given direction. This action
+    /// does nothing if there is no active selection.
+    adjust_selection: AdjustSelection,
+
     /// Jump the viewport forward or back by prompt. Positive number is the
     /// number of prompts to jump forward, negative is backwards.
     jump_to_prompt: i16,
@@ -275,6 +279,17 @@ pub const Action = union(enum) {
     pub const CursorKey = struct {
         normal: []const u8,
         application: []const u8,
+    };
+
+    pub const AdjustSelection = enum {
+        left,
+        right,
+        up,
+        down,
+        page_up,
+        page_down,
+        home,
+        end,
     };
 
     pub const SplitDirection = enum {
