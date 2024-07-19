@@ -1,6 +1,6 @@
-//! OSC (Operating System Command) related functions and types. OSC is
+//! OSC (Operating System Command) related functions and types.
 //!
-//! another set of control sequences for terminal programs that start with
+//! OSC is another set of control sequences for terminal programs that start with
 //! "ESC ]". Unlike CSI or standard ESC sequences, they may contain strings
 //! and other irregular formatting so a dedicated parser is created to handle it.
 const osc = @This();
@@ -33,9 +33,18 @@ pub const Command = union(enum) {
     /// Subsequent text (until a OSC "133;B" or OSC "133;I" command) is a
     /// prompt string (as if followed by OSC 133;P;k=i\007). Note: I've noticed
     /// not all shells will send the prompt end code.
+    ///
+    /// "aid" is an optional "application identifier" that helps disambiguate
+    /// nested shell sessions. It can be anything but is usually a process ID.
+    ///
+    /// "kind" tells us which kind of semantic prompt sequence this is:
+    /// - primary: normal, left-aligned first-line prompt (initial, default)
+    /// - continuation: an editable continuation line
+    /// - secondary: a non-editable continuation line
+    /// - right: a right-aligned prompt that may need adjustment during reflow
     prompt_start: struct {
         aid: ?[]const u8 = null,
-        kind: enum { primary, right, continuation } = .primary,
+        kind: enum { primary, continuation, secondary, right } = .primary,
         redraw: bool = true,
     },
 
@@ -899,12 +908,13 @@ pub const Parser = struct {
             }
         } else if (mem.eql(u8, self.temp_state.key, "k")) {
             // The "k" marks the kind of prompt, or "primary" if we don't know.
-            // This can be used to distinguish between the first prompt,
+            // This can be used to distinguish between the first (initial) prompt,
             // a continuation, etc.
             switch (self.command) {
                 .prompt_start => |*v| if (value.len == 1) {
                     v.kind = switch (value[0]) {
-                        'c', 's' => .continuation,
+                        'c' => .continuation,
+                        's' => .secondary,
                         'r' => .right,
                         'i' => .primary,
                         else => .primary,
@@ -1086,6 +1096,19 @@ test "OSC: prompt_start with continuation" {
     const cmd = p.end(null).?;
     try testing.expect(cmd == .prompt_start);
     try testing.expect(cmd.prompt_start.kind == .continuation);
+}
+
+test "OSC: prompt_start with secondary" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "133;A;k=s";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .prompt_start);
+    try testing.expect(cmd.prompt_start.kind == .secondary);
 }
 
 test "OSC: end_of_command no exit code" {
