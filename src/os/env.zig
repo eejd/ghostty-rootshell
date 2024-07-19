@@ -20,6 +20,19 @@ pub fn appendEnv(
     if (current.len == 0) return try alloc.dupe(u8, value);
 
     // Otherwise we must prefix.
+    return try appendEnvAlways(alloc, current, value);
+}
+
+/// Always append value to environment, even when it is empty.
+/// This is useful because some env vars (like MANPATH) want there
+/// to be an empty prefix to preserve existing values.
+///
+/// The returned value is always allocated so it must be freed.
+pub fn appendEnvAlways(
+    alloc: Allocator,
+    current: []const u8,
+    value: []const u8,
+) ![]u8 {
     return try std.fmt.allocPrint(alloc, "{s}{s}{s}", .{
         current,
         PATH_SEP,
