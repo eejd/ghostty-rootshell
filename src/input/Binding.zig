@@ -169,15 +169,6 @@ pub const Action = union(enum) {
     /// enter after to get a new prompt.
     reset: void,
 
-    selection_navigation_left: void,
-    selection_navigation_right: void,
-    selection_navigation_up: void,
-    selection_navigation_down: void,
-    selection_navigation_page_up: void,
-    selection_navigation_page_down: void,
-    selection_natigation_home: void,
-    selection_natigation_end: void,
-
     /// Copy and paste.
     copy_to_clipboard: void,
     paste_from_clipboard: void,
@@ -203,6 +194,10 @@ pub const Action = union(enum) {
     scroll_page_down: void,
     scroll_page_fractional: f32,
     scroll_page_lines: i16,
+
+    /// Expand an existing selection in a given direction. This action
+    /// does nothing if there is no active selection.
+    expand_selection: ExpandSelection,
 
     /// Jump the viewport forward or back by prompt. Positive number is the
     /// number of prompts to jump forward, negative is backwards.
@@ -284,6 +279,17 @@ pub const Action = union(enum) {
     pub const CursorKey = struct {
         normal: []const u8,
         application: []const u8,
+    };
+
+    pub const ExpandSelection = enum {
+        left,
+        right,
+        up,
+        down,
+        page_up,
+        page_down,
+        home,
+        end,
     };
 
     pub const SplitDirection = enum {
