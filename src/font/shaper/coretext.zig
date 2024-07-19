@@ -61,7 +61,7 @@ pub const Shaper = struct {
 
     /// The grid that our cached fonts correspond to.
     /// If the grid changes then we need to reset our cache.
-    cached_font_grid: ?*font.SharedGrid,
+    cached_font_grid: usize,
 
     /// The list of CoreFoundation objects to release on the dedicated
     /// release thread. This is built up over the course of shaping and
@@ -245,7 +245,7 @@ pub const Shaper = struct {
             .features = feats,
             .writing_direction = writing_direction,
             .cached_fonts = .{},
-            .cached_font_grid = null,
+            .cached_font_grid = 0,
             .cf_release_pool = .{},
             .cf_release_thread = cf_release_thread,
             .cf_release_thr = cf_release_thr,
@@ -494,20 +494,26 @@ pub const Shaper = struct {
     ) !*macos.foundation.Dictionary {
         // If this grid doesn't match the one we've cached fonts for,
         // then we reset the cache list since it's no longer valid.
-        if (grid != self.cached_font_grid) {
-            // Put all the currently cached fonts in to
-            // the release pool before clearing the list.
-            try self.cf_release_pool.ensureUnusedCapacity(
-                self.alloc,
-                self.cached_fonts.items.len,
-            );
-            for (self.cached_fonts.items) |ft| {
-                if (ft) |f| self.cf_release_pool.appendAssumeCapacity(f);
+        // We use an intFromPtr rather than direct pointer comparison
+        // because we don't want anyone to inadvertenly use the pointer.
+        const grid_id: usize = @intFromPtr(grid);
+        if (grid_id != self.cached_font_grid) {
+            if (self.cached_font_grid > 0) {
+                // Put all the currently cached fonts in to
+                // the release pool before clearing the list.
+                try self.cf_release_pool.ensureUnusedCapacity(
+                    self.alloc,
+                    self.cached_fonts.items.len,
+                );
+                for (self.cached_fonts.items) |ft| {
+                    if (ft) |f| {
+                        self.cf_release_pool.appendAssumeCapacity(f);
+                    }
+                }
+                self.cached_fonts.clearRetainingCapacity();
             }
 
-            self.cached_fonts.clearRetainingCapacity();
-
-            self.cached_font_grid = grid;
+            self.cached_font_grid = grid_id;
         }
 
         const index_int = index.int();
