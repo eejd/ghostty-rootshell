@@ -3315,21 +3315,47 @@ pub const Pin = struct {
         }
 
         if (self.page == top.page) {
+            // If our pin is the top page and our y is less than the top y
+            // then we can't possibly be between the top and bottom.
             if (self.y < top.y) return false;
+
+            // If our y is after the top y but we're on the same page
+            // then we're between the top and bottom if our y is less
+            // than or equal to the bottom y IF its the same page. If the
+            // bottom is another page then it means that the range is
+            // at least the full top page and since we're the same page
+            // we're in the range.
             if (self.y > top.y) {
                 return if (self.page == bottom.page)
                     self.y <= bottom.y
                 else
                     true;
             }
-            if (self.x < top.x) return false;
+
+            // Otherwise our y is the same as the top y, so we need to
+            // check the x coordinate.
+            assert(self.y == top.y);
+            return self.x >= top.x;
         }
         if (self.page == bottom.page) {
+            // Our page is the bottom page so we're between the top and
+            // bottom if our y is less than the bottom y.
             if (self.y > bottom.y) return false;
             if (self.y < bottom.y) return true;
+
+            // If our y is the same then we're between if we're before
+            // or equal to the bottom x.
+            assert(self.y == bottom.y);
             return self.x <= bottom.x;
         }
 
+        // Our page isn't the top or bottom so we need to check if
+        // our page is somewhere between the top and bottom.
+
+        // Since our loop starts at top.page.next we need to check that
+        // top != bottom because if they're the same then we can't possibly
+        // be between them.
+        if (top.page == bottom.page) return false;
         var page = top.page.next;
         while (page) |p| : (page = p.next) {
             if (p == bottom.page) break;
