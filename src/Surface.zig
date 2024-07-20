@@ -3329,6 +3329,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             v,
         ),
 
+        .write_selection_file => |v| try self.writeScreenFile(
+            .selection,
+            v,
+        ),
+
         .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
 
         .new_tab => {
@@ -3508,6 +3513,7 @@ fn closingAction(action: input.Binding.Action) bool {
 /// The portion of the screen to write for writeScreenFile.
 const WriteScreenLoc = enum {
     history,
+    selection,
 };
 
 fn writeScreenFile(
@@ -3534,30 +3540,35 @@ fn writeScreenFile(
         // the file and write the empty file to the pty so that this
         // command always works on the primary screen.
         const pages = &self.io.terminal.screen.pages;
-        const tl: terminal.Pin, const br: ?terminal.Pin = switch (loc) {
+        const sel_: ?terminal.Selection = switch (loc) {
             .history => history: {
                 // We do not support this for alternate screens
                 // because they don't have scrollback anyways.
                 if (self.io.terminal.active_screen == .alternate) {
-                    tmp_dir.deinit();
-                    return;
+                    break :history null;
                 }
 
-                break :history .{
+                break :history terminal.Selection.init(
                     pages.getTopLeft(.history),
-                    pages.getBottomRight(.history),
-                };
+                    pages.getBottomRight(.history) orelse
+                        break :history null,
+                    false,
+                );
             },
+
+            .selection => self.io.terminal.screen.selection,
         };
 
+        const sel = sel_ orelse {
+            // If we have no selection we have no data so we do nothing.
+            tmp_dir.deinit();
+            return;
+        };
         try self.io.terminal.screen.dumpString(
             buf_writer.writer(),
             .{
-                .tl = tl,
-                .br = br orelse {
-                    tmp_dir.deinit();
-                    return;
-                },
+                .tl = sel.start(),
+                .br = sel.end(),
                 .unwrap = true,
             },
         );

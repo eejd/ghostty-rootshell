@@ -211,6 +211,12 @@ pub const Action = union(enum) {
     ///
     write_scrollback_file: WriteScreenAction,
 
+    /// Same as write_scrollback_file but writes the selected text.
+    /// If there is no selected text this does nothing (it doesn't
+    /// even create an empty file). See write_scrollback_file for
+    /// available values.
+    write_selection_file: WriteScreenAction,
+
     /// Open a new window.
     new_window: void,
 
