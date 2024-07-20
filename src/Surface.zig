@@ -3324,55 +3324,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             }, .unlocked);
         },
 
-        .write_scrollback_file => |write_action| write_scrollback_file: {
-            // Create a temporary directory to store our scrollback.
-            var tmp_dir = try internal_os.TempDir.init();
-            errdefer tmp_dir.deinit();
-
-            // Open our scrollback file
-            var file = try tmp_dir.dir.createFile("scrollback", .{});
-            defer file.close();
-            // Screen.dumpString writes byte-by-byte, so buffer it
-            var buf_writer = std.io.bufferedWriter(file.writer());
-
-            // Write the scrollback contents. This requires a lock.
-            {
-                self.renderer_state.mutex.lock();
-                defer self.renderer_state.mutex.unlock();
-
-                // We do not support this for alternate screens
-                // because they don't have scrollback anyways.
-                if (self.io.terminal.active_screen == .alternate) {
-                    tmp_dir.deinit();
-                    break :write_scrollback_file;
-                }
-
-                // We only dump history if we have history. We still keep
-                // the file and write the empty file to the pty so that this
-                // command always works on the primary screen.
-                const pages = &self.io.terminal.screen.pages;
-                if (pages.getBottomRight(.active)) |br| {
-                    const tl = pages.getTopLeft(.history);
-                    try self.io.terminal.screen.dumpString(
-                        buf_writer.writer(),
-                        .{ .tl = tl, .br = br, .unwrap = true },
-                    );
-                }
-            }
-            try buf_writer.flush();
-
-            // Get the final path
-            var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-            const path = try tmp_dir.dir.realpath("scrollback", &path_buf);
-
-            switch (write_action) {
-                .open => try internal_os.open(self.alloc, path),
-                .paste => self.io.queueMessage(try termio.Message.writeReq(
-                    self.alloc,
-                    path,
-                ), .unlocked),
-            }
-        },
+        .write_scrollback_file => |v| try self.writeScreenFile(
+            .history,
+            v,
+        ),
 
         .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
 
@@ -3548,6 +3503,78 @@ fn closingAction(action: input.Binding.Action) bool {
 
         else => false,
     };
+}
+
+/// The portion of the screen to write for writeScreenFile.
+const WriteScreenLoc = enum {
+    history,
+};
+
+fn writeScreenFile(
+    self: *Surface,
+    loc: WriteScreenLoc,
+    write_action: input.Binding.Action.WriteScreenAction,
+) !void {
+    // Create a temporary directory to store our scrollback.
+    var tmp_dir = try internal_os.TempDir.init();
+    errdefer tmp_dir.deinit();
+
+    // Open our scrollback file
+    var file = try tmp_dir.dir.createFile(@tagName(loc), .{});
+    defer file.close();
+    // Screen.dumpString writes byte-by-byte, so buffer it
+    var buf_writer = std.io.bufferedWriter(file.writer());
+
+    // Write the scrollback contents. This requires a lock.
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // We only dump history if we have history. We still keep
+        // the file and write the empty file to the pty so that this
+        // command always works on the primary screen.
+        const pages = &self.io.terminal.screen.pages;
+        const tl: terminal.Pin, const br: ?terminal.Pin = switch (loc) {
+            .history => history: {
+                // We do not support this for alternate screens
+                // because they don't have scrollback anyways.
+                if (self.io.terminal.active_screen == .alternate) {
+                    tmp_dir.deinit();
+                    return;
+                }
+
+                break :history .{
+                    pages.getTopLeft(.history),
+                    pages.getBottomRight(.history),
+                };
+            },
+        };
+
+        try self.io.terminal.screen.dumpString(
+            buf_writer.writer(),
+            .{
+                .tl = tl,
+                .br = br orelse {
+                    tmp_dir.deinit();
+                    return;
+                },
+                .unwrap = true,
+            },
+        );
+    }
+    try buf_writer.flush();
+
+    // Get the final path
+    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const path = try tmp_dir.dir.realpath(@tagName(loc), &path_buf);
+
+    switch (write_action) {
+        .open => try internal_os.open(self.alloc, path),
+        .paste => self.io.queueMessage(try termio.Message.writeReq(
+            self.alloc,
+            path,
+        ), .unlocked),
+    }
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should
