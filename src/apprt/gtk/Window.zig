@@ -31,6 +31,8 @@ window: *c.GtkWindow,
 /// The notebook (tab grouping) for this window.
 notebook: *c.GtkNotebook,
 
+context_menu: *c.GtkWidget,
+
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -51,6 +53,7 @@ pub fn init(self: *Window, app: *App) !void {
         .app = app,
         .window = undefined,
         .notebook = undefined,
+        .context_menu = undefined,
     };
 
     // Create the window
@@ -140,10 +143,16 @@ pub fn init(self: *Window, app: *App) !void {
     }
     c.gtk_box_append(@ptrCast(box), notebook_widget);
 
+    self.context_menu = c.gtk_popover_menu_new_from_model(@ptrCast(@alignCast(self.app.context_menu)));
+    c.gtk_widget_set_parent(self.context_menu, window);
+    c.gtk_popover_set_has_arrow(@ptrCast(@alignCast(self.context_menu)), c.False);
+    c.gtk_widget_set_halign(self.context_menu, c.GTK_ALIGN_START);
+
     // If we are in fullscreen mode, new windows start fullscreen.
     if (app.config.fullscreen) c.gtk_window_fullscreen(self.window);
 
     // All of our events
+    _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), self, null, c.G_CONNECT_DEFAULT);
@@ -173,6 +182,8 @@ fn initActions(self: *Window) void {
         .{ "split_right", &gtkActionSplitRight },
         .{ "split_down", &gtkActionSplitDown },
         .{ "toggle_inspector", &gtkActionToggleInspector },
+        .{ "copy", &gtkActionCopy },
+        .{ "paste", &gtkActionPaste },
     };
 
     inline for (actions) |entry| {
@@ -190,7 +201,9 @@ fn initActions(self: *Window) void {
     }
 }
 
-pub fn deinit(_: *Window) void {}
+pub fn deinit(self: *Window) void {
+    c.gtk_widget_unparent(@ptrCast(self.context_menu));
+}
 
 /// Add a new tab to this window.
 pub fn newTab(self: *Window, parent: ?*CoreSurface) !void {
@@ -399,6 +412,16 @@ fn gtkNotebookCreateWindow(
     return window.notebook;
 }
 
+fn gtkRefocusTerm(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+    _ = v;
+    log.debug("refocus term request", .{});
+    const self = userdataSelf(ud.?);
+
+    self.focusCurrentTab();
+
+    return true;
+}
+
 fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     _ = v;
     log.debug("window close request", .{});
@@ -575,6 +598,32 @@ fn gtkActionToggleInspector(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionCopy(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .copy_to_clipboard = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionPaste(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .paste_from_clipboard = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };

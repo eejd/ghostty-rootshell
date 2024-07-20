@@ -1168,6 +1168,40 @@ pub fn showDesktopNotification(
     c.g_application_send_notification(g_app, body.ptr, notif);
 }
 
+fn showContextMenu(self: *Surface, x: f32, y: f32) void {
+    const window: *Window = self.container.window() orelse {
+        log.info(
+            "showContextMenu invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    var point: c.graphene_point_t = .{
+        .x = x,
+        .y = y,
+    };
+    if (c.gtk_widget_compute_point(
+        self.primaryWidget(),
+        @ptrCast(window.window),
+        &c.GRAPHENE_POINT_INIT(point.x, point.y),
+        @ptrCast(&point),
+    ) == c.False) {
+        log.warn("failed computing point for context menu", .{});
+        return;
+    }
+
+    const rect: c.GdkRectangle = .{
+        .x = @intFromFloat(point.x),
+        .y = @intFromFloat(point.y),
+        .width = 1,
+        .height = 1,
+    };
+
+    c.gtk_popover_set_pointing_to(@ptrCast(@alignCast(window.context_menu)), &rect);
+    c.gtk_popover_popup(@ptrCast(@alignCast(window.context_menu)));
+}
+
 fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     log.debug("gl surface realized", .{});
 
@@ -1303,8 +1337,8 @@ fn scaledCoordinates(
 fn gtkMouseDown(
     gesture: *c.GtkGestureClick,
     _: c.gint,
-    _: c.gdouble,
-    _: c.gdouble,
+    x: c.gdouble,
+    y: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud.?);
@@ -1320,10 +1354,22 @@ fn gtkMouseDown(
         self.grabFocus();
     }
 
-    _ = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
+    // Allow forcing context menu to open with ctrl in apps that would normally consume the click
+    if (button == .right and mods.ctrl) {
+        self.showContextMenu(@floatCast(x), @floatCast(y));
+        return;
+    }
+
+    const consumed = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
+
+    // If a right click isn't consumed, mouseButtonCallback selects the hovered word and returns false.
+    // We can use this to handle the context menu opening under normal scenarios.
+    if (!consumed and button == .right) {
+        self.showContextMenu(@floatCast(x), @floatCast(y));
+    }
 }
 
 fn gtkMouseUp(

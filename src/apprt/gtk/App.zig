@@ -53,6 +53,9 @@ cursor_none: ?*c.GdkCursor,
 /// The shared application menu.
 menu: ?*c.GMenu = null,
 
+/// The shared context menu.
+context_menu: ?*c.GMenu = null,
+
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
 
@@ -300,6 +303,7 @@ pub fn terminate(self: *App) void {
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
     if (self.menu) |menu| c.g_object_unref(menu);
+    if (self.context_menu) |context_menu| c.g_object_unref(context_menu);
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
     self.config.deinit();
@@ -364,6 +368,8 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
     try self.syncActionAccelerator("win.split_right", .{ .new_split = .right });
     try self.syncActionAccelerator("win.split_down", .{ .new_split = .down });
+    try self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = {} });
+    try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
 }
 
 fn syncActionAccelerator(
@@ -460,6 +466,7 @@ pub fn run(self: *App) !void {
     // Setup our menu items
     self.initActions();
     self.initMenu();
+    self.initContextMenu();
 
     // On startup, we want to check for configuration errors right away
     // so we can show our error window. We also need to setup other initial
@@ -784,6 +791,36 @@ fn initMenu(self: *App) void {
     // }
 
     self.menu = menu;
+}
+
+fn initContextMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Copy", "win.copy");
+        c.g_menu_append(section, "Paste", "win.paste");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Split Right", "win.split_right");
+        c.g_menu_append(section, "Split Down", "win.split_down");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+    }
+
+    self.context_menu = menu;
 }
 
 fn isValidAppId(app_id: [:0]const u8) bool {
