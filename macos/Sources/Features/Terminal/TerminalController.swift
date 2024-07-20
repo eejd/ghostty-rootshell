@@ -604,11 +604,6 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let surface = focusedSurface?.surface else { return }
         ghostty.toggleTerminalInspector(surface: surface)
     }
-
-    @IBAction func openScrollback(_ sender: Any) {
-        guard let surface = focusedSurface?.surface else { return }
-        ghostty.openScrollback(surface: surface)
-    }
     
     //MARK: - TerminalViewDelegate
     
