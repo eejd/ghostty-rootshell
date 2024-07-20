@@ -203,9 +203,13 @@ pub const Action = union(enum) {
     /// number of prompts to jump forward, negative is backwards.
     jump_to_prompt: i16,
 
-    /// Write the entire scrollback into a temporary file and write the path to
-    /// the file to the tty.
-    write_scrollback_file: WriteScrollbackAction,
+    /// Write the entire scrollback into a temporary file. The action
+    /// determines what to do with the filepath. Valid values are:
+    ///
+    ///   - "paste": Paste the file path into the terminal.
+    ///   - "open": Open the file in the default OS editor for text files.
+    ///
+    write_scrollback_file: WriteScreenAction,
 
     /// Open a new window.
     new_window: void,
@@ -292,11 +296,6 @@ pub const Action = union(enum) {
         end,
     };
 
-    pub const WriteScrollbackAction = enum {
-        paste,
-        open,
-    };
-
     pub const SplitDirection = enum {
         right,
         down,
@@ -327,6 +326,11 @@ pub const Action = union(enum) {
     pub const SplitResizeParameter = struct {
         SplitResizeDirection,
         u16,
+    };
+
+    pub const WriteScreenAction = enum {
+        paste,
+        open,
     };
 
     // Extern because it is used in the embedded runtime ABI.
