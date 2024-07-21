@@ -353,9 +353,9 @@ pub fn adjust(
     s: *const Screen,
     adjustment: Adjustment,
 ) void {
-    // Note that we always adjusts "end" because end always represents
+    // Note that we always adjust "end" because end always represents
     // the last point of the selection by mouse, not necessarilly the
-    // top/bottom visually. So this results in the right behavior
+    // top/bottom visually. So this results in the correct behavior
     // whether the user drags up or down.
     const end_pin = self.endPtr();
     switch (adjustment) {
