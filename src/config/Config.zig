@@ -1688,6 +1688,8 @@ pub fn loadIter(
 
 /// Load configuration from the target config file at `path`.
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
+    assert(std.fs.path.isAbsolute(path));
+
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
