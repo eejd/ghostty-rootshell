@@ -129,15 +129,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
-
+        
         for (tab, window) in zip(1..., windows) {
+            // We need to clear any windows beyond this because they have had
+            // a keyEquivalent set previously.
             guard tab <= 9 else {
                 window.keyEquivalent = ""
                 continue
             }
 
             let action = "goto_tab:\(tab)"
-
             if let equiv = ghostty.config.keyEquivalent(for: action) {
                 window.keyEquivalent = "\(equiv)"
             } else {
