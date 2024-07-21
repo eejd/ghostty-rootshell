@@ -23,6 +23,13 @@ pub const Slant = enum(c_uint) {
     oblique = c.FC_SLANT_OBLIQUE,
 };
 
+pub const Spacing = enum(c_uint) {
+    proportional = c.FC_PROPORTIONAL,
+    dual = c.FC_DUAL,
+    mono = c.FC_MONO,
+    charcell = c.FC_CHARCELL,
+};
+
 pub const Property = enum {
     family,
     style,
