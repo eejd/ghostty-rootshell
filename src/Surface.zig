@@ -3471,6 +3471,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 .page_down => .page_down,
                 .home => .home,
                 .end => .end,
+                .beginning_of_line => .beginning_of_line,
+                .end_of_line => .end_of_line,
             });
 
             // If the selection endpoint is outside of the current viewpoint,

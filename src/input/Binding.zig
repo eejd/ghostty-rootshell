@@ -304,6 +304,8 @@ pub const Action = union(enum) {
         page_down,
         home,
         end,
+        beginning_of_line,
+        end_of_line,
     };
 
     pub const SplitDirection = enum {

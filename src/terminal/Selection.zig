@@ -344,6 +344,8 @@ pub const Adjustment = enum {
     end,
     page_up,
     page_down,
+    beginning_of_line,
+    end_of_line,
 };
 
 /// Adjust the selection by some given adjustment. An adjustment allows
@@ -362,7 +364,7 @@ pub fn adjust(
         .up => if (end_pin.up(1)) |new_end| {
             end_pin.* = new_end;
         } else {
-            end_pin.x = 0;
+            self.adjust(s, .beginning_of_line);
         },
 
         .down => {
@@ -377,7 +379,7 @@ pub fn adjust(
                 }
             } else {
                 // If we're at the bottom, just go to the end of the line
-                end_pin.x = end_pin.page.data.size.cols - 1;
+                self.adjust(s, .end_of_line);
             }
         },
 
@@ -440,6 +442,10 @@ pub fn adjust(
                 }
             }
         },
+
+        .beginning_of_line => end_pin.x = 0,
+
+        .end_of_line => end_pin.x = end_pin.page.data.size.cols - 1,
     }
 }
 
