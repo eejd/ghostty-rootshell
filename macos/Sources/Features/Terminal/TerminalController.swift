@@ -118,7 +118,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
-    /// changes and when a window is closed.
+    /// changes, when a window is closed, and when tabs are reordered
+    /// with the mouse.
     func relabelTabs() {
         // Reset this to false. It'll be set back to true later.
         tabListenForFrame = false
