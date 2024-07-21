@@ -130,11 +130,18 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
 
-        for (index, window) in windows.enumerated().prefix(9) {
+        for (index, window) in windows.enumerated() {
+            guard index < 9 else {
+                window.keyEquivalent = ""
+                continue
+            }
+
             let action = "goto_tab:\(index + 1)"
 
             if let equiv = ghostty.config.keyEquivalent(for: action) {
                 window.keyEquivalent = "\(equiv)"
+            } else {
+                window.keyEquivalent = ""
             }
         }
     }
