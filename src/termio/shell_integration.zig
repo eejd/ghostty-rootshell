@@ -204,7 +204,7 @@ fn setupBash(
     if (!posix and env.get("HISTFILE") == null) {
         var home_buf: [1024]u8 = undefined;
         if (try homedir.home(&home_buf)) |home| {
-            var histfile_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            var histfile_buf: [std.fs.max_path_bytes]u8 = undefined;
             const histfile = try std.fmt.bufPrint(
                 &histfile_buf,
                 "{s}/.bash_history",
@@ -223,7 +223,7 @@ fn setupBash(
     }
 
     // Set our new ENV to point to our integration script.
-    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const integ_dir = try std.fmt.bufPrint(
         &path_buf,
         "{s}/shell-integration/bash/ghostty.bash",
@@ -433,7 +433,7 @@ fn setupXdgDataDirs(
     resource_dir: []const u8,
     env: *EnvMap,
 ) !void {
-    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
 
     // Get our path to the shell integration directory.
     const integ_dir = try std.fmt.bufPrint(
@@ -484,7 +484,7 @@ fn setupZsh(
     }
 
     // Set our new ZDOTDIR
-    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const integ_dir = try std.fmt.bufPrint(
         &path_buf,
         "{s}/shell-integration/zsh",

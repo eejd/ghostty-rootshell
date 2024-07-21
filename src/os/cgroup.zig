@@ -8,7 +8,7 @@ const log = std.log.scoped(.@"linux-cgroup");
 
 /// Returns the path to the cgroup for the given pid.
 pub fn current(alloc: Allocator, pid: std.os.linux.pid_t) !?[]const u8 {
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
 
     // Read our cgroup by opening /proc/<pid>/cgroup and reading the first
     // line. The first line will look something like this:
@@ -39,7 +39,7 @@ pub fn create(
     child: []const u8,
     move: ?std.os.linux.pid_t,
 ) !void {
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "/sys/fs/cgroup{s}/{s}", .{ cgroup, child });
     try std.fs.cwd().makePath(path);
 
@@ -61,7 +61,7 @@ pub fn moveInto(
     cgroup: []const u8,
     pid: std.os.linux.pid_t,
 ) !void {
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "/sys/fs/cgroup{s}/cgroup.procs", .{cgroup});
     const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
     defer file.close();
@@ -71,7 +71,7 @@ pub fn moveInto(
 /// Use clone3 to have the kernel create a new process with the correct cgroup
 /// rather than moving the process to the correct cgroup later.
 pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try std.fmt.bufPrintZ(&buf, "/sys/fs/cgroup{s}", .{cgroup});
 
     // Get a file descriptor that refers to the cgroup directory in the cgroup
@@ -133,7 +133,7 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
 /// than allocating a bunch of copies for an array.
 pub fn controllers(alloc: Allocator, cgroup: []const u8) ![]const u8 {
     assert(cgroup[0] == '/');
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
 
     // Read the available controllers. These will be space separated.
     const path = try std.fmt.bufPrint(
@@ -165,7 +165,7 @@ pub fn configureControllers(
     v: []const u8,
 ) !void {
     assert(cgroup[0] == '/');
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
 
     // Read the available controllers. These will be space separated.
     const path = try std.fmt.bufPrint(
@@ -195,7 +195,7 @@ pub fn configureMemoryLimit(cgroup: []const u8, limit: MemoryLimit) !void {
     };
 
     // Open our file
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try std.fmt.bufPrint(
         &buf,
         "/sys/fs/cgroup{s}/{s}",
