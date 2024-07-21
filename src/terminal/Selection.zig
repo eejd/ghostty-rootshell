@@ -792,6 +792,144 @@ test "Selection: adjust end with not full screen" {
     }
 }
 
+test "Selection: adjust beginning of line" {
+    const testing = std.testing;
+    var s = try Screen.init(testing.allocator, 8, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("A12 B34\nC12 D34");
+
+    // Not at beginning of the line
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 5, .y = 1 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 5, .y = 1 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .beginning_of_line);
+
+        // Start line
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+
+    // Already at beginning of the line
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 5, .y = 1 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 0, .y = 1 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .beginning_of_line);
+
+        // Start line
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+
+    // End pin moves to start pin
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 0, .y = 1 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 5, .y = 1 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .beginning_of_line);
+
+        // Start line
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 1,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Selection: adjust end of line" {
+    const testing = std.testing;
+    var s = try Screen.init(testing.allocator, 8, 10, 0);
+    defer s.deinit();
+    try s.testWriteString("A12 B34\nC12 D34");
+
+    // Not at end of the line
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 1, .y = 0 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 1, .y = 0 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .end_of_line);
+
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+
+    // Already at end of the line
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 1, .y = 0 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 7, .y = 0 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .end_of_line);
+
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+
+    // End pin moves to start pin
+    {
+        var sel = Selection.init(
+            s.pages.pin(.{ .screen = .{ .x = 7, .y = 0 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 1, .y = 0 } }).?,
+            false,
+        );
+        defer sel.deinit(&s);
+        sel.adjust(&s, .end_of_line);
+
+        // Start line
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
 test "Selection: order, standard" {
     const testing = std.testing;
     const alloc = testing.allocator;
