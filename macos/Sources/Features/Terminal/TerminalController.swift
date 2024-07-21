@@ -118,7 +118,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
-    /// changes and when a window is closed.
+    /// changes, when a window is closed, and when tabs are reordered
+    /// with the mouse.
     func relabelTabs() {
         // Reset this to false. It'll be set back to true later.
         tabListenForFrame = false
@@ -128,12 +129,20 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
+        
+        for (tab, window) in zip(1..., windows) {
+            // We need to clear any windows beyond this because they have had
+            // a keyEquivalent set previously.
+            guard tab <= 9 else {
+                window.keyEquivalent = ""
+                continue
+            }
 
-        for (index, window) in windows.enumerated().prefix(9) {
-            let action = "goto_tab:\(index + 1)"
-
+            let action = "goto_tab:\(tab)"
             if let equiv = ghostty.config.keyEquivalent(for: action) {
                 window.keyEquivalent = "\(equiv)"
+            } else {
+                window.keyEquivalent = ""
             }
         }
     }
