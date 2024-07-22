@@ -98,8 +98,8 @@ function __ghostty_precmd() {
       _GHOSTTY_SAVE_PS2="$PS2"
 
       # Marks
-      PS1='\[\e]133;P;k=i\a\]'$PS1'\[\e]133;B\a\]'
-      PS2='\[\e]133;P;k=s\a\]'$PS2'\[\e]133;B\a\]'
+      PS1=$PS1'\[\e]133;B\a\]'
+      PS2=$PS2'\[\e]133;B\a\]'
 
       if [[ "${PS1}" == *"\n"* || "${PS1}" == *$'\n'* ]]; then
         # bash doesn't redraw the leading lines in a multiline prompt so
@@ -108,7 +108,7 @@ function __ghostty_precmd() {
         builtin local oldval
         oldval=$(builtin shopt -p extglob)
         builtin shopt -s extglob
-        PS1=${PS1%@('\n'|$'\n')*}'\n\[\e]133;P;k=s\a\]'${PS1##*@('\n'|$'\n')}
+        PS1=${PS1%@('\n'|$'\n')*}'\n\[\e]133;A;k=s\a\]'${PS1##*@('\n'|$'\n')}
         builtin eval "$oldval"
       fi
 
