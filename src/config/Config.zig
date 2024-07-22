@@ -111,6 +111,12 @@ const c = @cImport({
 /// then you can get an odd numbered pixel size by specifying a half point.
 ///
 /// For example, 13.5pt @ 2px/pt = 27px
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc. Note that you may still not see the change
+/// depending on your `window-inherit-font-size` setting. If that setting is
+/// true, only the first window will be affected by this change since all
+/// subsequent windows will inherit the font size of the previous window.
 @"font-size": f32 = switch (builtin.os.tag) {
     // On macOS we default a little bigger since this tends to look better. This
     // is purely subjective but this is easy to modify.
