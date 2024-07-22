@@ -3591,7 +3591,7 @@ fn writeScreenFile(
     try buf_writer.flush();
 
     // Get the final path
-    var path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try tmp_dir.dir.realpath(@tagName(loc), &path_buf);
 
     switch (write_action) {

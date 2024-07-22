@@ -1864,7 +1864,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
 
     // Config files loaded from the CLI args are relative to pwd
     if (self.@"config-file".value.list.items.len > 0) {
-        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
         try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
     }
 }
@@ -2097,7 +2097,7 @@ pub fn finalize(self: *Config) !void {
                     }
 
                     if (wd_home) {
-                        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                        var buf: [std.fs.max_path_bytes]u8 = undefined;
                         if (try internal_os.home(&buf)) |home| {
                             self.@"working-directory" = try alloc.dupe(u8, home);
                         }
@@ -2899,7 +2899,7 @@ pub const RepeatablePath = struct {
 
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
-            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
             const abs = dir.realpath(path, &buf) catch |err| {
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(

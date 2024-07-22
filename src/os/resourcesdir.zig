@@ -24,12 +24,12 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
     const sentinel = "terminfo/ghostty.termcap";
 
     // Get the path to our running binary
-    var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     var exe: []const u8 = std.fs.selfExePath(&exe_buf) catch return null;
 
     // We have an exe path! Climb the tree looking for the terminfo
     // bundle as we expect it.
-    var dir_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     while (std.fs.path.dirname(exe)) |dir| {
         exe = dir;
 
@@ -56,7 +56,7 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
 /// seems roughly right.
 ///
 /// "buf" must be large enough to fit base + sub + suffix. This is generally
-/// MAX_PATH_BYTES so its not a big deal.
+/// max_path_bytes so its not a big deal.
 pub fn maybeDir(
     buf: []u8,
     base: []const u8,

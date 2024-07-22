@@ -375,7 +375,7 @@ pub const Action = union(enum) {
                 // ordering
                 comptime assert(info.is_tuple);
 
-                var it = std.mem.split(u8, param, ",");
+                var it = std.mem.splitAny(u8, param, ",");
                 var value: field.type = undefined;
                 inline for (info.fields) |field_| {
                     const next = it.next() orelse return Error.InvalidFormat;

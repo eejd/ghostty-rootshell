@@ -589,7 +589,7 @@ const Subprocess = struct {
 
             // Assume that the resources directory is adjacent to the terminfo
             // database
-            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
             const dir = try std.fmt.bufPrint(&buf, "{s}/terminfo", .{
                 std.fs.path.dirname(base) orelse unreachable,
             });
@@ -607,7 +607,7 @@ const Subprocess = struct {
 
         // Add our binary to the path if we can find it.
         ghostty_path: {
-            var exe_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
             const exe_bin_path = std.fs.selfExePath(&exe_buf) catch |err| {
                 log.warn("failed to get ghostty exe path err={}", .{err});
                 break :ghostty_path;
@@ -642,7 +642,7 @@ const Subprocess = struct {
         // Add the man pages from our application bundle to MANPATH.
         if (comptime builtin.target.isDarwin()) {
             if (cfg.resources_dir) |resources_dir| man: {
-                var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                var buf: [std.fs.max_path_bytes]u8 = undefined;
                 const dir = std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir}) catch |err| {
                     log.warn("error building manpath, man pages may not be available err={}", .{err});
                     break :man;

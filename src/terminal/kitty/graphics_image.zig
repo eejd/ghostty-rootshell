@@ -74,7 +74,7 @@ pub const LoadingImage = struct {
             }
         }
 
-        var abs_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
         const path = posix.realpath(cmd.data, &abs_buf) catch |err| {
             log.warn("failed to get absolute path: {}", .{err});
             return error.InvalidData;
@@ -197,7 +197,7 @@ pub const LoadingImage = struct {
 
             // The temporary dir is sometimes a symlink. On macOS for
             // example /tmp is /private/var/...
-            var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
             if (posix.realpath(dir, &buf)) |real_dir| {
                 if (std.mem.startsWith(u8, path, real_dir)) return true;
             } else |_| {}
@@ -627,7 +627,7 @@ test "image load: rgb, not compressed, temporary file" {
         .data = data,
     });
 
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try tmp_dir.dir.realpath("image.data", &buf);
 
     var cmd: command.Command = .{
@@ -664,7 +664,7 @@ test "image load: rgb, not compressed, regular file" {
         .data = data,
     });
 
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try tmp_dir.dir.realpath("image.data", &buf);
 
     var cmd: command.Command = .{
@@ -699,7 +699,7 @@ test "image load: png, not compressed, regular file" {
         .data = data,
     });
 
-    var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try tmp_dir.dir.realpath("image.data", &buf);
 
     var cmd: command.Command = .{
