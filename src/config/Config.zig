@@ -1785,22 +1785,30 @@ pub fn loadIter(
     try cli.args.parse(Config, alloc, self, iter);
 }
 
+/// Load configuration from the target config file at `path`.
+///
+/// `path` must be resolved and absolute.
+pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
+    assert(std.fs.path.isAbsolute(path));
+
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    std.log.info("reading configuration file path={s}", .{path});
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var iter = cli.args.lineIterator(buf_reader.reader());
+    try self.loadIter(alloc, &iter);
+    try self.expandPaths(std.fs.path.dirname(path).?);
+}
+
 /// Load the configuration from the default configuration file. The default
 /// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     const config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
     defer alloc.free(config_path);
 
-    const cwd = std.fs.cwd();
-    if (cwd.openFile(config_path, .{})) |file| {
-        defer file.close();
-        std.log.info("reading configuration file path={s}", .{config_path});
-
-        var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli.args.lineIterator(buf_reader.reader());
-        try self.loadIter(alloc, &iter);
-        try self.expandPaths(std.fs.path.dirname(config_path).?);
-    } else |err| switch (err) {
+    self.loadFile(alloc, config_path) catch |err| switch (err) {
         error.FileNotFound => std.log.info(
             "homedir config not found, not loading path={s}",
             .{config_path},
@@ -1810,7 +1818,7 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
             "error reading config file, not loading err={} path={s}",
             .{ err, config_path },
         ),
-    }
+    };
 }
 
 /// Load and parse the CLI args.
