@@ -291,8 +291,6 @@ palette: Palette = .{},
 
 /// Swap the foreground and background colors of the cell under the cursor. This
 /// option overrides the `cursor-color` and `cursor-text` options.
-///
-/// This is currently only supported on macOS.
 @"cursor-invert-fg-bg": bool = false,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
