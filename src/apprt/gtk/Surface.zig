@@ -1887,7 +1887,7 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
 
-    // We only dim the surface if we are a split
+    // We only try dimming the surface if we are a split
     switch (self.container) {
         .split_br,
         .split_tl,
@@ -1904,6 +1904,16 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
 /// Adds the unfocused_widget to the overlay. If the unfocused_widget has already been added, this
 /// is a no-op
 pub fn dimSurface(self: *Surface) void {
+    const window = self.container.window() orelse {
+        log.warn("dimSurface invalid for container={}", .{self.container});
+        return;
+    };
+
+    // Don't dim surface if context menu is open.
+    // This means we got unfocused due to it opening.
+    const context_menu_open = c.gtk_widget_get_visible(window.context_menu);
+    if (context_menu_open == c.True) return;
+
     if (self.unfocused_widget != null) return;
     self.unfocused_widget = c.gtk_drawing_area_new();
     c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
