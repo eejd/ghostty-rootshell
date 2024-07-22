@@ -596,7 +596,7 @@ fn renderModesWindow(self: *Inspector) void {
             _ = cimgui.c.igTableSetColumnIndex(1);
             cimgui.c.igText(
                 "%s%d",
-                if (tag.ansi) "?" else "",
+                if (tag.ansi) "" else "?",
                 @as(u32, @intCast(tag.value)),
             );
         }
