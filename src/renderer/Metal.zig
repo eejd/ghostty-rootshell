@@ -1039,10 +1039,11 @@ pub fn updateFrame(
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
 
-    // If our cells are not rebuilt, do a no-op draw. This means
-    // that no possible new data can exist that would warrant a full
-    // GPU update, our existing drawable is valid.
-    if (!self.cells_rebuilt) return;
+    // If we have no cells rebuilt we can usually skip drawing since there
+    // is no changed data. However, if we have active animations we still
+    // need to draw so that we can update the time uniform and render the
+    // changes.
+    if (!self.cells_rebuilt and !self.hasAnimations()) return;
     self.cells_rebuilt = false;
 
     // Wait for a frame to be available.
