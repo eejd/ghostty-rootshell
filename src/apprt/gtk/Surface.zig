@@ -1168,6 +1168,38 @@ pub fn showDesktopNotification(
     c.g_application_send_notification(g_app, body.ptr, notif);
 }
 
+fn showContextMenu(self: *Surface, x: f32, y: f32) void {
+    const window: *Window = self.container.window() orelse {
+        log.info(
+            "showContextMenu invalid for container={s}",
+            .{@tagName(self.container)},
+        );
+        return;
+    };
+
+    var point: c.graphene_point_t = .{ .x = x, .y = y };
+    if (c.gtk_widget_compute_point(
+        self.primaryWidget(),
+        @ptrCast(window.window),
+        &c.GRAPHENE_POINT_INIT(point.x, point.y),
+        @ptrCast(&point),
+    ) == c.False) {
+        log.warn("failed computing point for context menu", .{});
+        return;
+    }
+
+    const rect: c.GdkRectangle = .{
+        .x = @intFromFloat(point.x),
+        .y = @intFromFloat(point.y),
+        .width = 1,
+        .height = 1,
+    };
+
+    c.gtk_popover_set_pointing_to(@ptrCast(@alignCast(window.context_menu)), &rect);
+    self.app.refreshContextMenu(self.core_surface.hasSelection());
+    c.gtk_popover_popup(@ptrCast(@alignCast(window.context_menu)));
+}
+
 fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     log.debug("gl surface realized", .{});
 
@@ -1303,8 +1335,8 @@ fn scaledCoordinates(
 fn gtkMouseDown(
     gesture: *c.GtkGestureClick,
     _: c.gint,
-    _: c.gdouble,
-    _: c.gdouble,
+    x: c.gdouble,
+    y: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud.?);
@@ -1320,10 +1352,17 @@ fn gtkMouseDown(
         self.grabFocus();
     }
 
-    _ = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
+    const consumed = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
+
+    // If a right click isn't consumed, mouseButtonCallback selects the hovered
+    // word and returns false. We can use this to handle the context menu
+    // opening under normal scenarios.
+    if (!consumed and button == .right) {
+        self.showContextMenu(@floatCast(x), @floatCast(y));
+    }
 }
 
 fn gtkMouseUp(
@@ -1848,7 +1887,7 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
     // Notify our IM context
     c.gtk_im_context_focus_out(self.im_context);
 
-    // We only dim the surface if we are a split
+    // We only try dimming the surface if we are a split
     switch (self.container) {
         .split_br,
         .split_tl,
@@ -1865,6 +1904,16 @@ fn gtkFocusLeave(_: *c.GtkEventControllerFocus, ud: ?*anyopaque) callconv(.C) vo
 /// Adds the unfocused_widget to the overlay. If the unfocused_widget has already been added, this
 /// is a no-op
 pub fn dimSurface(self: *Surface) void {
+    const window = self.container.window() orelse {
+        log.warn("dimSurface invalid for container={}", .{self.container});
+        return;
+    };
+
+    // Don't dim surface if context menu is open.
+    // This means we got unfocused due to it opening.
+    const context_menu_open = c.gtk_widget_get_visible(window.context_menu);
+    if (context_menu_open == c.True) return;
+
     if (self.unfocused_widget != null) return;
     self.unfocused_widget = c.gtk_drawing_area_new();
     c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
