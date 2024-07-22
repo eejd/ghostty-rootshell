@@ -6,7 +6,8 @@ const Config = @import("../config.zig").Config;
 const cli = @import("../cli.zig");
 
 pub const Options = struct {
-    /// The path of the config file to validate
+    /// The path of the config file to validate. If this isn't specified,
+    /// then the default config file paths will be validated.
     @"config-file": ?[:0]const u8 = null,
 
     pub fn deinit(self: Options) void {
@@ -43,7 +44,7 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     // If a config path is passed, validate it, otherwise validate default configs
     if (opts.@"config-file") |config_path| {
-        var buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
         const abs_path = try std.fs.cwd().realpath(config_path, &buf);
 
         try cfg.loadFile(alloc, abs_path);
@@ -59,7 +60,7 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
             try stdout.print("{s}\n", .{err.message});
         }
 
-        return 65;
+        return 1;
     }
 
     return 0;
