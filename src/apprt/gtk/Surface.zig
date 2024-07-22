@@ -1357,19 +1357,14 @@ fn gtkMouseDown(
         self.grabFocus();
     }
 
-    // Allow forcing context menu to open with ctrl in apps that would normally consume the click
-    if (button == .right and mods.ctrl) {
-        self.showContextMenu(@floatCast(x), @floatCast(y));
-        return;
-    }
-
     const consumed = self.core_surface.mouseButtonCallback(.press, button, mods) catch |err| {
         log.err("error in key callback err={}", .{err});
         return;
     };
 
-    // If a right click isn't consumed, mouseButtonCallback selects the hovered word and returns false.
-    // We can use this to handle the context menu opening under normal scenarios.
+    // If a right click isn't consumed, mouseButtonCallback selects the hovered
+    // word and returns false. We can use this to handle the context menu
+    // opening under normal scenarios.
     if (!consumed and button == .right) {
         self.showContextMenu(@floatCast(x), @floatCast(y));
     }
