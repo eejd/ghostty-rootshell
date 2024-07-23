@@ -291,6 +291,10 @@ pub const Page = struct {
         UnmarkedStyleRow,
         MismatchedStyleRef,
         InvalidStyleCount,
+        MissingHyperlinkData,
+        MismatchedHyperlinkRef,
+        UnmarkedHyperlinkCell,
+        UnmarkedHyperlinkRow,
         InvalidSpacerTailLocation,
         InvalidSpacerHeadLocation,
         UnwrappedSpacerHead,
@@ -356,6 +360,8 @@ pub const Page = struct {
         var graphemes_seen: usize = 0;
         var styles_seen = std.AutoHashMap(style.Id, usize).init(alloc);
         defer styles_seen.deinit();
+        var hyperlinks_seen = std.AutoHashMap(hyperlink.Id, usize).init(alloc);
+        defer hyperlinks_seen.deinit();
 
         const rows = self.rows.ptr(self.memory)[0..self.size.rows];
         for (rows, 0..) |*row, y| {
@@ -395,6 +401,41 @@ pub const Page = struct {
                     const gop = try styles_seen.getOrPut(cell.style_id);
                     if (!gop.found_existing) gop.value_ptr.* = 0;
                     gop.value_ptr.* += 1;
+                }
+
+                if (cell.hyperlink) {
+                    const id = self.lookupHyperlink(cell) orelse {
+                        log.warn(
+                            "page integrity violation y={} x={} hyperlink data missing",
+                            .{ y, x },
+                        );
+                        return IntegrityError.MissingHyperlinkData;
+                    };
+
+                    if (!row.hyperlink) {
+                        log.warn(
+                            "page integrity violation y={} x={} row not marked as hyperlink",
+                            .{ y, x },
+                        );
+                        return IntegrityError.UnmarkedHyperlinkRow;
+                    }
+
+                    const gop = try hyperlinks_seen.getOrPut(id);
+                    if (!gop.found_existing) gop.value_ptr.* = 0;
+                    gop.value_ptr.* += 1;
+
+                    // Hyperlink ID should be valid. This just straight crashes
+                    // if this fails due to assertions.
+                    _ = self.hyperlink_set.get(self.memory, id);
+                } else {
+                    // It should not have hyperlink data if it isn't marked
+                    if (self.lookupHyperlink(cell) != null) {
+                        log.warn(
+                            "page integrity violation y={} x={} cell not marked as hyperlink",
+                            .{ y, x },
+                        );
+                        return IntegrityError.UnmarkedHyperlinkCell;
+                    }
                 }
 
                 switch (cell.wide) {
@@ -479,6 +520,21 @@ pub const Page = struct {
                         .{ entry.key_ptr.*, entry.value_ptr.*, ref_count },
                     );
                     return IntegrityError.MismatchedStyleRef;
+                }
+            }
+        }
+
+        // Verify all our hyperlinks have the correct ref count.
+        {
+            var it = hyperlinks_seen.iterator();
+            while (it.next()) |entry| {
+                const ref_count = self.hyperlink_set.refCount(self.memory, entry.key_ptr.*);
+                if (ref_count < entry.value_ptr.*) {
+                    log.warn(
+                        "page integrity violation hyperlink ref count mismatch id={} expected={} actual={}",
+                        .{ entry.key_ptr.*, entry.value_ptr.*, ref_count },
+                    );
+                    return IntegrityError.MismatchedHyperlinkRef;
                 }
             }
         }
@@ -1017,7 +1073,17 @@ pub const Page = struct {
 
         if (gop.found_existing) {
             // If the hyperlink matches then we don't need to do anything.
-            if (gop.value_ptr.* == id) return;
+            if (gop.value_ptr.* == id) {
+                // It is possible for cell hyperlink to be false but row
+                // must never be false. The cell hyperlink can be false because
+                // in Terminal.print we clear the hyperlink for the cursor cell
+                // before writing the cell again, so if someone prints over
+                // a cell with a matching hyperlink this state can happen.
+                // This is tested in Terminal.zig.
+                assert(row.hyperlink);
+                cell.hyperlink = true;
+                return;
+            }
 
             // Different hyperlink, we need to release the old one
             self.hyperlink_set.release(self.memory, gop.value_ptr.*);
@@ -1034,10 +1100,8 @@ pub const Page = struct {
     /// because we avoid any allocations since we're just moving data.
     /// Destination must NOT have a hyperlink.
     fn moveHyperlink(self: *Page, src: *Cell, dst: *Cell) void {
-        if (comptime std.debug.runtime_safety) {
-            assert(src.hyperlink);
-            assert(!dst.hyperlink);
-        }
+        assert(src.hyperlink);
+        assert(!dst.hyperlink);
 
         const src_offset = getOffset(Cell, self.memory, src);
         const dst_offset = getOffset(Cell, self.memory, dst);
@@ -1046,6 +1110,11 @@ pub const Page = struct {
         const value = entry.value_ptr.*;
         map.removeByPtr(entry.key_ptr);
         map.putAssumeCapacity(dst_offset, value);
+
+        // NOTE: We must not set src/dst.hyperlink here because this
+        // function is used in various cases where we swap cell contents
+        // and its unsafe. The flip side: the caller must be careful
+        // to set the proper cell state to represent the move.
     }
 
     /// Returns the number of hyperlinks in the page. This isn't the byte
