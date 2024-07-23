@@ -312,7 +312,7 @@ pub const Page = struct {
     /// A helper that can be used to assert the integrity of the page
     /// when runtime safety is enabled. This is a no-op when runtime
     /// safety is disabled. This uses the libc allocator.
-    pub fn assertIntegrity(self: *Page) void {
+    pub fn assertIntegrity(self: *const Page) void {
         if (comptime std.debug.runtime_safety) {
             self.verifyIntegrity(std.heap.c_allocator) catch unreachable;
         }
@@ -324,7 +324,7 @@ pub const Page = struct {
     /// is freed before this function returns.
     ///
     /// Integrity errors are also logged as warnings.
-    pub fn verifyIntegrity(self: *Page, alloc_gpa: Allocator) !void {
+    pub fn verifyIntegrity(self: *const Page, alloc_gpa: Allocator) !void {
         // Some things that seem like we should check but do not:
         //
         // - We do not check that the style ref count is exact, only that
@@ -657,6 +657,17 @@ pub const Page = struct {
         // If we have no managed memory in the source, then we can just
         // copy it directly.
         if (!src_row.managedMemory()) {
+            // This is an integrity check: if the row claims it doesn't
+            // have managed memory then all cells must also not have
+            // managed memory.
+            if (comptime std.debug.runtime_safety) {
+                for (other_cells) |cell| {
+                    assert(!cell.hasGrapheme());
+                    assert(!cell.hyperlink);
+                    assert(cell.style_id == style.default_id);
+                }
+            }
+
             fastmem.copy(Cell, cells, other_cells);
         } else {
             // We have managed memory, so we have to do a slower copy to
@@ -664,8 +675,11 @@ pub const Page = struct {
             for (cells, other_cells) |*dst_cell, *src_cell| {
                 dst_cell.* = src_cell.*;
                 if (src_cell.hasGrapheme()) {
-                    // To prevent integrity checks flipping
-                    if (comptime std.debug.runtime_safety) dst_cell.style_id = style.default_id;
+                    // To prevent integrity checks flipping. This will
+                    // get fixed up when we check the style id below.
+                    if (comptime std.debug.runtime_safety) {
+                        dst_cell.style_id = style.default_id;
+                    }
 
                     dst_cell.content_tag = .codepoint; // required for appendGrapheme
                     const cps = other.lookupGrapheme(src_cell).?;
@@ -683,16 +697,59 @@ pub const Page = struct {
                     // Slow-path: get the hyperlink from the other page,
                     // add it, and migrate.
                     const id = other.lookupHyperlink(src_cell).?;
-                    const other_link = other.hyperlink_set.get(other.memory, id);
+
+                    const dst_link = dst_link: {
+                        // Fast path is we just dupe the hyperlink because
+                        // it doesn't require traversal through the hyperlink
+                        // map. If the add below already contains it then it'll
+                        // call the deleted context callback and we'll free
+                        // this back.
+                        const other_link = other.hyperlink_set.get(other.memory, id);
+                        if (other_link.dupe(other, self)) |dst_link| {
+                            break :dst_link dst_link;
+                        } else |err| switch (err) {
+                            // If this happens, the only possible valid outcome is
+                            // that it is because this link is already in our set
+                            // and our memory is full because we already have it.
+                            // Any other outcome is an integrity violation.
+                            error.OutOfMemory => {},
+                        }
+
+                        // Slow, the only way to really find our link is to
+                        // traverse over the map, which includes dupes...
+                        const dst_map = self.hyperlink_map.map(self.memory);
+                        var it = dst_map.valueIterator();
+                        while (it.next()) |existing_id| {
+                            const existing_link = self.hyperlink_set.get(
+                                self.memory,
+                                existing_id.*,
+                            );
+
+                            if (existing_link.eql(
+                                self.memory,
+                                other_link,
+                                other.memory,
+                            )) {
+                                break :dst_link existing_link.*;
+                            }
+                        }
+
+                        // There is no other valid scenario where we don't
+                        // have the memory to dupe a hyperlink since we allocate
+                        // cloned pages with enough capacity to contain their
+                        // contents.
+                        unreachable;
+                    };
+
                     const dst_id = try self.hyperlink_set.addWithIdContext(
                         self.memory,
-                        try other_link.dupe(other, self),
+                        dst_link,
                         id,
                         .{ .page = self },
                     ) orelse id;
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
                 }
-                if (src_cell.style_id != style.default_id) {
+                if (src_cell.style_id != style.default_id) style: {
                     dst_row.styled = true;
 
                     if (other == self) {
@@ -700,7 +757,7 @@ pub const Page = struct {
                         // copying the style, we can use the style ID directly.
                         dst_cell.style_id = src_cell.style_id;
                         self.styles.use(self.memory, dst_cell.style_id);
-                        continue;
+                        break :style;
                     }
 
                     // Slow path: Get the style from the other
