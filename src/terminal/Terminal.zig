@@ -3824,6 +3824,33 @@ test "Terminal: print with hyperlink" {
     try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
+test "Terminal: print over cell with same hyperlink" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Setup our hyperlink and print
+    try t.screen.startHyperlink("http://example.com", null);
+    try t.printString("123456");
+    t.setCursorPos(1, 1);
+    try t.printString("123456");
+
+    // Verify all our cells have a hyperlink
+    for (0..6) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{
+            .x = @intCast(x),
+            .y = 0,
+        } }).?;
+        const row = list_cell.row;
+        try testing.expect(row.hyperlink);
+        const cell = list_cell.cell;
+        try testing.expect(cell.hyperlink);
+        const id = list_cell.page.data.lookupHyperlink(cell).?;
+        try testing.expectEqual(@as(hyperlink.Id, 1), id);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
 test "Terminal: print and end hyperlink" {
     var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
     defer t.deinit(testing.allocator);
