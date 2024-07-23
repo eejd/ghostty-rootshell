@@ -36,7 +36,11 @@ pub const Hyperlink = struct {
     };
 
     /// Duplicate this hyperlink from one page to another.
-    pub fn dupe(self: *const Hyperlink, self_page: *const Page, dst_page: *Page) !Hyperlink {
+    pub fn dupe(
+        self: *const Hyperlink,
+        self_page: *const Page,
+        dst_page: *Page,
+    ) error{OutOfMemory}!Hyperlink {
         var copy = self.*;
 
         // If the pages are the same then we can return a shallow copy.
@@ -100,13 +104,18 @@ pub const Hyperlink = struct {
         return hasher.final();
     }
 
-    pub fn eql(self: *const Hyperlink, base: anytype, other: *const Hyperlink) bool {
+    pub fn eql(
+        self: *const Hyperlink,
+        self_base: anytype,
+        other: *const Hyperlink,
+        other_base: anytype,
+    ) bool {
         if (std.meta.activeTag(self.id) != std.meta.activeTag(other.id)) return false;
         switch (self.id) {
             .implicit => if (self.id.implicit != other.id.implicit) return false,
             .explicit => {
-                const self_ptr = self.id.explicit.offset.ptr(base);
-                const other_ptr = other.id.explicit.offset.ptr(base);
+                const self_ptr = self.id.explicit.offset.ptr(self_base);
+                const other_ptr = other.id.explicit.offset.ptr(other_base);
                 if (!std.mem.eql(
                     u8,
                     self_ptr[0..self.id.explicit.len],
@@ -117,8 +126,8 @@ pub const Hyperlink = struct {
 
         return std.mem.eql(
             u8,
-            self.uri.offset.ptr(base)[0..self.uri.len],
-            other.uri.offset.ptr(base)[0..other.uri.len],
+            self.uri.offset.ptr(self_base)[0..self.uri.len],
+            other.uri.offset.ptr(other_base)[0..other.uri.len],
         );
     }
 };
@@ -137,7 +146,7 @@ pub const Set = RefCountedSet(
         }
 
         pub fn eql(self: *const @This(), a: Hyperlink, b: Hyperlink) bool {
-            return a.eql(self.page.?.memory, &b);
+            return a.eql(self.page.?.memory, &b, self.page.?.memory);
         }
 
         pub fn deleted(self: *const @This(), link: Hyperlink) void {
