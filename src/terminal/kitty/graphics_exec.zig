@@ -196,7 +196,9 @@ fn display(
 
     // Add the placement
     const p: ImageStorage.Placement = .{
-        .pin = placement_pin,
+        .location = .{
+            .pin = placement_pin,
+        },
         .x_offset = d.x_offset,
         .y_offset = d.y_offset,
         .source_x = d.x,
@@ -218,21 +220,23 @@ fn display(
         return result;
     };
 
-    // Cursor needs to move after placement
-    switch (d.cursor_movement) {
-        .none => {},
-        .after => {
-            // We use terminal.index to properly handle scroll regions.
-            const size = p.gridSize(img, terminal);
-            for (0..size.rows) |_| terminal.index() catch |err| {
-                log.warn("failed to move cursor: {}", .{err});
-                break;
-            };
+    // Apply cursor movement setting. This only applies to pin placements.
+    switch (p.location) {
+        .pin => |pin| switch (d.cursor_movement) {
+            .none => {},
+            .after => {
+                // We use terminal.index to properly handle scroll regions.
+                const size = p.gridSize(img, terminal);
+                for (0..size.rows) |_| terminal.index() catch |err| {
+                    log.warn("failed to move cursor: {}", .{err});
+                    break;
+                };
 
-            terminal.setCursorPos(
-                terminal.screen.cursor.y,
-                p.pin.x + size.cols + 1,
-            );
+                terminal.setCursorPos(
+                    terminal.screen.cursor.y,
+                    pin.x + size.cols + 1,
+                );
+            },
         },
     }
 
