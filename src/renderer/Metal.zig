@@ -1598,8 +1598,11 @@ fn prepKittyGraphics(
             continue;
         };
 
+        // Get the rect for the placement. If this placement doesn't have
+        // a rect then its virtual or something so skip it.
+        const rect = p.rect(image, t) orelse continue;
+
         // If the selection isn't within our viewport then skip it.
-        const rect = p.rect(image, t);
         if (bot.before(rect.top_left)) continue;
         if (rect.bottom_right.before(top)) continue;
 
@@ -1656,7 +1659,7 @@ fn prepKittyGraphics(
         // Convert our screen point to a viewport point
         const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
             .viewport,
-            p.pin.*,
+            rect.top_left,
         ) orelse .{ .viewport = .{} };
 
         // Calculate the source rectangle
@@ -1679,7 +1682,7 @@ fn prepKittyGraphics(
         if (image.width > 0 and image.height > 0) {
             try self.image_placements.append(self.alloc, .{
                 .image_id = kv.key_ptr.image_id,
-                .x = @intCast(p.pin.x),
+                .x = @intCast(rect.top_left.x),
                 .y = @intCast(viewport.viewport.y),
                 .z = p.z,
                 .width = dest_width,
