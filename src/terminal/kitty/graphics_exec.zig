@@ -184,21 +184,26 @@ fn display(
     // Make sure our response has the image id in case we looked up by number
     result.id = img.id;
 
-    // Track a new pin for our cursor. The cursor is always tracked but we
-    // don't want this one to move with the cursor.
-    const placement_pin = terminal.screen.pages.trackPin(
-        terminal.screen.cursor.page_pin.*,
-    ) catch |err| {
-        log.warn("failed to create pin for Kitty graphics err={}", .{err});
-        result.message = "EINVAL: failed to prepare terminal state";
-        return result;
+    // Location where the placement will go.
+    const location: ImageStorage.Placement.Location = location: {
+        // Virtual placements are not tracked
+        if (d.virtual_placement) break :location .{ .virtual = {} };
+
+        // Track a new pin for our cursor. The cursor is always tracked but we
+        // don't want this one to move with the cursor.
+        const pin = terminal.screen.pages.trackPin(
+            terminal.screen.cursor.page_pin.*,
+        ) catch |err| {
+            log.warn("failed to create pin for Kitty graphics err={}", .{err});
+            result.message = "EINVAL: failed to prepare terminal state";
+            return result;
+        };
+        break :location .{ .pin = pin };
     };
 
     // Add the placement
     const p: ImageStorage.Placement = .{
-        .location = .{
-            .pin = placement_pin,
-        },
+        .location = location,
         .x_offset = d.x_offset,
         .y_offset = d.y_offset,
         .source_x = d.x,
@@ -222,6 +227,7 @@ fn display(
 
     // Apply cursor movement setting. This only applies to pin placements.
     switch (p.location) {
+        .virtual => {},
         .pin => |pin| switch (d.cursor_movement) {
             .none => {},
             .after => {

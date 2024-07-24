@@ -218,6 +218,7 @@ pub const ImageStorage = struct {
         cmd: command.Delete,
     ) void {
         switch (cmd) {
+            // TODO: virtual placeholders must not be deleted according to spec
             .all => |delete_images| if (delete_images) {
                 // We just reset our entire state.
                 self.deinit(alloc, &t.screen);
@@ -318,7 +319,7 @@ pub const ImageStorage = struct {
                 var it = self.placements.iterator();
                 while (it.next()) |entry| {
                     const img = self.imageById(entry.key_ptr.image_id) orelse continue;
-                    const rect = entry.value_ptr.rect(img, t);
+                    const rect = entry.value_ptr.rect(img, t) orelse continue;
                     if (rect.top_left.x <= x and rect.bottom_right.x >= x) {
                         entry.value_ptr.deinit(&t.screen);
                         self.placements.removeByPtr(entry.key_ptr);
@@ -345,7 +346,7 @@ pub const ImageStorage = struct {
                 var it = self.placements.iterator();
                 while (it.next()) |entry| {
                     const img = self.imageById(entry.key_ptr.image_id) orelse continue;
-                    const rect = entry.value_ptr.rect(img, t);
+                    const rect = entry.value_ptr.rect(img, t) orelse continue;
 
                     // We need to copy our pin to ensure we are at least at
                     // the top-left x.
@@ -365,6 +366,14 @@ pub const ImageStorage = struct {
             .z => |v| {
                 var it = self.placements.iterator();
                 while (it.next()) |entry| {
+                    switch (entry.value_ptr.location) {
+                        .pin => {},
+
+                        // Virtual placeholders cannot delete by z according
+                        // to the spec.
+                        .virtual => continue,
+                    }
+
                     if (entry.value_ptr.z == v.z) {
                         const image_id = entry.key_ptr.image_id;
                         entry.value_ptr.deinit(&t.screen);
@@ -451,7 +460,7 @@ pub const ImageStorage = struct {
         var it = self.placements.iterator();
         while (it.next()) |entry| {
             const img = self.imageById(entry.key_ptr.image_id) orelse continue;
-            const rect = entry.value_ptr.rect(img, t);
+            const rect = entry.value_ptr.rect(img, t) orelse continue;
             if (target_pin.isBetween(rect.top_left, rect.bottom_right)) {
                 if (filter) |f| if (!f(filter_ctx, entry.value_ptr.*)) continue;
                 entry.value_ptr.deinit(&t.screen);
@@ -577,10 +586,7 @@ pub const ImageStorage = struct {
 
     pub const Placement = struct {
         /// The location where this placement should be drawn.
-        location: union(enum) {
-            /// Exactly placed on a screen pin.
-            pin: *PageList.Pin,
-        },
+        location: Location,
 
         /// Offset of the x/y from the top-left of the cell.
         x_offset: u32 = 0,
@@ -599,12 +605,21 @@ pub const ImageStorage = struct {
         /// The z-index for this placement.
         z: i32 = 0,
 
+        pub const Location = union(enum) {
+            /// Exactly placed on a screen pin.
+            pin: *PageList.Pin,
+
+            /// Virtual placement (U=1) for unicode placeholders.
+            virtual: void,
+        };
+
         pub fn deinit(
             self: *const Placement,
             s: *terminal.Screen,
         ) void {
             switch (self.location) {
                 .pin => |p| s.pages.untrackPin(p),
+                .virtual => {},
             }
         }
 
@@ -647,16 +662,18 @@ pub const ImageStorage = struct {
         }
 
         /// Returns a selection of the entire rectangle this placement
-        /// occupies within the screen.
+        /// occupies within the screen. This can return null if the placement
+        /// doesn't have an associated rect (i.e. a virtual placement).
         pub fn rect(
             self: Placement,
             image: Image,
             t: *const terminal.Terminal,
-        ) Rect {
-            assert(self.location == .pin);
-
+        ) ?Rect {
             const grid_size = self.gridSize(image, t);
-            const pin = self.location.pin;
+            const pin = switch (self.location) {
+                .pin => |p| p,
+                .virtual => return null,
+            };
 
             var br = switch (pin.downOverflow(grid_size.rows - 1)) {
                 .offset => |v| v,
