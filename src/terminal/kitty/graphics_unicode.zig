@@ -32,21 +32,60 @@ pub const PlacementIterator = struct {
             // A row must have graphemes to possibly have virtual placements
             // since virtual placements are done via diacritics.
             if (row.rowAndCell().row.grapheme) {
+                // TODO: document
+                const prev: ?Placement = null;
+                _ = prev;
+
                 // Iterate over our remaining cells and find one with a placeholder.
                 const cells = row.cells(.right);
-                for (cells, row.x..) |cell, x| {
+                for (cells, row.x..) |*cell, x| {
                     if (cell.codepoint() != placeholder) continue;
+
+                    // TODO: we need to support non-grapheme cells that just
+                    // do continuations all the way through.
+                    assert(cell.hasGrapheme());
+
+                    // "row" now points to the top-left pin of the placement.
+                    row.x = @intCast(x);
+
+                    // Build our placement
+                    var p: Placement = .{
+                        .pin = row.*,
+
+                        // Filled in below. Marked as undefined so we can catch
+                        // bugs with safety checks.
+                        .col = undefined,
+                        .row = undefined,
+
+                        // For now we don't build runs and we always produce
+                        // single cell placements.
+                        .width = 1,
+                        .height = 1,
+                    };
+
+                    // Determine our row/col by looking at the diacritics.
+                    const cps: []const u21 = row.grapheme(cell) orelse &.{};
+                    if (cps.len > 0) {
+                        p.row = getIndex(cps[0]) orelse @panic("TODO: invalid");
+                        if (cps.len > 1) {
+                            p.col = getIndex(cps[1]) orelse @panic("TODO: invalid");
+                            if (cps.len > 2) {
+                                @panic("TODO: higher 8 bits of image ID");
+                            }
+                        }
+                    } else @panic("TODO: continuations");
 
                     if (x == cells.len - 1) {
                         // We are at the end of this row so move to the next row
                         self.row = self.row_it.next();
                     } else {
-                        // We can move right to the next cell.
-                        row.x = @intCast(x + 1);
+                        // We can move right to the next cell. row is a pointer
+                        // to self.row so we can modify it directly.
+                        assert(@intFromPtr(row) == @intFromPtr(&self.row));
+                        row.x += 1;
                     }
 
-                    // TODO
-                    return .{};
+                    return p;
                 }
             }
 
@@ -60,16 +99,30 @@ pub const PlacementIterator = struct {
 
 /// A virtual placement in the terminal. This can represent more than
 /// one cell if the cells combine to be a run.
-pub const Placement = struct {};
+pub const Placement = struct {
+    /// The top-left pin of the placement. This can be used to get the
+    /// screen x/y.
+    pin: terminal.Pin,
+
+    /// Starting row/col index for the image itself. This is the "fragment"
+    /// of the image we want to show in this placement. This is 0-indexed.
+    col: u32,
+    row: u32,
+
+    /// The width/height in cells of this placement.
+    width: u32,
+    height: u32,
+};
 
 /// Get the row/col index for a diacritic codepoint. These are 0-indexed.
-pub fn getIndex(cp: u21) ?usize {
-    return std.sort.binarySearch(u21, cp, diacritics, {}, (struct {
+pub fn getIndex(cp: u21) ?u32 {
+    const idx = std.sort.binarySearch(u21, cp, diacritics, {}, (struct {
         fn order(context: void, lhs: u21, rhs: u21) std.math.Order {
             _ = context;
             return std.math.order(lhs, rhs);
         }
-    }).order);
+    }).order) orelse return null;
+    return @intCast(idx);
 }
 
 /// These are the diacritics used with the Kitty graphics protocol
@@ -425,7 +478,8 @@ test "unicode placement: single" {
     var it = placementIterator(pin, null);
     {
         const p = it.next().?;
-        _ = p;
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
     }
     try testing.expect(it.next() == null);
 }

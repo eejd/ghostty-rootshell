@@ -1220,7 +1220,7 @@ pub const Page = struct {
     /// Returns the codepoints for the given cell. These are the codepoints
     /// in addition to the first codepoint. The first codepoint is NOT
     /// included since it is on the cell itself.
-    pub fn lookupGrapheme(self: *const Page, cell: *Cell) ?[]u21 {
+    pub fn lookupGrapheme(self: *const Page, cell: *const Cell) ?[]u21 {
         const cell_offset = getOffset(Cell, self.memory, cell);
         const map = self.grapheme_map.map(self.memory);
         const slice = map.get(cell_offset) orelse return null;

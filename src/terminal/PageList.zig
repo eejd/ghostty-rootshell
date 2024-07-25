@@ -3224,7 +3224,7 @@ pub const Pin = struct {
 
     /// Returns the grapheme codepoints for the given cell. These are only
     /// the EXTRA codepoints and not the first codepoint.
-    pub fn grapheme(self: Pin, cell: *pagepkg.Cell) ?[]u21 {
+    pub fn grapheme(self: Pin, cell: *const pagepkg.Cell) ?[]u21 {
         return self.page.data.lookupGrapheme(cell);
     }
 
