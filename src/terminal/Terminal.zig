@@ -379,7 +379,11 @@ pub fn print(self: *Terminal, c: u21) !void {
                 }
             }
 
-            log.debug("c={x} grapheme attach to left={}", .{ c, prev.left });
+            log.debug("c={X} grapheme attach to left={} primary_cp={X}", .{
+                c,
+                prev.left,
+                prev.cell.codepoint(),
+            });
             self.screen.cursorMarkDirty();
             try self.screen.appendGrapheme(prev.cell, c);
             return;

@@ -2,6 +2,9 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
+/// Codepoint for the unicode placeholder character.
+pub const placeholder: u21 = 0x10EEEE;
+
 /// Get the row/col index for a diacritic codepoint.
 pub fn get(cp: u21) ?usize {
     return std.sort.binarySearch(u21, cp, diacritics, {}, (struct {

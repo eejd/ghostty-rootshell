@@ -8,6 +8,7 @@ const posix = std.posix;
 const fastmem = @import("../fastmem.zig");
 const color = @import("color.zig");
 const hyperlink = @import("hyperlink.zig");
+const kitty = @import("kitty.zig");
 const sgr = @import("sgr.zig");
 const style = @import("style.zig");
 const size = @import("size.zig");
@@ -1673,11 +1674,18 @@ pub const Cell = packed struct(u64) {
         return @as(u64, @bitCast(self)) == 0;
     }
 
+    /// Returns true if this cell represents a cell with text to render.
+    ///
+    /// Cases this returns false:
+    ///   - Cell text is blank
+    ///   - Cell is styled but only with a background color and no text
+    ///   - Cell has a unicode placeholder for Kitty graphics protocol
     pub fn hasText(self: Cell) bool {
         return switch (self.content_tag) {
             .codepoint,
             .codepoint_grapheme,
-            => self.content.codepoint != 0,
+            => self.content.codepoint != 0 and
+                self.content.codepoint != kitty.graphics.placeholder,
 
             .bg_color_palette,
             .bg_color_rgb,
@@ -1709,7 +1717,8 @@ pub const Cell = packed struct(u64) {
         return self.style_id != style.default_id;
     }
 
-    /// Returns true if the cell has no text or styling.
+    /// Returns true if the cell has no text or styling. This also returns
+    /// true if the cell represents a Kitty graphics unicode placeholder.
     pub fn isEmpty(self: Cell) bool {
         return switch (self.content_tag) {
             // Textual cells are empty if they have no text and are narrow.
@@ -2640,4 +2649,13 @@ test "Page verifyIntegrity zero cols" {
         Page.IntegrityError.ZeroColCount,
         page.verifyIntegrity(testing.allocator),
     );
+}
+
+test "Cell isEmpty for kitty placeholder" {
+    var c: Cell = .{
+        .content_tag = .codepoint_grapheme,
+        .content = .{ .codepoint = kitty.graphics.placeholder },
+    };
+    try testing.expectEqual(@as(u21, kitty.graphics.placeholder), c.codepoint());
+    try testing.expect(c.isEmpty());
 }

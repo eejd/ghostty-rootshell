@@ -21,6 +21,7 @@ pub usingnamespace @import("graphics_exec.zig");
 pub usingnamespace @import("graphics_image.zig");
 pub usingnamespace @import("graphics_storage.zig");
 pub const diacritics = @import("graphics_diacritics.zig");
+pub const placeholder = diacritics.placeholder;
 
 test {
     @import("std").testing.refAllDecls(@This());
