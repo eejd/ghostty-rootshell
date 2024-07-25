@@ -5,7 +5,7 @@ const testing = std.testing;
 /// Codepoint for the unicode placeholder character.
 pub const placeholder: u21 = 0x10EEEE;
 
-/// Get the row/col index for a diacritic codepoint.
+/// Get the row/col index for a diacritic codepoint. These are 0-indexed.
 pub fn get(cp: u21) ?usize {
     return std.sort.binarySearch(u21, cp, diacritics, {}, (struct {
         fn order(context: void, lhs: u21, rhs: u21) std.math.Order {
@@ -321,7 +321,7 @@ const diacritics: []const u21 = &.{
     0x1D244,
 };
 
-test {
+test "sorted" {
     // diacritics must be sorted since we use a binary search.
     try testing.expect(std.sort.isSorted(u21, diacritics, {}, (struct {
         fn lessThan(context: void, lhs: u21, rhs: u21) bool {
@@ -329,4 +329,10 @@ test {
             return lhs < rhs;
         }
     }).lessThan));
+}
+
+test "diacritic" {
+    // Some spot checks based on Kitty behavior
+    try testing.expectEqual(30, get(0x483).?);
+    try testing.expectEqual(294, get(0x1d242).?);
 }
