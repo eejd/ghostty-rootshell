@@ -98,7 +98,8 @@ pub const PlacementIterator = struct {
                         if (cps.len > 1) {
                             p.col = getIndex(cps[1]) orelse @panic("TODO: invalid");
                             if (cps.len > 2) {
-                                @panic("TODO: higher 8 bits of image ID");
+                                const high = getIndex(cps[2]) orelse @panic("TODO: invalid");
+                                p.image_id += high << 24;
                             }
                         }
                     } else @panic("TODO: continuations");
@@ -539,6 +540,31 @@ test "unicode placement: specifying image id as palette" {
     {
         const p = it.next().?;
         try testing.expectEqual(42, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: specifying image id with high bits" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Single cell
+    try t.setAttribute(.{ .@"256_fg" = 42 });
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}\u{030E}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(33554474, p.image_id);
         try testing.expectEqual(0, p.placement_id);
         try testing.expectEqual(0, p.row);
         try testing.expectEqual(0, p.col);
