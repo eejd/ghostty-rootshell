@@ -4,9 +4,63 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
+const terminal = @import("../main.zig");
 
 /// Codepoint for the unicode placeholder character.
 pub const placeholder: u21 = 0x10EEEE;
+
+/// Returns an iterator that iterates over all of the virtual placements
+/// in the given pin. If `limit` is provided, the iterator will stop
+/// when it reaches that pin (inclusive). If `limit` is not provided,
+/// the iterator will continue until the end of the page list.
+pub fn placementIterator(
+    pin: terminal.Pin,
+    limit: ?terminal.Pin,
+) PlacementIterator {
+    var row_it = pin.rowIterator(.right_down, limit);
+    const row = row_it.next();
+    return .{ .row_it = row_it, .row = row };
+}
+
+/// Iterator over unicode virtual placements.
+pub const PlacementIterator = struct {
+    row_it: terminal.PageList.RowIterator,
+    row: ?terminal.Pin,
+
+    pub fn next(self: *PlacementIterator) ?Placement {
+        while (self.row) |*row| {
+            // A row must have graphemes to possibly have virtual placements
+            // since virtual placements are done via diacritics.
+            if (row.rowAndCell().row.grapheme) {
+                // Iterate over our remaining cells and find one with a placeholder.
+                const cells = row.cells(.right);
+                for (cells, row.x..) |cell, x| {
+                    if (cell.codepoint() != placeholder) continue;
+
+                    if (x == cells.len - 1) {
+                        // We are at the end of this row so move to the next row
+                        self.row = self.row_it.next();
+                    } else {
+                        // We can move right to the next cell.
+                        row.x = @intCast(x + 1);
+                    }
+
+                    // TODO
+                    return .{};
+                }
+            }
+
+            // We didn't find any placements. Move to the next row.
+            self.row = self.row_it.next();
+        }
+
+        return null;
+    }
+};
+
+/// A virtual placement in the terminal. This can represent more than
+/// one cell if the cells combine to be a run.
+pub const Placement = struct {};
 
 /// Get the row/col index for a diacritic codepoint. These are 0-indexed.
 pub fn getIndex(cp: u21) ?usize {
@@ -324,7 +378,7 @@ const diacritics: []const u21 = &.{
     0x1D244,
 };
 
-test "sorted" {
+test "unicode diacritic sorted" {
     // diacritics must be sorted since we use a binary search.
     try testing.expect(std.sort.isSorted(u21, diacritics, {}, (struct {
         fn lessThan(context: void, lhs: u21, rhs: u21) bool {
@@ -334,8 +388,44 @@ test "sorted" {
     }).lessThan));
 }
 
-test "diacritic" {
+test "unicode diacritic" {
     // Some spot checks based on Kitty behavior
     try testing.expectEqual(30, getIndex(0x483).?);
     try testing.expectEqual(294, getIndex(0x1d242).?);
+}
+
+test "unicode placement: none" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Single cell
+    try t.printString("hello\nworld\n1\n2");
+
+    // No placements
+    const pin = t.screen.pages.getTopLeft(.viewport);
+    var it = placementIterator(pin, null);
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: single" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Single cell
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        _ = p;
+    }
+    try testing.expect(it.next() == null);
 }
