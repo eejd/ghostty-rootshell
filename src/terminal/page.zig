@@ -1161,7 +1161,7 @@ pub const Page = struct {
     pub fn appendGrapheme(self: *Page, row: *Row, cell: *Cell, cp: u21) Allocator.Error!void {
         defer self.assertIntegrity();
 
-        if (comptime std.debug.runtime_safety) assert(cell.hasText());
+        if (comptime std.debug.runtime_safety) assert(cell.codepoint() != 0);
 
         const cell_offset = getOffset(Cell, self.memory, cell);
         var map = self.grapheme_map.map(self.memory);

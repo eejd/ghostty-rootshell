@@ -281,7 +281,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                 // column. Otherwise, we need to check if there is text to
                 // figure out if we're attaching to the prev or current.
                 if (self.screen.cursor.x != right_limit - 1) break :left 1;
-                break :left @intFromBool(!self.screen.cursor.page_cell.hasText());
+                break :left @intFromBool(self.screen.cursor.page_cell.codepoint() == 0);
             };
 
             // If the previous cell is a wide spacer tail, then we actually
@@ -299,7 +299,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
         // If our cell has no content, then this is a new cell and
         // necessarily a grapheme break.
-        if (!prev.cell.hasText()) break :grapheme;
+        if (prev.cell.codepoint() == 0) break :grapheme;
 
         const grapheme_break = brk: {
             var state: unicode.GraphemeBreakState = .{};
