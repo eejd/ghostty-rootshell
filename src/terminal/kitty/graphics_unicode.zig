@@ -6,6 +6,8 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const terminal = @import("../main.zig");
 
+const log = std.log.scoped(.kitty_gfx);
+
 /// Codepoint for the unicode placeholder character.
 pub const placeholder: u21 = 0x10EEEE;
 
@@ -22,23 +24,6 @@ pub fn placementIterator(
     return .{ .row_it = row_it, .row = row };
 }
 
-/// Convert a style color to a Kitty image protocol ID. This works by
-/// taking the 24 most significant bits of the color, which lets it work
-/// for both palette and rgb-based colors.
-fn colorToId(c: terminal.Style.Color) u32 {
-    // TODO: test this
-    return switch (c) {
-        .none => 0,
-        .palette => |v| @intCast(v),
-        .rgb => |rgb| rgb: {
-            const r: u24 = @intCast(rgb.r);
-            const g: u24 = @intCast(rgb.g);
-            const b: u24 = @intCast(rgb.b);
-            break :rgb (r << 16) | (g << 8) | b;
-        },
-    };
-}
-
 /// Iterator over unicode virtual placements.
 pub const PlacementIterator = struct {
     row_it: terminal.PageList.RowIterator,
@@ -46,80 +31,62 @@ pub const PlacementIterator = struct {
 
     pub fn next(self: *PlacementIterator) ?Placement {
         while (self.row) |*row| {
+            // Our current run. A run is always only a single row. This
+            // assumption is built-in to our logic so if we want to change
+            // this later we have to redo the logic; tests should cover;
+            var run: ?IncompletePlacement = null;
+
             // A row must have graphemes to possibly have virtual placements
             // since virtual placements are done via diacritics.
             if (row.rowAndCell().row.grapheme) {
-                // Our current run. A run is always only a single row. This
-                // assumption is built-in to our logic so if we want to change
-                // this later we have to redo the logic; tests should cover;
-                const run: ?Placement = null;
-                _ = run;
-
                 // Iterate over our remaining cells and find one with a placeholder.
                 const cells = row.cells(.right);
                 for (cells, row.x..) |*cell, x| {
-                    if (cell.codepoint() != placeholder) continue;
+                    // "row" now points to the top-left pin of the placement.
+                    // We need this temporary state to build our incomplete
+                    // placement.
+                    assert(@intFromPtr(row) == @intFromPtr(&self.row));
+                    row.x = @intCast(x);
+
+                    // If this cell doesn't have the placeholder, then we
+                    // complete the run if we have it otherwise we just move
+                    // on and keep searching.
+                    if (cell.codepoint() != placeholder) {
+                        if (run) |prev| return prev.complete();
+                        continue;
+                    }
 
                     // TODO: we need to support non-grapheme cells that just
                     // do continuations all the way through.
                     assert(cell.hasGrapheme());
 
-                    // "row" now points to the top-left pin of the placement.
-                    row.x = @intCast(x);
-
-                    // Determine our image ID and placement ID from the style.
-                    const style = row.style(cell);
-                    const image_id = colorToId(style.fg_color);
-                    const placement_id = colorToId(style.underline_color);
-
-                    // Build our placement
-                    var p: Placement = .{
-                        .pin = row.*,
-                        .image_id = image_id,
-                        .placement_id = placement_id,
-
-                        // Filled in below. Marked as undefined so we can catch
-                        // bugs with safety checks.
-                        .col = undefined,
-                        .row = undefined,
-
-                        // For now we don't build runs and we always produce
-                        // single cell placements.
-                        .width = 1,
-                        .height = 1,
-                    };
-
-                    // Determine our row/col by looking at the diacritics.
-                    // If the cell doesn't have graphemes that's okay because
-                    // of continuations.
-                    const cps: []const u21 = row.grapheme(cell) orelse &.{};
-                    if (cps.len > 0) {
-                        p.row = getIndex(cps[0]) orelse @panic("TODO: invalid");
-                        if (cps.len > 1) {
-                            p.col = getIndex(cps[1]) orelse @panic("TODO: invalid");
-                            if (cps.len > 2) {
-                                const high = getIndex(cps[2]) orelse @panic("TODO: invalid");
-                                p.image_id += high << 24;
-                            }
+                    // If we don't have a previous run, then we save this
+                    // incomplete one, start a run, and move on.
+                    const curr = IncompletePlacement.init(row, cell);
+                    if (run) |*prev| {
+                        // If we can't append, then we complete the previous
+                        // run and return it.
+                        if (!prev.append(&curr)) {
+                            // Note: self.row is already updated due to the
+                            // row pointer above. It points back at this same
+                            // cell so we can continue the new placements from
+                            // here.
+                            return prev.complete();
                         }
-                    } else @panic("TODO: continuations");
 
-                    if (x == cells.len - 1) {
-                        // We are at the end of this row so move to the next row
-                        self.row = self.row_it.next();
+                        // append is mutating so if we reached this point
+                        // then prev has been updated.
                     } else {
-                        // We can move right to the next cell. row is a pointer
-                        // to self.row so we can modify it directly.
-                        assert(@intFromPtr(row) == @intFromPtr(&self.row));
-                        row.x += 1;
+                        run = curr;
                     }
-
-                    return p;
                 }
             }
 
-            // We didn't find any placements. Move to the next row.
+            // We move to the next row no matter what
             self.row = self.row_it.next();
+
+            // If we have a run, we complete it here.
+            if (run) |prev| return prev.complete();
         }
 
         return null;
@@ -150,8 +117,150 @@ pub const Placement = struct {
     height: u32,
 };
 
+/// IncompletePlacement is the placement information present in a single
+/// cell. It is "incomplete" because the specification allows for missing
+/// diacritics and so on that continue from previous valid placements.
+const IncompletePlacement = struct {
+    /// The pin of the cell that created this incomplete placement.
+    pin: terminal.Pin,
+
+    /// Lower 24 bits of the image ID. This is specified in the fg color
+    /// and is always required.
+    image_id_low: u24,
+
+    /// Higher 8 bits of the image ID specified using the 3rd diacritic.
+    /// This is optional.
+    image_id_high: ?u8 = null,
+
+    /// Placement ID is optionally specified in the underline color.
+    placement_id: ?u24 = null,
+
+    /// The row/col index for the image. These are 0-indexed. These
+    /// are specified using diacritics. The row is first and the col
+    /// is second. Both are optional. If not specified, they can continue
+    /// a previous placement under certain conditions.
+    row: ?u32 = null,
+    col: ?u32 = null,
+
+    /// Parse the incomplete placement information from a row and cell.
+    ///
+    /// The cell could be derived from the row but in our usage we already
+    /// have the cell and we don't want to waste cycles recomputing it.
+    pub fn init(
+        row: *const terminal.Pin,
+        cell: *const terminal.Cell,
+    ) IncompletePlacement {
+        assert(cell.codepoint() == placeholder);
+        const style = row.style(cell);
+
+        var result: IncompletePlacement = .{
+            .pin = row.*,
+            .image_id_low = colorToId(style.fg_color),
+            .placement_id = placement_id: {
+                const id = colorToId(style.underline_color);
+                break :placement_id if (id != 0) id else null;
+            },
+        };
+
+        // Try to decode all our diacritics. Any invalid diacritics are
+        // treated as if they don't exist. This isn't explicitly specified
+        // at the time of writing this but it appears to be how Kitty behaves.
+        const cps: []const u21 = row.grapheme(cell) orelse &.{};
+        if (cps.len > 0) {
+            result.row = getIndex(cps[0]) orelse value: {
+                log.warn("virtual placement with invalid row diacritic cp={X}", .{cps[0]});
+                break :value null;
+            };
+
+            if (cps.len > 1) {
+                result.col = getIndex(cps[1]) orelse value: {
+                    log.warn("virtual placement with invalid col diacritic cp={X}", .{cps[1]});
+                    break :value null;
+                };
+
+                if (cps.len > 2) {
+                    const high_ = getIndex(cps[2]) orelse value: {
+                        log.warn("virtual placement with invalid high diacritic cp={X}", .{cps[2]});
+                        break :value null;
+                    };
+
+                    if (high_) |high| {
+                        result.image_id_high = std.math.cast(
+                            u8,
+                            high,
+                        ) orelse value: {
+                            log.warn("virtual placement with invalid high diacritic cp={X} value={}", .{
+                                cps[2],
+                                high,
+                            });
+                            break :value null;
+                        };
+                    }
+
+                    // Any additional diacritics are ignored.
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// Append this incomplete placement to an existing placement to
+    /// create a run. This returns true if the placements are compatible
+    /// and were combined. If this returns false, the other placement is
+    /// unchanged.
+    pub fn append(self: *IncompletePlacement, other: *const IncompletePlacement) bool {
+        return self.canAppend(other);
+    }
+
+    fn canAppend(self: *const IncompletePlacement, other: *const IncompletePlacement) bool {
+        if (self.image_id_low != other.image_id_low) return false;
+        if (self.placement_id != other.placement_id) return false;
+        return false;
+    }
+
+    /// Complete the incomplete placement to create a full placement.
+    /// This creates a new placement that isn't continuous with any previous
+    /// placements.
+    ///
+    /// The pin is the pin of the cell that created this incomplete placement.
+    pub fn complete(self: *const IncompletePlacement) Placement {
+        return .{
+            .pin = self.pin,
+            .image_id = image_id: {
+                const low: u32 = @intCast(self.image_id_low);
+                const high: u32 = @intCast(self.image_id_high orelse 0);
+                break :image_id low | (high << 24);
+            },
+
+            .placement_id = self.placement_id orelse 0,
+            .col = self.col orelse 0,
+            .row = self.row orelse 0,
+            .width = 1,
+            .height = 1,
+        };
+    }
+
+    /// Convert a style color to a Kitty image protocol ID. This works by
+    /// taking the 24 most significant bits of the color, which lets it work
+    /// for both palette and rgb-based colors.
+    fn colorToId(c: terminal.Style.Color) u24 {
+        // TODO: test this
+        return switch (c) {
+            .none => 0,
+            .palette => |v| @intCast(v),
+            .rgb => |rgb| rgb: {
+                const r: u24 = @intCast(rgb.r);
+                const g: u24 = @intCast(rgb.g);
+                const b: u24 = @intCast(rgb.b);
+                break :rgb (r << 16) | (g << 8) | b;
+            },
+        };
+    }
+};
+
 /// Get the row/col index for a diacritic codepoint. These are 0-indexed.
-pub fn getIndex(cp: u21) ?u32 {
+fn getIndex(cp: u21) ?u32 {
     const idx = std.sort.binarySearch(u21, cp, diacritics, {}, (struct {
         fn order(context: void, lhs: u21, rhs: u21) std.math.Order {
             _ = context;

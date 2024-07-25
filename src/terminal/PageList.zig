@@ -3229,7 +3229,7 @@ pub const Pin = struct {
     }
 
     /// Returns the style for the given cell in this pin.
-    pub fn style(self: Pin, cell: *pagepkg.Cell) stylepkg.Style {
+    pub fn style(self: Pin, cell: *const pagepkg.Cell) stylepkg.Style {
         if (cell.style_id == stylepkg.default_id) return .{};
         return self.page.data.styles.get(
             self.page.data.memory,
