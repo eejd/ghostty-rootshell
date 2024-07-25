@@ -77,7 +77,11 @@ pub const PlacementIterator = struct {
                         // append is mutating so if we reached this point
                         // then prev has been updated.
                     } else {
-                        run = curr;
+                        // For appending, we need to set our initial values.
+                        var prev = curr;
+                        if (prev.row == null) prev.row = 0;
+                        if (prev.col == null) prev.col = 0;
+                        run = prev;
                     }
                 }
             }
@@ -141,6 +145,9 @@ const IncompletePlacement = struct {
     /// a previous placement under certain conditions.
     row: ?u32 = null,
     col: ?u32 = null,
+
+    /// The run width so far in cells.
+    width: u32 = 1,
 
     /// Parse the incomplete placement information from a row and cell.
     ///
@@ -210,13 +217,18 @@ const IncompletePlacement = struct {
     /// and were combined. If this returns false, the other placement is
     /// unchanged.
     pub fn append(self: *IncompletePlacement, other: *const IncompletePlacement) bool {
-        return self.canAppend(other);
+        if (!self.canAppend(other)) return false;
+        self.width += 1;
+        return true;
     }
 
     fn canAppend(self: *const IncompletePlacement, other: *const IncompletePlacement) bool {
-        if (self.image_id_low != other.image_id_low) return false;
-        if (self.placement_id != other.placement_id) return false;
-        return false;
+        // Converted from Kitty's logic, don't @ me.
+        return self.image_id_low == other.image_id_low and
+            self.placement_id == other.placement_id and
+            (other.row == null or other.row == self.row) and
+            (other.col == null or other.col == self.col.? + self.width) and
+            (other.image_id_high == null or other.image_id_high == self.image_id_high);
     }
 
     /// Complete the incomplete placement to create a full placement.
@@ -236,7 +248,7 @@ const IncompletePlacement = struct {
             .placement_id = self.placement_id orelse 0,
             .col = self.col orelse 0,
             .row = self.row orelse 0,
-            .width = 1,
+            .width = self.width,
             .height = 1,
         };
     }
@@ -627,6 +639,94 @@ test "unicode placement: single row/col" {
         try testing.expectEqual(0, p.placement_id);
         try testing.expectEqual(0, p.row);
         try testing.expectEqual(0, p.col);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: continuation break" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Two runs because it jumps cols
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}\u{030E}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(1, p.width);
+    }
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(2, p.col);
+        try testing.expectEqual(1, p.width);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: continuation with diacritics set" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Three cells. They'll continue even though they're explicit
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}\u{030D}");
+    try t.printString("\u{10EEEE}\u{0305}\u{030E}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(3, p.width);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: continuation with no col" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Three cells. They'll continue even though they're explicit
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(3, p.width);
     }
     try testing.expect(it.next() == null);
 }
