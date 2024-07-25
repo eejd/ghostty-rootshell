@@ -22,6 +22,23 @@ pub fn placementIterator(
     return .{ .row_it = row_it, .row = row };
 }
 
+/// Convert a style color to a Kitty image protocol ID. This works by
+/// taking the 24 most significant bits of the color, which lets it work
+/// for both palette and rgb-based colors.
+fn colorToId(c: terminal.Style.Color) u32 {
+    // TODO: test this
+    return switch (c) {
+        .none => 0,
+        .palette => |v| @intCast(v),
+        .rgb => |rgb| rgb: {
+            const r: u24 = @intCast(rgb.r);
+            const g: u24 = @intCast(rgb.g);
+            const b: u24 = @intCast(rgb.b);
+            break :rgb (r << 16) | (g << 8) | b;
+        },
+    };
+}
+
 /// Iterator over unicode virtual placements.
 pub const PlacementIterator = struct {
     row_it: terminal.PageList.RowIterator,
@@ -32,9 +49,11 @@ pub const PlacementIterator = struct {
             // A row must have graphemes to possibly have virtual placements
             // since virtual placements are done via diacritics.
             if (row.rowAndCell().row.grapheme) {
-                // TODO: document
-                const prev: ?Placement = null;
-                _ = prev;
+                // Our current run. A run is always only a single row. This
+                // assumption is built-in to our logic so if we want to change
+                // this later we have to redo the logic; tests should cover;
+                const run: ?Placement = null;
+                _ = run;
 
                 // Iterate over our remaining cells and find one with a placeholder.
                 const cells = row.cells(.right);
@@ -48,9 +67,16 @@ pub const PlacementIterator = struct {
                     // "row" now points to the top-left pin of the placement.
                     row.x = @intCast(x);
 
+                    // Determine our image ID and placement ID from the style.
+                    const style = row.style(cell);
+                    const image_id = colorToId(style.fg_color);
+                    const placement_id = colorToId(style.underline_color);
+
                     // Build our placement
                     var p: Placement = .{
                         .pin = row.*,
+                        .image_id = image_id,
+                        .placement_id = placement_id,
 
                         // Filled in below. Marked as undefined so we can catch
                         // bugs with safety checks.
@@ -64,6 +90,8 @@ pub const PlacementIterator = struct {
                     };
 
                     // Determine our row/col by looking at the diacritics.
+                    // If the cell doesn't have graphemes that's okay because
+                    // of continuations.
                     const cps: []const u21 = row.grapheme(cell) orelse &.{};
                     if (cps.len > 0) {
                         p.row = getIndex(cps[0]) orelse @panic("TODO: invalid");
@@ -103,6 +131,13 @@ pub const Placement = struct {
     /// The top-left pin of the placement. This can be used to get the
     /// screen x/y.
     pin: terminal.Pin,
+
+    /// The image ID and placement ID for this virtual placement. The
+    /// image ID is encoded in the fg color (plus optional a 8-bit high
+    /// value in the 3rd diacritic). The placement ID is encoded in the
+    /// underline color (optionally).
+    image_id: u32,
+    placement_id: u32,
 
     /// Starting row/col index for the image itself. This is the "fragment"
     /// of the image we want to show in this placement. This is 0-indexed.
@@ -462,7 +497,7 @@ test "unicode placement: none" {
     try testing.expect(it.next() == null);
 }
 
-test "unicode placement: single" {
+test "unicode placement: single row/col" {
     const alloc = testing.allocator;
     var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
     defer t.deinit(alloc);
@@ -478,6 +513,59 @@ test "unicode placement: single" {
     var it = placementIterator(pin, null);
     {
         const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: specifying image id as palette" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Single cell
+    try t.setAttribute(.{ .@"256_fg" = 42 });
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(42, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: specifying placement id as palette" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Single cell
+    try t.setAttribute(.{ .@"256_fg" = 42 });
+    try t.setAttribute(.{ .@"256_underline_color" = 21 });
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(42, p.image_id);
+        try testing.expectEqual(21, p.placement_id);
         try testing.expectEqual(0, p.row);
         try testing.expectEqual(0, p.col);
     }
