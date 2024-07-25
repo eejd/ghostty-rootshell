@@ -1685,7 +1685,7 @@ pub const Cell = packed struct(u64) {
             .codepoint,
             .codepoint_grapheme,
             => self.content.codepoint != 0 and
-                self.content.codepoint != kitty.graphics.placeholder,
+                self.content.codepoint != kitty.graphics.unicode.placeholder,
 
             .bg_color_palette,
             .bg_color_rgb,
@@ -2654,8 +2654,8 @@ test "Page verifyIntegrity zero cols" {
 test "Cell isEmpty for kitty placeholder" {
     var c: Cell = .{
         .content_tag = .codepoint_grapheme,
-        .content = .{ .codepoint = kitty.graphics.placeholder },
+        .content = .{ .codepoint = kitty.graphics.unicode.placeholder },
     };
-    try testing.expectEqual(@as(u21, kitty.graphics.placeholder), c.codepoint());
+    try testing.expectEqual(@as(u21, kitty.graphics.unicode.placeholder), c.codepoint());
     try testing.expect(c.isEmpty());
 }

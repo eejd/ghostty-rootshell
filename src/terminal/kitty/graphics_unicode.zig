@@ -1,3 +1,6 @@
+//! This file contains various logic and data for working with the
+//! Kitty graphics protocol unicode placeholder, virtual placement feature.
+
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
@@ -6,7 +9,7 @@ const testing = std.testing;
 pub const placeholder: u21 = 0x10EEEE;
 
 /// Get the row/col index for a diacritic codepoint. These are 0-indexed.
-pub fn get(cp: u21) ?usize {
+pub fn getIndex(cp: u21) ?usize {
     return std.sort.binarySearch(u21, cp, diacritics, {}, (struct {
         fn order(context: void, lhs: u21, rhs: u21) std.math.Order {
             _ = context;
@@ -333,6 +336,6 @@ test "sorted" {
 
 test "diacritic" {
     // Some spot checks based on Kitty behavior
-    try testing.expectEqual(30, get(0x483).?);
-    try testing.expectEqual(294, get(0x1d242).?);
+    try testing.expectEqual(30, getIndex(0x483).?);
+    try testing.expectEqual(294, getIndex(0x1d242).?);
 }

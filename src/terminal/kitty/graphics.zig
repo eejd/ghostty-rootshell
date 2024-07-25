@@ -20,8 +20,7 @@ pub usingnamespace @import("graphics_command.zig");
 pub usingnamespace @import("graphics_exec.zig");
 pub usingnamespace @import("graphics_image.zig");
 pub usingnamespace @import("graphics_storage.zig");
-pub const diacritics = @import("graphics_diacritics.zig");
-pub const placeholder = diacritics.placeholder;
+pub const unicode = @import("graphics_unicode.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
