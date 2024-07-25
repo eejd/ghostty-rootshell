@@ -187,7 +187,14 @@ fn display(
     // Location where the placement will go.
     const location: ImageStorage.Placement.Location = location: {
         // Virtual placements are not tracked
-        if (d.virtual_placement) break :location .{ .virtual = {} };
+        if (d.virtual_placement) {
+            if (d.parent_id > 0) {
+                result.message = "EINVAL: virtual placement cannot refer to a parent";
+                return result;
+            }
+
+            break :location .{ .virtual = {} };
+        }
 
         // Track a new pin for our cursor. The cursor is always tracked but we
         // don't want this one to move with the cursor.
