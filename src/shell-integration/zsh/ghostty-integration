@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env zsh
 #
 # Based on (started as) a copy of Kitty's zsh integration. Kitty is
 # distributed under GPLv3, so this file is also distributed under GPLv3.
