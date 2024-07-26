@@ -3335,7 +3335,7 @@ pub const Pin = struct {
             // Otherwise our y is the same as the top y, so we need to
             // check the x coordinate.
             assert(self.y == top.y);
-            return self.x >= top.x;
+            if (self.x < top.x) return false;
         }
         if (self.page == bottom.page) {
             // Our page is the bottom page so we're between the top and
