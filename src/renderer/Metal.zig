@@ -1816,7 +1816,6 @@ fn prepKittyVirtualPlacement(
         if (rows <= row_off) return;
         rows -= row_off;
     }
-
     if (src_x + src_w > img_width_f64) {
         const redundant_px = src_x + src_w - img_width_f64;
         const redundant_cells = @as(u32, @intFromFloat(redundant_px * x_scale)) / self.grid_metrics.cell_width;

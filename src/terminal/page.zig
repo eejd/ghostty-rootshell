@@ -1152,7 +1152,7 @@ pub const Page = struct {
     pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) Allocator.Error!void {
         defer self.assertIntegrity();
 
-        assert(cell.hasText());
+        assert(cell.codepoint() > 0);
         assert(cell.content_tag == .codepoint);
 
         const cell_offset = getOffset(Cell, self.memory, cell);
