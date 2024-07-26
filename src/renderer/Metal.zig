@@ -124,6 +124,7 @@ images: ImageMap = .{},
 image_placements: ImagePlacementList = .{},
 image_bg_end: u32 = 0,
 image_text_end: u32 = 0,
+image_virtual: bool = false,
 
 /// Metal state
 shaders: Shaders, // Compiled shaders
@@ -927,7 +928,14 @@ pub fn updateFrame(
         // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
         // We only do this if the Kitty image state is dirty meaning only if
         // it changes.
-        if (state.terminal.screen.kitty_images.dirty) {
+        //
+        // If we have any virtual references, we must also rebuild our
+        // kitty state on every frame because any cell change can move
+        // an image.
+        // TODO(mitchellh): integrate with row dirty flags
+        if (state.terminal.screen.kitty_images.dirty or
+            self.image_virtual)
+        {
             try self.prepKittyGraphics(state.terminal);
         }
 
@@ -1565,6 +1573,7 @@ fn prepKittyGraphics(
     // We always clear our previous placements no matter what because
     // we rebuild them from scratch.
     self.image_placements.clearRetainingCapacity();
+    self.image_virtual = false;
 
     // Go through our known images and if there are any that are no longer
     // in use then mark them to be freed.
@@ -1588,8 +1597,25 @@ fn prepKittyGraphics(
     // Go through the placements and ensure the image is loaded on the GPU.
     var it = storage.placements.iterator();
     while (it.next()) |kv| {
-        // Find the image in storage
         const p = kv.value_ptr;
+
+        // Special logic based on location
+        switch (p.location) {
+            .pin => {},
+            .virtual => {
+                // We need to mark virtual placements on our renderer so that
+                // we know to rebuild in more scenarios since cell changes can
+                // now trigger placement changes.
+                self.image_virtual = true;
+
+                // We also continue out because virtual placements are
+                // only triggered by the unicode placeholder, not by the
+                // placement itself.
+                continue;
+            },
+        }
+
+        // Get the image for the placement
         const image = storage.imageById(kv.key_ptr.image_id) orelse {
             log.warn(
                 "missing image for placement, ignoring image_id={}",
@@ -1598,103 +1624,7 @@ fn prepKittyGraphics(
             continue;
         };
 
-        // Get the rect for the placement. If this placement doesn't have
-        // a rect then its virtual or something so skip it.
-        const rect = p.rect(image, t) orelse continue;
-
-        // If the selection isn't within our viewport then skip it.
-        if (bot.before(rect.top_left)) continue;
-        if (rect.bottom_right.before(top)) continue;
-
-        // If the top left is outside the viewport we need to calc an offset
-        // so that we render (0, 0) with some offset for the texture.
-        const offset_y: u32 = if (rect.top_left.before(top)) offset_y: {
-            const vp_y = t.screen.pages.pointFromPin(.screen, top).?.screen.y;
-            const img_y = t.screen.pages.pointFromPin(.screen, rect.top_left).?.screen.y;
-            const offset_cells = vp_y - img_y;
-            const offset_pixels = offset_cells * self.grid_metrics.cell_height;
-            break :offset_y @intCast(offset_pixels);
-        } else 0;
-
-        // We need to prep this image for upload if it isn't in the cache OR
-        // it is in the cache but the transmit time doesn't match meaning this
-        // image is different.
-        const gop = try self.images.getOrPut(self.alloc, kv.key_ptr.image_id);
-        if (!gop.found_existing or
-            gop.value_ptr.transmit_time.order(image.transmit_time) != .eq)
-        {
-            // Copy the data into the pending state.
-            const data = try self.alloc.dupe(u8, image.data);
-            errdefer self.alloc.free(data);
-
-            // Store it in the map
-            const pending: Image.Pending = .{
-                .width = image.width,
-                .height = image.height,
-                .data = data.ptr,
-            };
-
-            const new_image: Image = switch (image.format) {
-                .grey_alpha => .{ .pending_grey_alpha = pending },
-                .rgb => .{ .pending_rgb = pending },
-                .rgba => .{ .pending_rgba = pending },
-                .png => unreachable, // should be decoded by now
-            };
-
-            if (!gop.found_existing) {
-                gop.value_ptr.* = .{
-                    .image = new_image,
-                    .transmit_time = undefined,
-                };
-            } else {
-                try gop.value_ptr.image.markForReplace(
-                    self.alloc,
-                    new_image,
-                );
-            }
-
-            gop.value_ptr.transmit_time = image.transmit_time;
-        }
-
-        // Convert our screen point to a viewport point
-        const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
-            .viewport,
-            rect.top_left,
-        ) orelse .{ .viewport = .{} };
-
-        // Calculate the source rectangle
-        const source_x = @min(image.width, p.source_x);
-        const source_y = @min(image.height, p.source_y + offset_y);
-        const source_width = if (p.source_width > 0)
-            @min(image.width - source_x, p.source_width)
-        else
-            image.width;
-        const source_height = if (p.source_height > 0)
-            @min(image.height, p.source_height)
-        else
-            image.height -| source_y;
-
-        // Calculate the width/height of our image.
-        const dest_width = if (p.columns > 0) p.columns * self.grid_metrics.cell_width else source_width;
-        const dest_height = if (p.rows > 0) p.rows * self.grid_metrics.cell_height else source_height;
-
-        // Accumulate the placement
-        if (image.width > 0 and image.height > 0) {
-            try self.image_placements.append(self.alloc, .{
-                .image_id = kv.key_ptr.image_id,
-                .x = @intCast(rect.top_left.x),
-                .y = @intCast(viewport.viewport.y),
-                .z = p.z,
-                .width = dest_width,
-                .height = dest_height,
-                .cell_offset_x = p.x_offset,
-                .cell_offset_y = p.y_offset,
-                .source_x = source_x,
-                .source_y = source_y,
-                .source_width = source_width,
-                .source_height = source_height,
-            });
-        }
+        try self.prepKittyPlacement(t, &top, &bot, &image, p);
     }
 
     // Sort the placements by their Z value.
@@ -1728,6 +1658,113 @@ fn prepKittyGraphics(
     }
     if (self.image_text_end == 0) {
         self.image_text_end = @intCast(self.image_placements.items.len);
+    }
+}
+
+fn prepKittyPlacement(
+    self: *Metal,
+    t: *terminal.Terminal,
+    top: *const terminal.Pin,
+    bot: *const terminal.Pin,
+    image: *const terminal.kitty.graphics.Image,
+    p: *const terminal.kitty.graphics.ImageStorage.Placement,
+) !void {
+    // Get the rect for the placement. If this placement doesn't have
+    // a rect then its virtual or something so skip it.
+    const rect = p.rect(image.*, t) orelse return;
+
+    // If the selection isn't within our viewport then skip it.
+    if (bot.before(rect.top_left)) return;
+    if (rect.bottom_right.before(top.*)) return;
+
+    // If the top left is outside the viewport we need to calc an offset
+    // so that we render (0, 0) with some offset for the texture.
+    const offset_y: u32 = if (rect.top_left.before(top.*)) offset_y: {
+        const vp_y = t.screen.pages.pointFromPin(.screen, top.*).?.screen.y;
+        const img_y = t.screen.pages.pointFromPin(.screen, rect.top_left).?.screen.y;
+        const offset_cells = vp_y - img_y;
+        const offset_pixels = offset_cells * self.grid_metrics.cell_height;
+        break :offset_y @intCast(offset_pixels);
+    } else 0;
+
+    // We need to prep this image for upload if it isn't in the cache OR
+    // it is in the cache but the transmit time doesn't match meaning this
+    // image is different.
+    const gop = try self.images.getOrPut(self.alloc, image.id);
+    if (!gop.found_existing or
+        gop.value_ptr.transmit_time.order(image.transmit_time) != .eq)
+    {
+        // Copy the data into the pending state.
+        const data = try self.alloc.dupe(u8, image.data);
+        errdefer self.alloc.free(data);
+
+        // Store it in the map
+        const pending: Image.Pending = .{
+            .width = image.width,
+            .height = image.height,
+            .data = data.ptr,
+        };
+
+        const new_image: Image = switch (image.format) {
+            .grey_alpha => .{ .pending_grey_alpha = pending },
+            .rgb => .{ .pending_rgb = pending },
+            .rgba => .{ .pending_rgba = pending },
+            .png => unreachable, // should be decoded by now
+        };
+
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .{
+                .image = new_image,
+                .transmit_time = undefined,
+            };
+        } else {
+            try gop.value_ptr.image.markForReplace(
+                self.alloc,
+                new_image,
+            );
+        }
+
+        gop.value_ptr.transmit_time = image.transmit_time;
+    }
+
+    // Convert our screen point to a viewport point
+    const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
+        .viewport,
+        rect.top_left,
+    ) orelse .{ .viewport = .{} };
+
+    // Calculate the source rectangle
+    const source_x = @min(image.width, p.source_x);
+    const source_y = @min(image.height, p.source_y + offset_y);
+    const source_width = if (p.source_width > 0)
+        @min(image.width - source_x, p.source_width)
+    else
+        image.width;
+    const source_height = if (p.source_height > 0)
+        @min(image.height, p.source_height)
+    else
+        image.height -| source_y;
+
+    // Calculate the width/height of our image.
+    const dest_width = if (p.columns > 0) p.columns * self.grid_metrics.cell_width else source_width;
+    const dest_height = if (p.rows > 0) p.rows * self.grid_metrics.cell_height else source_height;
+
+    // Accumulate the placement
+    if (image.width > 0 and image.height > 0) {
+        try self.image_placements.append(self.alloc, .{
+            .image_id = image.id,
+            .x = @intCast(rect.top_left.x),
+            .y = @intCast(viewport.viewport.y),
+            .z = p.z,
+            .width = dest_width,
+            .height = dest_height,
+            .cell_offset_x = p.x_offset,
+            .cell_offset_y = p.y_offset,
+            .source_x = source_x,
+            .source_y = source_y,
+            .source_width = source_width,
+            .source_height = source_height,
+        });
     }
 }
 
