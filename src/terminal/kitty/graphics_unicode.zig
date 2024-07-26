@@ -31,58 +31,56 @@ pub const PlacementIterator = struct {
 
     pub fn next(self: *PlacementIterator) ?Placement {
         while (self.row) |*row| {
+            // This row flag is set on rows that have the virtual placeholder
+            if (!row.rowAndCell().row.kitty_virtual_placeholder) {
+                self.row = self.row_it.next();
+                continue;
+            }
+
             // Our current run. A run is always only a single row. This
             // assumption is built-in to our logic so if we want to change
             // this later we have to redo the logic; tests should cover;
             var run: ?IncompletePlacement = null;
 
-            // A row must have graphemes to possibly have virtual placements
-            // since virtual placements are done via diacritics.
-            if (row.rowAndCell().row.grapheme) {
-                // Iterate over our remaining cells and find one with a placeholder.
-                const cells = row.cells(.right);
-                for (cells, row.x..) |*cell, x| {
-                    // "row" now points to the top-left pin of the placement.
-                    // We need this temporary state to build our incomplete
-                    // placement.
-                    assert(@intFromPtr(row) == @intFromPtr(&self.row));
-                    row.x = @intCast(x);
+            // Iterate over our remaining cells and find one with a placeholder.
+            const cells = row.cells(.right);
+            for (cells, row.x..) |*cell, x| {
+                // "row" now points to the top-left pin of the placement.
+                // We need this temporary state to build our incomplete
+                // placement.
+                assert(@intFromPtr(row) == @intFromPtr(&self.row));
+                row.x = @intCast(x);
 
-                    // If this cell doesn't have the placeholder, then we
-                    // complete the run if we have it otherwise we just move
-                    // on and keep searching.
-                    if (cell.codepoint() != placeholder) {
-                        if (run) |prev| return prev.complete();
-                        continue;
+                // If this cell doesn't have the placeholder, then we
+                // complete the run if we have it otherwise we just move
+                // on and keep searching.
+                if (cell.codepoint() != placeholder) {
+                    if (run) |prev| return prev.complete();
+                    continue;
+                }
+
+                // If we don't have a previous run, then we save this
+                // incomplete one, start a run, and move on.
+                const curr = IncompletePlacement.init(row, cell);
+                if (run) |*prev| {
+                    // If we can't append, then we complete the previous
+                    // run and return it.
+                    if (!prev.append(&curr)) {
+                        // Note: self.row is already updated due to the
+                        // row pointer above. It points back at this same
+                        // cell so we can continue the new placements from
+                        // here.
+                        return prev.complete();
                     }
 
-                    // TODO: we need to support non-grapheme cells that just
-                    // do continuations all the way through.
-                    assert(cell.hasGrapheme());
-
-                    // If we don't have a previous run, then we save this
-                    // incomplete one, start a run, and move on.
-                    const curr = IncompletePlacement.init(row, cell);
-                    if (run) |*prev| {
-                        // If we can't append, then we complete the previous
-                        // run and return it.
-                        if (!prev.append(&curr)) {
-                            // Note: self.row is already updated due to the
-                            // row pointer above. It points back at this same
-                            // cell so we can continue the new placements from
-                            // here.
-                            return prev.complete();
-                        }
-
-                        // append is mutating so if we reached this point
-                        // then prev has been updated.
-                    } else {
-                        // For appending, we need to set our initial values.
-                        var prev = curr;
-                        if (prev.row == null) prev.row = 0;
-                        if (prev.col == null) prev.col = 0;
-                        run = prev;
-                    }
+                    // append is mutating so if we reached this point
+                    // then prev has been updated.
+                } else {
+                    // For appending, we need to set our initial values.
+                    var prev = curr;
+                    if (prev.row == null) prev.row = 0;
+                    if (prev.col == null) prev.col = 0;
+                    run = prev;
                 }
             }
 
@@ -713,6 +711,33 @@ test "unicode placement: continuation with no col" {
     try t.printString("\u{10EEEE}\u{0305}\u{0305}");
     try t.printString("\u{10EEEE}\u{0305}");
     try t.printString("\u{10EEEE}\u{0305}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(3, p.width);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: continuation with no diacritics" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Three cells. They'll continue even though they're explicit
+    try t.printString("\u{10EEEE}");
+    try t.printString("\u{10EEEE}");
+    try t.printString("\u{10EEEE}");
 
     // Get our top left pin
     const pin = t.screen.pages.getTopLeft(.viewport);
