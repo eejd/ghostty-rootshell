@@ -289,20 +289,31 @@ pub const FrameState = struct {
 };
 
 pub const CustomShaderState = struct {
-    /// The screen texture that we render the terminal to. If we don't have
-    /// custom shaders, we render directly to the drawable.
-    screen_texture: objc.Object, // MTLTexture
+    /// When we have a custom shader state, we maintain a front
+    /// and back texture which we use as a swap chain to render
+    /// between when multiple custom shaders are defined.
+    front_texture: objc.Object, // MTLTexture
+    back_texture: objc.Object, // MTLTexture
+
     sampler: mtl_sampler.Sampler,
     uniforms: mtl_shaders.PostUniforms,
-    /// The first time a frame was drawn. This is used to update the time
-    /// uniform.
+
+    /// The first time a frame was drawn.
+    /// This is used to update the time uniform.
     first_frame_time: std.time.Instant,
-    /// The last time a frame was drawn. This is used to update the time
-    /// uniform.
+
+    /// The last time a frame was drawn.
+    /// This is used to update the time uniform.
     last_frame_time: std.time.Instant,
 
+    /// Swap the front and back textures.
+    pub fn swap(self: *CustomShaderState) void {
+        std.mem.swap(objc.Object, &self.front_texture, &self.back_texture);
+    }
+
     pub fn deinit(self: *CustomShaderState) void {
-        deinitMTLResource(self.screen_texture);
+        deinitMTLResource(self.front_texture);
+        deinitMTLResource(self.back_texture);
         self.sampler.deinit();
     }
 };
@@ -531,9 +542,10 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         errdefer sampler.deinit();
 
         break :state .{
-            // Resolution and screen texture will be fixed up by first
+            // Resolution and screen textures will be fixed up by first
             // call to setScreenSize. This happens before any draw call.
-            .screen_texture = undefined,
+            .front_texture = undefined,
+            .back_texture = undefined,
             .sampler = sampler,
             .uniforms = .{
                 .resolution = .{ 0, 0, 1 },
@@ -1076,7 +1088,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     // Get our screen texture. If we don't have a dedicated screen texture
     // then we just use the drawable texture.
     const screen_texture = if (self.custom_shader_state) |state|
-        state.screen_texture
+        state.back_texture
     else tex: {
         const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
         break :tex objc.Object.fromId(texture);
@@ -1122,11 +1134,6 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
                     .{@as(c_ulong, 0)},
                 );
 
-                // Texture is a property of CAMetalDrawable but if you run
-                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
-                // which ironically doesn't implement CAMetalDrawable as a
-                // property so we just send a message.
-                //const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
                 attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
                 attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
                 attachment.setProperty("texture", screen_texture.value);
@@ -1165,9 +1172,8 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_text_end..]);
     }
 
-    // If we have custom shaders AND we have a screen texture, then we
-    // render the custom shaders.
-    if (self.custom_shader_state) |state| {
+    // If we have custom shaders, then we render them.
+    if (self.custom_shader_state) |*state| {
         // MTLRenderPassDescriptor
         const desc = desc: {
             const MTLRenderPassDescriptor = objc.getClass("MTLRenderPassDescriptor").?;
@@ -1177,44 +1183,69 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
                 .{},
             );
 
-            // Set our color attachment to be our drawable surface.
-            const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-            {
-                const attachment = attachments.msgSend(
-                    objc.Object,
-                    objc.sel("objectAtIndexedSubscript:"),
-                    .{@as(c_ulong, 0)},
-                );
-
-                // Texture is a property of CAMetalDrawable but if you run
-                // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
-                // which ironically doesn't implement CAMetalDrawable as a
-                // property so we just send a message.
-                const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
-                attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
-                attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
-                attachment.setProperty("texture", texture);
-                attachment.setProperty("clearColor", mtl.MTLClearColor{
-                    .red = 0,
-                    .green = 0,
-                    .blue = 0,
-                    .alpha = 1,
-                });
-            }
-
             break :desc desc;
         };
 
-        // MTLRenderCommandEncoder
-        const encoder = buffer.msgSend(
+        // Prepare our color atachment (output).
+        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+        const attachment = attachments.msgSend(
             objc.Object,
-            objc.sel("renderCommandEncoderWithDescriptor:"),
-            .{desc.value},
+            objc.sel("objectAtIndexedSubscript:"),
+            .{@as(c_ulong, 0)},
         );
-        defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+        attachment.setProperty("loadAction", @intFromEnum(mtl.MTLLoadAction.clear));
+        attachment.setProperty("storeAction", @intFromEnum(mtl.MTLStoreAction.store));
+        attachment.setProperty("clearColor", mtl.MTLClearColor{
+            .red = 0,
+            .green = 0,
+            .blue = 0,
+            .alpha = 1,
+        });
 
-        for (self.shaders.post_pipelines) |pipeline| {
-            try self.drawPostShader(encoder, pipeline, &state);
+        const post_len = self.shaders.post_pipelines.len;
+
+        for (self.shaders.post_pipelines[0 .. post_len - 1]) |pipeline| {
+            // Set our color attachment to be our front texture.
+            attachment.setProperty("texture", state.front_texture.value);
+
+            // MTLRenderCommandEncoder
+            const encoder = buffer.msgSend(
+                objc.Object,
+                objc.sel("renderCommandEncoderWithDescriptor:"),
+                .{desc.value},
+            );
+            defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+
+            // Draw shader
+            try self.drawPostShader(encoder, pipeline, state);
+            // Swap the front and back textures.
+            state.swap();
+        }
+
+        // Draw the final shader directly to the drawable.
+        {
+            // Set our color attachment to be our drawable.
+            //
+            // Texture is a property of CAMetalDrawable but if you run
+            // Ghostty in XCode in debug mode it returns a CaptureMTLDrawable
+            // which ironically doesn't implement CAMetalDrawable as a
+            // property so we just send a message.
+            const texture = drawable.msgSend(objc.c.id, objc.sel("texture"), .{});
+            attachment.setProperty("texture", texture);
+
+            // MTLRenderCommandEncoder
+            const encoder = buffer.msgSend(
+                objc.Object,
+                objc.sel("renderCommandEncoderWithDescriptor:"),
+                .{desc.value},
+            );
+            defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
+
+            try self.drawPostShader(
+                encoder,
+                self.shaders.post_pipelines[post_len - 1],
+                state,
+            );
         }
     }
 
@@ -1311,7 +1342,7 @@ fn drawPostShader(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            state.screen_texture.value,
+            state.back_texture.value,
             @as(c_ulong, 0),
         },
     );
@@ -1828,7 +1859,8 @@ pub fn setScreenSize(
         // Only free our previous texture if this isn't our first
         // time setting the custom shader state.
         if (state.uniforms.resolution[0] > 0) {
-            deinitMTLResource(state.screen_texture);
+            deinitMTLResource(state.front_texture);
+            deinitMTLResource(state.back_texture);
         }
 
         state.uniforms.resolution = .{
@@ -1837,7 +1869,7 @@ pub fn setScreenSize(
             1,
         };
 
-        state.screen_texture = screen_texture: {
+        state.front_texture = texture: {
             // This texture is the size of our drawable but supports being a
             // render target AND reading so that the custom shaders can read from it.
             const desc = init: {
@@ -1864,7 +1896,37 @@ pub fn setScreenSize(
                 .{desc},
             ) orelse return error.MetalFailed;
 
-            break :screen_texture objc.Object.fromId(id);
+            break :texture objc.Object.fromId(id);
+        };
+
+        state.back_texture = texture: {
+            // This texture is the size of our drawable but supports being a
+            // render target AND reading so that the custom shaders can read from it.
+            const desc = init: {
+                const Class = objc.getClass("MTLTextureDescriptor").?;
+                const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+                const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+                break :init id_init;
+            };
+            desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.bgra8unorm));
+            desc.setProperty("width", @as(c_ulong, @intCast(dim.width)));
+            desc.setProperty("height", @as(c_ulong, @intCast(dim.height)));
+            desc.setProperty(
+                "usage",
+                @intFromEnum(mtl.MTLTextureUsage.render_target) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_read) |
+                    @intFromEnum(mtl.MTLTextureUsage.shader_write),
+            );
+
+            // If we fail to create the texture, then we just don't have a screen
+            // texture and our custom shaders won't run.
+            const id = self.gpu_state.device.msgSend(
+                ?*anyopaque,
+                objc.sel("newTextureWithDescriptor:"),
+                .{desc},
+            ) orelse return error.MetalFailed;
+
+            break :texture objc.Object.fromId(id);
         };
     }
 
