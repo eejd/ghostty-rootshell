@@ -640,6 +640,12 @@ fn printCell(
         }
     }
 
+    // If this is a Kitty unicode placeholder then we need to mark the
+    // row so that the renderer can lookup rows with these much faster.
+    if (c == kitty.graphics.unicode.placeholder) {
+        self.screen.cursor.page_row.kitty_virtual_placeholder = true;
+    }
+
     // We check for an active hyperlink first because setHyperlink
     // handles clearing the old hyperlink and an optimization if we're
     // overwriting the same hyperlink.

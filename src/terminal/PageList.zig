@@ -7,6 +7,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const fastmem = @import("../fastmem.zig");
+const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const pagepkg = @import("page.zig");
 const stylepkg = @import("style.zig");
@@ -1054,6 +1055,11 @@ const ReflowCursor = struct {
                 self.page_row.styled = true;
 
                 self.page_cell.style_id = id;
+            }
+
+            // Copy Kitty virtual placeholder status
+            if (cell.codepoint() == kitty.graphics.unicode.placeholder) {
+                self.page_row.kitty_virtual_placeholder = true;
             }
 
             self.cursorForward();

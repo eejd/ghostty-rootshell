@@ -984,6 +984,16 @@ pub fn clearCells(
         if (cells.len == self.pages.cols) row.styled = false;
     }
 
+    if (row.kitty_virtual_placeholder and
+        cells.len == self.pages.cols)
+    {
+        for (cells) |c| {
+            if (c.codepoint() == kitty.graphics.unicode.placeholder) {
+                break;
+            }
+        } else row.kitty_virtual_placeholder = false;
+    }
+
     @memset(cells, self.blankCell());
 }
 
