@@ -1627,6 +1627,17 @@ fn prepKittyGraphics(
         try self.prepKittyPlacement(t, &top, &bot, &image, p);
     }
 
+    // If we have virtual placements then we need to scan for placeholders.
+    if (self.image_virtual) {
+        var v_it = terminal.kitty.graphics.unicode.placementIterator(top, bot);
+        while (v_it.next()) |virtual_p| try self.prepKittyVirtualPlacement(
+            t,
+            &top,
+            &bot,
+            &virtual_p,
+        );
+    }
+
     // Sort the placements by their Z value.
     std.mem.sortUnstable(
         mtl_image.Placement,
@@ -1659,6 +1670,100 @@ fn prepKittyGraphics(
     if (self.image_text_end == 0) {
         self.image_text_end = @intCast(self.image_placements.items.len);
     }
+}
+
+fn prepKittyVirtualPlacement(
+    self: *Metal,
+    t: *terminal.Terminal,
+    top: *const terminal.Pin,
+    bot: *const terminal.Pin,
+    p: *const terminal.kitty.graphics.unicode.Placement,
+) !void {
+    const storage = &t.screen.kitty_images;
+    const image = storage.imageById(p.image_id) orelse {
+        log.warn(
+            "missing image for virtual placement, ignoring image_id={}",
+            .{p.image_id},
+        );
+        return;
+    };
+
+    // Get the placement. If an ID is specified we look for the exact one.
+    // If no ID, then we find the first virtual placement for this image.
+    const placement = if (p.placement_id > 0) storage.placements.get(.{
+        .image_id = p.image_id,
+        .placement_id = .{ .tag = .external, .id = p.placement_id },
+    }) orelse {
+        log.warn(
+            "missing placement for virtual placement, ignoring image_id={} placement_id={}",
+            .{ p.image_id, p.placement_id },
+        );
+        return;
+    } else placement: {
+        var it = storage.placements.iterator();
+        while (it.next()) |entry| {
+            if (entry.key_ptr.image_id == p.image_id and
+                entry.value_ptr.location == .virtual)
+            {
+                break :placement entry.value_ptr.*;
+            }
+        }
+
+        log.warn(
+            "missing placement for virtual placement, ignoring image_id={}",
+            .{p.image_id},
+        );
+        return;
+    };
+
+    // Calculate our grid size for the placement. If it is isn't explicitly
+    // provided by the placement we try to calculate it to fit in the
+    // grid as closely as possible.
+    const img_grid: renderer.GridSize = grid: {
+        var rows = placement.rows;
+        var columns = placement.columns;
+
+        if (rows == 0) {
+            const cell_height = self.grid_metrics.cell_height;
+            rows = (image.height + cell_height - 1) / cell_height;
+        }
+
+        if (columns == 0) {
+            const cell_width = self.grid_metrics.cell_width;
+            columns = (image.width + cell_width - 1) / cell_width;
+        }
+
+        break :grid .{
+            .rows = std.math.cast(terminal.size.CellCountInt, rows) orelse {
+                log.warn(
+                    "placement rows too large for virtual placement, ignoring image_id={}",
+                    .{p.image_id},
+                );
+                return;
+            },
+            .columns = std.math.cast(terminal.size.CellCountInt, columns) orelse {
+                log.warn(
+                    "placement columns too large for virtual placement, ignoring image_id={}",
+                    .{p.image_id},
+                );
+                return;
+            },
+        };
+    };
+
+    // Build our real placement
+    const real_p: terminal.kitty.graphics.ImageStorage.Placement = .{
+        // Note: this constCast is safe because we only ever need a mutable
+        // pin if we deinit the placement. We never deinit this placement
+        // because it is a temporary value.
+        .location = .{ .pin = @constCast(&p.pin) },
+        .columns = p.width,
+        .rows = p.height,
+        .z = -1, // Render behind cursor
+    };
+
+    try self.prepKittyPlacement(t, top, bot, &image, &real_p);
+    _ = img_grid;
 }
 
 fn prepKittyPlacement(
