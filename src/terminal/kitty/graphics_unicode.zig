@@ -257,7 +257,6 @@ const IncompletePlacement = struct {
     /// taking the 24 most significant bits of the color, which lets it work
     /// for both palette and rgb-based colors.
     fn colorToId(c: terminal.Style.Color) u24 {
-        // TODO: test this
         return switch (c) {
             .none => 0,
             .palette => |v| @intCast(v),
@@ -727,6 +726,60 @@ test "unicode placement: continuation with no col" {
         try testing.expectEqual(0, p.row);
         try testing.expectEqual(0, p.col);
         try testing.expectEqual(3, p.width);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: run ending" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Three cells. They'll continue even though they're explicit
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}\u{030D}");
+    try t.printString("ABC");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(2, p.width);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "unicode placement: run starting in the middle" {
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 5, .cols = 10 });
+    defer t.deinit(alloc);
+    t.modes.set(.grapheme_cluster, true);
+
+    // Three cells. They'll continue even though they're explicit
+    try t.printString("ABC");
+    try t.printString("\u{10EEEE}\u{0305}\u{0305}");
+    try t.printString("\u{10EEEE}\u{0305}\u{030D}");
+
+    // Get our top left pin
+    const pin = t.screen.pages.getTopLeft(.viewport);
+
+    // Should have exactly one placement
+    var it = placementIterator(pin, null);
+    {
+        const p = it.next().?;
+        try testing.expectEqual(0, p.image_id);
+        try testing.expectEqual(0, p.placement_id);
+        try testing.expectEqual(0, p.row);
+        try testing.expectEqual(0, p.col);
+        try testing.expectEqual(2, p.width);
     }
     try testing.expect(it.next() == null);
 }
