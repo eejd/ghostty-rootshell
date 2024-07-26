@@ -1751,19 +1751,100 @@ fn prepKittyVirtualPlacement(
         };
     };
 
-    // Build our real placement
-    const real_p: terminal.kitty.graphics.ImageStorage.Placement = .{
-        // Note: this constCast is safe because we only ever need a mutable
-        // pin if we deinit the placement. We never deinit this placement
-        // because it is a temporary value.
-        .location = .{ .pin = @constCast(&p.pin) },
-        .columns = p.width,
-        .rows = p.height,
-        .z = -1, // Render behind cursor
-    };
+    // The image is fit into the placement grid size. We need to calculate
+    // various offsets in order to center the image vertically/horizontally
+    // into the grid size while preserving the aspect ratio.
+    var x_offset: f64 = 0;
+    var y_offset: f64 = 0;
+    var x_scale: f64 = 0;
+    var y_scale: f64 = 0;
+    const rows_px: f64 = @floatFromInt(img_grid.rows * self.grid_metrics.cell_height);
+    const cols_px: f64 = @floatFromInt(img_grid.columns * self.grid_metrics.cell_width);
+    const img_width_f64: f64 = @floatFromInt(image.width);
+    const img_height_f64: f64 = @floatFromInt(image.height);
+    if (img_width_f64 * rows_px > img_height_f64 * cols_px) {
+        // Image is wider than the grid, fit width and center height
+        x_scale = cols_px / @max(img_width_f64, 1);
+        y_scale = x_scale;
+        y_offset = (rows_px - img_height_f64 * y_scale) / 2;
+    } else {
+        // Image is taller than the grid, fit height and center width
+        y_scale = rows_px / @max(img_height_f64, 1);
+        x_scale = y_scale;
+        x_offset = (cols_px - img_width_f64 * x_scale) / 2;
+    }
 
-    try self.prepKittyPlacement(t, top, bot, &image, &real_p);
-    _ = img_grid;
+    // A bunch of math to map the placement and image to virtual placeholder
+    // grid. This is ported as closely as possible from Kitty so we get this
+    // as right as possible. I EXPECT there are some rounding bugs in here
+    // so compared to Kitty we may be off by 1px here or there. If someone
+    // can show that to be true let's modify it.
+    //
+    // This code is purposely not super Zig-like because I want to keep it
+    // as close to the Kitty implementation as possible os its easy to
+    // compare and modify.
+    var pin: terminal.Pin = p.pin;
+    var cols: u32 = p.width;
+    var rows: u32 = p.height;
+    const x_dst: f64 = @floatFromInt(p.col * self.grid_metrics.cell_width);
+    const y_dst: f64 = @floatFromInt(p.row * self.grid_metrics.cell_height);
+    const w_dst: f64 = @floatFromInt(p.width * self.grid_metrics.cell_width);
+    const h_dst: f64 = @floatFromInt(p.height * self.grid_metrics.cell_height);
+    var cell_x_off: u32 = 0;
+    var cell_y_off: u32 = 0;
+    var src_x: f64 = (x_dst - x_offset) / x_scale;
+    var src_y: f64 = (y_dst - y_offset) / y_scale;
+    var src_w: f64 = w_dst / x_scale;
+    var src_h: f64 = h_dst / y_scale;
+    if (src_x < 0) {
+        src_w += src_x;
+        cell_x_off = @intFromFloat(@round(-src_x * x_scale));
+        src_x = 0;
+        const col_off: u32 = cell_x_off / self.grid_metrics.cell_width;
+        cell_x_off %= self.grid_metrics.cell_width;
+        pin = pin.right(col_off);
+        if (cols <= col_off) return;
+        cols -= col_off;
+    }
+    if (src_y < 0) {
+        src_h += src_y;
+        cell_y_off = @intFromFloat(@round(-src_y * y_scale));
+        src_y = 0;
+        const row_off: u32 = cell_y_off / self.grid_metrics.cell_height;
+        cell_y_off %= self.grid_metrics.cell_height;
+        pin = pin.down(row_off) orelse return;
+        if (rows <= row_off) return;
+        rows -= row_off;
+    }
+
+    if (src_x + src_w > img_width_f64) {
+        const redundant_px = src_x + src_w - img_width_f64;
+        const redundant_cells = @as(u32, @intFromFloat(redundant_px * x_scale)) / self.grid_metrics.cell_width;
+        if (cols <= redundant_cells) return;
+        cols -= redundant_cells;
+        src_w -= @as(f64, @floatFromInt(redundant_cells * self.grid_metrics.cell_width)) / x_scale;
+    }
+    if (src_y + src_h > img_height_f64) {
+        const redundant_px = src_y + src_h - img_height_f64;
+        const redundant_cells = @as(u32, @intFromFloat(redundant_px * y_scale)) / self.grid_metrics.cell_height;
+        if (rows <= redundant_cells) return;
+        rows -= redundant_cells;
+        src_h -= @as(f64, @floatFromInt(redundant_cells * self.grid_metrics.cell_height)) / y_scale;
+    }
+
+    // Build our real placement
+    try self.prepKittyPlacement(t, top, bot, &image, &.{
+        .location = .{ .pin = &pin },
+        .x_offset = cell_x_off,
+        .y_offset = cell_y_off,
+        .source_x = @intFromFloat(@round(src_x)),
+        .source_y = @intFromFloat(@round(src_y)),
+        .source_width = @intFromFloat(@round(src_w)),
+        .source_height = @intFromFloat(@round(src_h)),
+        .columns = cols,
+        .rows = rows,
+        .z = -1, // Render behind cursor
+    });
 }
 
 fn prepKittyPlacement(
