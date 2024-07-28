@@ -646,7 +646,8 @@ keybind: Keybinds = .{},
 /// to pick a reasonable value. If you pick an unreasonable value, a warning
 /// will appear in the logs.
 ///
-/// Changing these values will only apply after restart.
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
 @"window-padding-x": u32 = 2,
 @"window-padding-y": u32 = 2,
 
