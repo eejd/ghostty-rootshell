@@ -797,35 +797,63 @@ fn cursorChangePin(self: *Screen, new: Pin) void {
         new.markDirty();
     }
 
-    // If we have a style set, then we need to migrate it over to the
-    // new page. This is expensive so we do everything we can with cheap
-    // ops to avoid it.
-    if (self.cursor.style_id == style.default_id or
-        self.cursor.page_pin.page == new.page)
-    {
+    // If our pin is on the same page, then we can just update the pin.
+    // We don't need to migrate any state.
+    if (self.cursor.page_pin.page == new.page) {
         self.cursor.page_pin.* = new;
         return;
     }
 
-    // Store our old full style so we can reapply it in the new page.
-    const old_style = self.cursor.style;
+    // If we have a old style then we need to release it from the old page.
+    const old_style_: ?style.Style = if (self.cursor.style_id == style.default_id)
+        null
+    else
+        self.cursor.style;
+    if (old_style_ != null) {
+        self.cursor.style = .{};
+        self.manualStyleUpdate() catch unreachable; // Removing a style should never fail
+    }
 
-    // Clear our old style in the current pin
-    self.cursor.style = .{};
-    self.manualStyleUpdate() catch unreachable; // Removing a style should never fail
+    // If we have a hyperlink then we need to release it from the old page.
+    if (self.cursor.hyperlink != null) {
+        const old_page = &self.cursor.page_pin.page.data;
+        old_page.hyperlink_set.release(old_page.memory, self.cursor.hyperlink_id);
+    }
 
     // Update our pin to the new page
     self.cursor.page_pin.* = new;
-    self.cursor.style = old_style;
-    self.manualStyleUpdate() catch |err| {
-        // This failure should not happen because manualStyleUpdate
-        // handles page splitting, overflow, and more. This should only
-        // happen if we're out of RAM. In this case, we'll just degrade
-        // gracefully back to the default style.
-        log.err("failed to update style on cursor change err={}", .{err});
-        self.cursor.style = .{};
-        self.cursor.style_id = 0;
-    };
+
+    // On the new page, we need to migrate our style
+    if (old_style_) |old_style| {
+        self.cursor.style = old_style;
+        self.manualStyleUpdate() catch |err| {
+            // This failure should not happen because manualStyleUpdate
+            // handles page splitting, overflow, and more. This should only
+            // happen if we're out of RAM. In this case, we'll just degrade
+            // gracefully back to the default style.
+            log.err("failed to update style on cursor change err={}", .{err});
+            self.cursor.style = .{};
+            self.cursor.style_id = 0;
+        };
+    }
+
+    // On the new page, we need to migrate our hyperlink
+    if (self.cursor.hyperlink) |link| {
+        // So we don't attempt to free any memory in the replaced page.
+        self.cursor.hyperlink_id = 0;
+        self.cursor.hyperlink = null;
+
+        // Re-add
+        self.startHyperlink(link.uri, link.id) catch |err| {
+            // This shouldn't happen because startHyperlink should handle
+            // resizing. This only happens if we're truly out of RAM. Degrade
+            // to forgetting the hyperlink.
+            log.err("failed to update hyperlink on cursor change err={}", .{err});
+        };
+
+        // Remove our old link
+        link.destroy(self.alloc);
+    }
 }
 
 /// Mark the cursor position as dirty.
