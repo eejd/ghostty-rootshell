@@ -3456,12 +3456,17 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .quit => try self.app.setQuit(),
 
-        .adjust_selection => |direction| adjust_selection: {
+        .adjust_selection => |direction| {
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
 
             const screen = &self.io.terminal.screen;
-            const sel = if (screen.selection) |*sel| sel else break :adjust_selection;
+            const sel = if (screen.selection) |*sel| sel else {
+                // If we don't have a selection we do not perform this
+                // action, allowing the keybind to fall through to the
+                // terminal.
+                return false;
+            };
             sel.adjust(screen, switch (direction) {
                 .left => .left,
                 .right => .right,
