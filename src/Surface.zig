@@ -2152,13 +2152,7 @@ pub fn mouseButtonCallback(
             // Checking for selection requires the renderer state mutex which
             // sucks but this should be pretty rare of an event so it won't
             // cause a ton of contention.
-            const selection = selection: {
-                self.renderer_state.mutex.lock();
-                defer self.renderer_state.mutex.unlock();
-                break :selection self.io.terminal.screen.selection != null;
-            };
-
-            if (selection) {
+            if (self.hasSelection()) {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.cursorPosCallback(pos);
                 return true;
