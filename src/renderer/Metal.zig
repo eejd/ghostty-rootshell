@@ -1679,6 +1679,9 @@ fn prepKittyVirtualPlacement(
     bot: *const terminal.Pin,
     p: *const terminal.kitty.graphics.unicode.Placement,
 ) !void {
+    _ = top;
+    _ = bot;
+
     const storage = &t.screen.kitty_images;
     const image = storage.imageById(p.image_id) orelse {
         log.warn(
@@ -1716,18 +1719,23 @@ fn prepKittyVirtualPlacement(
         return;
     };
 
-    // Calculate our grid size for the placement. If it is isn't explicitly
-    // provided by the placement we try to calculate it to fit in the
-    // grid as closely as possible.
+    // Calculate the grid size for the placement. For virtual placements,
+    // we use the requested row/cols. If either isn't specified, we choose
+    // the best size based on the image size to fit the entire image in its
+    // original size.
+    //
+    // This part of the code does NOT do preserve any aspect ratios. Its
+    // dumbly fitting the image into the grid size -- possibly user specified.
     const img_grid: renderer.GridSize = grid: {
+        // Use requested rows/columns if specified
         var rows = placement.rows;
         var columns = placement.columns;
 
+        // For unspecified rows/columns, calculate based on the image size.
         if (rows == 0) {
             const cell_height = self.grid_metrics.cell_height;
             rows = (image.height + cell_height - 1) / cell_height;
         }
-
         if (columns == 0) {
             const cell_width = self.grid_metrics.cell_width;
             columns = (image.width + cell_width - 1) / cell_width;
@@ -1751,11 +1759,17 @@ fn prepKittyVirtualPlacement(
         };
     };
 
-    // The image is fit into the placement grid size. We need to calculate
-    // various offsets in order to center the image vertically/horizontally
-    // into the grid size while preserving the aspect ratio.
+    // Next we have to fit the source image into the grid size while preserving
+    // aspect ratio. We will center the image horizontally/vertically if
+    // necessary.
+
+    // The offsets are the pixel offsets from the top-left of the top-left
+    // grid cell in order to center the image as best as possible.
     var x_offset: f64 = 0;
     var y_offset: f64 = 0;
+
+    // The scale factors are the scaling factors applied to the original
+    // image size in order to fit it into our placement grid size.
     var x_scale: f64 = 0;
     var y_scale: f64 = 0;
     const rows_px: f64 = @floatFromInt(img_grid.rows * self.grid_metrics.cell_height);
@@ -1773,76 +1787,93 @@ fn prepKittyVirtualPlacement(
         x_scale = y_scale;
         x_offset = (cols_px - img_width_f64 * x_scale) / 2;
     }
+    log.warn("x_offset={}, y_offset={}, x_scale={}, y_scale={}", .{
+        x_offset, y_offset, x_scale, y_scale,
+    });
 
-    // A bunch of math to map the placement and image to virtual placeholder
-    // grid. This is ported as closely as possible from Kitty so we get this
-    // as right as possible. I EXPECT there are some rounding bugs in here
-    // so compared to Kitty we may be off by 1px here or there. If someone
-    // can show that to be true let's modify it.
+    // At this point, we have the following information:
+    //   - image.width/height - The original image width and height.
+    //   - img_grid.rows/columns - The requested grid size for the placement.
+    //   - offset/scale - The offset and scale to fit the image into the
+    //     placement grid.
     //
-    // This code is purposely not super Zig-like because I want to keep it
-    // as close to the Kitty implementation as possible os its easy to
-    // compare and modify.
-    var pin: terminal.Pin = p.pin;
-    var cols: u32 = p.width;
-    var rows: u32 = p.height;
-    const x_dst: f64 = @floatFromInt(p.col * self.grid_metrics.cell_width);
-    const y_dst: f64 = @floatFromInt(p.row * self.grid_metrics.cell_height);
-    const w_dst: f64 = @floatFromInt(p.width * self.grid_metrics.cell_width);
-    const h_dst: f64 = @floatFromInt(p.height * self.grid_metrics.cell_height);
-    var cell_x_off: u32 = 0;
-    var cell_y_off: u32 = 0;
-    var src_x: f64 = (x_dst - x_offset) / x_scale;
-    var src_y: f64 = (y_dst - y_offset) / y_scale;
-    var src_w: f64 = w_dst / x_scale;
-    var src_h: f64 = h_dst / y_scale;
-    if (src_x < 0) {
-        src_w += src_x;
-        cell_x_off = @intFromFloat(@round(-src_x * x_scale));
-        src_x = 0;
-        const col_off: u32 = cell_x_off / self.grid_metrics.cell_width;
-        cell_x_off %= self.grid_metrics.cell_width;
-        pin = pin.right(col_off);
-        if (cols <= col_off) return;
-        cols -= col_off;
-    }
-    if (src_y < 0) {
-        src_h += src_y;
-        cell_y_off = @intFromFloat(@round(-src_y * y_scale));
-        src_y = 0;
-        const row_off: u32 = cell_y_off / self.grid_metrics.cell_height;
-        cell_y_off %= self.grid_metrics.cell_height;
-        pin = pin.down(row_off) orelse return;
-        if (rows <= row_off) return;
-        rows -= row_off;
-    }
-    if (src_x + src_w > img_width_f64) {
-        const redundant_px = src_x + src_w - img_width_f64;
-        const redundant_cells = @as(u32, @intFromFloat(redundant_px * x_scale)) / self.grid_metrics.cell_width;
-        if (cols <= redundant_cells) return;
-        cols -= redundant_cells;
-        src_w -= @as(f64, @floatFromInt(redundant_cells * self.grid_metrics.cell_width)) / x_scale;
-    }
-    if (src_y + src_h > img_height_f64) {
-        const redundant_px = src_y + src_h - img_height_f64;
-        const redundant_cells = @as(u32, @intFromFloat(redundant_px * y_scale)) / self.grid_metrics.cell_height;
-        if (rows <= redundant_cells) return;
-        rows -= redundant_cells;
-        src_h -= @as(f64, @floatFromInt(redundant_cells * self.grid_metrics.cell_height)) / y_scale;
+    // For our run requested coordinates and size we now need to map
+    // the original image down into our grid cells honoring the offsets
+    // calculated for the best fit.
+
+    const img_x_offset: f64 = x_offset / x_scale;
+    const img_y_offset: f64 = y_offset / y_scale;
+    const img_width_padded: f64 = img_width_f64 + (img_x_offset * 2);
+    const img_height_padded: f64 = img_height_f64 + (img_y_offset * 2);
+    log.warn("padded_width={}, padded_height={} original_width={}, original_height={}", .{
+        img_width_padded, img_height_padded, img_width_f64, img_height_f64,
+    });
+
+    const source_width_f64: f64 = img_width_padded * (@as(f64, @floatFromInt(p.width)) / @as(f64, @floatFromInt(img_grid.columns)));
+    var source_height_f64: f64 = img_height_padded * (@as(f64, @floatFromInt(p.height)) / @as(f64, @floatFromInt(img_grid.rows)));
+    const source_x_f64: f64 = img_width_padded * (@as(f64, @floatFromInt(p.col)) / @as(f64, @floatFromInt(img_grid.columns)));
+    var source_y_f64: f64 = img_height_padded * (@as(f64, @floatFromInt(p.row)) / @as(f64, @floatFromInt(img_grid.rows)));
+
+    const p_x_offset_f64: f64 = 0;
+    var p_y_offset_f64: f64 = 0;
+    const dst_width_f64: f64 = @floatFromInt(p.width * self.grid_metrics.cell_width);
+    var dst_height_f64: f64 = @floatFromInt(p.height * self.grid_metrics.cell_height);
+
+    // If our y is in our top offset area, we need to adjust the source to
+    // be shorter, and offset it into the cell.
+    if (source_y_f64 < img_y_offset) {
+        const offset: f64 = img_y_offset - source_y_f64;
+        source_height_f64 -= offset;
+        p_y_offset_f64 = offset;
+        dst_height_f64 -= offset * y_scale;
+        source_y_f64 = 0;
     }
 
-    // Build our real placement
-    try self.prepKittyPlacement(t, top, bot, &image, &.{
-        .location = .{ .pin = &pin },
-        .x_offset = cell_x_off,
-        .y_offset = cell_y_off,
-        .source_x = @intFromFloat(@round(src_x)),
-        .source_y = @intFromFloat(@round(src_y)),
-        .source_width = @intFromFloat(@round(src_w)),
-        .source_height = @intFromFloat(@round(src_h)),
-        .columns = cols,
-        .rows = rows,
-        .z = -1, // Render behind cursor
+    // if our y is in our bottom offset area, we need to shorten the
+    // source to fit in the cell.
+    if (source_y_f64 + source_height_f64 > img_height_padded - img_y_offset) {
+        source_y_f64 -= img_y_offset;
+        source_height_f64 = img_height_padded - img_y_offset - source_y_f64;
+        source_height_f64 -= img_y_offset;
+        dst_height_f64 = source_height_f64 * y_scale;
+    }
+
+    const source_width: u32 = @intFromFloat(@round(source_width_f64));
+    const source_height: u32 = @intFromFloat(@round(source_height_f64));
+    const source_x: u32 = @intFromFloat(@round(source_x_f64));
+    const source_y: u32 = @intFromFloat(@round(source_y_f64));
+    const p_x_offset: u32 = @intFromFloat(@round(p_x_offset_f64 * x_scale));
+    const p_y_offset: u32 = @intFromFloat(@round(p_y_offset_f64 * y_scale));
+    const dest_width: u32 = @intFromFloat(@round(dst_width_f64));
+    const dest_height: u32 = @intFromFloat(@round(dst_height_f64));
+
+    log.warn("source_x={}, source_y={}, source_width={}, source_height={}", .{
+        source_x, source_y, source_width, source_height,
+    });
+    log.warn("p_x_offset={}, p_y_offset={}", .{ p_x_offset, p_y_offset });
+    log.warn("dest_width={}, dest_height={}", .{ dest_width, dest_height });
+
+    // Send our image to the GPU
+    try self.prepKittyImage(&image);
+
+    const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
+        .viewport,
+        p.pin,
+    ) orelse @panic("TODO: unreachable?");
+
+    try self.image_placements.append(self.alloc, .{
+        .image_id = image.id,
+        .x = @intCast(p.pin.x),
+        .y = @intCast(viewport.viewport.y),
+        .z = -1,
+        .width = dest_width,
+        .height = dest_height,
+        .cell_offset_x = p_x_offset,
+        .cell_offset_y = p_y_offset,
+        .source_x = source_x,
+        .source_y = source_y,
+        .source_width = source_width,
+        .source_height = source_height,
     });
 }
 
@@ -1875,42 +1906,7 @@ fn prepKittyPlacement(
     // We need to prep this image for upload if it isn't in the cache OR
     // it is in the cache but the transmit time doesn't match meaning this
     // image is different.
-    const gop = try self.images.getOrPut(self.alloc, image.id);
-    if (!gop.found_existing or
-        gop.value_ptr.transmit_time.order(image.transmit_time) != .eq)
-    {
-        // Copy the data into the pending state.
-        const data = try self.alloc.dupe(u8, image.data);
-        errdefer self.alloc.free(data);
-
-        // Store it in the map
-        const pending: Image.Pending = .{
-            .width = image.width,
-            .height = image.height,
-            .data = data.ptr,
-        };
-
-        const new_image: Image = switch (image.format) {
-            .grey_alpha => .{ .pending_grey_alpha = pending },
-            .rgb => .{ .pending_rgb = pending },
-            .rgba => .{ .pending_rgba = pending },
-            .png => unreachable, // should be decoded by now
-        };
-
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{
-                .image = new_image,
-                .transmit_time = undefined,
-            };
-        } else {
-            try gop.value_ptr.image.markForReplace(
-                self.alloc,
-                new_image,
-            );
-        }
-
-        gop.value_ptr.transmit_time = image.transmit_time;
-    }
+    try self.prepKittyImage(image);
 
     // Convert our screen point to a viewport point
     const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
@@ -1951,6 +1947,52 @@ fn prepKittyPlacement(
             .source_height = source_height,
         });
     }
+}
+
+fn prepKittyImage(
+    self: *Metal,
+    image: *const terminal.kitty.graphics.Image,
+) !void {
+    // If this image exists and its transmit time is the same we assume
+    // it is the identical image so we don't need to send it to the GPU.
+    const gop = try self.images.getOrPut(self.alloc, image.id);
+    if (gop.found_existing and
+        gop.value_ptr.transmit_time.order(image.transmit_time) == .eq)
+    {
+        return;
+    }
+
+    // Copy the data into the pending state.
+    const data = try self.alloc.dupe(u8, image.data);
+    errdefer self.alloc.free(data);
+
+    // Store it in the map
+    const pending: Image.Pending = .{
+        .width = image.width,
+        .height = image.height,
+        .data = data.ptr,
+    };
+
+    const new_image: Image = switch (image.format) {
+        .grey_alpha => .{ .pending_grey_alpha = pending },
+        .rgb => .{ .pending_rgb = pending },
+        .rgba => .{ .pending_rgba = pending },
+        .png => unreachable, // should be decoded by now
+    };
+
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .{
+            .image = new_image,
+            .transmit_time = undefined,
+        };
+    } else {
+        try gop.value_ptr.image.markForReplace(
+            self.alloc,
+            new_image,
+        );
+    }
+
+    gop.value_ptr.transmit_time = image.transmit_time;
 }
 
 /// Update the configuration.
