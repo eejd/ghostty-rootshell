@@ -370,6 +370,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.split_down", .{ .new_split = .down });
     try self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = {} });
     try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
+    try self.syncActionAccelerator("win.reset", .{ .reset = {} });
 }
 
 fn syncActionAccelerator(
@@ -803,6 +804,9 @@ fn initContextMenu(self: *App) void {
         const section = c.g_menu_new();
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Reset", "win.reset");
+        c.g_menu_append(section, "New Window", "win.new_window");
+        c.g_menu_append(section, "New Tab", "win.new_tab");
         c.g_menu_append(section, "Split Right", "win.split_right");
         c.g_menu_append(section, "Split Down", "win.split_down");
     }
