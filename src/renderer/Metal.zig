@@ -1685,7 +1685,7 @@ fn prepKittyVirtualPlacement(
     };
 
     const rp = p.renderPlacement(
-        &t.screen.kitty_images,
+        storage,
         &image,
         self.grid_metrics.cell_width,
         self.grid_metrics.cell_height,
@@ -1694,14 +1694,19 @@ fn prepKittyVirtualPlacement(
         return;
     };
 
-    // Send our image to the GPU
-    try self.prepKittyImage(&image);
-
     const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
         .viewport,
         rp.top_left,
-    ) orelse @panic("TODO: unreachable?");
+    ) orelse {
+        // This is unreachable with virtual placements because we should
+        // only ever be looking at virtual placements that are in our
+        // viewport in the renderer and virtual placements only ever take
+        // up one row.
+        unreachable;
+    };
 
+    // Send our image to the GPU and store the placement for rendering.
+    try self.prepKittyImage(&image);
     try self.image_placements.append(self.alloc, .{
         .image_id = image.id,
         .x = @intCast(rp.top_left.x),
