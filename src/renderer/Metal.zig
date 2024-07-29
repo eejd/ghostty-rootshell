@@ -1632,8 +1632,6 @@ fn prepKittyGraphics(
         var v_it = terminal.kitty.graphics.unicode.placementIterator(top, bot);
         while (v_it.next()) |virtual_p| try self.prepKittyVirtualPlacement(
             t,
-            &top,
-            &bot,
             &virtual_p,
         );
     }
@@ -1675,13 +1673,8 @@ fn prepKittyGraphics(
 fn prepKittyVirtualPlacement(
     self: *Metal,
     t: *terminal.Terminal,
-    top: *const terminal.Pin,
-    bot: *const terminal.Pin,
     p: *const terminal.kitty.graphics.unicode.Placement,
 ) !void {
-    _ = top;
-    _ = bot;
-
     const storage = &t.screen.kitty_images;
     const image = storage.imageById(p.image_id) orelse {
         log.warn(
@@ -1690,6 +1683,43 @@ fn prepKittyVirtualPlacement(
         );
         return;
     };
+
+    if (true) {
+        const rp = p.renderPlacement(
+            &t.screen.kitty_images,
+            &image,
+            self.grid_metrics.cell_width,
+            self.grid_metrics.cell_height,
+        ) catch |err| {
+            log.warn("error rendering virtual placement err={}", .{err});
+            return;
+        };
+
+        // Send our image to the GPU
+        try self.prepKittyImage(&image);
+
+        const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
+            .viewport,
+            rp.top_left,
+        ) orelse @panic("TODO: unreachable?");
+
+        try self.image_placements.append(self.alloc, .{
+            .image_id = image.id,
+            .x = @intCast(rp.top_left.x),
+            .y = @intCast(viewport.viewport.y),
+            .z = -1,
+            .width = rp.dest_width,
+            .height = rp.dest_height,
+            .cell_offset_x = rp.offset_x,
+            .cell_offset_y = rp.offset_y,
+            .source_x = rp.source_x,
+            .source_y = rp.source_y,
+            .source_width = rp.source_width,
+            .source_height = rp.source_height,
+        });
+
+        return;
+    }
 
     // Get the placement. If an ID is specified we look for the exact one.
     // If no ID, then we find the first virtual placement for this image.

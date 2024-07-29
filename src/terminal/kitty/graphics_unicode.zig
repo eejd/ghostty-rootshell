@@ -5,6 +5,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const terminal = @import("../main.zig");
+const kitty_gfx = terminal.kitty.graphics;
+const RenderPlacement = kitty_gfx.RenderPlacement;
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -117,6 +119,231 @@ pub const Placement = struct {
     /// The width/height in cells of this placement.
     width: u32,
     height: u32,
+
+    pub const Error = error{
+        PlacementGridOutOfBounds,
+        PlacementMissingPlacement,
+    };
+
+    /// Take this virtual placement and convert it to a render placement.
+    pub fn renderPlacement(
+        self: *const Placement,
+        storage: *const kitty_gfx.ImageStorage,
+        img: *const kitty_gfx.Image,
+        cell_width: u32,
+        cell_height: u32,
+    ) Error!RenderPlacement {
+        // In this function, there is a variable naming convention to try
+        // to make it slightly less confusing. The prefix will tell you what
+        // coordinate/size space a variable lives in:
+        // - img_* is for the original image
+        // - p_* is for the final placement
+        // - vp_* is for the virtual placement
+
+        // Determine the grid size that this virtual placement fits into.
+        const p_grid = try self.grid(storage, img, cell_width, cell_height);
+
+        // From here on out we switch to floating point math. These are
+        // constants that we'll reference repeatedly.
+        const img_width_f64: f64 = @floatFromInt(img.width);
+        const img_height_f64: f64 = @floatFromInt(img.height);
+
+        // Next we have to fit the source image into the grid size while preserving
+        // aspect ratio. We will center the image horizontally/vertically if
+        // necessary.
+        const p_scale: struct {
+            /// The offsets are pixels from the top-left of the placement-sized
+            /// image in order to center the image as necessary.
+            x_offset: f64 = 0,
+            y_offset: f64 = 0,
+
+            /// The multipliers to apply to the width/height of the original
+            /// image size in order to reach the placement size.
+            x_scale: f64 = 0,
+            y_scale: f64 = 0,
+        } = scale: {
+            const p_rows_px: f64 = @floatFromInt(p_grid.rows * cell_height);
+            const p_cols_px: f64 = @floatFromInt(p_grid.columns * cell_width);
+            if (img_width_f64 * p_rows_px > img_height_f64 * p_cols_px) {
+                // Image is wider than the grid, fit width and center height
+                const x_scale = p_cols_px / @max(img_width_f64, 1);
+                const y_scale = x_scale;
+                const y_offset = (p_rows_px - img_height_f64 * y_scale) / 2;
+                break :scale .{
+                    .x_scale = x_scale,
+                    .y_scale = y_scale,
+                    .y_offset = y_offset,
+                };
+            } else {
+                // Image is taller than the grid, fit height and center width
+                const y_scale = p_rows_px / @max(img_height_f64, 1);
+                const x_scale = y_scale;
+                const x_offset = (p_cols_px - img_width_f64 * x_scale) / 2;
+                break :scale .{
+                    .x_scale = x_scale,
+                    .y_scale = y_scale,
+                    .x_offset = x_offset,
+                };
+            }
+        };
+
+        // Scale our original image according to the aspect ratio
+        // and padding calculated for p_scale.
+        const img_scaled: struct {
+            x_offset: f64,
+            y_offset: f64,
+            width: f64,
+            height: f64,
+        } = scale: {
+            const x_offset: f64 = p_scale.x_offset / p_scale.x_scale;
+            const y_offset: f64 = p_scale.y_offset / p_scale.y_scale;
+            const width: f64 = img_width_f64 + (x_offset * 2);
+            const height: f64 = img_height_f64 + (y_offset * 2);
+            break :scale .{
+                .x_offset = x_offset,
+                .y_offset = y_offset,
+                .width = width,
+                .height = height,
+            };
+        };
+
+        // Calculate the source rectangle for the scaled image. These
+        // coordinates are in the scaled image space.
+        var img_scale_source: struct {
+            x: f64,
+            y: f64,
+            width: f64,
+            height: f64,
+        } = source: {
+            // Float-converted values we already have
+            const vp_width: f64 = @floatFromInt(self.width);
+            const vp_height: f64 = @floatFromInt(self.height);
+            const vp_col: f64 = @floatFromInt(self.col);
+            const vp_row: f64 = @floatFromInt(self.row);
+            const p_grid_cols: f64 = @floatFromInt(p_grid.columns);
+            const p_grid_rows: f64 = @floatFromInt(p_grid.rows);
+
+            // Calculate the scaled source rectangle for the image, undoing
+            // the aspect ratio scaling as necessary.
+            const width: f64 = img_scaled.width * (vp_width / p_grid_cols);
+            const height: f64 = img_scaled.height * (vp_height / p_grid_rows);
+            const x: f64 = img_scaled.width * (vp_col / p_grid_cols);
+            const y: f64 = img_scaled.height * (vp_row / p_grid_rows);
+
+            break :source .{
+                .width = width,
+                .height = height,
+                .x = x,
+                .y = y,
+            };
+        };
+
+        // The destination rectangle. The x/y is specified by offsets from
+        // the top-left since that's how our RenderPlacement works.
+        const p_dest: struct {
+            x_offset: f64,
+            y_offset: f64,
+            width: f64,
+            height: f64,
+        } = dest: {
+            const x_offset: f64 = 0;
+            var y_offset: f64 = 0;
+            const width: f64 = @floatFromInt(self.width * cell_width);
+            var height: f64 = @floatFromInt(self.height * cell_height);
+
+            if (img_scale_source.y < img_scaled.y_offset) {
+                // If our source rect y is within the offset area, we need to
+                // adjust our source rect and destination since the source texture
+                // doesnt actually have the offset area blank.
+                const offset: f64 = img_scaled.y_offset - img_scale_source.y;
+                img_scale_source.height -= offset;
+                y_offset = offset;
+                height -= offset * p_scale.y_scale;
+                img_scale_source.y = 0;
+            }
+
+            if (img_scale_source.y + img_scale_source.height >
+                img_scaled.height - img_scaled.y_offset)
+            {
+                // if our y is in our bottom offset area, we need to shorten the
+                // source to fit in the cell.
+                img_scale_source.y -= img_scaled.y_offset;
+                img_scale_source.height = img_scaled.height - img_scaled.y_offset - img_scale_source.y;
+                img_scale_source.height -= img_scaled.y_offset;
+                height = img_scale_source.height * p_scale.y_scale;
+            }
+
+            break :dest .{
+                .x_offset = x_offset,
+                .y_offset = y_offset,
+                .width = width,
+                .height = height,
+            };
+        };
+
+        return .{
+            .top_left = self.pin,
+            .offset_x = @intFromFloat(@round(p_dest.x_offset)),
+            .offset_y = @intFromFloat(@round(p_dest.y_offset)),
+            .source_x = @intFromFloat(@round(img_scale_source.x)),
+            .source_y = @intFromFloat(@round(img_scale_source.y)),
+            .source_width = @intFromFloat(@round(img_scale_source.width)),
+            .source_height = @intFromFloat(@round(img_scale_source.height)),
+            .dest_width = @intFromFloat(@round(p_dest.width)),
+            .dest_height = @intFromFloat(@round(p_dest.height)),
+        };
+    }
+
+    // Calculate the grid size for the placement. For virtual placements,
+    // we use the requested row/cols. If either isn't specified, we choose
+    // the best size based on the image size to fit the entire image in its
+    // original size.
+    //
+    // This part of the code does NOT do preserve any aspect ratios. Its
+    // dumbly fitting the image into the grid size -- possibly user specified.
+    fn grid(
+        self: *const Placement,
+        storage: *const kitty_gfx.ImageStorage,
+        image: *const kitty_gfx.Image,
+        cell_width: u32,
+        cell_height: u32,
+    ) !struct {
+        rows: u32,
+        columns: u32,
+    } {
+        // Get the placement. If an ID is specified we look for the exact one.
+        // If no ID, then we find the first virtual placement for this image.
+        const placement = if (self.placement_id > 0) storage.placements.get(.{
+            .image_id = self.image_id,
+            .placement_id = .{ .tag = .external, .id = self.placement_id },
+        }) orelse {
+            return Error.PlacementMissingPlacement;
+        } else placement: {
+            var it = storage.placements.iterator();
+            while (it.next()) |entry| {
+                if (entry.key_ptr.image_id == self.image_id and
+                    entry.value_ptr.location == .virtual)
+                {
+                    break :placement entry.value_ptr.*;
+                }
+            }
+
+            return Error.PlacementMissingPlacement;
+        };
+
+        // Use requested rows/columns if specified
+        // For unspecified rows/columns, calculate based on the image size.
+        var rows = placement.rows;
+        var columns = placement.columns;
+        if (rows == 0) rows = (image.height + cell_height - 1) / cell_height;
+        if (columns == 0) columns = (image.width + cell_width - 1) / cell_width;
+        return .{
+            .rows = std.math.cast(terminal.size.CellCountInt, rows) orelse
+                return Error.PlacementGridOutOfBounds,
+            .columns = std.math.cast(terminal.size.CellCountInt, columns) orelse
+                return Error.PlacementGridOutOfBounds,
+        };
+    }
 };
 
 /// IncompletePlacement is the placement information present in a single

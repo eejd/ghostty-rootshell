@@ -16,11 +16,13 @@
 //! aim to ship a v1 of this implementation came at some cost. I learned a lot
 //! though and I think we can go back through and fix this up.
 
+const render = @import("graphics_render.zig");
 pub usingnamespace @import("graphics_command.zig");
 pub usingnamespace @import("graphics_exec.zig");
 pub usingnamespace @import("graphics_image.zig");
 pub usingnamespace @import("graphics_storage.zig");
 pub const unicode = @import("graphics_unicode.zig");
+pub const RenderPlacement = render.Placement;
 
 test {
     @import("std").testing.refAllDecls(@This());
