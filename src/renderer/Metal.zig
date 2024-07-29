@@ -1694,6 +1694,9 @@ fn prepKittyVirtualPlacement(
         return;
     };
 
+    // If our placement is zero sized then we don't do anything.
+    if (rp.dest_width == 0 or rp.dest_height == 0) return;
+
     const viewport: terminal.point.Point = t.screen.pages.pointFromPin(
         .viewport,
         rp.top_left,

@@ -293,6 +293,13 @@ pub const Placement = struct {
                 width = img_scale_source.width * p_scale.x_scale;
             }
 
+            // If our modified source width/height is less than zero then
+            // we render nothing because it means we're rendering outside
+            // of the visible image.
+            if (img_scale_source.width <= 0 or img_scale_source.height <= 0) {
+                return .{ .top_left = self.pin };
+            }
+
             break :dest .{
                 .x_offset = x_offset * p_scale.x_scale,
                 .y_offset = y_offset * p_scale.y_scale,
