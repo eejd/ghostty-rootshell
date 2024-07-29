@@ -1705,8 +1705,7 @@ pub const Cell = packed struct(u64) {
         return switch (self.content_tag) {
             .codepoint,
             .codepoint_grapheme,
-            => self.content.codepoint != 0 and
-                self.content.codepoint != kitty.graphics.unicode.placeholder,
+            => self.content.codepoint != 0,
 
             .bg_color_palette,
             .bg_color_rgb,
@@ -1738,8 +1737,7 @@ pub const Cell = packed struct(u64) {
         return self.style_id != style.default_id;
     }
 
-    /// Returns true if the cell has no text or styling. This also returns
-    /// true if the cell represents a Kitty graphics unicode placeholder.
+    /// Returns true if the cell has no text or styling.
     pub fn isEmpty(self: Cell) bool {
         return switch (self.content_tag) {
             // Textual cells are empty if they have no text and are narrow.
@@ -2670,13 +2668,4 @@ test "Page verifyIntegrity zero cols" {
         Page.IntegrityError.ZeroColCount,
         page.verifyIntegrity(testing.allocator),
     );
-}
-
-test "Cell isEmpty for kitty placeholder" {
-    var c: Cell = .{
-        .content_tag = .codepoint_grapheme,
-        .content = .{ .codepoint = kitty.graphics.unicode.placeholder },
-    };
-    try testing.expectEqual(@as(u21, kitty.graphics.unicode.placeholder), c.codepoint());
-    try testing.expect(c.isEmpty());
 }
