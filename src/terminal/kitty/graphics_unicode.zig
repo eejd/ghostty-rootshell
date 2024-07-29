@@ -274,12 +274,19 @@ pub const Placement = struct {
             }
 
             break :dest .{
-                .x_offset = x_offset,
-                .y_offset = y_offset,
+                .x_offset = x_offset * p_scale.x_scale,
+                .y_offset = y_offset * p_scale.y_scale,
                 .width = width,
                 .height = height,
             };
         };
+        // log.warn("p_grid={} p_scale={} img_scaled={} img_scale_source={} p_dest={}", .{
+        //     p_grid,
+        //     p_scale,
+        //     img_scaled,
+        //     img_scale_source,
+        //     p_dest,
+        // });
 
         return .{
             .top_left = self.pin,
