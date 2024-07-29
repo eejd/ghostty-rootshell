@@ -248,9 +248,9 @@ pub const Placement = struct {
             width: f64,
             height: f64,
         } = dest: {
-            const x_offset: f64 = 0;
+            var x_offset: f64 = 0;
             var y_offset: f64 = 0;
-            const width: f64 = @floatFromInt(self.width * cell_width);
+            var width: f64 = @floatFromInt(self.width * cell_width);
             var height: f64 = @floatFromInt(self.height * cell_height);
 
             if (img_scale_source.y < img_scaled.y_offset) {
@@ -262,9 +262,7 @@ pub const Placement = struct {
                 y_offset = offset;
                 height -= offset * p_scale.y_scale;
                 img_scale_source.y = 0;
-            }
-
-            if (img_scale_source.y + img_scale_source.height >
+            } else if (img_scale_source.y + img_scale_source.height >
                 img_scaled.height - img_scaled.y_offset)
             {
                 // if our y is in our bottom offset area, we need to shorten the
@@ -273,6 +271,26 @@ pub const Placement = struct {
                 img_scale_source.height = img_scaled.height - img_scaled.y_offset - img_scale_source.y;
                 img_scale_source.height -= img_scaled.y_offset;
                 height = img_scale_source.height * p_scale.y_scale;
+            }
+
+            if (img_scale_source.x < img_scaled.x_offset) {
+                // If our source rect x is within the offset area, we need to
+                // adjust our source rect and destination since the source texture
+                // doesnt actually have the offset area blank.
+                const offset: f64 = img_scaled.x_offset - img_scale_source.x;
+                img_scale_source.width -= offset;
+                x_offset = offset;
+                width -= offset * p_scale.x_scale;
+                img_scale_source.x = 0;
+            } else if (img_scale_source.x + img_scale_source.width >
+                img_scaled.width - img_scaled.x_offset)
+            {
+                // if our x is in our right offset area, we need to shorten the
+                // source to fit in the cell.
+                img_scale_source.x -= img_scaled.x_offset;
+                img_scale_source.width = img_scaled.width - img_scaled.x_offset - img_scale_source.x;
+                img_scale_source.width -= img_scaled.x_offset;
+                width = img_scale_source.width * p_scale.x_scale;
             }
 
             break :dest .{
@@ -1185,5 +1203,72 @@ test "unicode render placement: dog 4x2" {
         try testing.expectEqual(153, rp.source_height);
         try testing.expectEqual(144, rp.dest_width);
         try testing.expectEqual(44, rp.dest_height);
+    }
+}
+
+// Fish:
+// printf "\033_Gf=100,i=1,t=f,q=2;$(printf dog.png | base64)\033\\"
+// printf "\e[38;5;1m\U10EEEE\U0305\U0305\U10EEEE\U0305\U030D\U10EEEE\U0305\U030E\U10EEEE\U0305\U0310\e[39m\n"
+// printf "\e[38;5;1m\U10EEEE\U030D\U0305\U10EEEE\U030D\U030D\U10EEEE\U030D\U030E\U10EEEE\U030D\U0310\e[39m\n"
+// printf "\033_Ga=p,i=1,U=1,q=2,c=2,r=2\033\\"
+test "unicode render placement: dog 2x2 with blank cells" {
+    const alloc = testing.allocator;
+    const cell_width = 36;
+    const cell_height = 80;
+
+    var t = try terminal.Terminal.init(alloc, .{ .cols = 100, .rows = 100 });
+    defer t.deinit(alloc);
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+
+    const image: Image = .{ .id = 1, .width = 500, .height = 306 };
+    try s.addImage(alloc, image);
+    try s.addPlacement(alloc, 1, 0, .{
+        .location = .{ .virtual = {} },
+        .columns = 2,
+        .rows = 2,
+    });
+
+    // Row 1
+    {
+        const p: Placement = .{
+            .pin = t.screen.cursor.page_pin.*,
+            .image_id = 1,
+            .placement_id = 0,
+            .col = 0,
+            .row = 0,
+            .width = 4,
+            .height = 1,
+        };
+        const rp = try p.renderPlacement(&s, &image, cell_width, cell_height);
+        try testing.expectEqual(0, rp.offset_x);
+        try testing.expectEqual(58, rp.offset_y);
+        try testing.expectEqual(0, rp.source_x);
+        try testing.expectEqual(0, rp.source_y);
+        try testing.expectEqual(500, rp.source_width);
+        try testing.expectEqual(153, rp.source_height);
+        try testing.expectEqual(72, rp.dest_width);
+        try testing.expectEqual(22, rp.dest_height);
+    }
+    // Row 2
+    {
+        const p: Placement = .{
+            .pin = t.screen.cursor.page_pin.*,
+            .image_id = 1,
+            .placement_id = 0,
+            .col = 0,
+            .row = 1,
+            .width = 4,
+            .height = 1,
+        };
+        const rp = try p.renderPlacement(&s, &image, cell_width, cell_height);
+        try testing.expectEqual(0, rp.offset_x);
+        try testing.expectEqual(0, rp.offset_y);
+        try testing.expectEqual(0, rp.source_x);
+        try testing.expectEqual(153, rp.source_y);
+        try testing.expectEqual(500, rp.source_width);
+        try testing.expectEqual(153, rp.source_height);
+        try testing.expectEqual(72, rp.dest_width);
+        try testing.expectEqual(22, rp.dest_height);
     }
 }
