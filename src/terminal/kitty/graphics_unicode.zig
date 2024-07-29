@@ -6,6 +6,8 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const terminal = @import("../main.zig");
 const kitty_gfx = terminal.kitty.graphics;
+const Image = kitty_gfx.Image;
+const ImageStorage = kitty_gfx.ImageStorage;
 const RenderPlacement = kitty_gfx.RenderPlacement;
 
 const log = std.log.scoped(.kitty_gfx);
@@ -128,8 +130,8 @@ pub const Placement = struct {
     /// Take this virtual placement and convert it to a render placement.
     pub fn renderPlacement(
         self: *const Placement,
-        storage: *const kitty_gfx.ImageStorage,
-        img: *const kitty_gfx.Image,
+        storage: *const ImageStorage,
+        img: *const Image,
         cell_width: u32,
         cell_height: u32,
     ) Error!RenderPlacement {
@@ -310,8 +312,8 @@ pub const Placement = struct {
     // dumbly fitting the image into the grid size -- possibly user specified.
     fn grid(
         self: *const Placement,
-        storage: *const kitty_gfx.ImageStorage,
-        image: *const kitty_gfx.Image,
+        storage: *const ImageStorage,
+        image: *const Image,
         cell_width: u32,
         cell_height: u32,
     ) !struct {
@@ -1117,4 +1119,71 @@ test "unicode placement: specifying placement id as palette" {
         try testing.expectEqual(0, p.col);
     }
     try testing.expect(it.next() == null);
+}
+
+// Fish:
+// printf "\033_Gf=100,i=1,t=f,q=2;$(printf dog.png | base64)\033\\"
+// printf "\e[38;5;1m\U10EEEE\U0305\U0305\U10EEEE\U0305\U030D\U10EEEE\U0305\U030E\U10EEEE\U0305\U0310\e[39m\n"
+// printf "\e[38;5;1m\U10EEEE\U030D\U0305\U10EEEE\U030D\U030D\U10EEEE\U030D\U030E\U10EEEE\U030D\U0310\e[39m\n"
+// printf "\033_Ga=p,i=1,U=1,q=2,c=4,r=2\033\\"
+test "unicode render placement: dog 4x2" {
+    const alloc = testing.allocator;
+    const cell_width = 36;
+    const cell_height = 80;
+
+    var t = try terminal.Terminal.init(alloc, .{ .cols = 100, .rows = 100 });
+    defer t.deinit(alloc);
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+
+    const image: Image = .{ .id = 1, .width = 500, .height = 306 };
+    try s.addImage(alloc, image);
+    try s.addPlacement(alloc, 1, 0, .{
+        .location = .{ .virtual = {} },
+        .columns = 4,
+        .rows = 2,
+    });
+
+    // Row 1
+    {
+        const p: Placement = .{
+            .pin = t.screen.cursor.page_pin.*,
+            .image_id = 1,
+            .placement_id = 0,
+            .col = 0,
+            .row = 0,
+            .width = 4,
+            .height = 1,
+        };
+        const rp = try p.renderPlacement(&s, &image, cell_width, cell_height);
+        try testing.expectEqual(0, rp.offset_x);
+        try testing.expectEqual(36, rp.offset_y);
+        try testing.expectEqual(0, rp.source_x);
+        try testing.expectEqual(0, rp.source_y);
+        try testing.expectEqual(500, rp.source_width);
+        try testing.expectEqual(153, rp.source_height);
+        try testing.expectEqual(144, rp.dest_width);
+        try testing.expectEqual(44, rp.dest_height);
+    }
+    // Row 2
+    {
+        const p: Placement = .{
+            .pin = t.screen.cursor.page_pin.*,
+            .image_id = 1,
+            .placement_id = 0,
+            .col = 0,
+            .row = 1,
+            .width = 4,
+            .height = 1,
+        };
+        const rp = try p.renderPlacement(&s, &image, cell_width, cell_height);
+        try testing.expectEqual(0, rp.offset_x);
+        try testing.expectEqual(0, rp.offset_y);
+        try testing.expectEqual(0, rp.source_x);
+        try testing.expectEqual(153, rp.source_y);
+        try testing.expectEqual(500, rp.source_width);
+        try testing.expectEqual(153, rp.source_height);
+        try testing.expectEqual(144, rp.dest_width);
+        try testing.expectEqual(44, rp.dest_height);
+    }
 }
