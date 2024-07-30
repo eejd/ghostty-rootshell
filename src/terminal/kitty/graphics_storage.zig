@@ -218,19 +218,27 @@ pub const ImageStorage = struct {
         cmd: command.Delete,
     ) void {
         switch (cmd) {
-            // TODO: virtual placeholders must not be deleted according to spec
-            .all => |delete_images| if (delete_images) {
-                // We just reset our entire state.
-                self.deinit(alloc, &t.screen);
-                self.* = .{
-                    .dirty = true,
-                    .total_limit = self.total_limit,
-                };
-            } else {
-                // Delete all our placements
-                self.clearPlacements(&t.screen);
-                self.placements.deinit(alloc);
-                self.placements = .{};
+            .all => |delete_images| {
+                var it = self.placements.iterator();
+                while (it.next()) |entry| {
+                    // Skip virtual placements
+                    switch (entry.value_ptr.location) {
+                        .pin => {},
+                        .virtual => continue,
+                    }
+
+                    // Deinit the placement and remove it
+                    const image_id = entry.key_ptr.image_id;
+                    entry.value_ptr.deinit(&t.screen);
+                    self.placements.removeByPtr(entry.key_ptr);
+                    if (delete_images) self.deleteIfUnused(alloc, image_id);
+                }
+
+                if (delete_images) {
+                    var image_it = self.images.iterator();
+                    while (image_it.next()) |kv| self.deleteIfUnused(alloc, kv.key_ptr.*);
+                }
+
                 self.dirty = true;
             },
 
