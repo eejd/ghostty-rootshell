@@ -271,6 +271,8 @@ pub const Placement = struct {
                 img_scale_source.height = img_scaled.height - img_scaled.y_offset - img_scale_source.y;
                 img_scale_source.height -= img_scaled.y_offset;
                 height = img_scale_source.height * p_scale.y_scale;
+            } else {
+                img_scale_source.y -= img_scaled.y_offset;
             }
 
             if (img_scale_source.x < img_scaled.x_offset) {
@@ -291,6 +293,8 @@ pub const Placement = struct {
                 img_scale_source.width = img_scaled.width - img_scaled.x_offset - img_scale_source.x;
                 img_scale_source.width -= img_scaled.x_offset;
                 width = img_scale_source.width * p_scale.x_scale;
+            } else {
+                img_scale_source.x -= img_scaled.x_offset;
             }
 
             // If our modified source width/height is less than zero then
