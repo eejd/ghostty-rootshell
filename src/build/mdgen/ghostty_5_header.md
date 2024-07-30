@@ -57,7 +57,7 @@ pipe that through a pager, an editor, etc.
 
 Note: You'll see a lot of weird blank configurations like `font-family =`. This
 is a valid syntax to specify the default behavior (no value). The `+show-config`
-outputs it so its clear that key is defaulting and also to have something to
+outputs it so it's clear that key is defaulting and also to have something to
 attach the doc comment to.
 
 You can also see and read all available configuration options in the source
