@@ -262,6 +262,14 @@ pub const Placement = struct {
                 y_offset = offset;
                 height -= offset * p_scale.y_scale;
                 img_scale_source.y = 0;
+
+                // If our height is greater than our original height,
+                // bring it back down. This addresses the case where the top
+                // and bottom offsets are both used.
+                if (img_scale_source.height > img_height_f64) {
+                    img_scale_source.height = img_height_f64;
+                    height = img_height_f64 * p_scale.y_scale;
+                }
             } else if (img_scale_source.y + img_scale_source.height >
                 img_scaled.height - img_scaled.y_offset)
             {
@@ -284,6 +292,14 @@ pub const Placement = struct {
                 x_offset = offset;
                 width -= offset * p_scale.x_scale;
                 img_scale_source.x = 0;
+
+                // If our width is greater than our original width,
+                // bring it back down. This addresses the case where the left
+                // and right offsets are both used.
+                if (img_scale_source.width > img_width_f64) {
+                    img_scale_source.width = img_width_f64;
+                    width = img_width_f64 * p_scale.x_scale;
+                }
             } else if (img_scale_source.x + img_scale_source.width >
                 img_scaled.width - img_scaled.x_offset)
             {
@@ -311,7 +327,9 @@ pub const Placement = struct {
                 .height = height,
             };
         };
-        // log.warn("p_grid={} p_scale={} img_scaled={} img_scale_source={} p_dest={}", .{
+        // log.warn("img_width={} img_height={}\np_grid={}\np_scale={}\nimg_scaled={}\nimg_scale_source={}\np_dest={}\n", .{
+        //     img_width_f64,
+        //     img_height_f64,
         //     p_grid,
         //     p_scale,
         //     img_scaled,
@@ -1280,6 +1298,51 @@ test "unicode render placement: dog 2x2 with blank cells" {
         try testing.expectEqual(500, rp.source_width);
         try testing.expectEqual(153, rp.source_height);
         try testing.expectEqual(72, rp.dest_width);
+        try testing.expectEqual(22, rp.dest_height);
+    }
+}
+
+// Fish:
+// printf "\033_Gf=100,i=1,t=f,q=2;$(printf dog.png | base64)\033\\"
+// printf "\e[38;5;1m\U10EEEE\U0305\U0305\U10EEEE\U0305\U030D\U10EEEE\U0305\U030E\U10EEEE\U0305\U0310\e[39m\n"
+// printf "\033_Ga=p,i=1,U=1,q=2,c=1,r=1\033\\"
+test "unicode render placement: dog 1x1" {
+    const alloc = testing.allocator;
+    const cell_width = 36;
+    const cell_height = 80;
+
+    var t = try terminal.Terminal.init(alloc, .{ .cols = 100, .rows = 100 });
+    defer t.deinit(alloc);
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+
+    const image: Image = .{ .id = 1, .width = 500, .height = 306 };
+    try s.addImage(alloc, image);
+    try s.addPlacement(alloc, 1, 0, .{
+        .location = .{ .virtual = {} },
+        .columns = 1,
+        .rows = 1,
+    });
+
+    // Row 1
+    {
+        const p: Placement = .{
+            .pin = t.screen.cursor.page_pin.*,
+            .image_id = 1,
+            .placement_id = 0,
+            .col = 0,
+            .row = 0,
+            .width = 4,
+            .height = 1,
+        };
+        const rp = try p.renderPlacement(&s, &image, cell_width, cell_height);
+        try testing.expectEqual(0, rp.offset_x);
+        try testing.expectEqual(29, rp.offset_y);
+        try testing.expectEqual(0, rp.source_x);
+        try testing.expectEqual(0, rp.source_y);
+        try testing.expectEqual(500, rp.source_width);
+        try testing.expectEqual(306, rp.source_height);
+        try testing.expectEqual(36, rp.dest_width);
         try testing.expectEqual(22, rp.dest_height);
     }
 }
