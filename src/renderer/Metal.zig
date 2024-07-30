@@ -932,7 +932,6 @@ pub fn updateFrame(
         // If we have any virtual references, we must also rebuild our
         // kitty state on every frame because any cell change can move
         // an image.
-        // TODO(mitchellh): integrate with row dirty flags
         if (state.terminal.screen.kitty_images.dirty or
             self.image_virtual)
         {
