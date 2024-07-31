@@ -7962,3 +7962,122 @@ test "PageList resize reflow less cols to wrap a wide char" {
         }
     }
 }
+
+test "PageList resize reflow less cols copy kitty placeholder" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 2, 0);
+    defer s.deinit();
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        // Write unicode placeholders
+        for (0..s.cols - 1) |x| {
+            const rac = page.getRowAndCell(x, 0);
+            rac.row.kitty_virtual_placeholder = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = kitty.graphics.unicode.placeholder },
+            };
+        }
+    }
+
+    // Resize
+    try s.resize(.{ .cols = 2, .reflow = true });
+    try testing.expectEqual(@as(usize, 2), s.cols);
+    try testing.expectEqual(@as(usize, 2), s.totalRows());
+
+    var it = s.rowIterator(.right_down, .{ .active = .{} }, null);
+    while (it.next()) |offset| {
+        for (0..s.cols - 1) |x| {
+            var offset_copy = offset;
+            offset_copy.x = @intCast(x);
+            const rac = offset_copy.rowAndCell();
+
+            const row = rac.row;
+            try testing.expect(row.kitty_virtual_placeholder);
+        }
+    }
+}
+
+test "PageList resize reflow more cols clears kitty placeholder" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 2, 0);
+    defer s.deinit();
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        // Write unicode placeholders
+        for (0..s.cols - 1) |x| {
+            const rac = page.getRowAndCell(x, 0);
+            rac.row.kitty_virtual_placeholder = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = kitty.graphics.unicode.placeholder },
+            };
+        }
+    }
+
+    // Resize smaller then larger
+    try s.resize(.{ .cols = 2, .reflow = true });
+    try s.resize(.{ .cols = 4, .reflow = true });
+    try testing.expectEqual(@as(usize, 4), s.cols);
+    try testing.expectEqual(@as(usize, 2), s.totalRows());
+
+    var it = s.rowIterator(.right_down, .{ .active = .{} }, null);
+    {
+        const row = it.next().?;
+        const rac = row.rowAndCell();
+        try testing.expect(rac.row.kitty_virtual_placeholder);
+    }
+    {
+        const row = it.next().?;
+        const rac = row.rowAndCell();
+        try testing.expect(!rac.row.kitty_virtual_placeholder);
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "PageList resize reflow wrap moves kitty placeholder" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 4, 2, 0);
+    defer s.deinit();
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+
+        // Write unicode placeholders
+        for (2..s.cols - 1) |x| {
+            const rac = page.getRowAndCell(x, 0);
+            rac.row.kitty_virtual_placeholder = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = kitty.graphics.unicode.placeholder },
+            };
+        }
+    }
+
+    try s.resize(.{ .cols = 2, .reflow = true });
+    try testing.expectEqual(@as(usize, 2), s.cols);
+    try testing.expectEqual(@as(usize, 2), s.totalRows());
+
+    var it = s.rowIterator(.right_down, .{ .active = .{} }, null);
+    {
+        const row = it.next().?;
+        const rac = row.rowAndCell();
+        try testing.expect(!rac.row.kitty_virtual_placeholder);
+    }
+    {
+        const row = it.next().?;
+        const rac = row.rowAndCell();
+        try testing.expect(rac.row.kitty_virtual_placeholder);
+    }
+    try testing.expect(it.next() == null);
+}
