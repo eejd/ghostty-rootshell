@@ -184,19 +184,33 @@ fn display(
     // Make sure our response has the image id in case we looked up by number
     result.id = img.id;
 
-    // Track a new pin for our cursor. The cursor is always tracked but we
-    // don't want this one to move with the cursor.
-    const placement_pin = terminal.screen.pages.trackPin(
-        terminal.screen.cursor.page_pin.*,
-    ) catch |err| {
-        log.warn("failed to create pin for Kitty graphics err={}", .{err});
-        result.message = "EINVAL: failed to prepare terminal state";
-        return result;
+    // Location where the placement will go.
+    const location: ImageStorage.Placement.Location = location: {
+        // Virtual placements are not tracked
+        if (d.virtual_placement) {
+            if (d.parent_id > 0) {
+                result.message = "EINVAL: virtual placement cannot refer to a parent";
+                return result;
+            }
+
+            break :location .{ .virtual = {} };
+        }
+
+        // Track a new pin for our cursor. The cursor is always tracked but we
+        // don't want this one to move with the cursor.
+        const pin = terminal.screen.pages.trackPin(
+            terminal.screen.cursor.page_pin.*,
+        ) catch |err| {
+            log.warn("failed to create pin for Kitty graphics err={}", .{err});
+            result.message = "EINVAL: failed to prepare terminal state";
+            return result;
+        };
+        break :location .{ .pin = pin };
     };
 
     // Add the placement
     const p: ImageStorage.Placement = .{
-        .pin = placement_pin,
+        .location = location,
         .x_offset = d.x_offset,
         .y_offset = d.y_offset,
         .source_x = d.x,
@@ -218,21 +232,24 @@ fn display(
         return result;
     };
 
-    // Cursor needs to move after placement
-    switch (d.cursor_movement) {
-        .none => {},
-        .after => {
-            // We use terminal.index to properly handle scroll regions.
-            const size = p.gridSize(img, terminal);
-            for (0..size.rows) |_| terminal.index() catch |err| {
-                log.warn("failed to move cursor: {}", .{err});
-                break;
-            };
+    // Apply cursor movement setting. This only applies to pin placements.
+    switch (p.location) {
+        .virtual => {},
+        .pin => |pin| switch (d.cursor_movement) {
+            .none => {},
+            .after => {
+                // We use terminal.index to properly handle scroll regions.
+                const size = p.gridSize(img, terminal);
+                for (0..size.rows) |_| terminal.index() catch |err| {
+                    log.warn("failed to move cursor: {}", .{err});
+                    break;
+                };
 
-            terminal.setCursorPos(
-                terminal.screen.cursor.y,
-                p.pin.x + size.cols + 1,
-            );
+                terminal.setCursorPos(
+                    terminal.screen.cursor.y,
+                    pin.x + size.cols + 1,
+                );
+            },
         },
     }
 

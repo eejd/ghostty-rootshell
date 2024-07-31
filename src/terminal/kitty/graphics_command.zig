@@ -462,6 +462,10 @@ pub const Display = struct {
     rows: u32 = 0, // r
     cursor_movement: CursorMovement = .after, // C
     virtual_placement: bool = false, // U
+    parent_id: u32 = 0, // P
+    parent_placement_id: u32 = 0, // Q
+    horizontal_offset: u32 = 0, // H
+    vertical_offset: u32 = 0, // V
     z: i32 = 0, // z
 
     pub const CursorMovement = enum {
@@ -535,6 +539,22 @@ pub const Display = struct {
         if (kv.get('z')) |v| {
             // We can bitcast here because of how we parse it earlier.
             result.z = @bitCast(v);
+        }
+
+        if (kv.get('P')) |v| {
+            result.parent_id = v;
+        }
+
+        if (kv.get('Q')) |v| {
+            result.parent_placement_id = v;
+        }
+
+        if (kv.get('H')) |v| {
+            result.horizontal_offset = v;
+        }
+
+        if (kv.get('V')) |v| {
+            result.vertical_offset = v;
         }
 
         return result;

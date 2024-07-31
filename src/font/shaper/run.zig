@@ -228,6 +228,12 @@ pub const RunIterator = struct {
                 continue;
             }
 
+            // If we're a Kitty unicode placeholder then we add a blank.
+            if (cell.codepoint() == terminal.kitty.graphics.unicode.placeholder) {
+                try self.addCodepoint(&hasher, ' ', @intCast(cluster));
+                continue;
+            }
+
             // Add all the codepoints for our grapheme
             try self.addCodepoint(
                 &hasher,
@@ -284,8 +290,20 @@ pub const RunIterator = struct {
         style: font.Style,
         presentation: ?font.Presentation,
     ) !?font.Collection.Index {
+        if (cell.isEmpty() or
+            cell.codepoint() == 0 or
+            cell.codepoint() == terminal.kitty.graphics.unicode.placeholder)
+        {
+            return try self.grid.getIndex(
+                alloc,
+                ' ',
+                style,
+                presentation,
+            );
+        }
+
         // Get the font index for the primary codepoint.
-        const primary_cp: u32 = if (cell.isEmpty() or cell.codepoint() == 0) ' ' else cell.codepoint();
+        const primary_cp: u32 = cell.codepoint();
         const primary = try self.grid.getIndex(
             alloc,
             primary_cp,

@@ -8,6 +8,7 @@ const posix = std.posix;
 const fastmem = @import("../fastmem.zig");
 const color = @import("color.zig");
 const hyperlink = @import("hyperlink.zig");
+const kitty = @import("kitty.zig");
 const sgr = @import("sgr.zig");
 const style = @import("style.zig");
 const size = @import("size.zig");
@@ -825,6 +826,9 @@ pub const Page = struct {
                         src_cell.style_id,
                     ) orelse src_cell.style_id;
                 }
+                if (src_cell.codepoint() == kitty.graphics.unicode.placeholder) {
+                    dst_row.kitty_virtual_placeholder = true;
+                }
             }
         }
 
@@ -912,6 +916,9 @@ pub const Page = struct {
                     dst.hyperlink = true;
                     dst_row.hyperlink = true;
                 }
+                if (src.codepoint() == kitty.graphics.unicode.placeholder) {
+                    dst_row.kitty_virtual_placeholder = true;
+                }
             }
         }
 
@@ -931,6 +938,7 @@ pub const Page = struct {
             src_row.grapheme = false;
             src_row.hyperlink = false;
             src_row.styled = false;
+            src_row.kitty_virtual_placeholder = false;
         }
     }
 
@@ -1026,6 +1034,16 @@ pub const Page = struct {
             }
 
             if (cells.len == self.size.cols) row.styled = false;
+        }
+
+        if (row.kitty_virtual_placeholder and
+            cells.len == self.size.cols)
+        {
+            for (cells) |c| {
+                if (c.codepoint() == kitty.graphics.unicode.placeholder) {
+                    break;
+                }
+            } else row.kitty_virtual_placeholder = false;
         }
 
         // Zero the cells as u64s since empirically this seems
@@ -1134,7 +1152,7 @@ pub const Page = struct {
     pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) Allocator.Error!void {
         defer self.assertIntegrity();
 
-        assert(cell.hasText());
+        assert(cell.codepoint() > 0);
         assert(cell.content_tag == .codepoint);
 
         const cell_offset = getOffset(Cell, self.memory, cell);
@@ -1160,7 +1178,7 @@ pub const Page = struct {
     pub fn appendGrapheme(self: *Page, row: *Row, cell: *Cell, cp: u21) Allocator.Error!void {
         defer self.assertIntegrity();
 
-        if (comptime std.debug.runtime_safety) assert(cell.hasText());
+        if (comptime std.debug.runtime_safety) assert(cell.codepoint() != 0);
 
         const cell_offset = getOffset(Cell, self.memory, cell);
         var map = self.grapheme_map.map(self.memory);
@@ -1219,7 +1237,7 @@ pub const Page = struct {
     /// Returns the codepoints for the given cell. These are the codepoints
     /// in addition to the first codepoint. The first codepoint is NOT
     /// included since it is on the cell itself.
-    pub fn lookupGrapheme(self: *const Page, cell: *Cell) ?[]u21 {
+    pub fn lookupGrapheme(self: *const Page, cell: *const Cell) ?[]u21 {
         const cell_offset = getOffset(Cell, self.memory, cell);
         const map = self.grapheme_map.map(self.memory);
         const slice = map.get(cell_offset) orelse return null;
@@ -1551,7 +1569,11 @@ pub const Row = packed struct(u64) {
     /// running program, or "unknown" if it was never set.
     semantic_prompt: SemanticPrompt = .unknown,
 
-    _padding: u24 = 0,
+    /// True if this row contains a virtual placeholder for the Kitty
+    /// graphics protocol. (U+10EEEE)
+    kitty_virtual_placeholder: bool = false,
+
+    _padding: u23 = 0,
 
     /// Semantic prompt type.
     pub const SemanticPrompt = enum(u3) {
@@ -1673,6 +1695,12 @@ pub const Cell = packed struct(u64) {
         return @as(u64, @bitCast(self)) == 0;
     }
 
+    /// Returns true if this cell represents a cell with text to render.
+    ///
+    /// Cases this returns false:
+    ///   - Cell text is blank
+    ///   - Cell is styled but only with a background color and no text
+    ///   - Cell has a unicode placeholder for Kitty graphics protocol
     pub fn hasText(self: Cell) bool {
         return switch (self.content_tag) {
             .codepoint,

@@ -281,7 +281,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                 // column. Otherwise, we need to check if there is text to
                 // figure out if we're attaching to the prev or current.
                 if (self.screen.cursor.x != right_limit - 1) break :left 1;
-                break :left @intFromBool(!self.screen.cursor.page_cell.hasText());
+                break :left @intFromBool(self.screen.cursor.page_cell.codepoint() == 0);
             };
 
             // If the previous cell is a wide spacer tail, then we actually
@@ -299,7 +299,7 @@ pub fn print(self: *Terminal, c: u21) !void {
 
         // If our cell has no content, then this is a new cell and
         // necessarily a grapheme break.
-        if (!prev.cell.hasText()) break :grapheme;
+        if (prev.cell.codepoint() == 0) break :grapheme;
 
         const grapheme_break = brk: {
             var state: unicode.GraphemeBreakState = .{};
@@ -379,7 +379,11 @@ pub fn print(self: *Terminal, c: u21) !void {
                 }
             }
 
-            log.debug("c={x} grapheme attach to left={}", .{ c, prev.left });
+            log.debug("c={X} grapheme attach to left={} primary_cp={X}", .{
+                c,
+                prev.left,
+                prev.cell.codepoint(),
+            });
             self.screen.cursorMarkDirty();
             try self.screen.appendGrapheme(prev.cell, c);
             return;
@@ -634,6 +638,12 @@ fn printCell(
             page.styles.use(page.memory, cell.style_id);
             self.screen.cursor.page_row.styled = true;
         }
+    }
+
+    // If this is a Kitty unicode placeholder then we need to mark the
+    // row so that the renderer can lookup rows with these much faster.
+    if (c == kitty.graphics.unicode.placeholder) {
+        self.screen.cursor.page_row.kitty_virtual_placeholder = true;
     }
 
     // We check for an active hyperlink first because setHyperlink
@@ -3540,6 +3550,24 @@ test "Terminal: print invoke charset single" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("`◆`", str);
     }
+}
+
+test "Terminal: print kitty unicode placeholder" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    try t.print(kitty.graphics.unicode.placeholder);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, kitty.graphics.unicode.placeholder), cell.content.codepoint);
+        try testing.expect(list_cell.row.kitty_virtual_placeholder);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
 }
 
 test "Terminal: soft wrap" {
