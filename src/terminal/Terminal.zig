@@ -3552,6 +3552,24 @@ test "Terminal: print invoke charset single" {
     }
 }
 
+test "Terminal: print kitty unicode placeholder" {
+    var t = try init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    try t.print(kitty.graphics.unicode.placeholder);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 1), t.screen.cursor.x);
+
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, kitty.graphics.unicode.placeholder), cell.content.codepoint);
+        try testing.expect(list_cell.row.kitty_virtual_placeholder);
+    }
+
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+}
+
 test "Terminal: soft wrap" {
     var t = try init(testing.allocator, .{ .cols = 3, .rows = 80 });
     defer t.deinit(testing.allocator);
