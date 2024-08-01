@@ -1394,10 +1394,20 @@ fn gtkMouseMotion(
     const self = userdataSelf(ud.?);
     const scaled = self.scaledCoordinates(x, y);
 
-    self.cursor_pos = .{
+    const pos: apprt.CursorPos = .{
         .x = @floatCast(@max(0, scaled.x)),
         .y = @floatCast(scaled.y),
     };
+
+    // GTK can send spurious mouse movement events. Ignore them
+    // because this can cause actual issues:
+    // https://github.com/ghostty-org/ghostty/issues/2022
+    if (pos.x == self.cursor_pos.x and pos.y == self.cursor_pos.y) {
+        return;
+    }
+
+    // Our pos changed, update
+    self.cursor_pos = pos;
 
     // If we don't have focus, and we want it, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
