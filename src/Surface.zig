@@ -1396,6 +1396,22 @@ pub fn keyCallback(
         // Update our modifiers, this will update mouse mods too
         self.modsChanged(event.mods);
 
+        // We need to avoid mouse position updates due to cursor
+        // changes because the mouse event should only report if the
+        // mouse moved or button pressed (see:
+        // https://github.com/ghostty-org/ghostty/issues/2018)
+        //
+        // This is hacky but its a way we can avoid grabbing the
+        // renderer lock in order to avoid the mouse report.
+        const old_mods = self.mouse.mods;
+        const old_config = self.config.mouse_shift_capture;
+        self.mouse.mods.shift = true;
+        self.config.mouse_shift_capture = .never;
+        defer {
+            self.mouse.mods = old_mods;
+            self.config.mouse_shift_capture = old_config;
+        }
+
         // We set this to null to force link reprocessing since
         // mod changes can affect link highlighting.
         self.mouse.link_point = null;
