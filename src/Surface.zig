@@ -221,7 +221,7 @@ const DerivedConfig = struct {
     window_padding_y: u32,
     window_padding_balance: bool,
     title: ?[:0]const u8,
-    links: []const Link,
+    links: []Link,
 
     const Link = struct {
         regex: oni.Regex,
@@ -288,6 +288,7 @@ const DerivedConfig = struct {
     }
 
     pub fn deinit(self: *DerivedConfig) void {
+        for (self.links) |*link| link.regex.deinit();
         self.arena.deinit();
     }
 };
