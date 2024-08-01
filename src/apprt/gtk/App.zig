@@ -512,11 +512,10 @@ pub fn run(self: *App) !void {
                 if (self.config.@"quit-after-last-window-closed") {
                     // If the background timeout is not zero, check to see if
                     // the timeout has elapsed.
-                    if (self.config.@"quit-after-last-window-closed-delay".duration != 0) {
+                    if (self.config.@"quit-after-last-window-closed-delay") |duration| {
                         const now = try std.time.Instant.now();
 
-                        if (now.since(last_one) > self.config.@"quit-after-last-window-closed-delay".duration) {
-                            log.info("timeout elapsed", .{});
+                        if (now.since(last_one) > duration.duration) {
                             // The timeout has elapsed, quit.
                             break :q true;
                         }
@@ -525,7 +524,7 @@ pub fn run(self: *App) !void {
                         break :q false;
                     }
 
-                    // `quit-after-last-window-closed-delay` is zero, don't quit.
+                    // `quit-after-last-window-closed-delay` is not set, don't quit.
                     break :q false;
                 }
 

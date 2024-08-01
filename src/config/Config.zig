@@ -887,13 +887,13 @@ keybind: Keybinds = .{},
 @"quit-after-last-window-closed": bool = false,
 
 /// If `quit-after-last-window-closed` is `true`, this controls how long
-/// Ghostty will stay running after the last open surface has been closed.  If
-/// `quit-after-last-window-closed-delay` is set to 0 ns Ghostty will remain
-/// running indefinitely. The duration should be at least long enough to allow
-/// Ghostty to initialize and open it's first window, but this is not enforced
-/// nor will a warning be issued. The duration is specified as a series of
-/// numbers followed by time units. Whitespace is allowed between numbers and
-/// units. The allowed time units are as follows:
+/// Ghostty will stay running after the last open surface has been closed. If
+/// `quit-after-last-window-closed-delay` is unset Ghostty will remain running
+/// indefinitely. The duration should be at least long enough to allow Ghostty
+/// to initialize and open it's first window, but this is not enforced nor
+/// will a warning be issued. The duration is specified as a series of numbers
+/// followed by time units. Whitespace is allowed between numbers and units. The
+/// allowed time units are as follows:
 ///
 ///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
 ///     are made for leap years or leap seconds.
@@ -911,10 +911,10 @@ keybind: Keybinds = .{},
 ///
 /// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`.
 ///
-/// By default `quit-after-last-window-closed-delay` is set to `0 ns`.
+/// By default `quit-after-last-window-closed-delay` is unset.
 ///
 /// Only implemented on Linux.
-@"quit-after-last-window-closed-delay": Duration = .{ .duration = 0 },
+@"quit-after-last-window-closed-delay": ?Duration = null,
 
 /// This controls whether an initial window is created when Ghostty is run. Only
 /// implemented on Linux.
@@ -3801,11 +3801,8 @@ pub const Duration = struct {
         return self.duration == other.duration;
     }
 
-    pub fn parseCLI(self: *@This(), _: Allocator, input: ?[]const u8) !void {
-        var remaining = input orelse {
-            self.duration = 0;
-            return;
-        };
+    pub fn parseCLI(input: ?[]const u8) !Duration {
+        var remaining = input orelse return error.ValueRequired;
 
         const units = [_]struct {
             name: []const u8,
@@ -3887,7 +3884,7 @@ pub const Duration = struct {
                 value = number * factor;
         }
 
-        self.duration = value orelse 0;
+        return if (value) |v| .{ .duration = v } else error.ValueRequired;
     }
 
     pub fn formatEntry(self: @This(), formatter: anytype) !void {
@@ -3929,63 +3926,92 @@ pub const Duration = struct {
 };
 
 test "parse duration" {
-    var d: Duration = undefined;
+    {
+        const d = try Duration.parseCLI("0ns");
+        try std.testing.expectEqual(@as(u64, 0), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "");
-    try std.testing.expectEqual(@as(u64, 0), d.duration);
+    {
+        const d = try Duration.parseCLI("1ns");
+        try std.testing.expectEqual(@as(u64, 1), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "0ns");
-    try std.testing.expectEqual(@as(u64, 0), d.duration);
+    {
+        const d = try Duration.parseCLI("100ns");
+        try std.testing.expectEqual(@as(u64, 100), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1ns");
-    try std.testing.expectEqual(@as(u64, 1), d.duration);
+    {
+        const d = try Duration.parseCLI("1µs");
+        try std.testing.expectEqual(@as(u64, 1000), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "100ns");
-    try std.testing.expectEqual(@as(u64, 100), d.duration);
+    {
+        const d = try Duration.parseCLI("1µs1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1µs");
-    try std.testing.expectEqual(@as(u64, 1000), d.duration);
+    {
+        const d = try Duration.parseCLI("1µs 1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1µs1ns");
-    try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    {
+        const d = try Duration.parseCLI(" 1µs1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1µs 1ns");
-    try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    {
+        const d = try Duration.parseCLI("1µs1ns ");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, " 1µs1ns");
-    try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    {
+        const d = try Duration.parseCLI("1y");
+        try std.testing.expectEqual(@as(u64, 365 * std.time.ns_per_day), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1µs1ns ");
-    try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    {
+        const d = try Duration.parseCLI("1d");
+        try std.testing.expectEqual(@as(u64, std.time.ns_per_day), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1y");
-    try std.testing.expectEqual(@as(u64, 365 * std.time.ns_per_day), d.duration);
+    {
+        const d = try Duration.parseCLI("1h");
+        try std.testing.expectEqual(@as(u64, std.time.ns_per_hour), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1d");
-    try std.testing.expectEqual(@as(u64, std.time.ns_per_day), d.duration);
+    {
+        const d = try Duration.parseCLI("1m");
+        try std.testing.expectEqual(@as(u64, std.time.ns_per_min), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1h");
-    try std.testing.expectEqual(@as(u64, std.time.ns_per_hour), d.duration);
+    {
+        const d = try Duration.parseCLI("1s");
+        try std.testing.expectEqual(@as(u64, std.time.ns_per_s), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1m");
-    try std.testing.expectEqual(@as(u64, std.time.ns_per_min), d.duration);
+    {
+        const d = try Duration.parseCLI("1ms");
+        try std.testing.expectEqual(@as(u64, std.time.ns_per_ms), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1s");
-    try std.testing.expectEqual(@as(u64, std.time.ns_per_s), d.duration);
+    {
+        const d = try Duration.parseCLI("30s");
+        try std.testing.expectEqual(@as(u64, 30 * std.time.ns_per_s), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "1ms");
-    try std.testing.expectEqual(@as(u64, std.time.ns_per_ms), d.duration);
+    {
+        const d = try Duration.parseCLI("584y 49w 23h 34m 33s 709ms 551µs 615ns");
+        try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
+    }
 
-    try d.parseCLI(std.testing.allocator, "30s");
-    try std.testing.expectEqual(@as(u64, 30 * std.time.ns_per_s), d.duration);
-
-    try d.parseCLI(std.testing.allocator, "584y 49w 23h 34m 33s 709ms 551µs 615ns");
-    try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
-
-    try std.testing.expectError(error.InvalidValue, d.parseCLI(std.testing.allocator, "1"));
-    try std.testing.expectError(error.InvalidValue, d.parseCLI(std.testing.allocator, "s"));
-    try std.testing.expectError(error.InvalidValue, d.parseCLI(std.testing.allocator, "1x"));
-    try std.testing.expectError(error.InvalidValue, d.parseCLI(std.testing.allocator, "1 "));
+    try std.testing.expectError(error.ValueRequired, Duration.parseCLI(null));
+    try std.testing.expectError(error.ValueRequired, Duration.parseCLI(""));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("s"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1x"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1 "));
 }
 
 test "format duration" {
