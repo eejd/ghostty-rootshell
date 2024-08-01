@@ -614,6 +614,11 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         ghostty.toggleTerminalInspector(surface: surface)
     }
     
+    @objc func resetTerminal(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.resetTerminal(surface: surface)
+    }
+    
     //MARK: - TerminalViewDelegate
     
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
