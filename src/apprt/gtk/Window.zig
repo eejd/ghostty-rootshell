@@ -184,6 +184,7 @@ fn initActions(self: *Window) void {
         .{ "toggle_inspector", &gtkActionToggleInspector },
         .{ "copy", &gtkActionCopy },
         .{ "paste", &gtkActionPaste },
+        .{ "reset", &gtkActionReset },
     };
 
     inline for (actions) |entry| {
@@ -624,6 +625,19 @@ fn gtkActionPaste(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .paste_from_clipboard = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionReset(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .reset = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
