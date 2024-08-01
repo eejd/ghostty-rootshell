@@ -253,10 +253,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         break :x11_xkb try x11.Xkb.init(display);
     };
 
-    // This just calls the "activate" signal but its part of the normal
-    // startup routine so we just call it:
+    // This just calls the `activate` signal but its part of the normal startup
+    // routine so we just call it, but only if the config allows it (this allows
+    // for launching Ghostty in the "background" without immediately opening
+    // a window)
+    //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
-    c.g_application_activate(gapp);
+    if (config.@"initial-window")
+        c.g_application_activate(gapp);
 
     // Register for dbus events
     if (c.g_application_get_dbus_connection(gapp)) |dbus_connection| {
@@ -277,6 +281,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const css_provider = c.gtk_css_provider_new();
     try loadRuntimeCss(&config, css_provider);
 
+    // Run a small no-op function every 500 milliseconds so that we don't get
+    // stuck in g_main_context_iteration forever if there are no open surfaces.
+    _ = c.g_timeout_add(500, gtkTimeout, null);
+
     return .{
         .core_app = core_app,
         .app = app,
@@ -291,6 +299,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .running = c.g_application_get_is_remote(gapp) == 0,
         .css_provider = css_provider,
     };
+}
+
+// This timeout function is run periodically so that we don't get stuck in
+// g_main_context_iteration forever if there are no open surfaces.
+pub fn gtkTimeout(_: ?*anyopaque) callconv(.C) c.gboolean {
+    return 1;
 }
 
 // Terminate the application. The application will not be restarted after
@@ -463,6 +477,9 @@ pub fn run(self: *App) !void {
         self.transient_cgroup_base = path;
     } else log.debug("cgroup isoation disabled config={}", .{self.config.@"linux-cgroup"});
 
+    // The last instant that one or more surfaces were open
+    var last_one = try std.time.Instant.now();
+
     // Setup our menu items
     self.initActions();
     self.initMenu();
@@ -478,9 +495,48 @@ pub fn run(self: *App) !void {
     while (self.running) {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
-        // Tick the terminal app
+        // Tick the terminal app and see if we should quit.
         const should_quit = try self.core_app.tick(self);
-        if (should_quit or self.core_app.surfaces.items.len == 0) self.quit();
+
+        // If there are one or more surfaces open, update the timer.
+        if (self.core_app.surfaces.items.len > 0) last_one = try std.time.Instant.now();
+
+        const q = q: {
+            // If we've been told by GTK that we should quit, do so regardless
+            // of any other setting.
+            if (should_quit) break :q true;
+
+            // If there are no surfaces check to see if we should stay in the
+            // background or not.
+            if (self.core_app.surfaces.items.len == 0) {
+                if (self.config.@"quit-after-last-window-closed") {
+                    // If the background timeout is not zero, check to see if
+                    // the timeout has elapsed.
+                    if (self.config.@"quit-after-last-window-closed-delay".duration != 0) {
+                        const now = try std.time.Instant.now();
+
+                        if (now.since(last_one) > self.config.@"quit-after-last-window-closed-delay".duration) {
+                            log.info("timeout elapsed", .{});
+                            // The timeout has elapsed, quit.
+                            break :q true;
+                        }
+
+                        // Not enough time has elapsed, don't quit.
+                        break :q false;
+                    }
+
+                    // `quit-after-last-window-closed-delay` is zero, don't quit.
+                    break :q false;
+                }
+
+                break :q false;
+            }
+
+            // there's at least one surface open, don't quit.
+            break :q false;
+        };
+
+        if (q) self.quit();
     }
 }
 
@@ -598,9 +654,8 @@ fn gtkQuitConfirmation(
     self.quitNow();
 }
 
-/// This is called by the "activate" signal. This is sent on program
-/// startup and also when a secondary instance launches and requests
-/// a new window.
+/// This is called by the `activate` signal. This is sent on program startup and
+/// also when a secondary instance launches and requests a new window.
 fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = app;
 
