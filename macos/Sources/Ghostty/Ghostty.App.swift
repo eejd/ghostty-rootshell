@@ -241,6 +241,13 @@ extension Ghostty {
             }
         }
         
+        func resetTerminal(surface: ghostty_surface_t) {
+            let action = "reset"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                logger.warning("action failed action=\(action)")
+            }
+        }
+        
         #if os(iOS)
         // MARK: Ghostty Callbacks (iOS)
         

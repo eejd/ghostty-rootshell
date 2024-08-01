@@ -951,6 +951,7 @@ extension Ghostty {
             menu.addItem(withTitle: "Split Down", action: #selector(TerminalController.splitDown(_:)), keyEquivalent: "")
 
             menu.addItem(.separator())
+            menu.addItem(withTitle: "Reset Terminal", action: #selector(TerminalController.resetTerminal(_:)), keyEquivalent: "")
             menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
 
             return menu
