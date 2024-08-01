@@ -880,6 +880,19 @@ keybind: Keybinds = .{},
 /// the configuration file will be ignored.
 @"config-file": RepeatablePath = .{},
 
+/// When this is true, the default configuration file paths will be loaded.
+/// The default configuration file paths are currently only the XDG
+/// config path ($XDG_CONFIG_HOME/ghostty/config).
+///
+/// If this is false, the default configuration paths will not be loaded.
+/// This is targeted directly at using Ghostty from the CLI in a way
+/// that minimizes external affects.
+///
+/// This is a CLI-only configuration. Setting this in a configuration file
+/// will have no effect. It is not an error, but it will not do anything.
+/// This configuration can only be set via CLI arguments.
+@"config-default-files": bool = true,
+
 /// Confirms that a surface should be closed before closing it. This defaults to
 /// true. If set to false, surfaces will close without any confirmation.
 @"confirm-close-surface": bool = true,
@@ -1216,44 +1229,8 @@ pub fn load(alloc_gpa: Allocator) !Config {
     // If we have a configuration file in our home directory, parse that first.
     try result.loadDefaultFiles(alloc_gpa);
 
-    // Parse the config from the CLI args. If the font families change from
-    // the CLI, we clear the font families set in the configuration file.
-    // This avoids a UX oddity where on the CLI you have to specify
-    // `font-family=""` to clear the font families before setting a new one.
-    {
-        const fields = &[_][]const u8{
-            "font-family",
-            "font-family-bold",
-            "font-family-italic",
-            "font-family-bold-italic",
-        };
-
-        // Build our initial counts
-        var counter: [fields.len]usize = undefined;
-        inline for (fields, 0..) |field, i| {
-            counter[i] = @field(result, field).list.items.len;
-        }
-
-        try result.loadCliArgs(alloc_gpa);
-
-        // If any of our font family settings were changed, then we
-        // replace the entire list with the new list.
-        inline for (fields, 0..) |field, i| {
-            const v = &@field(result, field);
-            const len = v.list.items.len - counter[i];
-            if (len > 0) {
-                // Note: we don't have to worry about freeing the memory
-                // that we overwrite or cut off here because its all in
-                // an arena.
-                v.list.replaceRangeAssumeCapacity(
-                    0,
-                    len,
-                    v.list.items[counter[i]..],
-                );
-                v.list.items.len = len;
-            }
-        }
-    }
+    // Parse the config from the CLI args.
+    try result.loadCliArgs(alloc_gpa);
 
     // Parse the config files that were added from our file and CLI args.
     try result.loadRecursiveFiles(alloc_gpa);
@@ -1876,10 +1853,71 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         }
     }
 
+    // We set config-default-files to true here because this
+    // should always be reset so we can detect if it is set
+    // in the CLI since it is documented as having no affect
+    // from files.
+    self.@"config-default-files" = true;
+
+    // Keep track of the replay steps up to this point so we
+    // can replay if we are disgarding the default files.
+    const replay_len_start = self._replay_steps.items.len;
+
+    // Keep track of font families because if they are set from the CLI
+    // then we clear the previously set values. This avoids a UX oddity
+    // where on the CLI you have to specify `font-family=""` to clear the
+    // font families before setting a new one.
+    const fields = &[_][]const u8{
+        "font-family",
+        "font-family-bold",
+        "font-family-italic",
+        "font-family-bold-italic",
+    };
+    var counter: [fields.len]usize = undefined;
+    inline for (fields, 0..) |field, i| {
+        counter[i] = @field(self, field).list.items.len;
+    }
+
     // Parse the config from the CLI args
     var iter = try std.process.argsWithAllocator(alloc_gpa);
     defer iter.deinit();
     try self.loadIter(alloc_gpa, &iter);
+
+    // If we are not loading the default files, then we need to
+    // replay the steps up to this point so that we can rebuild
+    // the config without it.
+    if (!self.@"config-default-files") reload: {
+        const replay_len_end = self._replay_steps.items.len;
+        if (replay_len_end == replay_len_start) break :reload;
+        log.info("config-default-files unset, discarding configuration from default files", .{});
+
+        var new_config = try default(alloc_gpa);
+        var it = Replay.iterator(
+            self._replay_steps.items[replay_len_start..replay_len_end],
+            &new_config,
+        );
+        try new_config.loadIter(alloc_gpa, &it);
+        self.deinit();
+        self.* = new_config;
+    } else {
+        // If any of our font family settings were changed, then we
+        // replace the entire list with the new list.
+        inline for (fields, 0..) |field, i| {
+            const v = &@field(self, field);
+            const len = v.list.items.len - counter[i];
+            if (len > 0) {
+                // Note: we don't have to worry about freeing the memory
+                // that we overwrite or cut off here because its all in
+                // an arena.
+                v.list.replaceRangeAssumeCapacity(
+                    0,
+                    len,
+                    v.list.items[counter[i]..],
+                );
+                v.list.items.len = len;
+            }
+        }
+    }
 
     // Config files loaded from the CLI args are relative to pwd
     if (self.@"config-file".value.list.items.len > 0) {
