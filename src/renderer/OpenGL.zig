@@ -95,6 +95,11 @@ background_color: terminal.color.RGB,
 /// by a terminal application
 cursor_color: ?terminal.color.RGB,
 
+/// When `cursor_color` is null, swap the foreground and background colors of
+/// the cell under the cursor for the cursor color. Otherwise, use the default
+/// foreground color as the cursor color.
+cursor_invert: bool,
+
 /// Padding options
 padding: renderer.Options.Padding,
 
@@ -236,6 +241,7 @@ pub const DerivedConfig = struct {
     font_features: std.ArrayListUnmanaged([:0]const u8),
     font_styles: font.CodepointResolver.StyleStatus,
     cursor_color: ?terminal.color.RGB,
+    cursor_invert: bool,
     cursor_text: ?terminal.color.RGB,
     cursor_opacity: f64,
     background: terminal.color.RGB,
@@ -275,16 +281,20 @@ pub const DerivedConfig = struct {
             config.link.links.items,
         );
 
+        const cursor_invert = config.@"cursor-invert-fg-bg";
+
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
             .font_features = font_features,
             .font_styles = font_styles,
 
-            .cursor_color = if (config.@"cursor-color") |col|
-                col.toTerminalRGB()
+            .cursor_color = if (!cursor_invert and config.@"cursor-color" != null)
+                config.@"cursor-color".?.toTerminalRGB()
             else
                 null,
+
+            .cursor_invert = cursor_invert,
 
             .cursor_text = if (config.@"cursor-text") |txt|
                 txt.toTerminalRGB()
@@ -355,6 +365,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .foreground_color = options.config.foreground,
         .background_color = options.config.background,
         .cursor_color = options.config.cursor_color,
+        .cursor_invert = options.config.cursor_invert,
         .padding = options.padding,
         .surface_mailbox = options.surface_mailbox,
         .deferred_font_size = .{ .metrics = grid.metrics },
@@ -1233,20 +1244,30 @@ pub fn rebuildCells(
             break :cursor_style;
         }
 
-        _ = try self.addCursor(screen, cursor_style);
+        const cursor_color = self.cursor_color orelse color: {
+            if (self.cursor_invert) {
+                const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
+                break :color sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color;
+            } else {
+                break :color self.foreground_color;
+            }
+        };
+
+        _ = try self.addCursor(screen, cursor_style, cursor_color);
         if (cursor_cell) |*cell| {
             if (cell.mode == .fg or cell.mode == .fg_constrained) {
-                if (self.config.cursor_text) |txt| {
-                    cell.r = txt.r;
-                    cell.g = txt.g;
-                    cell.b = txt.b;
-                    cell.a = 255;
-                } else {
-                    cell.r = self.background_color.r;
-                    cell.g = self.background_color.g;
-                    cell.b = self.background_color.b;
-                    cell.a = 255;
-                }
+                const cell_color = if (self.cursor_invert) blk: {
+                    const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
+                    break :blk sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color;
+                } else if (self.config.cursor_text) |txt|
+                    txt
+                else
+                    self.background_color;
+
+                cell.r = cell_color.r;
+                cell.g = cell_color.g;
+                cell.b = cell_color.b;
+                cell.a = 255;
             }
             try self.cells.append(self.alloc, cell.*);
         }
@@ -1334,6 +1355,7 @@ fn addCursor(
     self: *OpenGL,
     screen: *terminal.Screen,
     cursor_style: renderer.CursorStyle,
+    cursor_color: terminal.color.RGB,
 ) !?*const CellProgram.Cell {
     // Add the cursor. We render the cursor over the wide character if
     // we're on the wide characer tail.
@@ -1349,7 +1371,6 @@ fn addCursor(
         break :cell .{ prev_cell.wide == .wide, screen.cursor.x - 1 };
     };
 
-    const color = self.cursor_color orelse self.foreground_color;
     const alpha: u8 = if (!self.focused) 255 else alpha: {
         const alpha = 255 * self.config.cursor_opacity;
         break :alpha @intFromFloat(@ceil(alpha));
@@ -1380,9 +1401,9 @@ fn addCursor(
         .grid_col = @intCast(x),
         .grid_row = @intCast(screen.cursor.y),
         .grid_width = if (wide) 2 else 1,
-        .r = color.r,
-        .g = color.g,
-        .b = color.b,
+        .r = cursor_color.r,
+        .g = cursor_color.g,
+        .b = cursor_color.b,
         .a = alpha,
         .bg_r = 0,
         .bg_g = 0,
@@ -1699,7 +1720,8 @@ pub fn changeConfig(self: *OpenGL, config: *DerivedConfig) !void {
     // Set our new colors
     self.background_color = config.background;
     self.foreground_color = config.foreground;
-    self.cursor_color = config.cursor_color;
+    self.cursor_invert = config.cursor_invert;
+    self.cursor_color = if (!config.cursor_invert) config.cursor_color else null;
 
     // Update our uniforms
     self.deferred_config = .{};

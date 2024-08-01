@@ -82,6 +82,7 @@ pub const DerivedConfig = struct {
     cursor_style: terminal.CursorStyle,
     cursor_blink: ?bool,
     cursor_color: ?configpkg.Config.Color,
+    cursor_invert: bool,
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -103,6 +104,7 @@ pub const DerivedConfig = struct {
             .cursor_style = config.@"cursor-style",
             .cursor_blink = config.@"cursor-style-blink",
             .cursor_color = config.@"cursor-color",
+            .cursor_invert = config.@"cursor-invert-fg-bg",
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
@@ -176,8 +178,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Create our stream handler. This points to memory in self so it
     // isn't safe to use until self.* is set.
     const handler: StreamHandler = handler: {
-        const default_cursor_color = if (opts.config.cursor_color) |col|
-            col.toTerminalRGB()
+        const default_cursor_color = if (!opts.config.cursor_invert and opts.config.cursor_color != null)
+            opts.config.cursor_color.?.toTerminalRGB()
         else
             null;
 
