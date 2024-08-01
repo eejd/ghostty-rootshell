@@ -2145,13 +2145,15 @@ pub fn mouseButtonCallback(
     // cursorPosCallback will also do a mouse report so we don't need to do any
     // of the logic below.
     if (button == .left and action == .press) {
+        // We could do all the conditionals in one but I find it more
+        // readable as a human to break this one up.
         if (mods.shift and
             self.mouse.left_click_count > 0 and
             !shift_capture)
         {
-            // Checking for selection requires the renderer state mutex which
-            // sucks but this should be pretty rare of an event so it won't
-            // cause a ton of contention.
+            // We split this conditional out on its own because this is the
+            // only one that requires a renderer mutex grab which is VERY
+            // expensive because it could block all our threads.
             if (self.hasSelection()) {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.cursorPosCallback(pos);
