@@ -134,6 +134,8 @@ pub fn updateConfig(self: *App, config: *const Config) !void {
 /// The surface must be from the pool.
 pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
     try self.surfaces.append(self.alloc, rt_surface);
+
+    if (@hasDecl(apprt.App, "cancelQuitTimer")) rt_surface.app.cancelQuitTimer();
 }
 
 /// Delete the surface from the known surface list. This will NOT call the
@@ -158,6 +160,8 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
 
         i += 1;
     }
+
+    if (@hasDecl(apprt.App, "startQuitTimer") and self.surfaces.items.len == 0) rt_surface.app.startQuitTimer();
 }
 
 /// The last focused surface. This is only valid while on the main thread

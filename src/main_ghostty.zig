@@ -107,6 +107,11 @@ pub fn main() !MainReturn {
     var app_runtime = try apprt.App.init(app, .{});
     defer app_runtime.terminate();
 
+    // Since - by definition - there are no surfaces when first started, the
+    // quit timer may need to be started. The start timer will get cancelled if/
+    // when the first surface is created.
+    if (@hasDecl(apprt.App, "startQuitTimer")) app_runtime.startQuitTimer();
+
     // Run the GUI event loop
     try app_runtime.run();
 }

@@ -76,6 +76,12 @@ transient_cgroup_base: ?[]const u8 = null,
 /// CSS Provider for any styles based on ghostty configuration values
 css_provider: *c.GtkCssProvider,
 
+/// GLib source for tracking quit timer.
+quit_timer_source: ?c.guint = null,
+
+/// If there is a quit timer, has it expired?
+quit_timer_expired: bool = false,
+
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
@@ -281,10 +287,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const css_provider = c.gtk_css_provider_new();
     try loadRuntimeCss(&config, css_provider);
 
-    // Run a small no-op function every 500 milliseconds so that we don't get
-    // stuck in g_main_context_iteration forever if there are no open surfaces.
-    _ = c.g_timeout_add(500, gtkTimeout, null);
-
     return .{
         .core_app = core_app,
         .app = app,
@@ -299,12 +301,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .running = c.g_application_get_is_remote(gapp) == 0,
         .css_provider = css_provider,
     };
-}
-
-// This timeout function is run periodically so that we don't get stuck in
-// g_main_context_iteration forever if there are no open surfaces.
-pub fn gtkTimeout(_: ?*anyopaque) callconv(.C) c.gboolean {
-    return 1;
 }
 
 // Terminate the application. The application will not be restarted after
@@ -477,9 +473,6 @@ pub fn run(self: *App) !void {
         self.transient_cgroup_base = path;
     } else log.debug("cgroup isoation disabled config={}", .{self.config.@"linux-cgroup"});
 
-    // The last instant that one or more surfaces were open
-    var last_one = try std.time.Instant.now();
-
     // Setup our menu items
     self.initActions();
     self.initMenu();
@@ -498,44 +491,63 @@ pub fn run(self: *App) !void {
         // Tick the terminal app and see if we should quit.
         const should_quit = try self.core_app.tick(self);
 
-        // If there are one or more surfaces open, update the timer.
-        if (self.core_app.surfaces.items.len > 0) last_one = try std.time.Instant.now();
-
-        const q = q: {
+        const must_quit = q: {
             // If we've been told by GTK that we should quit, do so regardless
             // of any other setting.
             if (should_quit) break :q true;
 
-            // If there are no surfaces check to see if we should stay in the
-            // background or not.
-            if (self.core_app.surfaces.items.len == 0) {
-                if (self.config.@"quit-after-last-window-closed") {
-                    // If the background timeout is not zero, check to see if
-                    // the timeout has elapsed.
-                    if (self.config.@"quit-after-last-window-closed-delay") |duration| {
-                        const now = try std.time.Instant.now();
+            // If we are configured to always stay running, don't quit.
+            if (!self.config.@"quit-after-last-window-closed") break :q false;
 
-                        if (now.since(last_one) > duration.duration) {
-                            // The timeout has elapsed, quit.
-                            break :q true;
-                        }
-
-                        // Not enough time has elapsed, don't quit.
-                        break :q false;
-                    }
-
-                    // `quit-after-last-window-closed-delay` is not set, don't quit.
-                    break :q false;
-                }
-
-                break :q false;
+            if (self.quit_timer_source) |_| {
+                // if the quit timer has expired, quit.
+                if (self.quit_timer_expired) break :q true;
             }
 
-            // there's at least one surface open, don't quit.
+            // There's no quit timer running, or it hasn't expired, don't quit.
             break :q false;
         };
 
-        if (q) self.quit();
+        if (must_quit) self.quit();
+    }
+}
+
+// This timeout function is started when no surfaces are open. It can be
+// cancelled if a new surface is opened before the timer expires.
+pub fn gtkQuitTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
+    const self: *App = @ptrCast(@alignCast(ud));
+    self.quit_timer_expired = true;
+    return c.FALSE;
+}
+
+/// This will get called when there are no more open surfaces.
+pub fn startQuitTimer(self: *App) void {
+    // Cancel any previous timeout.
+    if (self.quit_timer_source) |source| {
+        if (c.g_source_remove(source) == c.FALSE)
+            log.warn("unable to remove quit timer {d}", .{source});
+        self.quit_timer_source = null;
+    }
+
+    // This is a no-op unless we are configured to quit after last window is closed.
+    if (!self.config.@"quit-after-last-window-closed") return;
+
+    // If a delay is configured, set a timeout function to quit after the delay.
+    if (self.config.@"quit-after-last-window-closed-delay") |duration| {
+        const t: c.guint = if (duration.duration > (std.math.maxInt(c.guint) * std.time.ns_per_ms))
+            std.math.maxInt(c.guint)
+        else
+            @intCast(duration.duration / std.time.ns_per_ms);
+        self.quit_timer_source = c.g_timeout_add(t, gtkQuitTimerExpired, self);
+    }
+}
+
+/// This will get called when a new surface gets opened.
+pub fn cancelQuitTimer(self: *App) void {
+    if (self.quit_timer_source) |source| {
+        if (c.g_source_remove(source) == c.FALSE)
+            log.warn("unable to remove quit timer {d}", .{source});
+        self.quit_timer_source = null;
     }
 }
 
