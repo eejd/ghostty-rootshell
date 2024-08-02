@@ -523,11 +523,7 @@ pub fn gtkQuitTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
 /// This will get called when there are no more open surfaces.
 pub fn startQuitTimer(self: *App) void {
     // Cancel any previous timeout.
-    if (self.quit_timer_source) |source| {
-        if (c.g_source_remove(source) == c.FALSE)
-            log.warn("unable to remove quit timer {d}", .{source});
-        self.quit_timer_source = null;
-    }
+    self.cancelQuitTimer();
 
     // This is a no-op unless we are configured to quit after last window is closed.
     if (!self.config.@"quit-after-last-window-closed") return;
