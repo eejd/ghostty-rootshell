@@ -34,7 +34,7 @@ pub const Action = enum {
     /// List named RGB colors
     @"list-colors",
 
-    /// List keybind actions colors
+    /// List keybind actions
     @"list-actions",
 
     /// Dump the config to stdout
