@@ -3894,9 +3894,12 @@ pub const Duration = struct {
         var buf: [64]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
+        try self.format("", .{}, writer);
+        try formatter.formatEntry([]const u8, fbs.getWritten());
+    }
 
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         var value = self.duration;
-
         var i: usize = 0;
         for (units) |unit| {
             if (value >= unit.factor) {
@@ -3908,8 +3911,6 @@ pub const Duration = struct {
                 i += 1;
             }
         }
-
-        try formatter.formatEntry([]const u8, fbs.getWritten());
     }
 };
 
@@ -3976,9 +3977,22 @@ test "parse duration" {
     try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1 "));
 }
 
-test "format duration" {
-    const testing = std.testing;
-    var buf = std.ArrayList(u8).init(testing.allocator);
+test "test format" {
+    inline for (Duration.units) |unit| {
+        const d: Duration = .{ .duration = unit.factor };
+        var actual_buf: [16]u8 = undefined;
+        const actual = try std.fmt.bufPrint(&actual_buf, "{}", .{d});
+        var expected_buf: [16]u8 = undefined;
+        const expected = if (!std.mem.eql(u8, unit.name, "us"))
+            try std.fmt.bufPrint(&expected_buf, "1{s}", .{unit.name})
+        else
+            "1µs";
+        try std.testing.expectEqualSlices(u8, expected, actual);
+    }
+}
+
+test "test entryFormatter" {
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
     defer buf.deinit();
 
     var p: Duration = .{ .duration = std.math.maxInt(u64) };
