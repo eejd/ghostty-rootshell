@@ -2205,6 +2205,11 @@ pub fn finalize(self: *Config) !void {
     // If URLs are disabled, cut off the first link. The first link is
     // always the URL matcher.
     if (!self.@"link-url") self.link.links.items = self.link.links.items[1..];
+
+    if (self.@"quit-after-last-window-closed-delay") |duration| {
+        if (duration.duration < 5 * std.time.ns_per_s)
+            log.warn("quit-after-last-window-closed-delay is set to a very short value ({}), which might cause problems", .{duration});
+    }
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
