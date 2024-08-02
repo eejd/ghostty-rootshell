@@ -462,7 +462,7 @@ pub fn run(self: *App) !void {
 
         log.info("cgroup isolation enabled base={s}", .{path});
         self.transient_cgroup_base = path;
-    } else log.debug("cgroup isoation disabled config={}", .{self.config.@"linux-cgroup"});
+    } else log.debug("cgroup isolation disabled config={}", .{self.config.@"linux-cgroup"});
 
     // Setup our menu items
     self.initActions();
