@@ -3793,6 +3793,24 @@ pub const LinuxCgroup = enum {
 pub const Duration = struct {
     duration: u64 = 0,
 
+    const units = [_]struct {
+        name: []const u8,
+        factor: u64,
+    }{
+        // The order is important as the first factor that matches will be the
+        // default unit that is used for formatting.
+        .{ .name = "y", .factor = 365 * std.time.ns_per_day },
+        .{ .name = "w", .factor = std.time.ns_per_week },
+        .{ .name = "d", .factor = std.time.ns_per_day },
+        .{ .name = "h", .factor = std.time.ns_per_hour },
+        .{ .name = "m", .factor = std.time.ns_per_min },
+        .{ .name = "s", .factor = std.time.ns_per_s },
+        .{ .name = "ms", .factor = std.time.ns_per_ms },
+        .{ .name = "µs", .factor = std.time.ns_per_us },
+        .{ .name = "us", .factor = std.time.ns_per_us },
+        .{ .name = "ns", .factor = 1 },
+    };
+
     pub fn clone(self: *const @This(), _: Allocator) !@This() {
         return .{ .duration = self.duration };
     }
@@ -3804,22 +3822,6 @@ pub const Duration = struct {
     pub fn parseCLI(input: ?[]const u8) !Duration {
         var remaining = input orelse return error.ValueRequired;
 
-        const units = [_]struct {
-            name: []const u8,
-            factor: u64,
-        }{
-            .{ .name = "y", .factor = 365 * std.time.ns_per_day },
-            .{ .name = "w", .factor = std.time.ns_per_week },
-            .{ .name = "d", .factor = std.time.ns_per_day },
-            .{ .name = "h", .factor = std.time.ns_per_hour },
-            .{ .name = "m", .factor = std.time.ns_per_min },
-            .{ .name = "s", .factor = std.time.ns_per_s },
-            .{ .name = "ms", .factor = std.time.ns_per_ms },
-            .{ .name = "us", .factor = std.time.ns_per_us },
-            .{ .name = "µs", .factor = std.time.ns_per_us },
-            .{ .name = "ns", .factor = 1 },
-        };
-
         var value: ?u64 = null;
 
         while (remaining.len > 0) {
@@ -3827,6 +3829,7 @@ pub const Duration = struct {
             while (remaining.len > 0 and std.ascii.isWhitespace(remaining[0])) {
                 remaining = remaining[1..];
             }
+
             // There was whitespace at the end, that's OK
             if (remaining.len == 0) break;
 
@@ -3894,21 +3897,6 @@ pub const Duration = struct {
 
         var value = self.duration;
 
-        const units = [_]struct {
-            name: []const u8,
-            factor: u64,
-        }{
-            .{ .name = "y", .factor = 365 * std.time.ns_per_day },
-            .{ .name = "w", .factor = std.time.ns_per_week },
-            .{ .name = "d", .factor = std.time.ns_per_day },
-            .{ .name = "h", .factor = std.time.ns_per_hour },
-            .{ .name = "m", .factor = std.time.ns_per_min },
-            .{ .name = "s", .factor = std.time.ns_per_s },
-            .{ .name = "ms", .factor = std.time.ns_per_ms },
-            .{ .name = "µs", .factor = std.time.ns_per_us },
-            .{ .name = "ns", .factor = 1 },
-        };
-
         var i: usize = 0;
         for (units) |unit| {
             if (value > unit.factor) {
@@ -3926,14 +3914,18 @@ pub const Duration = struct {
 };
 
 test "parse duration" {
-    {
-        const d = try Duration.parseCLI("0ns");
+    inline for (Duration.units) |unit| {
+        var buf: [16]u8 = undefined;
+        const t = try std.fmt.bufPrint(&buf, "0{s}", .{unit.name});
+        const d = try Duration.parseCLI(t);
         try std.testing.expectEqual(@as(u64, 0), d.duration);
     }
 
-    {
-        const d = try Duration.parseCLI("1ns");
-        try std.testing.expectEqual(@as(u64, 1), d.duration);
+    inline for (Duration.units) |unit| {
+        var buf: [16]u8 = undefined;
+        const t = try std.fmt.bufPrint(&buf, "1{s}", .{unit.name});
+        const d = try Duration.parseCLI(t);
+        try std.testing.expectEqual(unit.factor, d.duration);
     }
 
     {
@@ -3964,36 +3956,6 @@ test "parse duration" {
     {
         const d = try Duration.parseCLI("1µs1ns ");
         try std.testing.expectEqual(@as(u64, 1001), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1y");
-        try std.testing.expectEqual(@as(u64, 365 * std.time.ns_per_day), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1d");
-        try std.testing.expectEqual(@as(u64, std.time.ns_per_day), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1h");
-        try std.testing.expectEqual(@as(u64, std.time.ns_per_hour), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1m");
-        try std.testing.expectEqual(@as(u64, std.time.ns_per_min), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1s");
-        try std.testing.expectEqual(@as(u64, std.time.ns_per_s), d.duration);
-    }
-
-    {
-        const d = try Duration.parseCLI("1ms");
-        try std.testing.expectEqual(@as(u64, std.time.ns_per_ms), d.duration);
     }
 
     {
