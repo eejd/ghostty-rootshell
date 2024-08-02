@@ -3899,7 +3899,7 @@ pub const Duration = struct {
 
         var i: usize = 0;
         for (units) |unit| {
-            if (value > unit.factor) {
+            if (value >= unit.factor) {
                 if (i > 0) writer.writeAll(" ") catch unreachable;
                 const remainder = value % unit.factor;
                 const quotient = (value - remainder) / unit.factor;
