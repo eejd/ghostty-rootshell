@@ -8,6 +8,7 @@ const version = @import("version.zig");
 const list_keybinds = @import("list_keybinds.zig");
 const list_themes = @import("list_themes.zig");
 const list_colors = @import("list_colors.zig");
+const list_actions = @import("list_actions.zig");
 const show_config = @import("show_config.zig");
 const validate_config = @import("validate_config.zig");
 
@@ -32,6 +33,9 @@ pub const Action = enum {
 
     /// List named RGB colors
     @"list-colors",
+
+    /// List keybind actions
+    @"list-actions",
 
     /// Dump the config to stdout
     @"show-config",
@@ -127,6 +131,7 @@ pub const Action = enum {
             .@"list-keybinds" => try list_keybinds.run(alloc),
             .@"list-themes" => try list_themes.run(alloc),
             .@"list-colors" => try list_colors.run(alloc),
+            .@"list-actions" => try list_actions.run(alloc),
             .@"show-config" => try show_config.run(alloc),
             .@"validate-config" => try validate_config.run(alloc),
         };
