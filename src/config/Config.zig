@@ -669,6 +669,16 @@ keybind: Keybinds = .{},
 /// given a certain viewport size and grid cell size.
 @"window-padding-balance": bool = false,
 
+/// The color of the padding area of the window. Valid values are:
+///
+/// * `background` - The background color specified in `background`.
+/// * `extend` - Extend the background color of the nearest grid cell.
+///
+/// The default value is "extend". This allows for smooth resizing of a
+/// terminal grid without having visible empty areas around the edge. The edge
+/// cells may appear slightly larger due to the extension.
+@"window-padding-color": WindowPaddingColor = .extend,
+
 /// Synchronize rendering with the screen refresh rate. If true, this will
 /// minimize tearing and align redraws with the screen but may cause input
 /// latency. If false, this will maximize redraw frequency but may cause tearing,
@@ -2676,6 +2686,11 @@ pub const OptionAsAlt = enum {
     true,
     left,
     right,
+};
+
+pub const WindowPaddingColor = enum {
+    background,
+    extend,
 };
 
 /// Color represents a color using RGB.

@@ -345,6 +345,7 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     bold_is_bright: bool,
     min_contrast: f32,
+    padding_color: configpkg.WindowPaddingColor,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     links: link.Set,
     vsync: bool,
@@ -402,6 +403,7 @@ pub const DerivedConfig = struct {
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
             .bold_is_bright = config.@"bold-is-bright",
             .min_contrast = @floatCast(config.@"minimum-contrast"),
+            .padding_color = config.@"window-padding-color",
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -1960,10 +1962,16 @@ pub fn setScreenSize(
     const padded_dim = dim.subPadding(padding);
 
     // Blank space around the grid.
-    const blank = dim.blankPadding(padding, grid_size, .{
-        .width = self.grid_metrics.cell_width,
-        .height = self.grid_metrics.cell_height,
-    }).add(padding);
+    const blank: renderer.Padding = switch (self.config.padding_color) {
+        // We can use zero padding because the backgroudn color is our
+        // clear color.
+        .background => .{},
+
+        .extend => dim.blankPadding(padding, grid_size, .{
+            .width = self.grid_metrics.cell_width,
+            .height = self.grid_metrics.cell_height,
+        }).add(padding),
+    };
 
     // Set the size of the drawable surface to the bounds
     self.layer.setProperty("drawableSize", macos.graphics.Size{
