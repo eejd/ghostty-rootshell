@@ -640,10 +640,27 @@ class: ?[:0]const u8 = null,
 /// "unconsumed:ctrl+a=reload_config"
 keybind: Keybinds = .{},
 
-/// Window padding. This applies padding between the terminal cells and the
-/// window border. The `x` option applies to the left and right padding and the
-/// `y` option is top and bottom. The value is in points, meaning that it will
-/// be scaled appropriately for screen DPI.
+/// Horizontal window padding. This applies padding between the terminal cells
+/// and the left and right window borders. The value is in points, meaning that
+/// it will be scaled appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals, i.e.
+/// new windows, tabs, etc.
+///
+/// If this value is set, the value of `window-padding-left` and
+/// `window-padding-right` will have no effect.
+///
+/// By default, this value is unset.
+@"window-padding-x": ?u32 = null,
+
+/// Vertical window padding. This applies padding between the terminal cells and
+/// the top and bottom window borders. The value is in points, meaning that it
+/// will be scaled appropriately for screen DPI.
 ///
 /// If this value is set too large, the screen will render nothing, because the
 /// grid will be completely squished by the padding. It is up to you as the user
@@ -652,8 +669,80 @@ keybind: Keybinds = .{},
 ///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
-@"window-padding-x": u32 = 2,
-@"window-padding-y": u32 = 2,
+///
+/// If this value is set, the value of `window-padding-top` and
+/// `window-padding-bottom` will have no effect.
+///
+/// By default, this value is unset.
+@"window-padding-y": ?u32 = null,
+
+/// Top window padding. This applies padding between the terminal cells and the
+/// top window border. The value is in points, meaning that it will be scaled
+/// appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
+///
+/// If `window-padding-y` is set, this value will be ignored.
+///
+/// This value is set to 2 by default.
+@"window-padding-top": u32 = 2,
+
+/// Bottom window padding. This applies padding between the terminal cells and
+/// the bottom window border. The value is in points, meaning that it will be
+/// scaled appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
+///
+/// If `window-padding-y` is set, this value will be ignored.
+///
+/// This value is set to 2 by default.
+@"window-padding-bottom": u32 = 2,
+
+/// Left window padding. This applies padding between the terminal cells and the
+/// left window border. The value is in points, meaning that it will be scaled
+/// appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
+///
+/// If `window-padding-x` is set, this value will be ignored.
+///
+/// This value is set to 2 by default.
+@"window-padding-left": u32 = 2,
+
+/// Right window padding. This applies padding between the terminal cells and
+/// the right window border. The value is in points, meaning that it will be
+/// scaled appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals,
+/// i.e. new windows, tabs, etc.
+///
+/// If `window-padding-x` is set, this value will be ignored.
+///
+/// This value is set to 2 by default.
+@"window-padding-right": u32 = 2,
 
 /// The viewport dimensions are usually not perfectly divisible by the cell
 /// size. In this case, some extra padding on the end of a column and the bottom

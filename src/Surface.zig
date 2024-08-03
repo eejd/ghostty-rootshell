@@ -217,8 +217,10 @@ const DerivedConfig = struct {
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: configpkg.OptionAsAlt,
     vt_kam_allowed: bool,
-    window_padding_x: u32,
-    window_padding_y: u32,
+    window_padding_top: u32,
+    window_padding_bottom: u32,
+    window_padding_left: u32,
+    window_padding_right: u32,
     window_padding_balance: bool,
     title: ?[:0]const u8,
     links: []Link,
@@ -275,8 +277,10 @@ const DerivedConfig = struct {
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
             .vt_kam_allowed = config.@"vt-kam-allowed",
-            .window_padding_x = config.@"window-padding-x",
-            .window_padding_y = config.@"window-padding-y",
+            .window_padding_top = config.@"window-padding-y" orelse config.@"window-padding-top",
+            .window_padding_bottom = config.@"window-padding-y" orelse config.@"window-padding-bottom",
+            .window_padding_left = config.@"window-padding-x" orelse config.@"window-padding-left",
+            .window_padding_right = config.@"window-padding-x" orelse config.@"window-padding-right",
             .window_padding_balance = config.@"window-padding-balance",
             .title = config.title,
             .links = links,
@@ -341,19 +345,27 @@ pub fn init(
     const cell_size = font_grid.cellSize();
 
     // Convert our padding from points to pixels
-    const padding_x: u32 = padding_x: {
-        const padding_x: f32 = @floatFromInt(config.@"window-padding-x");
-        break :padding_x @intFromFloat(@floor(padding_x * x_dpi / 72));
+    const padding_top: u32 = padding_top: {
+        const padding_top: f32 = @floatFromInt(config.@"window-padding-y" orelse config.@"window-padding-top");
+        break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
     };
-    const padding_y: u32 = padding_y: {
-        const padding_y: f32 = @floatFromInt(config.@"window-padding-y");
-        break :padding_y @intFromFloat(@floor(padding_y * y_dpi / 72));
+    const padding_bottom: u32 = padding_bottom: {
+        const padding_bottom: f32 = @floatFromInt(config.@"window-padding-y" orelse config.@"window-padding-bottom");
+        break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
+    };
+    const padding_left: u32 = padding_left: {
+        const padding_left: f32 = @floatFromInt(config.@"window-padding-x" orelse config.@"window-padding-left");
+        break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
+    };
+    const padding_right: u32 = padding_right: {
+        const padding_right: f32 = @floatFromInt(config.@"window-padding-y" orelse config.@"window-padding-right");
+        break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
     };
     const padding: renderer.Padding = .{
-        .top = padding_y,
-        .bottom = padding_y,
-        .right = padding_x,
-        .left = padding_x,
+        .top = padding_top,
+        .bottom = padding_bottom,
+        .left = padding_left,
+        .right = padding_right,
     };
 
     // Create our terminal grid with the initial size
@@ -1825,20 +1837,28 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 
     // Update our padding which is dependent on DPI.
     self.padding = padding: {
-        const padding_x: u32 = padding_x: {
-            const padding_x: f32 = @floatFromInt(self.config.window_padding_x);
-            break :padding_x @intFromFloat(@floor(padding_x * x_dpi / 72));
+        const padding_top: u32 = padding_top: {
+            const padding_top: f32 = @floatFromInt(self.config.window_padding_top);
+            break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
         };
-        const padding_y: u32 = padding_y: {
-            const padding_y: f32 = @floatFromInt(self.config.window_padding_y);
-            break :padding_y @intFromFloat(@floor(padding_y * y_dpi / 72));
+        const padding_bottom: u32 = padding_bottom: {
+            const padding_bottom: f32 = @floatFromInt(self.config.window_padding_bottom);
+            break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
+        };
+        const padding_left: u32 = padding_left: {
+            const padding_left: f32 = @floatFromInt(self.config.window_padding_left);
+            break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
+        };
+        const padding_right: u32 = padding_right: {
+            const padding_right: f32 = @floatFromInt(self.config.window_padding_right);
+            break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
         };
 
         break :padding .{
-            .top = padding_y,
-            .bottom = padding_y,
-            .right = padding_x,
-            .left = padding_x,
+            .top = padding_top,
+            .bottom = padding_bottom,
+            .left = padding_left,
+            .right = padding_right,
         };
     };
 

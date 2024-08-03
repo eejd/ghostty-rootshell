@@ -12,7 +12,7 @@ pub const fish_completions = comptimeGenerateFishCompletions();
 
 fn comptimeGenerateFishCompletions() []const u8 {
     comptime {
-        @setEvalBranchQuota(15000);
+        @setEvalBranchQuota(16000);
         var counter = std.io.countingWriter(std.io.null_writer);
         try writeFishCompletions(&counter.writer());
 
