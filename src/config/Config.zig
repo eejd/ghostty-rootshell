@@ -881,19 +881,25 @@ keybind: Keybinds = .{},
 @"confirm-close-surface": bool = true,
 
 /// Whether or not to quit after the last surface is closed. This
-/// defaults to `false`. On Linux, if this is `true`, Ghostty can delay
-/// quitting fully for a configurable amount. See the documentation of
-/// `quit-after-last-window-closed-delay` for more information.
+/// defaults to `false`.
+///
+/// On Linux, if this is `true`, Ghostty can delay quitting fully until a
+/// configurable amount of time has passed after the last window is closed.
+/// See the documentation of `quit-after-last-window-closed-delay`.
 @"quit-after-last-window-closed": bool = false,
 
-/// If `quit-after-last-window-closed` is `true`, this controls how long
-/// Ghostty will stay running after the last open surface has been closed. If
-/// `quit-after-last-window-closed-delay` is unset Ghostty will remain running
-/// indefinitely. The duration should be at least long enough to allow Ghostty
-/// to initialize and open it's first window, but this is not enforced nor
-/// will a warning be issued. The duration is specified as a series of numbers
-/// followed by time units. Whitespace is allowed between numbers and units. The
-/// allowed time units are as follows:
+/// Controls how long Ghostty will stay running after the last open surface has
+/// been closed. This only has an effect if `quit-after-last-window-closed` is
+/// also set to `true`.
+///
+/// The minimum value for this configuration is `1s`. Any values lower than
+/// this will be clamped to `1s`.
+///
+/// The duration is specified as a series of numbers followed by time units.
+/// Whitespace is allowed between numbers and units. Each number and unit will
+/// be added together to form the total duration.
+///
+/// The allowed time units are as follows:
 ///
 ///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
 ///     are made for leap years or leap seconds.
@@ -909,9 +915,16 @@ keybind: Keybinds = .{},
 ///   * `1h30m`
 ///   * `45s`
 ///
-/// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`.
+/// Units can be repeated and will be added together. This means that
+/// `1h1h` is equivalent to `2h`. This is confusing and should be avoided.
+/// A future update may disallow this.
 ///
-/// By default `quit-after-last-window-closed-delay` is unset.
+/// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
+/// value larger than this will be clamped to the maximum value.
+///
+/// By default `quit-after-last-window-closed-delay` is unset and
+/// Ghostty will quit immediately after the last window is closed if
+/// `quit-after-last-window-closed` is `true`.
 ///
 /// Only implemented on Linux.
 @"quit-after-last-window-closed-delay": ?Duration = null,
@@ -3799,6 +3812,7 @@ pub const LinuxCgroup = enum {
 };
 
 pub const Duration = struct {
+    /// Duration in nanoseconds
     duration: u64 = 0,
 
     const units = [_]struct {
@@ -3831,7 +3845,6 @@ pub const Duration = struct {
         var remaining = input orelse return error.ValueRequired;
 
         var value: ?u64 = null;
-
         while (remaining.len > 0) {
             // Skip over whitespace before the number
             while (remaining.len > 0 and std.ascii.isWhitespace(remaining[0])) {
@@ -3855,11 +3868,6 @@ pub const Duration = struct {
                 if (prev_remaining) |prev| remaining = prev;
                 break :number prev_number;
             } orelse return error.InvalidValue;
-
-            // Skip over any whitespace between the number and the unit
-            while (remaining.len > 0 and std.ascii.isWhitespace(remaining[0])) {
-                remaining = remaining[1..];
-            }
 
             // A number without a unit is invalid
             if (remaining.len == 0) return error.InvalidValue;
@@ -3889,10 +3897,9 @@ pub const Duration = struct {
                 break :factor prev_factor;
             } orelse return error.InvalidValue;
 
-            if (value) |v|
-                value = v + number * factor
-            else
-                value = number * factor;
+            // Add our time value to the total. Avoid overflow with saturating math.
+            const diff = std.math.mul(u64, number, factor) catch std.math.maxInt(u64);
+            value = (value orelse 0) +| diff;
         }
 
         return if (value) |v| .{ .duration = v } else error.ValueRequired;
@@ -3975,6 +3982,18 @@ test "parse duration" {
     {
         const d = try Duration.parseCLI("584y 49w 23h 34m 33s 709ms 551µs 615ns");
         try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
+    }
+
+    // Overflow
+    {
+        const d = try Duration.parseCLI("600y");
+        try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
+    }
+
+    // Repeated units
+    {
+        const d = try Duration.parseCLI("100ns100ns");
+        try std.testing.expectEqual(@as(u64, 200), d.duration);
     }
 
     try std.testing.expectError(error.ValueRequired, Duration.parseCLI(null));
