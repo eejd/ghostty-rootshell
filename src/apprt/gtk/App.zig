@@ -76,6 +76,13 @@ transient_cgroup_base: ?[]const u8 = null,
 /// CSS Provider for any styles based on ghostty configuration values
 css_provider: *c.GtkCssProvider,
 
+/// The timer used to quit the application after the last window is closed.
+quit_timer: union(enum) {
+    off: void,
+    active: c.guint,
+    expired: void,
+} = .{ .off = {} },
+
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
@@ -253,10 +260,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         break :x11_xkb try x11.Xkb.init(display);
     };
 
-    // This just calls the "activate" signal but its part of the normal
-    // startup routine so we just call it:
+    // This just calls the `activate` signal but its part of the normal startup
+    // routine so we just call it, but only if the config allows it (this allows
+    // for launching Ghostty in the "background" without immediately opening
+    // a window)
+    //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
-    c.g_application_activate(gapp);
+    if (config.@"initial-window")
+        c.g_application_activate(gapp);
 
     // Register for dbus events
     if (c.g_application_get_dbus_connection(gapp)) |dbus_connection| {
@@ -479,9 +490,68 @@ pub fn run(self: *App) !void {
     while (self.running) {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
-        // Tick the terminal app
+        // Tick the terminal app and see if we should quit.
         const should_quit = try self.core_app.tick(self);
-        if (should_quit or self.core_app.surfaces.items.len == 0) self.quit();
+
+        // Check if we must quit based on the current state.
+        const must_quit = q: {
+            // If we've been told by GTK that we should quit, do so regardless
+            // of any other setting.
+            if (should_quit) break :q true;
+
+            // If we are configured to always stay running, don't quit.
+            if (!self.config.@"quit-after-last-window-closed") break :q false;
+
+            // If the quit timer has expired, quit.
+            if (self.quit_timer == .expired) break :q true;
+
+            // There's no quit timer running, or it hasn't expired, don't quit.
+            break :q false;
+        };
+
+        if (must_quit) self.quit();
+    }
+}
+
+// This timeout function is started when no surfaces are open. It can be
+// cancelled if a new surface is opened before the timer expires.
+pub fn gtkQuitTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
+    const self: *App = @ptrCast(@alignCast(ud));
+    self.quit_timer = .{ .expired = {} };
+    return c.FALSE;
+}
+
+/// This will get called when there are no more open surfaces.
+pub fn startQuitTimer(self: *App) void {
+    // Cancel any previous timer.
+    self.cancelQuitTimer();
+
+    // This is a no-op unless we are configured to quit after last window is closed.
+    if (!self.config.@"quit-after-last-window-closed") return;
+
+    // If a delay is configured, set a timeout function to quit after the delay.
+    if (self.config.@"quit-after-last-window-closed-delay") |v| {
+        const ms: u64 = std.math.divTrunc(
+            u64,
+            v.duration,
+            std.time.ns_per_ms,
+        ) catch std.math.maxInt(c.guint);
+        const t = std.math.cast(c.guint, ms) orelse std.math.maxInt(c.guint);
+        self.quit_timer = .{ .active = c.g_timeout_add(t, gtkQuitTimerExpired, self) };
+    }
+}
+
+/// This will get called when a new surface gets opened.
+pub fn cancelQuitTimer(self: *App) void {
+    switch (self.quit_timer) {
+        .off => {},
+        .expired => self.quit_timer = .{ .off = {} },
+        .active => |source| {
+            if (c.g_source_remove(source) == c.FALSE) {
+                log.warn("unable to remove quit timer source={d}", .{source});
+            }
+            self.quit_timer = .{ .off = {} };
+        },
     }
 }
 
@@ -599,9 +669,8 @@ fn gtkQuitConfirmation(
     self.quitNow();
 }
 
-/// This is called by the "activate" signal. This is sent on program
-/// startup and also when a secondary instance launches and requests
-/// a new window.
+/// This is called by the `activate` signal. This is sent on program startup and
+/// also when a secondary instance launches and requests a new window.
 fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = app;
 

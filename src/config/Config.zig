@@ -897,10 +897,61 @@ keybind: Keybinds = .{},
 /// true. If set to false, surfaces will close without any confirmation.
 @"confirm-close-surface": bool = true,
 
-/// Whether or not to quit after the last window is closed. This defaults to
-/// false. Currently only supported on macOS. On Linux, the process always exits
-/// after the last window is closed.
+/// Whether or not to quit after the last surface is closed. This
+/// defaults to `false`.
+///
+/// On Linux, if this is `true`, Ghostty can delay quitting fully until a
+/// configurable amount of time has passed after the last window is closed.
+/// See the documentation of `quit-after-last-window-closed-delay`.
 @"quit-after-last-window-closed": bool = false,
+
+/// Controls how long Ghostty will stay running after the last open surface has
+/// been closed. This only has an effect if `quit-after-last-window-closed` is
+/// also set to `true`.
+///
+/// The minimum value for this configuration is `1s`. Any values lower than
+/// this will be clamped to `1s`.
+///
+/// The duration is specified as a series of numbers followed by time units.
+/// Whitespace is allowed between numbers and units. Each number and unit will
+/// be added together to form the total duration.
+///
+/// The allowed time units are as follows:
+///
+///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
+///     are made for leap years or leap seconds.
+///   * `d` - one SI day, or 86400 seconds.
+///   * `h` - one hour, or 3600 seconds.
+///   * `m` - one minute, or 60 seconds.
+///   * `s` - one second.
+///   * `ms` - one millisecond, or 0.001 second.
+///   * `us` or `µs` - one microsecond, or 0.000001 second.
+///   * `ns` - one nanosecond, or 0.000000001 second.
+///
+/// Examples:
+///   * `1h30m`
+///   * `45s`
+///
+/// Units can be repeated and will be added together. This means that
+/// `1h1h` is equivalent to `2h`. This is confusing and should be avoided.
+/// A future update may disallow this.
+///
+/// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
+/// value larger than this will be clamped to the maximum value.
+///
+/// By default `quit-after-last-window-closed-delay` is unset and
+/// Ghostty will quit immediately after the last window is closed if
+/// `quit-after-last-window-closed` is `true`.
+///
+/// Only implemented on Linux.
+@"quit-after-last-window-closed-delay": ?Duration = null,
+
+/// This controls whether an initial window is created when Ghostty
+/// is run. Note that if `quit-after-last-window-closed` is `true` and
+/// `quit-after-last-window-closed-delay` is set, setting `initial-window` to
+/// `false` will mean that Ghostty will quit after the configured delay if no
+/// window is ever created. Only implemented on Linux.
+@"initial-window": bool = true,
 
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
@@ -1126,15 +1177,16 @@ keybind: Keybinds = .{},
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 
-/// If true, the Ghostty GTK application will run in single-instance mode:
-/// each new `ghostty` process launched will result in a new window if there
-/// is already a running process.
+/// If `true`, the Ghostty GTK application will run in single-instance mode:
+/// each new `ghostty` process launched will result in a new window if there is
+/// already a running process.
 ///
-/// If false, each new ghostty process will launch a separate application.
+/// If `false`, each new ghostty process will launch a separate application.
 ///
-/// The default value is `desktop` which will default to `true` if Ghostty
-/// detects it was launched from the `.desktop` file such as an app launcher.
-/// If Ghostty is launched from the command line, it will default to `false`.
+/// The default value is `detect` which will default to `true` if Ghostty
+/// detects that it was launched from the `.desktop` file such as an app
+/// launcher (like Gnome Shell)  or by D-Bus activation. If Ghostty is launched
+/// from the command line, it will default to `false`.
 ///
 /// Note that debug builds of Ghostty have a separate single-instance ID
 /// so you can test single instance without conflicting with release builds.
@@ -2211,6 +2263,18 @@ pub fn finalize(self: *Config) !void {
     // If URLs are disabled, cut off the first link. The first link is
     // always the URL matcher.
     if (!self.@"link-url") self.link.links.items = self.link.links.items[1..];
+
+    // We warn when the quit-after-last-window-closed-delay is set to a very
+    // short value because it can cause Ghostty to quit before the first
+    // window is even shown.
+    if (self.@"quit-after-last-window-closed-delay") |duration| {
+        if (duration.duration < 5 * std.time.ns_per_s) {
+            log.warn(
+                "quit-after-last-window-closed-delay is set to a very short value ({}), which might cause problems",
+                .{duration},
+            );
+        }
+    }
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
@@ -3795,3 +3859,219 @@ pub const LinuxCgroup = enum {
     always,
     @"single-instance",
 };
+
+pub const Duration = struct {
+    /// Duration in nanoseconds
+    duration: u64 = 0,
+
+    const units = [_]struct {
+        name: []const u8,
+        factor: u64,
+    }{
+        // The order is important as the first factor that matches will be the
+        // default unit that is used for formatting.
+        .{ .name = "y", .factor = 365 * std.time.ns_per_day },
+        .{ .name = "w", .factor = std.time.ns_per_week },
+        .{ .name = "d", .factor = std.time.ns_per_day },
+        .{ .name = "h", .factor = std.time.ns_per_hour },
+        .{ .name = "m", .factor = std.time.ns_per_min },
+        .{ .name = "s", .factor = std.time.ns_per_s },
+        .{ .name = "ms", .factor = std.time.ns_per_ms },
+        .{ .name = "µs", .factor = std.time.ns_per_us },
+        .{ .name = "us", .factor = std.time.ns_per_us },
+        .{ .name = "ns", .factor = 1 },
+    };
+
+    pub fn clone(self: *const @This(), _: Allocator) !@This() {
+        return .{ .duration = self.duration };
+    }
+
+    pub fn equal(self: @This(), other: @This()) bool {
+        return self.duration == other.duration;
+    }
+
+    pub fn parseCLI(input: ?[]const u8) !Duration {
+        var remaining = input orelse return error.ValueRequired;
+
+        var value: ?u64 = null;
+        while (remaining.len > 0) {
+            // Skip over whitespace before the number
+            while (remaining.len > 0 and std.ascii.isWhitespace(remaining[0])) {
+                remaining = remaining[1..];
+            }
+
+            // There was whitespace at the end, that's OK
+            if (remaining.len == 0) break;
+
+            // Find the longest number
+            const number = number: {
+                var prev_number: ?u64 = null;
+                var prev_remaining: ?[]const u8 = null;
+                for (1..remaining.len + 1) |index| {
+                    prev_number = std.fmt.parseUnsigned(u64, remaining[0..index], 10) catch {
+                        if (prev_remaining) |prev| remaining = prev;
+                        break :number prev_number;
+                    };
+                    prev_remaining = remaining[index..];
+                }
+                if (prev_remaining) |prev| remaining = prev;
+                break :number prev_number;
+            } orelse return error.InvalidValue;
+
+            // A number without a unit is invalid
+            if (remaining.len == 0) return error.InvalidValue;
+
+            // Find the longest matching unit. Needs to be the longest matching
+            // to distinguish 'm' from 'ms'.
+            const factor = factor: {
+                var prev_factor: ?u64 = null;
+                var prev_index: ?usize = null;
+                for (1..remaining.len + 1) |index| {
+                    const next_factor = next: {
+                        for (units) |unit| {
+                            if (std.mem.eql(u8, unit.name, remaining[0..index])) {
+                                break :next unit.factor;
+                            }
+                        }
+                        break :next null;
+                    };
+                    if (next_factor) |next| {
+                        prev_factor = next;
+                        prev_index = index;
+                    }
+                }
+                if (prev_index) |index| {
+                    remaining = remaining[index..];
+                }
+                break :factor prev_factor;
+            } orelse return error.InvalidValue;
+
+            // Add our time value to the total. Avoid overflow with saturating math.
+            const diff = std.math.mul(u64, number, factor) catch std.math.maxInt(u64);
+            value = (value orelse 0) +| diff;
+        }
+
+        return if (value) |v| .{ .duration = v } else error.ValueRequired;
+    }
+
+    pub fn formatEntry(self: @This(), formatter: anytype) !void {
+        var buf: [64]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        try self.format("", .{}, writer);
+        try formatter.formatEntry([]const u8, fbs.getWritten());
+    }
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        var value = self.duration;
+        var i: usize = 0;
+        for (units) |unit| {
+            if (value >= unit.factor) {
+                if (i > 0) writer.writeAll(" ") catch unreachable;
+                const remainder = value % unit.factor;
+                const quotient = (value - remainder) / unit.factor;
+                writer.print("{d}{s}", .{ quotient, unit.name }) catch unreachable;
+                value = remainder;
+                i += 1;
+            }
+        }
+    }
+};
+
+test "parse duration" {
+    inline for (Duration.units) |unit| {
+        var buf: [16]u8 = undefined;
+        const t = try std.fmt.bufPrint(&buf, "0{s}", .{unit.name});
+        const d = try Duration.parseCLI(t);
+        try std.testing.expectEqual(@as(u64, 0), d.duration);
+    }
+
+    inline for (Duration.units) |unit| {
+        var buf: [16]u8 = undefined;
+        const t = try std.fmt.bufPrint(&buf, "1{s}", .{unit.name});
+        const d = try Duration.parseCLI(t);
+        try std.testing.expectEqual(unit.factor, d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("100ns");
+        try std.testing.expectEqual(@as(u64, 100), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("1µs");
+        try std.testing.expectEqual(@as(u64, 1000), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("1µs1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("1µs 1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI(" 1µs1ns");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("1µs1ns ");
+        try std.testing.expectEqual(@as(u64, 1001), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("30s");
+        try std.testing.expectEqual(@as(u64, 30 * std.time.ns_per_s), d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("584y 49w 23h 34m 33s 709ms 551µs 615ns");
+        try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
+    }
+
+    // Overflow
+    {
+        const d = try Duration.parseCLI("600y");
+        try std.testing.expectEqual(std.math.maxInt(u64), d.duration);
+    }
+
+    // Repeated units
+    {
+        const d = try Duration.parseCLI("100ns100ns");
+        try std.testing.expectEqual(@as(u64, 200), d.duration);
+    }
+
+    try std.testing.expectError(error.ValueRequired, Duration.parseCLI(null));
+    try std.testing.expectError(error.ValueRequired, Duration.parseCLI(""));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("s"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1x"));
+    try std.testing.expectError(error.InvalidValue, Duration.parseCLI("1 "));
+}
+
+test "test format" {
+    inline for (Duration.units) |unit| {
+        const d: Duration = .{ .duration = unit.factor };
+        var actual_buf: [16]u8 = undefined;
+        const actual = try std.fmt.bufPrint(&actual_buf, "{}", .{d});
+        var expected_buf: [16]u8 = undefined;
+        const expected = if (!std.mem.eql(u8, unit.name, "us"))
+            try std.fmt.bufPrint(&expected_buf, "1{s}", .{unit.name})
+        else
+            "1µs";
+        try std.testing.expectEqualSlices(u8, expected, actual);
+    }
+}
+
+test "test entryFormatter" {
+    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    defer buf.deinit();
+
+    var p: Duration = .{ .duration = std.math.maxInt(u64) };
+    try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+    try std.testing.expectEqualStrings("a = 584y 49w 23h 34m 33s 709ms 551µs 615ns\n", buf.items);
+}
