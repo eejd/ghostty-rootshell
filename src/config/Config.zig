@@ -2222,9 +2222,16 @@ pub fn finalize(self: *Config) !void {
     // always the URL matcher.
     if (!self.@"link-url") self.link.links.items = self.link.links.items[1..];
 
+    // We warn when the quit-after-last-window-closed-delay is set to a very
+    // short value because it can cause Ghostty to quit before the first
+    // window is even shown.
     if (self.@"quit-after-last-window-closed-delay") |duration| {
-        if (duration.duration < 5 * std.time.ns_per_s)
-            log.warn("quit-after-last-window-closed-delay is set to a very short value ({}), which might cause problems", .{duration});
+        if (duration.duration < 5 * std.time.ns_per_s) {
+            log.warn(
+                "quit-after-last-window-closed-delay is set to a very short value ({}), which might cause problems",
+                .{duration},
+            );
+        }
     }
 }
 
