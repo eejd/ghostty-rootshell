@@ -499,10 +499,7 @@ pub fn Stream(comptime Handler: type) type {
 
                     const mode_: ?csi.EraseDisplay = switch (input.params.len) {
                         0 => .below,
-                        1 => if (input.params[0] <= 3)
-                            std.meta.intToEnum(csi.EraseDisplay, input.params[0]) catch null
-                        else
-                            null,
+                        1 => std.meta.intToEnum(csi.EraseDisplay, input.params[0]) catch null,
                         else => null,
                     };
 
