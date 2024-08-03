@@ -102,11 +102,16 @@ vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
 
   // If we're at the edge of the grid, we add our padding to the background
   // to extend it. Note: grid_padding is top/right/bottom/left.
-  // TODO: top/left
-  if (input.grid_pos.y == uniforms.grid_size.y - 1) {
+  if (input.grid_pos.y == 0) {
+    cell_pos.y -= uniforms.grid_padding.r;
+    cell_size_scaled.y += uniforms.grid_padding.r;
+  } else if (input.grid_pos.y == uniforms.grid_size.y - 1) {
     cell_size_scaled.y += uniforms.grid_padding.b;
   }
-  if (input.grid_pos.x == uniforms.grid_size.x - 1) {
+  if (input.grid_pos.x == 0) {
+    cell_pos.x -= uniforms.grid_padding.a;
+    cell_size_scaled.x += uniforms.grid_padding.a;
+  } else if (input.grid_pos.x == uniforms.grid_size.x - 1) {
     cell_size_scaled.x += uniforms.grid_padding.g;
   }
 
