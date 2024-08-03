@@ -135,6 +135,9 @@ pub fn updateConfig(self: *App, config: *const Config) !void {
 pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
     try self.surfaces.append(self.alloc, rt_surface);
 
+    // Since we have non-zero surfaces, we can cancel the quit timer.
+    // It is up to the apprt if there is a quit timer at all and if it
+    // should be canceled.
     if (@hasDecl(apprt.App, "cancelQuitTimer")) rt_surface.app.cancelQuitTimer();
 }
 
@@ -161,7 +164,10 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
         i += 1;
     }
 
-    if (@hasDecl(apprt.App, "startQuitTimer") and self.surfaces.items.len == 0) rt_surface.app.startQuitTimer();
+    // If we have no surfaces, we can start the quit timer. It is up to the
+    // apprt to determine if this is necessary.
+    if (@hasDecl(apprt.App, "startQuitTimer") and
+        self.surfaces.items.len == 0) rt_surface.app.startQuitTimer();
 }
 
 /// The last focused surface. This is only valid while on the main thread
