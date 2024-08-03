@@ -55,6 +55,8 @@ flat out uint mode;
 uniform sampler2D text;
 uniform sampler2D text_color;
 uniform vec2 cell_size;
+uniform vec2 grid_size;
+uniform vec4 grid_padding;
 uniform mat4 projection;
 uniform float min_contrast;
 
@@ -167,6 +169,21 @@ void main() {
 
     switch (mode) {
     case MODE_BG:
+        // If we're at the edge of the grid, we add our padding to the background
+        // to extend it. Note: grid_padding is top/right/bottom/left.
+        if (grid_coord.y == 0) {
+            cell_pos.y -= grid_padding.r;
+            cell_size_scaled.y += grid_padding.r;
+        } else if (grid_coord.y == grid_size.y - 1) {
+            cell_size_scaled.y += grid_padding.b;
+        }
+        if (grid_coord.x == 0) {
+            cell_pos.x -= grid_padding.a;
+            cell_size_scaled.x += grid_padding.a;
+        } else if (grid_coord.x == grid_size.x - 1) {
+            cell_size_scaled.x += grid_padding.g;
+        }
+
         // Calculate the final position of our cell in world space.
         // We have to add our cell size since our vertices are offset
         // one cell up and to the left. (Do the math to verify yourself)
