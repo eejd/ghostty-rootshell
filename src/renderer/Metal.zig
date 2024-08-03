@@ -621,6 +621,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
+            .grid_size = undefined,
+            .grid_padding = undefined,
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
@@ -832,7 +834,8 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     self.grid_metrics = metrics;
 
     // Reset our cell contents.
-    self.cells.resize(self.alloc, self.gridSize().?) catch |err| {
+    const grid_size = self.gridSize().?;
+    self.cells.resize(self.alloc, grid_size) catch |err| {
         // The setFontGrid function can't fail but resizing our cell
         // buffer definitely can fail. If it does, our renderer is probably
         // screwed but let's just log it and continue until we can figure
@@ -857,6 +860,11 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
             @floatFromInt(metrics.cell_width),
             @floatFromInt(metrics.cell_height),
         },
+        .grid_size = .{
+            grid_size.columns,
+            grid_size.rows,
+        },
+        .grid_padding = self.uniforms.grid_padding,
         .min_contrast = self.uniforms.min_contrast,
         .cursor_pos = self.uniforms.cursor_pos,
         .cursor_color = self.uniforms.cursor_color,
@@ -1951,6 +1959,12 @@ pub fn setScreenSize(
         self.padding.explicit;
     const padded_dim = dim.subPadding(padding);
 
+    // Blank space around the grid.
+    const blank = dim.blankPadding(padding, grid_size, .{
+        .width = self.grid_metrics.cell_width,
+        .height = self.grid_metrics.cell_height,
+    }).add(padding);
+
     // Set the size of the drawable surface to the bounds
     self.layer.setProperty("drawableSize", macos.graphics.Size{
         .width = @floatFromInt(dim.width),
@@ -1969,6 +1983,16 @@ pub fn setScreenSize(
         .cell_size = .{
             @floatFromInt(self.grid_metrics.cell_width),
             @floatFromInt(self.grid_metrics.cell_height),
+        },
+        .grid_size = .{
+            grid_size.columns,
+            grid_size.rows,
+        },
+        .grid_padding = .{
+            @floatFromInt(blank.top),
+            @floatFromInt(blank.right),
+            @floatFromInt(blank.bottom),
+            @floatFromInt(blank.left),
         },
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
