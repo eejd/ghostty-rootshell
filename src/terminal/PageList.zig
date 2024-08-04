@@ -3254,6 +3254,35 @@ pub const Pin = struct {
         set.set(self.y);
     }
 
+    /// Returns true if the row of this pin should never have its background
+    /// color extended for filling padding space in the renderer. This is
+    /// a set of heuristics that help making our padding look better.
+    pub fn neverExtendBg(self: Pin) bool {
+        // Any semantic prompts should not have their background extended
+        // because prompts often contain special formatting (such as
+        // powerline) that looks bad when extended.
+        const rac = self.rowAndCell();
+        switch (rac.row.semantic_prompt) {
+            .prompt, .prompt_continuation, .input => return true,
+            .unknown, .command => {},
+        }
+
+        for (self.cells(.all)) |*cell| {
+            // If any cell has a default background color then we don't
+            // extend because the default background color probably looks
+            // good enough as an extension.
+            switch (cell.content_tag) {
+                .bg_color_palette, .bg_color_rgb => {},
+                .codepoint, .codepoint_grapheme => {
+                    const s = self.style(cell);
+                    if (s.bg_color == .none) return true;
+                },
+            }
+        }
+
+        return false;
+    }
+
     /// Iterators. These are the same as PageList iterator funcs but operate
     /// on pins rather than points. This is MUCH more efficient than calling
     /// pointFromPin and building up the iterator from points.

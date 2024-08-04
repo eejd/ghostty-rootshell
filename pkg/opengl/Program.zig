@@ -104,6 +104,7 @@ pub fn setUniform(
 
     // Perform the correct call depending on the type of the value.
     switch (@TypeOf(value)) {
+        bool => glad.context.Uniform1i.?(loc, if (value) 1 else 0),
         comptime_int => glad.context.Uniform1i.?(loc, value),
         f32 => glad.context.Uniform1f.?(loc, value),
         @Vector(2, f32) => glad.context.Uniform2f.?(loc, value[0], value[1]),

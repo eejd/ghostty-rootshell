@@ -625,6 +625,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cell_size = undefined,
             .grid_size = undefined,
             .grid_padding = undefined,
+            .padding_extend_top = true,
+            .padding_extend_bottom = true,
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
@@ -872,6 +874,7 @@ pub fn updateFrame(
     const Critical = struct {
         bg: terminal.color.RGB,
         screen: terminal.Screen,
+        screen_type: terminal.ScreenType,
         mouse: renderer.State.Mouse,
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
@@ -1001,6 +1004,7 @@ pub fn updateFrame(
         break :critical .{
             .bg = self.background_color,
             .screen = screen_copy,
+            .screen_type = state.terminal.active_screen,
             .mouse = state.mouse,
             .preedit = preedit,
             .cursor_style = cursor_style,
@@ -1018,6 +1022,7 @@ pub fn updateFrame(
     try self.rebuildCells(
         critical.full_rebuild,
         &critical.screen,
+        critical.screen_type,
         critical.mouse,
         critical.preedit,
         critical.cursor_style,
@@ -1988,6 +1993,8 @@ pub fn setScreenSize(
             @floatFromInt(blank.bottom),
             @floatFromInt(blank.left),
         },
+        .padding_extend_top = old.padding_extend_top,
+        .padding_extend_bottom = old.padding_extend_bottom,
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
         .cursor_color = old.cursor_color,
@@ -2085,6 +2092,7 @@ fn rebuildCells(
     self: *Metal,
     rebuild: bool,
     screen: *terminal.Screen,
+    screen_type: terminal.ScreenType,
     mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
@@ -2126,8 +2134,14 @@ fn rebuildCells(
         };
     } else null;
 
-    // If we are doing a full rebuild, then we clear the entire cell buffer.
-    if (rebuild) self.cells.reset();
+    if (rebuild) {
+        // If we are doing a full rebuild, then we clear the entire cell buffer.
+        self.cells.reset();
+
+        // We also reset our padding extension depending on the screen type
+        self.uniforms.padding_extend_top = screen_type == .alternate;
+        self.uniforms.padding_extend_bottom = screen_type == .alternate;
+    }
 
     // Go row-by-row to build the cells. We go row by row because we do
     // font shaping by row. In the future, we will also do dirty tracking
@@ -2158,6 +2172,16 @@ fn rebuildCells(
                 break :sel null;
             break :sel sel.containedRow(screen, pin) orelse null;
         };
+
+        // On primary screen, we still apply vertical padding extension
+        // under certain conditions we feel are safe. This helps make some
+        // scenarios look better while avoiding scenarios we know do NOT look
+        // good.
+        if (y == 0 and screen_type == .primary) {
+            self.uniforms.padding_extend_top = !row.neverExtendBg();
+        } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
+            self.uniforms.padding_extend_bottom = !row.neverExtendBg();
+        }
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
