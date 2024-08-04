@@ -529,8 +529,8 @@ pub fn startQuitTimer(self: *App) void {
     // This is a no-op unless we are configured to quit after last window is closed.
     if (!self.config.@"quit-after-last-window-closed") return;
 
-    // If a delay is configured, set a timeout function to quit after the delay.
     if (self.config.@"quit-after-last-window-closed-delay") |v| {
+        // If a delay is configured, set a timeout function to quit after the delay.
         const ms: u64 = std.math.divTrunc(
             u64,
             v.duration,
@@ -538,6 +538,10 @@ pub fn startQuitTimer(self: *App) void {
         ) catch std.math.maxInt(c.guint);
         const t = std.math.cast(c.guint, ms) orelse std.math.maxInt(c.guint);
         self.quit_timer = .{ .active = c.g_timeout_add(t, gtkQuitTimerExpired, self) };
+    } else {
+        // If no delay is configured, we still need a 0ms timer to break out of
+        // g_main_context_iteration so that control returns to our code.
+        self.quit_timer = .{ .active = c.g_timeout_add(0, gtkQuitTimerExpired, self) };
     }
 }
 
