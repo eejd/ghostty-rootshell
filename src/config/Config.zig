@@ -674,6 +674,17 @@ keybind: Keybinds = .{},
 /// * `background` - The background color specified in `background`.
 /// * `extend` - Extend the background color of the nearest grid cell.
 ///
+/// The "extend" value will be disabled in certain scenarios. On primary
+/// screen applications (i.e. not something like Neovim), the color will not
+/// be extended vertically if any of the following are true:
+///
+/// * The nearest row has any cells that have the default backgroudn color.
+///   The thinking is that in this case, the default background color looks
+///   fine as a padding color.
+/// * The nearest row is a prompt row (requires shell integration). The
+///   thinking here is that prompts often contain powerline glyphs that
+///   do not look good extended.
+///
 /// The default value is "extend". This allows for smooth resizing of a
 /// terminal grid without having visible empty areas around the edge. The edge
 /// cells may appear slightly larger due to the extension.

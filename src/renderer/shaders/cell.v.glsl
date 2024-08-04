@@ -57,6 +57,8 @@ uniform sampler2D text_color;
 uniform vec2 cell_size;
 uniform vec2 grid_size;
 uniform vec4 grid_padding;
+uniform bool padding_vertical_top;
+uniform bool padding_vertical_bottom;
 uniform mat4 projection;
 uniform float min_contrast;
 
@@ -171,10 +173,10 @@ void main() {
     case MODE_BG:
         // If we're at the edge of the grid, we add our padding to the background
         // to extend it. Note: grid_padding is top/right/bottom/left.
-        if (grid_coord.y == 0) {
+        if (grid_coord.y == 0 && padding_vertical_top) {
             cell_pos.y -= grid_padding.r;
             cell_size_scaled.y += grid_padding.r;
-        } else if (grid_coord.y == grid_size.y - 1) {
+        } else if (grid_coord.y == grid_size.y - 1 && padding_vertical_bottom) {
             cell_size_scaled.y += grid_padding.b;
         }
         if (grid_coord.x == 0) {

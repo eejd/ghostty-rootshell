@@ -53,11 +53,18 @@ grid_metrics: font.face.Metrics,
 /// Current screen size dimensions for this grid. This is set on the first
 /// resize event, and is not immediately available.
 screen_size: ?renderer.ScreenSize,
+grid_size: renderer.GridSize,
 
 /// The current set of cells to render. Each set of cells goes into
 /// a separate shader call.
 cells_bg: std.ArrayListUnmanaged(CellProgram.Cell),
 cells: std.ArrayListUnmanaged(CellProgram.Cell),
+
+/// The last viewport that we based our rebuild off of. If this changes,
+/// then we do a full rebuild of the cells. The pointer values in this pin
+/// are NOT SAFE to read because they may be modified, freed, etc from the
+/// termio thread. We treat the pointers as integers for comparison only.
+cells_viewport: ?terminal.Pin = null,
 
 /// The size of the cells list that was sent to the GPU. This is used
 /// to detect when the cells array was reallocated/resized and handle that
@@ -119,6 +126,10 @@ draw_mutex: DrawMutex = drawMutexZero,
 /// Current background to draw. This may not match self.background if the
 /// terminal is in reversed mode.
 draw_background: terminal.color.RGB,
+
+/// Whether we're doing padding extension for vertical sides.
+padding_extend_top: bool = true,
+padding_extend_bottom: bool = true,
 
 /// The images that we may render.
 images: ImageMap = .{},
@@ -394,6 +405,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !OpenGL {
         .cells = .{},
         .grid_metrics = grid.metrics,
         .screen_size = null,
+        .grid_size = .{},
         .gl_state = gl_state,
         .font_grid = grid,
         .font_shaper = shaper,
@@ -669,6 +681,12 @@ pub fn setFontGrid(self: *OpenGL, grid: *font.SharedGrid) void {
     self.font_shaper_cache.deinit(self.alloc);
     self.font_shaper_cache = font_shaper_cache;
 
+    // Update our grid size if we have a screen size. If we don't, its okay
+    // because this will get set when we get the screen size set.
+    if (self.screen_size) |size| {
+        self.grid_size = self.gridSize(size);
+    }
+
     // Defer our GPU updates
     self.deferred_font_size = .{ .metrics = grid.metrics };
 }
@@ -684,8 +702,10 @@ pub fn updateFrame(
 
     // Data we extract out of the critical area.
     const Critical = struct {
+        full_rebuild: bool,
         gl_bg: terminal.color.RGB,
         screen: terminal.Screen,
+        screen_type: terminal.ScreenType,
         mouse: renderer.State.Mouse,
         preedit: ?renderer.State.Preedit,
         cursor_style: ?renderer.CursorStyle,
@@ -714,6 +734,9 @@ pub fn updateFrame(
             self.background_color = fg;
             self.foreground_color = bg;
         }
+
+        // Get the viewport pin so that we can compare it to the current.
+        const viewport_pin = state.terminal.screen.pages.pin(.{ .viewport = .{} }).?;
 
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
@@ -758,9 +781,55 @@ pub fn updateFrame(
             try self.prepKittyGraphics(state.terminal);
         }
 
+        // If we have any terminal dirty flags set then we need to rebuild
+        // the entire screen. This can be optimized in the future.
+        const full_rebuild: bool = rebuild: {
+            {
+                const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.flags.dirty);
+                if (v > 0) break :rebuild true;
+            }
+            {
+                const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
+                const v: Int = @bitCast(state.terminal.screen.dirty);
+                if (v > 0) break :rebuild true;
+            }
+
+            // If our viewport changed then we need to rebuild the entire
+            // screen because it means we scrolled. If we have no previous
+            // viewport then we must rebuild.
+            const prev_viewport = self.cells_viewport orelse break :rebuild true;
+            if (!prev_viewport.eql(viewport_pin)) break :rebuild true;
+
+            break :rebuild false;
+        };
+
+        // Reset the dirty flags in the terminal and screen. We assume
+        // that our rebuild will be successful since so we optimize for
+        // success and reset while we hold the lock. This is much easier
+        // than coordinating row by row or as changes are persisted.
+        state.terminal.flags.dirty = .{};
+        state.terminal.screen.dirty = .{};
+        {
+            var it = state.terminal.screen.pages.pageIterator(
+                .right_down,
+                .{ .screen = .{} },
+                null,
+            );
+            while (it.next()) |chunk| {
+                var dirty_set = chunk.page.data.dirtyBitSet();
+                dirty_set.unsetAll();
+            }
+        }
+
+        // Update our viewport pin for dirty tracking
+        self.cells_viewport = viewport_pin;
+
         break :critical .{
+            .full_rebuild = full_rebuild,
             .gl_bg = self.background_color,
             .screen = screen_copy,
+            .screen_type = state.terminal.active_screen,
             .mouse = state.mouse,
             .preedit = preedit,
             .cursor_style = cursor_style,
@@ -782,7 +851,9 @@ pub fn updateFrame(
 
         // Build our GPU cells
         try self.rebuildCells(
+            critical.full_rebuild,
             &critical.screen,
+            critical.screen_type,
             critical.mouse,
             critical.preedit,
             critical.cursor_style,
@@ -1089,7 +1160,9 @@ fn prepKittyImage(
 /// the renderer will do this when it needs more memory space.
 pub fn rebuildCells(
     self: *OpenGL,
+    rebuild: bool,
     screen: *terminal.Screen,
+    screen_type: terminal.ScreenType,
     mouse: renderer.State.Mouse,
     preedit: ?renderer.State.Preedit,
     cursor_style_: ?renderer.CursorStyle,
@@ -1134,6 +1207,12 @@ pub fn rebuildCells(
     // We keep track of it so that we can invert the colors so the character
     // remains visible.
     var cursor_cell: ?CellProgram.Cell = null;
+
+    if (rebuild) {
+        // We also reset our padding extension depending on the screen type
+        self.padding_extend_top = screen_type == .alternate;
+        self.padding_extend_bottom = screen_type == .alternate;
+    }
 
     // Build each cell
     var row_it = screen.pages.rowIterator(.right_down, .{ .viewport = .{} }, null);
@@ -1184,6 +1263,16 @@ pub fn rebuildCells(
                 }
             }
         };
+
+        // On primary screen, we still apply vertical padding extension
+        // under certain conditions we feel are safe. This helps make some
+        // scenarios look better while avoiding scenarios we know do NOT look
+        // good.
+        if (y == 0 and screen_type == .primary) {
+            self.padding_extend_top = !row.neverExtendBg();
+        } else if (y == self.grid_size.rows - 1 and screen_type == .primary) {
+            self.padding_extend_bottom = !row.neverExtendBg();
+        }
 
         // Split our row into runs and shape each one.
         var iter = self.font_shaper.runIterator(
@@ -1787,13 +1876,11 @@ pub fn setScreenSize(
     // Store our screen size
     self.screen_size = dim;
     self.padding.explicit = pad;
-
-    // Recalculate the rows/columns.
-    const grid_size = self.gridSize(dim);
+    self.grid_size = self.gridSize(dim);
 
     log.debug("screen size screen={} grid={} cell={} padding={}", .{
         dim,
-        grid_size,
+        self.grid_size,
         renderer.CellSize{
             .width = self.grid_metrics.cell_width,
             .height = self.grid_metrics.cell_height,
@@ -1994,6 +2081,21 @@ fn drawCellProgram(
     if (self.deferred_config) |v| {
         try v.apply(self);
         self.deferred_config = null;
+    }
+
+    // Apply our padding extension fields
+    {
+        const program = gl_state.cell_program;
+        const bind = try program.program.use();
+        defer bind.unbind();
+        try program.program.setUniform(
+            "padding_vertical_top",
+            self.padding_extend_top,
+        );
+        try program.program.setUniform(
+            "padding_vertical_bottom",
+            self.padding_extend_bottom,
+        );
     }
 
     // Draw background images first

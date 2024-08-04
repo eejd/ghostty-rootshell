@@ -5,6 +5,8 @@ struct Uniforms {
   float2 cell_size;
   ushort2 grid_size;
   float4 grid_padding;
+  bool padding_extend_top;
+  bool padding_extend_bottom;
   float min_contrast;
   ushort2 cursor_pos;
   uchar4 cursor_color;
@@ -101,11 +103,14 @@ vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
   cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
 
   // If we're at the edge of the grid, we add our padding to the background
-  // to extend it. Note: grid_padding is top/right/bottom/left.
-  if (input.grid_pos.y == 0) {
+  // to extend it. Note: grid_padding is top/right/bottom/left. We always
+  // extend horiziontally because there is no downside but there are various
+  // heuristics to disable vertical extension.
+  if (input.grid_pos.y == 0 && uniforms.padding_extend_top) {
     cell_pos.y -= uniforms.grid_padding.r;
     cell_size_scaled.y += uniforms.grid_padding.r;
-  } else if (input.grid_pos.y == uniforms.grid_size.y - 1) {
+  } else if (input.grid_pos.y == uniforms.grid_size.y - 1 &&
+             uniforms.padding_extend_bottom) {
     cell_size_scaled.y += uniforms.grid_padding.b;
   }
   if (input.grid_pos.x == 0) {

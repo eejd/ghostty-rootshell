@@ -124,6 +124,10 @@ pub const Uniforms = extern struct {
     /// top, right, bottom, left.
     grid_padding: [4]f32 align(16),
 
+    /// True if vertical padding gets the extended color of the nearest row.
+    padding_extend_top: bool align(1),
+    padding_extend_bottom: bool align(1),
+
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.
     min_contrast: f32 align(4),
