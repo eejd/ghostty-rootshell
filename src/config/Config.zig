@@ -678,7 +678,7 @@ keybind: Keybinds = .{},
 /// screen applications (i.e. not something like Neovim), the color will not
 /// be extended vertically if any of the following are true:
 ///
-/// * The nearest row has any cells that have the default backgroudn color.
+/// * The nearest row has any cells that have the default background color.
 ///   The thinking is that in this case, the default background color looks
 ///   fine as a padding color.
 /// * The nearest row is a prompt row (requires shell integration). The
