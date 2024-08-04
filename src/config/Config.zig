@@ -688,7 +688,7 @@ keybind: Keybinds = .{},
 /// The default value is "extend". This allows for smooth resizing of a
 /// terminal grid without having visible empty areas around the edge. The edge
 /// cells may appear slightly larger due to the extension.
-@"window-padding-color": WindowPaddingColor = .extend,
+@"window-padding-color": WindowPaddingColor = .background,
 
 /// Synchronize rendering with the screen refresh rate. If true, this will
 /// minimize tearing and align redraws with the screen but may cause input
