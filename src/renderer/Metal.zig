@@ -835,16 +835,6 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     const metrics = grid.metrics;
     self.grid_metrics = metrics;
 
-    // Reset our cell contents.
-    const grid_size = self.gridSize().?;
-    self.cells.resize(self.alloc, grid_size) catch |err| {
-        // The setFontGrid function can't fail but resizing our cell
-        // buffer definitely can fail. If it does, our renderer is probably
-        // screwed but let's just log it and continue until we can figure
-        // out a better way to handle this.
-        log.err("error resizing cells buffer err={}", .{err});
-    };
-
     // Reset our shaper cache. If our font changed (not just the size) then
     // the data in the shaper cache may be invalid and cannot be used, so we
     // always clear the cache just in case.
@@ -852,25 +842,21 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     self.font_shaper_cache.deinit(self.alloc);
     self.font_shaper_cache = font_shaper_cache;
 
-    // Reset our viewport to force a rebuild
-    self.cells_viewport = null;
-
-    // Update our uniforms
-    self.uniforms = .{
-        .projection_matrix = self.uniforms.projection_matrix,
-        .cell_size = .{
-            @floatFromInt(metrics.cell_width),
-            @floatFromInt(metrics.cell_height),
-        },
-        .grid_size = .{
-            grid_size.columns,
-            grid_size.rows,
-        },
-        .grid_padding = self.uniforms.grid_padding,
-        .min_contrast = self.uniforms.min_contrast,
-        .cursor_pos = self.uniforms.cursor_pos,
-        .cursor_color = self.uniforms.cursor_color,
-    };
+    // Run a screen size update since this handles a lot of our uniforms
+    // that are grid size dependent and changing the font grid can change
+    // the grid size.
+    //
+    // If the screen size isn't set, it will be eventually so that'll call
+    // the setScreenSize automatically.
+    if (self.screen_size) |size| {
+        self.setScreenSize(size, self.padding.explicit) catch |err| {
+            // The setFontGrid function can't fail but resizing our cell
+            // buffer definitely can fail. If it does, our renderer is probably
+            // screwed but let's just log it and continue until we can figure
+            // out a better way to handle this.
+            log.err("error resizing cells buffer err={}", .{err});
+        };
+    }
 }
 
 /// Update the frame data.
