@@ -345,6 +345,7 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     bold_is_bright: bool,
     min_contrast: f32,
+    padding_color: configpkg.WindowPaddingColor,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     links: link.Set,
     vsync: bool,
@@ -402,6 +403,7 @@ pub const DerivedConfig = struct {
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
             .bold_is_bright = config.@"bold-is-bright",
             .min_contrast = @floatCast(config.@"minimum-contrast"),
+            .padding_color = config.@"window-padding-color",
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()
@@ -621,6 +623,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .uniforms = .{
             .projection_matrix = undefined,
             .cell_size = undefined,
+            .grid_size = undefined,
+            .grid_padding = undefined,
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
@@ -831,15 +835,6 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     const metrics = grid.metrics;
     self.grid_metrics = metrics;
 
-    // Reset our cell contents.
-    self.cells.resize(self.alloc, self.gridSize().?) catch |err| {
-        // The setFontGrid function can't fail but resizing our cell
-        // buffer definitely can fail. If it does, our renderer is probably
-        // screwed but let's just log it and continue until we can figure
-        // out a better way to handle this.
-        log.err("error resizing cells buffer err={}", .{err});
-    };
-
     // Reset our shaper cache. If our font changed (not just the size) then
     // the data in the shaper cache may be invalid and cannot be used, so we
     // always clear the cache just in case.
@@ -847,20 +842,21 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     self.font_shaper_cache.deinit(self.alloc);
     self.font_shaper_cache = font_shaper_cache;
 
-    // Reset our viewport to force a rebuild
-    self.cells_viewport = null;
-
-    // Update our uniforms
-    self.uniforms = .{
-        .projection_matrix = self.uniforms.projection_matrix,
-        .cell_size = .{
-            @floatFromInt(metrics.cell_width),
-            @floatFromInt(metrics.cell_height),
-        },
-        .min_contrast = self.uniforms.min_contrast,
-        .cursor_pos = self.uniforms.cursor_pos,
-        .cursor_color = self.uniforms.cursor_color,
-    };
+    // Run a screen size update since this handles a lot of our uniforms
+    // that are grid size dependent and changing the font grid can change
+    // the grid size.
+    //
+    // If the screen size isn't set, it will be eventually so that'll call
+    // the setScreenSize automatically.
+    if (self.screen_size) |size| {
+        self.setScreenSize(size, self.padding.explicit) catch |err| {
+            // The setFontGrid function can't fail but resizing our cell
+            // buffer definitely can fail. If it does, our renderer is probably
+            // screwed but let's just log it and continue until we can figure
+            // out a better way to handle this.
+            log.err("error resizing cells buffer err={}", .{err});
+        };
+    }
 }
 
 /// Update the frame data.
@@ -1951,6 +1947,18 @@ pub fn setScreenSize(
         self.padding.explicit;
     const padded_dim = dim.subPadding(padding);
 
+    // Blank space around the grid.
+    const blank: renderer.Padding = switch (self.config.padding_color) {
+        // We can use zero padding because the backgroudn color is our
+        // clear color.
+        .background => .{},
+
+        .extend => dim.blankPadding(padding, grid_size, .{
+            .width = self.grid_metrics.cell_width,
+            .height = self.grid_metrics.cell_height,
+        }).add(padding),
+    };
+
     // Set the size of the drawable surface to the bounds
     self.layer.setProperty("drawableSize", macos.graphics.Size{
         .width = @floatFromInt(dim.width),
@@ -1969,6 +1977,16 @@ pub fn setScreenSize(
         .cell_size = .{
             @floatFromInt(self.grid_metrics.cell_width),
             @floatFromInt(self.grid_metrics.cell_height),
+        },
+        .grid_size = .{
+            grid_size.columns,
+            grid_size.rows,
+        },
+        .grid_padding = .{
+            @floatFromInt(blank.top),
+            @floatFromInt(blank.right),
+            @floatFromInt(blank.bottom),
+            @floatFromInt(blank.left),
         },
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,

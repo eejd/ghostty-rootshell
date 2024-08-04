@@ -138,10 +138,11 @@ const SetScreenSize = struct {
             return error.OpenGLUninitialized;
 
         // Apply our padding
+        const grid_size = r.gridSize(self.size);
         const padding = if (r.padding.balance)
             renderer.Padding.balanced(
                 self.size,
-                r.gridSize(self.size),
+                grid_size,
                 .{
                     .width = r.grid_metrics.cell_width,
                     .height = r.grid_metrics.cell_height,
@@ -150,6 +151,18 @@ const SetScreenSize = struct {
         else
             r.padding.explicit;
         const padded_size = self.size.subPadding(padding);
+
+        // Blank space around the grid.
+        const blank: renderer.Padding = switch (r.config.padding_color) {
+            // We can use zero padding because the backgroudn color is our
+            // clear color.
+            .background => .{},
+
+            .extend => self.size.blankPadding(padding, grid_size, .{
+                .width = r.grid_metrics.cell_width,
+                .height = r.grid_metrics.cell_height,
+            }).add(padding),
+        };
 
         log.debug("GL api: screen size padded={} screen={} grid={} cell={} padding={}", .{
             padded_size,
@@ -186,6 +199,29 @@ const SetScreenSize = struct {
                     @floatFromInt(padded_size.height + padding.bottom),
                     -1 * @as(f32, @floatFromInt(padding.top)),
                 ),
+            );
+        }
+
+        // Setup our grid padding
+        {
+            const program = gl_state.cell_program;
+            const bind = try program.program.use();
+            defer bind.unbind();
+            try program.program.setUniform(
+                "grid_padding",
+                @Vector(4, f32){
+                    @floatFromInt(blank.top),
+                    @floatFromInt(blank.right),
+                    @floatFromInt(blank.bottom),
+                    @floatFromInt(blank.left),
+                },
+            );
+            try program.program.setUniform(
+                "grid_size",
+                @Vector(2, f32){
+                    @floatFromInt(grid_size.columns),
+                    @floatFromInt(grid_size.rows),
+                },
             );
         }
 
@@ -252,6 +288,7 @@ pub const DerivedConfig = struct {
     invert_selection_fg_bg: bool,
     bold_is_bright: bool,
     min_contrast: f32,
+    padding_color: configpkg.WindowPaddingColor,
     custom_shaders: std.ArrayListUnmanaged([:0]const u8),
     links: link.Set,
 
@@ -308,6 +345,7 @@ pub const DerivedConfig = struct {
             .invert_selection_fg_bg = config.@"selection-invert-fg-bg",
             .bold_is_bright = config.@"bold-is-bright",
             .min_contrast = @floatCast(config.@"minimum-contrast"),
+            .padding_color = config.@"window-padding-color",
 
             .selection_background = if (config.@"selection-background") |bg|
                 bg.toTerminalRGB()

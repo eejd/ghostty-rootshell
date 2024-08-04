@@ -34,6 +34,25 @@ pub const ScreenSize = struct {
         };
     }
 
+    /// Calculates the amount of blank space around the grid. This is possible
+    /// when padding isn't balanced.
+    ///
+    /// The "self" screen size here should be the unpadded screen.
+    pub fn blankPadding(self: ScreenSize, padding: Padding, grid: GridSize, cell: CellSize) Padding {
+        const grid_width = grid.columns * cell.width;
+        const grid_height = grid.rows * cell.height;
+        const padded_width = grid_width + (padding.left + padding.right);
+        const padded_height = grid_height + (padding.top + padding.bottom);
+        const leftover_width = self.width - padded_width;
+        const leftover_height = self.height - padded_height;
+        return .{
+            .top = 0,
+            .bottom = leftover_height,
+            .right = leftover_width,
+            .left = 0,
+        };
+    }
+
     /// Returns true if two sizes are equal.
     pub fn equals(self: ScreenSize, other: ScreenSize) bool {
         return self.width == other.width and self.height == other.height;

@@ -3,6 +3,8 @@ using namespace metal;
 struct Uniforms {
   float4x4 projection_matrix;
   float2 cell_size;
+  ushort2 grid_size;
+  float4 grid_padding;
   float min_contrast;
   ushort2 cursor_pos;
   uchar4 cursor_color;
@@ -97,6 +99,21 @@ vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
   // Scaled cell size for the cell width
   float2 cell_size_scaled = uniforms.cell_size;
   cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
+
+  // If we're at the edge of the grid, we add our padding to the background
+  // to extend it. Note: grid_padding is top/right/bottom/left.
+  if (input.grid_pos.y == 0) {
+    cell_pos.y -= uniforms.grid_padding.r;
+    cell_size_scaled.y += uniforms.grid_padding.r;
+  } else if (input.grid_pos.y == uniforms.grid_size.y - 1) {
+    cell_size_scaled.y += uniforms.grid_padding.b;
+  }
+  if (input.grid_pos.x == 0) {
+    cell_pos.x -= uniforms.grid_padding.a;
+    cell_size_scaled.x += uniforms.grid_padding.a;
+  } else if (input.grid_pos.x == uniforms.grid_size.x - 1) {
+    cell_size_scaled.x += uniforms.grid_padding.g;
+  }
 
   // Turn the cell position into a vertex point depending on the
   // vertex ID. Since we use instanced drawing, we have 4 vertices

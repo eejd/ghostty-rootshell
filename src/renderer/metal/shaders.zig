@@ -106,20 +106,31 @@ pub const Image = extern struct {
 
 /// The uniforms that are passed to the terminal cell shader.
 pub const Uniforms = extern struct {
+    // Note: all of the explicit aligmnments are copied from the
+    // MSL developer reference just so that we can be sure that we got
+    // it all exactly right.
+
     /// The projection matrix for turning world coordinates to normalized.
     /// This is calculated based on the size of the screen.
-    projection_matrix: math.Mat,
+    projection_matrix: math.Mat align(16),
 
     /// Size of a single cell in pixels, unscaled.
-    cell_size: [2]f32,
+    cell_size: [2]f32 align(8),
+
+    /// Size of the grid in columns and rows.
+    grid_size: [2]u16 align(4),
+
+    /// The padding around the terminal grid in pixels. In order:
+    /// top, right, bottom, left.
+    grid_padding: [4]f32 align(16),
 
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.
-    min_contrast: f32,
+    min_contrast: f32 align(4),
 
     /// The cursor position and color.
-    cursor_pos: [2]u16,
-    cursor_color: [4]u8,
+    cursor_pos: [2]u16 align(4),
+    cursor_color: [4]u8 align(4),
 };
 
 /// The uniforms used for custom postprocess shaders.
