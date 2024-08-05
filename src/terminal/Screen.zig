@@ -1182,7 +1182,7 @@ fn resizeInternal(
     });
 
     // If we have no scrollback and we shrunk our rows, we must explicitly
-    // erase our history. This is beacuse PageList always keeps at least
+    // erase our history. This is because PageList always keeps at least
     // a page size of history.
     if (self.no_scrollback) {
         self.pages.eraseRows(.{ .history = .{} }, null);

@@ -2424,7 +2424,7 @@ fn pinIsValid(self: *const PageList, p: Pin) bool {
     return false;
 }
 
-/// Returns the viewport for the given pin, prefering to pin to
+/// Returns the viewport for the given pin, preferring to pin to
 /// "active" if the pin is within the active area.
 fn pinIsActive(self: *const PageList, p: Pin) bool {
     // If the pin is in the active page, then we can quickly determine
@@ -2519,7 +2519,7 @@ pub fn getCell(self: *const PageList, pt: point.Point) ?Cell {
 ///  124 |     | | 0
 ///  125 |Text | | 1
 ///      :  ^  : : = PIN 0
-///  126 |Wrapp… | 2
+///  126 |Wrap…  | 2
 ///      +-----+ :
 ///      +-----+ : = PAGE 1
 ///    0 …ed   | | 3
@@ -2822,7 +2822,7 @@ pub const RowIterator = struct {
     }
 };
 
-/// Create an interator that can be used to iterate all the rows in
+/// Create an iterator that can be used to iterate all the rows in
 /// a region of the screen from the given top-left. The tag of the
 /// top-left point will also determine the end of the iteration,
 /// so convert from one reference point to another to change the

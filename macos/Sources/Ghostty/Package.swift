@@ -136,7 +136,7 @@ extension Ghostty {
         /// An application is attempting to read from the clipboard using OSC 52
         case osc_52_read
 
-        /// An applciation is attempting to write to the clipboard using OSC 52
+        /// An application is attempting to write to the clipboard using OSC 52
         case osc_52_write
 
         /// The text to show in the clipboard confirmation prompt for a given request type

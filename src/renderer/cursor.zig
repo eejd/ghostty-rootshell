@@ -102,7 +102,7 @@ test "cursor: blinking disabled" {
     try testing.expect(cursorStyle(&state, false, false) == .block_hollow);
 }
 
-test "cursor: explictly not visible" {
+test "cursor: explicitly not visible" {
     const testing = std.testing;
     const alloc = testing.allocator;
     var term = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });

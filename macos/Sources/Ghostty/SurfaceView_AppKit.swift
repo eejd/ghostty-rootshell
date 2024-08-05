@@ -894,7 +894,7 @@ extension Ghostty {
                 font.release()
             }
             
-            // Ghostty coordinate system is top-left, conver to bottom-left for AppKit
+            // Ghostty coordinate system is top-left, convert to bottom-left for AppKit
             let pt = NSMakePoint(info.tl_px_x - 2, frame.size.height - info.tl_px_y + 2)
             let str = NSAttributedString.init(string: text, attributes: attributes)
             self.showDefinition(for: str, at: pt);

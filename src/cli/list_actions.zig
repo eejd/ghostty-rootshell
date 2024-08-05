@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 const help_strings = @import("help_strings");
 
 pub const Options = struct {
-    /// If `true`, print out documenation about the action associated with the
+    /// If `true`, print out documentation about the action associated with the
     /// keybinds.
     docs: bool = false,
 

@@ -231,7 +231,7 @@ fn setupBash(
     );
     try env.put("ENV", integ_dir);
 
-    // Join the acculumated arguments to form the final command string.
+    // Join the accumulated arguments to form the final command string.
     return try std.mem.join(alloc, " ", args.items);
 }
 

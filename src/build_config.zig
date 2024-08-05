@@ -11,7 +11,7 @@ const font = @import("font/main.zig");
 const rendererpkg = @import("renderer.zig");
 const WasmTarget = @import("os/wasm/target.zig").Target;
 
-/// The build configuratin options. This may not be all available options
+/// The build configurations options. This may not be all available options
 /// to `zig build` but it contains all the options that the Ghostty source
 /// needs to know about at comptime.
 ///
@@ -51,7 +51,7 @@ pub const BuildConfig = struct {
 
         // Our version. We also add the string version so we don't need
         // to do any allocations at runtime. This has to be long enough to
-        // accomodate realistic large branch names for dev versions.
+        // accommodate realistic large branch names for dev versions.
         var buf: [1024]u8 = undefined;
         step.addOption(std.SemanticVersion, "app_version", self.version);
         step.addOption([:0]const u8, "app_version_string", try std.fmt.bufPrintZ(

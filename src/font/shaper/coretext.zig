@@ -495,7 +495,7 @@ pub const Shaper = struct {
         // If this grid doesn't match the one we've cached fonts for,
         // then we reset the cache list since it's no longer valid.
         // We use an intFromPtr rather than direct pointer comparison
-        // because we don't want anyone to inadvertenly use the pointer.
+        // because we don't want anyone to inadvertently use the pointer.
         const grid_id: usize = @intFromPtr(grid);
         if (grid_id != self.cached_font_grid) {
             if (self.cached_font_grid > 0) {

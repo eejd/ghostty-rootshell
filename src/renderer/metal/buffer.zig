@@ -65,7 +65,7 @@ pub fn Buffer(comptime T: type) type {
         }
 
         /// Sync new contents to the buffer. The data is expected to be the
-        /// complete contents of the buffer. If the amont of data is larger
+        /// complete contents of the buffer. If the amount of data is larger
         /// than the buffer length, the buffer will be reallocated.
         ///
         /// If the amount of data is smaller than the buffer length, the

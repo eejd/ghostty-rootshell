@@ -21,7 +21,7 @@ const fastmem = @import("../fastmem.zig");
 /// reference count. The caller is responsible for calling release for an
 /// item when it is no longer being used. Items with 0 references will be
 /// kept until another item is written to their bucket. This allows items
-/// to be ressurected if they are re-added before they get overwritten.
+/// to be resurrected if they are re-added before they get overwritten.
 ///
 /// The backing data structure of this set is an open addressed hash table
 /// with linear probing and Robin Hood hashing, and a flat array of items.

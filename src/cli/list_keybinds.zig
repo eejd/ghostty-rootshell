@@ -11,7 +11,7 @@ pub const Options = struct {
     /// in the config file.
     default: bool = false,
 
-    /// If `true`, print out documenation about the action associated with the
+    /// If `true`, print out documentation about the action associated with the
     /// keybinds.
     docs: bool = false,
 

@@ -1205,7 +1205,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
             break :desc desc;
         };
 
-        // Prepare our color atachment (output).
+        // Prepare our color attachment (output).
         const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
         const attachment = attachments.msgSend(
             objc.Object,
@@ -1954,7 +1954,7 @@ pub fn setScreenSize(
 
     // Blank space around the grid.
     const blank: renderer.Padding = switch (self.config.padding_color) {
-        // We can use zero padding because the backgroudn color is our
+        // We can use zero padding because the background color is our
         // clear color.
         .background => .{},
 
@@ -2565,7 +2565,7 @@ fn addCursor(
     cursor_color: terminal.color.RGB,
 ) void {
     // Add the cursor. We render the cursor over the wide character if
-    // we're on the wide characer tail.
+    // we're on the wide character tail.
     const wide, const x = cell: {
         // The cursor goes over the screen cursor position.
         const cell = screen.cursor.page_cell;

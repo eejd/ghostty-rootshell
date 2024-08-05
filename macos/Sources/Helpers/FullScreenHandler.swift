@@ -55,7 +55,7 @@ class FullScreenHandler {
         // It's important to do this in two calls, because setting them in a single call guarantees
         // that the menu bar will also be hidden on any additional displays (why? nobody knows!)
         // When these options are set separately, the menu bar hiding problem will only occur in
-        // specific scenarios. More invesitgation is needed to pin these scenarios down precisely,
+        // specific scenarios. More investigation is needed to pin these scenarios down precisely,
         // but it seems to have something to do with which app had focus last.
         // Furthermore, it's much easier to figure out which screen the dock is on if the menubar
         // has not yet been hidden, so the order matters here!

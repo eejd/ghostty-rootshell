@@ -692,7 +692,7 @@ const CsiUMods = packed struct(u3) {
         return raw + 1;
     }
 
-    test "modifer sequence values" {
+    test "modifier sequence values" {
         // This is all sort of trivially seen by looking at the code but
         // we want to make sure we never regress this.
         var mods: CsiUMods = .{};
@@ -775,7 +775,7 @@ const KittyMods = packed struct(u8) {
         return raw + 1;
     }
 
-    test "modifer sequence values" {
+    test "modifier sequence values" {
         // This is all sort of trivially seen by looking at the code but
         // we want to make sure we never regress this.
         var mods: KittyMods = .{};

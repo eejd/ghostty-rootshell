@@ -267,7 +267,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
-        // covered in thie GitHub issue: https://github.com/mitchellh/ghostty/pull/376
+        // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
         // Ghostty defaults to sRGB but this can be overridden.
         switch (ghostty.config.windowColorspace) {
         case "display-p3":

@@ -285,7 +285,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
                 // because forced presentation modes are only used for emoji and
                 // emoji should always have color glyphs set. This can be
                 // more correct by using the isColorGlyph logic but I'd want
-                // to find a font that actualy requires this so we can write
+                // to find a font that actually requires this so we can write
                 // a test for it before changing it.
                 if (p) |desired_p| {
                     const traits = ct.font.getSymbolicTraits();

@@ -165,7 +165,7 @@ const SetScreenSize = struct {
 
         // Blank space around the grid.
         const blank: renderer.Padding = switch (r.config.padding_color) {
-            // We can use zero padding because the backgroudn color is our
+            // We can use zero padding because the background color is our
             // clear color.
             .background => .{},
 
@@ -1485,7 +1485,7 @@ fn addCursor(
     cursor_color: terminal.color.RGB,
 ) !?*const CellProgram.Cell {
     // Add the cursor. We render the cursor over the wide character if
-    // we're on the wide characer tail.
+    // we're on the wide character tail.
     const wide, const x = cell: {
         // The cursor goes over the screen cursor position.
         const cell = screen.cursor.page_cell;
@@ -1923,7 +1923,7 @@ fn flushAtlasSingle(
     atlas: *font.Atlas,
     modified: *usize,
     resized: *usize,
-    interal_format: gl.Texture.InternalFormat,
+    internal_format: gl.Texture.InternalFormat,
     format: gl.Texture.Format,
 ) !void {
     // If the texture isn't modified we do nothing
@@ -1941,7 +1941,7 @@ fn flushAtlasSingle(
     if (new_resized > resized.*) {
         try texbind.image2D(
             0,
-            interal_format,
+            internal_format,
             @intCast(atlas.size),
             @intCast(atlas.size),
             0,

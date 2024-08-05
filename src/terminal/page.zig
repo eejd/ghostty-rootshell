@@ -172,7 +172,7 @@ pub const Page = struct {
 
     /// The current dimensions of the page. The capacity may be larger
     /// than this. This allows us to allocate a larger page than necessary
-    /// and also to resize a page smaller witout reallocating.
+    /// and also to resize a page smaller without reallocating.
     size: Size,
 
     /// The capacity of this page. This is the full size of the backing

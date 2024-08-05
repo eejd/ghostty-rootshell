@@ -74,7 +74,7 @@ test "url regex" {
             .expect = "https://example.com",
         },
         .{
-            .input = "some file wih https://google.com https://duckduckgo.com links.",
+            .input = "some file with https://google.com https://duckduckgo.com links.",
             .expect = "https://google.com",
         },
         .{

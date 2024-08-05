@@ -565,7 +565,7 @@ fn realize(self: *Surface) !void {
         try self.core_surface.setFontSize(size);
     }
 
-    // Set the intial color scheme
+    // Set the initial color scheme
     try self.core_surface.colorSchemeCallback(self.app.getColorScheme());
 
     // Note we're realized
@@ -1222,7 +1222,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     };
 
     // When we have a realized surface, we also attach our input method context.
-    // We do this here instead of init because this allows us to relase the ref
+    // We do this here instead of init because this allows us to release the ref
     // to the GLArea when we unrealized.
     c.gtk_im_context_set_client_widget(self.im_context, @ptrCast(@alignCast(self.overlay)));
 }
@@ -1854,7 +1854,7 @@ fn gtkInputCommit(
     self.im_composing = false;
 
     // We're not in a keypress, so this was sent from an on-screen emoji
-    // keyboard or someting like that. Send the characters directly to
+    // keyboard or something like that. Send the characters directly to
     // the surface.
     _ = self.core_surface.keyCallback(.{
         .action = .press,

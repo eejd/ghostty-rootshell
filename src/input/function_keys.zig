@@ -275,7 +275,7 @@ fn cursorKey(
 /// format should have exactly one "hole" for the mods code.
 /// Example: "\x1b[11;{}~" for F1.
 fn pcStyle(comptime fmt: []const u8) []Entry {
-    // The comptime {} wrapper is superflous but it prevents us from
+    // The comptime {} wrapper is superfluous but it prevents us from
     // accidentally running this function at runtime.
     comptime {
         var entries: [modifiers.len]Entry = undefined;

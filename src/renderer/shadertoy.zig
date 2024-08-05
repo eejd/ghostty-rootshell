@@ -42,7 +42,7 @@ pub fn loadFromFile(
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Load the shader fiel
+    // Load the shader file
     const cwd = std.fs.cwd();
     const file = try cwd.openFile(path, .{});
     defer file.close();
