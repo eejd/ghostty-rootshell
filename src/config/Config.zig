@@ -49,7 +49,15 @@ const c = @cImport({
 /// font. This is particularly useful for multiple languages, symbolic fonts,
 /// etc.
 ///
-/// If e.g. font-family-bold is not set, font-family is used as a default.
+/// The specific styles (bold, italic, bold italic) do not need to be
+/// explicitly set. If a style is not set, then the regular style (font-family)
+/// will be searched for stylistic variants. If an italic style is not found,
+/// Ghostty will auto-italicize the regular style by applying a slant. If
+/// a bold style is not found, Ghostty will look for another monospace
+/// font.
+///
+/// You can disable styles completely by using the `font-style` set of
+/// configurations. See the documentation for `font-style` for more information.
 ///
 /// If you want to overwrite a previous set value rather than append a fallback,
 /// specify the value as `""` (empty string) to reset the list and then set the
