@@ -650,10 +650,28 @@ class: ?[:0]const u8 = null,
 /// "unconsumed:ctrl+a=reload_config"
 keybind: Keybinds = .{},
 
-/// Window padding. This applies padding between the terminal cells and the
-/// window border. The `x` option applies to the left and right padding and the
-/// `y` option is top and bottom. The value is in points, meaning that it will
-/// be scaled appropriately for screen DPI.
+/// Horizontal window padding. This applies padding between the terminal cells
+/// and the left and right window borders. The value is in points, meaning that
+/// it will be scaled appropriately for screen DPI.
+///
+/// If this value is set too large, the screen will render nothing, because the
+/// grid will be completely squished by the padding. It is up to you as the user
+/// to pick a reasonable value. If you pick an unreasonable value, a warning
+/// will appear in the logs.
+///
+/// Changing this configuration at runtime will only affect new terminals, i.e.
+/// new windows, tabs, etc.
+///
+/// To set a different left and right padding, specify two numerical values
+/// separated by a comma. For example, `window-padding-x = 2,4` will set the
+/// left padding to 2 and the right padding to 4. If you want to set both
+/// paddings to the same value, you can use a single value. For example,
+/// `window-padding-x = 2` will set both paddings to 2.
+@"window-padding-x": WindowPadding = .{ .top_left = 2, .bottom_right = 2 },
+
+/// Vertical window padding. This applies padding between the terminal cells and
+/// the top and bottom window borders. The value is in points, meaning that it
+/// will be scaled appropriately for screen DPI.
 ///
 /// If this value is set too large, the screen will render nothing, because the
 /// grid will be completely squished by the padding. It is up to you as the user
@@ -662,8 +680,13 @@ keybind: Keybinds = .{},
 ///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
-@"window-padding-x": u32 = 2,
-@"window-padding-y": u32 = 2,
+///
+/// To set a different top and bottom padding, specify two numerical values
+/// separated by a comma. For example, `window-padding-y = 2,4` will set the
+/// top padding to 2 and the bottom padding to 4. If you want to set both
+/// paddings to the same value, you can use a single value. For example,
+/// `window-padding-y = 2` will set both paddings to 2.
+@"window-padding-y": WindowPadding = .{ .top_left = 2, .bottom_right = 2 },
 
 /// The viewport dimensions are usually not perfectly divisible by the cell
 /// size. In this case, some extra padding on the end of a column and the bottom
@@ -4011,6 +4034,99 @@ pub const Duration = struct {
                 i += 1;
             }
         }
+    }
+};
+
+pub const WindowPadding = struct {
+    const Self = @This();
+
+    top_left: u32 = 0,
+    bottom_right: u32 = 0,
+
+    pub fn clone(self: Self, _: Allocator) !Self {
+        return self;
+    }
+
+    pub fn equal(self: Self, other: Self) bool {
+        return std.meta.eql(self, other);
+    }
+
+    pub fn parseCLI(input_: ?[]const u8) !WindowPadding {
+        const input = input_ orelse return error.ValueRequired;
+        const whitespace = " \t";
+
+        if (std.mem.indexOf(u8, input, ",")) |idx| {
+            const input_left = std.mem.trim(u8, input[0..idx], whitespace);
+            const input_right = std.mem.trim(u8, input[idx + 1 ..], whitespace);
+            const left = std.fmt.parseInt(u32, input_left, 10) catch
+                return error.InvalidValue;
+            const right = std.fmt.parseInt(u32, input_right, 10) catch
+                return error.InvalidValue;
+            return .{ .top_left = left, .bottom_right = right };
+        } else {
+            const value = std.fmt.parseInt(
+                u32,
+                std.mem.trim(u8, input, whitespace),
+                10,
+            ) catch return error.InvalidValue;
+            return .{ .top_left = value, .bottom_right = value };
+        }
+    }
+
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        var buf: [128]u8 = undefined;
+        if (self.top_left == self.bottom_right) {
+            try formatter.formatEntry(
+                []const u8,
+                std.fmt.bufPrint(
+                    &buf,
+                    "{}",
+                    .{self.top_left},
+                ) catch return error.OutOfMemory,
+            );
+        } else {
+            try formatter.formatEntry(
+                []const u8,
+                std.fmt.bufPrint(
+                    &buf,
+                    "{},{}",
+                    .{ self.top_left, self.bottom_right },
+                ) catch return error.OutOfMemory,
+            );
+        }
+    }
+
+    test "parse WindowPadding" {
+        const testing = std.testing;
+
+        {
+            const v = try WindowPadding.parseCLI("100");
+            try testing.expectEqual(WindowPadding{
+                .top_left = 100,
+                .bottom_right = 100,
+            }, v);
+        }
+
+        {
+            const v = try WindowPadding.parseCLI("100,200");
+            try testing.expectEqual(WindowPadding{
+                .top_left = 100,
+                .bottom_right = 200,
+            }, v);
+        }
+
+        // Trim whitespace
+        {
+            const v = try WindowPadding.parseCLI(" 100 , 200 ");
+            try testing.expectEqual(WindowPadding{
+                .top_left = 100,
+                .bottom_right = 200,
+            }, v);
+        }
+
+        try testing.expectError(error.ValueRequired, WindowPadding.parseCLI(null));
+        try testing.expectError(error.InvalidValue, WindowPadding.parseCLI(""));
+        try testing.expectError(error.InvalidValue, WindowPadding.parseCLI("a"));
     }
 };
 
