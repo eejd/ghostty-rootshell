@@ -1023,7 +1023,7 @@ keybind: Keybinds = .{},
 /// are scaled-up RGB values, where each component are 16 bits. This is how
 /// most terminals report these values. However, some legacy applications may
 /// require 8-bit, unscaled, components. We also support turning off reporting
-/// alltogether. The components are lowercase hex values.
+/// altogether. The components are lowercase hex values.
 ///
 /// Allowable values are:
 ///
@@ -1102,7 +1102,7 @@ keybind: Keybinds = .{},
 ///
 ///   * `visible-menu` - Use non-native macOS fullscreen, keep the menu bar visible
 ///   * `true` - Use non-native macOS fullscreen, hide the menu bar
-///   * `false` - Use native macOS fullscreeen
+///   * `false` - Use native macOS fullscreen
 ///
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
@@ -2114,7 +2114,7 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     defer file.close();
 
     // From this point onwards, we load the theme and do a bit of a dance
-    // to achive two separate goals:
+    // to achieve two separate goals:
     //
     //   (1) We want the theme to be loaded and our existing config to
     //       override the theme. So we need to load the theme and apply
@@ -2125,7 +2125,7 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     //
     // Point 2 is strictly a result of aur approach to point 1.
 
-    // Keep track of our replay length prior ot loading the theme
+    // Keep track of our replay length prior to loading the theme
     // so that we can replay the previous config to override values.
     const replay_len = self._replay_steps.items.len;
 
@@ -2719,7 +2719,7 @@ pub const Color = packed struct(u24) {
     }
 
     pub fn parseCLI(input_: ?[]const u8) !Color {
-        const input = input_ orelse return error.ValueRequred;
+        const input = input_ orelse return error.ValueRequired;
 
         if (terminal.x11_color.map.get(input)) |rgb| return .{
             .r = rgb.r,

@@ -45,7 +45,7 @@ pub const Config = struct {
 /// same priority order Ghostty would use to pick a font.
 ///
 /// The `--family` argument can be used to filter results to a specific family.
-/// The family handling is identical to the `font-familiy` set of Ghostty
+/// The family handling is identical to the `font-family` set of Ghostty
 /// configuration values, so this can be used to debug why your desired font may
 /// not be loading.
 ///

@@ -84,7 +84,7 @@ mouse: Mouse,
 ///
 /// Also note the utf8 value is not valid for this event so some unfocused
 /// release events may not send exactly the right data within Kitty keyboard
-/// events. This seems unspecificed in the spec so for now I'm okay with
+/// events. This seems unspecified in the spec so for now I'm okay with
 /// this. Plus, its only for release events where the key text is far
 /// less important.
 pressed_key: ?input.KeyEvent = null,
@@ -1262,7 +1262,7 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
 }
 
 /// Called for any key events. This handles keybindings, encoding and
-/// sending to the termianl, etc.
+/// sending to the terminal, etc.
 pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
@@ -2075,7 +2075,7 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
     if (lock) self.renderer_state.mutex.lock();
     defer if (lock) self.renderer_state.mutex.unlock();
 
-    // If thet terminal explicitly requests it then we always allow it
+    // If the terminal explicitly requests it then we always allow it
     // since we processed never/always at this point.
     switch (self.io.terminal.flags.mouse_shift_capture) {
         .false => return false,
@@ -2153,7 +2153,7 @@ pub fn mouseButtonCallback(
     self.modsChanged(mods);
 
     // This is set to true if the terminal is allowed to capture the shift
-    // modifer. Note we can do this more efficiently probably with less
+    // modifier. Note we can do this more efficiently probably with less
     // locking/unlocking but clicking isn't that frequent enough to be a
     // bottleneck.
     const shift_capture = self.mouseShiftCapture(true);
@@ -2833,7 +2833,7 @@ fn dragLeftClickDouble(
     };
 
     // If our current mouse position is before the starting position,
-    // then the seletion start is the word nearest our current position.
+    // then the selection start is the word nearest our current position.
     if (drag_pin.before(click_pin)) {
         try self.setSelection(terminal.Selection.init(
             word_current.start(),

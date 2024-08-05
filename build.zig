@@ -445,7 +445,7 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    // Documenation
+    // Documentation
     if (emit_docs) {
         try buildDocumentation(b, config);
     } else {

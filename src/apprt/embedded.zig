@@ -1765,7 +1765,7 @@ pub const CAPI = struct {
         return true;
     }
 
-    /// Complete a clipboard read request startd via the read callback.
+    /// Complete a clipboard read request started via the read callback.
     /// This can only be called once for a given request. Once it is called
     /// with a request the request pointer will be invalidated.
     export fn ghostty_surface_complete_clipboard_request(
@@ -1817,7 +1817,7 @@ pub const CAPI = struct {
             const content_scale = ptr.getContentScale() catch return null;
 
             // Get the shared font grid. We acquire a read lock to
-            // read the font face. It should not be deffered since
+            // read the font face. It should not be deferred since
             // we're loading the primary face.
             const grid = ptr.core_surface.renderer.font_grid;
             grid.lock.lockShared();

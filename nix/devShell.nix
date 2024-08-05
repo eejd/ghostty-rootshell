@@ -48,6 +48,7 @@
   alejandra,
   pandoc,
   hyperfine,
+  typos,
 }: let
   # See package.nix. Keep in sync.
   rpathLibs =
@@ -95,6 +96,7 @@ in
         # Linting
         nodePackages.prettier
         alejandra
+        typos
 
         # Testing
         parallel

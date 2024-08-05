@@ -2516,7 +2516,7 @@ fn draw_dash_vertical(
     // |     |     |
     // |           |
     // +-----------+
-    // Our dashed line should be made such that when tiled verically it
+    // Our dashed line should be made such that when tiled vertically it
     // it creates one consistent line with no uneven gap or segment sizes.
     // In order to make sure this is the case, we should have an extra gap
     // gap at the bottom.

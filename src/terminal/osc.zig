@@ -16,7 +16,7 @@ pub const Command = union(enum) {
     /// Set the window title of the terminal
     ///
     /// If title mode 0  is set text is expect to be hex encoded (i.e. utf-8
-    /// with each code unit further encoded with two hex digets).
+    /// with each code unit further encoded with two hex digits).
     ///
     /// If title mode 2 is set or the terminal is setup for unconditional
     /// utf-8 titles text is interpreted as utf-8. Else text is interpreted

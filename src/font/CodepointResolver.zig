@@ -147,7 +147,7 @@ pub fn getIndex(
     // Build our presentation mode. If we don't have an explicit presentation
     // given then we use the UCD (Unicode Character Database) to determine
     // the default presentation. Note there is some inefficiency here because
-    // we'll do this muliple times if we recurse, but this is a cached function
+    // we'll do this multiple times if we recurse, but this is a cached function
     // call higher up (GroupCache) so this should be rare.
     const p_mode: Collection.PresentationMode = if (p) |v| .{ .explicit = v } else .{
         .default = if (ziglyph.emoji.isEmojiPresentation(@intCast(cp)))

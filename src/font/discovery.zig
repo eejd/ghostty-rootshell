@@ -445,7 +445,7 @@ pub const CoreText = struct {
 
         assert(desc.codepoint > 0);
 
-        // Get our original font. This is dependent on the requestd style
+        // Get our original font. This is dependent on the requested style
         // from the descriptor.
         const original = original: {
             // In all the styles below, we try to match it but if we don't
@@ -716,7 +716,7 @@ test "descriptor hash" {
     try testing.expect(d.hashcode() != 0);
 }
 
-test "descriptor hash familiy names" {
+test "descriptor hash family names" {
     const testing = std.testing;
 
     var d1: Descriptor = .{ .family = "A" };

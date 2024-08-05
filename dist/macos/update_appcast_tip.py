@@ -68,7 +68,7 @@ if len(items) > prune_amount:
     for item in items[:-prune_amount]:
         channel.remove(item)
 
-# Create the item using some absoultely terrible XML manipulation.
+# Create the item using some absolutely terrible XML manipulation.
 item = ET.SubElement(channel, "item")
 elem = ET.SubElement(item, "title")
 elem.text = f"Build {build}"

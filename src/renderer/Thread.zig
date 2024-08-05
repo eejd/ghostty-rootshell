@@ -230,7 +230,7 @@ fn threadMain_(self: *Thread) !void {
 }
 
 fn startDrawTimer(self: *Thread) void {
-    // If our renderer doesn't suppoort animations then we never run this.
+    // If our renderer doesn't support animations then we never run this.
     if (!@hasDecl(renderer.Renderer, "hasAnimations")) return;
     if (!self.renderer.hasAnimations()) return;
     if (self.config.custom_shader_animation == .false) return;

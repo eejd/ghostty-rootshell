@@ -492,7 +492,7 @@ pub fn print(self: *Terminal, c: u21) !void {
             self.printCell(0, .spacer_tail);
         } else {
             // This is pretty broken, terminals should never be only 1-wide.
-            // We sould prevent this downstream.
+            // We should prevent this downstream.
             self.screen.cursorMarkDirty();
             self.printCell(0, .narrow);
         },
@@ -867,7 +867,7 @@ pub fn cursorLeft(self: *Terminal, count_req: usize) void {
 
         // UNDEFINED TERMINAL BEHAVIOR. This situation is not handled in xterm
         // and currently results in a crash in xterm. Given no other known
-        // terminal [to me] implements XTREVWRAP2, I decided to just mimick
+        // terminal [to me] implements XTREVWRAP2, I decided to just mimic
         // the behavior of xterm up and not including the crash by wrapping
         // up to the (0, 0) and stopping there. My reasoning is that for an
         // appropriately sized value of "count" this is the behavior that xterm

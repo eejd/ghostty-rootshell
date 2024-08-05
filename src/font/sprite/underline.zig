@@ -184,7 +184,7 @@ const Draw = struct {
             break :pos y_max - (MIN_AMPLITUDE * 2);
         };
 
-        // The full aplitude of the wave can be from the bottom to the
+        // The full amplitude of the wave can be from the bottom to the
         // underline position. We also calculate our mid y point of the wave
         const double_amplitude: f64 = @floatFromInt(y_max - pos);
         const half_amplitude: f64 = @max(1, double_amplitude / 4);

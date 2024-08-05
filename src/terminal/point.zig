@@ -16,7 +16,7 @@ pub const Tag = enum {
     /// because it includes the full height (rows) of the screen, including
     /// rows that may not be written yet. This is required because the active
     /// area is fully "addressable" by the running program (see below) whereas
-    /// the other tags are used primarliy for reading/modifying past-written
+    /// the other tags are used primarily for reading/modifying past-written
     /// data so they can't address unwritten rows.
     ///
     /// Note for those less familiar with terminal functionality: there
@@ -36,7 +36,7 @@ pub const Tag = enum {
     /// Top-left is the furthest back in the scrollback history
     /// supported by the screen and the bottom-right is the bottom-right
     /// of the last written row. Note this last point is important: the
-    /// bottom right is NOT necessarilly the same as "active" because
+    /// bottom right is NOT necessarily the same as "active" because
     /// "active" always allows referencing the full rows tall of the
     /// screen whereas "screen" only contains written rows.
     screen,

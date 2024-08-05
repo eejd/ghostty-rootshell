@@ -158,7 +158,7 @@ pub fn Stream(comptime Handler: type) type {
             return offset;
         }
 
-        /// Like nextSlice but takes one byte and is necessarilly a scalar
+        /// Like nextSlice but takes one byte and is necessarily a scalar
         /// operation that can't use SIMD. Prefer nextSlice if you can and
         /// try to get multiple bytes at once.
         pub fn next(self: *Self, c: u8) !void {
