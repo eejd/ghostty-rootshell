@@ -539,9 +539,8 @@ pub fn startQuitTimer(self: *App) void {
         const t = std.math.cast(c.guint, ms) orelse std.math.maxInt(c.guint);
         self.quit_timer = .{ .active = c.g_timeout_add(t, gtkQuitTimerExpired, self) };
     } else {
-        // If no delay is configured, we still need a 0ms timer to break out of
-        // g_main_context_iteration so that control returns to our code.
-        self.quit_timer = .{ .active = c.g_timeout_add(0, gtkQuitTimerExpired, self) };
+        // If no delay is configured, treat it as expired.
+        self.quit_timer = .{ .expired = {} };
     }
 }
 
