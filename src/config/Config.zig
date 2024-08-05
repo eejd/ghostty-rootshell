@@ -49,6 +49,8 @@ const c = @cImport({
 /// font. This is particularly useful for multiple languages, symbolic fonts,
 /// etc.
 ///
+/// If e.g. font-family-bold is not set, font-family is used as a default.
+///
 /// If you want to overwrite a previous set value rather than append a fallback,
 /// specify the value as `""` (empty string) to reset the list and then set the
 /// new values. For example:
