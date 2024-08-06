@@ -43,6 +43,9 @@ pub const Options = struct {
 ///
 /// The `--default` argument will print out all the default keybinds configured
 /// for Ghostty
+///
+/// The `--plain` flag will disable formatting and make the output more
+/// friendly fro Unix tooling. This is default when not printing to a tty.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
