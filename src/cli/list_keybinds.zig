@@ -81,6 +81,13 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     defer tty.deinit();
     var vx = try vaxis.init(alloc, .{});
     defer vx.deinit(alloc, tty.anyWriter());
+
+    // We know we are ghostty, so let's enable mode 2027. Vaxis normally does this but you need an
+    // event loop to auto-enable it.
+    vx.caps.unicode = .unicode;
+    try tty.anyWriter().writeAll(vaxis.ctlseqs.unicode_set);
+    defer tty.anyWriter().writeAll(vaxis.ctlseqs.unicode_reset) catch {};
+
     var buf_writer = tty.bufferedWriter();
     const writer = buf_writer.writer().any();
 
@@ -89,11 +96,6 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
         else => try vaxis.Tty.getWinsize(tty.fd),
     };
     try vx.resize(alloc, tty.anyWriter(), winsize);
-
-    // We know we are ghostty, so let's enable mode 2027. Vaxis normally does this but you need an
-    // event loop to auto-enable it.
-    try tty.anyWriter().writeAll(vaxis.ctlseqs.unicode_set);
-    defer tty.anyWriter().writeAll(vaxis.ctlseqs.unicode_reset) catch {};
 
     const win = vx.window();
 
