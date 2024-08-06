@@ -251,11 +251,6 @@ const c = @cImport({
 /// Any additional colors specified via background, foreground, palette, etc.
 /// will override the colors specified in the theme.
 ///
-/// This configuration can be changed at runtime, but the new theme will only
-/// affect new cells. Existing colored cells will not be updated. Therefore,
-/// after changing the theme, you should restart any running programs to ensure
-/// they get the new colors.
-///
 /// A future update will allow custom themes to be installed in certain
 /// directories.
 theme: ?[]const u8 = null,
