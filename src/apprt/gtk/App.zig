@@ -422,7 +422,7 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         &css_buf,
         fmt,
         .{
-            config.@"unfocused-split-opacity",
+            1.0 - config.@"unfocused-split-opacity",
             fill.r,
             fill.g,
             fill.b,
