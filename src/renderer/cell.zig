@@ -49,7 +49,10 @@ pub fn fgMode(
                 break :text .normal;
             }
 
-            // Special-case Powerline glyphs
+            // Special-case Powerline glyphs. They exhibit box drawing behavior
+            // and should not be constrained. They have their own special category
+            // though because they're used for other logic (i.e. disabling
+            // min contrast).
             if (isPowerline(cp)) {
                 break :text .powerline;
             }
