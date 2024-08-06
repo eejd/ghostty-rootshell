@@ -53,6 +53,7 @@ pub const CellMode = enum(u8) {
     fg = 2,
     fg_constrained = 3,
     fg_color = 7,
+    fg_powerline = 15,
 
     // Non-exhaustive because masks change it
     _,
@@ -60,6 +61,10 @@ pub const CellMode = enum(u8) {
     /// Apply a mask to the mode.
     pub fn mask(self: CellMode, m: CellMode) CellMode {
         return @enumFromInt(@intFromEnum(self) | @intFromEnum(m));
+    }
+
+    pub fn isFg(self: CellMode) bool {
+        return @intFromEnum(self) & @intFromEnum(@as(CellMode, .fg)) != 0;
     }
 };
 

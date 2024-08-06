@@ -8,6 +8,7 @@ const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
 const uint MODE_FG_CONSTRAINED = 3u;
 const uint MODE_FG_COLOR = 7u;
+const uint MODE_FG_POWERLINE = 15u;
 
 // The grid coordinates (x, y) where x < columns and y < rows
 layout (location = 0) in vec2 grid_coord;
@@ -198,6 +199,7 @@ void main() {
     case MODE_FG:
     case MODE_FG_CONSTRAINED:
     case MODE_FG_COLOR:
+    case MODE_FG_POWERLINE:
         vec2 glyph_offset_calc = glyph_offset;
 
         // The glyph_offset.y is the y bearing, a y value that when added
@@ -227,6 +229,7 @@ void main() {
         ivec2 text_size;
         switch(mode) {
         case MODE_FG_CONSTRAINED:
+        case MODE_FG_POWERLINE:
         case MODE_FG:
             text_size = textureSize(text, 0);
             break;
@@ -242,6 +245,10 @@ void main() {
         // If we have a minimum contrast, we need to check if we need to
         // change the color of the text to ensure it has enough contrast
         // with the background.
+        // We only apply this adjustment to "normal" text with MODE_FG,
+        // since we want color glyphs to appear in their original color
+        // and Powerline glyphs to be unaffected (else parts of the line would
+        // have different colors as some parts are displayed via background colors).
         vec4 color_final = color_in / 255.0;
         if (min_contrast > 1.0 && mode == MODE_FG) {
             vec4 bg_color = bg_color_in / 255.0;

@@ -14,6 +14,10 @@ pub const FgMode = enum {
     /// size. If a glyph is larger than the cell then it must be resized
     /// to fit.
     constrained,
+
+    /// Similar to normal, but the text consists of Powerline glyphs and is
+    /// optionally exempt from padding color extension and minimum contrast requirements.
+    powerline,
 };
 
 /// Returns the appropriate foreground mode for the given cell. This is
@@ -45,10 +49,9 @@ pub fn fgMode(
                 break :text .normal;
             }
 
-            // We exempt the Powerline range from this since they exhibit
-            // box-drawing behavior and should not be constrained.
+            // Special-case Powerline glyphs
             if (isPowerline(cp)) {
-                break :text .normal;
+                break :text .powerline;
             }
 
             // If we are at the end of the screen its definitely constrained

@@ -2481,6 +2481,7 @@ fn updateCell(
             .normal => .fg,
             .color => .fg_color,
             .constrained => .fg_constrained,
+            .powerline => .fg_powerline,
         };
 
         try self.cells.add(self.alloc, .text, .{
