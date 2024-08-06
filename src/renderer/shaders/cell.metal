@@ -162,7 +162,7 @@ enum CellTextMode : uint8_t {
   MODE_TEXT_CONSTRAINED = 2u,
   MODE_TEXT_COLOR = 3u,
   MODE_TEXT_CURSOR = 4u,
-  MODE_TEXT_POWERLINE = 4u,
+  MODE_TEXT_POWERLINE = 5u,
 };
 
 struct CellTextVertexIn {
