@@ -1014,6 +1014,10 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
@@ -1093,6 +1097,7 @@ fn addDeps(
     step.root_module.addImport("opengl", opengl_dep.module("opengl"));
     step.root_module.addImport("pixman", pixman_dep.module("pixman"));
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
+    step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
