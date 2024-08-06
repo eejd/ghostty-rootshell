@@ -159,7 +159,7 @@ fn initLibrary(device: objc.Object) !objc.Object {
     const start = try std.time.Instant.now();
 
     const data = try macos.dispatch.Data.create(
-        @embedFile("../shaders/Ghostty.metallib"),
+        @embedFile("ghostty_metallib"),
         macos.dispatch.queue.getMain(),
         macos.dispatch.Data.DESTRUCTOR_DEFAULT,
     );

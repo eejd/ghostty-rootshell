@@ -16,6 +16,7 @@ const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
 const LibtoolStep = @import("src/build/LibtoolStep.zig");
 const LipoStep = @import("src/build/LipoStep.zig");
+const MetallibStep = @import("src/build/MetallibStep.zig");
 const XCFrameworkStep = @import("src/build/XCFrameworkStep.zig");
 const Version = @import("src/build/Version.zig");
 const Command = @import("src/Command.zig");
@@ -1072,6 +1073,7 @@ fn addDeps(
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().isDarwin()) {
         try @import("apple_sdk").addPaths(b, &step.root_module);
+        try addMetallib(b, step);
     }
 
     // We always need the Zig packages
@@ -1255,6 +1257,34 @@ fn addDeps(
     try addUnicodeTables(b, step);
 
     return static_libs;
+}
+
+/// Generate Metal shader library
+fn addMetallib(
+    b: *std.Build,
+    step_: ?*std.Build.Step.Compile,
+) !void {
+    // Our static state between runs. We memoize so we only compile
+    // the Metal shaders once.
+    const MetalState = struct {
+        var generated: ?std.Build.LazyPath = null;
+    };
+
+    const output = MetalState.generated orelse metal: {
+        const step = MetallibStep.create(b, .{
+            .name = "Ghostty",
+            .sources = &.{b.path("src/renderer/shaders/cell.metal")},
+        });
+
+        break :metal step.output;
+    };
+
+    if (step_) |step| {
+        output.addStepDependencies(&step.step);
+        step.root_module.addAnonymousImport("ghostty_metallib", .{
+            .root_source_file = output,
+        });
+    }
 }
 
 /// Generate help files
