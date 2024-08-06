@@ -1,3 +1,5 @@
+#include <metal_stdlib>
+
 using namespace metal;
 
 struct Uniforms {
@@ -291,6 +293,7 @@ fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
   switch (in.mode) {
+    default:
     case MODE_TEXT_CURSOR:
     case MODE_TEXT_CONSTRAINED:
     case MODE_TEXT_POWERLINE:
