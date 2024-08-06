@@ -95,8 +95,15 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     const writer = buf_writer.writer().any();
 
     const winsize: vaxis.Winsize = switch (builtin.os.tag) {
-        .windows => .{ .rows = 24, .cols = 120 }, // We use some default, it doesn't really matter
-        // for what we are doing since wrapping will occur anyways
+        // We use some default, it doesn't really matter for what
+        // we're doing because we don't do any wrapping.
+        .windows => .{
+            .rows = 24,
+            .cols = 120,
+            .x_pixel = 1024,
+            .y_pixel = 768,
+        },
+
         else => try vaxis.Tty.getWinsize(tty.fd),
     };
     try vx.resize(alloc, tty.anyWriter(), winsize);
@@ -120,7 +127,7 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     }
     std.mem.sort(Binding, bindings.items, {}, Binding.lessThan);
 
-    // Set up styles for each modifer
+    // Set up styles for each modifier
     const super_style: vaxis.Style = .{ .fg = .{ .index = 1 } };
     const ctrl_style: vaxis.Style = .{ .fg = .{ .index = 2 } };
     const alt_style: vaxis.Style = .{ .fg = .{ .index = 3 } };
