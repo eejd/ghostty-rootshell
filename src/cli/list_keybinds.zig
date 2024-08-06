@@ -92,7 +92,8 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     const writer = buf_writer.writer().any();
 
     const winsize: vaxis.Winsize = switch (builtin.os.tag) {
-        .windows => {}, // TODO from environment ($LINES and $COLUMNS)
+        .windows => .{ .rows = 24, .cols = 120 }, // We use some default, it doesn't really matter
+        // for what we are doing since wrapping will occur anyways
         else => try vaxis.Tty.getWinsize(tty.fd),
     };
     try vx.resize(alloc, tty.anyWriter(), winsize);
