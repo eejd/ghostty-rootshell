@@ -162,6 +162,7 @@ enum CellTextMode : uint8_t {
   MODE_TEXT_CONSTRAINED = 2u,
   MODE_TEXT_COLOR = 3u,
   MODE_TEXT_CURSOR = 4u,
+  MODE_TEXT_POWERLINE = 4u,
 };
 
 struct CellTextVertexIn {
@@ -263,6 +264,10 @@ vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
   // If we have a minimum contrast, we need to check if we need to
   // change the color of the text to ensure it has enough contrast
   // with the background.
+  // We only apply this adjustment to "normal" text with MODE_TEXT,
+  // since we want color glyphs to appear in their original color
+  // and Powerline glyphs to be unaffected (else parts of the line would
+  // have different colors as some parts are displayed via background colors).
   if (uniforms.min_contrast > 1.0f && input.mode == MODE_TEXT) {
     float4 bg_color = float4(input.bg_color) / 255.0f;
     out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
@@ -288,6 +293,7 @@ fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
   switch (in.mode) {
     case MODE_TEXT_CURSOR:
     case MODE_TEXT_CONSTRAINED:
+    case MODE_TEXT_POWERLINE:
     case MODE_TEXT: {
       // Normalize the texture coordinates to [0,1]
       float2 size =

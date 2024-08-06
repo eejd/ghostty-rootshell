@@ -28,6 +28,7 @@ const uint MODE_BG = 1u;
 const uint MODE_FG = 2u;
 const uint MODE_FG_CONSTRAINED = 3u;
 const uint MODE_FG_COLOR = 7u;
+const uint MODE_FG_POWERLINE = 15u;
 
 void main() {
     float a;
@@ -39,6 +40,7 @@ void main() {
 
     case MODE_FG:
     case MODE_FG_CONSTRAINED:
+    case MODE_FG_POWERLINE:
         a = texture(text, glyph_tex_coords).r;
         vec3 premult = color.rgb * color.a;
         out_FragColor = vec4(premult.rgb*a, a);

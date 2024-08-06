@@ -53,6 +53,7 @@ pub const CellMode = enum(u8) {
     fg = 2,
     fg_constrained = 3,
     fg_color = 7,
+    fg_powerline = 15,
 
     // Non-exhaustive because masks change it
     _,
@@ -60,6 +61,17 @@ pub const CellMode = enum(u8) {
     /// Apply a mask to the mode.
     pub fn mask(self: CellMode, m: CellMode) CellMode {
         return @enumFromInt(@intFromEnum(self) | @intFromEnum(m));
+    }
+
+    pub fn isFg(self: CellMode) bool {
+        // Since we use bit tricks below, we want to ensure the enum
+        // doesn't change without us looking at this logic again.
+        comptime {
+            const info = @typeInfo(CellMode).Enum;
+            std.debug.assert(info.fields.len == 5);
+        }
+
+        return @intFromEnum(self) & @intFromEnum(@as(CellMode, .fg)) != 0;
     }
 };
 

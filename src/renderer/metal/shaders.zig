@@ -319,6 +319,7 @@ pub const CellText = extern struct {
         fg_constrained = 2,
         fg_color = 3,
         cursor = 4,
+        fg_powerline = 5,
     };
 };
 
