@@ -77,8 +77,10 @@ pub fn run(alloc: Allocator) !u8 {
 
 fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     // Set up vaxis
-    var vx = try vaxis.init(alloc, .{});
     var tty = try vaxis.Tty.init();
+    defer tty.deinit();
+    var vx = try vaxis.init(alloc, .{});
+    defer vx.deinit(alloc, tty.anyWriter());
     var buf_writer = tty.bufferedWriter();
     const writer = buf_writer.writer().any();
 
