@@ -1267,29 +1267,18 @@ fn addDeps(
 /// Generate Metal shader library
 fn addMetallib(
     b: *std.Build,
-    step_: ?*std.Build.Step.Compile,
+    step: *std.Build.Step.Compile,
 ) !void {
-    // Our static state between runs. We memoize so we only compile
-    // the Metal shaders once.
-    const MetalState = struct {
-        var generated: ?std.Build.LazyPath = null;
-    };
+    const metal_step = MetallibStep.create(b, .{
+        .name = "Ghostty",
+        .target = step.root_module.resolved_target.?,
+        .sources = &.{b.path("src/renderer/shaders/cell.metal")},
+    });
 
-    const output = MetalState.generated orelse metal: {
-        const step = MetallibStep.create(b, .{
-            .name = "Ghostty",
-            .sources = &.{b.path("src/renderer/shaders/cell.metal")},
-        });
-
-        break :metal step.output;
-    };
-
-    if (step_) |step| {
-        output.addStepDependencies(&step.step);
-        step.root_module.addAnonymousImport("ghostty_metallib", .{
-            .root_source_file = output,
-        });
-    }
+    metal_step.output.addStepDependencies(&step.step);
+    step.root_module.addAnonymousImport("ghostty_metallib", .{
+        .root_source_file = metal_step.output,
+    });
 }
 
 /// Generate help files
