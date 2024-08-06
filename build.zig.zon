@@ -51,5 +51,9 @@
             .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/a34aeb1f505707a35102fe95984d4bea4a85eb3e.tar.gz",
             .hash = "12209b67d451ff9c61b2779eb22d38dab8deee49c533c5610f48cb8d0162f959be7b",
         },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis?ref=main#a8baf9ce371b89a84383130c82549bb91401d15a",
+            .hash = "12207f53d7dddd3e5ca6577fcdd137dcf1fa32c9f22cbb0911ad0701cde4095a1c4c",
+        },
     },
 }

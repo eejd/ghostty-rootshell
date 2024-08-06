@@ -133,6 +133,30 @@ pub fn parse(raw_input: []const u8) !Binding {
     };
 }
 
+/// Returns true if lhs should be sorted before rhs
+pub fn lessThan(_: void, lhs: Binding, rhs: Binding) bool {
+    const lhs_count: usize = blk: {
+        var count: usize = 0;
+        if (lhs.trigger.mods.super) count += 1;
+        if (lhs.trigger.mods.ctrl) count += 1;
+        if (lhs.trigger.mods.shift) count += 1;
+        if (lhs.trigger.mods.alt) count += 1;
+        break :blk count;
+    };
+    const rhs_count: usize = blk: {
+        var count: usize = 0;
+        if (rhs.trigger.mods.super) count += 1;
+        if (rhs.trigger.mods.ctrl) count += 1;
+        if (rhs.trigger.mods.shift) count += 1;
+        if (rhs.trigger.mods.alt) count += 1;
+        break :blk count;
+    };
+    if (lhs_count == rhs_count)
+        return lhs.trigger.mods.int() > rhs.trigger.mods.int();
+
+    return lhs_count > rhs_count;
+}
+
 /// The set of actions that a keybinding can take.
 pub const Action = union(enum) {
     /// Ignore this key combination, don't send it to the child process, just
