@@ -156,26 +156,28 @@ pub const PostUniforms = extern struct {
 
 /// Initialize the MTLLibrary. A MTLLibrary is a collection of shaders.
 fn initLibrary(device: objc.Object) !objc.Object {
-    // Hardcoded since this file isn't meant to be reusable.
-    const data = @embedFile("../shaders/cell.metal");
-    const source = try macos.foundation.String.createWithBytes(
-        data,
-        .utf8,
-        false,
+    const start = try std.time.Instant.now();
+
+    const data = try macos.dispatch.Data.create(
+        @embedFile("../shaders/Ghostty.metallib"),
+        macos.dispatch.queue.getMain(),
+        macos.dispatch.Data.DESTRUCTOR_DEFAULT,
     );
-    defer source.release();
+    defer data.release();
 
     var err: ?*anyopaque = null;
     const library = device.msgSend(
         objc.Object,
-        objc.sel("newLibraryWithSource:options:error:"),
+        objc.sel("newLibraryWithData:error:"),
         .{
-            source,
-            @as(?*anyopaque, null),
+            data,
             &err,
         },
     );
     try checkError(err);
+
+    const end = try std.time.Instant.now();
+    log.debug("shader library loaded time={}us", .{end.since(start) / std.time.ns_per_us});
 
     return library;
 }
