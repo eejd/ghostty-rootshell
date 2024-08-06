@@ -123,6 +123,8 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     const alt_style: vaxis.Style = .{ .fg = .{ .index = 3 } };
     const shift_style: vaxis.Style = .{ .fg = .{ .index = 4 } };
 
+    var longest_col: usize = 0;
+
     // Print the list
     for (bindings.items) |bind| {
         win.clear();
@@ -155,6 +157,8 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
         // nice alignment no matter what was printed for mods
         _ = try win.printSegment(.{ .text = key }, .{ .col_offset = result.col });
 
+        if (longest_col < result.col) longest_col = result.col;
+
         const action = try std.fmt.allocPrint(alloc, "{}", .{bind.action});
         // If our action has an argument, we print the argument in a different color
         if (std.mem.indexOfScalar(u8, action, ':')) |idx| {
@@ -162,9 +166,9 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
                 .{ .text = action[0..idx] },
                 .{ .text = action[idx .. idx + 1], .style = .{ .dim = true } },
                 .{ .text = action[idx + 1 ..], .style = .{ .fg = .{ .index = 5 } } },
-            }, .{ .col_offset = result.col + widest_key + 2 });
+            }, .{ .col_offset = longest_col + widest_key + 2 });
         } else {
-            _ = try win.printSegment(.{ .text = action }, .{ .col_offset = result.col + widest_key + 2 });
+            _ = try win.printSegment(.{ .text = action }, .{ .col_offset = longest_col + widest_key + 2 });
         }
         try vx.prettyPrint(writer);
     }
