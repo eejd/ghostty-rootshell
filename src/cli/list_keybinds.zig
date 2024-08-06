@@ -57,8 +57,13 @@ pub fn run(alloc: Allocator) !u8 {
     defer config.deinit();
 
     const stdout = std.io.getStdOut();
+
+    const can_pretty_print = switch (builtin.os.tag) {
+        .ios, .tvos, .watchos => false,
+        else => true,
+    };
     // Despite being under the posix namespace, this also works on Windows as of zig 0.13.0
-    if (std.posix.isatty(stdout.handle) and !opts.plain) {
+    if (can_pretty_print and !opts.plain and std.posix.isatty(stdout.handle)) {
         return prettyPrint(alloc, config.keybind);
     } else {
         try config.keybind.formatEntryDocs(
