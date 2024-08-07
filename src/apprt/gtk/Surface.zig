@@ -935,6 +935,10 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
     self.updateTitleLabels();
 }
 
+pub fn getTitle(self: *Surface) ?[:0]const u8 {
+    return self.title_text;
+}
+
 pub fn setMouseShape(
     self: *Surface,
     shape: terminal.MouseShape,

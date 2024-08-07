@@ -24,6 +24,13 @@ const log = std.log.scoped(.stream);
 /// do something else.
 const debug = false;
 
+pub const ReportStyle = enum {
+    csi_14_t,
+    csi_16_t,
+    csi_18_t,
+    csi_21_t,
+};
+
 /// Returns a type that can process a stream of tty control characters.
 /// This will call various callback functions on type T. Type T only has to
 /// implement the callbacks it cares about; any unimplemented callbacks will
@@ -1109,6 +1116,75 @@ pub fn Stream(comptime Handler: type) type {
                     ),
                 },
 
+                // XTWINOPS
+                't' => switch (input.intermediates.len) {
+                    0 => {
+                        if (input.params.len > 0) {
+                            switch (input.params[0]) {
+                                14 => if (input.params.len == 1) {
+                                    // report the text area size in pixels
+                                    if (@hasDecl(T, "sendReport")) {
+                                        self.handler.sendReport(.csi_14_t);
+                                    } else log.warn(
+                                        "ignoring unimplemented CSI 14 t",
+                                        .{},
+                                    );
+                                } else log.warn(
+                                    "ignoring CSI 14 t with extra parameters: {}",
+                                    .{input},
+                                ),
+                                16 => if (input.params.len == 1) {
+                                    // report cell size in pixels
+                                    if (@hasDecl(T, "sendReport")) {
+                                        self.handler.sendReport(.csi_16_t);
+                                    } else log.warn(
+                                        "ignoring unimplemented CSI 16 t",
+                                        .{},
+                                    );
+                                } else log.warn(
+                                    "ignoring CSI 16 t with extra parameters: {s}",
+                                    .{input},
+                                ),
+                                18 => if (input.params.len == 1) {
+                                    // report screen size in characters
+                                    if (@hasDecl(T, "sendReport")) {
+                                        self.handler.sendReport(.csi_18_t);
+                                    } else log.warn(
+                                        "ignoring unimplemented CSI 18 t",
+                                        .{},
+                                    );
+                                } else log.warn(
+                                    "ignoring CSI 18 t with extra parameters: {s}",
+                                    .{input},
+                                ),
+                                21 => if (input.params.len == 1) {
+                                    // report window title
+                                    if (@hasDecl(T, "sendReport")) {
+                                        self.handler.sendReport(.csi_21_t);
+                                    } else log.warn(
+                                        "ignoring unimplemented CSI 21 t",
+                                        .{},
+                                    );
+                                } else log.warn(
+                                    "ignoring CSI 21 t with extra parameters: {s}",
+                                    .{input},
+                                ),
+                                else => log.warn(
+                                    "ignoring CSI t with unimplemented parameter: {s}",
+                                    .{input},
+                                ),
+                            }
+                        } else log.err(
+                            "ignoring CSI t with no parameters: {s}",
+                            .{input},
+                        );
+                    },
+                    else => log.warn(
+                        "ignoring unimplemented CSI t with intermediates: {s}",
+                        .{input},
+                    ),
+                },
+
                 'u' => switch (input.intermediates.len) {
                     0 => if (@hasDecl(T, "restoreCursor"))
                         try self.handler.restoreCursor()
@@ -2046,4 +2122,43 @@ test "stream: csi param too long" {
 
     var s: Stream(H) = .{ .handler = .{} };
     try s.nextSlice("\x1B[1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111C");
+}
+
+test "stream: send report with CSI t" {
+    const H = struct {
+        style: ?ReportStyle = null,
+
+        pub fn sendReport(self: *@This(), style: ReportStyle) void {
+            self.style = style;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+
+    try s.nextSlice("\x1b[14t");
+    try testing.expectEqual(ReportStyle.csi_14_t, s.handler.style);
+
+    try s.nextSlice("\x1b[16t");
+    try testing.expectEqual(ReportStyle.csi_16_t, s.handler.style);
+
+    try s.nextSlice("\x1b[18t");
+    try testing.expectEqual(ReportStyle.csi_18_t, s.handler.style);
+
+    try s.nextSlice("\x1b[21t");
+    try testing.expectEqual(ReportStyle.csi_21_t, s.handler.style);
+}
+
+test "stream: invalid CSI t" {
+    const H = struct {
+        style: ?ReportStyle = null,
+
+        pub fn sendReport(self: *@This(), style: ReportStyle) void {
+            self.style = style;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+
+    try s.nextSlice("\x1b[19t");
+    try testing.expectEqual(null, s.handler.style);
 }

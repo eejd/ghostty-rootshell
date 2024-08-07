@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 pub usingnamespace @import("sanitize.zig");
 
 const charsets = @import("charsets.zig");
-const stream = @import("stream.zig");
+pub const stream = @import("stream.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const hyperlink = @import("hyperlink.zig");

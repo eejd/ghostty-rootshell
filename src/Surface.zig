@@ -713,6 +713,26 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             try self.rt_surface.setTitle(slice);
         },
 
+        .report_title => |style| {
+            const title: ?[:0]const u8 = if (@hasDecl(apprt.runtime.Surface, "getTitle"))
+                self.rt_surface.getTitle()
+            else
+                // If the apprt does not implement getTitle, report a
+                // blank title.
+                "";
+
+            const data = switch (style) {
+                .csi_21_t => try std.fmt.allocPrint(self.alloc, "\x1b]l{s}\x1b\\", .{title orelse ""}),
+            };
+
+            self.io.queueMessage(.{
+                .write_alloc = .{
+                    .alloc = self.alloc,
+                    .data = data,
+                },
+            }, .unlocked);
+        },
+
         .set_mouse_shape => |shape| {
             log.debug("changing mouse shape: {}", .{shape});
             try self.rt_surface.setMouseShape(shape);

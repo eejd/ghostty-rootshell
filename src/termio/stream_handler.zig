@@ -598,7 +598,7 @@ pub const StreamHandler = struct {
             },
 
             .in_band_size_reports => if (enabled) self.messageWriter(.{
-                .size_report = {},
+                .size_report = .mode_2048,
             }),
 
             .mouse_event_x10 => {
@@ -1258,5 +1258,15 @@ pub const StreamHandler = struct {
         message.desktop_notification.body[body_len] = 0;
 
         self.surfaceMessageWriter(message);
+    }
+
+    /// Send a report to the pty.
+    pub fn sendReport(self: *StreamHandler, style: terminal.stream.ReportStyle) void {
+        switch (style) {
+            .csi_14_t => self.messageWriter(.{ .size_report = .csi_14_t }),
+            .csi_16_t => self.messageWriter(.{ .size_report = .csi_16_t }),
+            .csi_18_t => self.messageWriter(.{ .size_report = .csi_18_t }),
+            .csi_21_t => self.surfaceMessageWriter(.{ .report_title = .csi_21_t }),
+        }
     }
 };

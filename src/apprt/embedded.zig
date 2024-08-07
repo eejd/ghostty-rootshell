@@ -55,6 +55,9 @@ pub const App = struct {
         /// Called to set the title of the window.
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
 
+        /// Called to get the title of the window.
+        get_title: ?*const fn (SurfaceUD) callconv(.C) ?[*]const u8 = null,
+
         /// Called to set the cursor shape.
         set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
 
@@ -541,6 +544,17 @@ pub const Surface = struct {
             self.userdata,
             slice.ptr,
         );
+    }
+
+    pub fn getTitle(self: *Surface) ?[:0]const u8 {
+        const func = self.app.opts.get_title orelse {
+            log.info("runtime embedder does not support get_title", .{});
+            return null;
+        };
+
+        const result = func(self.userdata);
+        if (result == null) return null;
+        return std.mem.sliceTo(@as([*:0]const u8, @ptrCast(result.?)), 0);
     }
 
     pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {

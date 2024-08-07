@@ -18,6 +18,9 @@ pub const Message = union(enum) {
     /// of any length
     set_title: [256]u8,
 
+    /// Report the window title back to the terminal
+    report_title: ReportTitleStyle,
+
     /// Set the mouse shape.
     set_mouse_shape: terminal.MouseShape,
 
@@ -57,6 +60,10 @@ pub const Message = union(enum) {
 
     /// Report the color scheme
     report_color_scheme: void,
+
+    pub const ReportTitleStyle = enum {
+        csi_21_t,
+    };
 };
 
 /// A surface mailbox.
