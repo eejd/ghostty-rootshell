@@ -1179,7 +1179,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, self.cells.size.columns * self.cells.size.rows);
+        try self.drawCellBgs(encoder, frame);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
@@ -1503,12 +1503,7 @@ fn drawCellBgs(
     self: *Metal,
     encoder: objc.Object,
     frame: *const FrameState,
-    len: usize,
 ) !void {
-    // This triggers an assertion in the Metal API if we try to draw
-    // with an instance count of 0 so just bail.
-    if (len == 0) return;
-
     // Use our shader pipeline
     encoder.msgSend(
         void,
