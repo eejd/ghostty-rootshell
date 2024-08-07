@@ -246,7 +246,7 @@ fn initPostPipeline(
     // Get our vertex and fragment functions
     const func_vert = func_vert: {
         const str = try macos.foundation.String.createWithBytes(
-            "post_vertex",
+            "full_screen_vertex",
             .utf8,
             false,
         );
@@ -307,14 +307,13 @@ fn initPostPipeline(
 
 /// This is a single parameter for the terminal cell shader.
 pub const CellText = extern struct {
-    mode: Mode,
-    glyph_pos: [2]u32 = .{ 0, 0 },
-    glyph_size: [2]u32 = .{ 0, 0 },
-    glyph_offset: [2]i32 = .{ 0, 0 },
-    color: [4]u8,
-    bg_color: [4]u8,
-    grid_pos: [2]u16,
-    cell_width: u8,
+    glyph_pos: [2]u32 align(8) = .{ 0, 0 },
+    glyph_size: [2]u32 align(8) = .{ 0, 0 },
+    bearings: [2]i16 align(4) = .{ 0, 0 },
+    grid_pos: [2]u16 align(4),
+    color: [4]u8 align(4),
+    mode: Mode align(1),
+    constraint_width: u8 align(1) = 0,
 
     pub const Mode = enum(u8) {
         fg = 1,
@@ -323,6 +322,12 @@ pub const CellText = extern struct {
         cursor = 4,
         fg_powerline = 5,
     };
+
+    test {
+        // Minimizing the size of this struct is important,
+        // so we test it in order to be aware of any changes.
+        try std.testing.expectEqual(32, @sizeOf(CellText));
+    }
 };
 
 /// Initialize the cell render pipeline for our shader library.
@@ -367,94 +372,7 @@ fn initCellTextPipeline(device: objc.Object, library: objc.Object) !objc.Object 
 
         // Our attributes are the fields of the input
         const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "mode")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 1)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.ushort2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "grid_pos")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 2)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_pos")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 3)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uint2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_size")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 4)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.int2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "glyph_offset")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 5)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "color")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 7)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "bg_color")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 6)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellText, "cell_width")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
+        autoAttribute(CellText, attrs);
 
         // The layout describes how and when we fetch the next vertex input.
         const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
@@ -525,23 +443,14 @@ fn initCellTextPipeline(device: objc.Object, library: objc.Object) !objc.Object 
 }
 
 /// This is a single parameter for the cell bg shader.
-pub const CellBg = extern struct {
-    mode: Mode,
-    grid_pos: [2]u16,
-    color: [4]u8,
-    cell_width: u8,
-
-    pub const Mode = enum(u8) {
-        rgb = 1,
-    };
-};
+pub const CellBg = [4]u8;
 
 /// Initialize the cell background render pipeline for our shader library.
 fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     // Get our vertex and fragment functions
     const func_vert = func_vert: {
         const str = try macos.foundation.String.createWithBytes(
-            "cell_bg_vertex",
+            "full_screen_vertex",
             .utf8,
             false,
         );
@@ -585,41 +494,8 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
                 .{@as(c_ulong, 0)},
             );
 
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "mode")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 1)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.ushort2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "grid_pos")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 2)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "cell_width")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 3)},
-            );
-
             attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(CellBg, "color")));
+            attr.setProperty("offset", @as(c_ulong, 0));
             attr.setProperty("bufferIndex", @as(c_ulong, 0));
         }
 
@@ -733,50 +609,7 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
 
         // Our attributes are the fields of the input
         const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 1)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "grid_pos")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 2)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "cell_offset")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 3)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float4));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "source_rect")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 4)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.float2));
-            attr.setProperty("offset", @as(c_ulong, @offsetOf(Image, "dest_size")));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
+        autoAttribute(Image, attrs);
 
         // The layout describes how and when we fetch the next vertex input.
         const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
@@ -845,6 +678,41 @@ fn initImagePipeline(device: objc.Object, library: objc.Object) !objc.Object {
     return pipeline_state;
 }
 
+fn autoAttribute(T: type, attrs: objc.Object) void {
+    inline for (@typeInfo(T).Struct.fields, 0..) |field, i| {
+        const offset = @offsetOf(T, field.name);
+
+        const FT = switch (@typeInfo(field.type)) {
+            .Enum => |e| e.tag_type,
+            else => field.type,
+        };
+
+        const format = switch (FT) {
+            [4]u8 => mtl.MTLVertexFormat.uchar4,
+            [2]u16 => mtl.MTLVertexFormat.ushort2,
+            [2]i16 => mtl.MTLVertexFormat.short2,
+            [2]f32 => mtl.MTLVertexFormat.float2,
+            [4]f32 => mtl.MTLVertexFormat.float4,
+            [2]i32 => mtl.MTLVertexFormat.int2,
+            u32 => mtl.MTLVertexFormat.uint,
+            [2]u32 => mtl.MTLVertexFormat.uint2,
+            [4]u32 => mtl.MTLVertexFormat.uint4,
+            u8 => mtl.MTLVertexFormat.uchar,
+            else => comptime unreachable,
+        };
+
+        const attr = attrs.msgSend(
+            objc.Object,
+            objc.sel("objectAtIndexedSubscript:"),
+            .{@as(c_ulong, i)},
+        );
+
+        attr.setProperty("format", @intFromEnum(format));
+        attr.setProperty("offset", @as(c_ulong, offset));
+        attr.setProperty("bufferIndex", @as(c_ulong, 0));
+    }
+}
+
 fn checkError(err_: ?*anyopaque) !void {
     const nserr = objc.Object.fromId(err_ orelse return);
     const str = @as(
@@ -854,28 +722,4 @@ fn checkError(err_: ?*anyopaque) !void {
 
     log.err("metal error={s}", .{str.cstringPtr(.ascii).?});
     return error.MetalFailed;
-}
-
-// Intel macOS 13 doesn't like it when any field in a vertex buffer is not
-// aligned on the alignment of the struct. I don't understand it, I think
-// this must be some macOS 13 Metal GPU driver bug because it doesn't matter
-// on macOS 12 or Apple Silicon macOS 13.
-//
-// To be safe, we put this test in here.
-test "CellText offsets" {
-    const testing = std.testing;
-    const alignment = @alignOf(CellText);
-    inline for (@typeInfo(CellText).Struct.fields) |field| {
-        const offset = @offsetOf(CellText, field.name);
-        try testing.expectEqual(0, @mod(offset, alignment));
-    }
-}
-
-test "CellBg offsets" {
-    const testing = std.testing;
-    const alignment = @alignOf(CellBg);
-    inline for (@typeInfo(CellBg).Struct.fields) |field| {
-        const offset = @offsetOf(CellBg, field.name);
-        try testing.expectEqual(0, @mod(offset, alignment));
-    }
 }

@@ -64,93 +64,75 @@ float4 contrasted_color(float min, float4 fg, float4 bg) {
 }
 
 //-------------------------------------------------------------------
-// Cell Background Shader
+// Full Screen Vertex Shader
 //-------------------------------------------------------------------
-#pragma mark - Cell BG Shader
+#pragma mark - Full Screen Vertex Shader
 
-// The possible modes that a cell bg entry can take.
-enum CellBgMode : uint8_t {
-  MODE_RGB = 1u,
-};
-
-struct CellBgVertexIn {
-  // The mode for this cell.
-  uint8_t mode [[attribute(0)]];
-
-  // The grid coordinates (x, y) where x < columns and y < rows
-  ushort2 grid_pos [[attribute(1)]];
-
-  // The color. For BG modes, this is the bg color, for FG modes this is
-  // the text color. For styles, this is the color of the style.
-  uchar4 color [[attribute(3)]];
-
-  // The width of the cell in cells (i.e. 2 for double-wide).
-  uint8_t cell_width [[attribute(2)]];
-};
-
-struct CellBgVertexOut {
+struct FullScreenVertexOut {
   float4 position [[position]];
-  float4 color;
 };
 
-vertex CellBgVertexOut cell_bg_vertex(unsigned int vid [[vertex_id]],
-                                      CellBgVertexIn input [[stage_in]],
-                                      constant Uniforms& uniforms
-                                      [[buffer(1)]]) {
-  // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * float2(input.grid_pos);
+vertex FullScreenVertexOut full_screen_vertex(
+  uint vid [[vertex_id]]
+) {
+  FullScreenVertexOut out;
 
-  // Scaled cell size for the cell width
-  float2 cell_size_scaled = uniforms.cell_size;
-  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
+  float4 position;
+  position.x = (vid == 2) ? 3.0 : -1.0;
+  position.y = (vid == 0) ? -3.0 : 1.0;
+  position.zw = 1.0;
 
-  // If we're at the edge of the grid, we add our padding to the background
-  // to extend it. Note: grid_padding is top/right/bottom/left. We always
-  // extend horiziontally because there is no downside but there are various
-  // heuristics to disable vertical extension.
-  if (input.grid_pos.y == 0 && uniforms.padding_extend_top) {
-    cell_pos.y -= uniforms.grid_padding.r;
-    cell_size_scaled.y += uniforms.grid_padding.r;
-  } else if (input.grid_pos.y == uniforms.grid_size.y - 1 &&
-             uniforms.padding_extend_bottom) {
-    cell_size_scaled.y += uniforms.grid_padding.b;
-  }
-  if (input.grid_pos.x == 0) {
-    cell_pos.x -= uniforms.grid_padding.a;
-    cell_size_scaled.x += uniforms.grid_padding.a;
-  } else if (input.grid_pos.x == uniforms.grid_size.x - 1) {
-    cell_size_scaled.x += uniforms.grid_padding.g;
-  }
-
-  // Turn the cell position into a vertex point depending on the
-  // vertex ID. Since we use instanced drawing, we have 4 vertices
-  // for each corner of the cell. We can use vertex ID to determine
-  // which one we're looking at. Using this, we can use 1 or 0 to keep
-  // or discard the value for the vertex.
+  // Single triangle is clipped to viewport.
   //
-  // 0 = top-right
-  // 1 = bot-right
-  // 2 = bot-left
-  // 3 = top-left
-  float2 position;
-  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
-  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+  // X <- vid == 0: (-1, -3)
+  // |\
+  // | \
+  // |  \
+  // |###\
+  // |#+# \ `+` is (0, 0). `#`s are viewport area.
+  // |###  \
+  // X------X <- vid == 2: (3, 1)
+  // ^
+  // vid == 1: (-1, 1)
 
-  // Calculate the final position of our cell in world space.
-  // We have to add our cell size since our vertices are offset
-  // one cell up and to the left. (Do the math to verify yourself)
-  cell_pos = cell_pos + cell_size_scaled * position;
-
-  CellBgVertexOut out;
-  out.color = float4(input.color) / 255.0f;
-  out.position =
-      uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
+  out.position = position;
 
   return out;
 }
 
-fragment float4 cell_bg_fragment(CellBgVertexOut in [[stage_in]]) {
-  return in.color;
+//-------------------------------------------------------------------
+// Cell Background Shader
+//-------------------------------------------------------------------
+#pragma mark - Cell BG Shader
+
+fragment float4 cell_bg_fragment(
+  FullScreenVertexOut in [[stage_in]],
+  constant uchar4 *cells [[buffer(0)]],
+  constant Uniforms& uniforms [[buffer(1)]]
+) {
+  int2 grid_pos = int2((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size);
+
+  // Clamp x position, extends edge bg colors in to padding on sides.
+  grid_pos.x = clamp(grid_pos.x, 0, uniforms.grid_size.x - 1);
+
+  // Clamp y position if we should extend, otherwise discard if out of bounds.
+  if (grid_pos.y < 0) {
+    if (uniforms.padding_extend_top) {
+      grid_pos.y = 0;
+    } else {
+      return float4(0.0);
+    }
+  }
+  if (grid_pos.y > uniforms.grid_size.y - 1) {
+    if (uniforms.padding_extend_bottom) {
+      grid_pos.y = uniforms.grid_size.y - 1;
+    } else {
+      return float4(0.0);
+    }
+  }
+
+  // Retrieve color for cell and return it.
+  return float4(cells[grid_pos.y * uniforms.grid_size.x + grid_pos.x]) / 255.0;
 }
 
 //-------------------------------------------------------------------
@@ -168,51 +150,43 @@ enum CellTextMode : uint8_t {
 };
 
 struct CellTextVertexIn {
-  // The mode for this cell.
-  uint8_t mode [[attribute(0)]];
+  // The position of the glyph in the texture (x, y)
+  uint2 glyph_pos [[attribute(0)]];
+
+  // The size of the glyph in the texture (w, h)
+  uint2 glyph_size [[attribute(1)]];
+
+  // The left and top bearings for the glyph (x, y)
+  int2 bearings [[attribute(2)]];
 
   // The grid coordinates (x, y) where x < columns and y < rows
-  ushort2 grid_pos [[attribute(1)]];
-
-  // The width of the cell in cells (i.e. 2 for double-wide).
-  uint8_t cell_width [[attribute(6)]];
+  ushort2 grid_pos [[attribute(3)]];
 
   // The color of the rendered text glyph.
-  uchar4 color [[attribute(5)]];
+  uchar4 color [[attribute(4)]];
 
-  // The background color of the cell. This is used to determine if
-  // we need to render the text with a different color to ensure
-  // contrast.
-  uchar4 bg_color [[attribute(7)]];
+  // The mode for this cell.
+  uint8_t mode [[attribute(5)]];
 
-  // The position of the glyph in the texture (x,y)
-  uint2 glyph_pos [[attribute(2)]];
-
-  // The size of the glyph in the texture (w,h)
-  uint2 glyph_size [[attribute(3)]];
-
-  // The left and top bearings for the glyph (x,y)
-  int2 glyph_offset [[attribute(4)]];
+  // The width to constrain the glyph to, in cells, or 0 for no constraint.
+  uint8_t constraint_width [[attribute(6)]];
 };
 
 struct CellTextVertexOut {
   float4 position [[position]];
-  float2 cell_size;
   uint8_t mode;
   float4 color;
   float2 tex_coord;
 };
 
-vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
-                                          CellTextVertexIn input [[stage_in]],
-                                          constant Uniforms& uniforms
-                                          [[buffer(1)]]) {
-  // Convert the grid x,y into world space x, y by accounting for cell size
-  float2 cell_pos = uniforms.cell_size * float2(input.grid_pos);
-
-  // Scaled cell size for the cell width
-  float2 cell_size_scaled = uniforms.cell_size;
-  cell_size_scaled.x = cell_size_scaled.x * input.cell_width;
+vertex CellTextVertexOut cell_text_vertex(
+  uint vid [[vertex_id]],
+  CellTextVertexIn in [[stage_in]],
+  constant Uniforms& uniforms [[buffer(1)]],
+  constant uchar4 *bg_colors [[buffer(2)]]
+) {
+  // Convert the grid x, y into world space x, y by accounting for cell size
+  float2 cell_pos = uniforms.cell_size * float2(in.grid_pos);
 
   // Turn the cell position into a vertex point depending on the
   // vertex ID. Since we use instanced drawing, we have 4 vertices
@@ -224,44 +198,68 @@ vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
   // 1 = bot-right
   // 2 = bot-left
   // 3 = top-left
-  float2 position;
-  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
-  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+  float2 corner;
+  corner.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
+  corner.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
 
   CellTextVertexOut out;
-  out.mode = input.mode;
-  out.cell_size = uniforms.cell_size;
-  out.color = float4(input.color) / 255.0f;
+  out.mode = in.mode;
+  out.color = float4(in.color) / 255.0f;
 
-  float2 glyph_size = float2(input.glyph_size);
-  float2 glyph_offset = float2(input.glyph_offset);
+  //              === Grid Cell ===
+  //
+  //    offset.x = bearings.x
+  //                  .|.
+  //                  | |
+  //                  +-------+_.
+  //                ._|       | |
+  //                | | .###. | |
+  //                | | #...# | +- bearings.y
+  //  glyph_size.y -+ | ##### | |
+  //                | | #.... | |
+  //   ^            |_| .#### |_| _.
+  //   |              |       |    +- offset.y = cell_size.y - bearings.y
+  //   .  cell_pos -> +-------+   -'
+  // +Y.                |_._|
+  //   .                  |
+  //   |             glyph_size.x
+  // 0,0--...->
+  //      +X
+  //
+  // In order to get the bottom left of the glyph, we compute an offset based
+  // on the bearings. The Y bearing is the distance from the top of the cell
+  // to the bottom of the glyph, so we subtract it from the cell height to get
+  // the y offset. The X bearing is the distance from the left of the cell to
+  // the left of the glyph, so it works as the x offset directly.
 
-  // The glyph_offset.y is the y bearing, a y value that when added
-  // to the baseline is the offset (+y is up). Our grid goes down.
-  // So we flip it with `cell_size.y - glyph_offset.y`.
-  glyph_offset.y = cell_size_scaled.y - glyph_offset.y;
+  float2 size = float2(in.glyph_size);
+  float2 offset = float2(in.bearings);
+
+  offset.y = uniforms.cell_size.y - offset.y;
 
   // If we're constrained then we need to scale the glyph.
   // We also always constrain colored glyphs since we should have
   // their scaled cell size exactly correct.
-  if (input.mode == MODE_TEXT_CONSTRAINED || input.mode == MODE_TEXT_COLOR) {
-    if (glyph_size.x > cell_size_scaled.x) {
-      float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
-      glyph_offset.y += (glyph_size.y - new_y) / 2;
-      glyph_size.y = new_y;
-      glyph_size.x = cell_size_scaled.x;
+  if (in.mode == MODE_TEXT_CONSTRAINED || in.mode == MODE_TEXT_COLOR) {
+    float max_width = uniforms.cell_size.x * in.constraint_width;
+    if (size.x > max_width) {
+      float new_y = size.y * (max_width / size.x);
+      offset.y += (size.y - new_y) / 2;
+      size.y = new_y;
+      size.x = max_width;
     }
   }
 
   // Calculate the final position of the cell which uses our glyph size
   // and glyph offset to create the correct bounding box for the glyph.
-  cell_pos = cell_pos + glyph_size * position + glyph_offset;
+  cell_pos = cell_pos + size * corner + offset;
   out.position =
       uniforms.projection_matrix * float4(cell_pos.x, cell_pos.y, 0.0f, 1.0f);
 
   // Calculate the texture coordinate in pixels. This is NOT normalized
-  // (between 0.0 and 1.0) and must be done in the fragment shader.
-  out.tex_coord = float2(input.glyph_pos) + float2(input.glyph_size) * position;
+  // (between 0.0 and 1.0), and does not need to be, since the texture will
+  // be sampled with pixel coordinate mode.
+  out.tex_coord = float2(in.glyph_pos) + float2(in.glyph_size) * corner;
 
   // If we have a minimum contrast, we need to check if we need to
   // change the color of the text to ensure it has enough contrast
@@ -270,27 +268,33 @@ vertex CellTextVertexOut cell_text_vertex(unsigned int vid [[vertex_id]],
   // since we want color glyphs to appear in their original color
   // and Powerline glyphs to be unaffected (else parts of the line would
   // have different colors as some parts are displayed via background colors).
-  if (uniforms.min_contrast > 1.0f && input.mode == MODE_TEXT) {
-    float4 bg_color = float4(input.bg_color) / 255.0f;
+  if (uniforms.min_contrast > 1.0f && in.mode == MODE_TEXT) {
+    float4 bg_color = float4(bg_colors[in.grid_pos.y * uniforms.grid_size.x + in.grid_pos.x]) / 255.0f;
     out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
   }
 
   // If this cell is the cursor cell, then we need to change the color.
-  if (input.mode != MODE_TEXT_CURSOR &&
-      input.grid_pos.x == uniforms.cursor_pos.x &&
-      input.grid_pos.y == uniforms.cursor_pos.y) {
+  if (
+    in.mode != MODE_TEXT_CURSOR &&
+    in.grid_pos.x == uniforms.cursor_pos.x &&
+    in.grid_pos.y == uniforms.cursor_pos.y
+  ) {
     out.color = float4(uniforms.cursor_color) / 255.0f;
   }
 
   return out;
 }
 
-fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
-                                   texture2d<float> textureGreyscale
-                                   [[texture(0)]],
-                                   texture2d<float> textureColor
-                                   [[texture(1)]]) {
-  constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
+fragment float4 cell_text_fragment(
+  CellTextVertexOut in [[stage_in]],
+  texture2d<float> textureGreyscale [[texture(0)]],
+  texture2d<float> textureColor [[texture(1)]]
+) {
+  constexpr sampler textureSampler(
+    coord::pixel,
+    address::clamp_to_edge,
+    filter::nearest
+  );
 
   switch (in.mode) {
     default:
@@ -298,26 +302,20 @@ fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
     case MODE_TEXT_CONSTRAINED:
     case MODE_TEXT_POWERLINE:
     case MODE_TEXT: {
-      // Normalize the texture coordinates to [0,1]
-      float2 size =
-          float2(textureGreyscale.get_width(), textureGreyscale.get_height());
-      float2 coord = in.tex_coord / size;
-
       // We premult the alpha to our whole color since our blend function
       // uses One/OneMinusSourceAlpha to avoid blurry edges.
       // We first premult our given color.
       float4 premult = float4(in.color.rgb * in.color.a, in.color.a);
+
       // Then premult the texture color
-      float a = textureGreyscale.sample(textureSampler, coord).r;
+      float a = textureGreyscale.sample(textureSampler, in.tex_coord).r;
       premult = premult * a;
+
       return premult;
     }
 
     case MODE_TEXT_COLOR: {
-      // Normalize the texture coordinates to [0,1]
-      float2 size = float2(textureColor.get_width(), textureColor.get_height());
-      float2 coord = in.tex_coord / size;
-      return textureColor.sample(textureSampler, coord);
+      return textureColor.sample(textureSampler, in.tex_coord);
     }
   }
 }
@@ -329,17 +327,17 @@ fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
 struct ImageVertexIn {
   // The grid coordinates (x, y) where x < columns and y < rows where
   // the image will be rendered. It will be rendered from the top left.
-  float2 grid_pos [[attribute(1)]];
+  float2 grid_pos [[attribute(0)]];
 
   // Offset in pixels from the top-left of the cell to make the top-left
   // corner of the image.
-  float2 cell_offset [[attribute(2)]];
+  float2 cell_offset [[attribute(1)]];
 
   // The source rectangle of the texture to sample from.
-  float4 source_rect [[attribute(3)]];
+  float4 source_rect [[attribute(2)]];
 
   // The final width/height of the image in pixels.
-  float2 dest_size [[attribute(4)]];
+  float2 dest_size [[attribute(3)]];
 };
 
 struct ImageVertexOut {
@@ -347,10 +345,12 @@ struct ImageVertexOut {
   float2 tex_coord;
 };
 
-vertex ImageVertexOut image_vertex(unsigned int vid [[vertex_id]],
-                                   ImageVertexIn input [[stage_in]],
-                                   texture2d<uint> image [[texture(0)]],
-                                   constant Uniforms& uniforms [[buffer(1)]]) {
+vertex ImageVertexOut image_vertex(
+  uint vid [[vertex_id]],
+  ImageVertexIn in [[stage_in]],
+  texture2d<uint> image [[texture(0)]],
+  constant Uniforms& uniforms [[buffer(1)]]
+) {
   // The size of the image in pixels
   float2 image_size = float2(image.get_width(), image.get_height());
 
@@ -364,22 +364,22 @@ vertex ImageVertexOut image_vertex(unsigned int vid [[vertex_id]],
   // 1 = bot-right
   // 2 = bot-left
   // 3 = top-left
-  float2 position;
-  position.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
-  position.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
+  float2 corner;
+  corner.x = (vid == 0 || vid == 1) ? 1.0f : 0.0f;
+  corner.y = (vid == 0 || vid == 3) ? 0.0f : 1.0f;
 
   // The texture coordinates start at our source x/y, then add the width/height
   // as enabled by our instance id, then normalize to [0, 1]
-  float2 tex_coord = input.source_rect.xy;
-  tex_coord += input.source_rect.zw * position;
+  float2 tex_coord = in.source_rect.xy;
+  tex_coord += in.source_rect.zw * corner;
   tex_coord /= image_size;
 
   ImageVertexOut out;
 
   // The position of our image starts at the top-left of the grid cell and
   // adds the source rect width/height components.
-  float2 image_pos = (uniforms.cell_size * input.grid_pos) + input.cell_offset;
-  image_pos += input.dest_size * position;
+  float2 image_pos = (uniforms.cell_size * in.grid_pos) + in.cell_offset;
+  image_pos += in.dest_size * corner;
 
   out.position =
       uniforms.projection_matrix * float4(image_pos.x, image_pos.y, 0.0f, 1.0f);
@@ -387,8 +387,10 @@ vertex ImageVertexOut image_vertex(unsigned int vid [[vertex_id]],
   return out;
 }
 
-fragment float4 image_fragment(ImageVertexOut in [[stage_in]],
-                               texture2d<uint> image [[texture(0)]]) {
+fragment float4 image_fragment(
+  ImageVertexOut in [[stage_in]],
+  texture2d<uint> image [[texture(0)]]
+) {
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
   // Ehhhhh our texture is in RGBA8Uint but our color attachment is
@@ -403,19 +405,3 @@ fragment float4 image_fragment(ImageVertexOut in [[stage_in]],
   return result;
 }
 
-//-------------------------------------------------------------------
-// Post Shader
-//-------------------------------------------------------------------
-#pragma mark - Post Shader
-
-struct PostVertexOut {
-  float4 position [[position]];
-};
-
-constant float2 post_pos[4] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
-
-vertex PostVertexOut post_vertex(uint id [[vertex_id]]) {
-  PostVertexOut out;
-  out.position = float4(post_pos[id], 0, 1);
-  return out;
-}

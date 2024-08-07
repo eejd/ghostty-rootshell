@@ -51,11 +51,13 @@ pub const MTLIndexType = enum(c_ulong) {
 pub const MTLVertexFormat = enum(c_ulong) {
     uchar4 = 3,
     ushort2 = 13,
+    short2 = 16,
     float2 = 29,
     float4 = 31,
     int2 = 33,
     uint = 36,
     uint2 = 37,
+    uint4 = 39,
     uchar = 45,
 };
 

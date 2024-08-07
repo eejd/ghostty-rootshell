@@ -75,22 +75,7 @@ fn ArrayListPool(comptime T: type) type {
 pub const Contents = struct {
     size: renderer.GridSize = .{ .rows = 0, .columns = 0 },
 
-    /// The ArrayListPool which holds all of the background cells. When sized
-    /// with Contents.resize the individual ArrayLists SHOULD be given enough
-    /// capacity that appendAssumeCapacity may be used, since it should be
-    /// impossible for a row to have more background cells than columns.
-    ///
-    /// HOWEVER, the initial capacity can be exceeded due to multi-glyph
-    /// composites each adding a background cell for the same position.
-    /// This should probably be considered a bug, but for now it means
-    /// that sometimes allocations might happen, so appendAssumeCapacity
-    /// MUST NOT be used.
-    ///
-    /// Rows are indexed as Contents.bg_rows[y].
-    ///
-    /// Must be initialized by calling resize on the Contents struct before
-    /// calling any operations.
-    bg_rows: ArrayListPool(mtl_shaders.CellBg) = .{},
+    bg_cells: []mtl_shaders.CellBg = undefined,
 
     /// The ArrayListPool which holds all of the foreground cells. When sized
     /// with Contents.resize the individual ArrayLists are given enough room
@@ -116,7 +101,7 @@ pub const Contents = struct {
     fg_rows: ArrayListPool(mtl_shaders.CellText) = .{},
 
     pub fn deinit(self: *Contents, alloc: Allocator) void {
-        self.bg_rows.deinit(alloc);
+        alloc.free(self.bg_cells);
         self.fg_rows.deinit(alloc);
     }
 
@@ -129,15 +114,10 @@ pub const Contents = struct {
     ) !void {
         self.size = size;
 
-        // When we create our bg_rows pool, we give the lists an initial
-        // capacity of size.columns. This is to account for the usual case
-        // where you have a row with normal text and background colors.
-        // This can be exceeded due to multi-glyph composites each adding
-        // a background cell for the same position. This should probably be
-        // considered a bug, but for now it means that sometimes allocations
-        // might happen, and appendAssumeCapacity MUST NOT be used.
-        var bg_rows = try ArrayListPool(mtl_shaders.CellBg).init(alloc, size.rows, size.columns);
-        errdefer bg_rows.deinit(alloc);
+        const cell_count = size.columns * size.rows;
+
+        const bg_cells = (try alloc.alloc(mtl_shaders.CellBg, cell_count))[0..cell_count];
+        errdefer alloc.free(bg_cells);
 
         // The foreground lists can hold 3 types of items:
         // - Glyphs
@@ -154,10 +134,10 @@ pub const Contents = struct {
         var fg_rows = try ArrayListPool(mtl_shaders.CellText).init(alloc, size.rows + 1, size.columns * 3);
         errdefer fg_rows.deinit(alloc);
 
-        self.bg_rows.deinit(alloc);
+        alloc.free(self.bg_cells);
         self.fg_rows.deinit(alloc);
 
-        self.bg_rows = bg_rows;
+        self.bg_cells = bg_cells;
         self.fg_rows = fg_rows;
 
         // We don't need 3*cols worth of cells for the cursor list, so we can
@@ -170,7 +150,7 @@ pub const Contents = struct {
 
     /// Reset the cell contents to an empty state without resizing.
     pub fn reset(self: *Contents) void {
-        self.bg_rows.reset();
+        @memset(self.bg_cells, .{ 0, 0, 0, 0 });
         self.fg_rows.reset();
     }
 
@@ -197,7 +177,7 @@ pub const Contents = struct {
         assert(y < self.size.rows);
 
         switch (key) {
-            .bg => try self.bg_rows.lists[y].append(alloc, cell),
+            .bg => comptime unreachable,
 
             .text,
             .underline,
@@ -213,7 +193,10 @@ pub const Contents = struct {
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
         assert(y < self.size.rows);
 
-        self.bg_rows.lists[y].clearRetainingCapacity();
+        for (self.bg_cells[y * self.size.columns ..][0..self.size.columns]) |*cell| {
+            cell.* = .{ 0, 0, 0, 0 };
+        }
+
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
         // correct index.
