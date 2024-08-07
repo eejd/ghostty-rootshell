@@ -1018,6 +1018,9 @@ fn addDeps(
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,
+        .libxev = false,
+        .images = false,
+        .text_input = false,
     });
 
     // Wasm we do manually since it is such a different build.
