@@ -119,6 +119,8 @@ pub const Contents = struct {
         const bg_cells = (try alloc.alloc(mtl_shaders.CellBg, cell_count))[0..cell_count];
         errdefer alloc.free(bg_cells);
 
+        @memset(bg_cells, .{0, 0, 0, 0});
+
         // The foreground lists can hold 3 types of items:
         // - Glyphs
         // - Underlines
@@ -217,47 +219,42 @@ test Contents {
 
     // We should start off empty after resizing.
     for (0..rows) |y| {
-        try testing.expect(c.bg_rows.lists[y].items.len == 0);
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        for (0..cols) |x| {
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bg_cells[y * cols + x]);
+        }
     }
     // And the cursor row should have a capacity of 1 and also be empty.
     try testing.expect(c.fg_rows.lists[0].capacity == 1);
     try testing.expect(c.fg_rows.lists[0].items.len == 0);
 
     // Add some contents.
-    const bg_cell: mtl_shaders.CellBg = .{
-        .mode = .rgb,
-        .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
-        .color = .{ 0, 0, 0, 1 },
-    };
+    const bg_cell: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell: mtl_shaders.CellText = .{
         .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
-        .bg_color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, bg_cell);
+    c.bg_cells[1 * cols + 4] = bg_cell;
     try c.add(alloc, .text, fg_cell);
-    try testing.expectEqual(bg_cell, c.bg_rows.lists[1].items[0]);
+    try testing.expectEqual(bg_cell, c.bg_cells[1 * cols + 4]);
     // The fg row index is offset by 1 because of the cursor list.
     try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
 
     // And we should be able to clear it.
     c.clear(1);
     for (0..rows) |y| {
-        try testing.expect(c.bg_rows.lists[y].items.len == 0);
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        for (0..cols) |x| {
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bg_cells[y * cols + x]);
+        }
     }
 
     // Add a cursor.
     const cursor_cell: mtl_shaders.CellText = .{
         .mode = .cursor,
         .grid_pos = .{ 2, 3 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
-        .bg_color = .{ 0, 0, 0, 1 },
     };
     c.setCursor(cursor_cell);
     try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
@@ -279,24 +276,32 @@ test "Contents clear retains other content" {
     defer c.deinit(alloc);
 
     // Set some contents
-    const cell1: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    // bg and fg cells in row 1
+    const bg_cell_1: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_1: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    const cell2: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    c.bg_cells[1 * cols + 4] = bg_cell_1;
+    try c.add(alloc, .text, fg_cell_1);
+    // bg and fg cells in row 2
+    const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_2: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 2 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, cell1);
-    try c.add(alloc, .bg, cell2);
+    c.bg_cells[2 * cols + 4] = bg_cell_2;
+    try c.add(alloc, .text, fg_cell_2);
+
+    // Clear row 1, this should leave row 2 untouched
     c.clear(1);
 
-    // Row 2 should still contain its cell.
-    try testing.expectEqual(cell2, c.bg_rows.lists[2].items[0]);
+    // Row 2 should still contain its cells.
+    try testing.expectEqual(bg_cell_2, c.bg_cells[2 * cols + 4]);
+    // Fg row index is +1 because of cursor list at start
+    try testing.expectEqual(fg_cell_2, c.fg_rows.lists[3].items[0]);
 }
 
 test "Contents clear last added content" {
@@ -311,22 +316,30 @@ test "Contents clear last added content" {
     defer c.deinit(alloc);
 
     // Set some contents
-    const cell1: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    // bg and fg cells in row 1
+    const bg_cell_1: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_1: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    const cell2: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    c.bg_cells[1 * cols + 4] = bg_cell_1;
+    try c.add(alloc, .text, fg_cell_1);
+    // bg and fg cells in row 2
+    const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_2: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 2 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, cell1);
-    try c.add(alloc, .bg, cell2);
+    c.bg_cells[2 * cols + 4] = bg_cell_2;
+    try c.add(alloc, .text, fg_cell_2);
+
+    // Clear row 2, this should leave row 1 untouched
     c.clear(2);
 
-    // Row 1 should still contain its cell.
-    try testing.expectEqual(cell1, c.bg_rows.lists[1].items[0]);
+    // Row 1 should still contain its cells.
+    try testing.expectEqual(bg_cell_1, c.bg_cells[1 * cols + 4]);
+    // Fg row index is +1 because of cursor list at start
+    try testing.expectEqual(fg_cell_1, c.fg_rows.lists[2].items[0]);
 }
