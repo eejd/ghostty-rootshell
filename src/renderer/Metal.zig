@@ -1371,9 +1371,9 @@ fn drawPostShader(
         void,
         objc.sel("drawPrimitives:vertexStart:vertexCount:"),
         .{
-            @intFromEnum(mtl.MTLPrimitiveType.triangle_strip),
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 0),
-            @as(c_ulong, 4),
+            @as(c_ulong, 3),
         },
     );
 }
