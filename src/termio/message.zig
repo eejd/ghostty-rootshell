@@ -44,7 +44,7 @@ pub const Message = union(enum) {
 
     /// Request a size report is sent to the pty ([in-band
     /// size report, mode 2048](https://gist.github.com/rockorager/e695fb2924d36b2bcf1fff4a3704bd83) and
-    /// [XTWINOPS](https://invisible-island.net/xterm/ctlseqs/ctlseqs.htmli#h4-Functions-using-CSI-_-ordered-by-the-final-character-lparen-s-rparen:CSI-Ps;Ps;Ps-t.1EB0)).
+    /// [XTWINOPS](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Functions-using-CSI-_-ordered-by-the-final-character-lparen-s-rparen:CSI-Ps;Ps;Ps-t.1EB0)).
     size_report: SizeReport,
 
     /// Clear the screen.
