@@ -21,7 +21,8 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
-const c = @import("c.zig").c;
+const cpkg = @import("c.zig");
+const c = cpkg.c;
 const x11 = @import("x11.zig");
 
 const log = std.log.scoped(.gtk_surface);
@@ -823,7 +824,7 @@ pub fn shouldClose(self: *const Surface) bool {
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
     const gtk_scale: f32 = scale: {
-        if (comptime c.gtkVersionMinimum(4, 12)) {
+        if (comptime cpkg.gtkVersionAtLeast(4, 12)) {
             const native = c.gtk_widget_get_native(@ptrCast(self.gl_area));
             const surface = c.gtk_native_get_surface(native);
             break :scale @floatCast(c.gdk_surface_get_scale(surface));

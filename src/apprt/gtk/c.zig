@@ -18,7 +18,7 @@ pub const c = @cImport({
     @cInclude("ghostty_gtk_compat.h");
 });
 
-pub fn gtkVersionMinimum(comptime major: c_int, comptime minor: c_int) bool {
+pub fn gtkVersionAtLeast(comptime major: c_int, comptime minor: c_int) bool {
     return (c.GTK_MAJOR_VERSION > major or
         (c.GTK_MAJOR_VERSION == major and c.GTK_MINOR_VERSION >= minor));
 }
