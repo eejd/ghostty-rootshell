@@ -75,6 +75,8 @@ fn ArrayListPool(comptime T: type) type {
 pub const Contents = struct {
     size: renderer.GridSize = .{ .rows = 0, .columns = 0 },
 
+    /// Flat array containing cell background colors for the terminal grid.
+    /// Index with `bg_cells[y * size.columns + x]`.
     bg_cells: []mtl_shaders.CellBg = undefined,
 
     /// The ArrayListPool which holds all of the foreground cells. When sized
