@@ -133,7 +133,7 @@ const Draw = struct {
         while (i < dot_count) : (i += 2) {
             // Ensure we never go out of bounds for the rect
             const x = @min(i * dot_width, self.width - 1);
-            const width = @min(self.width - 1 - x, dot_width);
+            const width = @min(self.width - x, dot_width);
             canvas.rect(.{
                 .x = @intCast(i * dot_width),
                 .y = @intCast(y),
@@ -154,7 +154,7 @@ const Draw = struct {
         while (i < dash_count) : (i += 2) {
             // Ensure we never go out of bounds for the rect
             const x = @min(i * dash_width, self.width - 1);
-            const width = @min(self.width - 1 - x, dash_width);
+            const width = @min(self.width - x, dash_width);
             canvas.rect(.{
                 .x = @intCast(x),
                 .y = @intCast(y),
