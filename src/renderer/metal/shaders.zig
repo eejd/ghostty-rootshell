@@ -124,9 +124,10 @@ pub const Uniforms = extern struct {
     /// top, right, bottom, left.
     grid_padding: [4]f32 align(16),
 
-    /// True if vertical padding gets the extended color of the nearest row.
-    padding_extend_top: bool align(1),
-    padding_extend_bottom: bool align(1),
+    /// Bit mask defining which directions to
+    /// extend cell colors in to the padding.
+    /// Order, LSB first: left, right, up, down
+    padding_extend: PaddingExtend align(1),
 
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.
@@ -135,6 +136,14 @@ pub const Uniforms = extern struct {
     /// The cursor position and color.
     cursor_pos: [2]u16 align(4),
     cursor_color: [4]u8 align(4),
+
+    const PaddingExtend = packed struct(u8) {
+        left: bool = false,
+        right: bool = false,
+        up: bool = false,
+        down: bool = false,
+        _padding: u4 = 0,
+    };
 };
 
 /// The uniforms used for custom postprocess shaders.

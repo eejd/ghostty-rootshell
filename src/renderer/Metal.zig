@@ -625,8 +625,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cell_size = undefined,
             .grid_size = undefined,
             .grid_padding = undefined,
-            .padding_extend_top = true,
-            .padding_extend_bottom = true,
+            .padding_extend = .{},
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
@@ -1950,16 +1949,20 @@ pub fn setScreenSize(
     const padded_dim = dim.subPadding(padding);
 
     // Blank space around the grid.
-    const blank: renderer.Padding = switch (self.config.padding_color) {
-        // We can use zero padding because the background color is our
-        // clear color.
-        .background => .{},
+    const blank: renderer.Padding = dim.blankPadding(padding, grid_size, .{
+        .width = self.grid_metrics.cell_width,
+        .height = self.grid_metrics.cell_height,
+    }).add(padding);
 
-        .extend => dim.blankPadding(padding, grid_size, .{
-            .width = self.grid_metrics.cell_width,
-            .height = self.grid_metrics.cell_height,
-        }).add(padding),
-    };
+    var padding_extend = self.uniforms.padding_extend;
+    if (self.config.padding_color == .extend) {
+        // If padding extension is enabled, we extend left and right always.
+        padding_extend.left = true;
+        padding_extend.right = true;
+    } else {
+        // Otherwise, disable all padding extension.
+        padding_extend = .{};
+    }
 
     // Set the size of the drawable surface to the bounds
     self.layer.setProperty("drawableSize", macos.graphics.Size{
@@ -1990,8 +1993,7 @@ pub fn setScreenSize(
             @floatFromInt(blank.bottom),
             @floatFromInt(blank.left),
         },
-        .padding_extend_top = old.padding_extend_top,
-        .padding_extend_bottom = old.padding_extend_bottom,
+        .padding_extend = padding_extend,
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
         .cursor_color = old.cursor_color,
@@ -2136,8 +2138,10 @@ fn rebuildCells(
         self.cells.reset();
 
         // We also reset our padding extension depending on the screen type
-        self.uniforms.padding_extend_top = screen_type == .alternate;
-        self.uniforms.padding_extend_bottom = screen_type == .alternate;
+        if (self.config.padding_color == .extend) {
+            self.uniforms.padding_extend.up = screen_type == .alternate;
+            self.uniforms.padding_extend.down = screen_type == .alternate;
+        }
     }
 
     // Go row-by-row to build the cells. We go row by row because we do
@@ -2174,10 +2178,12 @@ fn rebuildCells(
         // under certain conditions we feel are safe. This helps make some
         // scenarios look better while avoiding scenarios we know do NOT look
         // good.
-        if (y == 0 and screen_type == .primary) {
-            self.uniforms.padding_extend_top = !row.neverExtendBg();
-        } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
-            self.uniforms.padding_extend_bottom = !row.neverExtendBg();
+        if (self.config.padding_color == .extend) {
+            if (y == 0 and screen_type == .primary) {
+                self.uniforms.padding_extend.up = !row.neverExtendBg();
+            } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
+                self.uniforms.padding_extend.down = !row.neverExtendBg();
+            }
         }
 
         // Split our row into runs and shape each one.

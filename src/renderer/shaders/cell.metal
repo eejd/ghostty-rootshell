@@ -2,13 +2,19 @@
 
 using namespace metal;
 
+enum Padding : uint8_t {
+  EXTEND_LEFT = 1u,
+  EXTEND_RIGHT = 2u,
+  EXTEND_UP = 4u,
+  EXTEND_DOWN = 8u,
+};
+
 struct Uniforms {
   float4x4 projection_matrix;
   float2 cell_size;
   ushort2 grid_size;
   float4 grid_padding;
-  bool padding_extend_top;
-  bool padding_extend_bottom;
+  uint8_t padding_extend;
   float min_contrast;
   ushort2 cursor_pos;
   uchar4 cursor_color;
@@ -110,21 +116,32 @@ fragment float4 cell_bg_fragment(
   constant uchar4 *cells [[buffer(0)]],
   constant Uniforms& uniforms [[buffer(1)]]
 ) {
-  int2 grid_pos = int2((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size);
+  int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
 
   // Clamp x position, extends edge bg colors in to padding on sides.
-  grid_pos.x = clamp(grid_pos.x, 0, uniforms.grid_size.x - 1);
-
-  // Clamp y position if we should extend, otherwise discard if out of bounds.
-  if (grid_pos.y < 0) {
-    if (uniforms.padding_extend_top) {
-      grid_pos.y = 0;
+  if (grid_pos.x < 0) {
+    if (uniforms.padding_extend & EXTEND_LEFT) {
+      grid_pos.x = 0;
+    } else {
+      return float4(0.0);
+    }
+  } else if (grid_pos.x > uniforms.grid_size.x - 1) {
+    if (uniforms.padding_extend & EXTEND_RIGHT) {
+      grid_pos.x = uniforms.grid_size.x - 1;
     } else {
       return float4(0.0);
     }
   }
-  if (grid_pos.y > uniforms.grid_size.y - 1) {
-    if (uniforms.padding_extend_bottom) {
+
+  // Clamp y position if we should extend, otherwise discard if out of bounds.
+  if (grid_pos.y < 0) {
+    if (uniforms.padding_extend & EXTEND_UP) {
+      grid_pos.y = 0;
+    } else {
+      return float4(0.0);
+    }
+  } else if (grid_pos.y > uniforms.grid_size.y - 1) {
+    if (uniforms.padding_extend & EXTEND_DOWN) {
       grid_pos.y = uniforms.grid_size.y - 1;
     } else {
       return float4(0.0);
