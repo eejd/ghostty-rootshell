@@ -75,9 +75,13 @@ pub const LoadingImage = struct {
         }
 
         var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const path = posix.realpath(cmd.data, &abs_buf) catch |err| {
-            log.warn("failed to get absolute path: {}", .{err});
-            return error.InvalidData;
+        const path = switch (t.medium) {
+            .direct => unreachable, // handled above
+            .file, .temporary_file => posix.realpath(cmd.data, &abs_buf) catch |err| {
+                log.warn("failed to get absolute path: {}", .{err});
+                return error.InvalidData;
+            },
+            .shared_memory => cmd.data,
         };
 
         // Depending on the medium, load the data from the path.
@@ -98,15 +102,61 @@ pub const LoadingImage = struct {
         t: command.Transmission,
         path: []const u8,
     ) !void {
-        // We require libc for this for shm_open
-        if (comptime !builtin.link_libc) return error.UnsupportedMedium;
+        // windows is currently unsupported, does it support shm?
+        if (comptime builtin.target.os.tag == .windows) {
+            return error.UnsupportedMedium;
+        }
 
-        // Todo: support shared memory
-        _ = self;
-        _ = alloc;
-        _ = t;
-        _ = path;
-        return error.UnsupportedMedium;
+        // libc is required for shm_open
+        if (comptime !builtin.link_libc) {
+            return error.UnsupportedMedium;
+        }
+
+        // Since we're only supporting posix then max_path_bytes should
+        // be enough to stack allocate the path.
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const pathz = std.fmt.bufPrintZ(&buf, "{s}", .{path}) catch return error.InvalidData;
+
+        const fd = std.c.shm_open(pathz, @as(c_int, @bitCast(std.c.O{ .ACCMODE = .RDONLY })), 0);
+        switch (std.posix.errno(fd)) {
+            .SUCCESS => {},
+            else => |err| {
+                log.warn("unable to open shared memory {s}: {}", .{ path, err });
+                return error.InvalidData;
+            },
+        }
+        defer _ = std.c.close(fd);
+        defer _ = std.c.shm_unlink(pathz);
+
+        const stat = std.posix.fstat(fd) catch |err| {
+            log.warn("unable to fstat shared memory {s}: {}", .{ path, err });
+            return error.InvalidData;
+        };
+        if (stat.size <= 0) return error.InvalidData;
+
+        const size: usize = @intCast(stat.size);
+
+        const map = std.posix.mmap(
+            null,
+            size,
+            std.c.PROT.READ,
+            std.c.MAP{ .TYPE = .SHARED },
+            fd,
+            0,
+        ) catch |err| {
+            log.warn("unable to mmap shared memory {s}: {}", .{ path, err });
+            return error.InvalidData;
+        };
+        defer std.posix.munmap(map);
+
+        const start: usize = @intCast(t.offset);
+        const end: usize = if (t.size > 0) @min(
+            @as(usize, @intCast(t.offset)) + @as(usize, @intCast(t.size)),
+            size,
+        ) else size;
+
+        assert(self.data.items.len == 0);
+        try self.data.appendSlice(alloc, map[start..end]);
     }
 
     /// Reads the data from a temporary file and returns it. This allocates
