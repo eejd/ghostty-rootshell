@@ -118,7 +118,7 @@ pub const Contents = struct {
 
         const cell_count = size.columns * size.rows;
 
-        const bg_cells = (try alloc.alloc(mtl_shaders.CellBg, cell_count))[0..cell_count];
+        const bg_cells = try alloc.alloc(mtl_shaders.CellBg, cell_count);
         errdefer alloc.free(bg_cells);
 
         @memset(bg_cells, .{0, 0, 0, 0});
