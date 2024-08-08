@@ -195,9 +195,7 @@ pub const Contents = struct {
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
         assert(y < self.size.rows);
 
-        for (self.bg_cells[y * self.size.columns ..][0..self.size.columns]) |*cell| {
-            cell.* = .{ 0, 0, 0, 0 };
-        }
+        @memset(self.bg_cells[y * self.size.columns ..][0..self.size.columns], .{ 0, 0, 0, 0 });
 
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
