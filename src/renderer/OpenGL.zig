@@ -681,10 +681,14 @@ pub fn setFontGrid(self: *OpenGL, grid: *font.SharedGrid) void {
     self.font_shaper_cache.deinit(self.alloc);
     self.font_shaper_cache = font_shaper_cache;
 
-    // Update our grid size if we have a screen size. If we don't, its okay
-    // because this will get set when we get the screen size set.
     if (self.screen_size) |size| {
+        // Update our grid size if we have a screen size. If we don't, its okay
+        // because this will get set when we get the screen size set.
         self.grid_size = self.gridSize(size);
+
+        // Update our screen size because the font grid can affect grid
+        // metrics which update uniforms.
+        self.deferred_screen_size = .{ .size = size };
     }
 
     // Defer our GPU updates
