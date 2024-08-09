@@ -75,22 +75,13 @@ fn ArrayListPool(comptime T: type) type {
 pub const Contents = struct {
     size: renderer.GridSize = .{ .rows = 0, .columns = 0 },
 
-    /// The ArrayListPool which holds all of the background cells. When sized
-    /// with Contents.resize the individual ArrayLists SHOULD be given enough
-    /// capacity that appendAssumeCapacity may be used, since it should be
-    /// impossible for a row to have more background cells than columns.
+    /// Flat array containing cell background colors for the terminal grid.
     ///
-    /// HOWEVER, the initial capacity can be exceeded due to multi-glyph
-    /// composites each adding a background cell for the same position.
-    /// This should probably be considered a bug, but for now it means
-    /// that sometimes allocations might happen, so appendAssumeCapacity
-    /// MUST NOT be used.
+    /// Indexed as `bg_cells[row * size.columns + col]`.
     ///
-    /// Rows are indexed as Contents.bg_rows[y].
-    ///
-    /// Must be initialized by calling resize on the Contents struct before
-    /// calling any operations.
-    bg_rows: ArrayListPool(mtl_shaders.CellBg) = .{},
+    /// Prefer accessing with `Contents.bgCell(row, col).*` instead
+    /// of directly indexing in order to avoid integer size bugs.
+    bg_cells: []mtl_shaders.CellBg = undefined,
 
     /// The ArrayListPool which holds all of the foreground cells. When sized
     /// with Contents.resize the individual ArrayLists are given enough room
@@ -116,7 +107,7 @@ pub const Contents = struct {
     fg_rows: ArrayListPool(mtl_shaders.CellText) = .{},
 
     pub fn deinit(self: *Contents, alloc: Allocator) void {
-        self.bg_rows.deinit(alloc);
+        alloc.free(self.bg_cells);
         self.fg_rows.deinit(alloc);
     }
 
@@ -129,15 +120,12 @@ pub const Contents = struct {
     ) !void {
         self.size = size;
 
-        // When we create our bg_rows pool, we give the lists an initial
-        // capacity of size.columns. This is to account for the usual case
-        // where you have a row with normal text and background colors.
-        // This can be exceeded due to multi-glyph composites each adding
-        // a background cell for the same position. This should probably be
-        // considered a bug, but for now it means that sometimes allocations
-        // might happen, and appendAssumeCapacity MUST NOT be used.
-        var bg_rows = try ArrayListPool(mtl_shaders.CellBg).init(alloc, size.rows, size.columns);
-        errdefer bg_rows.deinit(alloc);
+        const cell_count = @as(usize, size.columns) * @as(usize, size.rows);
+
+        const bg_cells = try alloc.alloc(mtl_shaders.CellBg, cell_count);
+        errdefer alloc.free(bg_cells);
+
+        @memset(bg_cells, .{0, 0, 0, 0});
 
         // The foreground lists can hold 3 types of items:
         // - Glyphs
@@ -154,10 +142,10 @@ pub const Contents = struct {
         var fg_rows = try ArrayListPool(mtl_shaders.CellText).init(alloc, size.rows + 1, size.columns * 3);
         errdefer fg_rows.deinit(alloc);
 
-        self.bg_rows.deinit(alloc);
+        alloc.free(self.bg_cells);
         self.fg_rows.deinit(alloc);
 
-        self.bg_rows = bg_rows;
+        self.bg_cells = bg_cells;
         self.fg_rows = fg_rows;
 
         // We don't need 3*cols worth of cells for the cursor list, so we can
@@ -170,7 +158,7 @@ pub const Contents = struct {
 
     /// Reset the cell contents to an empty state without resizing.
     pub fn reset(self: *Contents) void {
-        self.bg_rows.reset();
+        @memset(self.bg_cells, .{ 0, 0, 0, 0 });
         self.fg_rows.reset();
     }
 
@@ -181,6 +169,12 @@ pub const Contents = struct {
         if (v) |cell| {
             self.fg_rows.lists[0].appendAssumeCapacity(cell);
         }
+    }
+
+    /// Access a background cell. Prefer this function over direct indexing
+    /// of `bg_cells` in order to avoid integer size bugs causing overflows.
+    pub inline fn bgCell(self: *Contents, row: usize, col: usize) *mtl_shaders.CellBg {
+        return &self.bg_cells[row * self.size.columns + col];
     }
 
     /// Add a cell to the appropriate list. Adding the same cell twice will
@@ -197,7 +191,7 @@ pub const Contents = struct {
         assert(y < self.size.rows);
 
         switch (key) {
-            .bg => try self.bg_rows.lists[y].append(alloc, cell),
+            .bg => comptime unreachable,
 
             .text,
             .underline,
@@ -213,7 +207,8 @@ pub const Contents = struct {
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
         assert(y < self.size.rows);
 
-        self.bg_rows.lists[y].clearRetainingCapacity();
+        @memset(self.bg_cells[@as(usize, y) * self.size.columns ..][0..self.size.columns], .{ 0, 0, 0, 0 });
+
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
         // correct index.
@@ -234,47 +229,42 @@ test Contents {
 
     // We should start off empty after resizing.
     for (0..rows) |y| {
-        try testing.expect(c.bg_rows.lists[y].items.len == 0);
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        for (0..cols) |x| {
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+        }
     }
     // And the cursor row should have a capacity of 1 and also be empty.
     try testing.expect(c.fg_rows.lists[0].capacity == 1);
     try testing.expect(c.fg_rows.lists[0].items.len == 0);
 
     // Add some contents.
-    const bg_cell: mtl_shaders.CellBg = .{
-        .mode = .rgb,
-        .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
-        .color = .{ 0, 0, 0, 1 },
-    };
+    const bg_cell: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell: mtl_shaders.CellText = .{
         .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
-        .bg_color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, bg_cell);
+    c.bgCell(1, 4).* = bg_cell;
     try c.add(alloc, .text, fg_cell);
-    try testing.expectEqual(bg_cell, c.bg_rows.lists[1].items[0]);
+    try testing.expectEqual(bg_cell, c.bgCell(1, 4).*);
     // The fg row index is offset by 1 because of the cursor list.
     try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
 
     // And we should be able to clear it.
     c.clear(1);
     for (0..rows) |y| {
-        try testing.expect(c.bg_rows.lists[y].items.len == 0);
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        for (0..cols) |x| {
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+        }
     }
 
     // Add a cursor.
     const cursor_cell: mtl_shaders.CellText = .{
         .mode = .cursor,
         .grid_pos = .{ 2, 3 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
-        .bg_color = .{ 0, 0, 0, 1 },
     };
     c.setCursor(cursor_cell);
     try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
@@ -296,24 +286,32 @@ test "Contents clear retains other content" {
     defer c.deinit(alloc);
 
     // Set some contents
-    const cell1: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    // bg and fg cells in row 1
+    const bg_cell_1: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_1: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    const cell2: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    c.bgCell(1, 4).* = bg_cell_1;
+    try c.add(alloc, .text, fg_cell_1);
+    // bg and fg cells in row 2
+    const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_2: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 2 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, cell1);
-    try c.add(alloc, .bg, cell2);
+    c.bgCell(2, 4).* = bg_cell_2;
+    try c.add(alloc, .text, fg_cell_2);
+
+    // Clear row 1, this should leave row 2 untouched
     c.clear(1);
 
-    // Row 2 should still contain its cell.
-    try testing.expectEqual(cell2, c.bg_rows.lists[2].items[0]);
+    // Row 2 should still contain its cells.
+    try testing.expectEqual(bg_cell_2, c.bgCell(2, 4).*);
+    // Fg row index is +1 because of cursor list at start
+    try testing.expectEqual(fg_cell_2, c.fg_rows.lists[3].items[0]);
 }
 
 test "Contents clear last added content" {
@@ -328,22 +326,30 @@ test "Contents clear last added content" {
     defer c.deinit(alloc);
 
     // Set some contents
-    const cell1: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    // bg and fg cells in row 1
+    const bg_cell_1: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_1: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 1 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    const cell2: mtl_shaders.CellBg = .{
-        .mode = .rgb,
+    c.bgCell(1, 4).* = bg_cell_1;
+    try c.add(alloc, .text, fg_cell_1);
+    // bg and fg cells in row 2
+    const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
+    const fg_cell_2: mtl_shaders.CellText = .{
+        .mode = .fg,
         .grid_pos = .{ 4, 2 },
-        .cell_width = 1,
         .color = .{ 0, 0, 0, 1 },
     };
-    try c.add(alloc, .bg, cell1);
-    try c.add(alloc, .bg, cell2);
+    c.bgCell(2, 4).* = bg_cell_2;
+    try c.add(alloc, .text, fg_cell_2);
+
+    // Clear row 2, this should leave row 1 untouched
     c.clear(2);
 
-    // Row 1 should still contain its cell.
-    try testing.expectEqual(cell1, c.bg_rows.lists[1].items[0]);
+    // Row 1 should still contain its cells.
+    try testing.expectEqual(bg_cell_1, c.bgCell(1, 4).*);
+    // Fg row index is +1 because of cursor list at start
+    try testing.expectEqual(fg_cell_1, c.fg_rows.lists[2].items[0]);
 }

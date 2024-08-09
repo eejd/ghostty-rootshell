@@ -625,8 +625,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cell_size = undefined,
             .grid_size = undefined,
             .grid_padding = undefined,
-            .padding_extend_top = true,
-            .padding_extend_bottom = true,
+            .padding_extend = .{},
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
@@ -1084,7 +1083,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // Setup our frame data
     try frame.uniforms.sync(self.gpu_state.device, &.{self.uniforms});
-    const bg_count = try frame.cells_bg.syncFromArrayLists(self.gpu_state.device, self.cells.bg_rows.lists);
+    try frame.cells_bg.sync(self.gpu_state.device, self.cells.bg_cells);
     const fg_count = try frame.cells.syncFromArrayLists(self.gpu_state.device, self.cells.fg_rows.lists);
 
     // If we have custom shaders, update the animation time.
@@ -1179,7 +1178,7 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
         try self.drawImagePlacements(encoder, self.image_placements.items[0..self.image_bg_end]);
 
         // Then draw background cells
-        try self.drawCellBgs(encoder, frame, bg_count);
+        try self.drawCellBgs(encoder, frame);
 
         // Then draw images under text
         try self.drawImagePlacements(encoder, self.image_placements.items[self.image_bg_end..self.image_text_end]);
@@ -1371,9 +1370,9 @@ fn drawPostShader(
         void,
         objc.sel("drawPrimitives:vertexStart:vertexCount:"),
         .{
-            @intFromEnum(mtl.MTLPrimitiveType.triangle_strip),
+            @intFromEnum(mtl.MTLPrimitiveType.triangle),
             @as(c_ulong, 0),
-            @as(c_ulong, 4),
+            @as(c_ulong, 3),
         },
     );
 }
@@ -1503,12 +1502,7 @@ fn drawCellBgs(
     self: *Metal,
     encoder: objc.Object,
     frame: *const FrameState,
-    len: usize,
 ) !void {
-    // This triggers an assertion in the Metal API if we try to draw
-    // with an instance count of 0 so just bail.
-    if (len == 0) return;
-
     // Use our shader pipeline
     encoder.msgSend(
         void,
@@ -1519,25 +1513,22 @@ fn drawCellBgs(
     // Set our buffers
     encoder.msgSend(
         void,
-        objc.sel("setVertexBuffer:offset:atIndex:"),
+        objc.sel("setFragmentBuffer:offset:atIndex:"),
         .{ frame.cells_bg.buffer.value, @as(c_ulong, 0), @as(c_ulong, 0) },
     );
     encoder.msgSend(
         void,
-        objc.sel("setVertexBuffer:offset:atIndex:"),
+        objc.sel("setFragmentBuffer:offset:atIndex:"),
         .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
     );
 
     encoder.msgSend(
         void,
-        objc.sel("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"),
+        objc.sel("drawPrimitives:vertexStart:vertexCount:"),
         .{
             @intFromEnum(mtl.MTLPrimitiveType.triangle),
-            @as(c_ulong, 6),
-            @intFromEnum(mtl.MTLIndexType.uint16),
-            self.gpu_state.instance.buffer.value,
             @as(c_ulong, 0),
-            @as(c_ulong, len),
+            @as(c_ulong, 3),
         },
     );
 }
@@ -1570,6 +1561,11 @@ fn drawCellFgs(
         void,
         objc.sel("setVertexBuffer:offset:atIndex:"),
         .{ frame.uniforms.buffer.value, @as(c_ulong, 0), @as(c_ulong, 1) },
+    );
+    encoder.msgSend(
+        void,
+        objc.sel("setVertexBuffer:offset:atIndex:"),
+        .{ frame.cells_bg.buffer.value, @as(c_ulong, 0), @as(c_ulong, 2) },
     );
     encoder.msgSend(
         void,
@@ -1953,16 +1949,20 @@ pub fn setScreenSize(
     const padded_dim = dim.subPadding(padding);
 
     // Blank space around the grid.
-    const blank: renderer.Padding = switch (self.config.padding_color) {
-        // We can use zero padding because the background color is our
-        // clear color.
-        .background => .{},
+    const blank: renderer.Padding = dim.blankPadding(padding, grid_size, .{
+        .width = self.grid_metrics.cell_width,
+        .height = self.grid_metrics.cell_height,
+    }).add(padding);
 
-        .extend => dim.blankPadding(padding, grid_size, .{
-            .width = self.grid_metrics.cell_width,
-            .height = self.grid_metrics.cell_height,
-        }).add(padding),
-    };
+    var padding_extend = self.uniforms.padding_extend;
+    if (self.config.padding_color == .extend) {
+        // If padding extension is enabled, we extend left and right always.
+        padding_extend.left = true;
+        padding_extend.right = true;
+    } else {
+        // Otherwise, disable all padding extension.
+        padding_extend = .{};
+    }
 
     // Set the size of the drawable surface to the bounds
     self.layer.setProperty("drawableSize", macos.graphics.Size{
@@ -1993,8 +1993,7 @@ pub fn setScreenSize(
             @floatFromInt(blank.bottom),
             @floatFromInt(blank.left),
         },
-        .padding_extend_top = old.padding_extend_top,
-        .padding_extend_bottom = old.padding_extend_bottom,
+        .padding_extend = padding_extend,
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
         .cursor_color = old.cursor_color,
@@ -2139,8 +2138,10 @@ fn rebuildCells(
         self.cells.reset();
 
         // We also reset our padding extension depending on the screen type
-        self.uniforms.padding_extend_top = screen_type == .alternate;
-        self.uniforms.padding_extend_bottom = screen_type == .alternate;
+        if (self.config.padding_color == .extend) {
+            self.uniforms.padding_extend.up = screen_type == .alternate;
+            self.uniforms.padding_extend.down = screen_type == .alternate;
+        }
     }
 
     // Go row-by-row to build the cells. We go row by row because we do
@@ -2177,10 +2178,12 @@ fn rebuildCells(
         // under certain conditions we feel are safe. This helps make some
         // scenarios look better while avoiding scenarios we know do NOT look
         // good.
-        if (y == 0 and screen_type == .primary) {
-            self.uniforms.padding_extend_top = !row.neverExtendBg();
-        } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
-            self.uniforms.padding_extend_bottom = !row.neverExtendBg();
+        if (self.config.padding_color == .extend) {
+            if (y == 0 and screen_type == .primary) {
+                self.uniforms.padding_extend.up = !row.neverExtendBg();
+            } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
+                self.uniforms.padding_extend.down = !row.neverExtendBg();
+            }
         }
 
         // Split our row into runs and shape each one.
@@ -2411,7 +2414,7 @@ fn updateCell(
     const alpha: u8 = if (style.flags.faint) 175 else 255;
 
     // If the cell has a background, we always draw it.
-    const bg: [4]u8 = if (colors.bg) |rgb| bg: {
+    if (colors.bg) |rgb| {
         // Determine our background alpha. If we have transparency configured
         // then this is dynamic depending on some situations. This is all
         // in an attempt to make transparency look the best for various
@@ -2440,20 +2443,16 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        try self.cells.add(self.alloc, .bg, .{
-            .mode = .rgb,
-            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .cell_width = cell.gridWidth(),
-            .color = .{ rgb.r, rgb.g, rgb.b, bg_alpha },
-        });
+        self.cells.bgCell(coord.y, coord.x).* = .{
+            rgb.r, rgb.g, rgb.b, bg_alpha,
+        };
 
-        break :bg .{ rgb.r, rgb.g, rgb.b, bg_alpha };
-    } else .{
-        self.current_background_color.r,
-        self.current_background_color.g,
-        self.current_background_color.b,
-        @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
-    };
+        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
+            self.cells.bgCell(coord.y, coord.x).* = .{
+                rgb.r, rgb.g, rgb.b, bg_alpha,
+            };
+        }
+    }
 
     // If the shaper cell has a glyph, draw it.
     if (shaper_cell.glyph_index) |glyph_index| glyph: {
@@ -2487,14 +2486,13 @@ fn updateCell(
         try self.cells.add(self.alloc, .text, .{
             .mode = mode,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .cell_width = cell.gridWidth(),
+            .constraint_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .bg_color = bg,
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{
-                render.glyph.offset_x + shaper_cell.x_offset,
-                render.glyph.offset_y + shaper_cell.y_offset,
+            .bearings = .{
+                @intCast(render.glyph.offset_x + shaper_cell.x_offset),
+                @intCast(render.glyph.offset_y + shaper_cell.y_offset),
             },
         });
     }
@@ -2524,12 +2522,14 @@ fn updateCell(
         try self.cells.add(self.alloc, .underline, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .cell_width = cell.gridWidth(),
+            .constraint_width = cell.gridWidth(),
             .color = .{ color.r, color.g, color.b, alpha },
-            .bg_color = bg,
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+            .bearings = .{
+                @intCast(render.glyph.offset_x),
+                @intCast(render.glyph.offset_y),
+            },
         });
     }
 
@@ -2547,12 +2547,14 @@ fn updateCell(
         try self.cells.add(self.alloc, .strikethrough, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .cell_width = cell.gridWidth(),
+            .constraint_width = cell.gridWidth(),
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .bg_color = bg,
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+            .bearings = .{
+                @intCast(render.glyph.offset_x),
+                @intCast(render.glyph.offset_y),
+            },
         });
     }
 
@@ -2607,12 +2609,13 @@ fn addCursor(
     self.cells.setCursor(.{
         .mode = .cursor,
         .grid_pos = .{ x, screen.cursor.y },
-        .cell_width = if (wide) 2 else 1,
         .color = .{ cursor_color.r, cursor_color.g, cursor_color.b, alpha },
-        .bg_color = .{ 0, 0, 0, 0 },
         .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
         .glyph_size = .{ render.glyph.width, render.glyph.height },
-        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+        .bearings = .{
+            @intCast(render.glyph.offset_x),
+            @intCast(render.glyph.offset_y),
+        },
     });
 }
 
@@ -2642,23 +2645,26 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    try self.cells.add(self.alloc, .bg, .{
-        .mode = .rgb,
-        .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-        .cell_width = if (cp.wide) 2 else 1,
-        .color = .{ bg.r, bg.g, bg.b, 255 },
-    });
+    self.cells.bgCell(coord.y, coord.x).* = .{
+        bg.r, bg.g, bg.b, 255,
+    };
+    if (cp.wide and coord.x < self.cells.size.columns - 1) {
+        self.cells.bgCell(coord.y, coord.x + 1).* = .{
+            bg.r, bg.g, bg.b, 255,
+        };
+    }
 
     // Add our text
     try self.cells.add(self.alloc, .text, .{
         .mode = .fg,
         .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-        .cell_width = if (cp.wide) 2 else 1,
         .color = .{ fg.r, fg.g, fg.b, 255 },
-        .bg_color = .{ bg.r, bg.g, bg.b, 255 },
         .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
         .glyph_size = .{ render.glyph.width, render.glyph.height },
-        .glyph_offset = .{ render.glyph.offset_x, render.glyph.offset_y },
+        .bearings = .{
+            @intCast(render.glyph.offset_x),
+            @intCast(render.glyph.offset_y),
+        },
     });
 }
 
