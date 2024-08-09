@@ -76,7 +76,11 @@ pub const Contents = struct {
     size: renderer.GridSize = .{ .rows = 0, .columns = 0 },
 
     /// Flat array containing cell background colors for the terminal grid.
-    /// Index with `bg_cells[y * size.columns + x]`.
+    ///
+    /// Indexed as `bg_cells[row * size.columns + col]`.
+    ///
+    /// Prefer accessing with `Contents.bgCell(row, col).*` instead
+    /// of directly indexing in order to avoid integer size bugs.
     bg_cells: []mtl_shaders.CellBg = undefined,
 
     /// The ArrayListPool which holds all of the foreground cells. When sized
@@ -167,6 +171,12 @@ pub const Contents = struct {
         }
     }
 
+    /// Access a background cell. Prefer this function over direct indexing
+    /// of `bg_cells` in order to avoid integer size bugs causing overflows.
+    pub inline fn bgCell(self: *Contents, row: usize, col: usize) *mtl_shaders.CellBg {
+        return &self.bg_cells[row * self.size.columns + col];
+    }
+
     /// Add a cell to the appropriate list. Adding the same cell twice will
     /// result in duplication in the vertex buffer. The caller should clear
     /// the corresponding row with Contents.clear to remove old cells first.
@@ -197,7 +207,7 @@ pub const Contents = struct {
     pub fn clear(self: *Contents, y: terminal.size.CellCountInt) void {
         assert(y < self.size.rows);
 
-        @memset(self.bg_cells[y * self.size.columns ..][0..self.size.columns], .{ 0, 0, 0, 0 });
+        @memset(self.bg_cells[@as(usize, y) * self.size.columns ..][0..self.size.columns], .{ 0, 0, 0, 0 });
 
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
@@ -221,7 +231,7 @@ test Contents {
     for (0..rows) |y| {
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bg_cells[y * cols + x]);
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
         }
     }
     // And the cursor row should have a capacity of 1 and also be empty.
@@ -235,9 +245,9 @@ test Contents {
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.bg_cells[1 * cols + 4] = bg_cell;
+    c.bgCell(1, 4).* = bg_cell;
     try c.add(alloc, .text, fg_cell);
-    try testing.expectEqual(bg_cell, c.bg_cells[1 * cols + 4]);
+    try testing.expectEqual(bg_cell, c.bgCell(1, 4).*);
     // The fg row index is offset by 1 because of the cursor list.
     try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
 
@@ -246,7 +256,7 @@ test Contents {
     for (0..rows) |y| {
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bg_cells[y * cols + x]);
+            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
         }
     }
 
@@ -283,7 +293,7 @@ test "Contents clear retains other content" {
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.bg_cells[1 * cols + 4] = bg_cell_1;
+    c.bgCell(1, 4).* = bg_cell_1;
     try c.add(alloc, .text, fg_cell_1);
     // bg and fg cells in row 2
     const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
@@ -292,14 +302,14 @@ test "Contents clear retains other content" {
         .grid_pos = .{ 4, 2 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.bg_cells[2 * cols + 4] = bg_cell_2;
+    c.bgCell(2, 4).* = bg_cell_2;
     try c.add(alloc, .text, fg_cell_2);
 
     // Clear row 1, this should leave row 2 untouched
     c.clear(1);
 
     // Row 2 should still contain its cells.
-    try testing.expectEqual(bg_cell_2, c.bg_cells[2 * cols + 4]);
+    try testing.expectEqual(bg_cell_2, c.bgCell(2, 4).*);
     // Fg row index is +1 because of cursor list at start
     try testing.expectEqual(fg_cell_2, c.fg_rows.lists[3].items[0]);
 }
@@ -323,7 +333,7 @@ test "Contents clear last added content" {
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.bg_cells[1 * cols + 4] = bg_cell_1;
+    c.bgCell(1, 4).* = bg_cell_1;
     try c.add(alloc, .text, fg_cell_1);
     // bg and fg cells in row 2
     const bg_cell_2: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
@@ -332,14 +342,14 @@ test "Contents clear last added content" {
         .grid_pos = .{ 4, 2 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.bg_cells[2 * cols + 4] = bg_cell_2;
+    c.bgCell(2, 4).* = bg_cell_2;
     try c.add(alloc, .text, fg_cell_2);
 
     // Clear row 2, this should leave row 1 untouched
     c.clear(2);
 
     // Row 1 should still contain its cells.
-    try testing.expectEqual(bg_cell_1, c.bg_cells[1 * cols + 4]);
+    try testing.expectEqual(bg_cell_1, c.bgCell(1, 4).*);
     // Fg row index is +1 because of cursor list at start
     try testing.expectEqual(fg_cell_1, c.fg_rows.lists[2].items[0]);
 }

@@ -2443,12 +2443,12 @@ fn updateCell(
             break :bg_alpha @intFromFloat(bg_alpha);
         };
 
-        self.cells.bg_cells[coord.y * self.cells.size.columns + coord.x] = .{
+        self.cells.bgCell(coord.y, coord.x).* = .{
             rgb.r, rgb.g, rgb.b, bg_alpha,
         };
 
         if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            self.cells.bg_cells[coord.y * self.cells.size.columns + coord.x + 1] = .{
+            self.cells.bgCell(coord.y, coord.x).* = .{
                 rgb.r, rgb.g, rgb.b, bg_alpha,
             };
         }
@@ -2645,11 +2645,11 @@ fn addPreeditCell(
     };
 
     // Add our opaque background cell
-    self.cells.bg_cells[coord.y * self.cells.size.columns + coord.x] = .{
+    self.cells.bgCell(coord.y, coord.x).* = .{
         bg.r, bg.g, bg.b, 255,
     };
     if (cp.wide and coord.x < self.cells.size.columns - 1) {
-        self.cells.bg_cells[coord.y * self.cells.size.columns + coord.x + 1] = .{
+        self.cells.bgCell(coord.y, coord.x + 1).* = .{
             bg.r, bg.g, bg.b, 255,
         };
     }
