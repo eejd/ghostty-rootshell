@@ -482,50 +482,6 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     };
     defer func_frag.msgSend(void, objc.sel("release"), .{});
 
-    // Create the vertex descriptor. The vertex descriptor describes the
-    // data layout of the vertex inputs. We use indexed (or "instanced")
-    // rendering, so this makes it so that each instance gets a single
-    // Cell as input.
-    const vertex_desc = vertex_desc: {
-        const desc = init: {
-            const Class = objc.getClass("MTLVertexDescriptor").?;
-            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-            break :init id_init;
-        };
-
-        // Our attributes are the fields of the input
-        const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
-        {
-            const attr = attrs.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            attr.setProperty("format", @intFromEnum(mtl.MTLVertexFormat.uchar4));
-            attr.setProperty("offset", @as(c_ulong, 0));
-            attr.setProperty("bufferIndex", @as(c_ulong, 0));
-        }
-
-        // The layout describes how and when we fetch the next vertex input.
-        const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
-        {
-            const layout = layouts.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            // Access each Cell per instance, not per vertex.
-            layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
-            layout.setProperty("stride", @as(c_ulong, @sizeOf(CellBg)));
-        }
-
-        break :vertex_desc desc;
-    };
-    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
-
     // Create our descriptor
     const desc = init: {
         const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
@@ -538,7 +494,6 @@ fn initCellBgPipeline(device: objc.Object, library: objc.Object) !objc.Object {
     // Set our properties
     desc.setProperty("vertexFunction", func_vert);
     desc.setProperty("fragmentFunction", func_frag);
-    desc.setProperty("vertexDescriptor", vertex_desc);
 
     // Set our color attachment
     const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
