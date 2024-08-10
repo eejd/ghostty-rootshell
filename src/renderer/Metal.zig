@@ -1955,13 +1955,19 @@ pub fn setScreenSize(
     }).add(padding);
 
     var padding_extend = self.uniforms.padding_extend;
-    if (self.config.padding_color == .extend) {
-        // If padding extension is enabled, we extend left and right always.
-        padding_extend.left = true;
-        padding_extend.right = true;
-    } else {
-        // Otherwise, disable all padding extension.
-        padding_extend = .{};
+    switch (self.config.padding_color) {
+        .extend => {
+            // If padding extension is enabled, we extend left and right always
+            // because there is no downside to this. Up/down is dependent
+            // on some heuristics (see rebuildCells).
+            padding_extend.left = true;
+            padding_extend.right = true;
+        },
+
+        else => {
+            // Otherwise, disable all padding extension.
+            padding_extend = .{};
+        },
     }
 
     // Set the size of the drawable surface to the bounds
@@ -2138,9 +2144,12 @@ fn rebuildCells(
         self.cells.reset();
 
         // We also reset our padding extension depending on the screen type
-        if (self.config.padding_color == .extend) {
-            self.uniforms.padding_extend.up = screen_type == .alternate;
-            self.uniforms.padding_extend.down = screen_type == .alternate;
+        switch (self.config.padding_color) {
+            .background => {},
+            .extend => {
+                self.uniforms.padding_extend.up = screen_type == .alternate;
+                self.uniforms.padding_extend.down = screen_type == .alternate;
+            },
         }
     }
 

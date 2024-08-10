@@ -712,10 +712,9 @@ keybind: Keybinds = .{},
 /// * The nearest row is a prompt row (requires shell integration). The
 ///   thinking here is that prompts often contain powerline glyphs that
 ///   do not look good extended.
+/// * The nearest row contains a perfect fit powerline character. These
+///   don't look good extended.
 ///
-/// The default value is "extend". This allows for smooth resizing of a
-/// terminal grid without having visible empty areas around the edge. The edge
-/// cells may appear slightly larger due to the extension.
 @"window-padding-color": WindowPaddingColor = .background,
 
 /// Synchronize rendering with the screen refresh rate. If true, this will
