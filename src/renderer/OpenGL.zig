@@ -1172,6 +1172,8 @@ pub fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
+    _ = screen_type;
+
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
     self.cells.clearRetainingCapacity();
@@ -1216,12 +1218,7 @@ pub fn rebuildCells(
         switch (self.config.padding_color) {
             .background => {},
 
-            .extend => {
-                self.padding_extend_top = screen_type == .alternate;
-                self.padding_extend_bottom = screen_type == .alternate;
-            },
-
-            .@"extend-always" => {
+            .extend, .@"extend-always" => {
                 self.padding_extend_top = true;
                 self.padding_extend_bottom = true;
             },
@@ -1283,9 +1280,9 @@ pub fn rebuildCells(
             .background, .@"extend-always" => {},
 
             // Apply heuristics for padding extension.
-            .extend => if (y == 0 and screen_type == .primary) {
+            .extend => if (y == 0) {
                 self.padding_extend_top = !row.neverExtendBg();
-            } else if (y == self.grid_size.rows - 1 and screen_type == .primary) {
+            } else if (y == self.grid_size.rows - 1) {
                 self.padding_extend_bottom = !row.neverExtendBg();
             },
         }

@@ -2118,6 +2118,8 @@ fn rebuildCells(
     //     std.log.warn("[rebuildCells time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
     // }
 
+    _ = screen_type; // we might use this again later so not deleting it yet
+
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
     defer arena.deinit();
@@ -2154,12 +2156,9 @@ fn rebuildCells(
         switch (self.config.padding_color) {
             .background => {},
 
-            .extend => {
-                self.uniforms.padding_extend.up = screen_type == .alternate;
-                self.uniforms.padding_extend.down = screen_type == .alternate;
-            },
-
-            .@"extend-always" => {
+            // For extension, assume we are extending in all directions.
+            // For "extend" this may be disabled due to heuristics below.
+            .extend, .@"extend-always" => {
                 self.uniforms.padding_extend = .{
                     .up = true,
                     .down = true,
@@ -2209,9 +2208,9 @@ fn rebuildCells(
             .background, .@"extend-always" => {},
 
             // Apply heuristics for padding extension.
-            .extend => if (y == 0 and screen_type == .primary) {
+            .extend => if (y == 0) {
                 self.uniforms.padding_extend.up = !row.neverExtendBg();
-            } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
+            } else if (y == self.cells.size.rows - 1) {
                 self.uniforms.padding_extend.down = !row.neverExtendBg();
             },
         }
