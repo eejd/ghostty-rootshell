@@ -701,6 +701,8 @@ keybind: Keybinds = .{},
 ///
 /// * `background` - The background color specified in `background`.
 /// * `extend` - Extend the background color of the nearest grid cell.
+/// * `extend-always` - Same as "extend" but always extends without applying
+///   any of the heuristics that disable extending noted below.
 ///
 /// The "extend" value will be disabled in certain scenarios. On primary
 /// screen applications (i.e. not something like Neovim), the color will not
@@ -712,11 +714,10 @@ keybind: Keybinds = .{},
 /// * The nearest row is a prompt row (requires shell integration). The
 ///   thinking here is that prompts often contain powerline glyphs that
 ///   do not look good extended.
+/// * The nearest row contains a perfect fit powerline character. These
+///   don't look good extended.
 ///
-/// The default value is "extend". This allows for smooth resizing of a
-/// terminal grid without having visible empty areas around the edge. The edge
-/// cells may appear slightly larger due to the extension.
-@"window-padding-color": WindowPaddingColor = .background,
+@"window-padding-color": WindowPaddingColor = .extend,
 
 /// Synchronize rendering with the screen refresh rate. If true, this will
 /// minimize tearing and align redraws with the screen but may cause input
@@ -2730,6 +2731,7 @@ pub const OptionAsAlt = enum {
 pub const WindowPaddingColor = enum {
     background,
     extend,
+    @"extend-always",
 };
 
 /// Color represents a color using RGB.

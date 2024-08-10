@@ -1955,13 +1955,26 @@ pub fn setScreenSize(
     }).add(padding);
 
     var padding_extend = self.uniforms.padding_extend;
-    if (self.config.padding_color == .extend) {
-        // If padding extension is enabled, we extend left and right always.
-        padding_extend.left = true;
-        padding_extend.right = true;
-    } else {
-        // Otherwise, disable all padding extension.
-        padding_extend = .{};
+    switch (self.config.padding_color) {
+        .extend => {
+            // If padding extension is enabled, we extend left and right always
+            // because there is no downside to this. Up/down is dependent
+            // on some heuristics (see rebuildCells).
+            padding_extend.left = true;
+            padding_extend.right = true;
+        },
+
+        .@"extend-always" => {
+            padding_extend.up = true;
+            padding_extend.down = true;
+            padding_extend.left = true;
+            padding_extend.right = true;
+        },
+
+        .background => {
+            // Otherwise, disable all padding extension.
+            padding_extend = .{};
+        },
     }
 
     // Set the size of the drawable surface to the bounds
@@ -2105,6 +2118,8 @@ fn rebuildCells(
     //     std.log.warn("[rebuildCells time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
     // }
 
+    _ = screen_type; // we might use this again later so not deleting it yet
+
     // Create an arena for all our temporary allocations while rebuilding
     var arena = ArenaAllocator.init(self.alloc);
     defer arena.deinit();
@@ -2138,9 +2153,19 @@ fn rebuildCells(
         self.cells.reset();
 
         // We also reset our padding extension depending on the screen type
-        if (self.config.padding_color == .extend) {
-            self.uniforms.padding_extend.up = screen_type == .alternate;
-            self.uniforms.padding_extend.down = screen_type == .alternate;
+        switch (self.config.padding_color) {
+            .background => {},
+
+            // For extension, assume we are extending in all directions.
+            // For "extend" this may be disabled due to heuristics below.
+            .extend, .@"extend-always" => {
+                self.uniforms.padding_extend = .{
+                    .up = true,
+                    .down = true,
+                    .left = true,
+                    .right = true,
+                };
+            },
         }
     }
 
@@ -2178,12 +2203,16 @@ fn rebuildCells(
         // under certain conditions we feel are safe. This helps make some
         // scenarios look better while avoiding scenarios we know do NOT look
         // good.
-        if (self.config.padding_color == .extend) {
-            if (y == 0 and screen_type == .primary) {
+        switch (self.config.padding_color) {
+            // These already have the correct values set above.
+            .background, .@"extend-always" => {},
+
+            // Apply heuristics for padding extension.
+            .extend => if (y == 0) {
                 self.uniforms.padding_extend.up = !row.neverExtendBg();
-            } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
+            } else if (y == self.cells.size.rows - 1) {
                 self.uniforms.padding_extend.down = !row.neverExtendBg();
-            }
+            },
         }
 
         // Split our row into runs and shape each one.

@@ -169,7 +169,7 @@ const SetScreenSize = struct {
             // clear color.
             .background => .{},
 
-            .extend => self.size.blankPadding(padding, grid_size, .{
+            .extend, .@"extend-always" => self.size.blankPadding(padding, grid_size, .{
                 .width = r.grid_metrics.cell_width,
                 .height = r.grid_metrics.cell_height,
             }).add(padding),
@@ -1172,6 +1172,8 @@ pub fn rebuildCells(
     cursor_style_: ?renderer.CursorStyle,
     color_palette: *const terminal.color.Palette,
 ) !void {
+    _ = screen_type;
+
     // Bg cells at most will need space for the visible screen size
     self.cells_bg.clearRetainingCapacity();
     self.cells.clearRetainingCapacity();
@@ -1213,9 +1215,14 @@ pub fn rebuildCells(
     var cursor_cell: ?CellProgram.Cell = null;
 
     if (rebuild) {
-        // We also reset our padding extension depending on the screen type
-        self.padding_extend_top = screen_type == .alternate;
-        self.padding_extend_bottom = screen_type == .alternate;
+        switch (self.config.padding_color) {
+            .background => {},
+
+            .extend, .@"extend-always" => {
+                self.padding_extend_top = true;
+                self.padding_extend_bottom = true;
+            },
+        }
     }
 
     // Build each cell
@@ -1268,10 +1275,16 @@ pub fn rebuildCells(
         // under certain conditions we feel are safe. This helps make some
         // scenarios look better while avoiding scenarios we know do NOT look
         // good.
-        if (y == 0 and screen_type == .primary) {
-            self.padding_extend_top = !row.neverExtendBg();
-        } else if (y == self.grid_size.rows - 1 and screen_type == .primary) {
-            self.padding_extend_bottom = !row.neverExtendBg();
+        switch (self.config.padding_color) {
+            // These already have the correct values set above.
+            .background, .@"extend-always" => {},
+
+            // Apply heuristics for padding extension.
+            .extend => if (y == 0) {
+                self.padding_extend_top = !row.neverExtendBg();
+            } else if (y == self.grid_size.rows - 1) {
+                self.padding_extend_bottom = !row.neverExtendBg();
+            },
         }
 
         // Split our row into runs and shape each one.
