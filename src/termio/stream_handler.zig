@@ -1261,7 +1261,7 @@ pub const StreamHandler = struct {
     }
 
     /// Send a report to the pty.
-    pub fn sendReport(self: *StreamHandler, style: terminal.stream.ReportStyle) void {
+    pub fn sendSizeReport(self: *StreamHandler, style: terminal.SizeReportStyle) void {
         switch (style) {
             .csi_14_t => self.messageWriter(.{ .size_report = .csi_14_t }),
             .csi_16_t => self.messageWriter(.{ .size_report = .csi_16_t }),

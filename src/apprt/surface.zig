@@ -63,6 +63,8 @@ pub const Message = union(enum) {
 
     pub const ReportTitleStyle = enum {
         csi_21_t,
+
+        // This enum is a placeholder for future title styles.
     };
 };
 

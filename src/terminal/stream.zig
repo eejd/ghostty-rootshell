@@ -24,13 +24,6 @@ const log = std.log.scoped(.stream);
 /// do something else.
 const debug = false;
 
-pub const ReportStyle = enum {
-    csi_14_t,
-    csi_16_t,
-    csi_18_t,
-    csi_21_t,
-};
-
 /// Returns a type that can process a stream of tty control characters.
 /// This will call various callback functions on type T. Type T only has to
 /// implement the callbacks it cares about; any unimplemented callbacks will
@@ -1123,8 +1116,8 @@ pub fn Stream(comptime Handler: type) type {
                             switch (input.params[0]) {
                                 14 => if (input.params.len == 1) {
                                     // report the text area size in pixels
-                                    if (@hasDecl(T, "sendReport")) {
-                                        self.handler.sendReport(.csi_14_t);
+                                    if (@hasDecl(T, "sendSizeReport")) {
+                                        self.handler.sendSizeReport(.csi_14_t);
                                     } else log.warn(
                                         "ignoring unimplemented CSI 14 t",
                                         .{},
@@ -1135,8 +1128,8 @@ pub fn Stream(comptime Handler: type) type {
                                 ),
                                 16 => if (input.params.len == 1) {
                                     // report cell size in pixels
-                                    if (@hasDecl(T, "sendReport")) {
-                                        self.handler.sendReport(.csi_16_t);
+                                    if (@hasDecl(T, "sendSizeReport")) {
+                                        self.handler.sendSizeReport(.csi_16_t);
                                     } else log.warn(
                                         "ignoring unimplemented CSI 16 t",
                                         .{},
@@ -1147,8 +1140,8 @@ pub fn Stream(comptime Handler: type) type {
                                 ),
                                 18 => if (input.params.len == 1) {
                                     // report screen size in characters
-                                    if (@hasDecl(T, "sendReport")) {
-                                        self.handler.sendReport(.csi_18_t);
+                                    if (@hasDecl(T, "sendSizeReport")) {
+                                        self.handler.sendSizeReport(.csi_18_t);
                                     } else log.warn(
                                         "ignoring unimplemented CSI 18 t",
                                         .{},
@@ -1159,8 +1152,8 @@ pub fn Stream(comptime Handler: type) type {
                                 ),
                                 21 => if (input.params.len == 1) {
                                     // report window title
-                                    if (@hasDecl(T, "sendReport")) {
-                                        self.handler.sendReport(.csi_21_t);
+                                    if (@hasDecl(T, "sendSizeReport")) {
+                                        self.handler.sendSizeReport(.csi_21_t);
                                     } else log.warn(
                                         "ignoring unimplemented CSI 21 t",
                                         .{},
@@ -2126,9 +2119,9 @@ test "stream: csi param too long" {
 
 test "stream: send report with CSI t" {
     const H = struct {
-        style: ?ReportStyle = null,
+        style: ?csi.SizeReportStyle = null,
 
-        pub fn sendReport(self: *@This(), style: ReportStyle) void {
+        pub fn sendSizeReport(self: *@This(), style: csi.SizeReportStyle) void {
             self.style = style;
         }
     };
@@ -2136,23 +2129,23 @@ test "stream: send report with CSI t" {
     var s: Stream(H) = .{ .handler = .{} };
 
     try s.nextSlice("\x1b[14t");
-    try testing.expectEqual(ReportStyle.csi_14_t, s.handler.style);
+    try testing.expectEqual(csi.SizeReportStyle.csi_14_t, s.handler.style);
 
     try s.nextSlice("\x1b[16t");
-    try testing.expectEqual(ReportStyle.csi_16_t, s.handler.style);
+    try testing.expectEqual(csi.SizeReportStyle.csi_16_t, s.handler.style);
 
     try s.nextSlice("\x1b[18t");
-    try testing.expectEqual(ReportStyle.csi_18_t, s.handler.style);
+    try testing.expectEqual(csi.SizeReportStyle.csi_18_t, s.handler.style);
 
     try s.nextSlice("\x1b[21t");
-    try testing.expectEqual(ReportStyle.csi_21_t, s.handler.style);
+    try testing.expectEqual(csi.SizeReportStyle.csi_21_t, s.handler.style);
 }
 
 test "stream: invalid CSI t" {
     const H = struct {
-        style: ?ReportStyle = null,
+        style: ?csi.SizeReportStyle = null,
 
-        pub fn sendReport(self: *@This(), style: ReportStyle) void {
+        pub fn sendSizeReport(self: *@This(), style: csi.SizeReportStyle) void {
             self.style = style;
         }
     };

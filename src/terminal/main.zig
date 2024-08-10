@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 pub usingnamespace @import("sanitize.zig");
 
 const charsets = @import("charsets.zig");
-pub const stream = @import("stream.zig");
+const stream = @import("stream.zig");
 const ansi = @import("ansi.zig");
 const csi = @import("csi.zig");
 const hyperlink = @import("hyperlink.zig");
@@ -38,6 +38,7 @@ pub const Pin = PageList.Pin;
 pub const Screen = @import("Screen.zig");
 pub const ScreenType = Terminal.ScreenType;
 pub const Selection = @import("Selection.zig");
+pub const SizeReportStyle = csi.SizeReportStyle;
 pub const StringMap = @import("StringMap.zig");
 pub const Style = style.Style;
 pub const Terminal = @import("Terminal.zig");

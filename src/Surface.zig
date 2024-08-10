@@ -714,17 +714,22 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .report_title => |style| {
-            const title: ?[:0]const u8 = if (@hasDecl(apprt.runtime.Surface, "getTitle"))
-                self.rt_surface.getTitle()
-            else
-                // If the apprt does not implement getTitle, report a
-                // blank title.
-                "";
-
-            const data = switch (style) {
-                .csi_21_t => try std.fmt.allocPrint(self.alloc, "\x1b]l{s}\x1b\\", .{title orelse ""}),
+            const title: ?[:0]const u8 = title: {
+                if (!@hasDecl(apprt.runtime.Surface, "getTitle")) break :title null;
+                break :title self.rt_surface.getTitle();
             };
 
+            const data = switch (style) {
+                .csi_21_t => try std.fmt.allocPrint(
+                    self.alloc,
+                    "\x1b]l{s}\x1b\\",
+                    .{title orelse ""},
+                ),
+            };
+
+            // We always use an allocating message because we don't know
+            // the length of the title and this isn't a performance critical
+            // path.
             self.io.queueMessage(.{
                 .write_alloc = .{
                     .alloc = self.alloc,
