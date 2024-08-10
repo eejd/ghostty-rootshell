@@ -3272,8 +3272,25 @@ pub const Pin = struct {
             // extend because the default background color probably looks
             // good enough as an extension.
             switch (cell.content_tag) {
+                // We assume bg color cells are setting non-default colors.
                 .bg_color_palette, .bg_color_rgb => {},
+
+                // If its a codepoint cell we can check the style.
                 .codepoint, .codepoint_grapheme => {
+                    // For codepoint containing, we also never extend bg
+                    // if any cell has a powerline glyph because these are
+                    // perfect-fit.
+                    switch (cell.codepoint()) {
+                        // Powerline
+                        0xE0B0...0xE0C8,
+                        0xE0CA,
+                        0xE0CC...0xE0D2,
+                        0xE0D4,
+                        => return true,
+
+                        else => {},
+                    }
+
                     const s = self.style(cell);
                     if (s.bg_color == .none) return true;
                 },
