@@ -325,6 +325,19 @@ gl_area: *c.GtkGLArea,
 /// If non-null this is the widget on the overlay that shows the URL.
 url_widget: ?URLWidget = null,
 
+/// If non-null this is the widget on the overlay that shows the size of the
+/// surface when it is resized.
+resize_overlay_widget: ?*c.GtkWidget = null,
+
+/// If non-null this is a timer for dismissing the resize overlay.
+resize_overlay_timer: ?c.guint = null,
+
+/// If non-null this is a timer for dismissing the resize overlay.
+resize_overlay_idler: ?c.guint = null,
+
+/// If true, the next resize event will be the first one.
+resize_overlay_first: bool = true,
+
 /// If non-null this is the widget on the overlay which dims the surface when it is unfocused
 unfocused_widget: ?*c.GtkWidget = null,
 
@@ -456,6 +469,12 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         break :font_size parent.font_size;
     };
 
+    const resize_overlay_widget = maybeCreateResizeOverlay(&app.config);
+
+    if (resize_overlay_widget) |widget| {
+        c.gtk_overlay_add_overlay(@ptrCast(overlay), @ptrCast(widget));
+    }
+
     // If the parent has a transient cgroup, then we're creating cgroups
     // for each surface if we can. We need to create a child cgroup.
     const cgroup_path: ?[]const u8 = cgroup: {
@@ -500,6 +519,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
         .cgroup_path = cgroup_path,
+        .resize_overlay_widget = resize_overlay_widget,
     };
     errdefer self.* = undefined;
 
@@ -597,6 +617,24 @@ pub fn deinit(self: *Surface) void {
         c.gtk_overlay_remove_overlay(self.overlay, widget);
         self.unfocused_widget = null;
     }
+    if (self.resize_overlay_idler) |idler| {
+        if (c.g_source_remove(idler) == c.FALSE) {
+            log.warn("unable to remove resize overlay idler", .{});
+        }
+    }
+    if (self.resize_overlay_timer) |timer| {
+        if (c.g_source_remove(timer) == c.FALSE) {
+            log.warn("unable to remove resize overlay timer", .{});
+        }
+    }
+
+    // This probably _should_ be uncommented, but I get segfaults if I do, and
+    // none if I dont. ¯\_(ツ)_/¯
+
+    // if (self.resize_overlay_widget) |widget| {
+    //     c.gtk_overlay_remove_overlay(self.overlay, widget);
+    //     self.resize_overlay_widget = null;
+    // }
 }
 
 // unref removes the long-held reference to the gl_area and kicks off the
@@ -1299,6 +1337,8 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
             log.err("error in size callback err={}", .{err});
             return;
         };
+
+        self.maybeShowResizeOverlay();
     }
 }
 
@@ -1973,4 +2013,121 @@ fn translateMods(state: c.GdkModifierType) input.Mods {
     // Lock is dependent on the X settings but we just assume caps lock.
     if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;
     return mods;
+}
+
+/// If we're configured to do so, create a label widget for displaying the size
+/// of the surface during a resize event.
+fn maybeCreateResizeOverlay(config: *const configpkg.Config) ?*c.GtkWidget {
+    if (config.@"resize-overlay" == .never) return null;
+
+    const widget = c.gtk_label_new("");
+
+    c.gtk_widget_add_css_class(@ptrCast(widget), "view");
+    c.gtk_widget_add_css_class(@ptrCast(widget), "size-overlay");
+    c.gtk_widget_add_css_class(@ptrCast(widget), "hidden");
+    c.gtk_widget_set_visible(@ptrCast(widget), c.FALSE);
+    c.gtk_widget_set_focusable(@ptrCast(widget), c.FALSE);
+    c.gtk_widget_set_can_target(@ptrCast(widget), c.FALSE);
+    c.gtk_label_set_justify(@ptrCast(widget), c.GTK_JUSTIFY_CENTER);
+    c.gtk_label_set_selectable(@ptrCast(widget), c.FALSE);
+
+    setOverlayWidgetPosition(widget, config);
+
+    return widget;
+}
+
+/// If we're configured to do so, update the text in the resize overlay widget
+/// and make it visible. Schedule a timer to hide the widget after the delay
+/// expires.
+fn maybeShowResizeOverlay(self: *Surface) void {
+    if (self.app.config.@"resize-overlay" == .never) return;
+
+    if (self.app.config.@"resize-overlay" == .@"after-first" and self.resize_overlay_first) {
+        self.resize_overlay_first = false;
+        return;
+    }
+
+    self.resize_overlay_first = false;
+
+    // When updating a widget, do so from GTK's thread, but not if there's
+    // already an update queued up.
+    if (self.resize_overlay_idler != null) return;
+    self.resize_overlay_idler = c.g_idle_add(gtkUpdateOverlayWidget, @ptrCast(self));
+}
+
+/// Actually update the overlay widget. This should only be called as an idle
+/// handler.
+fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
+    const self: *Surface = @ptrCast(@alignCast(ud));
+
+    if (self.resize_overlay_widget) |widget| {
+        var buf: [64]u8 = undefined;
+        const text = std.fmt.bufPrintZ(
+            &buf,
+            "{d}c ⨯ {d}r\n{d}px ⨯ {d}px",
+            .{
+                self.core_surface.grid_size.columns,
+                self.core_surface.grid_size.rows,
+                self.core_surface.screen_size.width,
+                self.core_surface.screen_size.height,
+            },
+        ) catch |err| {
+            log.err("unable to format text: {}", .{err});
+            return c.FALSE;
+        };
+
+        c.gtk_label_set_text(@ptrCast(widget), text.ptr);
+        c.gtk_widget_remove_css_class(@ptrCast(widget), "hidden");
+        c.gtk_widget_set_visible(@ptrCast(widget), 1);
+
+        setOverlayWidgetPosition(widget, &self.app.config);
+
+        if (self.resize_overlay_timer) |timer| {
+            if (c.g_source_remove(timer) == c.FALSE) {
+                log.warn("unable to remove size overlay timer", .{});
+            }
+        }
+        self.resize_overlay_timer = c.g_timeout_add(
+            self.app.config.@"resize-overlay-delay".asMilliseconds(),
+            gtkResizeOverlayTimerExpired,
+            @ptrCast(self),
+        );
+    }
+
+    self.resize_overlay_idler = null;
+
+    return c.FALSE;
+}
+
+/// Update the position of the resize overlay widget. It might seem excessive to
+/// do this often, but it should make hot config reloading of the position work.
+fn setOverlayWidgetPosition(widget: *c.GtkWidget, config: *const configpkg.Config) void {
+    c.gtk_widget_set_halign(
+        @ptrCast(widget),
+        switch (config.@"resize-overlay-position") {
+            .center, .@"top-center", .@"bottom-center" => c.GTK_ALIGN_CENTER,
+            .@"top-left", .@"bottom-left" => c.GTK_ALIGN_START,
+            .@"top-right", .@"bottom-right" => c.GTK_ALIGN_END,
+        },
+    );
+    c.gtk_widget_set_valign(
+        @ptrCast(widget),
+        switch (config.@"resize-overlay-position") {
+            .center => c.GTK_ALIGN_CENTER,
+            .@"top-left", .@"top-center", .@"top-right" => c.GTK_ALIGN_START,
+            .@"bottom-left", .@"bottom-center", .@"bottom-right" => c.GTK_ALIGN_END,
+        },
+    );
+}
+
+/// If this fires, it means that the delay period has expired and the resize
+/// overlay widget should be hidden.
+fn gtkResizeOverlayTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
+    const self: *Surface = @ptrCast(@alignCast(ud));
+    if (self.resize_overlay_widget) |widget| {
+        c.gtk_widget_add_css_class(@ptrCast(widget), "hidden");
+        c.gtk_widget_set_visible(@ptrCast(widget), c.FALSE);
+        self.resize_overlay_timer = null;
+    }
+    return c.FALSE;
 }
