@@ -408,7 +408,6 @@ typedef void (*ghostty_runtime_wakeup_cb)(void*);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void*);
 typedef void (*ghostty_runtime_open_config_cb)(void*);
 typedef void (*ghostty_runtime_set_title_cb)(void*, const char*);
-typedef const char* (*ghostty_runtime_get_title_cb)(void*);
 typedef void (*ghostty_runtime_set_mouse_shape_cb)(void*,
                                                    ghostty_mouse_shape_e);
 typedef void (*ghostty_runtime_set_mouse_visibility_cb)(void*, bool);
@@ -463,7 +462,6 @@ typedef struct {
   ghostty_runtime_reload_config_cb reload_config_cb;
   ghostty_runtime_open_config_cb open_config_cb;
   ghostty_runtime_set_title_cb set_title_cb;
-  ghostty_runtime_get_title_cb get_title_cb;
   ghostty_runtime_set_mouse_shape_cb set_mouse_shape_cb;
   ghostty_runtime_set_mouse_visibility_cb set_mouse_visibility_cb;
   ghostty_runtime_read_clipboard_cb read_clipboard_cb;

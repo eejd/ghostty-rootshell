@@ -70,7 +70,6 @@ extension Ghostty {
                 reload_config_cb: { userdata in App.reloadConfig(userdata) },
                 open_config_cb: { userdata in App.openConfig(userdata) },
                 set_title_cb: { userdata, title in App.setTitle(userdata, title: title) },
-                get_title_cb: { userdata in App.title(userdata) },
                 set_mouse_shape_cb: { userdata, shape in App.setMouseShape(userdata, shape: shape) },
                 set_mouse_visibility_cb: { userdata, visible in App.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc, state in App.readClipboard(userdata, location: loc, state: state) },

@@ -55,9 +55,6 @@ pub const App = struct {
         /// Called to set the title of the window.
         set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
 
-        /// Called to get the title of the window.
-        get_title: ?*const fn (SurfaceUD) callconv(.C) ?[*]const u8 = null,
-
         /// Called to set the cursor shape.
         set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
 
@@ -309,6 +306,10 @@ pub const Surface = struct {
     keymap_state: input.Keymap.State,
     inspector: ?*Inspector = null,
 
+    /// The current title of the surface. The embedded apprt saves this so
+    /// that getTitle works without the implementer needing to save it.
+    title: ?[:0]const u8 = null,
+
     /// Surface initialization options.
     pub const Options = extern struct {
         /// The platform that this surface is being initialized for and
@@ -432,6 +433,9 @@ pub const Surface = struct {
         // Shut down our inspector
         self.freeInspector();
 
+        // Free our title
+        if (self.title) |v| self.app.core_app.alloc.free(v);
+
         // Remove ourselves from the list of known surfaces in the app.
         self.app.core_app.deleteSurface(self);
 
@@ -540,6 +544,12 @@ pub const Surface = struct {
     }
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+        // Dupe the title so that we can store it. If we get an allocation
+        // error we just ignore it, since this only breaks a few minor things.
+        const alloc = self.app.core_app.alloc;
+        if (self.title) |v| alloc.free(v);
+        self.title = alloc.dupeZ(u8, slice) catch null;
+
         self.app.opts.set_title(
             self.userdata,
             slice.ptr,
@@ -547,14 +557,7 @@ pub const Surface = struct {
     }
 
     pub fn getTitle(self: *Surface) ?[:0]const u8 {
-        const func = self.app.opts.get_title orelse {
-            log.info("runtime embedder does not support get_title", .{});
-            return null;
-        };
-
-        const result = func(self.userdata);
-        if (result == null) return null;
-        return std.mem.sliceTo(@as([*:0]const u8, @ptrCast(result.?)), 0);
+        return self.title;
     }
 
     pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
