@@ -2088,7 +2088,7 @@ fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
             }
         }
         self.resize_overlay_timer = c.g_timeout_add(
-            self.app.config.@"resize-overlay-delay".asMilliseconds(),
+            self.app.config.@"resize-overlay-duration".asMilliseconds(),
             gtkResizeOverlayTimerExpired,
             @ptrCast(self),
         );

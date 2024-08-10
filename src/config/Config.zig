@@ -868,13 +868,13 @@ keybind: Keybinds = .{},
 ///                     is first created, but will show up if the surface is
 ///                     subsequently resized.
 ///
-/// The default is `always`.
+/// The default is `after-first`.
 ///
 /// Changing this value at runtime and reloading the configuration will only
 /// affect new windows, tabs, and splits.
 ///
 /// Linux/GTK only.
-@"resize-overlay": ResizeOverlay = .always,
+@"resize-overlay": ResizeOverlay = .@"after-first",
 
 /// If resize overlays are enabled, this controls the position of the overlay.
 /// The possible options are:
@@ -924,7 +924,7 @@ keybind: Keybinds = .{},
 /// value larger than this will be clamped to the maximum value.
 ///
 /// Linux/GTK only.
-@"resize-overlay-delay": Duration = .{ .duration = 750 * std.time.ns_per_ms },
+@"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
 
 // If true, when there are multiple split panes, the mouse selects the pane
 // that is focused. This only applies to the currently focused window; i.e.
