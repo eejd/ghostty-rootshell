@@ -1,3 +1,5 @@
+const ResizeOverlay = @This();
+
 const std = @import("std");
 const c = @import("c.zig");
 const configpkg = @import("../../config.zig");
@@ -23,14 +25,18 @@ first: bool = true,
 
 /// If we're configured to do so, create a label widget for displaying the size
 /// of the surface during a resize event.
-pub fn init(surface: *Surface, config: *configpkg.Config, overlay: *c.GtkOverlay) @This() {
+pub fn init(
+    surface: *Surface,
+    config: *configpkg.Config,
+    overlay: *c.GtkOverlay,
+) ResizeOverlay {
     // At this point the surface object has been _created_ but not
     // _initialized_ so we can't use any information from it.
 
     if (config.@"resize-overlay" == .never) return .{};
 
+    // Create the label that will show the resize information.
     const widget = c.gtk_label_new("");
-
     c.gtk_widget_add_css_class(widget, "view");
     c.gtk_widget_add_css_class(widget, "size-overlay");
     c.gtk_widget_add_css_class(widget, "hidden");
@@ -39,15 +45,13 @@ pub fn init(surface: *Surface, config: *configpkg.Config, overlay: *c.GtkOverlay
     c.gtk_widget_set_can_target(widget, c.FALSE);
     c.gtk_label_set_justify(@ptrCast(widget), c.GTK_JUSTIFY_CENTER);
     c.gtk_label_set_selectable(@ptrCast(widget), c.FALSE);
-
     setOverlayWidgetPosition(widget, config);
-
     c.gtk_overlay_add_overlay(overlay, widget);
 
     return .{ .surface = surface, .widget = widget };
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *ResizeOverlay) void {
     if (self.idler) |idler| {
         if (c.g_source_remove(idler) == c.FALSE) {
             log.warn("unable to remove resize overlay idler", .{});
@@ -66,21 +70,28 @@ pub fn deinit(self: *@This()) void {
 /// If we're configured to do so, update the text in the resize overlay widget
 /// and make it visible. Schedule a timer to hide the widget after the delay
 /// expires.
-pub fn maybeShowResizeOverlay(self: *@This()) void {
+///
+/// If we're not configured to show the overlay, do nothing.
+pub fn maybeShowResizeOverlay(self: *ResizeOverlay) void {
     if (self.widget == null) return;
     const surface = self.surface orelse return;
 
-    if (surface.app.config.@"resize-overlay" == .never) return;
-
-    if (surface.app.config.@"resize-overlay" == .@"after-first" and self.first) {
-        self.first = false;
-        return;
+    switch (surface.app.config.@"resize-overlay") {
+        .never => return,
+        .always => {},
+        .@"after-first" => if (self.first) {
+            self.first = false;
+            return;
+        },
     }
 
     self.first = false;
 
     // When updating a widget, do so from GTK's thread, but not if there's
-    // already an update queued up.
+    // already an update queued up. Even though all our function calls ARE
+    // from the main thread, we have to do this to avoid GTK warnings. My
+    // guess is updating a widget in the hierarchy while another widget is
+    // being resized is a bad idea.
     if (self.idler != null) return;
     self.idler = c.g_idle_add(gtkUpdateOverlayWidget, @ptrCast(self));
 }
@@ -88,7 +99,10 @@ pub fn maybeShowResizeOverlay(self: *@This()) void {
 /// Actually update the overlay widget. This should only be called as an idle
 /// handler.
 fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
-    const self: *@This() = @ptrCast(@alignCast(ud));
+    const self: *ResizeOverlay = @ptrCast(@alignCast(ud));
+
+    // No matter what our idler is complete with this callback
+    self.idler = null;
 
     const widget = self.widget orelse return c.FALSE;
     const surface = self.surface orelse return c.FALSE;
@@ -123,8 +137,6 @@ fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
         @ptrCast(self),
     );
 
-    self.idler = null;
-
     return c.FALSE;
 }
 
@@ -152,11 +164,11 @@ fn setOverlayWidgetPosition(widget: *c.GtkWidget, config: *configpkg.Config) voi
 /// If this fires, it means that the delay period has expired and the resize
 /// overlay widget should be hidden.
 fn gtkResizeOverlayTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
-    const self: *@This() = @ptrCast(@alignCast(ud));
+    const self: *ResizeOverlay = @ptrCast(@alignCast(ud));
+    self.timer = null;
     if (self.widget) |widget| {
         c.gtk_widget_add_css_class(@ptrCast(widget), "hidden");
         c.gtk_widget_set_visible(@ptrCast(widget), c.FALSE);
     }
-    self.timer = null;
     return c.FALSE;
 }

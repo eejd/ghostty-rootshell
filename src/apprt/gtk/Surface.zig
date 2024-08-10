@@ -326,6 +326,7 @@ gl_area: *c.GtkGLArea,
 /// If non-null this is the widget on the overlay that shows the URL.
 url_widget: ?URLWidget = null,
 
+/// The overlay that shows resizing information.
 resize_overlay: ResizeOverlay = .{},
 
 /// If non-null this is the widget on the overlay which dims the surface when it is unfocused
@@ -459,8 +460,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         break :font_size parent.font_size;
     };
 
-    const resize_overlay = ResizeOverlay.init(self, &app.config, @ptrCast(overlay));
-
     // If the parent has a transient cgroup, then we're creating cgroups
     // for each surface if we can. We need to create a child cgroup.
     const cgroup_path: ?[]const u8 = cgroup: {
@@ -497,6 +496,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .container = .{ .none = {} },
         .overlay = @ptrCast(overlay),
         .gl_area = @ptrCast(gl_area),
+        .resize_overlay = ResizeOverlay.init(self, &app.config, @ptrCast(overlay)),
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
@@ -505,7 +505,6 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
         .cgroup_path = cgroup_path,
-        .resize_overlay = resize_overlay,
     };
     errdefer self.* = undefined;
 
