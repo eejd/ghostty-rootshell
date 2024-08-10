@@ -18,6 +18,7 @@ const Split = @import("Split.zig");
 const Tab = @import("Tab.zig");
 const Window = @import("Window.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
+const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig");
@@ -325,6 +326,9 @@ gl_area: *c.GtkGLArea,
 /// If non-null this is the widget on the overlay that shows the URL.
 url_widget: ?URLWidget = null,
 
+/// The overlay that shows resizing information.
+resize_overlay: ResizeOverlay = .{},
+
 /// If non-null this is the widget on the overlay which dims the surface when it is unfocused
 unfocused_widget: ?*c.GtkWidget = null,
 
@@ -492,6 +496,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .container = .{ .none = {} },
         .overlay = @ptrCast(overlay),
         .gl_area = @ptrCast(gl_area),
+        .resize_overlay = ResizeOverlay.init(self, &app.config, @ptrCast(overlay)),
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
@@ -597,6 +602,7 @@ pub fn deinit(self: *Surface) void {
         c.gtk_overlay_remove_overlay(self.overlay, widget);
         self.unfocused_widget = null;
     }
+    self.resize_overlay.deinit();
 }
 
 // unref removes the long-held reference to the gl_area and kicks off the
@@ -1303,6 +1309,8 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
             log.err("error in size callback err={}", .{err});
             return;
         };
+
+        self.resize_overlay.maybeShowResizeOverlay();
     }
 }
 

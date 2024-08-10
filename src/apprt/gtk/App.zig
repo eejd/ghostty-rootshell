@@ -531,13 +531,7 @@ pub fn startQuitTimer(self: *App) void {
 
     if (self.config.@"quit-after-last-window-closed-delay") |v| {
         // If a delay is configured, set a timeout function to quit after the delay.
-        const ms: u64 = std.math.divTrunc(
-            u64,
-            v.duration,
-            std.time.ns_per_ms,
-        ) catch std.math.maxInt(c.guint);
-        const t = std.math.cast(c.guint, ms) orelse std.math.maxInt(c.guint);
-        self.quit_timer = .{ .active = c.g_timeout_add(t, gtkQuitTimerExpired, self) };
+        self.quit_timer = .{ .active = c.g_timeout_add(v.asMilliseconds(), gtkQuitTimerExpired, self) };
     } else {
         // If no delay is configured, treat it as expired.
         self.quit_timer = .{ .expired = {} };

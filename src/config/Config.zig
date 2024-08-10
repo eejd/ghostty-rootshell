@@ -859,6 +859,74 @@ keybind: Keybinds = .{},
 /// This configuration currently only works with GTK.
 @"window-new-tab-position": WindowNewTabPosition = .current,
 
+/// This controls when resize overlays are shown. Resize overlays are a
+/// transient popup that shows the size of the terminal while the surfaces are
+/// being resized. The possible options are:
+///
+///   * `always` - Always show resize overlays.
+///   * `never` - Never show resize overlays.
+///   * `after-first` - The resize overlay will not appear when the surface
+///                     is first created, but will show up if the surface is
+///                     subsequently resized.
+///
+/// The default is `after-first`.
+///
+/// Changing this value at runtime and reloading the configuration will only
+/// affect new windows, tabs, and splits.
+///
+/// Linux/GTK only.
+@"resize-overlay": ResizeOverlay = .@"after-first",
+
+/// If resize overlays are enabled, this controls the position of the overlay.
+/// The possible options are:
+///
+///   * `center`
+///   * `top-left`
+///   * `top-center`
+///   * `top-right`
+///   * `bottom-left`
+///   * `bottom-center`
+///   * `bottom-right`
+///
+/// The default is `center`.
+///
+/// Linux/GTK only.
+@"resize-overlay-position": ResizeOverlayPosition = .center,
+
+/// If resize overlays are enabled, this controls how long the overlay is
+/// visible on the screen before it is hidden. The default is ¾ of a second or
+/// 750 ms.
+///
+/// The duration is specified as a series of numbers followed by time units.
+/// Whitespace is allowed between numbers and units. Each number and unit will
+/// be added together to form the total duration.
+///
+/// The allowed time units are as follows:
+///
+///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
+///     are made for leap years or leap seconds.
+///   * `d` - one SI day, or 86400 seconds.
+///   * `h` - one hour, or 3600 seconds.
+///   * `m` - one minute, or 60 seconds.
+///   * `s` - one second.
+///   * `ms` - one millisecond, or 0.001 second.
+///   * `us` or `µs` - one microsecond, or 0.000001 second.
+///   * `ns` - one nanosecond, or 0.000000001 second.
+///
+/// Examples:
+///   * `1h30m`
+///   * `45s`
+///
+/// Units can be repeated and will be added together. This means that
+/// `1h1h` is equivalent to `2h`. This is confusing and should be avoided.
+/// A future update may disallow this.
+///
+/// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
+/// value larger than this will be clamped to the maximum value.
+///
+/// Linux/GTK only.
+@"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
+
 // If true, when there are multiple split panes, the mouse selects the pane
 // that is focused. This only applies to the currently focused window; i.e.
 // mousing over a split in an unfocused window will now focus that split
@@ -3906,6 +3974,24 @@ pub const WindowNewTabPosition = enum {
     end,
 };
 
+/// See resize-overlay
+pub const ResizeOverlay = enum {
+    always,
+    never,
+    @"after-first",
+};
+
+/// See resize-overlay-position
+pub const ResizeOverlayPosition = enum {
+    center,
+    @"top-left",
+    @"top-center",
+    @"top-right",
+    @"bottom-left",
+    @"bottom-center",
+    @"bottom-right",
+};
+
 /// See grapheme-width-method
 pub const GraphemeWidthMethod = enum {
     legacy,
@@ -4034,6 +4120,17 @@ pub const Duration = struct {
                 i += 1;
             }
         }
+    }
+
+    /// Convenience function to convert to milliseconds since many OS and
+    /// library timing functions operate on that timescale.
+    pub fn asMilliseconds(self: @This()) c_uint {
+        const ms: u64 = std.math.divTrunc(
+            u64,
+            self.duration,
+            std.time.ns_per_ms,
+        ) catch std.math.maxInt(c_uint);
+        return std.math.cast(c_uint, ms) orelse std.math.maxInt(c_uint);
     }
 };
 
