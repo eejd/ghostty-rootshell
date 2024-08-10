@@ -368,6 +368,15 @@ pub const Transmission = struct {
         // but they are formats that a png may decode to that we
         // support.
         grey_alpha,
+
+        pub fn bpp(self: Format) u8 {
+            return switch (self) {
+                .grey_alpha => 2,
+                .rgb => 3,
+                .rgba => 4,
+                .png => unreachable, // Must be validated before
+            };
+        }
     };
 
     pub const Medium = enum {

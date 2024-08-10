@@ -128,17 +128,42 @@ pub const LoadingImage = struct {
         defer _ = std.c.close(fd);
         defer _ = std.c.shm_unlink(pathz);
 
-        const stat = std.posix.fstat(fd) catch |err| {
-            log.warn("unable to fstat shared memory {s}: {}", .{ path, err });
-            return error.InvalidData;
+        // The size from stat on may be larger than our expected size because
+        // shared memory has to be a multiple of the page size.
+        const stat_size: usize = stat: {
+            const stat = std.posix.fstat(fd) catch |err| {
+                log.warn("unable to fstat shared memory {s}: {}", .{ path, err });
+                return error.InvalidData;
+            };
+            if (stat.size <= 0) return error.InvalidData;
+            break :stat @intCast(stat.size);
         };
-        if (stat.size <= 0) return error.InvalidData;
 
-        const size: usize = @intCast(stat.size);
+        const expected_size: usize = switch (self.image.format) {
+            // Png we decode the full data size because later decoding will
+            // get the proper dimensions and assert validity.
+            .png => stat_size,
+
+            // For these formats we have a size we must have.
+            .grey_alpha, .rgb, .rgba => |f| size: {
+                const bpp = f.bpp();
+                break :size self.image.width * self.image.height * bpp;
+            },
+        };
+
+        // Our stat size must be at least the expected size otherwise
+        // the shared memory data is invalid.
+        if (stat_size < expected_size) {
+            log.warn(
+                "shared memory size too small expected={} actual={}",
+                .{ expected_size, stat_size },
+            );
+            return error.InvalidData;
+        }
 
         const map = std.posix.mmap(
             null,
-            size,
+            stat_size, // mmap always uses the stat size
             std.c.PROT.READ,
             std.c.MAP{ .TYPE = .SHARED },
             fd,
@@ -149,11 +174,13 @@ pub const LoadingImage = struct {
         };
         defer std.posix.munmap(map);
 
+        // Our end size always uses the expected size so we cut off the
+        // padding for mmap alignment.
         const start: usize = @intCast(t.offset);
         const end: usize = if (t.size > 0) @min(
             @as(usize, @intCast(t.offset)) + @as(usize, @intCast(t.size)),
-            size,
-        ) else size;
+            expected_size,
+        ) else expected_size;
 
         assert(self.data.items.len == 0);
         try self.data.appendSlice(alloc, map[start..end]);
@@ -302,12 +329,7 @@ pub const LoadingImage = struct {
         if (img.width > max_dimension or img.height > max_dimension) return error.DimensionsTooLarge;
 
         // Data length must be what we expect
-        const bpp: u32 = switch (img.format) {
-            .grey_alpha => 2,
-            .rgb => 3,
-            .rgba => 4,
-            .png => unreachable, // png should be decoded by here
-        };
+        const bpp = img.format.bpp();
         const expected_len = img.width * img.height * bpp;
         const actual_len = self.data.items.len;
         if (actual_len != expected_len) {
