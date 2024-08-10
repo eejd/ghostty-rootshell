@@ -1964,7 +1964,14 @@ pub fn setScreenSize(
             padding_extend.right = true;
         },
 
-        else => {
+        .@"extend-always" => {
+            padding_extend.up = true;
+            padding_extend.down = true;
+            padding_extend.left = true;
+            padding_extend.right = true;
+        },
+
+        .background => {
             // Otherwise, disable all padding extension.
             padding_extend = .{};
         },
@@ -2146,9 +2153,19 @@ fn rebuildCells(
         // We also reset our padding extension depending on the screen type
         switch (self.config.padding_color) {
             .background => {},
+
             .extend => {
                 self.uniforms.padding_extend.up = screen_type == .alternate;
                 self.uniforms.padding_extend.down = screen_type == .alternate;
+            },
+
+            .@"extend-always" => {
+                self.uniforms.padding_extend = .{
+                    .up = true,
+                    .down = true,
+                    .left = true,
+                    .right = true,
+                };
             },
         }
     }
@@ -2187,12 +2204,16 @@ fn rebuildCells(
         // under certain conditions we feel are safe. This helps make some
         // scenarios look better while avoiding scenarios we know do NOT look
         // good.
-        if (self.config.padding_color == .extend) {
-            if (y == 0 and screen_type == .primary) {
+        switch (self.config.padding_color) {
+            // These already have the correct values set above.
+            .background, .@"extend-always" => {},
+
+            // Apply heuristics for padding extension.
+            .extend => if (y == 0 and screen_type == .primary) {
                 self.uniforms.padding_extend.up = !row.neverExtendBg();
             } else if (y == self.cells.size.rows - 1 and screen_type == .primary) {
                 self.uniforms.padding_extend.down = !row.neverExtendBg();
-            }
+            },
         }
 
         // Split our row into runs and shape each one.

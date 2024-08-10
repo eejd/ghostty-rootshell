@@ -701,6 +701,8 @@ keybind: Keybinds = .{},
 ///
 /// * `background` - The background color specified in `background`.
 /// * `extend` - Extend the background color of the nearest grid cell.
+/// * `extend-always` - Same as "extend" but always extends without applying
+///   any of the heuristics that disable extending noted below.
 ///
 /// The "extend" value will be disabled in certain scenarios. On primary
 /// screen applications (i.e. not something like Neovim), the color will not
@@ -2729,6 +2731,7 @@ pub const OptionAsAlt = enum {
 pub const WindowPaddingColor = enum {
     background,
     extend,
+    @"extend-always",
 };
 
 /// Color represents a color using RGB.
