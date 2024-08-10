@@ -306,6 +306,10 @@ pub const Surface = struct {
     keymap_state: input.Keymap.State,
     inspector: ?*Inspector = null,
 
+    /// The current title of the surface. The embedded apprt saves this so
+    /// that getTitle works without the implementer needing to save it.
+    title: ?[:0]const u8 = null,
+
     /// Surface initialization options.
     pub const Options = extern struct {
         /// The platform that this surface is being initialized for and
@@ -429,6 +433,9 @@ pub const Surface = struct {
         // Shut down our inspector
         self.freeInspector();
 
+        // Free our title
+        if (self.title) |v| self.app.core_app.alloc.free(v);
+
         // Remove ourselves from the list of known surfaces in the app.
         self.app.core_app.deleteSurface(self);
 
@@ -537,10 +544,20 @@ pub const Surface = struct {
     }
 
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+        // Dupe the title so that we can store it. If we get an allocation
+        // error we just ignore it, since this only breaks a few minor things.
+        const alloc = self.app.core_app.alloc;
+        if (self.title) |v| alloc.free(v);
+        self.title = alloc.dupeZ(u8, slice) catch null;
+
         self.app.opts.set_title(
             self.userdata,
             slice.ptr,
         );
+    }
+
+    pub fn getTitle(self: *Surface) ?[:0]const u8 {
+        return self.title;
     }
 
     pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {

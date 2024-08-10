@@ -383,32 +383,58 @@ pub fn resize(
 
         // If we have size reporting enabled we need to send a report.
         if (self.terminal.modes.get(.in_band_size_reports)) {
-            try self.sizeReportLocked(td);
+            try self.sizeReportLocked(td, .mode_2048);
         }
     }
 }
 
-/// Make a mode 2048 in-band size report.
-pub fn sizeReport(self: *Termio, td: *ThreadData) !void {
+/// Make a size report.
+pub fn sizeReport(self: *Termio, td: *ThreadData, style: termio.Message.SizeReport) !void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-    try self.sizeReportLocked(td);
+    try self.sizeReportLocked(td, style);
 }
 
-fn sizeReportLocked(self: *Termio, td: *ThreadData) !void {
+fn sizeReportLocked(self: *Termio, td: *ThreadData, style: termio.Message.SizeReport) !void {
     // 1024 bytes should be enough for size report since report
     // in columns and pixels.
     var buf: [1024]u8 = undefined;
-    const message = try std.fmt.bufPrint(
-        &buf,
-        "\x1B[48;{};{};{};{}t",
-        .{
-            self.grid_size.rows,
-            self.grid_size.columns,
-            self.terminal.height_px,
-            self.terminal.width_px,
-        },
-    );
+    const message = switch (style) {
+        .mode_2048 => try std.fmt.bufPrint(
+            &buf,
+            "\x1B[48;{};{};{};{}t",
+            .{
+                self.grid_size.rows,
+                self.grid_size.columns,
+                self.terminal.height_px,
+                self.terminal.width_px,
+            },
+        ),
+        .csi_14_t => try std.fmt.bufPrint(
+            &buf,
+            "\x1b[4;{};{}t",
+            .{
+                self.terminal.height_px,
+                self.terminal.width_px,
+            },
+        ),
+        .csi_16_t => try std.fmt.bufPrint(
+            &buf,
+            "\x1b[6;{};{}t",
+            .{
+                self.terminal.height_px / self.grid_size.rows,
+                self.terminal.width_px / self.grid_size.columns,
+            },
+        ),
+        .csi_18_t => try std.fmt.bufPrint(
+            &buf,
+            "\x1b[8;{};{}t",
+            .{
+                self.grid_size.rows,
+                self.grid_size.columns,
+            },
+        ),
+    };
 
     try self.queueWrite(td, message, false);
 }

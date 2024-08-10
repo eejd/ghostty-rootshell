@@ -360,6 +360,11 @@ pub const Surface = struct {
     /// The monitor dimensions so we can toggle fullscreen on and off.
     monitor_dims: MonitorDimensions,
 
+    /// Save the title text so that we can return it later when requested.
+    /// This is allocated from the heap so it must be freed when we deinit the
+    /// surface.
+    title_text: ?[:0]const u8 = null,
+
     pub const Options = struct {};
 
     /// Initialize the surface into the given self pointer. This gives a
@@ -463,6 +468,8 @@ pub const Surface = struct {
     }
 
     pub fn deinit(self: *Surface) void {
+        if (self.title_text) |t| self.core_surface.alloc.free(t);
+
         // Remove ourselves from the list of known surfaces in the app.
         self.app.app.deleteSurface(self);
 
@@ -609,7 +616,14 @@ pub const Surface = struct {
 
     /// Set the title of the window.
     pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        self.window.setTitle(slice.ptr);
+        if (self.title_text) |t| self.core_surface.alloc.free(t);
+        self.title_text = try self.core_surface.alloc.dupeZ(u8, slice);
+        self.window.setTitle(self.title_text.?.ptr);
+    }
+
+    /// Return the title of the window.
+    pub fn getTitle(self: *Surface) ?[:0]const u8 {
+        return self.title_text;
     }
 
     /// Set the shape of the cursor.

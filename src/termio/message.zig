@@ -42,9 +42,10 @@ pub const Message = union(enum) {
     /// Resize the window.
     resize: Resize,
 
-    /// Request a size report is sent to the pty (in-band size report,
-    /// mode 2048: https://gist.github.com/rockorager/e695fb2924d36b2bcf1fff4a3704bd83)
-    size_report: void,
+    /// Request a size report is sent to the pty ([in-band
+    /// size report, mode 2048](https://gist.github.com/rockorager/e695fb2924d36b2bcf1fff4a3704bd83) and
+    /// [XTWINOPS](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Functions-using-CSI-_-ordered-by-the-final-character-lparen-s-rparen:CSI-Ps;Ps;Ps-t.1EB0)).
+    size_report: SizeReport,
 
     /// Clear the screen.
     clear_screen: struct {
@@ -94,6 +95,14 @@ pub const Message = union(enum) {
             .alloc => |v| Message{ .write_alloc = v },
         };
     }
+
+    /// The types of size reports that we support
+    pub const SizeReport = enum {
+        mode_2048,
+        csi_14_t,
+        csi_16_t,
+        csi_18_t,
+    };
 };
 
 /// Creates a union that can be used to accommodate data that fit within an array,

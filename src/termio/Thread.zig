@@ -267,7 +267,7 @@ fn drainMailbox(
             },
             .inspector => |v| self.flags.has_inspector = v,
             .resize => |v| self.handleResize(cb, v),
-            .size_report => try io.sizeReport(data),
+            .size_report => |v| try io.sizeReport(data, v),
             .clear_screen => |v| try io.clearScreen(data, v.history),
             .scroll_viewport => |v| try io.scrollViewport(v),
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
