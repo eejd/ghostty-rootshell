@@ -312,8 +312,9 @@ extension Ghostty {
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(.background)
                                 .shadow(radius: 3)
-                        ).lineLimit(1)
-                        .truncationMode(.middle)
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     
                     if (!position.right()) {
                         Spacer()
