@@ -49,7 +49,7 @@ const PagePool = std.heap.MemoryPoolAligned(
 
 /// List of pins, known as "tracked" pins. These are pins that are kept
 /// up to date automatically through page-modifying operations.
-const PinSet = std.AutoHashMapUnmanaged(*Pin, void);
+const PinSet = std.AutoArrayHashMapUnmanaged(*Pin, void);
 const PinPool = std.heap.MemoryPool(Pin);
 
 /// The pool of memory used for a pagelist. This can be shared between
@@ -433,9 +433,8 @@ pub fn clone(
             // Updating tracked pins is easy, we just change the page
             // pointer but all offsets remain the same.
             if (opts.tracked_pins) |remap| {
-                var pin_it = self.tracked_pins.keyIterator();
-                while (pin_it.next()) |p_ptr| {
-                    const p = p_ptr.*;
+                const pin_keys = self.tracked_pins.keys();
+                for (pin_keys) |p| {
                     if (p.page != chunk.page) continue;
                     const new_p = try pool.pins.create();
                     new_p.* = p.*;
@@ -458,9 +457,8 @@ pub fn clone(
 
             // Updating tracked pins for the pins that are in the shortened chunk.
             if (opts.tracked_pins) |remap| {
-                var pin_it = self.tracked_pins.keyIterator();
-                while (pin_it.next()) |p_ptr| {
-                    const p = p_ptr.*;
+                const pin_keys = self.tracked_pins.keys();
+                for (pin_keys) |p| {
                     if (p.page != chunk.page or
                         p.y >= chunk.end) continue;
                     const new_p = try pool.pins.create();
@@ -502,9 +500,8 @@ pub fn clone(
 
         // Updating tracked pins
         if (opts.tracked_pins) |remap| {
-            var pin_it = self.tracked_pins.keyIterator();
-            while (pin_it.next()) |p_ptr| {
-                const p = p_ptr.*;
+            const pin_keys = self.tracked_pins.keys();
+            for (pin_keys) |p| {
                 if (p.page != chunk.page or
                     p.y < chunk.start or
                     p.y >= chunk.end) continue;
@@ -810,9 +807,8 @@ const ReflowCursor = struct {
 
         // Handle tracked pin adjustments.
         {
-            var it = list.tracked_pins.keyIterator();
-            while (it.next()) |p_ptr| {
-                const p = p_ptr.*;
+            const pin_keys = list.tracked_pins.keys();
+            for (pin_keys) |p| {
                 if (&p.page.data != src_page or
                     p.y != src_y) continue;
 
@@ -861,9 +857,8 @@ const ReflowCursor = struct {
 
             // Move any tracked pins from the source.
             {
-                var it = list.tracked_pins.keyIterator();
-                while (it.next()) |p_ptr| {
-                    const p = p_ptr.*;
+                const pin_keys = list.tracked_pins.keys();
+                for (pin_keys) |p| {
                     if (&p.page.data != src_page or
                         p.y != src_y or
                         p.x != x) continue;
@@ -1276,9 +1271,8 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
 
                 // Update all our tracked pins. If they have an X
                 // beyond the edge, clamp it.
-                var pin_it = self.tracked_pins.keyIterator();
-                while (pin_it.next()) |p_ptr| {
-                    const p = p_ptr.*;
+                const pin_keys = self.tracked_pins.keys();
+                for (pin_keys) |p| {
                     if (p.x >= cols) p.x = cols - 1;
                 }
 
@@ -1495,9 +1489,8 @@ fn resizeWithoutReflowGrowCols(
         self.pages.insertBefore(chunk.page, new_page);
 
         // Update our tracked pins that pointed to this previous page.
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != chunk.page or
                 p.y < y_start or
                 p.y >= y_end) continue;
@@ -1561,9 +1554,8 @@ fn trimTrailingBlankRows(
         // If our tracked pins are in this row then we cannot trim it
         // because it implies some sort of importance. If we trimmed this
         // we'd invalidate this pin, as well.
-        var tracked_it = self.tracked_pins.keyIterator();
-        while (tracked_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != row_pin.page or
                 p.y != row_pin.y) continue;
             return trimmed;
@@ -1793,9 +1785,8 @@ pub fn grow(self: *PageList) !?*List.Node {
 
         // Update any tracked pins that point to this page to point to the
         // new first page to the top-left.
-        var it = self.tracked_pins.keyIterator();
-        while (it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != first) continue;
             p.page = self.pages.first.?;
             p.y = 0;
@@ -1892,9 +1883,8 @@ pub fn adjustCapacity(
     try new_page.data.cloneFrom(&page.data, 0, page.data.size.rows);
 
     // Fix up all our tracked pins to point to the new page.
-    var it = self.tracked_pins.keyIterator();
-    while (it.next()) |p_ptr| {
-        const p = p_ptr.*;
+    const pin_keys = self.tracked_pins.keys();
+    for (pin_keys) |p| {
         if (p.page != page) continue;
         p.page = new_page;
     }
@@ -2013,9 +2003,8 @@ pub fn eraseRow(
     // We adjust the tracked pins in this page, moving up any that were below
     // the removed row.
     {
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page == page and p.y > pn.y) p.y -= 1;
         }
     }
@@ -2064,9 +2053,8 @@ pub fn eraseRow(
         // Our tracked pins for this page need to be updated.
         // If the pin is in row 0 that means the corresponding row has
         // been moved to the previous page. Otherwise, move it up by 1.
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != page) continue;
             if (p.y == 0) {
                 p.page = page.prev.?;
@@ -2114,9 +2102,8 @@ pub fn eraseRowBounded(
         dirty.setRangeValue(.{ .start = pn.y, .end = pn.y + limit }, true);
 
         // Update pins in the shifted region.
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page == page and
                 p.y >= pn.y and
                 p.y <= pn.y + limit)
@@ -2147,9 +2134,8 @@ pub fn eraseRowBounded(
 
     // Update tracked pins.
     {
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page == page and p.y >= pn.y) {
                 if (p.y == 0) {
                     p.x = 0;
@@ -2187,9 +2173,8 @@ pub fn eraseRowBounded(
             dirty.setRangeValue(.{ .start = 0, .end = shifted_limit }, true);
 
             // Update pins in the shifted region.
-            var pin_it = self.tracked_pins.keyIterator();
-            while (pin_it.next()) |p_ptr| {
-                const p = p_ptr.*;
+            const pin_keys = self.tracked_pins.keys();
+            for (pin_keys) |p| {
                 if (p.page != page or p.y > shifted_limit) continue;
                 if (p.y == 0) {
                     p.page = page.prev.?;
@@ -2212,9 +2197,8 @@ pub fn eraseRowBounded(
         shifted += page.data.size.rows;
 
         // Update tracked pins.
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != page) continue;
             if (p.y == 0) {
                 p.page = page.prev.?;
@@ -2298,9 +2282,8 @@ pub fn eraseRows(
 
         // Update any tracked pins to shift their y. If it was in the erased
         // row then we move it to the top of this page.
-        var pin_it = self.tracked_pins.keyIterator();
-        while (pin_it.next()) |p_ptr| {
-            const p = p_ptr.*;
+        const pin_keys = self.tracked_pins.keys();
+        for (pin_keys) |p| {
             if (p.page != chunk.page) continue;
             if (p.y >= chunk.end) {
                 p.y -= chunk.end;
@@ -2357,9 +2340,8 @@ fn erasePage(self: *PageList, page: *List.Node) void {
     assert(page.next != null or page.prev != null);
 
     // Update any tracked pins to move to the next page.
-    var it = self.tracked_pins.keyIterator();
-    while (it.next()) |p_ptr| {
-        const p = p_ptr.*;
+    const pin_keys = self.tracked_pins.keys();
+    for (pin_keys) |p| {
         if (p.page != page) continue;
         p.page = page.next orelse page.prev orelse unreachable;
         p.y = 0;
@@ -2401,7 +2383,7 @@ pub fn trackPin(self: *PageList, p: Pin) !*Pin {
 /// Untrack a previously tracked pin. This will deallocate the pin.
 pub fn untrackPin(self: *PageList, p: *Pin) void {
     assert(p != self.viewport_pin);
-    if (self.tracked_pins.remove(p)) {
+    if (self.tracked_pins.swapRemove(p)) {
         self.pool.pins.destroy(p);
     }
 }
@@ -2644,9 +2626,8 @@ pub fn diagram(self: *const PageList, writer: anytype) !void {
                 // don't wanna bother making this function allocating.
                 var pin_buf: [16]*Pin = undefined;
                 var pin_count: usize = 0;
-                var pin_it = self.tracked_pins.keyIterator();
-                while (pin_it.next()) |p_ptr| {
-                    const p = p_ptr.*;
+                const pin_keys = self.tracked_pins.keys();
+                for (pin_keys) |p| {
                     if (p.page != chunk.page) continue;
                     if (p.y != y) continue;
                     pin_buf[pin_count] = p;
