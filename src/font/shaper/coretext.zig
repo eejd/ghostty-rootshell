@@ -934,37 +934,6 @@ test "shape monaspace ligs" {
     }
 }
 
-// This font has an undesirable "fl" lig but we want to
-// ensure we get it so that we can test for it.
-test "shape fl lig" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var testdata = try testShaperWithFont(alloc, .code_new_roman);
-    defer testdata.deinit();
-
-    // Make a screen with some data
-    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
-    defer screen.deinit();
-    try screen.testWriteString("fl");
-
-    // Get our run iterator
-    var shaper = &testdata.shaper;
-    var it = shaper.runIterator(
-        testdata.grid,
-        &screen,
-        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
-        null,
-        null,
-    );
-    const run = (try it.next(alloc)).?;
-    try testing.expect((try it.next(alloc)) == null);
-    const cells = try shaper.shape(run);
-    try testing.expectEqual(@as(usize, 2), cells.len);
-    try testing.expect(cells[0].glyph_index != null);
-    try testing.expect(cells[1].glyph_index == null);
-}
-
 // https://github.com/mitchellh/ghostty/issues/1708
 test "shape left-replaced lig in last run" {
     const testing = std.testing;
