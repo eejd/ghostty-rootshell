@@ -871,10 +871,9 @@ keybind: Keybinds = .{},
 ///
 /// The default is `after-first`.
 ///
-/// Changing this value at runtime and reloading the configuration will only
-/// affect new windows, tabs, and splits.
-///
-/// Linux/GTK only.
+/// Changing this value at runtime and reloading the configuration will take
+/// effect immediately on macOS, but will only affect new terminals on
+/// Linux.
 @"resize-overlay": ResizeOverlay = .@"after-first",
 
 /// If resize overlays are enabled, this controls the position of the overlay.
@@ -889,8 +888,6 @@ keybind: Keybinds = .{},
 ///   * `bottom-right`
 ///
 /// The default is `center`.
-///
-/// Linux/GTK only.
 @"resize-overlay-position": ResizeOverlayPosition = .center,
 
 /// If resize overlays are enabled, this controls how long the overlay is
@@ -923,8 +920,6 @@ keybind: Keybinds = .{},
 ///
 /// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
 /// value larger than this will be clamped to the maximum value.
-///
-/// Linux/GTK only.
 @"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
 
 // If true, when there are multiple split panes, the mouse selects the pane
@@ -4027,11 +4022,11 @@ pub const Duration = struct {
         .{ .name = "ns", .factor = 1 },
     };
 
-    pub fn clone(self: *const @This(), _: Allocator) !@This() {
+    pub fn clone(self: *const Duration, _: Allocator) !Duration {
         return .{ .duration = self.duration };
     }
 
-    pub fn equal(self: @This(), other: @This()) bool {
+    pub fn equal(self: Duration, other: Duration) bool {
         return self.duration == other.duration;
     }
 
@@ -4099,7 +4094,7 @@ pub const Duration = struct {
         return if (value) |v| .{ .duration = v } else error.ValueRequired;
     }
 
-    pub fn formatEntry(self: @This(), formatter: anytype) !void {
+    pub fn formatEntry(self: Duration, formatter: anytype) !void {
         var buf: [64]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
@@ -4107,7 +4102,7 @@ pub const Duration = struct {
         try formatter.formatEntry([]const u8, fbs.getWritten());
     }
 
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Duration, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         var value = self.duration;
         var i: usize = 0;
         for (units) |unit| {
@@ -4122,9 +4117,14 @@ pub const Duration = struct {
         }
     }
 
+    pub fn c_get(self: Duration, ptr_raw: *anyopaque) void {
+        const ptr: *usize = @ptrCast(@alignCast(ptr_raw));
+        ptr.* = @intCast(self.asMilliseconds());
+    }
+
     /// Convenience function to convert to milliseconds since many OS and
     /// library timing functions operate on that timescale.
-    pub fn asMilliseconds(self: @This()) c_uint {
+    pub fn asMilliseconds(self: Duration) c_uint {
         const ms: u64 = std.math.divTrunc(
             u64,
             self.duration,

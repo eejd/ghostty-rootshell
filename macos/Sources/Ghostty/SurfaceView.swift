@@ -145,6 +145,17 @@ extension Ghostty {
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
+                    
+                    // If our geo size changed then we show the resize overlay as configured. 
+                    if let surfaceSize = surfaceView.surfaceSize {
+                        SurfaceResizeOverlay(
+                            geoSize: geo.size,
+                            size: surfaceSize,
+                            overlay: ghostty.config.resizeOverlay,
+                            position: ghostty.config.resizeOverlayPosition,
+                            duration: ghostty.config.resizeOverlayDuration)
+                        
+                    }
                 }
                 .ghosttySurfaceView(surfaceView)
                 
@@ -252,6 +263,77 @@ extension Ghostty {
                 }
             }
             .padding()
+        }
+    }
+    
+    // This is the resize overlay that shows on top of a surface to show the current
+    // size during a resize operation.
+    struct SurfaceResizeOverlay: View {
+        let geoSize: CGSize
+        let size: ghostty_surface_size_s
+        let overlay: Ghostty.Config.ResizeOverlay
+        let position: Ghostty.Config.ResizeOverlayPosition
+        let duration: UInt
+        
+        // This is the last size that we processed. This is how we handle our
+        // timer state.
+        @State var lastSize: CGSize? = nil
+        
+        // Fixed value set based on personal taste.
+        private let padding: CGFloat = 5
+        
+        // This computed boolean is set to true when the overlay should be hidden.
+        private var hidden: Bool {
+            // Hidden if we already processed this size.
+            if (lastSize == geoSize) { return true; }
+
+            // Hidden depending on overlay config
+            switch (overlay) {
+            case .never: return true;
+            case .always: return false;
+            case .after_first: return lastSize == nil;
+            }
+        }
+        
+        var body: some View {
+            VStack {
+                if (!position.top()) {
+                    Spacer()
+                }
+                
+                HStack {
+                    if (!position.left()) {
+                        Spacer()
+                    }
+                    
+                    Text(verbatim: "\(size.columns)c ⨯ \(size.rows)r")
+                        .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(.background)
+                                .shadow(radius: 3)
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    
+                    if (!position.right()) {
+                        Spacer()
+                    }
+                }
+                
+                if (!position.bottom()) {
+                    Spacer()
+                }
+            }
+            .allowsHitTesting(false)
+            .opacity(hidden ? 0 : 1)
+            .task(id: geoSize) {
+                // By ID-ing the task on the geoSize, we get the task to restart if our
+                // geoSize changes. This also ensures that future resize overlays are shown
+                // properly.
+                try? await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000)
+                lastSize = geoSize
+            }
         }
     }
     

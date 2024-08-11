@@ -404,6 +404,15 @@ typedef struct {
   const char* command;
 } ghostty_surface_config_s;
 
+typedef struct {
+  uint16_t columns;
+  uint16_t rows;
+  uint32_t width_px;
+  uint32_t height_px;
+  uint32_t cell_width_px;
+  uint32_t cell_height_px;
+} ghostty_surface_size_s;
+
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void*);
 typedef void (*ghostty_runtime_open_config_cb)(void*);
@@ -530,6 +539,7 @@ void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
+ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 void ghostty_surface_set_color_scheme(ghostty_surface_t,
                                       ghostty_color_scheme_e);
 ghostty_input_mods_e ghostty_surface_key_translation_mods(ghostty_surface_t,

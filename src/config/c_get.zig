@@ -60,6 +60,12 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
             },
 
             .Struct => |info| {
+                // If the struct implements c_get then we call that
+                if (@hasDecl(@TypeOf(value), "c_get")) {
+                    value.c_get(ptr_raw);
+                    return true;
+                }
+
                 // Packed structs that are less than or equal to the
                 // size of a C int can be passed directly as their
                 // bit representation.

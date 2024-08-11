@@ -28,6 +28,13 @@ extension Ghostty {
         // The hovered URL
         @Published var hoverUrl: String? = nil
         
+        // Returns sizing information for the surface. This is the raw C
+        // structure because I'm lazy.
+        var surfaceSize: ghostty_surface_size_s? {
+            guard let surface = self.surface else { return nil }
+            return ghostty_surface_size(surface)
+        }
+        
         private(set) var surface: ghostty_surface_t?
         
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
