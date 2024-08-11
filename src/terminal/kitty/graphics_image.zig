@@ -145,7 +145,7 @@ pub const LoadingImage = struct {
             .png => stat_size,
 
             // For these formats we have a size we must have.
-            .grey_alpha, .rgb, .rgba => |f| size: {
+            .gray_alpha, .rgb, .rgba => |f| size: {
                 const bpp = f.bpp();
                 break :size self.image.width * self.image.height * bpp;
             },
@@ -447,7 +447,7 @@ pub const LoadingImage = struct {
         self.image.width = @intCast(width);
         self.image.height = @intCast(height);
         self.image.format = switch (bpp) {
-            2 => .grey_alpha,
+            2 => .gray_alpha,
             3 => .rgb,
             4 => .rgba,
             else => unreachable, // validated above

@@ -281,7 +281,7 @@ pub const Face = struct {
         // conversion.
         const format: ?font.Atlas.Format = switch (bitmap_ft.pixel_mode) {
             freetype.c.FT_PIXEL_MODE_MONO => null,
-            freetype.c.FT_PIXEL_MODE_GRAY => .greyscale,
+            freetype.c.FT_PIXEL_MODE_GRAY => .grayscale,
             freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
             else => {
                 log.warn("glyph={} pixel mode={}", .{ glyph_index, bitmap_ft.pixel_mode });
@@ -657,7 +657,7 @@ test {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(
@@ -734,7 +734,7 @@ test "metrics" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(

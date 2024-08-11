@@ -82,8 +82,8 @@ gl_state: ?GLState = null,
 font_grid: *font.SharedGrid,
 font_shaper: font.Shaper,
 font_shaper_cache: font.ShaperCache,
-texture_greyscale_modified: usize = 0,
-texture_greyscale_resized: usize = 0,
+texture_grayscale_modified: usize = 0,
+texture_grayscale_resized: usize = 0,
 texture_color_modified: usize = 0,
 texture_color_resized: usize = 0,
 
@@ -551,9 +551,9 @@ pub fn displayRealize(self: *OpenGL) !void {
     // reflush everything
     self.gl_cells_size = 0;
     self.gl_cells_written = 0;
-    self.texture_greyscale_modified = 0;
+    self.texture_grayscale_modified = 0;
     self.texture_color_modified = 0;
-    self.texture_greyscale_resized = 0;
+    self.texture_grayscale_resized = 0;
     self.texture_color_resized = 0;
 
     // We need to reset our uniforms
@@ -669,8 +669,8 @@ pub fn setFontGrid(self: *OpenGL, grid: *font.SharedGrid) void {
     // Reset our font grid
     self.font_grid = grid;
     self.grid_metrics = grid.metrics;
-    self.texture_greyscale_modified = 0;
-    self.texture_greyscale_resized = 0;
+    self.texture_grayscale_modified = 0;
+    self.texture_grayscale_resized = 0;
     self.texture_color_modified = 0;
     self.texture_color_resized = 0;
 
@@ -1134,7 +1134,7 @@ fn prepKittyImage(
     };
 
     const new_image: Image = switch (image.format) {
-        .grey_alpha => .{ .pending_grey_alpha = pending },
+        .gray_alpha => .{ .pending_gray_alpha = pending },
         .rgb => .{ .pending_rgb = pending },
         .rgba => .{ .pending_rgba = pending },
         .png => unreachable, // should be decoded by now
@@ -1912,9 +1912,9 @@ fn flushAtlas(self: *OpenGL) !void {
     try flushAtlasSingle(
         &self.font_grid.lock,
         gl_state.texture,
-        &self.font_grid.atlas_greyscale,
-        &self.texture_greyscale_modified,
-        &self.texture_greyscale_resized,
+        &self.font_grid.atlas_grayscale,
+        &self.texture_grayscale_modified,
+        &self.texture_grayscale_resized,
         .red,
         .red,
     );
@@ -1998,10 +1998,10 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
             switch (kv.value_ptr.image) {
                 .ready => {},
 
-                .pending_grey_alpha,
+                .pending_gray_alpha,
                 .pending_rgb,
                 .pending_rgba,
-                .replace_grey_alpha,
+                .replace_gray_alpha,
                 .replace_rgb,
                 .replace_rgba,
                 => try kv.value_ptr.image.upload(self.alloc),
@@ -2317,12 +2317,12 @@ const GLState = struct {
             try texbind.image2D(
                 0,
                 .red,
-                @intCast(font_grid.atlas_greyscale.size),
-                @intCast(font_grid.atlas_greyscale.size),
+                @intCast(font_grid.atlas_grayscale.size),
+                @intCast(font_grid.atlas_grayscale.size),
                 0,
                 .red,
                 .UnsignedByte,
-                font_grid.atlas_greyscale.data.ptr,
+                font_grid.atlas_grayscale.data.ptr,
             );
         }
 

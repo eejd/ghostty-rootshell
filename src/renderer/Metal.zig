@@ -238,8 +238,8 @@ pub const FrameState = struct {
     cells: CellTextBuffer,
     cells_bg: CellBgBuffer,
 
-    greyscale: objc.Object, // MTLTexture
-    greyscale_modified: usize = 0,
+    grayscale: objc.Object, // MTLTexture
+    grayscale_modified: usize = 0,
     color: objc.Object, // MTLTexture
     color_modified: usize = 0,
 
@@ -263,12 +263,12 @@ pub const FrameState = struct {
         errdefer cells_bg.deinit();
 
         // Initialize our textures for our font atlas.
-        const greyscale = try initAtlasTexture(device, &.{
+        const grayscale = try initAtlasTexture(device, &.{
             .data = undefined,
             .size = 8,
-            .format = .greyscale,
+            .format = .grayscale,
         });
-        errdefer deinitMTLResource(greyscale);
+        errdefer deinitMTLResource(grayscale);
         const color = try initAtlasTexture(device, &.{
             .data = undefined,
             .size = 8,
@@ -280,7 +280,7 @@ pub const FrameState = struct {
             .uniforms = uniforms,
             .cells = cells,
             .cells_bg = cells_bg,
-            .greyscale = greyscale,
+            .grayscale = grayscale,
             .color = color,
         };
     }
@@ -289,7 +289,7 @@ pub const FrameState = struct {
         self.uniforms.deinit();
         self.cells.deinit();
         self.cells_bg.deinit();
-        deinitMTLResource(self.greyscale);
+        deinitMTLResource(self.grayscale);
         deinitMTLResource(self.color);
     }
 };
@@ -827,7 +827,7 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
     // We can modify this without a lock because the GPU does not
     // touch this data.
     for (&self.gpu_state.frames) |*frame| {
-        frame.greyscale_modified = 0;
+        frame.grayscale_modified = 0;
         frame.color_modified = 0;
     }
 
@@ -1045,10 +1045,10 @@ pub fn updateFrame(
             switch (kv.value_ptr.image) {
                 .ready => {},
 
-                .pending_grey_alpha,
+                .pending_gray_alpha,
                 .pending_rgb,
                 .pending_rgba,
-                .replace_grey_alpha,
+                .replace_gray_alpha,
                 .replace_rgb,
                 .replace_rgba,
                 => try kv.value_ptr.image.upload(self.alloc, self.gpu_state.device),
@@ -1114,12 +1114,12 @@ pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
 
     // If our font atlas changed, sync the texture data
     texture: {
-        const modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        if (modified <= frame.greyscale_modified) break :texture;
+        const modified = self.font_grid.atlas_grayscale.modified.load(.monotonic);
+        if (modified <= frame.grayscale_modified) break :texture;
         self.font_grid.lock.lockShared();
         defer self.font_grid.lock.unlockShared();
-        frame.greyscale_modified = self.font_grid.atlas_greyscale.modified.load(.monotonic);
-        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_greyscale, &frame.greyscale);
+        frame.grayscale_modified = self.font_grid.atlas_grayscale.modified.load(.monotonic);
+        try syncAtlasTexture(self.gpu_state.device, &self.font_grid.atlas_grayscale, &frame.grayscale);
     }
     texture: {
         const modified = self.font_grid.atlas_color.modified.load(.monotonic);
@@ -1571,7 +1571,7 @@ fn drawCellFgs(
         void,
         objc.sel("setFragmentTexture:atIndex:"),
         .{
-            frame.greyscale.value,
+            frame.grayscale.value,
             @as(c_ulong, 0),
         },
     );
@@ -1861,7 +1861,7 @@ fn prepKittyImage(
     };
 
     const new_image: Image = switch (image.format) {
-        .grey_alpha => .{ .pending_grey_alpha = pending },
+        .gray_alpha => .{ .pending_gray_alpha = pending },
         .rgb => .{ .pending_rgb = pending },
         .rgba => .{ .pending_rgba = pending },
         .png => unreachable, // should be decoded by now
@@ -2733,7 +2733,7 @@ fn syncAtlasTexture(device: objc.Object, atlas: *const font.Atlas, texture: *obj
 fn initAtlasTexture(device: objc.Object, atlas: *const font.Atlas) !objc.Object {
     // Determine our pixel format
     const pixel_format: mtl.MTLPixelFormat = switch (atlas.format) {
-        .greyscale => .r8unorm,
+        .grayscale => .r8unorm,
         .rgba => .bgra8unorm,
         else => @panic("unsupported atlas format for Metal texture"),
     };

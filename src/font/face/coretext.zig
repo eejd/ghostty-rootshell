@@ -671,7 +671,7 @@ test {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     const name = try macos.foundation.String.createWithBytes("Monaco", .utf8, false);
@@ -735,7 +735,7 @@ test "in-memory" {
     const alloc = testing.allocator;
     const testFont = @import("../test.zig").fontRegular;
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     var lib = try font.Library.init();
@@ -757,7 +757,7 @@ test "variable" {
     const alloc = testing.allocator;
     const testFont = @import("../test.zig").fontVariable;
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     var lib = try font.Library.init();
@@ -779,7 +779,7 @@ test "variable set variation" {
     const alloc = testing.allocator;
     const testFont = @import("../test.zig").fontVariable;
 
-    var atlas = try font.Atlas.init(alloc, 512, .greyscale);
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
 
     var lib = try font.Library.init();

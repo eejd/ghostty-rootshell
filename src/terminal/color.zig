@@ -31,7 +31,7 @@ pub const default: Palette = default: {
         }
     }
 
-    // Grey ramp
+    // Gray ramp
     assert(i == 232);
     assert(@TypeOf(i) == u8);
     while (i > 0) : (i +%= 1) {

@@ -304,7 +304,7 @@ vertex CellTextVertexOut cell_text_vertex(
 
 fragment float4 cell_text_fragment(
   CellTextVertexOut in [[stage_in]],
-  texture2d<float> textureGreyscale [[texture(0)]],
+  texture2d<float> textureGrayscale [[texture(0)]],
   texture2d<float> textureColor [[texture(1)]]
 ) {
   constexpr sampler textureSampler(
@@ -325,7 +325,7 @@ fragment float4 cell_text_fragment(
       float4 premult = float4(in.color.rgb * in.color.a, in.color.a);
 
       // Then premult the texture color
-      float a = textureGreyscale.sample(textureSampler, in.tex_coord).r;
+      float a = textureGrayscale.sample(textureSampler, in.tex_coord).r;
       premult = premult * a;
 
       return premult;

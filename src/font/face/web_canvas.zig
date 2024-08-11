@@ -203,7 +203,7 @@ pub const Face = struct {
             .rgba => render.bitmap,
 
             // Convert down to A8
-            .greyscale => a8: {
+            .grayscale => a8: {
                 assert(@mod(render.bitmap.len, 4) == 0);
                 var bitmap_a8 = try alloc.alloc(u8, render.bitmap.len / 4);
                 errdefer alloc.free(bitmap_a8);
