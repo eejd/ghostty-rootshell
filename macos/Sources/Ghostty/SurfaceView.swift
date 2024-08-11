@@ -153,7 +153,8 @@ extension Ghostty {
                             size: surfaceSize,
                             overlay: ghostty.config.resizeOverlay,
                             position: ghostty.config.resizeOverlayPosition,
-                            duration: ghostty.config.resizeOverlayDuration)
+                            duration: ghostty.config.resizeOverlayDuration,
+                            focusInstant: surfaceView.focusInstant)
                         
                     }
                 }
@@ -274,6 +275,7 @@ extension Ghostty {
         let overlay: Ghostty.Config.ResizeOverlay
         let position: Ghostty.Config.ResizeOverlayPosition
         let duration: UInt
+        let focusInstant: Any?
         
         // This is the last size that we processed. This is how we handle our
         // timer state.
@@ -293,7 +295,20 @@ extension Ghostty {
             
             // Hidden if we already processed this size.
             if (lastSize == geoSize) { return true; }
-
+            
+            // If we were focused recently we hide it as well. This avoids showing
+            // the resize overlay when SwiftUI is lazily resizing.
+            if #available(macOS 13, iOS 16, *) {
+                if let instant = focusInstant as? ContinuousClock.Instant {
+                    let d = instant.duration(to: ContinuousClock.now)
+                    if (d < .milliseconds(500)) {
+                        // Avoid this size completely.
+                        lastSize = geoSize
+                        return true;
+                    }
+                }
+            }
+            
             // Hidden depending on overlay config
             switch (overlay) {
             case .never: return true;
