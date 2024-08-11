@@ -279,11 +279,18 @@ extension Ghostty {
         // timer state.
         @State var lastSize: CGSize? = nil
         
+        // Ready is set to true after a short delay. This avoids some of the
+        // challenges of initial view sizing from SwiftUI.
+        @State var ready: Bool = false
+        
         // Fixed value set based on personal taste.
         private let padding: CGFloat = 5
         
         // This computed boolean is set to true when the overlay should be hidden.
         private var hidden: Bool {
+            // If we aren't ready yet then we wait...
+            if (!ready) { return true; }
+            
             // Hidden if we already processed this size.
             if (lastSize == geoSize) { return true; }
 
@@ -327,11 +334,24 @@ extension Ghostty {
             }
             .allowsHitTesting(false)
             .opacity(hidden ? 0 : 1)
+            .task {
+                // Sleep chosen arbitrarily... a better long term solution would be to detect
+                // when the size stabilizes (coalesce a value) for the first time and then after
+                // that show the resize overlay consistently.
+                try? await Task.sleep(nanoseconds: 500 * 1_000_000)
+                ready = true
+            }
             .task(id: geoSize) {
                 // By ID-ing the task on the geoSize, we get the task to restart if our
                 // geoSize changes. This also ensures that future resize overlays are shown
                 // properly.
-                try? await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000)
+                
+                // We only sleep if we're ready. If we're not ready then we want to set
+                // our last size right away to avoid a flash.
+                if (ready) {
+                    try? await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000)
+                }
+                
                 lastSize = geoSize
             }
         }
