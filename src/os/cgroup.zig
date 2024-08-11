@@ -207,3 +207,30 @@ pub fn configureMemoryLimit(cgroup: []const u8, limit: MemoryLimit) !void {
     // Write our limit in bytes
     try file.writer().print("{}", .{size});
 }
+
+pub const ProcessesLimit = union(enum) {
+    /// pids.max
+    processes: usize,
+};
+
+/// Configure the number of processes for the given cgroup.
+pub fn configureProcessesLimit(cgroup: []const u8, limit: ProcessesLimit) !void {
+    assert(cgroup[0] == '/');
+
+    const filename, const size = switch (limit) {
+        .processes => |v| .{ "pids.max", v },
+    };
+
+    // Open our file
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try std.fmt.bufPrint(
+        &buf,
+        "/sys/fs/cgroup{s}/{s}",
+        .{ cgroup, filename },
+    );
+    const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
+    defer file.close();
+
+    // Write our limit in bytes
+    try file.writer().print("{}", .{size});
+}

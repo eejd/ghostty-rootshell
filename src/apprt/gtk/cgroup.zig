@@ -71,6 +71,14 @@ pub fn init(app: *App) ![]const u8 {
         });
     }
 
+    // Configure the "max" pids limit. This is a hard limit and cannot be
+    // exceeded.
+    if (app.config.@"linux-cgroup-processes-limit") |limit| {
+        try internal_os.cgroup.configureProcessesLimit(surfaces, .{
+            .processes = limit,
+        });
+    }
+
     return transient;
 }
 

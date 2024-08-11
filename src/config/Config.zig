@@ -1276,6 +1276,13 @@ keybind: Keybinds = .{},
 /// pressure.
 @"linux-cgroup-memory-limit": ?u64 = null,
 
+/// Number of processes limit for any individual terminal process (tab, split,
+/// window, etc.). If this is unset then no limit will be set.
+///
+/// Note that this sets the "pids.max" configuration for the process number
+/// controller, which is a hard limit.
+@"linux-cgroup-processes-limit": ?u64 = null,
+
 /// If this is false, then any cgroup initialization (for linux-cgroup)
 /// will be allowed to fail and the failure is ignored. This is useful if
 /// you view cgroup isolation as a "nice to have" and not a critical resource
