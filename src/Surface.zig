@@ -2086,14 +2086,15 @@ fn mouseReport(
         .sgr_pixels => {
             // Final character to send in the CSI
             const final: u8 = if (action == .release) 'm' else 'M';
+            const adjusted = self.posAdjusted(pos.x, pos.y);
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                @as(i32, @intFromFloat(@round(pos.x))),
-                @as(i32, @intFromFloat(@round(pos.y))),
+                @as(i32, @intFromFloat(@round(adjusted.x))),
+                @as(i32, @intFromFloat(@round(adjusted.y))),
                 final,
             });
 
@@ -3104,34 +3105,40 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     if (report) try self.reportColorScheme();
 }
 
-pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // xpos/ypos need to be adjusted for window padding
-    // (i.e. "window-padding-*" settings.
+pub fn posAdjusted(self: Surface, xpos: f64, ypos: f64) struct { x: f64, y: f64 } {
     const pad = if (self.config.window_padding_balance)
         renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
     else
         self.padding;
 
-    const xpos_adjusted: f64 = xpos - @as(f64, @floatFromInt(pad.left));
-    const ypos_adjusted: f64 = ypos - @as(f64, @floatFromInt(pad.top));
+    return .{
+        .x = xpos - @as(f64, @floatFromInt(pad.left)),
+        .y = ypos - @as(f64, @floatFromInt(pad.top)),
+    };
+}
 
-    // xpos and ypos can be negative if while dragging, the user moves the
+pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
+    // xpos/ypos need to be adjusted for window padding
+    // (i.e. "window-padding-*" settings.
+    const adjusted = self.posAdjusted(xpos, ypos);
+
+    // adjusted.x and adjusted.y can be negative if while dragging, the user moves the
     // mouse off the surface. Likewise, they can be larger than our surface
     // width if the user drags out of the surface positively.
     return .{
-        .x = if (xpos_adjusted < 0) 0 else x: {
+        .x = if (adjusted.x < 0) 0 else x: {
             // Our cell is the mouse divided by cell width
             const cell_width: f64 = @floatFromInt(self.cell_size.width);
-            const x: usize = @intFromFloat(xpos_adjusted / cell_width);
+            const x: usize = @intFromFloat(adjusted.x / cell_width);
 
             // Can be off the screen if the user drags it out, so max
             // it out on our available columns
             break :x @min(x, self.grid_size.columns - 1);
         },
 
-        .y = if (ypos_adjusted < 0) 0 else y: {
+        .y = if (adjusted.y < 0) 0 else y: {
             const cell_height: f64 = @floatFromInt(self.cell_size.height);
-            const y: usize = @intFromFloat(ypos_adjusted / cell_height);
+            const y: usize = @intFromFloat(adjusted.y / cell_height);
             break :y @min(y, self.grid_size.rows - 1);
         },
     };
