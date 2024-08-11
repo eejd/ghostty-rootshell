@@ -180,18 +180,19 @@ pub fn configureControllers(
     try file.writer().writeAll(v);
 }
 
-pub const MemoryLimit = union(enum) {
-    /// memory.high
-    high: usize,
+pub const Limit = union(enum) {
+    memory_high: usize,
+    pids_max: usize,
 };
 
-/// Configure the memory limit for the given cgroup. Use the various
-/// fields in MemoryLimit to configure a specific type of limit.
-pub fn configureMemoryLimit(cgroup: []const u8, limit: MemoryLimit) !void {
+/// Configure a limit for the given cgroup. Use the various
+/// fields in Limit to configure a specific type of limit.
+pub fn configureLimit(cgroup: []const u8, limit: Limit) !void {
     assert(cgroup[0] == '/');
 
     const filename, const size = switch (limit) {
-        .high => |v| .{ "memory.high", v },
+        .memory_high => |v| .{ "memory.high", v },
+        .pids_max => |v| .{ "pids.max", v },
     };
 
     // Open our file
