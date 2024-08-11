@@ -52,9 +52,6 @@ extension Ghostty {
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
         
-        // The last size so we can detect resizes and show our resize overlay
-        @State private var lastSize: CGSize? = nil
-        
         @EnvironmentObject private var ghostty: Ghostty.App
         
         var body: some View {
@@ -150,51 +147,14 @@ extension Ghostty {
                         }
                     
                     // If our geo size changed then we show the resize overlay as configured. 
-                    if (lastSize != geo.size) {
-                        let resizeOverlay = ghostty.config.resizeOverlay
-                        if (resizeOverlay != .never) {
-                            if let surfaceSize = surfaceView.surfaceSize {
-                                let padding: CGFloat = 5
-                                let resizeDuration = ghostty.config.resizeOverlayDuration
-                                let resizePosition = ghostty.config.resizeOverlayPosition
-                                
-                                VStack {
-                                    if (!resizePosition.top()) {
-                                        Spacer()
-                                    }
-                                    
-                                    HStack {
-                                        if (!resizePosition.left()) {
-                                            Spacer()
-                                        }
-                                        
-                                        Text(verbatim: "\(surfaceSize.columns)c ⨯ \(surfaceSize.rows)r")
-                                            .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .fill(.background)
-                                                    .shadow(radius: 3)
-                                            ).lineLimit(1)
-                                            .truncationMode(.middle)
-                                        
-                                        if (!resizePosition.right()) {
-                                            Spacer()
-                                        }
-                                    }
-                                    
-                                    if (!resizePosition.bottom()) {
-                                        Spacer()
-                                    }
-                                }
-                                .allowsHitTesting(false)
-                                .opacity(resizeOverlay == .after_first && lastSize == nil ? 0 : 1)
-                                .onAppear() {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(resizeDuration))) {
-                                        self.lastSize = geo.size
-                                    }
-                                }
-                            }
-                        }
+                    if let surfaceSize = surfaceView.surfaceSize {
+                        SurfaceResizeOverlay(
+                            geoSize: geo.size,
+                            size: surfaceSize,
+                            overlay: ghostty.config.resizeOverlay,
+                            position: ghostty.config.resizeOverlayPosition,
+                            duration: ghostty.config.resizeOverlayDuration)
+                        
                     }
                 }
                 .ghosttySurfaceView(surfaceView)
@@ -303,6 +263,76 @@ extension Ghostty {
                 }
             }
             .padding()
+        }
+    }
+    
+    // This is the resize overlay that shows on top of a surface to show the current
+    // size during a resize operation.
+    struct SurfaceResizeOverlay: View {
+        let geoSize: CGSize
+        let size: ghostty_surface_size_s
+        let overlay: Ghostty.Config.ResizeOverlay
+        let position: Ghostty.Config.ResizeOverlayPosition
+        let duration: UInt
+        
+        // This is the last size that we processed. This is how we handle our
+        // timer state.
+        @State var lastSize: CGSize? = nil
+        
+        // Fixed value set based on personal taste.
+        private let padding: CGFloat = 5
+        
+        // This computed boolean is set to true when the overlay should be hidden.
+        private var hidden: Bool {
+            // Hidden if we already processed this size.
+            if (lastSize == geoSize) { return true; }
+
+            // Hidden depending on overlay config
+            switch (overlay) {
+            case .never: return true;
+            case .always: return false;
+            case .after_first: return lastSize == nil;
+            }
+        }
+        
+        var body: some View {
+            VStack {
+                if (!position.top()) {
+                    Spacer()
+                }
+                
+                HStack {
+                    if (!position.left()) {
+                        Spacer()
+                    }
+                    
+                    Text(verbatim: "\(size.columns)c ⨯ \(size.rows)r")
+                        .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(.background)
+                                .shadow(radius: 3)
+                        ).lineLimit(1)
+                        .truncationMode(.middle)
+                    
+                    if (!position.right()) {
+                        Spacer()
+                    }
+                }
+                
+                if (!position.bottom()) {
+                    Spacer()
+                }
+            }
+            .allowsHitTesting(false)
+            .opacity(hidden ? 0 : 1)
+            .task(id: geoSize) {
+                // By ID-ing the task on the geoSize, we get the task to restart if our
+                // geoSize changes. This also ensures that future resize overlays are shown
+                // properly.
+                try? await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000)
+                lastSize = geoSize
+            }
         }
     }
     
