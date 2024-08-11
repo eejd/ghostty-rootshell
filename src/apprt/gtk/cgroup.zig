@@ -66,16 +66,16 @@ pub fn init(app: *App) ![]const u8 {
     // can be monitored by things like systemd-oomd to kill if needed,
     // versus an instant hard kill.
     if (app.config.@"linux-cgroup-memory-limit") |limit| {
-        try internal_os.cgroup.configureMemoryLimit(surfaces, .{
-            .high = limit,
+        try internal_os.cgroup.configureLimit(surfaces, .{
+            .memory_high = limit,
         });
     }
 
     // Configure the "max" pids limit. This is a hard limit and cannot be
     // exceeded.
     if (app.config.@"linux-cgroup-processes-limit") |limit| {
-        try internal_os.cgroup.configureProcessesLimit(surfaces, .{
-            .processes = limit,
+        try internal_os.cgroup.configureLimit(surfaces, .{
+            .pids_max = limit,
         });
     }
 

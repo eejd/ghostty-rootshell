@@ -180,45 +180,19 @@ pub fn configureControllers(
     try file.writer().writeAll(v);
 }
 
-pub const MemoryLimit = union(enum) {
-    /// memory.high
-    high: usize,
+pub const Limit = union(enum) {
+    memory_high: usize,
+    pids_max: usize,
 };
 
-/// Configure the memory limit for the given cgroup. Use the various
-/// fields in MemoryLimit to configure a specific type of limit.
-pub fn configureMemoryLimit(cgroup: []const u8, limit: MemoryLimit) !void {
+/// Configure a limit for the given cgroup. Use the various
+/// fields in Limit to configure a specific type of limit.
+pub fn configureLimit(cgroup: []const u8, limit: Limit) !void {
     assert(cgroup[0] == '/');
 
     const filename, const size = switch (limit) {
-        .high => |v| .{ "memory.high", v },
-    };
-
-    // Open our file
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = try std.fmt.bufPrint(
-        &buf,
-        "/sys/fs/cgroup{s}/{s}",
-        .{ cgroup, filename },
-    );
-    const file = try std.fs.cwd().openFile(path, .{ .mode = .write_only });
-    defer file.close();
-
-    // Write our limit in bytes
-    try file.writer().print("{}", .{size});
-}
-
-pub const ProcessesLimit = union(enum) {
-    /// pids.max
-    processes: usize,
-};
-
-/// Configure the number of processes for the given cgroup.
-pub fn configureProcessesLimit(cgroup: []const u8, limit: ProcessesLimit) !void {
-    assert(cgroup[0] == '/');
-
-    const filename, const size = switch (limit) {
-        .processes => |v| .{ "pids.max", v },
+        .memory_high => |v| .{ "memory.high", v },
+        .pids_max => |v| .{ "pids.max", v },
     };
 
     // Open our file
