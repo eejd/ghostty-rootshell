@@ -28,6 +28,10 @@ extension Ghostty {
         // The hovered URL
         @Published var hoverUrl: String? = nil
         
+        // The time this surface last became focused. This is a ContinuousClock.Instant
+        // on supported platforms.
+        @Published var focusInstant: Any? = nil
+        
         // Returns sizing information for the surface. This is the raw C
         // structure because I'm lazy.
         var surfaceSize: ghostty_surface_size_s? {
@@ -67,6 +71,13 @@ extension Ghostty {
         func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             ghostty_surface_set_focus(surface, focused)
+            
+            // On macOS 13+ we can store our continuous clock...
+            if #available(macOS 13, iOS 16, *) {
+                if (focused) {
+                    focusInstant = ContinuousClock.now
+                }
+            }
         }
 
         func sizeDidChange(_ size: CGSize) {
