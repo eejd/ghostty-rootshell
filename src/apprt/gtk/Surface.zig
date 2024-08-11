@@ -496,7 +496,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .container = .{ .none = {} },
         .overlay = @ptrCast(overlay),
         .gl_area = @ptrCast(gl_area),
-        .resize_overlay = ResizeOverlay.init(self, &app.config, @ptrCast(overlay)),
+        .resize_overlay = ResizeOverlay.init(self),
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
@@ -1310,7 +1310,7 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
             return;
         };
 
-        self.resize_overlay.maybeShowResizeOverlay();
+        self.resize_overlay.maybeShow();
     }
 }
 

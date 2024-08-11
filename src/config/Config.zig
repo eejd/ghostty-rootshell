@@ -870,10 +870,6 @@ keybind: Keybinds = .{},
 ///                     subsequently resized.
 ///
 /// The default is `after-first`.
-///
-/// Changing this value at runtime and reloading the configuration will take
-/// effect immediately on macOS, but will only affect new terminals on
-/// Linux.
 @"resize-overlay": ResizeOverlay = .@"after-first",
 
 /// If resize overlays are enabled, this controls the position of the overlay.

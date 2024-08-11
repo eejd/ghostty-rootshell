@@ -23,34 +23,17 @@ idler: ?c.guint = null,
 /// If true, the next resize event will be the first one.
 first: bool = true,
 
-/// If we're configured to do so, create a label widget for displaying the size
-/// of the surface during a resize event.
-pub fn init(
-    surface: *Surface,
-    config: *configpkg.Config,
-    overlay: *c.GtkOverlay,
-) ResizeOverlay {
-    // At this point the surface object has been _created_ but not
-    // _initialized_ so we can't use any information from it.
-
-    if (config.@"resize-overlay" == .never) return .{};
-
-    // Create the label that will show the resize information.
-    const widget = c.gtk_label_new("");
-    c.gtk_widget_add_css_class(widget, "view");
-    c.gtk_widget_add_css_class(widget, "size-overlay");
-    c.gtk_widget_add_css_class(widget, "hidden");
-    c.gtk_widget_set_visible(widget, c.FALSE);
-    c.gtk_widget_set_focusable(widget, c.FALSE);
-    c.gtk_widget_set_can_target(widget, c.FALSE);
-    c.gtk_label_set_justify(@ptrCast(widget), c.GTK_JUSTIFY_CENTER);
-    c.gtk_label_set_selectable(@ptrCast(widget), c.FALSE);
-    setOverlayWidgetPosition(widget, config);
-    c.gtk_overlay_add_overlay(overlay, widget);
-
-    return .{ .surface = surface, .widget = widget };
+/// Initialize the ResizeOverlay. This doesn't do anything more than save a
+/// pointer to the surface that we are a part of as all of the widget creation
+/// is done later.
+pub fn init(surface: *Surface) ResizeOverlay {
+    return .{
+        .surface = surface,
+    };
 }
 
+/// De-initialize the ResizeOverlay. This removes any pending idlers/timers that
+/// may not have fired yet.
 pub fn deinit(self: *ResizeOverlay) void {
     if (self.idler) |idler| {
         if (c.g_source_remove(idler) == c.FALSE) {
@@ -72,9 +55,11 @@ pub fn deinit(self: *ResizeOverlay) void {
 /// expires.
 ///
 /// If we're not configured to show the overlay, do nothing.
-pub fn maybeShowResizeOverlay(self: *ResizeOverlay) void {
-    if (self.widget == null) return;
-    const surface = self.surface orelse return;
+pub fn maybeShow(self: *ResizeOverlay) void {
+    const surface = self.surface orelse {
+        log.err("resize overlay configured without a surface", .{});
+        return;
+    };
 
     switch (surface.app.config.@"resize-overlay") {
         .never => return,
@@ -87,25 +72,27 @@ pub fn maybeShowResizeOverlay(self: *ResizeOverlay) void {
 
     self.first = false;
 
-    // When updating a widget, do so from GTK's thread, but not if there's
-    // already an update queued up. Even though all our function calls ARE
-    // from the main thread, we have to do this to avoid GTK warnings. My
-    // guess is updating a widget in the hierarchy while another widget is
-    // being resized is a bad idea.
+    // When updating a widget, wait until GTK is "idle", i.e. not in the middle
+    // of doing any other updates. Since we are called in the middle of resizing
+    // GTK is doing a lot of work rearranging all of the widgets. Not doing this
+    // results in a lot of warnings from GTK and _horrible_ flickering of the
+    // resize overlay.
     if (self.idler != null) return;
-    self.idler = c.g_idle_add(gtkUpdateOverlayWidget, @ptrCast(self));
+    self.idler = c.g_idle_add(gtkUpdate, @ptrCast(self));
 }
 
-/// Actually update the overlay widget. This should only be called as an idle
-/// handler.
-fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
+/// Actually update the overlay widget. This should only be called from a GTK
+/// idle handler.
+fn gtkUpdate(ud: ?*anyopaque) callconv(.C) c.gboolean {
     const self: *ResizeOverlay = @ptrCast(@alignCast(ud));
 
     // No matter what our idler is complete with this callback
     self.idler = null;
 
-    const widget = self.widget orelse return c.FALSE;
-    const surface = self.surface orelse return c.FALSE;
+    const surface = self.surface orelse {
+        log.err("resize overlay configured without a surface", .{});
+        return c.FALSE;
+    };
 
     var buf: [32]u8 = undefined;
     const text = std.fmt.bufPrintZ(
@@ -120,11 +107,27 @@ fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
         return c.FALSE;
     };
 
-    c.gtk_label_set_text(@ptrCast(widget), text.ptr);
-    c.gtk_widget_remove_css_class(@ptrCast(widget), "hidden");
-    c.gtk_widget_set_visible(@ptrCast(widget), 1);
+    if (self.widget) |widget| {
+        // The resize overlay widget already exists, just update it.
+        c.gtk_label_set_text(@ptrCast(widget), text.ptr);
+        setPosition(widget, &surface.app.config);
+        show(widget);
+    } else {
+        // Create the resize overlay widget.
+        const widget = c.gtk_label_new(text.ptr);
 
-    setOverlayWidgetPosition(widget, &surface.app.config);
+        c.gtk_widget_add_css_class(widget, "view");
+        c.gtk_widget_add_css_class(widget, "size-overlay");
+        c.gtk_widget_set_focusable(widget, c.FALSE);
+        c.gtk_widget_set_can_target(widget, c.FALSE);
+        c.gtk_label_set_justify(@ptrCast(widget), c.GTK_JUSTIFY_CENTER);
+        c.gtk_label_set_selectable(@ptrCast(widget), c.FALSE);
+        setPosition(widget, &surface.app.config);
+
+        c.gtk_overlay_add_overlay(surface.overlay, widget);
+
+        self.widget = widget;
+    }
 
     if (self.timer) |timer| {
         if (c.g_source_remove(timer) == c.FALSE) {
@@ -133,16 +136,33 @@ fn gtkUpdateOverlayWidget(ud: ?*anyopaque) callconv(.C) c.gboolean {
     }
     self.timer = c.g_timeout_add(
         surface.app.config.@"resize-overlay-duration".asMilliseconds(),
-        gtkResizeOverlayTimerExpired,
+        gtkTimerExpired,
         @ptrCast(self),
     );
 
     return c.FALSE;
 }
 
+// This should only be called from a GTK idle handler or timer.
+fn show(widget: *c.GtkWidget) void {
+    // The CSS class is used only by libadwaita.
+    c.gtk_widget_remove_css_class(@ptrCast(widget), "hidden");
+    // Set the visibility for non-libadwaita usage.
+    c.gtk_widget_set_visible(@ptrCast(widget), 1);
+}
+
+// This should only be called from a GTK idle handler or timer.
+fn hide(widget: *c.GtkWidget) void {
+    // The CSS class is used only by libadwaita.
+    c.gtk_widget_add_css_class(widget, "hidden");
+    // Set the visibility for non-libadwaita usage.
+    c.gtk_widget_set_visible(widget, c.FALSE);
+}
+
 /// Update the position of the resize overlay widget. It might seem excessive to
 /// do this often, but it should make hot config reloading of the position work.
-fn setOverlayWidgetPosition(widget: *c.GtkWidget, config: *configpkg.Config) void {
+/// This should only be called from a GTK idle handler.
+fn setPosition(widget: *c.GtkWidget, config: *configpkg.Config) void {
     c.gtk_widget_set_halign(
         @ptrCast(widget),
         switch (config.@"resize-overlay-position") {
@@ -163,12 +183,9 @@ fn setOverlayWidgetPosition(widget: *c.GtkWidget, config: *configpkg.Config) voi
 
 /// If this fires, it means that the delay period has expired and the resize
 /// overlay widget should be hidden.
-fn gtkResizeOverlayTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
+fn gtkTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
     const self: *ResizeOverlay = @ptrCast(@alignCast(ud));
     self.timer = null;
-    if (self.widget) |widget| {
-        c.gtk_widget_add_css_class(@ptrCast(widget), "hidden");
-        c.gtk_widget_set_visible(@ptrCast(widget), c.FALSE);
-    }
+    if (self.widget) |widget| hide(widget);
     return c.FALSE;
 }
