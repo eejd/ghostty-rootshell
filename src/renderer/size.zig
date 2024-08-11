@@ -43,8 +43,14 @@ pub const ScreenSize = struct {
         const grid_height = grid.rows * cell.height;
         const padded_width = grid_width + (padding.left + padding.right);
         const padded_height = grid_height + (padding.top + padding.bottom);
-        const leftover_width = self.width - padded_width;
-        const leftover_height = self.height - padded_height;
+
+        // Note these have to use a saturating subtraction to avoid underflow
+        // because our padding can cause the padded sizes to be larger than
+        // our real screen if the screen is shrunk to a minimal size such
+        // as 1x1.
+        const leftover_width = self.width -| padded_width;
+        const leftover_height = self.height -| padded_height;
+
         return .{
             .top = 0,
             .bottom = leftover_height,
