@@ -52,6 +52,13 @@ extension Ghostty {
             return v
         }
         
+        // Returns sizing information for the surface. This is the raw C
+        // structure because I'm lazy.
+        var surfaceSize: ghostty_surface_size_s? {
+            guard let surface = self.surface else { return nil }
+            return ghostty_surface_size(surface)
+        }
+        
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {

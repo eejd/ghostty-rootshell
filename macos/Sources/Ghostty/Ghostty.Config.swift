@@ -331,5 +331,82 @@ extension Ghostty {
             let newColor = isLightBackground ? backgroundColor.darken(by: 0.08) : backgroundColor.darken(by: 0.4)
             return Color(newColor)
         }
+        
+        var resizeOverlay: ResizeOverlay {
+            guard let config = self.config else { return .after_first }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "resize-overlay"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return .after_first }
+            guard let ptr = v else { return .after_first }
+            let str = String(cString: ptr)
+            return ResizeOverlay(rawValue: str) ?? .after_first
+        }
+        
+        var resizeOverlayPosition: ResizeOverlayPosition {
+            let defaultValue = ResizeOverlayPosition.center
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "resize-overlay-position"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return ResizeOverlayPosition(rawValue: str) ?? defaultValue
+        }
+        
+        var resizeOverlayDuration: UInt {
+            guard let config = self.config else { return 1000 }
+            var v: UInt = 0
+            let key = "resize-overlay-duration"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v;
+        }
+    }
+}
+
+// MARK: Configuration Enums
+
+extension Ghostty.Config {
+    enum ResizeOverlay : String {
+        case always
+        case never
+        case after_first = "after-first"
+    }
+    
+    enum ResizeOverlayPosition : String {
+        case center
+        case top_left = "top-left"
+        case top_center = "top-center"
+        case top_right = "top-right"
+        case bottom_left = "bottom-left"
+        case bottom_center = "bottom-center"
+        case bottom_right = "bottom-right"
+        
+        func top() -> Bool {
+            switch (self) {
+            case .top_left, .top_center, .top_right: return true;
+            default: return false;
+            }
+        }
+        
+        func bottom() -> Bool {
+            switch (self) {
+            case .bottom_left, .bottom_center, .bottom_right: return true;
+            default: return false;
+            }
+        }
+        
+        func left() -> Bool {
+            switch (self) {
+            case .top_left, .bottom_left: return true;
+            default: return false;
+            }
+        }
+        
+        func right() -> Bool {
+            switch (self) {
+            case .top_right, .bottom_right: return true;
+            default: return false;
+            }
+        }
     }
 }

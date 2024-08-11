@@ -52,6 +52,9 @@ extension Ghostty {
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
         
+        // The last size so we can detect resizes and show our resize overlay
+        @State private var lastSize: CGSize? = nil
+        
         @EnvironmentObject private var ghostty: Ghostty.App
         
         var body: some View {
@@ -145,6 +148,54 @@ extension Ghostty {
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
+                    
+                    // If our geo size changed then we show the resize overlay as configured. 
+                    if (lastSize != geo.size) {
+                        let resizeOverlay = ghostty.config.resizeOverlay
+                        if (resizeOverlay != .never) {
+                            if let surfaceSize = surfaceView.surfaceSize {
+                                let padding: CGFloat = 5
+                                let resizeDuration = ghostty.config.resizeOverlayDuration
+                                let resizePosition = ghostty.config.resizeOverlayPosition
+                                
+                                VStack {
+                                    if (!resizePosition.top()) {
+                                        Spacer()
+                                    }
+                                    
+                                    HStack {
+                                        if (!resizePosition.left()) {
+                                            Spacer()
+                                        }
+                                        
+                                        Text(verbatim: "\(surfaceSize.columns)c ⨯ \(surfaceSize.rows)r")
+                                            .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(.background)
+                                                    .shadow(radius: 3)
+                                            ).lineLimit(1)
+                                            .truncationMode(.middle)
+                                        
+                                        if (!resizePosition.right()) {
+                                            Spacer()
+                                        }
+                                    }
+                                    
+                                    if (!resizePosition.bottom()) {
+                                        Spacer()
+                                    }
+                                }
+                                .allowsHitTesting(false)
+                                .opacity(resizeOverlay == .after_first && lastSize == nil ? 0 : 1)
+                                .onAppear() {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(resizeDuration))) {
+                                        self.lastSize = geo.size
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 .ghosttySurfaceView(surfaceView)
                 

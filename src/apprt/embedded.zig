@@ -1418,6 +1418,15 @@ pub const CAPI = struct {
         offset_len: u32,
     };
 
+    const SurfaceSize = extern struct {
+        columns: u16,
+        rows: u16,
+        width_px: u32,
+        height_px: u32,
+        cell_width_px: u32,
+        cell_height_px: u32,
+    };
+
     /// Create a new app.
     export fn ghostty_app_new(
         opts: *const apprt.runtime.App.Options,
@@ -1591,6 +1600,18 @@ pub const CAPI = struct {
     /// to the pty and the renderer.
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
         surface.updateSize(w, h);
+    }
+
+    /// Return the size information a surface has.
+    export fn ghostty_surface_size(surface: *Surface) SurfaceSize {
+        return .{
+            .columns = surface.core_surface.grid_size.columns,
+            .rows = surface.core_surface.grid_size.rows,
+            .width_px = surface.core_surface.screen_size.width,
+            .height_px = surface.core_surface.screen_size.height,
+            .cell_width_px = surface.core_surface.cell_size.width,
+            .cell_height_px = surface.core_surface.cell_size.height,
+        };
     }
 
     /// Update the color scheme of the surface.
