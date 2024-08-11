@@ -698,6 +698,27 @@ test "run iterator" {
         while (try it.next(alloc)) |_| count += 1;
         try testing.expectEqual(@as(usize, 3), count);
     }
+
+    // Bad ligatures
+    for (&[_][]const u8{ "fl", "fi", "st" }) |bad| {
+        // Make a screen with some data
+        var screen = try terminal.Screen.init(alloc, 5, 3, 0);
+        defer screen.deinit();
+        try screen.testWriteString(bad);
+
+        // Get our run iterator
+        var shaper = &testdata.shaper;
+        var it = shaper.runIterator(
+            testdata.grid,
+            &screen,
+            screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+            null,
+            null,
+        );
+        var count: usize = 0;
+        while (try it.next(alloc)) |_| count += 1;
+        try testing.expectEqual(@as(usize, 2), count);
+    }
 }
 
 test "run iterator: empty cells with background set" {

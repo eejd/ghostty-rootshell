@@ -104,6 +104,30 @@ pub const RunIterator = struct {
             if (j > self.i) style: {
                 const prev_cell = cells[j - 1];
 
+                // If the prev cell and this cell are both plain
+                // codepoints then we check if they are commonly "bad"
+                // ligatures and spit the run if they are.
+                if (prev_cell.content_tag == .codepoint and
+                    cell.content_tag == .codepoint)
+                {
+                    const prev_cp = prev_cell.codepoint();
+                    switch (prev_cp) {
+                        // fl, fi
+                        'f' => {
+                            const cp = cell.codepoint();
+                            if (cp == 'l' or cp == 'i') break;
+                        },
+
+                        // st
+                        's' => {
+                            const cp = cell.codepoint();
+                            if (cp == 't') break;
+                        },
+
+                        else => {},
+                    }
+                }
+
                 // If the style is exactly the change then fast path out.
                 if (prev_cell.style_id == cell.style_id) break :style;
 
