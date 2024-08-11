@@ -12,21 +12,18 @@ const font = @import("font/main.zig");
 
 /// If true, the default font features should be disabled for the given face.
 pub fn disableDefaultFontFeatures(face: *const font.Face) bool {
-    var buf: [64]u8 = undefined;
-    const name = face.name(&buf) catch |err| switch (err) {
-        // If the name doesn't fit in buf we know this will be false
-        // because we have no quirks fonts that are longer than buf!
-        error.OutOfMemory => return false,
-    };
+    _ = face;
 
-    // CodeNewRoman, Menlo and Monaco both have a default ligature of "fi" that
-    // looks really bad in terminal grids, so we want to disable ligatures
-    // by default for these faces.
-    //
-    // JuliaMono has a default ligature of "st" that looks bad.
-    return std.mem.eql(u8, name, "CodeNewRoman") or
-        std.mem.eql(u8, name, "CodeNewRoman Nerd Font") or
-        std.mem.eql(u8, name, "JuliaMono") or
-        std.mem.eql(u8, name, "Menlo") or
-        std.mem.eql(u8, name, "Monaco");
+    // This function used to do something, but we integrated the logic
+    // we checked for directly into our shaping algorithm. It's likely
+    // there are other broken fonts for other reasons so I'm keeping this
+    // around so its easy to add more checks in the future.
+    return false;
+
+    // var buf: [64]u8 = undefined;
+    // const name = face.name(&buf) catch |err| switch (err) {
+    //     // If the name doesn't fit in buf we know this will be false
+    //     // because we have no quirks fonts that are longer than buf!
+    //     error.OutOfMemory => return false,
+    // };
 }
