@@ -247,7 +247,8 @@ const c = @cImport({
 ///
 /// If the theme is not an absolute pathname, two different directories will be
 /// searched for a file name that matches the theme. This is case sensitive on
-/// systems with case-sensitive filesystems.
+/// systems with case-sensitive filesystems. It is an error for it to include
+/// path separators.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
 /// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
@@ -2204,11 +2205,9 @@ pub fn themeDir(alloc: std.mem.Allocator, type_: ThemeDirType) ?[]const u8 {
 }
 
 fn loadTheme(self: *Config, theme: []const u8) !void {
-    const alloc = self._arena.?.allocator();
-
     // Find our theme file and open it. See the open function for details.
     const file: std.fs.File = (try themepkg.open(
-        alloc,
+        &self._arena.?,
         theme,
         &self._errors,
     )) orelse return;
