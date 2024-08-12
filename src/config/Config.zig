@@ -247,8 +247,8 @@ const c = @cImport({
 ///
 /// If the theme is not an absolute pathname, two different directories will be
 /// searched for a file name that matches the theme. This is case sensitive on
-/// systems with case-sensitive filesystems. It is an error for it to include
-/// path separators.
+/// systems with case-sensitive filesystems. It is an error for a theme name to
+/// include path separators unless it is an absolute pathname.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
 /// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
