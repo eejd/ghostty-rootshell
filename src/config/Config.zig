@@ -24,6 +24,7 @@ const cli = @import("../cli.zig");
 const Command = @import("../Command.zig");
 
 const formatterpkg = @import("formatter.zig");
+const themepkg = @import("theme.zig");
 const url = @import("url.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
@@ -2205,88 +2206,12 @@ pub fn themeDir(alloc: std.mem.Allocator, type_: ThemeDirType) ?[]const u8 {
 fn loadTheme(self: *Config, theme: []const u8) !void {
     const alloc = self._arena.?.allocator();
 
-    const file = file: {
-        if (std.fs.path.isAbsolute(theme)) {
-            // Theme is an absolute path, open that file or fail
-            break :file std.fs.openFileAbsolute(theme, .{}) catch |err| switch (err) {
-                error.FileNotFound => {
-                    try self._errors.add(alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            alloc,
-                            "failed to load theme from the path \"{s}\"",
-                            .{theme},
-                        ),
-                    });
-                    return;
-                },
-                else => {
-                    try self._errors.add(alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            alloc,
-                            "failed to load theme from the path \"{s}\": {}",
-                            .{ theme, err },
-                        ),
-                    });
-                    return;
-                },
-            };
-        }
-
-        // The theme is not an absolute path, search the user and system theme
-        // directories
-
-        const dirs: []const struct {
-            type: ThemeDirType,
-            dir: ?[]const u8,
-        } = &.{
-            .{ .type = .user, .dir = themeDir(alloc, .user) },
-            .{ .type = .system, .dir = themeDir(alloc, .system) },
-        };
-
-        const cwd = std.fs.cwd();
-        for (dirs) |dir| {
-            if (dir.dir) |d| {
-                const path = try std.fs.path.join(alloc, &.{
-                    d,
-                    theme,
-                });
-                if (cwd.openFile(path, .{})) |file| {
-                    break :file file;
-                } else |err| switch (err) {
-                    error.FileNotFound => {},
-                    else => {
-                        try self._errors.add(alloc, .{
-                            .message = try std.fmt.allocPrintZ(
-                                alloc,
-                                "failed to load theme \"{s}\" from the file \"{s}\": {}",
-                                .{ theme, path, err },
-                            ),
-                        });
-                    },
-                }
-            }
-        }
-
-        // If we get here, no file was found with the theme. Log some errors
-        // and bail.
-        for (dirs) |dir| {
-            if (dir.dir) |d| {
-                try self._errors.add(alloc, .{
-                    .message = try std.fmt.allocPrintZ(
-                        alloc,
-                        "theme \"{s}\" not found, tried {s} path \"{s}\"",
-                        .{
-                            theme,
-                            @tagName(dir.type),
-                            d,
-                        },
-                    ),
-                });
-            }
-        }
-
-        return;
-    };
+    // Find our theme file and open it. See the open function for details.
+    const file: std.fs.File = (try themepkg.open(
+        alloc,
+        theme,
+        &self._errors,
+    )) orelse return;
     defer file.close();
 
     // From this point onwards, we load the theme and do a bit of a dance
