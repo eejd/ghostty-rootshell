@@ -48,9 +48,10 @@ pub const Location = enum {
                     error.OutOfMemory => return error.OutOfMemory,
                     error.BufferTooSmall => return error.OutOfMemory,
 
-                    // No home dir means we don't have an XDG config dir
-                    // so we can just return null.
-                    error.NoHomeDir => return null,
+                    // Any other error we treat as the XDG directory not
+                    // existing. Windows in particularly can return a LOT
+                    // of errors here.
+                    else => return null,
                 };
             },
 
