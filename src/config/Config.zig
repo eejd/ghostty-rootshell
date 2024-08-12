@@ -726,7 +726,7 @@ keybind: Keybinds = .{},
 ///
 /// This defaults to true because out-of-sync rendering on macOS can
 /// cause kernel panics (macOS 14.4+) and performance issues for external
-/// displays over some hardware such as DisplayLink. If you want to maximize
+/// displays over some hardware such as DisplayLink. If you want to minimize
 /// input latency, set this to false with the known aforementioned risks.
 ///
 /// Changing this value at runtime will only affect new terminals.
