@@ -83,17 +83,18 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
 
     var themes = std.ArrayList(ThemeListElement).init(alloc);
 
-    var it = themepkg.LocationIterator{ .arena = &arena };
+    var it = themepkg.LocationIterator{ .arena_alloc = arena.allocator() };
 
     while (try it.next()) |loc| {
         var dir = std.fs.cwd().openDir(loc.dir, .{ .iterate = true }) catch |err| switch (err) {
             error.FileNotFound => continue,
             else => {
-                std.debug.print("err: {}\n", .{err});
+                std.debug.print("error trying to open {s}: {}\n", .{ loc.dir, err });
                 continue;
             },
         };
         defer dir.close();
+
         var walker = dir.iterate();
 
         while (try walker.next()) |entry| {

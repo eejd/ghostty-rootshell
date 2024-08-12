@@ -2207,7 +2207,7 @@ pub fn themeDir(alloc: std.mem.Allocator, type_: ThemeDirType) ?[]const u8 {
 fn loadTheme(self: *Config, theme: []const u8) !void {
     // Find our theme file and open it. See the open function for details.
     const file: std.fs.File = (try themepkg.open(
-        &self._arena.?,
+        self._arena.?.allocator(),
         theme,
         &self._errors,
     )) orelse return;

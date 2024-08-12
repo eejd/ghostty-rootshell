@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
-const ArenaAllocator = std.heap.ArenaAllocator;
+const Allocator = std.mem.Allocator;
 const global_state = &@import("../main.zig").state;
 const internal_os = @import("../os/main.zig");
 const ErrorList = @import("ErrorList.zig");
@@ -18,26 +18,21 @@ pub const Location = enum {
     /// or is invalid for any reason. For example, it is perfectly valid to
     /// install and run Ghostty without the resources directory.
     ///
-    /// Due to the way allocations are handled, a pointer to an Arena allocator
-    /// must be used.
+    /// Due to the way allocations are handled, an Arena allocator (or another
+    /// similar allocator implementation) should be used. It may not be safe to
+    /// free the returned allocations.
     pub fn dir(
         self: Location,
-        arena: *ArenaAllocator,
+        arena_alloc: Allocator,
     ) error{OutOfMemory}!?[]const u8 {
-        const alloc = arena.allocator();
-
-        // if (comptime std.debug.runtime_safety) {
-        //     assert(!std.fs.path.isAbsolute(theme));
-        // }
-
         return switch (self) {
             .user => user: {
-                const subdir = std.fs.path.join(alloc, &.{
+                const subdir = std.fs.path.join(arena_alloc, &.{
                     "ghostty", "themes",
                 }) catch return error.OutOfMemory;
 
                 break :user internal_os.xdg.config(
-                    alloc,
+                    arena_alloc,
                     .{ .subdir = subdir },
                 ) catch |err| switch (err) {
                     error.OutOfMemory => return error.OutOfMemory,
@@ -50,7 +45,7 @@ pub const Location = enum {
                 };
             },
 
-            .resources => try std.fs.path.join(alloc, &.{
+            .resources => try std.fs.path.join(arena_alloc, &.{
                 global_state.resources_dir orelse return null,
                 "themes",
             }),
@@ -61,7 +56,10 @@ pub const Location = enum {
 /// An iterator that returns all possible directories for finding themes in
 /// order of priority.
 pub const LocationIterator = struct {
-    arena: *ArenaAllocator,
+    /// Due to the way allocations are handled, an Arena allocator (or another
+    /// similar allocator implementation) should be used. It may not be safe to
+    /// free the returned allocations.
+    arena_alloc: Allocator,
     i: usize = 0,
 
     pub fn next(self: *LocationIterator) !?struct {
@@ -69,12 +67,10 @@ pub const LocationIterator = struct {
         dir: []const u8,
     } {
         const max = @typeInfo(Location).Enum.fields.len;
-        std.debug.print("a: {d} {d}\n", .{ self.i, max });
         while (self.i < max) {
-            std.debug.print("b: {d}\n", .{self.i});
             const location: Location = @enumFromInt(self.i);
             self.i += 1;
-            if (try location.dir(self.arena)) |dir|
+            if (try location.dir(self.arena_alloc)) |dir|
                 return .{
                     .location = location,
                     .dir = dir,
@@ -95,28 +91,27 @@ pub const LocationIterator = struct {
 /// One error that is not recoverable and may be returned is OOM. This is
 /// always a critical error for configuration loading so it is returned.
 ///
-/// Due to the way allocations are handled, a pointer to an Arena allocator
-/// must be used.
+/// Due to the way allocations are handled, an Arena allocator (or another
+/// similar allocator implementation) should be used. It may not be safe to
+/// free the returned allocations.
 pub fn open(
-    arena: *ArenaAllocator,
+    arena_alloc: Allocator,
     theme: []const u8,
     errors: *ErrorList,
 ) error{OutOfMemory}!?std.fs.File {
 
     // Absolute themes are loaded a different path.
     if (std.fs.path.isAbsolute(theme)) return try openAbsolute(
-        arena,
+        arena_alloc,
         theme,
         errors,
     );
 
-    const alloc = arena.allocator();
-
     const basename = std.fs.path.basename(theme);
     if (!std.mem.eql(u8, theme, basename)) {
-        try errors.add(alloc, .{
+        try errors.add(arena_alloc, .{
             .message = try std.fmt.allocPrintZ(
-                alloc,
+                arena_alloc,
                 "theme \"{s}\" cannot include path separators unless it is an absolute path",
                 .{theme},
             ),
@@ -126,10 +121,10 @@ pub fn open(
 
     // Iterate over the possible locations to try to find the
     // one that exists.
-    var it: LocationIterator = .{ .arena = arena };
+    var it: LocationIterator = .{ .arena_alloc = arena_alloc };
     const cwd = std.fs.cwd();
     while (try it.next()) |loc| {
-        const path = try std.fs.path.join(alloc, &.{ loc.dir, theme });
+        const path = try std.fs.path.join(arena_alloc, &.{ loc.dir, theme });
         if (cwd.openFile(path, .{})) |file| {
             return file;
         } else |err| switch (err) {
@@ -138,9 +133,9 @@ pub fn open(
 
             // Anything else is an error we log and give up on.
             else => {
-                try errors.add(alloc, .{
+                try errors.add(arena_alloc, .{
                     .message = try std.fmt.allocPrintZ(
-                        alloc,
+                        arena_alloc,
                         "failed to load theme \"{s}\" from the file \"{s}\": {}",
                         .{ theme, path, err },
                     ),
@@ -157,10 +152,10 @@ pub fn open(
     // fine.
     it.reset();
     while (try it.next()) |loc| {
-        const path = try std.fs.path.join(alloc, &.{ loc.dir, theme });
-        try errors.add(alloc, .{
+        const path = try std.fs.path.join(arena_alloc, &.{ loc.dir, theme });
+        try errors.add(arena_alloc, .{
             .message = try std.fmt.allocPrintZ(
-                alloc,
+                arena_alloc,
                 "theme \"{s}\" not found, tried path \"{s}\"",
                 .{ theme, path },
             ),
@@ -175,26 +170,26 @@ pub fn open(
 /// returned. If a non-null return value is returned, there are never any
 /// errors added.
 ///
-/// Due to the way allocations are handled, a pointer to an Arena allocator
-/// must be used.
+/// Due to the way allocations are handled, an Arena allocator (or another
+/// similar allocator implementation) should be used. It may not be safe to
+/// free the returned allocations.
 pub fn openAbsolute(
-    arena: *ArenaAllocator,
+    arena_alloc: Allocator,
     theme: []const u8,
     errors: *ErrorList,
 ) error{OutOfMemory}!?std.fs.File {
-    const alloc = arena.allocator();
     return std.fs.openFileAbsolute(theme, .{}) catch |err| {
         switch (err) {
-            error.FileNotFound => try errors.add(alloc, .{
+            error.FileNotFound => try errors.add(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
-                    alloc,
+                    arena_alloc,
                     "failed to load theme from the path \"{s}\"",
                     .{theme},
                 ),
             }),
-            else => try errors.add(alloc, .{
+            else => try errors.add(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
-                    alloc,
+                    arena_alloc,
                     "failed to load theme from the path \"{s}\": {}",
                     .{ theme, err },
                 ),
