@@ -784,6 +784,7 @@ fn renderSizeWindow(self: *Inspector) void {
         }
 
         {
+            const adjusted = self.surface.posAdjusted(self.mouse.last_xpos, self.mouse.last_ypos);
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             {
                 _ = cimgui.c.igTableSetColumnIndex(0);
@@ -793,8 +794,8 @@ fn renderSizeWindow(self: *Inspector) void {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
                     "(%dpx, %dpx)",
-                    @as(u32, @intFromFloat(self.mouse.last_xpos)),
-                    @as(u32, @intFromFloat(self.mouse.last_ypos)),
+                    @as(i64, @intFromFloat(adjusted.x)),
+                    @as(i64, @intFromFloat(adjusted.y)),
                 );
             }
         }
