@@ -240,19 +240,29 @@ const c = @cImport({
 /// terminals. Only new terminals will use the new configuration.
 @"grapheme-width-method": GraphemeWidthMethod = .unicode,
 
-/// A named theme to use. The available themes are currently hardcoded to the
-/// themes that ship with Ghostty. On macOS, this list is in the `Ghostty.app/
-/// Contents/Resources/ghostty/themes` directory. On Linux, this list is in the
-/// `share/ghostty/themes` directory (wherever you installed the Ghostty "share"
+/// A theme to use. If the theme is an absolute pathname, Ghostty will attempt
+/// to load that file as a theme. If that file does not exist or is inaccessible,
+/// an error will be logged and no other directories will be searched.
+///
+/// If the theme is not an absolute pathname, two different directories will be
+/// searched for a file name that matches the theme. This is case sensitive on
+/// systems with case-sensitive filesystems.
+///
+/// The first directory is the `themes` subdirectory of your Ghostty
+/// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
+/// `~/.config/ghostty/themes`.
+///
+/// The second directory is the `themes` subdirectory of the Ghostty resources
+/// directory. Ghostty ships with a multitude of themes that will be installed
+/// into this directory. On macOS, this list is in the `Ghostty.app/Contents/
+/// Resources/ghostty/themes` directory. On Linux, this list is in the `share/
+/// ghostty/themes` directory (wherever you installed the Ghostty "share"
 /// directory.
 ///
 /// To see a list of available themes, run `ghostty +list-themes`.
 ///
 /// Any additional colors specified via background, foreground, palette, etc.
 /// will override the colors specified in the theme.
-///
-/// A future update will allow custom themes to be installed in certain
-/// directories.
 theme: ?[]const u8 = null,
 
 /// Background color for the window.
@@ -2174,40 +2184,107 @@ fn expandPaths(self: *Config, base: []const u8) !void {
     }
 }
 
+pub const ThemeDirType = enum {
+    user,
+    system,
+};
+
+pub fn themeDir(alloc: std.mem.Allocator, type_: ThemeDirType) ?[]const u8 {
+    return switch (type_) {
+        .user => internal_os.xdg.config(alloc, .{ .subdir = "ghostty/themes" }) catch null,
+        .system => result: {
+            const resources_dir = global_state.resources_dir orelse break :result null;
+            break :result std.fs.path.join(alloc, &.{
+                resources_dir,
+                "themes",
+            }) catch null;
+        },
+    };
+}
+
 fn loadTheme(self: *Config, theme: []const u8) !void {
     const alloc = self._arena.?.allocator();
-    const resources_dir = global_state.resources_dir orelse {
-        try self._errors.add(alloc, .{
-            .message = "no resources directory found, themes will not work",
-        });
-        return;
-    };
 
-    const path = try std.fs.path.join(alloc, &.{
-        resources_dir,
-        "themes",
-        theme,
-    });
-
-    const cwd = std.fs.cwd();
-    var file = cwd.openFile(path, .{}) catch |err| {
-        switch (err) {
-            error.FileNotFound => try self._errors.add(alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    alloc,
-                    "theme \"{s}\" not found, path={s}",
-                    .{ theme, path },
-                ),
-            }),
-
-            else => try self._errors.add(alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    alloc,
-                    "failed to load theme \"{s}\": {}",
-                    .{ theme, err },
-                ),
-            }),
+    const file = file: {
+        if (std.fs.path.isAbsolute(theme)) {
+            // Theme is an absolute path, open that file or fail
+            break :file std.fs.openFileAbsolute(theme, .{}) catch |err| switch (err) {
+                error.FileNotFound => {
+                    try self._errors.add(alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            alloc,
+                            "failed to load theme from the path \"{s}\"",
+                            .{theme},
+                        ),
+                    });
+                    return;
+                },
+                else => {
+                    try self._errors.add(alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            alloc,
+                            "failed to load theme from the path \"{s}\": {}",
+                            .{ theme, err },
+                        ),
+                    });
+                    return;
+                },
+            };
         }
+
+        // The theme is not an absolute path, search the user and system theme
+        // directories
+
+        const dirs: []const struct {
+            type: ThemeDirType,
+            dir: ?[]const u8,
+        } = &.{
+            .{ .type = .user, .dir = themeDir(alloc, .user) },
+            .{ .type = .system, .dir = themeDir(alloc, .system) },
+        };
+
+        const cwd = std.fs.cwd();
+        for (dirs) |dir| {
+            if (dir.dir) |d| {
+                const path = try std.fs.path.join(alloc, &.{
+                    d,
+                    theme,
+                });
+                if (cwd.openFile(path, .{})) |file| {
+                    break :file file;
+                } else |err| switch (err) {
+                    error.FileNotFound => {},
+                    else => {
+                        try self._errors.add(alloc, .{
+                            .message = try std.fmt.allocPrintZ(
+                                alloc,
+                                "failed to load theme \"{s}\" from the file \"{s}\": {}",
+                                .{ theme, path, err },
+                            ),
+                        });
+                    },
+                }
+            }
+        }
+
+        // If we get here, no file was found with the theme. Log some errors
+        // and bail.
+        for (dirs) |dir| {
+            if (dir.dir) |d| {
+                try self._errors.add(alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        alloc,
+                        "theme \"{s}\" not found, tried {s} path \"{s}\"",
+                        .{
+                            theme,
+                            @tagName(dir.type),
+                            d,
+                        },
+                    ),
+                });
+            }
+        }
+
         return;
     };
     defer file.close();

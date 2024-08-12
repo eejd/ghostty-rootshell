@@ -5,6 +5,7 @@ const Action = @import("action.zig").Action;
 const Arena = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const Config = @import("../config/Config.zig");
+const internal_os = @import("../os/main.zig");
 const global_state = &@import("../global.zig").state;
 
 pub const Options = struct {
@@ -41,40 +42,76 @@ pub fn run(alloc: Allocator) !u8 {
     const stderr = std.io.getStdErr().writer();
     const stdout = std.io.getStdOut().writer();
 
-    const resources_dir = global_state.resources_dir orelse {
+    if (global_state.resources_dir == null)
         try stderr.print("Could not find the Ghostty resources directory. Please ensure " ++
             "that Ghostty is installed correctly.\n", .{});
-        return 1;
+
+    const paths: []const struct {
+        type: Config.ThemeDirType,
+        dir: ?[]const u8,
+    } = &.{
+        .{
+            .type = .user,
+            .dir = Config.themeDir(alloc, .user),
+        },
+        .{
+            .type = .system,
+            .dir = Config.themeDir(alloc, .system),
+        },
     };
 
-    const path = try std.fs.path.join(alloc, &.{ resources_dir, "themes" });
-    defer alloc.free(path);
+    const ThemeListElement = struct {
+        type: Config.ThemeDirType,
+        path: []const u8,
+        theme: []const u8,
+        fn deinit(self: *const @This(), alloc_: std.mem.Allocator) void {
+            alloc_.free(self.path);
+            alloc_.free(self.theme);
+        }
+        fn lessThan(_: void, lhs: @This(), rhs: @This()) bool {
+            return std.ascii.orderIgnoreCase(lhs.theme, rhs.theme) == .lt;
+        }
+    };
 
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var count: usize = 0;
 
-    var walker = try dir.walk(alloc);
-    defer walker.deinit();
-
-    var themes = std.ArrayList([]const u8).init(alloc);
+    var themes = std.ArrayList(ThemeListElement).init(alloc);
     defer {
-        for (themes.items) |v| alloc.free(v);
+        for (themes.items) |v| v.deinit(alloc);
         themes.deinit();
     }
 
-    while (try walker.next()) |entry| {
-        if (entry.kind != .file) continue;
-        try themes.append(try alloc.dupe(u8, entry.basename));
+    for (paths) |path| {
+        if (path.dir) |p| {
+            defer alloc.free(p);
+
+            var dir = try std.fs.cwd().openDir(p, .{ .iterate = true });
+            defer dir.close();
+
+            var walker = try dir.walk(alloc);
+            defer walker.deinit();
+
+            while (try walker.next()) |entry| {
+                if (entry.kind != .file) continue;
+                count += 1;
+                try themes.append(.{
+                    .type = path.type,
+                    .path = try std.fs.path.join(alloc, &.{ p, entry.basename }),
+                    .theme = try alloc.dupe(u8, entry.basename),
+                });
+            }
+        }
     }
 
-    std.mem.sortUnstable([]const u8, themes.items, {}, struct {
-        fn lessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
-            return std.ascii.orderIgnoreCase(lhs, rhs) == .lt;
-        }
-    }.lessThan);
+    std.mem.sortUnstable(ThemeListElement, themes.items, {}, ThemeListElement.lessThan);
 
     for (themes.items) |theme| {
-        try stdout.print("{s}\n", .{theme});
+        try stdout.print("{s} ({s})\n", .{ theme.theme, @tagName(theme.type) });
+    }
+
+    if (count == 0) {
+        try stderr.print("No themes found, check to make sure that the themes were installed correctly.", .{});
+        return 1;
     }
 
     return 0;
