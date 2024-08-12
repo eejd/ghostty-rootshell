@@ -44,7 +44,7 @@ glyphs: std.AutoHashMapUnmanaged(GlyphKey, Render) = .{},
 
 /// The texture atlas to store renders in. The Glyph data in the glyphs
 /// cache is dependent on the atlas matching.
-atlas_greyscale: Atlas,
+atlas_grayscale: Atlas,
 atlas_color: Atlas,
 
 /// The underlying resolver for font data, fallbacks, etc. The shared
@@ -77,14 +77,14 @@ pub fn init(
     // We need to support loading options since we use the size data
     assert(resolver.collection.load_options != null);
 
-    var atlas_greyscale = try Atlas.init(alloc, 512, .greyscale);
-    errdefer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try Atlas.init(alloc, 512, .grayscale);
+    errdefer atlas_grayscale.deinit(alloc);
     var atlas_color = try Atlas.init(alloc, 512, .rgba);
     errdefer atlas_color.deinit(alloc);
 
     var result: SharedGrid = .{
         .resolver = resolver,
-        .atlas_greyscale = atlas_greyscale,
+        .atlas_grayscale = atlas_grayscale,
         .atlas_color = atlas_color,
         .lock = .{},
         .metrics = undefined, // Loaded below
@@ -105,7 +105,7 @@ pub fn init(
 pub fn deinit(self: *SharedGrid, alloc: Allocator) void {
     self.codepoints.deinit(alloc);
     self.glyphs.deinit(alloc);
-    self.atlas_greyscale.deinit(alloc);
+    self.atlas_grayscale.deinit(alloc);
     self.atlas_color.deinit(alloc);
     self.resolver.deinit(alloc);
 }
@@ -272,7 +272,7 @@ pub fn renderGlyph(
     // Get the presentation to determine what atlas to use
     const p = try self.resolver.getPresentation(index, glyph_index);
     const atlas: *font.Atlas = switch (p) {
-        .text => &self.atlas_greyscale,
+        .text => &self.atlas_grayscale,
         .emoji => &self.atlas_color,
     };
 

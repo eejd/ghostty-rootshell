@@ -215,12 +215,12 @@ test "single" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
 
     _ = try renderGlyph(
         alloc,
-        &atlas_greyscale,
+        &atlas_grayscale,
         .underline,
         36,
         18,
@@ -233,12 +233,12 @@ test "strikethrough" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
 
     _ = try renderGlyph(
         alloc,
-        &atlas_greyscale,
+        &atlas_grayscale,
         .strikethrough,
         36,
         18,
@@ -251,14 +251,14 @@ test "single large thickness" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
 
     // unrealistic thickness but used to cause a crash
     // https://github.com/mitchellh/ghostty/pull/1548
     _ = try renderGlyph(
         alloc,
-        &atlas_greyscale,
+        &atlas_grayscale,
         .underline,
         36,
         18,
@@ -271,12 +271,12 @@ test "curly" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
 
     _ = try renderGlyph(
         alloc,
-        &atlas_greyscale,
+        &atlas_grayscale,
         .underline_curly,
         36,
         18,

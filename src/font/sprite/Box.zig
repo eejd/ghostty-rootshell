@@ -2726,13 +2726,13 @@ test "all" {
     var cp: u32 = 0x2500;
     const end = 0x2570;
     while (cp <= end) : (cp += 1) {
-        var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-        defer atlas_greyscale.deinit(alloc);
+        var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+        defer atlas_grayscale.deinit(alloc);
 
         const face: Box = .{ .width = 18, .height = 36, .thickness = 2 };
         const glyph = try face.renderGlyph(
             alloc,
-            &atlas_greyscale,
+            &atlas_grayscale,
             cp,
         );
         try testing.expectEqual(@as(u32, face.width), glyph.width);

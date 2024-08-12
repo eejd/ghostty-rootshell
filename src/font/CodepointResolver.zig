@@ -458,8 +458,8 @@ test "getIndex disabled font style" {
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
 
-    var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-    defer atlas_greyscale.deinit(alloc);
+    var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
 
     var lib = try Library.init();
     defer lib.deinit();

@@ -220,7 +220,7 @@ const WebCanvasImpl = struct {
     }
 
     pub fn writeAtlas(self: *WebCanvasImpl, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
-        assert(atlas.format == .greyscale);
+        assert(atlas.format == .grayscale);
 
         // Reload our context since we resized the canvas
         const ctx = try self.context(null);
@@ -342,7 +342,7 @@ const PixmanImpl = struct {
 
     /// Write the data in this drawing to the atlas.
     pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
-        assert(atlas.format == .greyscale);
+        assert(atlas.format == .grayscale);
 
         const width = @as(u32, @intCast(self.image.getWidth()));
         const height = @as(u32, @intCast(self.image.getHeight()));

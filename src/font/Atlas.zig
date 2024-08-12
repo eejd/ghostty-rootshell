@@ -36,7 +36,7 @@ nodes: std.ArrayListUnmanaged(Node) = .{},
 /// The format of the texture data being written into the Atlas. This must be
 /// uniform for all textures in the Atlas. If you have some textures with
 /// different formats, you must use multiple atlases or convert the textures.
-format: Format = .greyscale,
+format: Format = .grayscale,
 
 /// This will be incremented every time the atlas is modified. This is useful
 /// for knowing if the texture data has changed since the last time it was
@@ -50,13 +50,13 @@ modified: std.atomic.Value(usize) = .{ .raw = 0 },
 resized: std.atomic.Value(usize) = .{ .raw = 0 },
 
 pub const Format = enum(u8) {
-    greyscale = 0,
+    grayscale = 0,
     rgb = 1,
     rgba = 2,
 
     pub fn depth(self: Format) u8 {
         return switch (self) {
-            .greyscale => 1,
+            .grayscale => 1,
             .rgb => 3,
             .rgba => 4,
         };
@@ -396,7 +396,7 @@ pub const Wasm = struct {
             // RGBA is the native ImageData format
             .rgba => self.data,
 
-            .greyscale => buf: {
+            .grayscale => buf: {
                 // Convert from A8 to RGBA so every 4th byte is set to a value.
                 var buf: []u8 = try alloc.alloc(u8, self.data.len * 4);
                 errdefer alloc.free(buf);
@@ -451,7 +451,7 @@ pub const Wasm = struct {
     }
 
     test "happy path" {
-        const atlas = atlas_new(512, @intFromEnum(Format.greyscale)).?;
+        const atlas = atlas_new(512, @intFromEnum(Format.grayscale)).?;
         defer atlas_free(atlas);
 
         const reg = atlas_reserve(atlas, 2, 2).?;
@@ -469,7 +469,7 @@ pub const Wasm = struct {
 
 test "exact fit" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 34, .greyscale); // +2 for 1px border
+    var atlas = try init(alloc, 34, .grayscale); // +2 for 1px border
     defer atlas.deinit(alloc);
 
     const modified = atlas.modified.load(.monotonic);
@@ -480,7 +480,7 @@ test "exact fit" {
 
 test "doesnt fit" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32, .greyscale);
+    var atlas = try init(alloc, 32, .grayscale);
     defer atlas.deinit(alloc);
 
     // doesn't fit due to border
@@ -489,7 +489,7 @@ test "doesnt fit" {
 
 test "fit multiple" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32, .greyscale);
+    var atlas = try init(alloc, 32, .grayscale);
     defer atlas.deinit(alloc);
 
     _ = try atlas.reserve(alloc, 15, 30);
@@ -499,7 +499,7 @@ test "fit multiple" {
 
 test "writing data" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 32, .greyscale);
+    var atlas = try init(alloc, 32, .grayscale);
     defer atlas.deinit(alloc);
 
     const reg = try atlas.reserve(alloc, 2, 2);
@@ -517,7 +517,7 @@ test "writing data" {
 
 test "grow" {
     const alloc = testing.allocator;
-    var atlas = try init(alloc, 4, .greyscale); // +2 for 1px border
+    var atlas = try init(alloc, 4, .grayscale); // +2 for 1px border
     defer atlas.deinit(alloc);
 
     const reg = try atlas.reserve(alloc, 2, 2);

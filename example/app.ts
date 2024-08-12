@@ -51,7 +51,7 @@ fetch(url.href)
       group_cache_free,
       group_cache_index_for_codepoint,
       group_cache_render_glyph,
-      group_cache_atlas_greyscale,
+      group_cache_atlas_grayscale,
       group_cache_atlas_color,
       atlas_new,
       atlas_free,
@@ -83,7 +83,7 @@ fetch(url.href)
     free(config_str.ptr);
 
     // Create our atlas
-    // const atlas = atlas_new(512, 0 /* greyscale */);
+    // const atlas = atlas_new(512, 0 /* grayscale */);
 
     // Create some memory for our string
     const font_name = makeStr("monospace");
@@ -174,7 +174,7 @@ fetch(url.href)
 
     // Debug our atlas canvas
     {
-      const atlas = group_cache_atlas_greyscale(group_cache);
+      const atlas = group_cache_atlas_grayscale(group_cache);
       const id = atlas_debug_canvas(atlas);
       document.getElementById("atlas-canvas").append(zjs.deleteValue(id));
     }

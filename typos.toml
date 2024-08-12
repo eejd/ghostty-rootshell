@@ -4,6 +4,8 @@ extend-exclude = [
   "pkg/*",
   "src/stb/*",
   "*.xib",
+  # "grey" color names are valid
+  "src/terminal/res/rgb.txt",
   # Do not self-check
   "typos.toml",
   # Fonts
@@ -36,6 +38,8 @@ iterm = "iterm"
 ACCES = "ACCES"
 wdth = "wdth"
 Strat = "Strat"
+grey = "gray"
+greyscale = "grayscale"
 
 [type.swift.extend-words]
 inout = "inout"

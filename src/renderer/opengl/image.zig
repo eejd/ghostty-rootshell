@@ -45,13 +45,13 @@ pub const Image = union(enum) {
     ///
     /// This data is owned by this union so it must be freed once the
     /// image is uploaded.
-    pending_grey_alpha: Pending,
+    pending_gray_alpha: Pending,
     pending_rgb: Pending,
     pending_rgba: Pending,
 
     /// This is the same as the pending states but there is a texture
     /// already allocated that we want to replace.
-    replace_grey_alpha: Replace,
+    replace_gray_alpha: Replace,
     replace_rgb: Replace,
     replace_rgba: Replace,
 
@@ -88,12 +88,12 @@ pub const Image = union(enum) {
 
     pub fn deinit(self: Image, alloc: Allocator) void {
         switch (self) {
-            .pending_grey_alpha => |p| alloc.free(p.dataSlice(2)),
+            .pending_gray_alpha => |p| alloc.free(p.dataSlice(2)),
             .pending_rgb => |p| alloc.free(p.dataSlice(3)),
             .pending_rgba => |p| alloc.free(p.dataSlice(4)),
             .unload_pending => |data| alloc.free(data),
 
-            .replace_grey_alpha => |r| {
+            .replace_gray_alpha => |r| {
                 alloc.free(r.pending.dataSlice(2));
                 r.texture.destroy();
             },
@@ -128,10 +128,10 @@ pub const Image = union(enum) {
             => return,
 
             .ready => |obj| .{ .unload_ready = obj },
-            .pending_grey_alpha => |p| .{ .unload_pending = p.dataSlice(2) },
+            .pending_gray_alpha => |p| .{ .unload_pending = p.dataSlice(2) },
             .pending_rgb => |p| .{ .unload_pending = p.dataSlice(3) },
             .pending_rgba => |p| .{ .unload_pending = p.dataSlice(4) },
-            .replace_grey_alpha => |r| .{ .unload_replace = .{
+            .replace_gray_alpha => |r| .{ .unload_replace = .{
                 r.pending.dataSlice(2), r.texture,
             } },
             .replace_rgb => |r| .{ .unload_replace = .{
@@ -157,7 +157,7 @@ pub const Image = union(enum) {
         // the self pointer directly.
         const existing: gl.Texture = switch (self.*) {
             // For pending, we can free the old data and become pending ourselves.
-            .pending_grey_alpha => |p| {
+            .pending_gray_alpha => |p| {
                 alloc.free(p.dataSlice(2));
                 self.* = img;
                 return;
@@ -191,7 +191,7 @@ pub const Image = union(enum) {
 
             // If we were already pending a replacement, then we free our
             // existing pending data and use the same texture.
-            .replace_grey_alpha => |r| existing: {
+            .replace_gray_alpha => |r| existing: {
                 alloc.free(r.pending.dataSlice(2));
                 break :existing r.texture;
             },
@@ -214,7 +214,7 @@ pub const Image = union(enum) {
 
         // We now have an existing texture, so set the proper replace key.
         self.* = switch (img) {
-            .pending_grey_alpha => |p| .{ .replace_grey_alpha = .{
+            .pending_gray_alpha => |p| .{ .replace_gray_alpha = .{
                 .texture = existing,
                 .pending = p,
             } },
@@ -246,7 +246,7 @@ pub const Image = union(enum) {
             => true,
 
             .ready,
-            .pending_grey_alpha,
+            .pending_gray_alpha,
             .pending_rgb,
             .pending_rgba,
             => false,
@@ -288,7 +288,7 @@ pub const Image = union(enum) {
             },
 
             // GA needs to be converted to RGBA, too.
-            .pending_grey_alpha => |*p| {
+            .pending_gray_alpha => |*p| {
                 const data = p.dataSlice(2);
                 const rgba = try gaToRgba(alloc, data);
                 alloc.free(data);
@@ -296,7 +296,7 @@ pub const Image = union(enum) {
                 self.* = .{ .pending_rgba = p.* };
             },
 
-            .replace_grey_alpha => |*r| {
+            .replace_gray_alpha => |*r| {
                 const data = r.pending.dataSlice(2);
                 const rgba = try gaToRgba(alloc, data);
                 alloc.free(data);

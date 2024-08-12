@@ -527,13 +527,13 @@ test "all" {
         0xE0D4,
     };
     for (cps) |cp| {
-        var atlas_greyscale = try font.Atlas.init(alloc, 512, .greyscale);
-        defer atlas_greyscale.deinit(alloc);
+        var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
+        defer atlas_grayscale.deinit(alloc);
 
         const face: Powerline = .{ .width = 18, .height = 36, .thickness = 2 };
         const glyph = try face.renderGlyph(
             alloc,
-            &atlas_greyscale,
+            &atlas_grayscale,
             cp,
         );
         try testing.expectEqual(@as(u32, face.width), glyph.width);

@@ -34,12 +34,12 @@ fn genMap() Map {
     }
 
     // Map our converters
-    result[freetype.c.FT_PIXEL_MODE_MONO].set(.greyscale, monoToGreyscale);
+    result[freetype.c.FT_PIXEL_MODE_MONO].set(.grayscale, monoToGrayscale);
 
     return result;
 }
 
-pub fn monoToGreyscale(alloc: Allocator, bm: Bitmap) Allocator.Error!Bitmap {
+pub fn monoToGrayscale(alloc: Allocator, bm: Bitmap) Allocator.Error!Bitmap {
     var buf = try alloc.alloc(u8, bm.width * bm.rows);
     errdefer alloc.free(buf);
 
@@ -77,7 +77,7 @@ test {
     _ = map;
 }
 
-test "mono to greyscale" {
+test "mono to grayscale" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -93,7 +93,7 @@ test "mono to greyscale" {
         .palette = null,
     };
 
-    const result = try monoToGreyscale(alloc, source);
+    const result = try monoToGrayscale(alloc, source);
     defer alloc.free(result.buffer[0..(result.width * result.rows)]);
     try testing.expect(result.pixel_mode == freetype.c.FT_PIXEL_MODE_GRAY);
     try testing.expectEqual(@as(u8, 255), result.buffer[0]);
