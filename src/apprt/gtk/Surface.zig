@@ -228,9 +228,9 @@ pub const URLWidget = struct {
         c.gtk_label_set_ellipsize(@ptrCast(left), c.PANGO_ELLIPSIZE_MIDDLE);
         c.gtk_widget_add_css_class(@ptrCast(left), "view");
         c.gtk_widget_add_css_class(@ptrCast(left), "url-overlay");
+        c.gtk_widget_add_css_class(@ptrCast(left), "left");
         c.gtk_widget_set_halign(left, c.GTK_ALIGN_START);
         c.gtk_widget_set_valign(left, c.GTK_ALIGN_END);
-        c.gtk_widget_set_margin_bottom(left, 2);
 
         // Create the right
         const right = c.gtk_label_new(str.ptr);
@@ -238,9 +238,9 @@ pub const URLWidget = struct {
         c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
         c.gtk_widget_add_css_class(@ptrCast(right), "view");
         c.gtk_widget_add_css_class(@ptrCast(right), "url-overlay");
+        c.gtk_widget_add_css_class(@ptrCast(right), "right");
         c.gtk_widget_set_halign(right, c.GTK_ALIGN_END);
         c.gtk_widget_set_valign(right, c.GTK_ALIGN_END);
-        c.gtk_widget_set_margin_bottom(right, 2);
 
         // Setup our mouse hover event for the left
         const ec_motion = c.gtk_event_controller_motion_new();

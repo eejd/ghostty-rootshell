@@ -1,9 +1,20 @@
 label.url-overlay {
-  padding: 2px;
+  padding: 4px 8px 4px 8px;
+  outline-style: solid;
+  outline-color: #555555;
+  outline-width: 1px;
 }
 
 label.url-overlay:hover {
   opacity: 0;
+}
+
+label.url-overlay.left {
+  border-radius: 0px 6px 0px 0px;
+}
+
+label.url-overlay.right {
+  border-radius: 6px 0px 0px 0px;
 }
 
 label.url-overlay.hidden {
