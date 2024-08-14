@@ -480,7 +480,7 @@ fn drawCallback(
     r: xev.Timer.RunError!void,
 ) xev.CallbackAction {
     _ = r catch unreachable;
-    const t = self_ orelse {
+    const t: *Thread = self_ orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
         return .disarm;
@@ -504,7 +504,7 @@ fn renderCallback(
     r: xev.Timer.RunError!void,
 ) xev.CallbackAction {
     _ = r catch unreachable;
-    const t = self_ orelse {
+    const t: *Thread = self_ orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
         return .disarm;
@@ -543,7 +543,7 @@ fn cursorTimerCallback(
         },
     };
 
-    const t = self_ orelse {
+    const t: *Thread = self_ orelse {
         // This shouldn't happen so we log it.
         log.warn("render callback fired without data set", .{});
         return .disarm;

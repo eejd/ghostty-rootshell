@@ -2012,11 +2012,13 @@ pub fn setScreenSize(
         .cursor_color = old.cursor_color,
     };
 
-    // Reset our cell contents.
-    try self.cells.resize(self.alloc, grid_size);
+    // Reset our cell contents if our grid size has changed.
+    if (!self.cells.size.equals(grid_size)) {
+        try self.cells.resize(self.alloc, grid_size);
 
-    // Reset our viewport to force a rebuild
-    self.cells_viewport = null;
+        // Reset our viewport to force a rebuild
+        self.cells_viewport = null;
+    }
 
     // If we have custom shaders then we update the state
     if (self.custom_shader_state) |*state| {
