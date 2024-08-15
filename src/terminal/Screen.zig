@@ -2737,6 +2737,77 @@ test "Screen cursorCopy style deref" {
     try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
 
+test "Screen cursorCopy style deref new page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 10, 0);
+    defer s.deinit();
+
+    var s2 = try Screen.init(alloc, 10, 10, 2048);
+    defer s2.deinit();
+
+    // We need to get the cursor on a new page.
+    const first_page_size = s2.pages.pages.first.?.data.capacity.rows;
+
+    // Fill the scrollback with blank lines until
+    // there are only 5 rows left on the first page.
+    for (0..first_page_size - 5) |_| {
+        try s2.testWriteString("\n");
+    }
+
+    try s2.testWriteString("1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+
+    // s2.pages.diagram(...):
+    //
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    //     +-------------+ ACTIVE
+    // 4300 |1         | | 0
+    // 4301 |2         | | 1
+    // 4302 |3         | | 2
+    // 4303 |4         | | 3
+    // 4304 |5         | | 4
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |6         | | 5
+    //    1 |7         | | 6
+    //    2 |8         | | 7
+    //    3 |9         | | 8
+    //    4 |10        | | 9
+    //      :  ^       : : = PIN 0
+    //      +----------+ :
+    //     +-------------+
+
+    // This should be PAGE 1
+    const page = &s2.cursor.page_pin.page.data;
+
+    // It should be the last page in the list.
+    try testing.expectEqual(&s2.pages.pages.last.?.data, page);
+    // It should have a previous page.
+    try testing.expect(s2.cursor.page_pin.page.prev != null);
+
+    // The cursor should be at 2, 9
+    try testing.expect(s2.cursor.x == 2);
+    try testing.expect(s2.cursor.y == 9);
+
+    // Bold should create our style in page 1.
+    try s2.setAttribute(.{ .bold = {} });
+    try testing.expectEqual(@as(usize, 1), page.styles.count());
+    try testing.expect(s2.cursor.style.flags.bold);
+
+    // Copy the cursor for the first screen. This should release
+    // the style from page 1 and move the cursor back to page 0.
+    try s2.cursorCopy(s.cursor);
+    try testing.expect(!s2.cursor.style.flags.bold);
+    try testing.expectEqual(@as(usize, 0), page.styles.count());
+    // The page after the page the cursor is now in should be page 1.
+    try testing.expectEqual(page, &s2.cursor.page_pin.page.next.?.data);
+    // The cursor should be at 0, 0
+    try testing.expect(s2.cursor.x == 0);
+    try testing.expect(s2.cursor.y == 0);
+}
+
 test "Screen cursorCopy style copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
