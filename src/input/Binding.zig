@@ -22,6 +22,58 @@ pub const Error = error{
     InvalidAction,
 };
 
+/// Full binding parser. The binding parser is implemented as an iterator
+/// which yields elements to support multi-key sequences without allocation.
+pub const Parser = struct {
+    unconsumed: bool = false,
+    trigger_it: SequenceIterator,
+    action: Action,
+
+    pub const Elem = union(enum) {
+        /// A leader trigger in a sequence.
+        leader: Trigger,
+
+        /// The final trigger and action in a sequence.
+        binding: Binding,
+    };
+
+    pub fn init(raw_input: []const u8) Error!Parser {
+        // If our entire input is prefixed with "unconsumed:" then we are
+        // not consuming this keybind when the action is triggered.
+        const unconsumed_prefix = "unconsumed:";
+        const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
+        const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
+        const input = raw_input[start_idx..];
+
+        // Find the first = which splits are mapping into the trigger
+        // and action, respectively.
+        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
+
+        // Sequence iterator goes up to the equal, action is after. We can
+        // parse the action now.
+        return .{
+            .unconsumed = unconsumed,
+            .trigger_it = .{ .input = input[0..eql_idx] },
+            .action = try Action.parse(input[eql_idx + 1 ..]),
+        };
+    }
+
+    pub fn next(self: *Parser) Error!?Elem {
+        // Get our trigger. If we're out of triggers then we're done.
+        const trigger = (try self.trigger_it.next()) orelse return null;
+
+        // If this is our last trigger then it is our final binding.
+        if (!self.trigger_it.done()) return .{ .leader = trigger };
+
+        // Out of triggers, yield the final action.
+        return .{ .binding = .{
+            .trigger = trigger,
+            .action = self.action,
+            .consumed = !self.unconsumed,
+        } };
+    }
+};
+
 /// An iterator that yields each trigger in a sequence of triggers. For
 /// example, the sequence "ctrl+a>ctrl+b" would yield "ctrl+a" and then
 /// "ctrl+b". The iterator approach allows us to parse a sequence of
@@ -35,11 +87,16 @@ const SequenceIterator = struct {
 
     /// Returns the next trigger in the sequence if there is no parsing error.
     pub fn next(self: *SequenceIterator) Error!?Trigger {
-        if (self.i > self.input.len) return null;
+        if (self.done()) return null;
         const rem = self.input[self.i..];
         const idx = std.mem.indexOf(u8, rem, ">") orelse rem.len;
         defer self.i += idx + 1;
         return try Trigger.parse(rem[0..idx]);
+    }
+
+    /// Returns true if there are no more triggers to parse.
+    pub fn done(self: *const SequenceIterator) bool {
+        return self.i > self.input.len;
     }
 };
 
@@ -751,6 +808,19 @@ pub const Set = struct {
     /// Assert: trigger in this map is also in bindings.
     unconsumed: UnconsumedMap = .{},
 
+    /// The entry type for the forward mapping of trigger to action.
+    const Entry = union(enum) {
+        /// This key is a leader key in a sequence. You must follow the given
+        /// set to find the next key in the sequence.
+        leader: *Set,
+
+        /// This trigger completes a sequence and the value is the action
+        /// to take. The "_unconsumed" variant is used for triggers that
+        /// should not consume the input.
+        action: Action,
+        action_unconsumed: Action,
+    };
+
     pub fn deinit(self: *Set, alloc: Allocator) void {
         self.bindings.deinit(alloc);
         self.reverse.deinit(alloc);
@@ -1149,6 +1219,38 @@ test "sequence iterator" {
         var it: SequenceIterator = .{ .input = "a>" };
         try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
         try testing.expectError(Error.InvalidFormat, it.next());
+    }
+}
+
+test "parse: sequences" {
+    const testing = std.testing;
+
+    // single character
+    {
+        var p = try Parser.init("ctrl+a=ignore");
+        try testing.expectEqual(Parser.Elem{ .binding = .{
+            .trigger = .{
+                .mods = .{ .ctrl = true },
+                .key = .{ .translated = .a },
+            },
+            .action = .{ .ignore = {} },
+        } }, (try p.next()).?);
+        try testing.expect(try p.next() == null);
+    }
+
+    // sequence
+    {
+        var p = try Parser.init("a>b=ignore");
+        try testing.expectEqual(Parser.Elem{ .leader = .{
+            .key = .{ .translated = .a },
+        } }, (try p.next()).?);
+        try testing.expectEqual(Parser.Elem{ .binding = .{
+            .trigger = .{
+                .key = .{ .translated = .b },
+            },
+            .action = .{ .ignore = {} },
+        } }, (try p.next()).?);
+        try testing.expect(try p.next() == null);
     }
 }
 
