@@ -908,12 +908,14 @@ pub fn updateFrame(
         }
 
         // If our terminal screen size doesn't match our expected renderer
-        // size then we skip a frame. This can happen if we get resized
-        // before the terminal gets resized. The terminal resize event also
-        // wakes up the renderer so we'll get another chance to update frame
-        // data.
-        if (self.cells.size.rows < state.terminal.rows or
-            self.cells.size.columns < state.terminal.cols)
+        // size then we skip a frame. This can happen if the terminal state
+        // is resized between when the renderer mailbox is drained and when
+        // the state mutex is acquired inside this function.
+        //
+        // For some reason this doesn't seem to cause any significant issues
+        // with flickering while resizing. '\_('-')_/'
+        if (self.cells.size.rows != state.terminal.rows or
+            self.cells.size.columns != state.terminal.cols)
         {
             return;
         }

@@ -522,6 +522,8 @@ fn renderCallback(
         t.flags.cursor_blink_visible,
     ) catch |err|
         log.warn("error rendering err={}", .{err});
+
+    // Draw
     t.drawFrame(false);
 
     return .disarm;
