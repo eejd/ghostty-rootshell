@@ -496,7 +496,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     errdefer gpu_state.deinit();
 
     // Get our CAMetalLayer
-    const layer = switch (builtin.os.tag) {
+    const layer: objc.Object = switch (builtin.os.tag) {
         .macos => layer: {
             const CAMetalLayer = objc.getClass("CAMetalLayer").?;
             break :layer CAMetalLayer.msgSend(objc.Object, objc.sel("layer"), .{});
@@ -556,7 +556,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
         break :state .{
             // Resolution and screen textures will be fixed up by first
-            // call to setScreenSize. This happens before any draw call.
+            // call to setScreenSize. Draw calls will bail out early if
+            // the screen size hasn't been set yet, so it won't error.
             .front_texture = undefined,
             .back_texture = undefined,
             .sampler = sampler,
@@ -869,6 +870,9 @@ pub fn updateFrame(
 ) !void {
     _ = surface;
 
+    // If we don't have a screen size yet then we can't render anything.
+    if (self.screen_size == null) return;
+
     // Data we extract out of the critical area.
     const Critical = struct {
         bg: terminal.color.RGB,
@@ -1070,6 +1074,9 @@ pub fn updateFrame(
 /// Draw the frame to the screen.
 pub fn drawFrame(self: *Metal, surface: *apprt.Surface) !void {
     _ = surface;
+
+    // If we don't have a screen size yet then we can't render anything.
+    if (self.screen_size == null) return;
 
     // If we have no cells rebuilt we can usually skip drawing since there
     // is no changed data. However, if we have active animations we still
