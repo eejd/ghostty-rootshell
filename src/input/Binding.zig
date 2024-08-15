@@ -22,6 +22,27 @@ pub const Error = error{
     InvalidAction,
 };
 
+/// An iterator that yields each trigger in a sequence of triggers. For
+/// example, the sequence "ctrl+a>ctrl+b" would yield "ctrl+a" and then
+/// "ctrl+b". The iterator approach allows us to parse a sequence of
+/// triggers without allocations.
+const SequenceIterator = struct {
+    /// The input of triggers. This is expected to be ONLY triggers. Things
+    /// like the "unconsumed:" prefix or action must be stripped before
+    /// passing to this iterator.
+    input: []const u8,
+    i: usize = 0,
+
+    /// Returns the next trigger in the sequence if there is no parsing error.
+    pub fn next(self: *SequenceIterator) Error!?Trigger {
+        if (self.i > self.input.len) return null;
+        const rem = self.input[self.i..];
+        const idx = std.mem.indexOf(u8, rem, ">") orelse rem.len;
+        defer self.i += idx + 1;
+        return try Trigger.parse(rem[0..idx]);
+    }
+};
+
 /// Parse the format "ctrl+a=csi:A" into a binding. The format is
 /// specifically "trigger=action". Trigger is a "+"-delimited series of
 /// modifiers and keys. Action is the action name and optionally a
@@ -551,6 +572,7 @@ pub const Trigger = struct {
     /// not be part of a sequence (i.e. `a>b`). This parses exactly a single
     /// trigger.
     pub fn parse(input: []const u8) !Trigger {
+        if (input.len == 0) return Error.InvalidFormat;
         var result: Trigger = .{};
         var iter = std.mem.tokenizeScalar(u8, input, '+');
         loop: while (iter.next()) |part| {
@@ -1090,6 +1112,44 @@ test "parse: action with a tuple" {
 
     // invalid type
     try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,four"));
+}
+
+test "sequence iterator" {
+    const testing = std.testing;
+
+    // single character
+    {
+        var it: SequenceIterator = .{ .input = "a" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expect(try it.next() == null);
+    }
+
+    // multi character
+    {
+        var it: SequenceIterator = .{ .input = "a>b" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .b } }, (try it.next()).?);
+        try testing.expect(try it.next() == null);
+    }
+
+    // empty
+    {
+        var it: SequenceIterator = .{ .input = "" };
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
+
+    // empty starting sequence
+    {
+        var it: SequenceIterator = .{ .input = ">a" };
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
+
+    // empty ending sequence
+    {
+        var it: SequenceIterator = .{ .input = "a>" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
 }
 
 test "set: maintains reverse mapping" {
