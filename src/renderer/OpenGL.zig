@@ -2030,6 +2030,12 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
         }
     }
 
+    // In the "OpenGL Programming Guide for Mac" it explains that: "When you
+    // use an NSOpenGLView object with OpenGL calls that are issued from a
+    // thread other than the main one, you must set up mutex locking."
+    // This locks the context and avoids crashes that can happen due to
+    // races with the underlying Metal layer that Apple is using to
+    // implement OpenGL.
     const is_darwin = builtin.target.isDarwin();
     const ogl = if (comptime is_darwin) @cImport({
         @cInclude("OpenGL/OpenGL.h");
