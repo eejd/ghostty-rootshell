@@ -109,7 +109,7 @@ pub fn RefCountedSet(
         items: Offset(Item),
 
         /// The number of living items currently stored in the set.
-        living: Id = 0,
+        living: usize = 0,
 
         /// The next index to store an item at.
         /// Id 0 is reserved for unused items.
