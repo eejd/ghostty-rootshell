@@ -117,13 +117,17 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     var widest_key: usize = 0;
     var buf: [64]u8 = undefined;
     while (iter.next()) |bind| {
+        const action = switch (bind.value_ptr.*) {
+            .leader => continue, // TODO: support this
+            .action, .action_unconsumed => |action| action,
+        };
         const key = switch (bind.key_ptr.key) {
             .translated => |k| try std.fmt.bufPrint(&buf, "{s}", .{@tagName(k)}),
             .physical => |k| try std.fmt.bufPrint(&buf, "physical:{s}", .{@tagName(k)}),
             .unicode => |c| try std.fmt.bufPrint(&buf, "{u}", .{c}),
         };
         widest_key = @max(widest_key, win.gwidth(key));
-        try bindings.append(.{ .trigger = bind.key_ptr.*, .action = bind.value_ptr.* });
+        try bindings.append(.{ .trigger = bind.key_ptr.*, .action = action });
     }
     std.mem.sort(Binding, bindings.items, {}, Binding.lessThan);
 

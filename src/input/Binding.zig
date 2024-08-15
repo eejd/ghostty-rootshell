@@ -772,7 +772,7 @@ pub const Trigger = struct {
 pub const Set = struct {
     const HashMap = std.HashMapUnmanaged(
         Trigger,
-        Action,
+        Entry,
         Context(Trigger),
         std.hash_map.default_max_load_percentage,
     );
@@ -797,23 +797,15 @@ pub const Set = struct {
     /// The reverse mapping of action to binding. Note that multiple
     /// bindings can map to the same action and this map will only have
     /// the most recently added binding for an action.
+    ///
+    /// Sequenced triggers are never present in the reverse map at this time.
+    /// This is a conscious decision since the primary use case of the reverse
+    /// map is to support GUI toolkit keyboard accelerators and no mainstream
+    /// GUI toolkit supports sequences.
     reverse: ReverseMap = .{},
 
-    /// The map of triggers that explicitly do not want to be consumed
-    /// when matched. A trigger is "consumed" when it is not further
-    /// processed and potentially sent to the terminal. An "unconsumed"
-    /// trigger will perform both its action and also continue normal
-    /// encoding processing (if any).
-    ///
-    /// This is stored as a separate map since unconsumed triggers are
-    /// rare and we don't want to bloat our map with a byte per entry
-    /// (for boolean state) when most entries will be consumed.
-    ///
-    /// Assert: trigger in this map is also in bindings.
-    unconsumed: UnconsumedMap = .{},
-
     /// The entry type for the forward mapping of trigger to action.
-    const Entry = union(enum) {
+    pub const Entry = union(enum) {
         /// This key is a leader key in a sequence. You must follow the given
         /// set to find the next key in the sequence.
         leader: *Set,
@@ -823,12 +815,32 @@ pub const Set = struct {
         /// should not consume the input.
         action: Action,
         action_unconsumed: Action,
+
+        /// Implements the formatter for the fmt package. This encodes the
+        /// action back into the format used by parse.
+        pub fn format(
+            self: Entry,
+            comptime layout: []const u8,
+            opts: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = layout;
+            _ = opts;
+
+            switch (self) {
+                .leader => @panic("TODO"),
+
+                .action, .action_unconsumed => |action| {
+                    // action implements the format
+                    try writer.print("{s}", .{action});
+                },
+            }
+        }
     };
 
     pub fn deinit(self: *Set, alloc: Allocator) void {
         self.bindings.deinit(alloc);
         self.reverse.deinit(alloc);
-        self.unconsumed.deinit(alloc);
         self.* = undefined;
     }
 
@@ -906,7 +918,6 @@ pub const Set = struct {
         assert(action != .unbind);
 
         const gop = try self.bindings.getOrPut(alloc, t);
-        if (!consumed) try self.unconsumed.put(alloc, t, {});
 
         // If we have an existing binding for this trigger, we have to
         // update the reverse mapping to remove the old action.
@@ -919,19 +930,21 @@ pub const Set = struct {
                     break :it;
                 }
             }
-
-            // We also have to remove the unconsumed state if it exists.
-            if (consumed) _ = self.unconsumed.remove(t);
         }
 
-        gop.value_ptr.* = action;
+        // TODO: i hate this error handling
+        gop.value_ptr.* = if (consumed) .{
+            .action = action,
+        } else .{
+            .action_unconsumed = action,
+        };
         errdefer _ = self.bindings.remove(t);
         try self.reverse.put(alloc, action, t);
         errdefer _ = self.reverse.remove(action);
     }
 
     /// Get a binding for a given trigger.
-    pub fn get(self: Set, t: Trigger) ?Action {
+    pub fn get(self: Set, t: Trigger) ?Entry {
         return self.bindings.get(t);
     }
 
@@ -941,34 +954,37 @@ pub const Set = struct {
         return self.reverse.get(a);
     }
 
-    /// Returns true if the given trigger should be consumed. Requires
-    /// that trigger is in the set to be valid so this should only follow
-    /// a non-null get.
-    pub fn getConsumed(self: Set, t: Trigger) bool {
-        return self.unconsumed.get(t) == null;
-    }
-
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, t: Trigger) void {
-        const action = self.bindings.get(t) orelse return;
+        const entry = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
-        _ = self.unconsumed.remove(t);
 
-        // Look for a matching action in bindings and use that.
-        // Note: we'd LIKE to replace this with the most recent binding but
-        // our hash map obviously has no concept of ordering so we have to
-        // choose whatever. Maybe a switch to an array hash map here.
-        const action_hash = action.hash();
-        var it = self.bindings.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.hash() == action_hash) {
-                self.reverse.putAssumeCapacity(action, entry.key_ptr.*);
-                break;
-            }
-        } else {
-            // No over trigger points to this action so we remove
-            // the reverse mapping completely.
-            _ = self.reverse.remove(action);
+        switch (entry) {
+            .leader => @panic("TODO"),
+
+            // For an action we need to fix up the reverse mapping.
+            // Note: we'd LIKE to replace this with the most recent binding but
+            // our hash map obviously has no concept of ordering so we have to
+            // choose whatever. Maybe a switch to an array hash map here.
+            .action, .action_unconsumed => |action| {
+                const action_hash = action.hash();
+                var it = self.bindings.iterator();
+                while (it.next()) |it_entry| {
+                    switch (it_entry.value_ptr.*) {
+                        .leader => {},
+                        .action, .action_unconsumed => |action_search| {
+                            if (action_search.hash() == action_hash) {
+                                self.reverse.putAssumeCapacity(action, it_entry.key_ptr.*);
+                                break;
+                            }
+                        },
+                    }
+                } else {
+                    // No over trigger points to this action so we remove
+                    // the reverse mapping completely.
+                    _ = self.reverse.remove(action);
+                }
+            },
         }
     }
 
@@ -1307,7 +1323,7 @@ test "set: parseAndPut typical binding" {
 
     // Creates forward mapping
     {
-        const action = s.get(.{ .key = .{ .translated = .a } }).?;
+        const action = s.get(.{ .key = .{ .translated = .a } }).?.action;
         try testing.expect(action == .new_window);
     }
 
@@ -1330,9 +1346,8 @@ test "set: parseAndPut unconsumed binding" {
     // Creates forward mapping
     {
         const trigger: Trigger = .{ .key = .{ .translated = .a } };
-        const action = s.get(trigger).?;
+        const action = s.get(trigger).?.action_unconsumed;
         try testing.expect(action == .new_window);
-        try testing.expect(!s.getConsumed(trigger));
     }
 
     // Creates reverse mapping
@@ -1417,11 +1432,11 @@ test "set: consumed state" {
     defer s.deinit(alloc);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
 
     try s.putUnconsumed(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(!s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action_unconsumed);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
 }

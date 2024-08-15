@@ -3317,30 +3317,45 @@ pub const Keybinds = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
+        // TODO: leaders
         return .{
             .set = .{
                 .bindings = try self.set.bindings.clone(alloc),
                 .reverse = try self.set.reverse.clone(alloc),
-                .unconsumed = try self.set.unconsumed.clone(alloc),
             },
         };
     }
 
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Keybinds, other: Keybinds) bool {
+        // Two keybinds are considered equal if their primary bindings
+        // are the same. We don't compare reverse mappings and such.
         const self_map = self.set.bindings;
         const other_map = other.set.bindings;
+
+        // If the count of mappings isn't identical they can't be equal
         if (self_map.count() != other_map.count()) return false;
 
         var it = self_map.iterator();
         while (it.next()) |self_entry| {
+            // If the trigger isn't in the other map, they can't be equal
             const other_entry = other_map.getEntry(self_entry.key_ptr.*) orelse
                 return false;
-            if (!equalField(
-                inputpkg.Binding.Action,
-                self_entry.value_ptr.*,
-                other_entry.value_ptr.*,
-            )) return false;
+
+            // If the entry types are different, they can't be equal
+            if (std.meta.activeTag(self_entry.value_ptr.*) !=
+                std.meta.activeTag(other_entry.value_ptr.*)) return false;
+
+            switch (self_entry.value_ptr.*) {
+                .leader => @panic("TODO"),
+
+                // Actions are compared by field directly
+                inline .action, .action_unconsumed => |_, tag| if (!equalField(
+                    inputpkg.Binding.Action,
+                    @field(self_entry.value_ptr.*, @tagName(tag)),
+                    @field(other_entry.value_ptr.*, @tagName(tag)),
+                )) return false,
+            }
         }
 
         return true;
