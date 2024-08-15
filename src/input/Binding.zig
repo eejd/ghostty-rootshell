@@ -839,6 +839,16 @@ pub const Set = struct {
     };
 
     pub fn deinit(self: *Set, alloc: Allocator) void {
+        // Clear any leaders if we have them
+        var it = self.bindings.iterator();
+        while (it.next()) |entry| switch (entry.value_ptr.*) {
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
+            .action, .action_unconsumed => {},
+        };
+
         self.bindings.deinit(alloc);
         self.reverse.deinit(alloc);
         self.* = undefined;
@@ -848,7 +858,9 @@ pub const Set = struct {
     /// the "unbind" case, ensure consumed/unconsumed fields are set correctly,
     /// handle sequences, etc.
     ///
-    /// If an error is returned, the set is unmodified and safe to reuse.
+    /// If this returns an OutOfMemory error then the set is in a broken
+    /// state and should not be used again. Any Error returned is validated
+    /// before any set modifications are made.
     pub fn parseAndPut(
         self: *Set,
         alloc: Allocator,
@@ -864,9 +876,33 @@ pub const Set = struct {
         // Now we know the input is valid, we can add it to the set.
         var set: *Set = self;
         while (it.next() catch unreachable) |elem| switch (elem) {
-            .leader => |t| {
-                _ = t;
-                @panic("TODO");
+            .leader => |t| leader: {
+                // If we have a leader, we need to upsert a set for it.
+                if (set.get(t)) |entry| switch (entry) {
+                    // TODO: test BOTH code paths
+
+                    .leader => |s| {
+                        // We have an existing leader for this key already
+                        // so reuse the set.
+                        set = s;
+                        break :leader;
+                    },
+
+                    .action, .action_unconsumed => {
+                        // Remove the existing action. Fallthrough as if
+                        // we don't have a leader.
+                        set.remove(t);
+                    },
+                };
+
+                // Create our new set for this leader
+                const next = try alloc.create(Set);
+                errdefer alloc.destroy(next);
+                next.* = .{};
+
+                // Insert the leader entry
+                try set.bindings.put(alloc, t, .{ .leader = next });
+                set = next;
             },
 
             .binding => |b| switch (b.action) {
@@ -1373,6 +1409,29 @@ test "set: parseAndPut removed binding" {
         try testing.expect(s.get(trigger) == null);
     }
     try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
+}
+
+test "set: parseAndPut sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
 }
 
 test "set: maintains reverse mapping" {
