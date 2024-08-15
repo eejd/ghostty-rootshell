@@ -43,85 +43,7 @@ pub fn parse(raw_input: []const u8) !Binding {
 
     // Determine our trigger conditions by parsing the part before
     // the "=", i.e. "ctrl+shift+a" or "a"
-    const trigger = trigger: {
-        var result: Trigger = .{};
-        var iter = std.mem.tokenizeScalar(u8, input[0..eqlIdx], '+');
-        loop: while (iter.next()) |part| {
-            // All parts must be non-empty
-            if (part.len == 0) return Error.InvalidFormat;
-
-            // Check if its a modifier
-            const modsInfo = @typeInfo(key.Mods).Struct;
-            inline for (modsInfo.fields) |field| {
-                if (field.type == bool) {
-                    if (std.mem.eql(u8, part, field.name)) {
-                        // Repeat not allowed
-                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
-                        @field(result.mods, field.name) = true;
-                        continue :loop;
-                    }
-                }
-            }
-
-            // Alias modifiers
-            const alias_mods = .{
-                .{ "cmd", "super" },    .{ "command", "super" },
-                .{ "opt", "alt" },      .{ "option", "alt" },
-                .{ "control", "ctrl" },
-            };
-            inline for (alias_mods) |pair| {
-                if (std.mem.eql(u8, part, pair[0])) {
-                    // Repeat not allowed
-                    if (@field(result.mods, pair[1])) return Error.InvalidFormat;
-                    @field(result.mods, pair[1]) = true;
-                    continue :loop;
-                }
-            }
-
-            // If the key starts with "physical" then this is an physical key.
-            const physical_prefix = "physical:";
-            const physical = std.mem.startsWith(u8, part, physical_prefix);
-            const key_part = if (physical) part[physical_prefix.len..] else part;
-
-            // Check if its a key
-            const keysInfo = @typeInfo(key.Key).Enum;
-            inline for (keysInfo.fields) |field| {
-                if (!std.mem.eql(u8, field.name, "invalid")) {
-                    if (std.mem.eql(u8, key_part, field.name)) {
-                        // Repeat not allowed
-                        if (!result.isKeyUnset()) return Error.InvalidFormat;
-
-                        const keyval = @field(key.Key, field.name);
-                        result.key = if (physical)
-                            .{ .physical = keyval }
-                        else
-                            .{ .translated = keyval };
-                        continue :loop;
-                    }
-                }
-            }
-
-            // If we're still unset and we have exactly one unicode
-            // character then we can use that as a key.
-            if (result.isKeyUnset()) unicode: {
-                // Invalid UTF8 drops to invalid format
-                const view = std.unicode.Utf8View.init(key_part) catch break :unicode;
-                var it = view.iterator();
-
-                // No codepoints or multiple codepoints drops to invalid format
-                const cp = it.nextCodepoint() orelse break :unicode;
-                if (it.nextCodepoint() != null) break :unicode;
-
-                result.key = .{ .unicode = cp };
-                continue :loop;
-            }
-
-            // We didn't recognize this value
-            return Error.InvalidFormat;
-        }
-
-        break :trigger result;
-    };
+    const trigger = try Trigger.parse(input[0..eqlIdx]);
 
     // Find a matching action
     const action = try Action.parse(input[eqlIdx + 1 ..]);
@@ -624,6 +546,89 @@ pub const Trigger = struct {
         };
     };
 
+    /// Parse a single trigger. The input is expected to be ONLY the trigger
+    /// (i.e. in the sequence `a=ignore` input is only `a`). The trigger may
+    /// not be part of a sequence (i.e. `a>b`). This parses exactly a single
+    /// trigger.
+    pub fn parse(input: []const u8) !Trigger {
+        var result: Trigger = .{};
+        var iter = std.mem.tokenizeScalar(u8, input, '+');
+        loop: while (iter.next()) |part| {
+            // All parts must be non-empty
+            if (part.len == 0) return Error.InvalidFormat;
+
+            // Check if its a modifier
+            const modsInfo = @typeInfo(key.Mods).Struct;
+            inline for (modsInfo.fields) |field| {
+                if (field.type == bool) {
+                    if (std.mem.eql(u8, part, field.name)) {
+                        // Repeat not allowed
+                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
+                        @field(result.mods, field.name) = true;
+                        continue :loop;
+                    }
+                }
+            }
+
+            // Alias modifiers
+            const alias_mods = .{
+                .{ "cmd", "super" },    .{ "command", "super" },
+                .{ "opt", "alt" },      .{ "option", "alt" },
+                .{ "control", "ctrl" },
+            };
+            inline for (alias_mods) |pair| {
+                if (std.mem.eql(u8, part, pair[0])) {
+                    // Repeat not allowed
+                    if (@field(result.mods, pair[1])) return Error.InvalidFormat;
+                    @field(result.mods, pair[1]) = true;
+                    continue :loop;
+                }
+            }
+
+            // If the key starts with "physical" then this is an physical key.
+            const physical_prefix = "physical:";
+            const physical = std.mem.startsWith(u8, part, physical_prefix);
+            const key_part = if (physical) part[physical_prefix.len..] else part;
+
+            // Check if its a key
+            const keysInfo = @typeInfo(key.Key).Enum;
+            inline for (keysInfo.fields) |field| {
+                if (!std.mem.eql(u8, field.name, "invalid")) {
+                    if (std.mem.eql(u8, key_part, field.name)) {
+                        // Repeat not allowed
+                        if (!result.isKeyUnset()) return Error.InvalidFormat;
+
+                        const keyval = @field(key.Key, field.name);
+                        result.key = if (physical)
+                            .{ .physical = keyval }
+                        else
+                            .{ .translated = keyval };
+                        continue :loop;
+                    }
+                }
+            }
+
+            // If we're still unset and we have exactly one unicode
+            // character then we can use that as a key.
+            if (result.isKeyUnset()) unicode: {
+                // Invalid UTF8 drops to invalid format
+                const view = std.unicode.Utf8View.init(key_part) catch break :unicode;
+                var it = view.iterator();
+
+                // No codepoints or multiple codepoints drops to invalid format
+                const cp = it.nextCodepoint() orelse break :unicode;
+                if (it.nextCodepoint() != null) break :unicode;
+
+                result.key = .{ .unicode = cp };
+                continue :loop;
+            }
+
+            // We didn't recognize this value
+            return Error.InvalidFormat;
+        }
+
+        return result;
+    }
     /// Returns true if this trigger has no key set.
     pub fn isKeyUnset(self: Trigger) bool {
         return switch (self.key) {
