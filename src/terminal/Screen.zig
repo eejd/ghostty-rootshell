@@ -78,7 +78,7 @@ pub const Dirty = packed struct {
     hyperlink_hover: bool = false,
 };
 
-/// The cursor position.
+/// The cursor position and style.
 pub const Cursor = struct {
     // The x/y position within the viewport.
     x: size.CellCountInt,
@@ -761,26 +761,23 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     self.cursor = other;
     errdefer self.cursor = old;
 
-    // Clear our style information initially so runtime safety integrity
-    // checks pass since there is a period below where the cursor is
-    // invalid.
-    self.cursor.style = .{};
-    self.cursor.style_id = 0;
+    // Keep our old style ID so it can be properly cleaned up below.
+    self.cursor.style_id = old.style_id;
 
-    // We need to keep our old x/y because that is our cursorAbsolute
-    // will fix up our pointers.
-    //
-    // We keep our old page pin because we expect to be in the active
-    // page relative to our own screen.
+    // Keep our old page pin and X/Y because:
+    // 1. The old style will need to be cleaned up from the page it's from.
+    // 2. The new position navigated to by `cursorAbsolute` needs to be in our
+    //    own screen.
     self.cursor.page_pin = old.page_pin;
     self.cursor.x = old.x;
     self.cursor.y = old.y;
-    self.cursorAbsolute(other.x, other.y);
 
-    // We keep the old style ref so manualStyleUpdate can clean our old style up.
-    self.cursor.style = other.style;
-    self.cursor.style_id = old.style_id;
+    // Call manual style update in order to clean up our old style, if we have
+    // one, and also to load the style from the other cursor, if it had one.
     try self.manualStyleUpdate();
+
+    // Move to the correct location to match the other cursor.
+    self.cursorAbsolute(other.x, other.y);
 }
 
 /// Always use this to write to cursor.page_pin.*.
