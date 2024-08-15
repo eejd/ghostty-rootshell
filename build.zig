@@ -1117,6 +1117,10 @@ fn addDeps(
         step.root_module.addImport("macos", macos_dep.module("macos"));
         step.linkLibrary(macos_dep.artifact("macos"));
         try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
+
+        if (config.renderer == .opengl) {
+            step.linkFramework("OpenGL");
+        }
     }
 
     // cimgui

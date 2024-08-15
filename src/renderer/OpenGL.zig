@@ -2030,6 +2030,14 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
         }
     }
 
+    const is_darwin = builtin.target.isDarwin();
+    const ogl = if (comptime is_darwin) @cImport({
+        @cInclude("OpenGL/OpenGL.h");
+    }) else {};
+    const cgl_ctx = if (comptime is_darwin) ogl.CGLGetCurrentContext();
+    if (comptime is_darwin) _ = ogl.CGLLockContext(cgl_ctx);
+    defer _ = if (comptime is_darwin) ogl.CGLUnlockContext(cgl_ctx);
+
     // Draw our terminal cells
     try self.drawCellProgram(gl_state);
 
