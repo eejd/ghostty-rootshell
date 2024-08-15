@@ -3311,15 +3311,8 @@ pub const Keybinds = struct {
             return;
         }
 
-        const binding = try inputpkg.Binding.parse(value);
-        switch (binding.action) {
-            .unbind => self.set.remove(binding.trigger),
-            else => if (binding.consumed) {
-                try self.set.put(alloc, binding.trigger, binding.action);
-            } else {
-                try self.set.putUnconsumed(alloc, binding.trigger, binding.action);
-            },
-        }
+        // Let our much better tested binding package handle parsing and storage.
+        try self.set.parseAndPut(alloc, value);
     }
 
     /// Deep copy of the struct. Required by Config.

@@ -72,6 +72,10 @@ pub const Parser = struct {
             .consumed = !self.unconsumed,
         } };
     }
+
+    pub fn reset(self: *Parser) void {
+        self.trigger_it.i = 0;
+    }
 };
 
 /// An iterator that yields each trigger in a sequence of triggers. For
@@ -828,6 +832,44 @@ pub const Set = struct {
         self.* = undefined;
     }
 
+    /// Parse a user input binding and add it to the set. This will handle
+    /// the "unbind" case, ensure consumed/unconsumed fields are set correctly,
+    /// handle sequences, etc.
+    ///
+    /// If an error is returned, the set is unmodified and safe to reuse.
+    pub fn parseAndPut(
+        self: *Set,
+        alloc: Allocator,
+        input: []const u8,
+    ) (Allocator.Error || Error)!void {
+        // To make cleanup easier, we ensure that the full sequence is
+        // valid before making any set modifications. This is more expensive
+        // computationally but it makes cleanup way, way easier.
+        var it = try Parser.init(input);
+        while (try it.next()) |_| {}
+        it.reset();
+
+        // Now we know the input is valid, we can add it to the set.
+        var set: *Set = self;
+        while (it.next() catch unreachable) |elem| switch (elem) {
+            .leader => |t| {
+                _ = t;
+                @panic("TODO");
+            },
+
+            .binding => |b| switch (b.action) {
+                // TODO: unbinding sequences doesn't remove their leaders
+                .unbind => set.remove(b.trigger),
+
+                else => if (b.consumed) {
+                    try set.put(alloc, b.trigger, b.action);
+                } else {
+                    try set.putUnconsumed(alloc, b.trigger, b.action);
+                },
+            },
+        };
+    }
+
     /// Add a binding to the set. If the binding already exists then
     /// this will overwrite it.
     pub fn put(
@@ -1252,6 +1294,70 @@ test "parse: sequences" {
         } }, (try p.next()).?);
         try testing.expect(try p.next() == null);
     }
+}
+
+test "set: parseAndPut typical binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+
+    // Creates forward mapping
+    {
+        const action = s.get(.{ .key = .{ .translated = .a } }).?;
+        try testing.expect(action == .new_window);
+    }
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: parseAndPut unconsumed binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "unconsumed:a=new_window");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        const action = s.get(trigger).?;
+        try testing.expect(action == .new_window);
+        try testing.expect(!s.getConsumed(trigger));
+    }
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: parseAndPut removed binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+    try s.parseAndPut(alloc, "a=unbind");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(s.get(trigger) == null);
+    }
+    try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
 }
 
 test "set: maintains reverse mapping" {
