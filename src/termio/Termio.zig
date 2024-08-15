@@ -378,14 +378,20 @@ pub fn resize(
         // immediately for a resize. This is allowed by the spec.
         self.terminal.modes.set(.synchronized_output, false);
 
-        // Wake up our renderer so any changes will be shown asap
-        self.renderer_wakeup.notify() catch {};
-
         // If we have size reporting enabled we need to send a report.
         if (self.terminal.modes.get(.in_band_size_reports)) {
             try self.sizeReportLocked(td, .mode_2048);
         }
     }
+
+    // Mail the renderer so that it can update the GPU and re-render
+    _ = self.renderer_mailbox.push(.{
+        .resize = .{
+            .screen_size = screen_size,
+            .padding = padding,
+        },
+    }, .{ .forever = {} });
+    self.renderer_wakeup.notify() catch {};
 }
 
 /// Make a size report.

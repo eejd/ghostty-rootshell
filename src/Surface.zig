@@ -1197,15 +1197,6 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     // Save our screen size
     self.screen_size = size;
 
-    // Mail the renderer so that it can update the GPU and re-render
-    _ = self.renderer_thread.mailbox.push(.{
-        .resize = .{
-            .screen_size = self.screen_size,
-            .padding = self.padding,
-        },
-    }, .{ .forever = {} });
-    try self.queueRender();
-
     // Recalculate our grid size. Because Ghostty supports fluid resizing,
     // its possible the grid doesn't change at all even if the screen size changes.
     // We have to update the IO thread no matter what because we send
