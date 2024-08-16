@@ -104,36 +104,15 @@ const SequenceIterator = struct {
     }
 };
 
-/// Parse the format "ctrl+a=csi:A" into a binding. The format is
-/// specifically "trigger=action". Trigger is a "+"-delimited series of
-/// modifiers and keys. Action is the action name and optionally a
-/// parameter after a colon, i.e. "csi:A" or "ignore".
-pub fn parse(raw_input: []const u8) !Binding {
-    // NOTE(mitchellh): This is not the most efficient way to do any
-    // of this, I welcome any improvements here!
-
-    // If our entire input is prefixed with "unconsumed:" then we are
-    // not consuming this keybind when the action is triggered.
-    const unconsumed_prefix = "unconsumed:";
-    const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
-    const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
-    const input = raw_input[start_idx..];
-
-    // Find the first = which splits are mapping into the trigger
-    // and action, respectively.
-    const eqlIdx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
-
-    // Determine our trigger conditions by parsing the part before
-    // the "=", i.e. "ctrl+shift+a" or "a"
-    const trigger = try Trigger.parse(input[0..eqlIdx]);
-
-    // Find a matching action
-    const action = try Action.parse(input[eqlIdx + 1 ..]);
-
-    return Binding{
-        .trigger = trigger,
-        .action = action,
-        .consumed = !unconsumed,
+/// Parse a single, non-sequenced binding. To support sequences you must
+/// use parse. This is a convenience function for single bindings aimed
+/// primarily at tests.
+fn parseSingle(raw_input: []const u8) (Error || error{UnexpectedSequence})!Binding {
+    var p = try Parser.init(raw_input);
+    const elem = (try p.next()) orelse return Error.InvalidFormat;
+    return switch (elem) {
+        .leader => error.UnexpectedSequence,
+        .binding => elem.binding,
     };
 }
 
@@ -1140,7 +1119,7 @@ test "parse: triggers" {
             .trigger = .{ .key = .{ .translated = .a } },
             .action = .{ .ignore = {} },
         },
-        try parse("a=ignore"),
+        try parseSingle("a=ignore"),
     );
 
     // single modifier
@@ -1150,14 +1129,14 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+a=ignore"));
+    }, try parseSingle("shift+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .ctrl = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("ctrl+a=ignore"));
+    }, try parseSingle("ctrl+a=ignore"));
 
     // multiple modifier
     try testing.expectEqual(Binding{
@@ -1166,7 +1145,7 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+ctrl+a=ignore"));
+    }, try parseSingle("shift+ctrl+a=ignore"));
 
     // key can come before modifier
     try testing.expectEqual(Binding{
@@ -1175,7 +1154,7 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("a+shift=ignore"));
+    }, try parseSingle("a+shift=ignore"));
 
     // physical keys
     try testing.expectEqual(Binding{
@@ -1184,7 +1163,7 @@ test "parse: triggers" {
             .key = .{ .physical = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+physical:a=ignore"));
+    }, try parseSingle("shift+physical:a=ignore"));
 
     // unicode keys
     try testing.expectEqual(Binding{
@@ -1193,7 +1172,7 @@ test "parse: triggers" {
             .key = .{ .unicode = 'ö' },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+ö=ignore"));
+    }, try parseSingle("shift+ö=ignore"));
 
     // unconsumed keys
     try testing.expectEqual(Binding{
@@ -1203,7 +1182,7 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
         .consumed = false,
-    }, try parse("unconsumed:shift+a=ignore"));
+    }, try parseSingle("unconsumed:shift+a=ignore"));
 
     // unconsumed physical keys
     try testing.expectEqual(Binding{
@@ -1213,16 +1192,16 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
         .consumed = false,
-    }, try parse("unconsumed:physical:a+shift=ignore"));
+    }, try parseSingle("unconsumed:physical:a+shift=ignore"));
 
     // invalid key
-    try testing.expectError(Error.InvalidFormat, parse("foo=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("foo=ignore"));
 
     // repeated control
-    try testing.expectError(Error.InvalidFormat, parse("shift+shift+a=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("shift+shift+a=ignore"));
 
     // multiple character
-    try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a+b=ignore"));
 }
 
 test "parse: modifier aliases" {
@@ -1234,14 +1213,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("cmd+a=ignore"));
+    }, try parseSingle("cmd+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .super = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("command+a=ignore"));
+    }, try parseSingle("command+a=ignore"));
 
     try testing.expectEqual(Binding{
         .trigger = .{
@@ -1249,14 +1228,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("opt+a=ignore"));
+    }, try parseSingle("opt+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .alt = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("option+a=ignore"));
+    }, try parseSingle("option+a=ignore"));
 
     try testing.expectEqual(Binding{
         .trigger = .{
@@ -1264,14 +1243,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("control+a=ignore"));
+    }, try parseSingle("control+a=ignore"));
 }
 
 test "parse: action invalid" {
     const testing = std.testing;
 
     // invalid action
-    try testing.expectError(Error.InvalidAction, parse("a=nopenopenope"));
+    try testing.expectError(Error.InvalidAction, parseSingle("a=nopenopenope"));
 }
 
 test "parse: action no parameters" {
@@ -1283,9 +1262,9 @@ test "parse: action no parameters" {
             .trigger = .{ .key = .{ .translated = .a } },
             .action = .{ .ignore = {} },
         },
-        try parse("a=ignore"),
+        try parseSingle("a=ignore"),
     );
-    try testing.expectError(Error.InvalidFormat, parse("a=ignore:A"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=ignore:A"));
 }
 
 test "parse: action with string" {
@@ -1293,13 +1272,13 @@ test "parse: action with string" {
 
     // parameter
     {
-        const binding = try parse("a=csi:A");
+        const binding = try parseSingle("a=csi:A");
         try testing.expect(binding.action == .csi);
         try testing.expectEqualStrings("A", binding.action.csi);
     }
     // parameter
     {
-        const binding = try parse("a=esc:A");
+        const binding = try parseSingle("a=esc:A");
         try testing.expect(binding.action == .esc);
         try testing.expectEqualStrings("A", binding.action.esc);
     }
@@ -1310,7 +1289,7 @@ test "parse: action with enum" {
 
     // parameter
     {
-        const binding = try parse("a=new_split:right");
+        const binding = try parseSingle("a=new_split:right");
         try testing.expect(binding.action == .new_split);
         try testing.expectEqual(Action.SplitDirection.right, binding.action.new_split);
     }
@@ -1321,12 +1300,12 @@ test "parse: action with int" {
 
     // parameter
     {
-        const binding = try parse("a=jump_to_prompt:-1");
+        const binding = try parseSingle("a=jump_to_prompt:-1");
         try testing.expect(binding.action == .jump_to_prompt);
         try testing.expectEqual(@as(i16, -1), binding.action.jump_to_prompt);
     }
     {
-        const binding = try parse("a=jump_to_prompt:10");
+        const binding = try parseSingle("a=jump_to_prompt:10");
         try testing.expect(binding.action == .jump_to_prompt);
         try testing.expectEqual(@as(i16, 10), binding.action.jump_to_prompt);
     }
@@ -1337,12 +1316,12 @@ test "parse: action with float" {
 
     // parameter
     {
-        const binding = try parse("a=scroll_page_fractional:-0.5");
+        const binding = try parseSingle("a=scroll_page_fractional:-0.5");
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, -0.5), binding.action.scroll_page_fractional);
     }
     {
-        const binding = try parse("a=scroll_page_fractional:+0.5");
+        const binding = try parseSingle("a=scroll_page_fractional:+0.5");
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
     }
@@ -1353,20 +1332,20 @@ test "parse: action with a tuple" {
 
     // parameter
     {
-        const binding = try parse("a=resize_split:up,10");
+        const binding = try parseSingle("a=resize_split:up,10");
         try testing.expect(binding.action == .resize_split);
         try testing.expectEqual(Action.SplitResizeDirection.up, binding.action.resize_split[0]);
         try testing.expectEqual(@as(u16, 10), binding.action.resize_split[1]);
     }
 
     // missing parameter
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up"));
 
     // too many
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,10,12"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up,10,12"));
 
     // invalid type
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,four"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up,four"));
 }
 
 test "sequence iterator" {
