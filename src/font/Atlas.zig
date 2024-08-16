@@ -300,9 +300,6 @@ pub fn clear(self: *Atlas) void {
 /// The wasm-compatible API. This lacks documentation unless the API differs
 /// from the standard Zig API. To learn what a function does, just look one
 /// level deeper to what Zig function is called and read the documentation there.
-///
-/// To export this from Zig, use `usingnamespace Wasm` in some top-level
-/// space and it will be exported.
 pub const Wasm = struct {
     // If you're copying this file (Atlas.zig) out to a separate project,
     // just replace this with the allocator you want to use.

@@ -63,17 +63,15 @@ const PosixPty = struct {
     const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
     const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
     extern "c" fn setsid() std.c.pid_t;
-    const c = struct {
-        usingnamespace switch (builtin.os.tag) {
-            .macos => @cImport({
-                @cInclude("sys/ioctl.h"); // ioctl and constants
-                @cInclude("util.h"); // openpty()
-            }),
-            else => @cImport({
-                @cInclude("sys/ioctl.h"); // ioctl and constants
-                @cInclude("pty.h");
-            }),
-        };
+    const c = switch (builtin.os.tag) {
+        .macos => @cImport({
+            @cInclude("sys/ioctl.h"); // ioctl and constants
+            @cInclude("util.h"); // openpty()
+        }),
+        else => @cImport({
+            @cInclude("sys/ioctl.h"); // ioctl and constants
+            @cInclude("pty.h");
+        }),
     };
 
     /// The file descriptors for the master and slave side of the pty.

@@ -1386,7 +1386,7 @@ pub const Inspector = struct {
 
 // C API
 pub const CAPI = struct {
-    const global = &@import("../main.zig").state;
+    const global = &@import("../global.zig").state;
 
     /// This is the same as Surface.KeyEvent but this is the raw C API version.
     const KeyEvent = extern struct {
@@ -1426,6 +1426,14 @@ pub const CAPI = struct {
         cell_width_px: u32,
         cell_height_px: u32,
     };
+
+    // Reference the conditional exports based on target platform
+    // so they're included in the C API.
+    comptime {
+        if (builtin.target.isDarwin()) {
+            _ = Darwin;
+        }
+    }
 
     /// Create a new app.
     export fn ghostty_app_new(
@@ -1830,8 +1838,112 @@ pub const CAPI = struct {
         ptr.freeInspector();
     }
 
-    // Inspector Metal APIs are only available on Apple systems
-    usingnamespace if (builtin.target.isDarwin()) struct {
+    export fn ghostty_inspector_set_size(ptr: *Inspector, w: u32, h: u32) void {
+        ptr.updateSize(w, h);
+    }
+
+    export fn ghostty_inspector_set_content_scale(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.updateContentScale(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_button(
+        ptr: *Inspector,
+        action: input.MouseButtonState,
+        button: input.MouseButton,
+        mods: c_int,
+    ) void {
+        ptr.mouseButtonCallback(
+            action,
+            button,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
+        );
+    }
+
+    export fn ghostty_inspector_mouse_pos(ptr: *Inspector, x: f64, y: f64) void {
+        ptr.cursorPosCallback(x, y);
+    }
+
+    export fn ghostty_inspector_mouse_scroll(
+        ptr: *Inspector,
+        x: f64,
+        y: f64,
+        scroll_mods: c_int,
+    ) void {
+        ptr.scrollCallback(
+            x,
+            y,
+            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
+        );
+    }
+
+    export fn ghostty_inspector_key(
+        ptr: *Inspector,
+        action: input.Action,
+        key: input.Key,
+        c_mods: c_int,
+    ) void {
+        ptr.keyCallback(
+            action,
+            key,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(c_mods))),
+            )),
+        ) catch |err| {
+            log.err("error processing key event err={}", .{err});
+            return;
+        };
+    }
+
+    export fn ghostty_inspector_text(
+        ptr: *Inspector,
+        str: [*:0]const u8,
+    ) void {
+        ptr.textCallback(std.mem.sliceTo(str, 0));
+    }
+
+    export fn ghostty_inspector_set_focus(ptr: *Inspector, focused: bool) void {
+        ptr.focusCallback(focused);
+    }
+
+    /// Sets the window background blur on macOS to the desired value.
+    /// I do this in Zig as an extern function because I don't know how to
+    /// call these functions in Swift.
+    ///
+    /// This uses an undocumented, non-public API because this is what
+    /// every terminal appears to use, including Terminal.app.
+    export fn ghostty_set_window_background_blur(
+        app: *App,
+        window: *anyopaque,
+    ) void {
+        // This is only supported on macOS
+        if (comptime builtin.target.os.tag != .macos) return;
+
+        const config = app.config;
+
+        // Do nothing if we don't have background transparency enabled
+        if (config.@"background-opacity" >= 1.0) return;
+
+        // Do nothing if our blur value is zero
+        if (config.@"background-blur-radius" == 0) return;
+
+        const nswindow = objc.Object.fromId(window);
+        _ = CGSSetWindowBackgroundBlurRadius(
+            CGSDefaultConnectionForThread(),
+            nswindow.msgSend(usize, objc.sel("windowNumber"), .{}),
+            @intCast(config.@"background-blur-radius"),
+        );
+    }
+
+    /// See ghostty_set_window_background_blur
+    extern "c" fn CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32;
+    extern "c" fn CGSDefaultConnectionForThread() *anyopaque;
+
+    // Darwin-only C APIs.
+    const Darwin = struct {
         export fn ghostty_surface_set_display_id(ptr: *Surface, display_id: u32) void {
             const surface = &ptr.core_surface;
             _ = surface.renderer_thread.mailbox.push(
@@ -1984,109 +2096,5 @@ pub const CAPI = struct {
                 ptr.backend = null;
             }
         }
-    } else struct {};
-
-    export fn ghostty_inspector_set_size(ptr: *Inspector, w: u32, h: u32) void {
-        ptr.updateSize(w, h);
-    }
-
-    export fn ghostty_inspector_set_content_scale(ptr: *Inspector, x: f64, y: f64) void {
-        ptr.updateContentScale(x, y);
-    }
-
-    export fn ghostty_inspector_mouse_button(
-        ptr: *Inspector,
-        action: input.MouseButtonState,
-        button: input.MouseButton,
-        mods: c_int,
-    ) void {
-        ptr.mouseButtonCallback(
-            action,
-            button,
-            @bitCast(@as(
-                input.Mods.Backing,
-                @truncate(@as(c_uint, @bitCast(mods))),
-            )),
-        );
-    }
-
-    export fn ghostty_inspector_mouse_pos(ptr: *Inspector, x: f64, y: f64) void {
-        ptr.cursorPosCallback(x, y);
-    }
-
-    export fn ghostty_inspector_mouse_scroll(
-        ptr: *Inspector,
-        x: f64,
-        y: f64,
-        scroll_mods: c_int,
-    ) void {
-        ptr.scrollCallback(
-            x,
-            y,
-            @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(scroll_mods))))),
-        );
-    }
-
-    export fn ghostty_inspector_key(
-        ptr: *Inspector,
-        action: input.Action,
-        key: input.Key,
-        c_mods: c_int,
-    ) void {
-        ptr.keyCallback(
-            action,
-            key,
-            @bitCast(@as(
-                input.Mods.Backing,
-                @truncate(@as(c_uint, @bitCast(c_mods))),
-            )),
-        ) catch |err| {
-            log.err("error processing key event err={}", .{err});
-            return;
-        };
-    }
-
-    export fn ghostty_inspector_text(
-        ptr: *Inspector,
-        str: [*:0]const u8,
-    ) void {
-        ptr.textCallback(std.mem.sliceTo(str, 0));
-    }
-
-    export fn ghostty_inspector_set_focus(ptr: *Inspector, focused: bool) void {
-        ptr.focusCallback(focused);
-    }
-
-    /// Sets the window background blur on macOS to the desired value.
-    /// I do this in Zig as an extern function because I don't know how to
-    /// call these functions in Swift.
-    ///
-    /// This uses an undocumented, non-public API because this is what
-    /// every terminal appears to use, including Terminal.app.
-    export fn ghostty_set_window_background_blur(
-        app: *App,
-        window: *anyopaque,
-    ) void {
-        // This is only supported on macOS
-        if (comptime builtin.target.os.tag != .macos) return;
-
-        const config = app.config;
-
-        // Do nothing if we don't have background transparency enabled
-        if (config.@"background-opacity" >= 1.0) return;
-
-        // Do nothing if our blur value is zero
-        if (config.@"background-blur-radius" == 0) return;
-
-        const nswindow = objc.Object.fromId(window);
-        _ = CGSSetWindowBackgroundBlurRadius(
-            CGSDefaultConnectionForThread(),
-            nswindow.msgSend(usize, objc.sel("windowNumber"), .{}),
-            @intCast(config.@"background-blur-radius"),
-        );
-    }
-
-    /// See ghostty_set_window_background_blur
-    extern "c" fn CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32;
-    extern "c" fn CGSDefaultConnectionForThread() *anyopaque;
+    };
 };

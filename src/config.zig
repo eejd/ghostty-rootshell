@@ -1,11 +1,14 @@
 const builtin = @import("builtin");
 
-pub usingnamespace @import("config/key.zig");
-pub usingnamespace @import("config/formatter.zig");
+const formatter = @import("config/formatter.zig");
 pub const Config = @import("config/Config.zig");
 pub const string = @import("config/string.zig");
 pub const edit = @import("config/edit.zig");
 pub const url = @import("config/url.zig");
+
+pub const FileFormatter = formatter.FileFormatter;
+pub const entryFormatter = formatter.entryFormatter;
+pub const formatEntry = formatter.formatEntry;
 
 // Field types
 pub const ClipboardAccess = Config.ClipboardAccess;

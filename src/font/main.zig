@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 
+const library = @import("library.zig");
+
 pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
 pub const face = @import("face.zig");
@@ -23,15 +25,17 @@ pub const Sprite = sprite.Sprite;
 pub const SpriteFace = sprite.Face;
 pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
-pub usingnamespace @import("library.zig");
+pub const Library = library.Library;
 
-/// If we're targeting wasm then we export some wasm APIs.
-pub usingnamespace if (builtin.target.isWasm()) struct {
-    pub usingnamespace Atlas.Wasm;
-    pub usingnamespace DeferredFace.Wasm;
-    pub usingnamespace face.web_canvas.Wasm;
-    pub usingnamespace shape.web_canvas.Wasm;
-} else struct {};
+// If we're targeting wasm then we export some wasm APIs.
+comptime {
+    if (builtin.target.isWasm()) {
+        _ = Atlas.Wasm;
+        _ = DeferredFace.Wasm;
+        _ = face.web_canvas.Wasm;
+        _ = shape.web_canvas.Wasm;
+    }
+}
 
 /// Build options
 pub const options: struct {

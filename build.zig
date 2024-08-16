@@ -1042,6 +1042,9 @@ fn addDeps(
     step.linkLibC();
     step.addIncludePath(b.path("src/stb"));
     step.addCSourceFiles(.{ .files = &.{"src/stb/stb.c"} });
+    if (step.rootModuleTarget().os.tag == .linux) {
+        step.addIncludePath(b.path("src/apprt/gtk"));
+    }
 
     // C++ files
     step.linkLibCpp();

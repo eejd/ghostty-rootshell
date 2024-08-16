@@ -1,11 +1,13 @@
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
+const run = @import("shaper/run.zig");
 pub const noop = @import("shaper/noop.zig");
 pub const harfbuzz = @import("shaper/harfbuzz.zig");
 pub const coretext = @import("shaper/coretext.zig");
 pub const web_canvas = @import("shaper/web_canvas.zig");
-pub usingnamespace @import("shaper/run.zig");
 pub const Cache = @import("shaper/Cache.zig");
+pub const TextRun = run.TextRun;
+pub const RunIterator = run.RunIterator;
 
 /// Shaper implementation for our compile options.
 pub const Shaper = switch (options.backend) {

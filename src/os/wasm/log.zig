@@ -4,9 +4,9 @@ const wasm = @import("../wasm.zig");
 const wasm_target = @import("target.zig");
 
 // Use the correct implementation
-pub usingnamespace if (wasm_target.target) |target| switch (target) {
-    .browser => Browser,
-} else struct {};
+pub const log = if (wasm_target.target) |target| switch (target) {
+    .browser => Browser.log,
+} else @compileError("wasm target required");
 
 /// Browser implementation calls an extern "log" function.
 pub const Browser = struct {

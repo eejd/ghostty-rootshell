@@ -12,7 +12,8 @@ const assert = std.debug.assert;
 const posix = std.posix;
 const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
-const main = @import("main.zig");
+const main = @import("main_ghostty.zig");
+const state = &@import("global.zig").state;
 const apprt = @import("apprt.zig");
 
 // Some comptime assertions that our C API depends on.
@@ -23,8 +24,12 @@ comptime {
 /// Global options so we can log. This is identical to main.
 pub const std_options = main.std_options;
 
-pub usingnamespace @import("config.zig").CAPI;
-pub usingnamespace apprt.runtime.CAPI;
+comptime {
+    // These structs need to be referenced so the `export` functions
+    // are truly exported by the C API lib.
+    _ = @import("config.zig").CAPI;
+    _ = apprt.runtime.CAPI;
+}
 
 /// ghostty_info_s
 const Info = extern struct {
@@ -51,7 +56,7 @@ export fn ghostty_init() c_int {
     var argv: [0][*:0]u8 = .{};
     std.os.argv = &argv;
 
-    main.state.init() catch |err| {
+    state.init() catch |err| {
         std.log.err("failed to initialize ghostty error={}", .{err});
         return 1;
     };

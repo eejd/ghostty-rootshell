@@ -1,15 +1,26 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub usingnamespace @import("input/mouse.zig");
-pub usingnamespace @import("input/key.zig");
+const mouse = @import("input/mouse.zig");
+const key = @import("input/key.zig");
+
 pub const function_keys = @import("input/function_keys.zig");
 pub const keycodes = @import("input/keycodes.zig");
 pub const kitty = @import("input/kitty.zig");
+
+pub const ctrlOrSuper = key.ctrlOrSuper;
+pub const Action = key.Action;
 pub const Binding = @import("input/Binding.zig");
 pub const Link = @import("input/Link.zig");
+pub const Key = key.Key;
 pub const KeyEncoder = @import("input/KeyEncoder.zig");
+pub const KeyEvent = key.KeyEvent;
 pub const InspectorMode = Binding.Action.InspectorMode;
+pub const Mods = key.Mods;
+pub const MouseButton = mouse.Button;
+pub const MouseButtonState = mouse.ButtonState;
+pub const MousePressureStage = mouse.PressureStage;
+pub const ScrollMods = mouse.ScrollMods;
 pub const SplitFocusDirection = Binding.Action.SplitFocusDirection;
 pub const SplitResizeDirection = Binding.Action.SplitResizeDirection;
 

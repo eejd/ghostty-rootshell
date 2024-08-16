@@ -5,7 +5,7 @@ const std = @import("std");
 /// This is backed by a c_int so we can use this as-is for our embedding API.
 ///
 /// IMPORTANT: Any changes here update include/ghostty.h
-pub const MouseButtonState = enum(c_int) {
+pub const ButtonState = enum(c_int) {
     release,
     press,
 };
@@ -20,7 +20,7 @@ pub const MouseButtonState = enum(c_int) {
 /// This is backed by a c_int so we can use this as-is for our embedding API.
 ///
 /// IMPORTANT: Any changes here update include/ghostty.h
-pub const MouseButton = enum(c_int) {
+pub const Button = enum(c_int) {
     const Self = @This();
 
     /// The maximum value in this enum. This can be used to create a densely
@@ -53,7 +53,7 @@ pub const MouseButton = enum(c_int) {
 /// This is used to handle "inertial scrolling" (i.e. flicking).
 ///
 /// https://developer.apple.com/documentation/appkit/nseventphase
-pub const MouseMomentum = enum(u3) {
+pub const Momentum = enum(u3) {
     none = 0,
     began = 1,
     stationary = 2,
@@ -66,7 +66,7 @@ pub const MouseMomentum = enum(u3) {
 /// The pressure stage of a pressure-sensitive input device.
 ///
 /// This currently only supports the stages that macOS supports.
-pub const MousePressureStage = enum(u2) {
+pub const PressureStage = enum(u2) {
     /// The input device is unpressed.
     none = 0,
 
@@ -88,7 +88,7 @@ pub const ScrollMods = packed struct(u8) {
 
     /// The momentum phase (if available, supported) of the scroll event.
     /// This is used to handle "inertial scrolling" (i.e. flicking).
-    momentum: MouseMomentum = .none,
+    momentum: Momentum = .none,
 
     _padding: u4 = 0,
 

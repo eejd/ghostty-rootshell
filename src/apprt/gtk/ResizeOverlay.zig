@@ -1,7 +1,7 @@
 const ResizeOverlay = @This();
 
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const configpkg = @import("../../config.zig");
 const Surface = @import("Surface.zig");
 

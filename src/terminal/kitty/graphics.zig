@@ -17,12 +17,19 @@
 //! though and I think we can go back through and fix this up.
 
 const render = @import("graphics_render.zig");
-pub usingnamespace @import("graphics_command.zig");
-pub usingnamespace @import("graphics_exec.zig");
-pub usingnamespace @import("graphics_image.zig");
-pub usingnamespace @import("graphics_storage.zig");
+const command = @import("graphics_command.zig");
+const exec = @import("graphics_exec.zig");
+const image = @import("graphics_image.zig");
+const storage = @import("graphics_storage.zig");
 pub const unicode = @import("graphics_unicode.zig");
+pub const Command = command.Command;
+pub const CommandParser = command.Parser;
+pub const Image = image.Image;
+pub const ImageStorage = storage.ImageStorage;
 pub const RenderPlacement = render.Placement;
+pub const Response = command.Response;
+
+pub const execute = exec.execute;
 
 test {
     @import("std").testing.refAllDecls(@This());

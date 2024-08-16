@@ -15,7 +15,7 @@ const log = std.log.scoped(.kitty_gfx);
 const KV = std.AutoHashMapUnmanaged(u8, u32);
 
 /// Command parser parses the Kitty graphics protocol escape sequence.
-pub const CommandParser = struct {
+pub const Parser = struct {
     /// The memory used by the parser is stored in an arena because it is
     /// all freed at the end of the command.
     arena: ArenaAllocator,
@@ -54,7 +54,7 @@ pub const CommandParser = struct {
 
     /// Initialize the parser. The allocator given will be used for both
     /// temporary data and long-lived values such as the final image blob.
-    pub fn init(alloc: Allocator) CommandParser {
+    pub fn init(alloc: Allocator) Parser {
         var arena = ArenaAllocator.init(alloc);
         errdefer arena.deinit();
         return .{
@@ -63,7 +63,7 @@ pub const CommandParser = struct {
         };
     }
 
-    pub fn deinit(self: *CommandParser) void {
+    pub fn deinit(self: *Parser) void {
         // We don't free the hash map because its in the arena
         self.arena.deinit();
         self.data.deinit();
@@ -74,7 +74,7 @@ pub const CommandParser = struct {
     /// The first byte to start parsing should be the byte immediately following
     /// the "G" in the APC sequence, i.e. "\x1b_G123" the first byte should
     /// be "1".
-    pub fn feed(self: *CommandParser, c: u8) !void {
+    pub fn feed(self: *Parser, c: u8) !void {
         switch (self.state) {
             .control_key => switch (c) {
                 // '=' means the key is complete and we're moving to the value.
@@ -119,7 +119,7 @@ pub const CommandParser = struct {
     ///
     /// The allocator given will be used for the long-lived data
     /// of the final command.
-    pub fn complete(self: *CommandParser) !Command {
+    pub fn complete(self: *Parser) !Command {
         switch (self.state) {
             // We can't ever end in the control key state and be valid.
             // This means the command looked something like "a=1,b"
@@ -175,7 +175,7 @@ pub const CommandParser = struct {
     /// Decodes the payload data from base64 and returns it as a slice.
     /// This function will destroy the contents of self.data, it should
     /// only be used once we are done collecting payload bytes.
-    fn decodeData(self: *CommandParser) ![]const u8 {
+    fn decodeData(self: *Parser) ![]const u8 {
         if (self.data.items.len == 0) {
             return "";
         }
@@ -202,7 +202,7 @@ pub const CommandParser = struct {
         return try self.data.toOwnedSlice();
     }
 
-    fn accumulateValue(self: *CommandParser, c: u8, overflow_state: State) !void {
+    fn accumulateValue(self: *Parser, c: u8, overflow_state: State) !void {
         const idx = self.kv_temp_len;
         self.kv_temp_len += 1;
         if (self.kv_temp_len > self.kv_temp.len) {
@@ -213,7 +213,7 @@ pub const CommandParser = struct {
         self.kv_temp[idx] = c;
     }
 
-    fn finishValue(self: *CommandParser, next_state: State) !void {
+    fn finishValue(self: *Parser, next_state: State) !void {
         const alloc = self.arena.allocator();
 
         // We can move states right away, we don't use it.
@@ -896,7 +896,7 @@ pub const CompositionMode = enum {
 test "transmission command" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "f=24,s=10,v=20";
@@ -914,7 +914,7 @@ test "transmission command" {
 test "query command" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "i=31,s=1,v=1,a=q,t=d,f=24;QUFBQQ";
@@ -934,7 +934,7 @@ test "query command" {
 test "display command" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "a=p,U=1,i=31,c=80,r=120";
@@ -952,7 +952,7 @@ test "display command" {
 test "delete command" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "a=d,d=p,x=3,y=4";
@@ -972,7 +972,7 @@ test "delete command" {
 test "ignore unknown keys (long)" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "f=24,s=10,v=20,hello=world";
@@ -990,7 +990,7 @@ test "ignore unknown keys (long)" {
 test "ignore very long values" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var p = CommandParser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const input = "f=24,s=10,v=2000000000000000000000000000000000000000";
