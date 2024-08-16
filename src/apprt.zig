@@ -12,13 +12,26 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 
-pub usingnamespace @import("apprt/structs.zig");
+const structs = @import("apprt/structs.zig");
+
 pub const glfw = @import("apprt/glfw.zig");
 pub const gtk = @import("apprt/gtk.zig");
 pub const none = @import("apprt/none.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
 pub const surface = @import("apprt/surface.zig");
+
+pub const ContentScale = structs.ContentScale;
+pub const Clipboard = structs.Clipboard;
+pub const ClipboardRequest = structs.ClipboardRequest;
+pub const ClipboardRequestType = structs.ClipboardRequestType;
+pub const ColorScheme = structs.ColorScheme;
+pub const CursorPos = structs.CursorPos;
+pub const DesktopNotification = structs.DesktopNotification;
+pub const IMEPos = structs.IMEPos;
+pub const Selection = structs.Selection;
+pub const SplitDirection = structs.SplitDirection;
+pub const SurfaceSize = structs.SurfaceSize;
 
 /// The implementation to use for the app runtime. This is comptime chosen
 /// so that every build has exactly one application runtime implementation.
