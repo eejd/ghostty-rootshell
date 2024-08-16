@@ -1020,7 +1020,6 @@ pub const Set = struct {
             }
         }
 
-        // TODO: i hate this error handling
         gop.value_ptr.* = if (consumed) .{
             .action = action,
         } else .{
