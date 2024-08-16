@@ -763,13 +763,6 @@ pub const Set = struct {
         std.hash_map.default_max_load_percentage,
     );
 
-    const UnconsumedMap = std.HashMapUnmanaged(
-        Trigger,
-        void,
-        Context(Trigger),
-        std.hash_map.default_max_load_percentage,
-    );
-
     /// The set of bindings.
     bindings: HashMap = .{},
 
