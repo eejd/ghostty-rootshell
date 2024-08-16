@@ -1,6 +1,6 @@
 const std = @import("std");
 const foundation = @import("../foundation.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 pub const Data = opaque {
     pub const DESTRUCTOR_DEFAULT = c.DISPATCH_DATA_DESTRUCTOR_DEFAULT;

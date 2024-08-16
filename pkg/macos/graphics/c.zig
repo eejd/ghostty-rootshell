@@ -1,3 +1,3 @@
-pub usingnamespace @cImport({
+pub const c = @cImport({
     @cInclude("CoreGraphics/CoreGraphics.h");
 });
