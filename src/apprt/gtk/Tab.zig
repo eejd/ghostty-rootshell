@@ -12,7 +12,7 @@ const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 const log = std.log.scoped(.gtk);
 

@@ -6,7 +6,7 @@ const App = @import("App.zig");
 const Surface = @import("Surface.zig");
 const TerminalWindow = @import("Window.zig");
 const ImguiWidget = @import("ImguiWidget.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const CoreInspector = @import("../../inspector/main.zig").Inspector;
 
 const log = std.log.scoped(.inspector);

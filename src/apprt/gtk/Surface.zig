@@ -21,7 +21,7 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const x11 = @import("x11.zig");
 
 const log = std.log.scoped(.gtk_surface);

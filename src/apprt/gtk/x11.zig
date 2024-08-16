@@ -1,6 +1,6 @@
 /// Utility functions for X11 handling.
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const input = @import("../../input.zig");
 
 const log = std.log.scoped(.gtk_x11);

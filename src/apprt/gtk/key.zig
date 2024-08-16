@@ -1,6 +1,6 @@
 const std = @import("std");
 const input = @import("../../input.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 /// Returns a GTK accelerator string from a trigger.
 pub fn accelFromTrigger(buf: []u8, trigger: input.Binding.Trigger) !?[:0]const u8 {

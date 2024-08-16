@@ -8,7 +8,7 @@ const Config = configpkg.Config;
 
 const App = @import("App.zig");
 const View = @import("View.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 const log = std.log.scoped(.gtk);
 

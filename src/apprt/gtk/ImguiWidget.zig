@@ -4,7 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const cimgui = @import("cimgui");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const key = @import("key.zig");
 const gl = @import("opengl");
 const input = @import("../../input.zig");
