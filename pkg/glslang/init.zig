@@ -1,4 +1,4 @@
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 pub fn init() !void {
     if (c.glslang_initialize_process() == 0) return error.GlslangInitFailed;
