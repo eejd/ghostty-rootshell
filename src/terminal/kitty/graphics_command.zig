@@ -368,9 +368,11 @@ pub const Transmission = struct {
         // but they are formats that a png may decode to that we
         // support.
         gray_alpha,
+        gray,
 
         pub fn bpp(self: Format) u8 {
             return switch (self) {
+                .gray => 1,
                 .gray_alpha => 2,
                 .rgb => 3,
                 .rgba => 4,
