@@ -1007,18 +1007,26 @@ pub const Set = struct {
 
         const gop = try self.bindings.getOrPut(alloc, t);
 
-        // If we have an existing binding for this trigger, we have to
-        // update the reverse mapping to remove the old action.
-        if (gop.found_existing) {
-            const t_hash = t.hash();
-            var it = self.reverse.iterator();
-            while (it.next()) |reverse_entry| it: {
-                if (t_hash == reverse_entry.value_ptr.hash()) {
-                    self.reverse.removeByPtr(reverse_entry.key_ptr);
-                    break :it;
+        if (gop.found_existing) switch (gop.value_ptr.*) {
+            // If we have a leader we need to clean up the memory
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
+
+            // If we have an existing binding for this trigger, we have to
+            // update the reverse mapping to remove the old action.
+            .action, .action_unconsumed => {
+                const t_hash = t.hash();
+                var it = self.reverse.iterator();
+                while (it.next()) |reverse_entry| it: {
+                    if (t_hash == reverse_entry.value_ptr.hash()) {
+                        self.reverse.removeByPtr(reverse_entry.key_ptr);
+                        break :it;
+                    }
                 }
-            }
-        }
+            },
+        };
 
         gop.value_ptr.* = if (consumed) .{
             .action = action,
@@ -1609,6 +1617,26 @@ test "set: parseAndPut sequence preserves reverse mapping" {
 
     try s.parseAndPut(alloc, "a=new_window");
     try s.parseAndPut(alloc, "ctrl+a>b=new_window");
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: put overwrites sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "ctrl+a>b=new_window");
+    try s.put(alloc, .{
+        .mods = .{ .ctrl = true },
+        .key = .{ .translated = .a },
+    }, .{ .new_window = {} });
 
     // Creates reverse mapping
     {
