@@ -1355,7 +1355,11 @@ pub fn keyCallback(
             break :binding;
         };
         const binding_action = switch (binding_entry) {
-            .leader => break :binding, // TODO
+            .leader => {
+                // TODO
+                log.warn("sequenced keybinds are not supported yet", .{});
+                break :binding;
+            },
             .action, .action_unconsumed => |action| action,
         };
         const consumed = binding_entry == .action;
