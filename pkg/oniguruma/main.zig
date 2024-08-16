@@ -1,10 +1,18 @@
-pub usingnamespace @import("init.zig");
-pub usingnamespace @import("errors.zig");
-pub usingnamespace @import("regex.zig");
-pub usingnamespace @import("region.zig");
-pub usingnamespace @import("types.zig");
+const initpkg = @import("init.zig");
+const regex = @import("regex.zig");
+const region = @import("region.zig");
+const types = @import("types.zig");
+
 pub const c = @import("c.zig");
 pub const testing = @import("testing.zig");
+pub const errors = @import("errors.zig");
+
+pub const init = initpkg.init;
+pub const deinit = initpkg.deinit;
+pub const Encoding = types.Encoding;
+pub const Regex = regex.Regex;
+pub const Region = region.Region;
+pub const Syntax = types.Syntax;
 
 test {
     @import("std").testing.refAllDecls(@This());

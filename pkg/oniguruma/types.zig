@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 pub const Encoding = opaque {
     pub const ascii: *Encoding = @ptrCast(c.ONIG_ENCODING_ASCII());
