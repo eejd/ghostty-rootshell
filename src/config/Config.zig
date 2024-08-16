@@ -618,6 +618,32 @@ class: ?[:0]const u8 = null,
 /// or the alias. When debugging keybinds, the non-aliased modifier will always
 /// be used in output.
 ///
+/// You may also specify multiple triggers separated by `>` to require a
+/// sequence of triggers to activate the action. For example,
+/// `ctrl+a>n=new_window` will only trigger the `new_window` action if the
+/// user presses `ctrl+a` followed separately by `n`. In other software, this
+/// is sometimes called a leader key, a key chord, a key table, etc. There
+/// is no hardcoded limit on the number of parts in a sequence.
+///
+/// A trigger sequence has some special handling:
+///
+///   * Ghostty will wait an indefinite amount of time for the next key in
+///     the sequence. There is no way to specify a timeout. The only way to
+///     force the output of a prefix key is to assign another keybind to
+///     specifically output that key (i.e. `ctrl+a>ctrl+a=text:foo`) or
+///     press an unbound key which will send both keys to the program.
+///
+///   * If a prefix in a sequence is previously bound, the sequence will
+///     override the previous binding. For example, if `ctrl+a` is bound to
+///     `new_window` and `ctrl+a>n` is bound to `new_tab`, pressing `ctrl+a`
+///     will do nothing.
+///
+///   * Adding to the above, if a previously bound sequence prefix is
+///     used in a new, non-sequence binding, the entire previously bound
+///     sequence will be unbound. For example, if you bind `ctrl+a>n` and
+///     `ctrl+a>t`, and then bind `ctrl+a` directly, both `ctrl+a>n` and
+///     `ctrl+a>t` will become unbound.
+///
 /// Action is the action to take when the trigger is satisfied. It takes the
 /// format `action` or `action:param`. The latter form is only valid if the
 /// action requires a parameter.
