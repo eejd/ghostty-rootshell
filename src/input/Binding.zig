@@ -879,8 +879,6 @@ pub const Set = struct {
             .leader => |t| leader: {
                 // If we have a leader, we need to upsert a set for it.
                 if (set.get(t)) |entry| switch (entry) {
-                    // TODO: test BOTH code paths
-
                     .leader => |s| {
                         // We have an existing leader for this key already
                         // so reuse the set.
@@ -1431,6 +1429,100 @@ test "set: parseAndPut sequence" {
         const e = current.get(t).?;
         try testing.expect(e == .action);
         try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut sequence with two actions" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    try s.parseAndPut(alloc, "a>c=new_tab");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .c } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_tab);
+    }
+}
+
+test "set: parseAndPut overwrite sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_tab");
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut overwrite leader" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_tab");
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut unbind sequence unbinds leader" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    try s.parseAndPut(alloc, "a>b=unbind");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(current.get(t) == null);
     }
 }
 
