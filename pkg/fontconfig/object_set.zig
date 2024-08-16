@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const Property = @import("main.zig").Property;
 
 pub const ObjectSet = opaque {
