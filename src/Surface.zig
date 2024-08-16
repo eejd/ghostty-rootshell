@@ -1325,7 +1325,7 @@ pub fn keyCallback(
     // Before encoding, we see if we have any keybindings for this
     // key. Those always intercept before any encoding tasks.
     binding: {
-        const binding_action: input.Binding.Action, const binding_trigger: input.Binding.Trigger, const consumed = action: {
+        const binding_entry: input.Binding.Set.Entry, const binding_trigger: input.Binding.Trigger = action: {
             const binding_mods = event.mods.binding();
             var trigger: input.Binding.Trigger = .{
                 .mods = binding_mods,
@@ -1336,14 +1336,12 @@ pub fn keyCallback(
             if (set.get(trigger)) |v| break :action .{
                 v,
                 trigger,
-                set.getConsumed(trigger),
             };
 
             trigger.key = .{ .physical = event.physical_key };
             if (set.get(trigger)) |v| break :action .{
                 v,
                 trigger,
-                set.getConsumed(trigger),
             };
 
             if (event.unshifted_codepoint > 0) {
@@ -1351,12 +1349,16 @@ pub fn keyCallback(
                 if (set.get(trigger)) |v| break :action .{
                     v,
                     trigger,
-                    set.getConsumed(trigger),
                 };
             }
 
             break :binding;
         };
+        const binding_action = switch (binding_entry) {
+            .leader => break :binding, // TODO
+            .action, .action_unconsumed => |action| action,
+        };
+        const consumed = binding_entry == .action;
 
         // We only execute the binding on press/repeat but we still consume
         // the key on release so that we don't send any release events.
