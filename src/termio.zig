@@ -19,7 +19,7 @@
 
 const stream_handler = @import("termio/stream_handler.zig");
 
-pub usingnamespace @import("termio/message.zig");
+const message = @import("termio/message.zig");
 pub const backend = @import("termio/backend.zig");
 pub const mailbox = @import("termio/mailbox.zig");
 pub const Exec = @import("termio/Exec.zig");
@@ -29,6 +29,8 @@ pub const Thread = @import("termio/Thread.zig");
 pub const Backend = backend.Backend;
 pub const DerivedConfig = Termio.DerivedConfig;
 pub const Mailbox = mailbox.Mailbox;
+pub const Message = message.Message;
+pub const MessageData = message.MessageData;
 pub const StreamHandler = stream_handler.StreamHandler;
 
 test {
