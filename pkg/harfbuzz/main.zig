@@ -1,4 +1,4 @@
-pub const c = @import("c.zig");
+pub const c = @import("c.zig").c;
 pub usingnamespace @import("blob.zig");
 pub usingnamespace @import("buffer.zig");
 pub usingnamespace @import("common.zig");

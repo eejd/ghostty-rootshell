@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const Error = @import("errors.zig").Error;
 
 /// Data type holding the memory modes available to client programs.
