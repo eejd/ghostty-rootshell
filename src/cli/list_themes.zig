@@ -5,7 +5,7 @@ const Action = @import("action.zig").Action;
 const Arena = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const Config = @import("../config/Config.zig");
-const global_state = &@import("../main.zig").state;
+const global_state = &@import("../global.zig").state;
 
 pub const Options = struct {
     pub fn deinit(self: Options) void {

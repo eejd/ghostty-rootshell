@@ -20,9 +20,9 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const global_state = &@import("global.zig").state;
 const oni = @import("oniguruma");
 const unicode = @import("unicode/main.zig");
-const main = @import("main.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
 const objc = @import("objc");
@@ -448,7 +448,7 @@ pub fn init(
             .shell_integration = config.@"shell-integration",
             .shell_integration_features = config.@"shell-integration-features",
             .working_directory = config.@"working-directory",
-            .resources_dir = main.state.resources_dir,
+            .resources_dir = global_state.resources_dir,
             .term = config.term,
 
             // Get the cgroup if we're on linux and have the decl. I'd love

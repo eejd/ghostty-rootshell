@@ -1,7 +1,7 @@
 const std = @import("std");
 const cli = @import("../cli.zig");
 const inputpkg = @import("../input.zig");
-const global = &@import("../main.zig").state;
+const global = &@import("../global.zig").state;
 
 const Config = @import("Config.zig");
 const c_get = @import("c_get.zig");
