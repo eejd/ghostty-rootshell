@@ -27,13 +27,15 @@ pub const Descriptor = discovery.Descriptor;
 pub const Discover = discovery.Discover;
 pub const Library = library.Library;
 
-/// If we're targeting wasm then we export some wasm APIs.
-pub usingnamespace if (builtin.target.isWasm()) struct {
-    pub usingnamespace Atlas.Wasm;
-    pub usingnamespace DeferredFace.Wasm;
-    pub usingnamespace face.web_canvas.Wasm;
-    pub usingnamespace shape.web_canvas.Wasm;
-} else struct {};
+// If we're targeting wasm then we export some wasm APIs.
+comptime {
+    if (builtin.target.isWasm()) {
+        _ = Atlas.Wasm;
+        _ = DeferredFace.Wasm;
+        _ = face.web_canvas.Wasm;
+        _ = shape.web_canvas.Wasm;
+    }
+}
 
 /// Build options
 pub const options: struct {

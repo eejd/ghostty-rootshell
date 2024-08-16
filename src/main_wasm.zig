@@ -3,11 +3,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub usingnamespace @import("os/wasm.zig");
-pub usingnamespace @import("font/main.zig");
-pub usingnamespace @import("terminal/main.zig");
-pub usingnamespace @import("config.zig").Wasm;
-pub usingnamespace @import("App.zig").Wasm;
+comptime {
+    _ = @import("os/wasm.zig");
+    _ = @import("font/main.zig");
+    _ = @import("terminal/main.zig");
+    _ = @import("config.zig").Wasm;
+    _ = @import("App.zig").Wasm;
+}
 
 pub const std_options = struct {
     // Set our log level. We try to get as much logging as possible but in

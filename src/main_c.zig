@@ -23,8 +23,12 @@ comptime {
 /// Global options so we can log. This is identical to main.
 pub const std_options = main.std_options;
 
-pub usingnamespace @import("config.zig").CAPI;
-pub usingnamespace apprt.runtime.CAPI;
+comptime {
+    // These structs need to be referenced so the `export` functions
+    // are truly exported by the C API lib.
+    _ = @import("config.zig").CAPI;
+    _ = apprt.runtime.CAPI;
+}
 
 /// ghostty_info_s
 const Info = extern struct {
