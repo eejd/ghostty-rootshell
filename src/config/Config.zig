@@ -325,6 +325,7 @@ palette: Palette = .{},
 ///   * `block`
 ///   * `bar`
 ///   * `underline`
+///   * `block_hollow`
 ///
 @"cursor-style": terminal.CursorStyle = .block,
 

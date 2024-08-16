@@ -16,6 +16,7 @@ pub const CursorStyle = enum {
         return switch (style) {
             .bar => .bar,
             .block => .block,
+            .block_hollow => .block_hollow,
             .underline => .underline,
         };
     }

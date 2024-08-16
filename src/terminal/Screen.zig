@@ -139,7 +139,7 @@ pub const Cursor = struct {
 /// The visual style of the cursor. Whether or not it blinks
 /// is determined by mode 12 (modes.zig). This mode is synchronized
 /// with CSI q, the same as xterm.
-pub const CursorStyle = enum { bar, block, underline };
+pub const CursorStyle = enum { bar, block, underline, block_hollow };
 
 /// Saved cursor state.
 pub const SavedCursor = struct {

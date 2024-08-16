@@ -208,6 +208,7 @@ pub const StreamHandler = struct {
                         const blink = self.terminal.modes.get(.cursor_blinking);
                         const style: u8 = switch (self.terminal.screen.cursor.cursor_style) {
                             .block => if (blink) 1 else 2,
+                            .block_hollow => if (blink) 1 else 2,
                             .underline => if (blink) 3 else 4,
                             .bar => if (blink) 5 else 6,
                         };
