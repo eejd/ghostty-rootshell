@@ -873,23 +873,55 @@ pub const Set = struct {
         while (try it.next()) |_| {}
         it.reset();
 
-        // Now we know the input is valid, we can add it to the set.
-        var set: *Set = self;
-        while (it.next() catch unreachable) |elem| switch (elem) {
-            .leader => |t| leader: {
+        // We use recursion so that we can utilize the stack as our state
+        // for cleanup.
+        self.parseAndPutRecurse(alloc, &it) catch |err| switch (err) {
+            // If this gets sent up to the root then we've unbound
+            // all the way up and this put was a success.
+            error.SequenceUnbind => {},
+
+            // Unrecoverable
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+    }
+
+    const ParseAndPutRecurseError = Allocator.Error || error{
+        SequenceUnbind,
+    };
+
+    fn parseAndPutRecurse(
+        set: *Set,
+        alloc: Allocator,
+        it: *Parser,
+    ) ParseAndPutRecurseError!void {
+        const elem = (it.next() catch unreachable) orelse return;
+        switch (elem) {
+            .leader => |t| {
                 // If we have a leader, we need to upsert a set for it.
-                if (set.get(t)) |entry| switch (entry) {
-                    .leader => |s| {
-                        // We have an existing leader for this key already
-                        // so reuse the set.
-                        set = s;
-                        break :leader;
+                const old = set.get(t);
+                if (old) |entry| switch (entry) {
+                    // We have an existing leader for this key already
+                    // so recurse into this set.
+                    .leader => |s| return parseAndPutRecurse(
+                        s,
+                        alloc,
+                        it,
+                    ) catch |err| switch (err) {
+                        // Our child put unbound. If our set is empty we
+                        // need to dealloc and continue up. If our set is
+                        // not empty then we're done.
+                        error.SequenceUnbind => if (s.bindings.count() == 0) {
+                            set.remove(alloc, t);
+                            return error.SequenceUnbind;
+                        },
+
+                        error.OutOfMemory => return error.OutOfMemory,
                     },
 
                     .action, .action_unconsumed => {
                         // Remove the existing action. Fallthrough as if
                         // we don't have a leader.
-                        set.remove(t);
+                        set.remove(alloc, t);
                     },
                 };
 
@@ -897,15 +929,37 @@ pub const Set = struct {
                 const next = try alloc.create(Set);
                 errdefer alloc.destroy(next);
                 next.* = .{};
+                errdefer next.deinit(alloc);
 
                 // Insert the leader entry
                 try set.bindings.put(alloc, t, .{ .leader = next });
-                set = next;
+
+                // Recurse
+                parseAndPutRecurse(next, alloc, it) catch |err| switch (err) {
+                    // If our action was to unbind, we restore the old
+                    // action if we have it.
+                    error.SequenceUnbind => {
+                        set.remove(alloc, t);
+                        if (old) |entry| switch (entry) {
+                            .leader => unreachable, // Handled above
+                            inline .action, .action_unconsumed => |action, tag| set.put_(
+                                alloc,
+                                t,
+                                action,
+                                tag == .action,
+                            ) catch {},
+                        };
+                    },
+
+                    error.OutOfMemory => return error.OutOfMemory,
+                };
             },
 
             .binding => |b| switch (b.action) {
-                // TODO: unbinding sequences doesn't remove their leaders
-                .unbind => set.remove(b.trigger),
+                .unbind => {
+                    set.remove(alloc, b.trigger);
+                    return error.SequenceUnbind;
+                },
 
                 else => if (b.consumed) {
                     try set.put(alloc, b.trigger, b.action);
@@ -913,7 +967,7 @@ pub const Set = struct {
                     try set.putUnconsumed(alloc, b.trigger, b.action);
                 },
             },
-        };
+        }
     }
 
     /// Add a binding to the set. If the binding already exists then
@@ -989,12 +1043,18 @@ pub const Set = struct {
     }
 
     /// Remove a binding for a given trigger.
-    pub fn remove(self: *Set, t: Trigger) void {
+    pub fn remove(self: *Set, alloc: Allocator, t: Trigger) void {
         const entry = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
 
         switch (entry) {
-            .leader => @panic("TODO"),
+            // For a leader removal, we need to deallocate our child set.
+            // Leaders are never part of reverse maps so no other accounting
+            // needs to be done.
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
 
             // For an action we need to fix up the reverse mapping.
             // Note: we'd LIKE to replace this with the most recent binding but
@@ -1526,6 +1586,38 @@ test "set: parseAndPut unbind sequence unbinds leader" {
     }
 }
 
+test "set: parseAndPut unbind sequence unbinds leader if not set" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=unbind");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(current.get(t) == null);
+    }
+}
+
+test "set: parseAndPut sequence preserves reverse mapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+    try s.parseAndPut(alloc, "ctrl+a>b=new_window");
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
 test "set: maintains reverse mapping" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1547,7 +1639,7 @@ test "set: maintains reverse mapping" {
     }
 
     // removal should replace
-    s.remove(.{ .key = .{ .translated = .b } });
+    s.remove(alloc, .{ .key = .{ .translated = .b } });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
         try testing.expect(trigger.key.translated == .a);
