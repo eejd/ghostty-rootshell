@@ -2,11 +2,11 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const graphics = @import("../graphics.zig");
-const context = @import("context.zig");
+const Context = @import("context.zig").Context;
 const c = @import("c.zig").c;
 
 pub const BitmapContext = opaque {
-    pub usingnamespace context.Context(BitmapContext);
+    pub const context = Context(BitmapContext);
 
     pub fn create(
         data: ?[]u8,

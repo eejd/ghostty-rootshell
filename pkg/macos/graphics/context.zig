@@ -8,6 +8,8 @@ const c = @import("c.zig").c;
 /// given type.
 pub fn Context(comptime T: type) type {
     return struct {
+        value: *T,
+
         pub fn release(self: *T) void {
             c.CGContextRelease(@ptrCast(self));
         }

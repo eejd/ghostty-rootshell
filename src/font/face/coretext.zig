@@ -338,6 +338,7 @@ pub const Face = struct {
         defer alloc.free(buf);
         @memset(buf, 0);
 
+        const context = macos.graphics.BitmapContext.context;
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
             width,
@@ -347,15 +348,15 @@ pub const Face = struct {
             color.space,
             color.context_opts,
         );
-        defer ctx.release();
+        defer context.release(ctx);
 
         // Perform an initial fill. This ensures that we don't have any
         // uninitialized pixels in the bitmap.
         if (color.color)
-            ctx.setRGBFillColor(1, 1, 1, 0)
+            context.setRGBFillColor(ctx, 1, 1, 1, 0)
         else
-            ctx.setGrayFillColor(0, 0);
-        ctx.fillRect(.{
+            context.setGrayFillColor(ctx, 0, 0);
+        context.fillRect(ctx, .{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
                 .width = @floatFromInt(width),
@@ -363,22 +364,22 @@ pub const Face = struct {
             },
         });
 
-        ctx.setAllowsFontSmoothing(true);
-        ctx.setShouldSmoothFonts(opts.thicken); // The amadeus "enthicken"
-        ctx.setAllowsFontSubpixelQuantization(true);
-        ctx.setShouldSubpixelQuantizeFonts(true);
-        ctx.setAllowsFontSubpixelPositioning(true);
-        ctx.setShouldSubpixelPositionFonts(true);
-        ctx.setAllowsAntialiasing(true);
-        ctx.setShouldAntialias(true);
+        context.setAllowsFontSmoothing(ctx, true);
+        context.setShouldSmoothFonts(ctx, opts.thicken); // The amadeus "enthicken"
+        context.setAllowsFontSubpixelQuantization(ctx, true);
+        context.setShouldSubpixelQuantizeFonts(ctx, true);
+        context.setAllowsFontSubpixelPositioning(ctx, true);
+        context.setShouldSubpixelPositionFonts(ctx, true);
+        context.setAllowsAntialiasing(ctx, true);
+        context.setShouldAntialias(ctx, true);
 
         // Set our color for drawing
         if (color.color) {
-            ctx.setRGBFillColor(1, 1, 1, 1);
-            ctx.setRGBStrokeColor(1, 1, 1, 1);
+            context.setRGBFillColor(ctx, 1, 1, 1, 1);
+            context.setRGBStrokeColor(ctx, 1, 1, 1, 1);
         } else {
-            ctx.setGrayFillColor(1, 1);
-            ctx.setGrayStrokeColor(1, 1);
+            context.setGrayFillColor(ctx, 1, 1);
+            context.setGrayStrokeColor(ctx, 1, 1);
         }
 
         // We want to render the glyphs at (0,0), but the glyphs themselves

@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
 const graphics = @import("../graphics.zig");
 const text = @import("../text.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 // https://developer.apple.com/documentation/coretext/ctparagraphstyle?language=objc
 pub const ParagraphStyle = opaque {
