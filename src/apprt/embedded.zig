@@ -1386,7 +1386,7 @@ pub const Inspector = struct {
 
 // C API
 pub const CAPI = struct {
-    const global = &@import("../main.zig").state;
+    const global = &@import("../global.zig").state;
 
     /// This is the same as Surface.KeyEvent but this is the raw C API version.
     const KeyEvent = extern struct {
