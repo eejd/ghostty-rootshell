@@ -161,7 +161,7 @@ fn gtkRealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
     // initialize the ImgUI OpenGL backend for our context.
     const self: *ImguiWidget = @ptrCast(@alignCast(ud.?));
     cimgui.c.igSetCurrentContext(self.ig_ctx);
-    _ = cimgui.c.ImGui_ImplOpenGL3_Init(null);
+    _ = cimgui.ImGui_ImplOpenGL3_Init(null);
 }
 
 fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
@@ -170,7 +170,7 @@ fn gtkUnrealize(area: *c.GtkGLArea, ud: ?*anyopaque) callconv(.C) void {
 
     const self: *ImguiWidget = @ptrCast(@alignCast(ud.?));
     cimgui.c.igSetCurrentContext(self.ig_ctx);
-    cimgui.c.ImGui_ImplOpenGL3_Shutdown();
+    cimgui.ImGui_ImplOpenGL3_Shutdown();
 }
 
 fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque) callconv(.C) void {
@@ -207,7 +207,7 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     // take multiple renders to process. I don't know how to make this
     // more efficient.
     for (0..2) |_| {
-        cimgui.c.ImGui_ImplOpenGL3_NewFrame();
+        cimgui.ImGui_ImplOpenGL3_NewFrame();
         self.newFrame() catch |err| {
             log.err("failed to setup frame: {}", .{err});
             return 0;
@@ -224,7 +224,7 @@ fn gtkRender(area: *c.GtkGLArea, ctx: *c.GdkGLContext, ud: ?*anyopaque) callconv
     // OpenGL final render
     gl.clearColor(0x28 / 0xFF, 0x2C / 0xFF, 0x34 / 0xFF, 1.0);
     gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
-    cimgui.c.ImGui_ImplOpenGL3_RenderDrawData(cimgui.c.igGetDrawData());
+    cimgui.ImGui_ImplOpenGL3_RenderDrawData(cimgui.c.igGetDrawData());
 
     return 1;
 }
