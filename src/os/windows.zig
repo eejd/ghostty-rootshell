@@ -1,7 +1,33 @@
 const std = @import("std");
 const windows = std.os.windows;
 
-pub usingnamespace std.os.windows;
+// Export any constants or functions we need from the Windows API so
+// we can just import one file.
+pub const kernel32 = windows.kernel32;
+pub const unexpectedError = windows.unexpectedError;
+pub const OpenFile = windows.OpenFile;
+pub const SetHandleInformation = windows.SetHandleInformation;
+pub const DWORD = windows.DWORD;
+pub const FILE_ATTRIBUTE_NORMAL = windows.FILE_ATTRIBUTE_NORMAL;
+pub const FILE_FLAG_OVERLAPPED = windows.FILE_FLAG_OVERLAPPED;
+pub const FILE_SHARE_READ = windows.FILE_SHARE_READ;
+pub const GENERIC_READ = windows.GENERIC_READ;
+pub const HANDLE = windows.HANDLE;
+pub const HANDLE_FLAG_INHERIT = windows.HANDLE_FLAG_INHERIT;
+pub const INFINITE = windows.INFINITE;
+pub const INVALID_HANDLE_VALUE = windows.INVALID_HANDLE_VALUE;
+pub const OPEN_EXISTING = windows.OPEN_EXISTING;
+pub const PIPE_ACCESS_OUTBOUND = windows.PIPE_ACCESS_OUTBOUND;
+pub const PIPE_TYPE_BYTE = windows.PIPE_TYPE_BYTE;
+pub const PROCESS_INFORMATION = windows.PROCESS_INFORMATION;
+pub const S_OK = windows.S_OK;
+pub const SECURITY_ATTRIBUTES = windows.SECURITY_ATTRIBUTES;
+pub const STARTUPINFOW = windows.STARTUPINFOW;
+pub const STARTF_USESTDHANDLES = windows.STARTF_USESTDHANDLES;
+pub const SYNCHRONIZE = windows.SYNCHRONIZE;
+pub const WAIT_FAILED = windows.WAIT_FAILED;
+pub const FALSE = windows.FALSE;
+pub const TRUE = windows.TRUE;
 
 pub const exp = struct {
     pub const HPCON = windows.LPVOID;
