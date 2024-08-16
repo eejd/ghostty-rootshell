@@ -1147,6 +1147,7 @@ fn prepKittyImage(
     };
 
     const new_image: Image = switch (image.format) {
+        .gray => .{ .pending_gray = pending },
         .gray_alpha => .{ .pending_gray_alpha = pending },
         .rgb => .{ .pending_rgb = pending },
         .rgba => .{ .pending_rgba = pending },
@@ -2011,9 +2012,11 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
             switch (kv.value_ptr.image) {
                 .ready => {},
 
+                .pending_gray,
                 .pending_gray_alpha,
                 .pending_rgb,
                 .pending_rgba,
+                .replace_gray,
                 .replace_gray_alpha,
                 .replace_rgb,
                 .replace_rgba,
