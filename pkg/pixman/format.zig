@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const pixman = @import("main.zig");
 
 pub const FormatCode = enum(c_uint) {
