@@ -12,9 +12,9 @@ const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 const WasmTarget = @import("os/wasm/target.zig").Target;
 
-pub usingnamespace @import("renderer/cursor.zig");
-pub usingnamespace @import("renderer/message.zig");
-pub usingnamespace @import("renderer/size.zig");
+const cursor = @import("renderer/cursor.zig");
+const message = @import("renderer/message.zig");
+const size = @import("renderer/size.zig");
 pub const shadertoy = @import("renderer/shadertoy.zig");
 pub const Metal = @import("renderer/Metal.zig");
 pub const OpenGL = @import("renderer/OpenGL.zig");
@@ -22,6 +22,13 @@ pub const WebGL = @import("renderer/WebGL.zig");
 pub const Options = @import("renderer/Options.zig");
 pub const Thread = @import("renderer/Thread.zig");
 pub const State = @import("renderer/State.zig");
+pub const CursorStyle = cursor.Style;
+pub const Message = message.Message;
+pub const CellSize = size.CellSize;
+pub const ScreenSize = size.ScreenSize;
+pub const GridSize = size.GridSize;
+pub const Padding = size.Padding;
+pub const cursorStyle = cursor.style;
 
 /// Possible implementations, used for build options.
 pub const Impl = enum {
