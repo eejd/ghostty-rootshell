@@ -3322,10 +3322,17 @@ pub const Keybinds = struct {
 
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Keybinds, other: Keybinds) bool {
+        return equalSet(&self.set, &other.set);
+    }
+
+    fn equalSet(
+        self: *const inputpkg.Binding.Set,
+        other: *const inputpkg.Binding.Set,
+    ) bool {
         // Two keybinds are considered equal if their primary bindings
         // are the same. We don't compare reverse mappings and such.
-        const self_map = self.set.bindings;
-        const other_map = other.set.bindings;
+        const self_map = &self.bindings;
+        const other_map = &other.bindings;
 
         // If the count of mappings isn't identical they can't be equal
         if (self_map.count() != other_map.count()) return false;
@@ -3341,7 +3348,11 @@ pub const Keybinds = struct {
                 std.meta.activeTag(other_entry.value_ptr.*)) return false;
 
             switch (self_entry.value_ptr.*) {
-                .leader => @panic("TODO"),
+                // They're equal if both leader sets are equal.
+                .leader => if (!equalSet(
+                    self_entry.value_ptr.*.leader,
+                    other_entry.value_ptr.*.leader,
+                )) return false,
 
                 // Actions are compared by field directly
                 inline .action, .action_unconsumed => |_, tag| if (!equalField(
