@@ -1089,6 +1089,32 @@ pub const Set = struct {
         }
     }
 
+    /// Deep clone the set.
+    pub fn clone(self: *const Set, alloc: Allocator) !Set {
+        var result: Set = .{
+            .bindings = try self.bindings.clone(alloc),
+            .reverse = try self.reverse.clone(alloc),
+        };
+
+        // If we have any leaders we need to clone them.
+        var it = result.bindings.iterator();
+        while (it.next()) |entry| switch (entry.value_ptr.*) {
+            // No data to clone
+            .action, .action_unconsumed => {},
+
+            // Must be deep cloned.
+            .leader => |*s| {
+                const ptr = try alloc.create(Set);
+                errdefer alloc.destroy(ptr);
+                ptr.* = try s.*.clone(alloc);
+                errdefer ptr.deinit(alloc);
+                s.* = ptr;
+            },
+        };
+
+        return result;
+    }
+
     /// The hash map context for the set. This defines how the hash map
     /// gets the hash key and checks for equality.
     fn Context(comptime KeyType: type) type {

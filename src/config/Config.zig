@@ -3317,13 +3317,7 @@ pub const Keybinds = struct {
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
-        // TODO: leaders
-        return .{
-            .set = .{
-                .bindings = try self.set.bindings.clone(alloc),
-                .reverse = try self.set.reverse.clone(alloc),
-            },
-        };
+        return .{ .set = try self.set.clone(alloc) };
     }
 
     /// Compare if two of our value are requal. Required by Config.
