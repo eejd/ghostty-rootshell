@@ -1,4 +1,4 @@
-pub const c = @import("c.zig");
+pub const c = @import("c.zig").c;
 
 /// Given a codepoint, return a character width analogous to `wcwidth(codepoint)`,
 /// except that a width of 0 is returned for non-printable codepoints
