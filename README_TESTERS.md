@@ -63,7 +63,7 @@ share feedback, discuss issues, ask questions and talk to other testers.
 
 Yes, if you have any friends you'd like to add to the beta, please ask
 them to join the Discord server: [discord.gg/ghostty](https://discord.gg/ghostty).
-After that, DM me with your friend's username and I'll add them to the beta
+After that, vouch for them in the [#beta channel](https://discord.com/channels/1005603569187160125/1005603569711452192) and I or the mods will add them to the beta
 immediately. Friends of beta testers do not have to wait in the queue.
 
 ### I want to help, what can I work on?
