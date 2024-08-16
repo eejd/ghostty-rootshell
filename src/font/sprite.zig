@@ -1,6 +1,10 @@
 const std = @import("std");
-pub usingnamespace @import("sprite/canvas.zig");
+const canvas = @import("sprite/canvas.zig");
 pub const Face = @import("sprite/Face.zig");
+
+pub const Box = canvas.Box;
+pub const Canvas = canvas.Canvas;
+pub const Color = canvas.Color;
 
 /// Sprites are represented as special codepoints outside of the Unicode
 /// codepoint range. Unicode maxes out at U+10FFFF (21 bits), and we use the
