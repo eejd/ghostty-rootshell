@@ -1109,62 +1109,97 @@ pub fn index(self: *Terminal) !void {
         // Scrolling dirties the images because it updates their placements pins.
         self.screen.kitty_images.dirty = true;
 
-        // If our scrolling region is the full screen, we create scrollback.
-        // Otherwise, we simply scroll the region.
+        // If our scrolling region is at the top, we create scrollback.
         if (self.scrolling_region.top == 0 and
-            self.scrolling_region.bottom == self.rows - 1 and
             self.scrolling_region.left == 0 and
             self.scrolling_region.right == self.cols - 1)
         {
-            try self.screen.cursorDownScroll();
-        } else {
-            // Slow path for left and right scrolling region margins.
-            if (self.scrolling_region.left != 0 or
-                self.scrolling_region.right != self.cols - 1 or
+            // TODO: check if left/right need to be margin in xterm
 
-                // PERF(mitchellh): If we have an SGR background set then
-                // we need to preserve that background in our erased rows.
-                // scrollUp does that but eraseRowBounded below does not.
-                // However, scrollUp is WAY slower. We should optimize this
-                // case to work in the eraseRowBounded codepath and remove
-                // this check.
-                !self.screen.blankCell().isZero())
-            {
-                self.scrollUp(1);
+            // If our scrolling region is the full screen, this is an
+            // easy and fast operation since we can just call grow.
+            if (self.scrolling_region.bottom == self.rows - 1) {
+                try self.screen.cursorDownScroll();
                 return;
             }
 
-            // Otherwise use a fast path function from PageList to efficiently
-            // scroll the contents of the scrolling region.
+            // Our scrolling region is partially down the screen. In this
+            // case we need to move the top of the scroll region into
+            // scrollback while keeping the bottom of the scroll region
+            // at the bottom of the screen.
 
-            // Preserve old cursor just for assertions
-            const old_cursor = self.screen.cursor;
+            // To do this today we break it down into a few operations:
+            // 1. Pretend we're at the bottom of the screen and scroll
+            //    everything up.
+            // 2. Create a new scroll region from the bottom of the old
+            //    scroll region to the bottom of the screen.
+            // 3. Use `insertLines` to push the scroll region down.
+            // 4. Reset the scroll region to the old scroll region.
 
-            try self.screen.pages.eraseRowBounded(
-                .{ .active = .{ .y = self.scrolling_region.top } },
-                self.scrolling_region.bottom - self.scrolling_region.top,
-            );
+            // Step 1 (from above)
+            const prev_x = self.screen.cursor.x;
+            self.screen.cursorAbsolute(prev_x, self.rows - 1);
+            try self.screen.cursorDownScroll();
 
-            // eraseRow and eraseRowBounded will end up moving the cursor pin
-            // up by 1, so we need to move it back down. A `cursorReload`
-            // would be better option but this is more efficient and this is
-            // a super hot path so we do this instead.
-            if (comptime std.debug.runtime_safety) {
-                assert(self.screen.cursor.x == old_cursor.x);
-                assert(self.screen.cursor.y == old_cursor.y);
-            }
-            self.screen.cursor.y -= 1;
-            self.screen.cursorDown(1);
+            // Steps 2-4 (from above)
+            const old_top = self.scrolling_region.top;
+            self.scrolling_region.top = self.scrolling_region.bottom;
+            self.scrolling_region.bottom = self.rows - 1;
+            self.screen.cursorAbsolute(prev_x, self.scrolling_region.top);
+            self.insertLines(1);
+            self.scrolling_region.bottom = self.scrolling_region.top;
+            self.scrolling_region.top = old_top;
+            self.screen.cursorAbsolute(prev_x, self.scrolling_region.bottom);
 
-            // The operations above can prune our cursor style so we need to
-            // update. This should never fail because the above can only FREE
-            // memory.
-            self.screen.manualStyleUpdate() catch |err| {
-                std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
-                self.screen.cursor.style = .{};
-                self.screen.manualStyleUpdate() catch unreachable;
-            };
+            return;
         }
+
+        // Slow path for left and right scrolling region margins.
+        if (self.scrolling_region.left != 0 or
+            self.scrolling_region.right != self.cols - 1 or
+
+            // PERF(mitchellh): If we have an SGR background set then
+            // we need to preserve that background in our erased rows.
+            // scrollUp does that but eraseRowBounded below does not.
+            // However, scrollUp is WAY slower. We should optimize this
+            // case to work in the eraseRowBounded codepath and remove
+            // this check.
+            !self.screen.blankCell().isZero())
+        {
+            self.scrollUp(1);
+            return;
+        }
+
+        // Otherwise use a fast path function from PageList to efficiently
+        // scroll the contents of the scrolling region.
+
+        // Preserve old cursor just for assertions
+        const old_cursor = self.screen.cursor;
+
+        try self.screen.pages.eraseRowBounded(
+            .{ .active = .{ .y = self.scrolling_region.top } },
+            self.scrolling_region.bottom - self.scrolling_region.top,
+        );
+
+        // eraseRow and eraseRowBounded will end up moving the cursor pin
+        // up by 1, so we need to move it back down. A `cursorReload`
+        // would be better option but this is more efficient and this is
+        // a super hot path so we do this instead.
+        if (comptime std.debug.runtime_safety) {
+            assert(self.screen.cursor.x == old_cursor.x);
+            assert(self.screen.cursor.y == old_cursor.y);
+        }
+        self.screen.cursor.y -= 1;
+        self.screen.cursorDown(1);
+
+        // The operations above can prune our cursor style so we need to
+        // update. This should never fail because the above can only FREE
+        // memory.
+        self.screen.manualStyleUpdate() catch |err| {
+            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
+            self.screen.cursor.style = .{};
+            self.screen.manualStyleUpdate() catch unreachable;
+        };
 
         return;
     }
@@ -6438,7 +6473,7 @@ test "Terminal: index bottom of scroll region with hyperlinks" {
 
 test "Terminal: index bottom of scroll region clear hyperlinks" {
     const alloc = testing.allocator;
-    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    var t = try init(alloc, .{ .rows = 5, .cols = 5, .max_scrollback = 0 });
     defer t.deinit(alloc);
 
     t.setTopAndBottomMargin(1, 2);
@@ -6597,9 +6632,29 @@ test "Terminal: index inside left/right margin" {
     }
 }
 
-test "Terminal: index bottom of scroll region" {
+test "Terminal: index bottom of scroll region creates scrollback" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    t.setTopAndBottomMargin(1, 3);
+    try t.printString("1\n2\n3");
+    t.setCursorPos(4, 1);
+    try t.print('X');
+    t.setCursorPos(3, 1);
+    try t.index();
+    try t.print('Y');
+
+    {
+        const str = try t.screen.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1\n2\n3\nY\nX", str);
+    }
+}
+
+test "Terminal: index bottom of scroll region no scrollback" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5, .max_scrollback = 0 });
     defer t.deinit(alloc);
 
     t.setTopAndBottomMargin(1, 3);
@@ -6614,7 +6669,6 @@ test "Terminal: index bottom of scroll region" {
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
-    try testing.expect(!t.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
 
     {
         const str = try t.plainString(testing.allocator);
