@@ -1269,4 +1269,97 @@ pub const StreamHandler = struct {
             .csi_21_t => self.surfaceMessageWriter(.{ .report_title = .csi_21_t }),
         }
     }
+
+    pub fn sendKittyColorReport(self: *StreamHandler, request: terminal.osc.Command.KittyColorProtocol) !void {
+        var buf = std.ArrayList(u8).init(self.alloc);
+        errdefer buf.deinit();
+        const writer = buf.writer();
+        try writer.writeAll("\x1b[21");
+
+        for (request.list.items) |item| {
+            switch (item) {
+                .query => |key| {
+                    const color = switch (key) {
+                        .foreground => self.foreground_color,
+                        .background => self.background_color,
+                        .cursor => self.cursor_color,
+                        else => {
+                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
+                            continue;
+                        },
+                    } orelse {
+                        log.warn("no color configured for: {s}", .{@tagName(key)});
+                        continue;
+                    };
+                    try writer.print(
+                        ";rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                        .{
+                            @as(u16, color.r),
+                            @as(u16, color.g),
+                            @as(u16, color.b),
+                        },
+                    );
+                },
+                .set => |v| switch (v.key) {
+                    .foreground => {
+                        self.foreground_color = v.color;
+                        _ = self.renderer_mailbox.push(.{
+                            .foreground_color = v.color,
+                        }, .{ .forever = {} });
+                    },
+                    .background => {
+                        self.background_color = v.color;
+                        _ = self.renderer_mailbox.push(.{
+                            .background_color = v.color,
+                        }, .{ .forever = {} });
+                    },
+                    .cursor => {
+                        self.cursor_color = v.color;
+                        _ = self.renderer_mailbox.push(.{
+                            .cursor_color = v.color,
+                        }, .{ .forever = {} });
+                    },
+                    else => {
+                        log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(v.key)});
+                        continue;
+                    },
+                },
+                .reset => |key| switch (key) {
+                    .foreground => {
+                        self.foreground_color = self.default_foreground_color;
+                        _ = self.renderer_mailbox.push(.{
+                            .foreground_color = self.foreground_color,
+                        }, .{ .forever = {} });
+                    },
+                    .background => {
+                        self.background_color = self.default_background_color;
+                        _ = self.renderer_mailbox.push(.{
+                            .background_color = self.background_color,
+                        }, .{ .forever = {} });
+                    },
+                    .cursor => {
+                        self.cursor_color = self.default_cursor_color;
+                        _ = self.renderer_mailbox.push(.{
+                            .cursor_color = self.cursor_color,
+                        }, .{ .forever = {} });
+                    },
+                    else => {
+                        log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
+                        continue;
+                    },
+                },
+            }
+        }
+
+        try writer.writeAll(request.terminator.string());
+
+        const msg = termio.Message{
+            .write_alloc = .{
+                .alloc = self.alloc,
+                .data = try buf.toOwnedSlice(),
+            },
+        };
+
+        self.messageWriter(msg);
+    }
 };

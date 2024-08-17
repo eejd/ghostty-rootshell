@@ -259,6 +259,11 @@ pub const VTEvent = struct {
                 }
             },
 
+            .Struct => try md.put(
+                key,
+                try alloc.dupeZ(u8, @typeName(Value)),
+            ),
+
             else => switch (Value) {
                 u8 => try md.put(
                     key,
