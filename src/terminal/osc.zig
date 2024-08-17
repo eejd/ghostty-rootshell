@@ -1038,15 +1038,24 @@ pub const Parser = struct {
         switch (self.command) {
             .kitty_color_protocol => |*v| {
                 if (kind == .key_only) {
-                    v.list.append(.{ .reset = key }) catch unreachable;
+                    v.list.append(.{ .reset = key }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
                     return;
                 }
                 if (value.len == 0) {
-                    v.list.append(.{ .reset = key }) catch unreachable;
+                    v.list.append(.{ .reset = key }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
                     return;
                 }
                 if (mem.eql(u8, "?", value)) {
-                    v.list.append(.{ .query = key }) catch unreachable;
+                    v.list.append(.{ .query = key }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
                     return;
                 }
                 v.list.append(
@@ -1055,13 +1064,16 @@ pub const Parser = struct {
                             .key = key,
                             .color = RGB.parse(value) catch |err| switch (err) {
                                 error.InvalidFormat => {
-                                    log.err("invalid color format in kitty color protocol: {s}", .{value});
+                                    log.warn("invalid color format in kitty color protocol: {s}", .{value});
                                     return;
                                 },
                             },
                         },
                     },
-                ) catch unreachable;
+                ) catch |err| {
+                    log.warn("unable to append kitty color protocol option: {}", .{err});
+                    return;
+                };
                 return;
             },
             else => {},
@@ -1636,7 +1648,7 @@ test "OSC: hyperlink end" {
 test "OSC: kitty color protocol" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = std.testing.allocator };
+    var p: Parser = .{ .alloc = testing.allocator };
     defer p.deinit();
 
     const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc";
