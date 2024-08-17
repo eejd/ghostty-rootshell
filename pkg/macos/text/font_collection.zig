@@ -2,7 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const foundation = @import("../foundation.zig");
 const text = @import("../text.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 pub const FontCollection = opaque {
     pub fn createFromAvailableFonts() Allocator.Error!*FontCollection {

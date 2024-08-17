@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 /// A font face is an object that represents a single face from within a font family.
 ///

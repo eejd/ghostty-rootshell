@@ -1,10 +1,16 @@
-pub const c = @import("c.zig");
+const computations = @import("computations.zig");
+const errors = @import("errors.zig");
+const face = @import("face.zig");
+const tag = @import("tag.zig");
+
+pub const c = @import("c.zig").c;
 pub const testing = @import("test.zig");
 pub const Library = @import("Library.zig");
-pub usingnamespace @import("computations.zig");
-pub usingnamespace @import("errors.zig");
-pub usingnamespace @import("face.zig");
-pub usingnamespace @import("tag.zig");
+
+pub const Error = errors.Error;
+pub const Face = face.Face;
+pub const Tag = tag.Tag;
+pub const mulFix = computations.mulFix;
 
 test {
     @import("std").testing.refAllDecls(@This());

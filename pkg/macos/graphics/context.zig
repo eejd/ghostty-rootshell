@@ -2,12 +2,14 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const graphics = @import("../graphics.zig");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 /// Returns a struct that has all the shared context functions for the
 /// given type.
 pub fn Context(comptime T: type) type {
     return struct {
+        value: *T,
+
         pub fn release(self: *T) void {
             c.CGContextRelease(@ptrCast(self));
         }

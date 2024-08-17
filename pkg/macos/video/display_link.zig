@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 
 pub const DisplayLink = opaque {
     pub const Error = error{

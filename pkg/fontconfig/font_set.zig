@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const Pattern = @import("pattern.zig").Pattern;
 
 pub const FontSet = opaque {

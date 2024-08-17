@@ -4,7 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const log = std.log.scoped(.opengl);
 
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const Shader = @import("Shader.zig");
 const errors = @import("errors.zig");
 const glad = @import("glad.zig");

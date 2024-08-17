@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const Face = @import("face.zig").Face;
 const Error = @import("errors.zig").Error;
 

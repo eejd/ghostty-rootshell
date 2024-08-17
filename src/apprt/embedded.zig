@@ -1157,7 +1157,7 @@ pub const Inspector = struct {
 
         pub fn deinit(self: Backend) void {
             switch (self) {
-                .metal => if (builtin.target.isDarwin()) cimgui.c.ImGui_ImplMetal_Shutdown(),
+                .metal => if (builtin.target.isDarwin()) cimgui.ImGui_ImplMetal_Shutdown(),
             }
         }
     };
@@ -1203,7 +1203,7 @@ pub const Inspector = struct {
             self.backend = null;
         }
 
-        if (!cimgui.c.ImGui_ImplMetal_Init(device.value)) {
+        if (!cimgui.ImGui_ImplMetal_Init(device.value)) {
             log.warn("failed to initialize metal backend", .{});
             return false;
         }
@@ -1229,7 +1229,7 @@ pub const Inspector = struct {
         // ImGui completes all its state processing. I don't know how to fix
         // this.
         for (0..2) |_| {
-            cimgui.c.ImGui_ImplMetal_NewFrame(desc.value);
+            cimgui.ImGui_ImplMetal_NewFrame(desc.value);
             try self.newFrame();
             cimgui.c.igNewFrame();
 
@@ -1251,7 +1251,7 @@ pub const Inspector = struct {
             .{desc.value},
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
-        cimgui.c.ImGui_ImplMetal_RenderDrawData(
+        cimgui.ImGui_ImplMetal_RenderDrawData(
             cimgui.c.igGetDrawData(),
             command_buffer.value,
             encoder.value,

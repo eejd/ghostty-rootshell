@@ -11,10 +11,8 @@
 //! WARNING: Lots of performance improvements that we can make with Zig
 //! comptime help. I'm deferring this until later but have some fun ideas.
 
-pub const c = @import("c.zig");
+pub const c = @import("c.zig").c;
 pub const glad = @import("glad.zig");
-pub usingnamespace @import("draw.zig");
-
 pub const ext = @import("extensions.zig");
 pub const Buffer = @import("Buffer.zig");
 pub const Framebuffer = @import("Framebuffer.zig");
@@ -22,3 +20,16 @@ pub const Program = @import("Program.zig");
 pub const Shader = @import("Shader.zig");
 pub const Texture = @import("Texture.zig");
 pub const VertexArray = @import("VertexArray.zig");
+
+const draw = @import("draw.zig");
+
+pub const blendFunc = draw.blendFunc;
+pub const clear = draw.clear;
+pub const clearColor = draw.clearColor;
+pub const drawArrays = draw.drawArrays;
+pub const drawElements = draw.drawElements;
+pub const drawElementsInstanced = draw.drawElementsInstanced;
+pub const enable = draw.enable;
+pub const frontFace = draw.frontFace;
+pub const pixelStore = draw.pixelStore;
+pub const viewport = draw.viewport;
