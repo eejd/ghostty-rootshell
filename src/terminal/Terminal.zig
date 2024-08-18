@@ -1114,8 +1114,6 @@ pub fn index(self: *Terminal) !void {
             self.scrolling_region.left == 0 and
             self.scrolling_region.right == self.cols - 1)
         {
-            // TODO: check if left/right need to be margin in xterm
-
             // If our scrolling region is the full screen, this is an
             // easy and fast operation since we can just call grow.
             if (self.scrolling_region.bottom == self.rows - 1) {
@@ -6646,6 +6644,11 @@ test "Terminal: index bottom of scroll region creates scrollback" {
     try t.print('Y');
 
     {
+        const str = try t.screen.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("2\n3\nY\nX", str);
+    }
+    {
         const str = try t.screen.dumpStringAlloc(alloc, .{ .screen = .{} });
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("1\n2\n3\nY\nX", str);
@@ -6674,6 +6677,47 @@ test "Terminal: index bottom of scroll region no scrollback" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("\nA\n X\nB", str);
+    }
+}
+
+test "Terminal: index bottom of scroll region blank line preserves SGR" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    t.setTopAndBottomMargin(1, 3);
+    try t.printString("1\n2\n3");
+    t.setCursorPos(4, 1);
+    try t.print('X');
+    t.setCursorPos(3, 1);
+    try t.setAttribute(.{ .direct_color_bg = .{
+        .r = 0xFF,
+        .g = 0,
+        .b = 0,
+    } });
+    try t.index();
+
+    {
+        const str = try t.screen.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("2\n3\n\nX", str);
+    }
+    {
+        const str = try t.screen.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1\n2\n3\n\nX", str);
+    }
+    for (0..t.cols) |x| {
+        const list_cell = t.screen.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 2,
+        } }).?;
+        try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
+        try testing.expectEqual(Cell.RGB{
+            .r = 0xFF,
+            .g = 0,
+            .b = 0,
+        }, list_cell.cell.content.color_rgb);
     }
 }
 
