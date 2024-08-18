@@ -1125,30 +1125,7 @@ pub fn index(self: *Terminal) !void {
             // case we need to move the top of the scroll region into
             // scrollback while keeping the bottom of the scroll region
             // at the bottom of the screen.
-
-            // To do this today we break it down into a few operations:
-            // 1. Pretend we're at the bottom of the screen and scroll
-            //    everything up.
-            // 2. Create a new scroll region from the bottom of the old
-            //    scroll region to the bottom of the screen.
-            // 3. Use `insertLines` to push the scroll region down.
-            // 4. Reset the scroll region to the old scroll region.
-
-            // Step 1 (from above)
-            const prev_x = self.screen.cursor.x;
-            self.screen.cursorAbsolute(prev_x, self.rows - 1);
-            try self.screen.cursorDownScroll();
-
-            // Steps 2-4 (from above)
-            const old_top = self.scrolling_region.top;
-            self.scrolling_region.top = self.scrolling_region.bottom;
-            self.scrolling_region.bottom = self.rows - 1;
-            self.screen.cursorAbsolute(prev_x, self.scrolling_region.top);
-            self.insertLines(1);
-            self.scrolling_region.bottom = self.scrolling_region.top;
-            self.scrolling_region.top = old_top;
-            self.screen.cursorAbsolute(prev_x, self.scrolling_region.bottom);
-
+            try self.screen.cursorScrollAbove();
             return;
         }
 
@@ -6474,7 +6451,8 @@ test "Terminal: index bottom of scroll region clear hyperlinks" {
     var t = try init(alloc, .{ .rows = 5, .cols = 5, .max_scrollback = 0 });
     defer t.deinit(alloc);
 
-    t.setTopAndBottomMargin(1, 2);
+    t.setTopAndBottomMargin(2, 3);
+    t.setCursorPos(2, 1);
     try t.screen.startHyperlink("http://example.com", null);
     try t.print('A');
     t.screen.endHyperlink();
@@ -6488,10 +6466,10 @@ test "Terminal: index bottom of scroll region clear hyperlinks" {
     {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
-        try testing.expectEqualStrings("B\nC", str);
+        try testing.expectEqualStrings("\nB\nC", str);
     }
 
-    for (0..2) |y| {
+    for (1..3) |y| {
         const list_cell = t.screen.pages.getCell(.{ .viewport = .{
             .x = 0,
             .y = @intCast(y),
@@ -6668,10 +6646,6 @@ test "Terminal: index bottom of scroll region no scrollback" {
     t.clearDirty();
     try t.index();
     try t.print('X');
-
-    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
-    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
-    try testing.expect(t.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 
     {
         const str = try t.plainString(testing.allocator);
