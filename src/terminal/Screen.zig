@@ -797,32 +797,109 @@ pub fn cursorScrollAbove(self: *Screen) !void {
         var dirty = prev_page.dirtyBitSet();
         dirty.set(prev_page.size.rows - 1);
     } else {
-        // In this case, it means grow() didn't allocate a new page. This
-        // allows us to perform a fast path by rotating rows on the same page.
-        assert(old_pin.page == self.cursor.page_pin.page);
-        self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
+        // In this case, it means grow() didn't allocate a new page.
 
-        const pin = self.cursor.page_pin;
-        const page = &self.cursor.page_pin.page.data;
+        if (self.cursor.page_pin.page == self.pages.pages.last) {
+            // If we're on the last page we can do a very fast path because
+            // all the rows we need to move around are within a single page.
 
-        // Rotate the rows so that the newly created empty row is at the
-        // beginning. e.g. [ 0 1 2 3 ] in to [ 3 0 1 2 ].
-        var rows = page.rows.ptr(page.memory.ptr);
-        fastmem.rotateOnceR(Row, rows[pin.y..page.size.rows]);
+            assert(old_pin.page == self.cursor.page_pin.page);
+            self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
 
-        // Mark all our rotated rows as dirty.
-        var dirty = page.dirtyBitSet();
-        dirty.setRangeValue(.{ .start = pin.y, .end = page.size.rows }, true);
+            const pin = self.cursor.page_pin;
+            const page = &self.cursor.page_pin.page.data;
 
-        // Setup our cursor caches after the rotation so it points to the
-        // correct data
-        const page_rac = self.cursor.page_pin.rowAndCell();
-        self.cursor.page_row = page_rac.row;
-        self.cursor.page_cell = page_rac.cell;
+            // Rotate the rows so that the newly created empty row is at the
+            // beginning. e.g. [ 0 1 2 3 ] in to [ 3 0 1 2 ].
+            var rows = page.rows.ptr(page.memory.ptr);
+            fastmem.rotateOnceR(Row, rows[pin.y..page.size.rows]);
 
-        // Note: we don't need to call cursorChangePin here because
-        // the pin page is the same so there is no accounting to do for
-        // styles or any of that.
+            // Mark all our rotated rows as dirty.
+            var dirty = page.dirtyBitSet();
+            dirty.setRangeValue(.{ .start = pin.y, .end = page.size.rows }, true);
+
+            // Setup our cursor caches after the rotation so it points to the
+            // correct data
+            const page_rac = self.cursor.page_pin.rowAndCell();
+            self.cursor.page_row = page_rac.row;
+            self.cursor.page_cell = page_rac.cell;
+
+            // Note: we don't need to call cursorChangePin here because
+            // the pin page is the same so there is no accounting to do for
+            // styles or any of that.
+        } else {
+            // We didn't grow pages but our cursor isn't on the last page.
+            // In this case we need to do more work because we need to copy
+            // elements between pages.
+            //
+            // An example scenario of this is shown below:
+            //
+            //      +----------+ = PAGE 0
+            //  ... :          :
+            //     +-------------+ ACTIVE
+            // 4302 |1A00000000| | 0
+            // 4303 |2B00000000| | 1
+            //      :^         : : = PIN 0
+            // 4304 |3C00000000| | 2
+            //      +----------+ :
+            //      +----------+ : = PAGE 1
+            //    0 |4D00000000| | 3
+            //    1 |5E00000000| | 4
+            //      +----------+ :
+            //     +-------------+
+
+            self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
+
+            // Go through each of the pages following our pin, shift all rows
+            // down by one, and copy the last row of the previous page.
+            var current = self.pages.pages.last.?;
+            while (current != self.cursor.page_pin.page) : (current = current.prev.?) {
+                const prev = current.prev.?;
+                const prev_page = &prev.data;
+                const cur_page = &current.data;
+                const prev_rows = prev_page.rows.ptr(prev_page.memory.ptr);
+                const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
+
+                // Rotate the pages down: [ 0 1 2 3 ] => [ 3 0 1 2 ]
+                fastmem.rotateOnceR(Row, cur_rows[0..cur_page.size.rows]);
+
+                // Copy the last row of the previous page to the top of current.
+                try cur_page.cloneRowFrom(
+                    prev_page,
+                    &cur_rows[0],
+                    &prev_rows[prev_page.size.rows - 1],
+                );
+
+                // All rows we rotated are dirty
+                var dirty = cur_page.dirtyBitSet();
+                dirty.setRangeValue(.{ .start = 0, .end = cur_page.size.rows }, true);
+            }
+
+            // Our current is our cursor page, we need to rotate down from
+            // our cursor and clear our row.
+            assert(current == self.cursor.page_pin.page);
+            const cur_page = &current.data;
+            const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
+            fastmem.rotateOnceR(Row, cur_rows[self.cursor.page_pin.y..cur_page.size.rows]);
+            self.clearCells(
+                cur_page,
+                &cur_rows[0],
+                cur_page.getCells(&cur_rows[0]),
+            );
+
+            // Set all the rows we rotated and cleared dirty
+            var dirty = cur_page.dirtyBitSet();
+            dirty.setRangeValue(
+                .{ .start = self.cursor.page_pin.y, .end = cur_page.size.rows },
+                true,
+            );
+
+            // Setup cursor cache data after all the rotations so our
+            // row is valid.
+            const page_rac = self.cursor.page_pin.rowAndCell();
+            self.cursor.page_row = page_rac.row;
+            self.cursor.page_cell = page_rac.cell;
+        }
     }
 
     if (self.cursor.style_id != style.default_id) {
@@ -3947,6 +4024,139 @@ test "Screen: scroll above same page" {
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
+test "Screen: scroll above same page but cursor on previous page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 10);
+    defer s.deinit();
+
+    // We need to get the cursor to a new page
+    const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_size - 3) |_| try s.testWriteString("\n");
+
+    try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
+    try s.testWriteString("1A\n2B\n3C\n4D\n5E");
+    s.cursorAbsolute(0, 1);
+    s.pages.clearDirty();
+
+    // Ensure we're still on the first page and have a second
+    try testing.expect(s.cursor.page_pin.page == s.pages.pages.first.?);
+    try testing.expect(s.pages.pages.first.?.next != null);
+
+    // At this point:
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    //     +-------------+ ACTIVE
+    // 4303 |1A00000000| | 0
+    // 4304 |2B00000000| | 1
+    //      :^         : : = PIN 0
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |3C00000000| | 2
+    //    1 |4D00000000| | 3
+    //    2 |5E00000000| | 4
+    //      +----------+ :
+    //     +-------------+
+
+    try s.cursorScrollAbove();
+
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2B\n\n3C\n4D\n5E", contents);
+    }
+    {
+        const list_cell = s.pages.getCell(.{ .active = .{ .x = 0, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.content_tag == .bg_color_rgb);
+        try testing.expectEqual(Cell.RGB{
+            .r = 155,
+            .g = 0,
+            .b = 0,
+        }, cell.content.color_rgb);
+    }
+
+    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+}
+
+test "Screen: scroll above same page but cursor on previous page last row" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 5, 10);
+    defer s.deinit();
+
+    // We need to get the cursor to a new page
+    const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_size - 2) |_| try s.testWriteString("\n");
+
+    try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
+    try s.testWriteString("1A\n2B\n3C\n4D\n5E");
+    s.cursorAbsolute(0, 1);
+    s.pages.clearDirty();
+
+    // Ensure we're still on the first page and have a second
+    try testing.expect(s.cursor.page_pin.page == s.pages.pages.first.?);
+    try testing.expect(s.pages.pages.first.?.next != null);
+
+    // At this point:
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    //     +-------------+ ACTIVE
+    // 4303 |1A00000000| | 0
+    // 4304 |2B00000000| | 1
+    //      :^         : : = PIN 0
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |3C00000000| | 2
+    //    1 |4D00000000| | 3
+    //    2 |5E00000000| | 4
+    //      +----------+ :
+    //     +-------------+
+
+    try s.cursorScrollAbove();
+
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    // 4303 |1A00000000|
+    //     +-------------+ ACTIVE
+    // 4304 |2B00000000| | 0
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |          | | 1
+    //      :^         : : = PIN 0
+    //    1 |3C00000000| | 2
+    //    2 |4D00000000| | 3
+    //    3 |5E00000000| | 4
+    //      +----------+ :
+    //     +-------------+
+
+    // try s.pages.diagram(std.io.getStdErr().writer());
+
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("2B\n\n3C\n4D\n5E", contents);
+    }
+    {
+        const list_cell = s.pages.getCell(.{ .active = .{ .x = 0, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expect(cell.content_tag == .bg_color_rgb);
+        try testing.expectEqual(Cell.RGB{
+            .r = 155,
+            .g = 0,
+            .b = 0,
+        }, cell.content.color_rgb);
+    }
+
+    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+}
+
 test "Screen: scroll above creates new page" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -3966,9 +4176,6 @@ test "Screen: scroll above creates new page" {
     // Ensure we're still on the first page
     try testing.expect(s.cursor.page_pin.page == s.pages.pages.first.?);
     try s.cursorScrollAbove();
-
-    // const stderr = std.io.getStdErr().writer();
-    // try s.pages.diagram(stderr);
 
     {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
