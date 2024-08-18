@@ -16,6 +16,7 @@ pub const Style = enum {
         return switch (term) {
             .bar => .bar,
             .block => .block,
+            .block_hollow => .block_hollow,
             .underline => .underline,
         };
     }

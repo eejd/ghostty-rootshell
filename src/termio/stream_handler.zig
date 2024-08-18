@@ -210,6 +210,10 @@ pub const StreamHandler = struct {
                             .block => if (blink) 1 else 2,
                             .underline => if (blink) 3 else 4,
                             .bar => if (blink) 5 else 6,
+
+                            // Below here, the cursor styles aren't represented by
+                            // DECSCUSR so we map it to some other style.
+                            .block_hollow => if (blink) 1 else 2,
                         };
                         try writer.print("{d} q", .{style});
                     },
