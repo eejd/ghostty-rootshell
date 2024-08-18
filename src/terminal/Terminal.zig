@@ -1114,17 +1114,6 @@ pub fn index(self: *Terminal) !void {
             self.scrolling_region.left == 0 and
             self.scrolling_region.right == self.cols - 1)
         {
-            // If our scrolling region is the full screen, this is an
-            // easy and fast operation since we can just call grow.
-            if (self.scrolling_region.bottom == self.rows - 1) {
-                try self.screen.cursorDownScroll();
-                return;
-            }
-
-            // Our scrolling region is partially down the screen. In this
-            // case we need to move the top of the scroll region into
-            // scrollback while keeping the bottom of the scroll region
-            // at the bottom of the screen.
             try self.screen.cursorScrollAbove();
             return;
         }
