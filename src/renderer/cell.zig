@@ -2,6 +2,18 @@ const ziglyph = @import("ziglyph");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 
+/// Returns true if a codepoint for a cell is a covering character. A covering
+/// character is a character that covers the entire cell. This is used to
+/// make window-padding-color=extend work better. See #2099.
+pub fn isCovering(cp: u21) bool {
+    return switch (cp) {
+        // U+2588 FULL BLOCK
+        0x2588 => true,
+
+        else => false,
+    };
+}
+
 pub const FgMode = enum {
     /// Normal non-colored text rendering. The text can leave the cell
     /// size if it is larger than the cell to allow for ligatures.

@@ -22,6 +22,7 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
 const fgMode = @import("cell.zig").fgMode;
+const isCovering = @import("cell.zig").isCovering;
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -2444,9 +2445,18 @@ fn updateCell(
         // the cell is transparent but still copy-able.
         const res: BgFg = selection_res orelse cell_res;
         if (style.flags.invisible) {
-            break :colors BgFg{
+            break :colors .{
                 .bg = res.bg,
                 .fg = res.bg orelse self.background_color,
+            };
+        }
+
+        // If our cell has a covering glyph, then our bg is set to our fg
+        // so that padding extension works correctly.
+        if (!selected and isCovering(cell.codepoint())) {
+            break :colors .{
+                .bg = res.fg,
+                .fg = res.fg,
             };
         }
 
@@ -2489,9 +2499,8 @@ fn updateCell(
         self.cells.bgCell(coord.y, coord.x).* = .{
             rgb.r, rgb.g, rgb.b, bg_alpha,
         };
-
         if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            self.cells.bgCell(coord.y, coord.x).* = .{
+            self.cells.bgCell(coord.y, coord.x + 1).* = .{
                 rgb.r, rgb.g, rgb.b, bg_alpha,
             };
         }
