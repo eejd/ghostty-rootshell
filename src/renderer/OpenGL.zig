@@ -9,6 +9,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const link = @import("link.zig");
+const isCovering = @import("cell.zig").isCovering;
 const fgMode = @import("cell.zig").fgMode;
 const shadertoy = @import("shadertoy.zig");
 const apprt = @import("../apprt.zig");
@@ -1646,6 +1647,15 @@ fn updateCell(
             break :colors BgFg{
                 .bg = res.bg,
                 .fg = res.bg orelse self.background_color,
+            };
+        }
+
+        // If our cell has a covering glyph, then our bg is set to our fg
+        // so that padding extension works correctly.
+        if (!selected and isCovering(cell.codepoint())) {
+            break :colors .{
+                .bg = res.fg,
+                .fg = res.fg,
             };
         }
 
