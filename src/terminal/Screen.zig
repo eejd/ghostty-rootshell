@@ -757,45 +757,8 @@ pub fn cursorScrollAbove(self: *Screen) !void {
     assert(self.cursor.y < self.pages.rows - 1);
 
     const old_pin = self.cursor.page_pin.*;
-    if (try self.pages.grow()) |new_page_node| {
-        // We allocated a new page and went to it. In this case, our new
-        // empty line is at the top of this page.
-
-        // Prev is never null because pagelist asserts that we always have
-        // memory for at least two pages. This is an assertion.
-        assert(new_page_node.prev.? == old_pin.page);
-        const prev_page = &old_pin.page.data;
-        const new_page = &new_page_node.data;
-
-        const prev_rows = prev_page.rows.ptr(prev_page.memory.ptr);
-        const new_rows = new_page.rows.ptr(new_page.memory.ptr);
-        const prev_last_row = &prev_rows[prev_page.size.rows - 1];
-
-        // First, copy the last row of the previous page to the top
-        // of our current page.
-        try new_page.cloneRowFrom(
-            prev_page,
-            &new_rows[0],
-            prev_last_row,
-        );
-
-        // Update our cursor metadata now. We call methods below that assert
-        // integrity in debug modes so we want to put ourselves in a
-        // consistent state first.
-        self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
-        self.cursorChangePin(self.cursor.page_pin.*);
-        const page_rac = self.cursor.page_pin.rowAndCell();
-        self.cursor.page_row = page_rac.row;
-        self.cursor.page_cell = page_rac.cell;
-
-        // Third, clear the last row of the previous page.
-        self.clearCells(
-            prev_page,
-            prev_last_row,
-            prev_page.getCells(prev_last_row),
-        );
-        var dirty = prev_page.dirtyBitSet();
-        dirty.set(prev_page.size.rows - 1);
+    if (try self.pages.grow()) |_| {
+        try self.cursorScrollAboveRotate();
     } else {
         // In this case, it means grow() didn't allocate a new page.
 
@@ -847,58 +810,7 @@ pub fn cursorScrollAbove(self: *Screen) !void {
             //    1 |5E00000000| | 4
             //      +----------+ :
             //     +-------------+
-
-            self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
-
-            // Go through each of the pages following our pin, shift all rows
-            // down by one, and copy the last row of the previous page.
-            var current = self.pages.pages.last.?;
-            while (current != self.cursor.page_pin.page) : (current = current.prev.?) {
-                const prev = current.prev.?;
-                const prev_page = &prev.data;
-                const cur_page = &current.data;
-                const prev_rows = prev_page.rows.ptr(prev_page.memory.ptr);
-                const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
-
-                // Rotate the pages down: [ 0 1 2 3 ] => [ 3 0 1 2 ]
-                fastmem.rotateOnceR(Row, cur_rows[0..cur_page.size.rows]);
-
-                // Copy the last row of the previous page to the top of current.
-                try cur_page.cloneRowFrom(
-                    prev_page,
-                    &cur_rows[0],
-                    &prev_rows[prev_page.size.rows - 1],
-                );
-
-                // All rows we rotated are dirty
-                var dirty = cur_page.dirtyBitSet();
-                dirty.setRangeValue(.{ .start = 0, .end = cur_page.size.rows }, true);
-            }
-
-            // Our current is our cursor page, we need to rotate down from
-            // our cursor and clear our row.
-            assert(current == self.cursor.page_pin.page);
-            const cur_page = &current.data;
-            const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
-            fastmem.rotateOnceR(Row, cur_rows[self.cursor.page_pin.y..cur_page.size.rows]);
-            self.clearCells(
-                cur_page,
-                &cur_rows[0],
-                cur_page.getCells(&cur_rows[0]),
-            );
-
-            // Set all the rows we rotated and cleared dirty
-            var dirty = cur_page.dirtyBitSet();
-            dirty.setRangeValue(
-                .{ .start = self.cursor.page_pin.y, .end = cur_page.size.rows },
-                true,
-            );
-
-            // Setup cursor cache data after all the rotations so our
-            // row is valid.
-            const page_rac = self.cursor.page_pin.rowAndCell();
-            self.cursor.page_row = page_rac.row;
-            self.cursor.page_cell = page_rac.cell;
+            try self.cursorScrollAboveRotate();
         }
     }
 
@@ -911,6 +823,60 @@ pub fn cursorScrollAbove(self: *Screen) !void {
             @memset(cells[0..self.pages.cols], blank_cell);
         }
     }
+}
+
+fn cursorScrollAboveRotate(self: *Screen) !void {
+    self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
+
+    // Go through each of the pages following our pin, shift all rows
+    // down by one, and copy the last row of the previous page.
+    var current = self.pages.pages.last.?;
+    while (current != self.cursor.page_pin.page) : (current = current.prev.?) {
+        const prev = current.prev.?;
+        const prev_page = &prev.data;
+        const cur_page = &current.data;
+        const prev_rows = prev_page.rows.ptr(prev_page.memory.ptr);
+        const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
+
+        // Rotate the pages down: [ 0 1 2 3 ] => [ 3 0 1 2 ]
+        fastmem.rotateOnceR(Row, cur_rows[0..cur_page.size.rows]);
+
+        // Copy the last row of the previous page to the top of current.
+        try cur_page.cloneRowFrom(
+            prev_page,
+            &cur_rows[0],
+            &prev_rows[prev_page.size.rows - 1],
+        );
+
+        // All rows we rotated are dirty
+        var dirty = cur_page.dirtyBitSet();
+        dirty.setRangeValue(.{ .start = 0, .end = cur_page.size.rows }, true);
+    }
+
+    // Our current is our cursor page, we need to rotate down from
+    // our cursor and clear our row.
+    assert(current == self.cursor.page_pin.page);
+    const cur_page = &current.data;
+    const cur_rows = cur_page.rows.ptr(cur_page.memory.ptr);
+    fastmem.rotateOnceR(Row, cur_rows[self.cursor.page_pin.y..cur_page.size.rows]);
+    self.clearCells(
+        cur_page,
+        &cur_rows[0],
+        cur_page.getCells(&cur_rows[0]),
+    );
+
+    // Set all the rows we rotated and cleared dirty
+    var dirty = cur_page.dirtyBitSet();
+    dirty.setRangeValue(
+        .{ .start = self.cursor.page_pin.y, .end = cur_page.size.rows },
+        true,
+    );
+
+    // Setup cursor cache data after all the rotations so our
+    // row is valid.
+    const page_rac = self.cursor.page_pin.rowAndCell();
+    self.cursor.page_row = page_rac.row;
+    self.cursor.page_cell = page_rac.cell;
 }
 
 /// Move the cursor down if we're not at the bottom of the screen. Otherwise
@@ -4196,7 +4162,7 @@ test "Screen: scroll above creates new page" {
     // Only y=1 is dirty because they are the ones that CHANGED contents
     try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
 test "Screen: scroll above no scrollback bottom of page" {
