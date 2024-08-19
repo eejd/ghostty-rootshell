@@ -209,6 +209,14 @@ pub const Keyboard = struct {
     /// a combination to be handled by different bindings before the release
     /// of the prior (namely since you can't bind modifier-only).
     last_trigger: ?u64 = null,
+
+    /// The queued keys when we're in the middle of a sequenced binding.
+    /// These are flushed when the sequence is completed and unconsumed or
+    /// invalid.
+    ///
+    /// This is naturally bounded due to the configuration maximum
+    /// length of a sequence.
+    queued: std.ArrayListUnmanaged(termio.Message.WriteReq) = .{},
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -624,6 +632,10 @@ pub fn deinit(self: *Surface) void {
         v.deinit();
         self.alloc.destroy(v);
     }
+
+    // Clean up our keyboard state
+    for (self.keyboard.queued.items) |req| req.deinit();
+    self.keyboard.queued.deinit(self.alloc);
 
     // Clean up our font grid
     self.app.font_grid_set.deref(self.font_grid_key);
@@ -1521,17 +1533,36 @@ fn maybeHandleBinding(
         // No entry found. If we're not looking at the root set of the
         // bindings we need to encode everything up to this point and
         // send to the pty.
-        if (self.keyboard.bindings != null) @panic("TODO");
+        if (self.keyboard.bindings != null) {
+            // Reset to the root set
+            self.keyboard.bindings = null;
+
+            // Encode everything up to this point
+            for (self.keyboard.queued.items) |write_req| {
+                self.io.queueMessage(switch (write_req) {
+                    .small => |v| .{ .write_small = v },
+                    .stable => |v| .{ .write_stable = v },
+                    .alloc => |v| .{ .write_alloc = v },
+                }, .unlocked);
+            }
+            self.keyboard.queued.clearRetainingCapacity();
+        }
 
         return null;
     };
 
     // Determine if this entry has an action or if its a leader key.
     const action: input.Binding.Action, const consumed: bool = switch (entry) {
-        .leader => {
-            // TODO
-            log.warn("sequenced keybinds are not supported yet", .{});
-            return null;
+        .leader => |set| {
+            // Setup the next set we'll look at.
+            self.keyboard.bindings = set;
+
+            // Store this event so that we can drain and encode on invalid
+            if (try self.encodeKey(event, insp_ev)) |req| {
+                try self.keyboard.queued.append(self.alloc, req);
+            }
+
+            return .consumed;
         },
 
         .action => |v| .{ v, true },
@@ -1542,6 +1573,14 @@ fn maybeHandleBinding(
     // we reset the last trigger to null. We only set this if we actually
     // perform an action (below)
     self.keyboard.last_trigger = null;
+
+    // An action also always resets the binding set.
+    self.keyboard.bindings = null;
+    if (self.keyboard.queued.items.len > 0) {
+        // TODO: unconsumed
+        for (self.keyboard.queued.items) |req| req.deinit();
+        self.keyboard.queued.clearRetainingCapacity();
+    }
 
     // Attempt to perform the action
     log.debug("key event binding consumed={} action={}", .{ consumed, action });
