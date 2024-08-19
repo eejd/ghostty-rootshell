@@ -72,6 +72,9 @@ renderer_thr: std.Thread,
 /// Mouse state.
 mouse: Mouse,
 
+/// Keyboard input state.
+keyboard: Keyboard,
+
 /// A currently pressed key. This is used so that we can send a keyboard
 /// release event when the surface is unfocused. Note that when the surface
 /// is refocused, a key press event may not be sent again -- this depends
@@ -190,6 +193,22 @@ const Mouse = struct {
     /// The last x/y in the cursor position for links. We use this to
     /// only process link hover events when the mouse actually moves cells.
     link_point: ?terminal.point.Coordinate = null,
+};
+
+/// Keyboard state for the surface.
+pub const Keyboard = struct {
+    /// The currently active keybindings for the surface. This is used to
+    /// implement sequences: as leader keys are pressed, the active bindings
+    /// set is updated to reflect the current leader key sequence. If this is
+    /// null then the root bindings are used.
+    bindings: ?*const input.Binding.Set = null,
+
+    /// The last handled binding. This is used to prevent encoding release
+    /// events for handled bindings. We only need to keep track of one because
+    /// at least at the time of writing this, its impossible for two keys of
+    /// a combination to be handled by different bindings before the release
+    /// of the prior (namely since you can't bind modifier-only).
+    last_trigger: ?u64 = null,
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -428,6 +447,7 @@ pub fn init(
         },
         .renderer_thr = undefined,
         .mouse = .{},
+        .keyboard = .{},
         .io = undefined,
         .io_thread = io_thread,
         .io_thr = undefined,
@@ -1322,82 +1342,13 @@ pub fn keyCallback(
         }
     };
 
-    // Before encoding, we see if we have any keybindings for this
-    // key. Those always intercept before any encoding tasks.
-    binding: {
-        const binding_entry: input.Binding.Set.Entry, const binding_trigger: input.Binding.Trigger = action: {
-            const binding_mods = event.mods.binding();
-            var trigger: input.Binding.Trigger = .{
-                .mods = binding_mods,
-                .key = .{ .translated = event.key },
-            };
-
-            const set = self.config.keybind.set;
-            if (set.get(trigger)) |v| break :action .{
-                v,
-                trigger,
-            };
-
-            trigger.key = .{ .physical = event.physical_key };
-            if (set.get(trigger)) |v| break :action .{
-                v,
-                trigger,
-            };
-
-            if (event.unshifted_codepoint > 0) {
-                trigger.key = .{ .unicode = event.unshifted_codepoint };
-                if (set.get(trigger)) |v| break :action .{
-                    v,
-                    trigger,
-                };
-            }
-
-            break :binding;
-        };
-        const binding_action = switch (binding_entry) {
-            .leader => {
-                // TODO
-                log.warn("sequenced keybinds are not supported yet", .{});
-                break :binding;
-            },
-            .action, .action_unconsumed => |action| action,
-        };
-        const consumed = binding_entry == .action;
-
-        // We only execute the binding on press/repeat but we still consume
-        // the key on release so that we don't send any release events.
-        log.debug("key event binding consumed={} action={}", .{ consumed, binding_action });
-        const performed = if (event.action == .press or event.action == .repeat) press: {
-            self.last_binding_trigger = 0;
-            break :press try self.performBindingAction(binding_action);
-        } else false;
-
-        // If we performed an action and it was a closing action,
-        // our "self" pointer is not safe to use anymore so we need to
-        // just exit immediately.
-        if (performed and closingAction(binding_action)) {
-            log.debug("key binding is a closing binding, halting key event processing", .{});
-            return .closed;
-        }
-
-        // If we consume this event, then we are done. If we don't consume
-        // it, we processed the action but we still want to process our
-        // encodings, too.
-        if (consumed and performed) {
-            self.last_binding_trigger = binding_trigger.hash();
-            if (insp_ev) |*ev| ev.binding = binding_action;
-            return .consumed;
-        }
-
-        // If we have a previous binding trigger and it matches this one,
-        // then we handled the down event so we don't want to send any further
-        // events.
-        if (self.last_binding_trigger > 0 and
-            self.last_binding_trigger == binding_trigger.hash())
-        {
-            return .consumed;
-        }
-    }
+    // Handle keybindings first. We need to handle this on all events
+    // (press, repeat, release) because a press may perform a binding but
+    // a release should not encode if we consumed the press.
+    if (try self.maybeHandleBinding(
+        event,
+        if (insp_ev) |*ev| ev else null,
+    )) |v| return v;
 
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
@@ -1579,6 +1530,99 @@ pub fn keyCallback(
     }
 
     return .consumed;
+}
+
+/// Maybe handles a binding for a given event and if so returns the effect.
+/// Returns null if the event is not handled in any way and processing should
+/// continue.
+fn maybeHandleBinding(
+    self: *Surface,
+    event: input.KeyEvent,
+    insp_ev: ?*inspector.key.Event,
+) !?InputEffect {
+    switch (event.action) {
+        // Release events never trigger a binding but we need to check if
+        // we consumed the press event so we don't encode the release.
+        .release => if (self.keyboard.last_trigger) |last| {
+            if (last == event.bindingHash()) {
+                // We don't reset the last trigger on release because
+                // an apprt may send multiple release events for a single
+                // press event.
+                return .consumed;
+            }
+
+            return null;
+        },
+
+        // Carry on processing.
+        .press, .repeat => {},
+    }
+
+    // Find an entry in the keybind set that matches our event.
+    const entry: input.Binding.Set.Entry = entry: {
+        const set = self.keyboard.bindings orelse &self.config.keybind.set;
+
+        var trigger: input.Binding.Trigger = .{
+            .mods = event.mods.binding(),
+            .key = .{ .translated = event.key },
+        };
+        if (set.get(trigger)) |v| break :entry v;
+
+        trigger.key = .{ .physical = event.physical_key };
+        if (set.get(trigger)) |v| break :entry v;
+
+        if (event.unshifted_codepoint > 0) {
+            trigger.key = .{ .unicode = event.unshifted_codepoint };
+            if (set.get(trigger)) |v| break :entry v;
+        }
+
+        // No entry found. If we're not looking at the root set of the
+        // bindings we need to encode everything up to this point and
+        // send to the pty.
+        if (self.keyboard.bindings != null) @panic("TODO");
+
+        return null;
+    };
+
+    // Determine if this entry has an action or if its a leader key.
+    const action: input.Binding.Action, const consumed: bool = switch (entry) {
+        .leader => {
+            // TODO
+            log.warn("sequenced keybinds are not supported yet", .{});
+            return null;
+        },
+
+        .action => |v| .{ v, true },
+        .action_unconsumed => |v| .{ v, false },
+    };
+
+    // We have an action, so at this point we're handling SOMETHING so
+    // we reset the last trigger to null. We only set this if we actually
+    // perform an action (below)
+    self.keyboard.last_trigger = null;
+
+    // Attempt to perform the action
+    log.debug("key event binding consumed={} action={}", .{ consumed, action });
+    const performed = try self.performBindingAction(action);
+
+    // If we performed an action and it was a closing action,
+    // our "self" pointer is not safe to use anymore so we need to
+    // just exit immediately.
+    if (performed and closingAction(action)) {
+        log.debug("key binding is a closing binding, halting key event processing", .{});
+        return .closed;
+    }
+
+    // If we consume this event, then we are done. If we don't consume
+    // it, we processed the action but we still want to process our
+    // encodings, too.
+    if (performed and consumed) {
+        self.keyboard.last_trigger = event.bindingHash();
+        if (insp_ev) |ev| ev.binding = action;
+        return .consumed;
+    }
+
+    return null;
 }
 
 /// Sends text as-is to the terminal without triggering any keyboard

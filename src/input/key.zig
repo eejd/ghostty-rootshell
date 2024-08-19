@@ -54,6 +54,29 @@ pub const KeyEvent = struct {
         if (self.utf8.len == 0) return self.mods;
         return self.mods.unset(self.consumed_mods);
     }
+
+    /// Returns a unique hash for this key event to be used for tracking
+    /// uniquess specifically with bindings. This omits fields that are
+    /// irrelevant for bindings.
+    pub fn bindingHash(self: KeyEvent) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+
+        // These are all the fields that are explicitly part of Trigger.
+        std.hash.autoHash(&hasher, self.key);
+        std.hash.autoHash(&hasher, self.physical_key);
+        std.hash.autoHash(&hasher, self.unshifted_codepoint);
+        std.hash.autoHash(&hasher, self.mods.binding());
+
+        // Notes on unmapped things and why:
+        //
+        // - action: we don't have action-specific bindings right now
+        //   AND we want to know if a key resulted in a binding regardless
+        //   of action because a press should also ignore a release and so on.
+        //
+        // We can add to this if there is other confusion.
+
+        return hasher.final();
+    }
 };
 
 /// A bitmask for all key modifiers.
