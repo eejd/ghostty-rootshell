@@ -1473,12 +1473,14 @@ fn maybeHandleBinding(
     switch (event.action) {
         // Release events never trigger a binding but we need to check if
         // we consumed the press event so we don't encode the release.
-        .release => if (self.keyboard.last_trigger) |last| {
-            if (last == event.bindingHash()) {
-                // We don't reset the last trigger on release because
-                // an apprt may send multiple release events for a single
-                // press event.
-                return .consumed;
+        .release => {
+            if (self.keyboard.last_trigger) |last| {
+                if (last == event.bindingHash()) {
+                    // We don't reset the last trigger on release because
+                    // an apprt may send multiple release events for a single
+                    // press event.
+                    return .consumed;
+                }
             }
 
             return null;
