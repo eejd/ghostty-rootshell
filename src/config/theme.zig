@@ -34,14 +34,24 @@ pub const Location = enum {
                 break :user internal_os.xdg.config(
                     arena_alloc,
                     .{ .subdir = subdir },
-                ) catch |err| switch (err) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.BufferTooSmall => return error.OutOfMemory,
+                ) catch |err| {
+                    // We need to do some comptime trick sot get the right
+                    // error set since some platforms don't support some
+                    // error types.
+                    const Error = @TypeOf(err) || switch (builtin.os.tag) {
+                        .ios => error{BufferTooSmall},
+                        else => error{},
+                    };
 
-                    // Any other error we treat as the XDG directory not
-                    // existing. Windows in particularly can return a LOT
-                    // of errors here.
-                    else => return null,
+                    switch (@as(Error, err)) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.BufferTooSmall => return error.OutOfMemory,
+
+                        // Any other error we treat as the XDG directory not
+                        // existing. Windows in particularly can return a LOT
+                        // of errors here.
+                        else => return null,
+                    }
                 };
             },
 
