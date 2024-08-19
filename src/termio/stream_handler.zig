@@ -1279,73 +1279,136 @@ pub const StreamHandler = struct {
         for (request.list.items) |item| {
             switch (item) {
                 .query => |key| {
+                    const i = @intFromEnum(key);
                     const color = switch (key) {
                         .foreground => self.foreground_color,
                         .background => self.background_color,
                         .cursor => self.cursor_color,
-                        else => {
-                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
-                            continue;
+                        else => color: {
+                            if (i > 255) {
+                                log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
+                                continue;
+                            }
+                            break :color self.terminal.color_palette.colors[i];
                         },
                     } orelse {
                         log.warn("no color configured for: {s}", .{@tagName(key)});
                         continue;
                     };
-                    try writer.print(
-                        ";rgb:{x:0>2}/{x:0>2}/{x:0>2}",
-                        .{
-                            @as(u16, color.r),
-                            @as(u16, color.g),
-                            @as(u16, color.b),
-                        },
-                    );
+                    if (i <= 255)
+                        try writer.print(
+                            ";{d}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                            .{ i, color.r, color.g, color.b },
+                        )
+                    else
+                        try writer.print(
+                            ";{s}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                            .{ @tagName(key), color.r, color.g, color.b },
+                        );
                 },
                 .set => |v| switch (v.key) {
                     .foreground => {
                         self.foreground_color = v.color;
-                        _ = self.renderer_mailbox.push(.{
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
                             .foreground_color = v.color,
-                        }, .{ .forever = {} });
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                     },
                     .background => {
                         self.background_color = v.color;
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
+                            .background_color = v.color,
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                         _ = self.renderer_mailbox.push(.{
                             .background_color = v.color,
                         }, .{ .forever = {} });
                     },
                     .cursor => {
                         self.cursor_color = v.color;
-                        _ = self.renderer_mailbox.push(.{
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
                             .cursor_color = v.color,
-                        }, .{ .forever = {} });
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                     },
                     else => {
-                        log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(v.key)});
-                        continue;
+                        const i = @intFromEnum(v.key);
+                        if (i > 255) {
+                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(v.key)});
+                            continue;
+                        }
+                        self.terminal.flags.dirty.palette = true;
+                        self.terminal.color_palette.colors[i] = v.color;
+                        self.terminal.color_palette.mask.unset(i);
                     },
                 },
                 .reset => |key| switch (key) {
                     .foreground => {
                         self.foreground_color = self.default_foreground_color;
-                        _ = self.renderer_mailbox.push(.{
-                            .foreground_color = self.foreground_color,
-                        }, .{ .forever = {} });
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
+                            .foreground_color = self.default_foreground_color,
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                     },
                     .background => {
                         self.background_color = self.default_background_color;
-                        _ = self.renderer_mailbox.push(.{
-                            .background_color = self.background_color,
-                        }, .{ .forever = {} });
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
+                            .background_color = self.default_background_color,
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                     },
                     .cursor => {
                         self.cursor_color = self.default_cursor_color;
-                        _ = self.renderer_mailbox.push(.{
-                            .cursor_color = self.cursor_color,
-                        }, .{ .forever = {} });
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        const msg: renderer.Message = .{
+                            .cursor_color = self.default_cursor_color,
+                        };
+                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
+                            self.renderer_state.mutex.unlock();
+                            defer self.renderer_state.mutex.lock();
+                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                        }
                     },
                     else => {
-                        log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
-                        continue;
+                        const i = @intFromEnum(key);
+                        if (i > 255) {
+                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
+                            continue;
+                        }
+                        self.terminal.flags.dirty.palette = true;
+                        self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                        self.terminal.color_palette.mask.unset(i);
                     },
                 },
             }

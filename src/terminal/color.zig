@@ -208,9 +208,11 @@ pub const RGB = struct {
     ///    where <red>, <green>, and <blue> are floating point values between
     ///    0.0 and 1.0 (inclusive).
     ///
-    /// 3. #hhh, #hhhhhh, #hhhhhhhhh #hhhhhhhhhhhh
+    /// 3. #rgb, #rrggbb, #rrrgggbbb #rrrrggggbbbb
     ///
-    ///    where `h` is a single hexadecimal digit.
+    ///    where `r`, `g`, and `b` are a single hexadecimal digit.
+    ///    These specifiy a color with 4, 8, 12, and 16 bits of precision
+    ///    per color channel.
     pub fn parse(value: []const u8) !RGB {
         if (value.len == 0) {
             return error.InvalidFormat;
