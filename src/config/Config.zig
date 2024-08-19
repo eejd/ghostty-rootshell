@@ -625,6 +625,10 @@ class: ?[:0]const u8 = null,
 /// is sometimes called a leader key, a key chord, a key table, etc. There
 /// is no hardcoded limit on the number of parts in a sequence.
 ///
+/// Warning: if you define a sequence as a CLI argument to `ghostty`,
+/// you probably have to quote the keybind since `>` is a special character
+/// in most shells. Example: ghostty --keybind='ctrl+a>n=new_window'
+///
 /// A trigger sequence has some special handling:
 ///
 ///   * Ghostty will wait an indefinite amount of time for the next key in
