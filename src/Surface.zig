@@ -1418,26 +1418,6 @@ pub fn keyCallback(
     }).keyToMouseShape()) |shape|
         try self.rt_surface.setMouseShape(shape);
 
-    // No binding, so we have to perform an encoding task. This
-    // may still result in no encoding. Under different modes and
-    // inputs there are many keybindings that result in no encoding
-    // whatsoever.
-    const enc: input.KeyEncoder = enc: {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        const t = &self.io.terminal;
-        break :enc .{
-            .event = event,
-            .macos_option_as_alt = self.config.macos_option_as_alt,
-            .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
-            .cursor_key_application = t.modes.get(.cursor_keys),
-            .keypad_key_application = t.modes.get(.keypad_keys),
-            .ignore_keypad_with_numlock = t.modes.get(.ignore_keypad_with_numlock),
-            .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
-            .kitty_flags = t.screen.kitty_keyboard.current(),
-        };
-    };
-
     // We've processed a key event that produced some data so we want to
     // track the last pressed key.
     self.pressed_key = event: {
@@ -1461,62 +1441,12 @@ pub fn keyCallback(
         break :event copy;
     };
 
-    const write_req: termio.Message.WriteReq = req: {
-        // Try to write the input into a small array. This fits almost
-        // every scenario. Larger situations can happen due to long
-        // pre-edits.
-        var data: termio.Message.WriteReq.Small.Array = undefined;
-        if (enc.encode(&data)) |seq| {
-            // Special-case: we did nothing.
-            if (seq.len == 0) return .ignored;
-
-            break :req .{ .small = .{
-                .data = data,
-                .len = @intCast(seq.len),
-            } };
-        } else |err| switch (err) {
-            // Means we need to allocate
-            error.OutOfMemory => {},
-            else => return err,
-        }
-
-        // We need to allocate. We allocate double the UTF-8 length
-        // or double the small array size, whichever is larger. That's
-        // a heuristic that should work. The only scenario I know while
-        // typing this where we don't have enough space is a long preedit,
-        // and in that case the size we need is exactly the UTF-8 length,
-        // so the double is being safe.
-        const buf = try self.alloc.alloc(u8, @max(
-            event.utf8.len * 2,
-            data.len * 2,
-        ));
-        defer self.alloc.free(buf);
-
-        // This results in a double allocation but this is such an unlikely
-        // path the performance impact is unimportant.
-        const seq = try enc.encode(buf);
-        break :req try termio.Message.WriteReq.init(self.alloc, seq);
-    };
-
-    // Copy the encoded data into the inspector event if we have one.
-    // We do this before the mailbox because the IO thread could
-    // release the memory before we get a chance to copy it.
-    if (insp_ev) |*ev| pty: {
-        const slice = write_req.slice();
-        const copy = self.alloc.alloc(u8, slice.len) catch |err| {
-            log.warn("error allocating pty data for inspector err={}", .{err});
-            break :pty;
-        };
-        errdefer self.alloc.free(copy);
-        @memcpy(copy, slice);
-        ev.pty = copy;
-    }
-
-    self.io.queueMessage(switch (write_req) {
-        .small => |v| .{ .write_small = v },
-        .stable => |v| .{ .write_stable = v },
-        .alloc => |v| .{ .write_alloc = v },
-    }, .unlocked);
+    // Encode and send our key. If we didn't encode anything, then we
+    // return the effect as ignored.
+    if (!try self.encodeKey(
+        event,
+        if (insp_ev) |*ev| ev else null,
+    )) return .ignored;
 
     // If our event is any keypress that isn't a modifier and we generated
     // some data to send to the pty, then we move the viewport down to the
@@ -1623,6 +1553,92 @@ fn maybeHandleBinding(
     }
 
     return null;
+}
+
+/// Encodes the key event and sends it to the pty. Returns true if the
+/// event resulted in encoded data (non-empty), otherwise false.
+fn encodeKey(
+    self: *Surface,
+    event: input.KeyEvent,
+    insp_ev: ?*inspector.key.Event,
+) !bool {
+    // Build up our encoder. Under different modes and
+    // inputs there are many keybindings that result in no encoding
+    // whatsoever.
+    const enc: input.KeyEncoder = enc: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        const t = &self.io.terminal;
+        break :enc .{
+            .event = event,
+            .macos_option_as_alt = self.config.macos_option_as_alt,
+            .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
+            .cursor_key_application = t.modes.get(.cursor_keys),
+            .keypad_key_application = t.modes.get(.keypad_keys),
+            .ignore_keypad_with_numlock = t.modes.get(.ignore_keypad_with_numlock),
+            .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
+            .kitty_flags = t.screen.kitty_keyboard.current(),
+        };
+    };
+
+    const write_req: termio.Message.WriteReq = req: {
+        // Try to write the input into a small array. This fits almost
+        // every scenario. Larger situations can happen due to long
+        // pre-edits.
+        var data: termio.Message.WriteReq.Small.Array = undefined;
+        if (enc.encode(&data)) |seq| {
+            // Special-case: we did nothing.
+            if (seq.len == 0) return false;
+
+            break :req .{ .small = .{
+                .data = data,
+                .len = @intCast(seq.len),
+            } };
+        } else |err| switch (err) {
+            // Means we need to allocate
+            error.OutOfMemory => {},
+            else => return err,
+        }
+
+        // We need to allocate. We allocate double the UTF-8 length
+        // or double the small array size, whichever is larger. That's
+        // a heuristic that should work. The only scenario I know while
+        // typing this where we don't have enough space is a long preedit,
+        // and in that case the size we need is exactly the UTF-8 length,
+        // so the double is being safe.
+        const buf = try self.alloc.alloc(u8, @max(
+            event.utf8.len * 2,
+            data.len * 2,
+        ));
+        defer self.alloc.free(buf);
+
+        // This results in a double allocation but this is such an unlikely
+        // path the performance impact is unimportant.
+        const seq = try enc.encode(buf);
+        break :req try termio.Message.WriteReq.init(self.alloc, seq);
+    };
+
+    // Copy the encoded data into the inspector event if we have one.
+    // We do this before the mailbox because the IO thread could
+    // release the memory before we get a chance to copy it.
+    if (insp_ev) |ev| pty: {
+        const slice = write_req.slice();
+        const copy = self.alloc.alloc(u8, slice.len) catch |err| {
+            log.warn("error allocating pty data for inspector err={}", .{err});
+            break :pty;
+        };
+        errdefer self.alloc.free(copy);
+        @memcpy(copy, slice);
+        ev.pty = copy;
+    }
+
+    self.io.queueMessage(switch (write_req) {
+        .small => |v| .{ .write_small = v },
+        .stable => |v| .{ .write_stable = v },
+        .alloc => |v| .{ .write_alloc = v },
+    }, .unlocked);
+
+    return true;
 }
 
 /// Sends text as-is to the terminal without triggering any keyboard
