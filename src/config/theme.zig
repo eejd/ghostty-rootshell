@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const global_state = &@import("../main.zig").state;
+const global_state = &@import("../global.zig").state;
 const internal_os = @import("../os/main.zig");
 const ErrorList = @import("ErrorList.zig");
 
