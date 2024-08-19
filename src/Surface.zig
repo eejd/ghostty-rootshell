@@ -3429,6 +3429,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement gotoNextTab", .{});
         },
 
+        .last_tab => {
+            if (@hasDecl(apprt.Surface, "hasTabs")) {
+                if (!self.rt_surface.hasTabs()) {
+                    log.debug("surface has no tabs, ignoring last_tab binding", .{});
+                    return false;
+                }
+            }
+
+            if (@hasDecl(apprt.Surface, "gotoLastTab")) {
+                self.rt_surface.gotoLastTab();
+            } else log.warn("runtime doesn't implement gotoLastTab", .{});
+        },
+
         .goto_tab => |n| {
             if (@hasDecl(apprt.Surface, "gotoTab")) {
                 self.rt_surface.gotoTab(n);

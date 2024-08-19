@@ -1584,6 +1584,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
+            .{ .key = .{ .physical =  inputpkg.Key.zero }, .mods = .{ .super = true } },
+            .{ .last_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
             .{ .key = .{ .translated = .page_up }, .mods = .{ .ctrl = true } },
             .{ .previous_tab = {} },
         );
@@ -1849,6 +1854,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .{ .translated = .right_bracket }, .mods = .{ .super = true, .shift = true } },
             .{ .next_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .physical = inputpkg.Key.zero }, .mods = .{ .super = true } },
+            .{ .last_tab = {} },
         );
         try result.keybind.set.put(
             alloc,

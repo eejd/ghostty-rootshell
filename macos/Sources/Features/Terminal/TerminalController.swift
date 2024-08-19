@@ -724,6 +724,8 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 } else {
                     finalIndex = selectedIndex + 1
                 }
+            } else if (tabIndex == GHOSTTY_TAB_LAST.rawValue) {
+                finalIndex = tabbedWindows.count - 1
             } else {
                 return
             }

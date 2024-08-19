@@ -139,6 +139,7 @@ pub const App = struct {
     const GotoTab = enum(i32) {
         previous = -1,
         next = -2,
+        last = -3,
         _,
     };
 
@@ -1006,6 +1007,15 @@ pub const Surface = struct {
         };
 
         func(self.userdata, @enumFromInt(idx));
+    }
+
+    pub fn gotoLastTab(self: *Surface) void {
+        const func = self.app.opts.goto_tab orelse {
+            log.info("runtime embedder does not goto_tab", .{});
+            return;
+        };
+
+        func(self.userdata, .last);
     }
 
     pub fn gotoPreviousTab(self: *Surface) void {
