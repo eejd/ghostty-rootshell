@@ -889,6 +889,13 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
         self.showMouse();
     }
 
+    // If we are in the middle of a key sequence, clear it.
+    self.keyboard.bindings = null;
+    if (self.keyboard.queued.items.len > 0) {
+        for (self.keyboard.queued.items) |req| req.deinit();
+        self.keyboard.queued.clearAndFree(self.alloc);
+    }
+
     // Before sending any other config changes, we give the renderer a new font
     // grid. We could check to see if there was an actual change to the font,
     // but this is easier and pretty rare so it's not a performance concern.
