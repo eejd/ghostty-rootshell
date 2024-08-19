@@ -35,7 +35,7 @@ pub const Location = enum {
                     arena_alloc,
                     .{ .subdir = subdir },
                 ) catch |err| {
-                    // We need to do some comptime trick sot get the right
+                    // We need to do some comptime tricks to get the right
                     // error set since some platforms don't support some
                     // error types.
                     const Error = @TypeOf(err) || switch (builtin.os.tag) {
