@@ -1557,7 +1557,9 @@ fn maybeHandleBinding(
             // Setup the next set we'll look at.
             self.keyboard.bindings = set;
 
-            // Store this event so that we can drain and encode on invalid
+            // Store this event so that we can drain and encode on invalid.
+            // We don't need to cap this because it is naturally capped by
+            // the config validation.
             if (try self.encodeKey(event, insp_ev)) |req| {
                 try self.keyboard.queued.append(self.alloc, req);
             }
@@ -1576,11 +1578,6 @@ fn maybeHandleBinding(
 
     // An action also always resets the binding set.
     self.keyboard.bindings = null;
-    if (self.keyboard.queued.items.len > 0) {
-        // TODO: unconsumed
-        for (self.keyboard.queued.items) |req| req.deinit();
-        self.keyboard.queued.clearRetainingCapacity();
-    }
 
     // Attempt to perform the action
     log.debug("key event binding consumed={} action={}", .{ consumed, action });
@@ -1598,9 +1595,30 @@ fn maybeHandleBinding(
     // it, we processed the action but we still want to process our
     // encodings, too.
     if (performed and consumed) {
+        // If we had queued events, we deinit them since we consumed
+        if (self.keyboard.queued.items.len > 0) {
+            for (self.keyboard.queued.items) |req| req.deinit();
+            self.keyboard.queued.clearRetainingCapacity();
+        }
+
+        // Store our last trigger so we don't encode the release event
         self.keyboard.last_trigger = event.bindingHash();
+
         if (insp_ev) |ev| ev.binding = action;
         return .consumed;
+    }
+
+    // If we didn't perform OR we didn't consume, then we want to
+    // encode any queued events for a sequence.
+    if (self.keyboard.queued.items.len > 0) {
+        for (self.keyboard.queued.items) |write_req| {
+            self.io.queueMessage(switch (write_req) {
+                .small => |v| .{ .write_small = v },
+                .stable => |v| .{ .write_stable = v },
+                .alloc => |v| .{ .write_alloc = v },
+            }, .unlocked);
+        }
+        self.keyboard.queued.clearRetainingCapacity();
     }
 
     return null;
