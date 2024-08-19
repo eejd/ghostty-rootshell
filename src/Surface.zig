@@ -891,10 +891,7 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
 
     // If we are in the middle of a key sequence, clear it.
     self.keyboard.bindings = null;
-    if (self.keyboard.queued.items.len > 0) {
-        for (self.keyboard.queued.items) |req| req.deinit();
-        self.keyboard.queued.clearAndFree(self.alloc);
-    }
+    self.endKeySequence(.drop, .free);
 
     // Before sending any other config changes, we give the renderer a new font
     // grid. We could check to see if there was an actual change to the font,
@@ -1545,14 +1542,7 @@ fn maybeHandleBinding(
             self.keyboard.bindings = null;
 
             // Encode everything up to this point
-            for (self.keyboard.queued.items) |write_req| {
-                self.io.queueMessage(switch (write_req) {
-                    .small => |v| .{ .write_small = v },
-                    .stable => |v| .{ .write_stable = v },
-                    .alloc => |v| .{ .write_alloc = v },
-                }, .unlocked);
-            }
-            self.keyboard.queued.clearRetainingCapacity();
+            self.endKeySequence(.flush, .retain);
         }
 
         return null;
@@ -1603,10 +1593,7 @@ fn maybeHandleBinding(
     // encodings, too.
     if (performed and consumed) {
         // If we had queued events, we deinit them since we consumed
-        if (self.keyboard.queued.items.len > 0) {
-            for (self.keyboard.queued.items) |req| req.deinit();
-            self.keyboard.queued.clearRetainingCapacity();
-        }
+        self.endKeySequence(.drop, .retain);
 
         // Store our last trigger so we don't encode the release event
         self.keyboard.last_trigger = event.bindingHash();
@@ -1617,18 +1604,41 @@ fn maybeHandleBinding(
 
     // If we didn't perform OR we didn't consume, then we want to
     // encode any queued events for a sequence.
-    if (self.keyboard.queued.items.len > 0) {
-        for (self.keyboard.queued.items) |write_req| {
-            self.io.queueMessage(switch (write_req) {
-                .small => |v| .{ .write_small = v },
-                .stable => |v| .{ .write_stable = v },
-                .alloc => |v| .{ .write_alloc = v },
-            }, .unlocked);
-        }
-        self.keyboard.queued.clearRetainingCapacity();
-    }
+    self.endKeySequence(.flush, .retain);
 
     return null;
+}
+
+const KeySequenceQueued = enum { flush, drop };
+const KeySequenceMemory = enum { retain, free };
+
+/// End a key sequence. Safe to call if no key sequence is active.
+///
+/// Action and mem determine the behavior of the queued inputs up to this
+/// point.
+fn endKeySequence(
+    self: *Surface,
+    action: KeySequenceQueued,
+    mem: KeySequenceMemory,
+) void {
+    if (self.keyboard.queued.items.len > 0) {
+        switch (action) {
+            .flush => for (self.keyboard.queued.items) |write_req| {
+                self.io.queueMessage(switch (write_req) {
+                    .small => |v| .{ .write_small = v },
+                    .stable => |v| .{ .write_stable = v },
+                    .alloc => |v| .{ .write_alloc = v },
+                }, .unlocked);
+            },
+
+            .drop => for (self.keyboard.queued.items) |req| req.deinit(),
+        }
+
+        switch (mem) {
+            .free => self.keyboard.queued.clearAndFree(self.alloc),
+            .retain => self.keyboard.queued.clearRetainingCapacity(),
+        }
+    }
 }
 
 /// Encodes the key event into a write request. The write request will
