@@ -2186,24 +2186,6 @@ fn expandPaths(self: *Config, base: []const u8) !void {
     }
 }
 
-pub const ThemeDirType = enum {
-    user,
-    system,
-};
-
-pub fn themeDir(alloc: std.mem.Allocator, type_: ThemeDirType) ?[]const u8 {
-    return switch (type_) {
-        .user => internal_os.xdg.config(alloc, .{ .subdir = "ghostty/themes" }) catch null,
-        .system => result: {
-            const resources_dir = global_state.resources_dir orelse break :result null;
-            break :result std.fs.path.join(alloc, &.{
-                resources_dir,
-                "themes",
-            }) catch null;
-        },
-    };
-}
-
 fn loadTheme(self: *Config, theme: []const u8) !void {
     // Find our theme file and open it. See the open function for details.
     const file: std.fs.File = (try themepkg.open(
