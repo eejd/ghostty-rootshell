@@ -1443,10 +1443,20 @@ pub fn keyCallback(
 
     // Encode and send our key. If we didn't encode anything, then we
     // return the effect as ignored.
-    if (!try self.encodeKey(
+    if (try self.encodeKey(
         event,
         if (insp_ev) |*ev| ev else null,
-    )) return .ignored;
+    )) |write_req| {
+        errdefer write_req.deinit();
+        self.io.queueMessage(switch (write_req) {
+            .small => |v| .{ .write_small = v },
+            .stable => |v| .{ .write_stable = v },
+            .alloc => |v| .{ .write_alloc = v },
+        }, .unlocked);
+    } else {
+        // No valid request means that we didn't encode anything.
+        return .ignored;
+    }
 
     // If our event is any keypress that isn't a modifier and we generated
     // some data to send to the pty, then we move the viewport down to the
@@ -1557,13 +1567,13 @@ fn maybeHandleBinding(
     return null;
 }
 
-/// Encodes the key event and sends it to the pty. Returns true if the
-/// event resulted in encoded data (non-empty), otherwise false.
+/// Encodes the key event into a write request. The write request will
+/// always copy or allocate so the caller can safely free the event.
 fn encodeKey(
     self: *Surface,
     event: input.KeyEvent,
     insp_ev: ?*inspector.key.Event,
-) !bool {
+) !?termio.Message.WriteReq {
     // Build up our encoder. Under different modes and
     // inputs there are many keybindings that result in no encoding
     // whatsoever.
@@ -1590,7 +1600,7 @@ fn encodeKey(
         var data: termio.Message.WriteReq.Small.Array = undefined;
         if (enc.encode(&data)) |seq| {
             // Special-case: we did nothing.
-            if (seq.len == 0) return false;
+            if (seq.len == 0) return null;
 
             break :req .{ .small = .{
                 .data = data,
@@ -1634,13 +1644,7 @@ fn encodeKey(
         ev.pty = copy;
     }
 
-    self.io.queueMessage(switch (write_req) {
-        .small => |v| .{ .write_small = v },
-        .stable => |v| .{ .write_stable = v },
-        .alloc => |v| .{ .write_alloc = v },
-    }, .unlocked);
-
-    return true;
+    return write_req;
 }
 
 /// Sends text as-is to the terminal without triggering any keyboard
