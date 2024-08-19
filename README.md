@@ -68,6 +68,7 @@ The file format is documented below as an example:
 background = 282c34
 foreground= ffffff
 
+# Comments start with a `#` and are only valid on their own line.
 # Blank lines are ignored!
 
 keybind = ctrl+z=close_surface
