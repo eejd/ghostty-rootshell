@@ -72,6 +72,9 @@ renderer_thr: std.Thread,
 /// Mouse state.
 mouse: Mouse,
 
+/// Keyboard input state.
+keyboard: Keyboard,
+
 /// A currently pressed key. This is used so that we can send a keyboard
 /// release event when the surface is unfocused. Note that when the surface
 /// is refocused, a key press event may not be sent again -- this depends
@@ -190,6 +193,30 @@ const Mouse = struct {
     /// The last x/y in the cursor position for links. We use this to
     /// only process link hover events when the mouse actually moves cells.
     link_point: ?terminal.point.Coordinate = null,
+};
+
+/// Keyboard state for the surface.
+pub const Keyboard = struct {
+    /// The currently active keybindings for the surface. This is used to
+    /// implement sequences: as leader keys are pressed, the active bindings
+    /// set is updated to reflect the current leader key sequence. If this is
+    /// null then the root bindings are used.
+    bindings: ?*const input.Binding.Set = null,
+
+    /// The last handled binding. This is used to prevent encoding release
+    /// events for handled bindings. We only need to keep track of one because
+    /// at least at the time of writing this, its impossible for two keys of
+    /// a combination to be handled by different bindings before the release
+    /// of the prior (namely since you can't bind modifier-only).
+    last_trigger: ?u64 = null,
+
+    /// The queued keys when we're in the middle of a sequenced binding.
+    /// These are flushed when the sequence is completed and unconsumed or
+    /// invalid.
+    ///
+    /// This is naturally bounded due to the configuration maximum
+    /// length of a sequence.
+    queued: std.ArrayListUnmanaged(termio.Message.WriteReq) = .{},
 };
 
 /// The configuration that a surface has, this is copied from the main
@@ -428,6 +455,7 @@ pub fn init(
         },
         .renderer_thr = undefined,
         .mouse = .{},
+        .keyboard = .{},
         .io = undefined,
         .io_thread = io_thread,
         .io_thr = undefined,
@@ -604,6 +632,10 @@ pub fn deinit(self: *Surface) void {
         v.deinit();
         self.alloc.destroy(v);
     }
+
+    // Clean up our keyboard state
+    for (self.keyboard.queued.items) |req| req.deinit();
+    self.keyboard.queued.deinit(self.alloc);
 
     // Clean up our font grid
     self.app.font_grid_set.deref(self.font_grid_key);
@@ -856,6 +888,10 @@ fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
     if (!self.config.mouse_hide_while_typing and self.mouse.hidden) {
         self.showMouse();
     }
+
+    // If we are in the middle of a key sequence, clear it.
+    self.keyboard.bindings = null;
+    self.endKeySequence(.drop, .free);
 
     // Before sending any other config changes, we give the renderer a new font
     // grid. We could check to see if there was an actual change to the font,
@@ -1322,76 +1358,13 @@ pub fn keyCallback(
         }
     };
 
-    // Before encoding, we see if we have any keybindings for this
-    // key. Those always intercept before any encoding tasks.
-    binding: {
-        const binding_action: input.Binding.Action, const binding_trigger: input.Binding.Trigger, const consumed = action: {
-            const binding_mods = event.mods.binding();
-            var trigger: input.Binding.Trigger = .{
-                .mods = binding_mods,
-                .key = .{ .translated = event.key },
-            };
-
-            const set = self.config.keybind.set;
-            if (set.get(trigger)) |v| break :action .{
-                v,
-                trigger,
-                set.getConsumed(trigger),
-            };
-
-            trigger.key = .{ .physical = event.physical_key };
-            if (set.get(trigger)) |v| break :action .{
-                v,
-                trigger,
-                set.getConsumed(trigger),
-            };
-
-            if (event.unshifted_codepoint > 0) {
-                trigger.key = .{ .unicode = event.unshifted_codepoint };
-                if (set.get(trigger)) |v| break :action .{
-                    v,
-                    trigger,
-                    set.getConsumed(trigger),
-                };
-            }
-
-            break :binding;
-        };
-
-        // We only execute the binding on press/repeat but we still consume
-        // the key on release so that we don't send any release events.
-        log.debug("key event binding consumed={} action={}", .{ consumed, binding_action });
-        const performed = if (event.action == .press or event.action == .repeat) press: {
-            self.last_binding_trigger = 0;
-            break :press try self.performBindingAction(binding_action);
-        } else false;
-
-        // If we performed an action and it was a closing action,
-        // our "self" pointer is not safe to use anymore so we need to
-        // just exit immediately.
-        if (performed and closingAction(binding_action)) {
-            log.debug("key binding is a closing binding, halting key event processing", .{});
-            return .closed;
-        }
-
-        // If we consume this event, then we are done. If we don't consume
-        // it, we processed the action but we still want to process our
-        // encodings, too.
-        if (consumed and performed) {
-            self.last_binding_trigger = binding_trigger.hash();
-            if (insp_ev) |*ev| ev.binding = binding_action;
-            return .consumed;
-        }
-
-        // If we have a previous binding trigger and it matches this one,
-        // then we handled the down event so we don't want to send any further
-        // events.
-        if (self.last_binding_trigger > 0 and
-            self.last_binding_trigger == binding_trigger.hash())
-        {
-            return .consumed;
-        }
-    }
+    // Handle keybindings first. We need to handle this on all events
+    // (press, repeat, release) because a press may perform a binding but
+    // a release should not encode if we consumed the press.
+    if (try self.maybeHandleBinding(
+        event,
+        if (insp_ev) |*ev| ev else null,
+    )) |v| return v;
 
     // If we allow KAM and KAM is enabled then we do nothing.
     if (self.config.vt_kam_allowed) {
@@ -1461,26 +1434,6 @@ pub fn keyCallback(
     }).keyToMouseShape()) |shape|
         try self.rt_surface.setMouseShape(shape);
 
-    // No binding, so we have to perform an encoding task. This
-    // may still result in no encoding. Under different modes and
-    // inputs there are many keybindings that result in no encoding
-    // whatsoever.
-    const enc: input.KeyEncoder = enc: {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        const t = &self.io.terminal;
-        break :enc .{
-            .event = event,
-            .macos_option_as_alt = self.config.macos_option_as_alt,
-            .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
-            .cursor_key_application = t.modes.get(.cursor_keys),
-            .keypad_key_application = t.modes.get(.keypad_keys),
-            .ignore_keypad_with_numlock = t.modes.get(.ignore_keypad_with_numlock),
-            .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
-            .kitty_flags = t.screen.kitty_keyboard.current(),
-        };
-    };
-
     // We've processed a key event that produced some data so we want to
     // track the last pressed key.
     self.pressed_key = event: {
@@ -1504,6 +1457,216 @@ pub fn keyCallback(
         break :event copy;
     };
 
+    // Encode and send our key. If we didn't encode anything, then we
+    // return the effect as ignored.
+    if (try self.encodeKey(
+        event,
+        if (insp_ev) |*ev| ev else null,
+    )) |write_req| {
+        errdefer write_req.deinit();
+        self.io.queueMessage(switch (write_req) {
+            .small => |v| .{ .write_small = v },
+            .stable => |v| .{ .write_stable = v },
+            .alloc => |v| .{ .write_alloc = v },
+        }, .unlocked);
+    } else {
+        // No valid request means that we didn't encode anything.
+        return .ignored;
+    }
+
+    // If our event is any keypress that isn't a modifier and we generated
+    // some data to send to the pty, then we move the viewport down to the
+    // bottom. We also clear the selection for any key other then modifiers.
+    if (!event.key.modifier()) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        try self.setSelection(null);
+        try self.io.terminal.scrollViewport(.{ .bottom = {} });
+        try self.queueRender();
+    }
+
+    return .consumed;
+}
+
+/// Maybe handles a binding for a given event and if so returns the effect.
+/// Returns null if the event is not handled in any way and processing should
+/// continue.
+fn maybeHandleBinding(
+    self: *Surface,
+    event: input.KeyEvent,
+    insp_ev: ?*inspector.key.Event,
+) !?InputEffect {
+    switch (event.action) {
+        // Release events never trigger a binding but we need to check if
+        // we consumed the press event so we don't encode the release.
+        .release => {
+            if (self.keyboard.last_trigger) |last| {
+                if (last == event.bindingHash()) {
+                    // We don't reset the last trigger on release because
+                    // an apprt may send multiple release events for a single
+                    // press event.
+                    return .consumed;
+                }
+            }
+
+            return null;
+        },
+
+        // Carry on processing.
+        .press, .repeat => {},
+    }
+
+    // Find an entry in the keybind set that matches our event.
+    const entry: input.Binding.Set.Entry = entry: {
+        const set = self.keyboard.bindings orelse &self.config.keybind.set;
+
+        var trigger: input.Binding.Trigger = .{
+            .mods = event.mods.binding(),
+            .key = .{ .translated = event.key },
+        };
+        if (set.get(trigger)) |v| break :entry v;
+
+        trigger.key = .{ .physical = event.physical_key };
+        if (set.get(trigger)) |v| break :entry v;
+
+        if (event.unshifted_codepoint > 0) {
+            trigger.key = .{ .unicode = event.unshifted_codepoint };
+            if (set.get(trigger)) |v| break :entry v;
+        }
+
+        // No entry found. If we're not looking at the root set of the
+        // bindings we need to encode everything up to this point and
+        // send to the pty.
+        if (self.keyboard.bindings != null) {
+            // Reset to the root set
+            self.keyboard.bindings = null;
+
+            // Encode everything up to this point
+            self.endKeySequence(.flush, .retain);
+        }
+
+        return null;
+    };
+
+    // Determine if this entry has an action or if its a leader key.
+    const action: input.Binding.Action, const consumed: bool = switch (entry) {
+        .leader => |set| {
+            // Setup the next set we'll look at.
+            self.keyboard.bindings = set;
+
+            // Store this event so that we can drain and encode on invalid.
+            // We don't need to cap this because it is naturally capped by
+            // the config validation.
+            if (try self.encodeKey(event, insp_ev)) |req| {
+                try self.keyboard.queued.append(self.alloc, req);
+            }
+
+            return .consumed;
+        },
+
+        .action => |v| .{ v, true },
+        .action_unconsumed => |v| .{ v, false },
+    };
+
+    // We have an action, so at this point we're handling SOMETHING so
+    // we reset the last trigger to null. We only set this if we actually
+    // perform an action (below)
+    self.keyboard.last_trigger = null;
+
+    // An action also always resets the binding set.
+    self.keyboard.bindings = null;
+
+    // Attempt to perform the action
+    log.debug("key event binding consumed={} action={}", .{ consumed, action });
+    const performed = try self.performBindingAction(action);
+
+    // If we performed an action and it was a closing action,
+    // our "self" pointer is not safe to use anymore so we need to
+    // just exit immediately.
+    if (performed and closingAction(action)) {
+        log.debug("key binding is a closing binding, halting key event processing", .{});
+        return .closed;
+    }
+
+    // If we consume this event, then we are done. If we don't consume
+    // it, we processed the action but we still want to process our
+    // encodings, too.
+    if (performed and consumed) {
+        // If we had queued events, we deinit them since we consumed
+        self.endKeySequence(.drop, .retain);
+
+        // Store our last trigger so we don't encode the release event
+        self.keyboard.last_trigger = event.bindingHash();
+
+        if (insp_ev) |ev| ev.binding = action;
+        return .consumed;
+    }
+
+    // If we didn't perform OR we didn't consume, then we want to
+    // encode any queued events for a sequence.
+    self.endKeySequence(.flush, .retain);
+
+    return null;
+}
+
+const KeySequenceQueued = enum { flush, drop };
+const KeySequenceMemory = enum { retain, free };
+
+/// End a key sequence. Safe to call if no key sequence is active.
+///
+/// Action and mem determine the behavior of the queued inputs up to this
+/// point.
+fn endKeySequence(
+    self: *Surface,
+    action: KeySequenceQueued,
+    mem: KeySequenceMemory,
+) void {
+    if (self.keyboard.queued.items.len > 0) {
+        switch (action) {
+            .flush => for (self.keyboard.queued.items) |write_req| {
+                self.io.queueMessage(switch (write_req) {
+                    .small => |v| .{ .write_small = v },
+                    .stable => |v| .{ .write_stable = v },
+                    .alloc => |v| .{ .write_alloc = v },
+                }, .unlocked);
+            },
+
+            .drop => for (self.keyboard.queued.items) |req| req.deinit(),
+        }
+
+        switch (mem) {
+            .free => self.keyboard.queued.clearAndFree(self.alloc),
+            .retain => self.keyboard.queued.clearRetainingCapacity(),
+        }
+    }
+}
+
+/// Encodes the key event into a write request. The write request will
+/// always copy or allocate so the caller can safely free the event.
+fn encodeKey(
+    self: *Surface,
+    event: input.KeyEvent,
+    insp_ev: ?*inspector.key.Event,
+) !?termio.Message.WriteReq {
+    // Build up our encoder. Under different modes and
+    // inputs there are many keybindings that result in no encoding
+    // whatsoever.
+    const enc: input.KeyEncoder = enc: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        const t = &self.io.terminal;
+        break :enc .{
+            .event = event,
+            .macos_option_as_alt = self.config.macos_option_as_alt,
+            .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
+            .cursor_key_application = t.modes.get(.cursor_keys),
+            .keypad_key_application = t.modes.get(.keypad_keys),
+            .ignore_keypad_with_numlock = t.modes.get(.ignore_keypad_with_numlock),
+            .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
+            .kitty_flags = t.screen.kitty_keyboard.current(),
+        };
+    };
+
     const write_req: termio.Message.WriteReq = req: {
         // Try to write the input into a small array. This fits almost
         // every scenario. Larger situations can happen due to long
@@ -1511,7 +1674,7 @@ pub fn keyCallback(
         var data: termio.Message.WriteReq.Small.Array = undefined;
         if (enc.encode(&data)) |seq| {
             // Special-case: we did nothing.
-            if (seq.len == 0) return .ignored;
+            if (seq.len == 0) return null;
 
             break :req .{ .small = .{
                 .data = data,
@@ -1544,7 +1707,7 @@ pub fn keyCallback(
     // Copy the encoded data into the inspector event if we have one.
     // We do this before the mailbox because the IO thread could
     // release the memory before we get a chance to copy it.
-    if (insp_ev) |*ev| pty: {
+    if (insp_ev) |ev| pty: {
         const slice = write_req.slice();
         const copy = self.alloc.alloc(u8, slice.len) catch |err| {
             log.warn("error allocating pty data for inspector err={}", .{err});
@@ -1555,24 +1718,7 @@ pub fn keyCallback(
         ev.pty = copy;
     }
 
-    self.io.queueMessage(switch (write_req) {
-        .small => |v| .{ .write_small = v },
-        .stable => |v| .{ .write_stable = v },
-        .alloc => |v| .{ .write_alloc = v },
-    }, .unlocked);
-
-    // If our event is any keypress that isn't a modifier and we generated
-    // some data to send to the pty, then we move the viewport down to the
-    // bottom. We also clear the selection for any key other then modifiers.
-    if (!event.key.modifier()) {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        try self.setSelection(null);
-        try self.io.terminal.scrollViewport(.{ .bottom = {} });
-        try self.queueRender();
-    }
-
-    return .consumed;
+    return write_req;
 }
 
 /// Sends text as-is to the terminal without triggering any keyboard

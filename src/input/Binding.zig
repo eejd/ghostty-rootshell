@@ -22,114 +22,97 @@ pub const Error = error{
     InvalidAction,
 };
 
-/// Parse the format "ctrl+a=csi:A" into a binding. The format is
-/// specifically "trigger=action". Trigger is a "+"-delimited series of
-/// modifiers and keys. Action is the action name and optionally a
-/// parameter after a colon, i.e. "csi:A" or "ignore".
-pub fn parse(raw_input: []const u8) !Binding {
-    // NOTE(mitchellh): This is not the most efficient way to do any
-    // of this, I welcome any improvements here!
+/// Full binding parser. The binding parser is implemented as an iterator
+/// which yields elements to support multi-key sequences without allocation.
+pub const Parser = struct {
+    unconsumed: bool = false,
+    trigger_it: SequenceIterator,
+    action: Action,
 
-    // If our entire input is prefixed with "unconsumed:" then we are
-    // not consuming this keybind when the action is triggered.
-    const unconsumed_prefix = "unconsumed:";
-    const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
-    const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
-    const input = raw_input[start_idx..];
+    pub const Elem = union(enum) {
+        /// A leader trigger in a sequence.
+        leader: Trigger,
 
-    // Find the first = which splits are mapping into the trigger
-    // and action, respectively.
-    const eqlIdx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
-
-    // Determine our trigger conditions by parsing the part before
-    // the "=", i.e. "ctrl+shift+a" or "a"
-    const trigger = trigger: {
-        var result: Trigger = .{};
-        var iter = std.mem.tokenizeScalar(u8, input[0..eqlIdx], '+');
-        loop: while (iter.next()) |part| {
-            // All parts must be non-empty
-            if (part.len == 0) return Error.InvalidFormat;
-
-            // Check if its a modifier
-            const modsInfo = @typeInfo(key.Mods).Struct;
-            inline for (modsInfo.fields) |field| {
-                if (field.type == bool) {
-                    if (std.mem.eql(u8, part, field.name)) {
-                        // Repeat not allowed
-                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
-                        @field(result.mods, field.name) = true;
-                        continue :loop;
-                    }
-                }
-            }
-
-            // Alias modifiers
-            const alias_mods = .{
-                .{ "cmd", "super" },    .{ "command", "super" },
-                .{ "opt", "alt" },      .{ "option", "alt" },
-                .{ "control", "ctrl" },
-            };
-            inline for (alias_mods) |pair| {
-                if (std.mem.eql(u8, part, pair[0])) {
-                    // Repeat not allowed
-                    if (@field(result.mods, pair[1])) return Error.InvalidFormat;
-                    @field(result.mods, pair[1]) = true;
-                    continue :loop;
-                }
-            }
-
-            // If the key starts with "physical" then this is an physical key.
-            const physical_prefix = "physical:";
-            const physical = std.mem.startsWith(u8, part, physical_prefix);
-            const key_part = if (physical) part[physical_prefix.len..] else part;
-
-            // Check if its a key
-            const keysInfo = @typeInfo(key.Key).Enum;
-            inline for (keysInfo.fields) |field| {
-                if (!std.mem.eql(u8, field.name, "invalid")) {
-                    if (std.mem.eql(u8, key_part, field.name)) {
-                        // Repeat not allowed
-                        if (!result.isKeyUnset()) return Error.InvalidFormat;
-
-                        const keyval = @field(key.Key, field.name);
-                        result.key = if (physical)
-                            .{ .physical = keyval }
-                        else
-                            .{ .translated = keyval };
-                        continue :loop;
-                    }
-                }
-            }
-
-            // If we're still unset and we have exactly one unicode
-            // character then we can use that as a key.
-            if (result.isKeyUnset()) unicode: {
-                // Invalid UTF8 drops to invalid format
-                const view = std.unicode.Utf8View.init(key_part) catch break :unicode;
-                var it = view.iterator();
-
-                // No codepoints or multiple codepoints drops to invalid format
-                const cp = it.nextCodepoint() orelse break :unicode;
-                if (it.nextCodepoint() != null) break :unicode;
-
-                result.key = .{ .unicode = cp };
-                continue :loop;
-            }
-
-            // We didn't recognize this value
-            return Error.InvalidFormat;
-        }
-
-        break :trigger result;
+        /// The final trigger and action in a sequence.
+        binding: Binding,
     };
 
-    // Find a matching action
-    const action = try Action.parse(input[eqlIdx + 1 ..]);
+    pub fn init(raw_input: []const u8) Error!Parser {
+        // If our entire input is prefixed with "unconsumed:" then we are
+        // not consuming this keybind when the action is triggered.
+        const unconsumed_prefix = "unconsumed:";
+        const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
+        const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
+        const input = raw_input[start_idx..];
 
-    return Binding{
-        .trigger = trigger,
-        .action = action,
-        .consumed = !unconsumed,
+        // Find the first = which splits are mapping into the trigger
+        // and action, respectively.
+        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
+
+        // Sequence iterator goes up to the equal, action is after. We can
+        // parse the action now.
+        return .{
+            .unconsumed = unconsumed,
+            .trigger_it = .{ .input = input[0..eql_idx] },
+            .action = try Action.parse(input[eql_idx + 1 ..]),
+        };
+    }
+
+    pub fn next(self: *Parser) Error!?Elem {
+        // Get our trigger. If we're out of triggers then we're done.
+        const trigger = (try self.trigger_it.next()) orelse return null;
+
+        // If this is our last trigger then it is our final binding.
+        if (!self.trigger_it.done()) return .{ .leader = trigger };
+
+        // Out of triggers, yield the final action.
+        return .{ .binding = .{
+            .trigger = trigger,
+            .action = self.action,
+            .consumed = !self.unconsumed,
+        } };
+    }
+
+    pub fn reset(self: *Parser) void {
+        self.trigger_it.i = 0;
+    }
+};
+
+/// An iterator that yields each trigger in a sequence of triggers. For
+/// example, the sequence "ctrl+a>ctrl+b" would yield "ctrl+a" and then
+/// "ctrl+b". The iterator approach allows us to parse a sequence of
+/// triggers without allocations.
+const SequenceIterator = struct {
+    /// The input of triggers. This is expected to be ONLY triggers. Things
+    /// like the "unconsumed:" prefix or action must be stripped before
+    /// passing to this iterator.
+    input: []const u8,
+    i: usize = 0,
+
+    /// Returns the next trigger in the sequence if there is no parsing error.
+    pub fn next(self: *SequenceIterator) Error!?Trigger {
+        if (self.done()) return null;
+        const rem = self.input[self.i..];
+        const idx = std.mem.indexOf(u8, rem, ">") orelse rem.len;
+        defer self.i += idx + 1;
+        return try Trigger.parse(rem[0..idx]);
+    }
+
+    /// Returns true if there are no more triggers to parse.
+    pub fn done(self: *const SequenceIterator) bool {
+        return self.i > self.input.len;
+    }
+};
+
+/// Parse a single, non-sequenced binding. To support sequences you must
+/// use parse. This is a convenience function for single bindings aimed
+/// primarily at tests.
+fn parseSingle(raw_input: []const u8) (Error || error{UnexpectedSequence})!Binding {
+    var p = try Parser.init(raw_input);
+    const elem = (try p.next()) orelse return Error.InvalidFormat;
+    return switch (elem) {
+        .leader => error.UnexpectedSequence,
+        .binding => elem.binding,
     };
 }
 
@@ -624,6 +607,90 @@ pub const Trigger = struct {
         };
     };
 
+    /// Parse a single trigger. The input is expected to be ONLY the trigger
+    /// (i.e. in the sequence `a=ignore` input is only `a`). The trigger may
+    /// not be part of a sequence (i.e. `a>b`). This parses exactly a single
+    /// trigger.
+    pub fn parse(input: []const u8) !Trigger {
+        if (input.len == 0) return Error.InvalidFormat;
+        var result: Trigger = .{};
+        var iter = std.mem.tokenizeScalar(u8, input, '+');
+        loop: while (iter.next()) |part| {
+            // All parts must be non-empty
+            if (part.len == 0) return Error.InvalidFormat;
+
+            // Check if its a modifier
+            const modsInfo = @typeInfo(key.Mods).Struct;
+            inline for (modsInfo.fields) |field| {
+                if (field.type == bool) {
+                    if (std.mem.eql(u8, part, field.name)) {
+                        // Repeat not allowed
+                        if (@field(result.mods, field.name)) return Error.InvalidFormat;
+                        @field(result.mods, field.name) = true;
+                        continue :loop;
+                    }
+                }
+            }
+
+            // Alias modifiers
+            const alias_mods = .{
+                .{ "cmd", "super" },    .{ "command", "super" },
+                .{ "opt", "alt" },      .{ "option", "alt" },
+                .{ "control", "ctrl" },
+            };
+            inline for (alias_mods) |pair| {
+                if (std.mem.eql(u8, part, pair[0])) {
+                    // Repeat not allowed
+                    if (@field(result.mods, pair[1])) return Error.InvalidFormat;
+                    @field(result.mods, pair[1]) = true;
+                    continue :loop;
+                }
+            }
+
+            // If the key starts with "physical" then this is an physical key.
+            const physical_prefix = "physical:";
+            const physical = std.mem.startsWith(u8, part, physical_prefix);
+            const key_part = if (physical) part[physical_prefix.len..] else part;
+
+            // Check if its a key
+            const keysInfo = @typeInfo(key.Key).Enum;
+            inline for (keysInfo.fields) |field| {
+                if (!std.mem.eql(u8, field.name, "invalid")) {
+                    if (std.mem.eql(u8, key_part, field.name)) {
+                        // Repeat not allowed
+                        if (!result.isKeyUnset()) return Error.InvalidFormat;
+
+                        const keyval = @field(key.Key, field.name);
+                        result.key = if (physical)
+                            .{ .physical = keyval }
+                        else
+                            .{ .translated = keyval };
+                        continue :loop;
+                    }
+                }
+            }
+
+            // If we're still unset and we have exactly one unicode
+            // character then we can use that as a key.
+            if (result.isKeyUnset()) unicode: {
+                // Invalid UTF8 drops to invalid format
+                const view = std.unicode.Utf8View.init(key_part) catch break :unicode;
+                var it = view.iterator();
+
+                // No codepoints or multiple codepoints drops to invalid format
+                const cp = it.nextCodepoint() orelse break :unicode;
+                if (it.nextCodepoint() != null) break :unicode;
+
+                result.key = .{ .unicode = cp };
+                continue :loop;
+            }
+
+            // We didn't recognize this value
+            return Error.InvalidFormat;
+        }
+
+        return result;
+    }
     /// Returns true if this trigger has no key set.
     pub fn isKeyUnset(self: Trigger) bool {
         return switch (self.key) {
@@ -684,7 +751,7 @@ pub const Trigger = struct {
 pub const Set = struct {
     const HashMap = std.HashMapUnmanaged(
         Trigger,
-        Action,
+        Entry,
         Context(Trigger),
         std.hash_map.default_max_load_percentage,
     );
@@ -696,39 +763,183 @@ pub const Set = struct {
         std.hash_map.default_max_load_percentage,
     );
 
-    const UnconsumedMap = std.HashMapUnmanaged(
-        Trigger,
-        void,
-        Context(Trigger),
-        std.hash_map.default_max_load_percentage,
-    );
-
     /// The set of bindings.
     bindings: HashMap = .{},
 
     /// The reverse mapping of action to binding. Note that multiple
     /// bindings can map to the same action and this map will only have
     /// the most recently added binding for an action.
+    ///
+    /// Sequenced triggers are never present in the reverse map at this time.
+    /// This is a conscious decision since the primary use case of the reverse
+    /// map is to support GUI toolkit keyboard accelerators and no mainstream
+    /// GUI toolkit supports sequences.
     reverse: ReverseMap = .{},
 
-    /// The map of triggers that explicitly do not want to be consumed
-    /// when matched. A trigger is "consumed" when it is not further
-    /// processed and potentially sent to the terminal. An "unconsumed"
-    /// trigger will perform both its action and also continue normal
-    /// encoding processing (if any).
-    ///
-    /// This is stored as a separate map since unconsumed triggers are
-    /// rare and we don't want to bloat our map with a byte per entry
-    /// (for boolean state) when most entries will be consumed.
-    ///
-    /// Assert: trigger in this map is also in bindings.
-    unconsumed: UnconsumedMap = .{},
+    /// The entry type for the forward mapping of trigger to action.
+    pub const Entry = union(enum) {
+        /// This key is a leader key in a sequence. You must follow the given
+        /// set to find the next key in the sequence.
+        leader: *Set,
+
+        /// This trigger completes a sequence and the value is the action
+        /// to take. The "_unconsumed" variant is used for triggers that
+        /// should not consume the input.
+        action: Action,
+        action_unconsumed: Action,
+
+        /// Implements the formatter for the fmt package. This encodes the
+        /// action back into the format used by parse.
+        pub fn format(
+            self: Entry,
+            comptime layout: []const u8,
+            opts: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = layout;
+            _ = opts;
+
+            switch (self) {
+                .leader => @panic("TODO"),
+
+                .action, .action_unconsumed => |action| {
+                    // action implements the format
+                    try writer.print("{s}", .{action});
+                },
+            }
+        }
+    };
 
     pub fn deinit(self: *Set, alloc: Allocator) void {
+        // Clear any leaders if we have them
+        var it = self.bindings.iterator();
+        while (it.next()) |entry| switch (entry.value_ptr.*) {
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
+            .action, .action_unconsumed => {},
+        };
+
         self.bindings.deinit(alloc);
         self.reverse.deinit(alloc);
-        self.unconsumed.deinit(alloc);
         self.* = undefined;
+    }
+
+    /// Parse a user input binding and add it to the set. This will handle
+    /// the "unbind" case, ensure consumed/unconsumed fields are set correctly,
+    /// handle sequences, etc.
+    ///
+    /// If this returns an OutOfMemory error then the set is in a broken
+    /// state and should not be used again. Any Error returned is validated
+    /// before any set modifications are made.
+    pub fn parseAndPut(
+        self: *Set,
+        alloc: Allocator,
+        input: []const u8,
+    ) (Allocator.Error || Error)!void {
+        // To make cleanup easier, we ensure that the full sequence is
+        // valid before making any set modifications. This is more expensive
+        // computationally but it makes cleanup way, way easier.
+        var it = try Parser.init(input);
+        while (try it.next()) |_| {}
+        it.reset();
+
+        // We use recursion so that we can utilize the stack as our state
+        // for cleanup.
+        self.parseAndPutRecurse(alloc, &it) catch |err| switch (err) {
+            // If this gets sent up to the root then we've unbound
+            // all the way up and this put was a success.
+            error.SequenceUnbind => {},
+
+            // Unrecoverable
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+    }
+
+    const ParseAndPutRecurseError = Allocator.Error || error{
+        SequenceUnbind,
+    };
+
+    fn parseAndPutRecurse(
+        set: *Set,
+        alloc: Allocator,
+        it: *Parser,
+    ) ParseAndPutRecurseError!void {
+        const elem = (it.next() catch unreachable) orelse return;
+        switch (elem) {
+            .leader => |t| {
+                // If we have a leader, we need to upsert a set for it.
+                const old = set.get(t);
+                if (old) |entry| switch (entry) {
+                    // We have an existing leader for this key already
+                    // so recurse into this set.
+                    .leader => |s| return parseAndPutRecurse(
+                        s,
+                        alloc,
+                        it,
+                    ) catch |err| switch (err) {
+                        // Our child put unbound. If our set is empty we
+                        // need to dealloc and continue up. If our set is
+                        // not empty then we're done.
+                        error.SequenceUnbind => if (s.bindings.count() == 0) {
+                            set.remove(alloc, t);
+                            return error.SequenceUnbind;
+                        },
+
+                        error.OutOfMemory => return error.OutOfMemory,
+                    },
+
+                    .action, .action_unconsumed => {
+                        // Remove the existing action. Fallthrough as if
+                        // we don't have a leader.
+                        set.remove(alloc, t);
+                    },
+                };
+
+                // Create our new set for this leader
+                const next = try alloc.create(Set);
+                errdefer alloc.destroy(next);
+                next.* = .{};
+                errdefer next.deinit(alloc);
+
+                // Insert the leader entry
+                try set.bindings.put(alloc, t, .{ .leader = next });
+
+                // Recurse
+                parseAndPutRecurse(next, alloc, it) catch |err| switch (err) {
+                    // If our action was to unbind, we restore the old
+                    // action if we have it.
+                    error.SequenceUnbind => {
+                        set.remove(alloc, t);
+                        if (old) |entry| switch (entry) {
+                            .leader => unreachable, // Handled above
+                            inline .action, .action_unconsumed => |action, tag| set.put_(
+                                alloc,
+                                t,
+                                action,
+                                tag == .action,
+                            ) catch {},
+                        };
+                    },
+
+                    error.OutOfMemory => return error.OutOfMemory,
+                };
+            },
+
+            .binding => |b| switch (b.action) {
+                .unbind => {
+                    set.remove(alloc, b.trigger);
+                    return error.SequenceUnbind;
+                },
+
+                else => if (b.consumed) {
+                    try set.put(alloc, b.trigger, b.action);
+                } else {
+                    try set.putUnconsumed(alloc, b.trigger, b.action);
+                },
+            },
+        }
     }
 
     /// Add a binding to the set. If the binding already exists then
@@ -767,32 +978,40 @@ pub const Set = struct {
         assert(action != .unbind);
 
         const gop = try self.bindings.getOrPut(alloc, t);
-        if (!consumed) try self.unconsumed.put(alloc, t, {});
 
-        // If we have an existing binding for this trigger, we have to
-        // update the reverse mapping to remove the old action.
-        if (gop.found_existing) {
-            const t_hash = t.hash();
-            var it = self.reverse.iterator();
-            while (it.next()) |reverse_entry| it: {
-                if (t_hash == reverse_entry.value_ptr.hash()) {
-                    self.reverse.removeByPtr(reverse_entry.key_ptr);
-                    break :it;
+        if (gop.found_existing) switch (gop.value_ptr.*) {
+            // If we have a leader we need to clean up the memory
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
+
+            // If we have an existing binding for this trigger, we have to
+            // update the reverse mapping to remove the old action.
+            .action, .action_unconsumed => {
+                const t_hash = t.hash();
+                var it = self.reverse.iterator();
+                while (it.next()) |reverse_entry| it: {
+                    if (t_hash == reverse_entry.value_ptr.hash()) {
+                        self.reverse.removeByPtr(reverse_entry.key_ptr);
+                        break :it;
+                    }
                 }
-            }
+            },
+        };
 
-            // We also have to remove the unconsumed state if it exists.
-            if (consumed) _ = self.unconsumed.remove(t);
-        }
-
-        gop.value_ptr.* = action;
+        gop.value_ptr.* = if (consumed) .{
+            .action = action,
+        } else .{
+            .action_unconsumed = action,
+        };
         errdefer _ = self.bindings.remove(t);
         try self.reverse.put(alloc, action, t);
         errdefer _ = self.reverse.remove(action);
     }
 
     /// Get a binding for a given trigger.
-    pub fn get(self: Set, t: Trigger) ?Action {
+    pub fn get(self: Set, t: Trigger) ?Entry {
         return self.bindings.get(t);
     }
 
@@ -802,35 +1021,70 @@ pub const Set = struct {
         return self.reverse.get(a);
     }
 
-    /// Returns true if the given trigger should be consumed. Requires
-    /// that trigger is in the set to be valid so this should only follow
-    /// a non-null get.
-    pub fn getConsumed(self: Set, t: Trigger) bool {
-        return self.unconsumed.get(t) == null;
+    /// Remove a binding for a given trigger.
+    pub fn remove(self: *Set, alloc: Allocator, t: Trigger) void {
+        const entry = self.bindings.get(t) orelse return;
+        _ = self.bindings.remove(t);
+
+        switch (entry) {
+            // For a leader removal, we need to deallocate our child set.
+            // Leaders are never part of reverse maps so no other accounting
+            // needs to be done.
+            .leader => |s| {
+                s.deinit(alloc);
+                alloc.destroy(s);
+            },
+
+            // For an action we need to fix up the reverse mapping.
+            // Note: we'd LIKE to replace this with the most recent binding but
+            // our hash map obviously has no concept of ordering so we have to
+            // choose whatever. Maybe a switch to an array hash map here.
+            .action, .action_unconsumed => |action| {
+                const action_hash = action.hash();
+                var it = self.bindings.iterator();
+                while (it.next()) |it_entry| {
+                    switch (it_entry.value_ptr.*) {
+                        .leader => {},
+                        .action, .action_unconsumed => |action_search| {
+                            if (action_search.hash() == action_hash) {
+                                self.reverse.putAssumeCapacity(action, it_entry.key_ptr.*);
+                                break;
+                            }
+                        },
+                    }
+                } else {
+                    // No over trigger points to this action so we remove
+                    // the reverse mapping completely.
+                    _ = self.reverse.remove(action);
+                }
+            },
+        }
     }
 
-    /// Remove a binding for a given trigger.
-    pub fn remove(self: *Set, t: Trigger) void {
-        const action = self.bindings.get(t) orelse return;
-        _ = self.bindings.remove(t);
-        _ = self.unconsumed.remove(t);
+    /// Deep clone the set.
+    pub fn clone(self: *const Set, alloc: Allocator) !Set {
+        var result: Set = .{
+            .bindings = try self.bindings.clone(alloc),
+            .reverse = try self.reverse.clone(alloc),
+        };
 
-        // Look for a matching action in bindings and use that.
-        // Note: we'd LIKE to replace this with the most recent binding but
-        // our hash map obviously has no concept of ordering so we have to
-        // choose whatever. Maybe a switch to an array hash map here.
-        const action_hash = action.hash();
-        var it = self.bindings.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.hash() == action_hash) {
-                self.reverse.putAssumeCapacity(action, entry.key_ptr.*);
-                break;
-            }
-        } else {
-            // No over trigger points to this action so we remove
-            // the reverse mapping completely.
-            _ = self.reverse.remove(action);
-        }
+        // If we have any leaders we need to clone them.
+        var it = result.bindings.iterator();
+        while (it.next()) |entry| switch (entry.value_ptr.*) {
+            // No data to clone
+            .action, .action_unconsumed => {},
+
+            // Must be deep cloned.
+            .leader => |*s| {
+                const ptr = try alloc.create(Set);
+                errdefer alloc.destroy(ptr);
+                ptr.* = try s.*.clone(alloc);
+                errdefer ptr.deinit(alloc);
+                s.* = ptr;
+            },
+        };
+
+        return result;
     }
 
     /// The hash map context for the set. This defines how the hash map
@@ -858,7 +1112,7 @@ test "parse: triggers" {
             .trigger = .{ .key = .{ .translated = .a } },
             .action = .{ .ignore = {} },
         },
-        try parse("a=ignore"),
+        try parseSingle("a=ignore"),
     );
 
     // single modifier
@@ -868,14 +1122,14 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+a=ignore"));
+    }, try parseSingle("shift+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .ctrl = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("ctrl+a=ignore"));
+    }, try parseSingle("ctrl+a=ignore"));
 
     // multiple modifier
     try testing.expectEqual(Binding{
@@ -884,7 +1138,7 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+ctrl+a=ignore"));
+    }, try parseSingle("shift+ctrl+a=ignore"));
 
     // key can come before modifier
     try testing.expectEqual(Binding{
@@ -893,7 +1147,7 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("a+shift=ignore"));
+    }, try parseSingle("a+shift=ignore"));
 
     // physical keys
     try testing.expectEqual(Binding{
@@ -902,7 +1156,7 @@ test "parse: triggers" {
             .key = .{ .physical = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+physical:a=ignore"));
+    }, try parseSingle("shift+physical:a=ignore"));
 
     // unicode keys
     try testing.expectEqual(Binding{
@@ -911,7 +1165,7 @@ test "parse: triggers" {
             .key = .{ .unicode = 'ö' },
         },
         .action = .{ .ignore = {} },
-    }, try parse("shift+ö=ignore"));
+    }, try parseSingle("shift+ö=ignore"));
 
     // unconsumed keys
     try testing.expectEqual(Binding{
@@ -921,7 +1175,7 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
         .consumed = false,
-    }, try parse("unconsumed:shift+a=ignore"));
+    }, try parseSingle("unconsumed:shift+a=ignore"));
 
     // unconsumed physical keys
     try testing.expectEqual(Binding{
@@ -931,16 +1185,16 @@ test "parse: triggers" {
         },
         .action = .{ .ignore = {} },
         .consumed = false,
-    }, try parse("unconsumed:physical:a+shift=ignore"));
+    }, try parseSingle("unconsumed:physical:a+shift=ignore"));
 
     // invalid key
-    try testing.expectError(Error.InvalidFormat, parse("foo=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("foo=ignore"));
 
     // repeated control
-    try testing.expectError(Error.InvalidFormat, parse("shift+shift+a=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("shift+shift+a=ignore"));
 
     // multiple character
-    try testing.expectError(Error.InvalidFormat, parse("a+b=ignore"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a+b=ignore"));
 }
 
 test "parse: modifier aliases" {
@@ -952,14 +1206,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("cmd+a=ignore"));
+    }, try parseSingle("cmd+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .super = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("command+a=ignore"));
+    }, try parseSingle("command+a=ignore"));
 
     try testing.expectEqual(Binding{
         .trigger = .{
@@ -967,14 +1221,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("opt+a=ignore"));
+    }, try parseSingle("opt+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .alt = true },
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("option+a=ignore"));
+    }, try parseSingle("option+a=ignore"));
 
     try testing.expectEqual(Binding{
         .trigger = .{
@@ -982,14 +1236,14 @@ test "parse: modifier aliases" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-    }, try parse("control+a=ignore"));
+    }, try parseSingle("control+a=ignore"));
 }
 
 test "parse: action invalid" {
     const testing = std.testing;
 
     // invalid action
-    try testing.expectError(Error.InvalidAction, parse("a=nopenopenope"));
+    try testing.expectError(Error.InvalidAction, parseSingle("a=nopenopenope"));
 }
 
 test "parse: action no parameters" {
@@ -1001,9 +1255,9 @@ test "parse: action no parameters" {
             .trigger = .{ .key = .{ .translated = .a } },
             .action = .{ .ignore = {} },
         },
-        try parse("a=ignore"),
+        try parseSingle("a=ignore"),
     );
-    try testing.expectError(Error.InvalidFormat, parse("a=ignore:A"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=ignore:A"));
 }
 
 test "parse: action with string" {
@@ -1011,13 +1265,13 @@ test "parse: action with string" {
 
     // parameter
     {
-        const binding = try parse("a=csi:A");
+        const binding = try parseSingle("a=csi:A");
         try testing.expect(binding.action == .csi);
         try testing.expectEqualStrings("A", binding.action.csi);
     }
     // parameter
     {
-        const binding = try parse("a=esc:A");
+        const binding = try parseSingle("a=esc:A");
         try testing.expect(binding.action == .esc);
         try testing.expectEqualStrings("A", binding.action.esc);
     }
@@ -1028,7 +1282,7 @@ test "parse: action with enum" {
 
     // parameter
     {
-        const binding = try parse("a=new_split:right");
+        const binding = try parseSingle("a=new_split:right");
         try testing.expect(binding.action == .new_split);
         try testing.expectEqual(Action.SplitDirection.right, binding.action.new_split);
     }
@@ -1039,12 +1293,12 @@ test "parse: action with int" {
 
     // parameter
     {
-        const binding = try parse("a=jump_to_prompt:-1");
+        const binding = try parseSingle("a=jump_to_prompt:-1");
         try testing.expect(binding.action == .jump_to_prompt);
         try testing.expectEqual(@as(i16, -1), binding.action.jump_to_prompt);
     }
     {
-        const binding = try parse("a=jump_to_prompt:10");
+        const binding = try parseSingle("a=jump_to_prompt:10");
         try testing.expect(binding.action == .jump_to_prompt);
         try testing.expectEqual(@as(i16, 10), binding.action.jump_to_prompt);
     }
@@ -1055,12 +1309,12 @@ test "parse: action with float" {
 
     // parameter
     {
-        const binding = try parse("a=scroll_page_fractional:-0.5");
+        const binding = try parseSingle("a=scroll_page_fractional:-0.5");
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, -0.5), binding.action.scroll_page_fractional);
     }
     {
-        const binding = try parse("a=scroll_page_fractional:+0.5");
+        const binding = try parseSingle("a=scroll_page_fractional:+0.5");
         try testing.expect(binding.action == .scroll_page_fractional);
         try testing.expectEqual(@as(f32, 0.5), binding.action.scroll_page_fractional);
     }
@@ -1071,20 +1325,322 @@ test "parse: action with a tuple" {
 
     // parameter
     {
-        const binding = try parse("a=resize_split:up,10");
+        const binding = try parseSingle("a=resize_split:up,10");
         try testing.expect(binding.action == .resize_split);
         try testing.expectEqual(Action.SplitResizeDirection.up, binding.action.resize_split[0]);
         try testing.expectEqual(@as(u16, 10), binding.action.resize_split[1]);
     }
 
     // missing parameter
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up"));
 
     // too many
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,10,12"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up,10,12"));
 
     // invalid type
-    try testing.expectError(Error.InvalidFormat, parse("a=resize_split:up,four"));
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=resize_split:up,four"));
+}
+
+test "sequence iterator" {
+    const testing = std.testing;
+
+    // single character
+    {
+        var it: SequenceIterator = .{ .input = "a" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expect(try it.next() == null);
+    }
+
+    // multi character
+    {
+        var it: SequenceIterator = .{ .input = "a>b" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .b } }, (try it.next()).?);
+        try testing.expect(try it.next() == null);
+    }
+
+    // empty
+    {
+        var it: SequenceIterator = .{ .input = "" };
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
+
+    // empty starting sequence
+    {
+        var it: SequenceIterator = .{ .input = ">a" };
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
+
+    // empty ending sequence
+    {
+        var it: SequenceIterator = .{ .input = "a>" };
+        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectError(Error.InvalidFormat, it.next());
+    }
+}
+
+test "parse: sequences" {
+    const testing = std.testing;
+
+    // single character
+    {
+        var p = try Parser.init("ctrl+a=ignore");
+        try testing.expectEqual(Parser.Elem{ .binding = .{
+            .trigger = .{
+                .mods = .{ .ctrl = true },
+                .key = .{ .translated = .a },
+            },
+            .action = .{ .ignore = {} },
+        } }, (try p.next()).?);
+        try testing.expect(try p.next() == null);
+    }
+
+    // sequence
+    {
+        var p = try Parser.init("a>b=ignore");
+        try testing.expectEqual(Parser.Elem{ .leader = .{
+            .key = .{ .translated = .a },
+        } }, (try p.next()).?);
+        try testing.expectEqual(Parser.Elem{ .binding = .{
+            .trigger = .{
+                .key = .{ .translated = .b },
+            },
+            .action = .{ .ignore = {} },
+        } }, (try p.next()).?);
+        try testing.expect(try p.next() == null);
+    }
+}
+
+test "set: parseAndPut typical binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+
+    // Creates forward mapping
+    {
+        const action = s.get(.{ .key = .{ .translated = .a } }).?.action;
+        try testing.expect(action == .new_window);
+    }
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: parseAndPut unconsumed binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "unconsumed:a=new_window");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        const action = s.get(trigger).?.action_unconsumed;
+        try testing.expect(action == .new_window);
+    }
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: parseAndPut removed binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+    try s.parseAndPut(alloc, "a=unbind");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(s.get(trigger) == null);
+    }
+    try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
+}
+
+test "set: parseAndPut sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut sequence with two actions" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    try s.parseAndPut(alloc, "a>c=new_tab");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .c } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_tab);
+    }
+}
+
+test "set: parseAndPut overwrite sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_tab");
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut overwrite leader" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_tab");
+    try s.parseAndPut(alloc, "a>b=new_window");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const e = current.get(t).?;
+        try testing.expect(e == .leader);
+        current = e.leader;
+    }
+    {
+        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const e = current.get(t).?;
+        try testing.expect(e == .action);
+        try testing.expect(e.action == .new_window);
+    }
+}
+
+test "set: parseAndPut unbind sequence unbinds leader" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=new_window");
+    try s.parseAndPut(alloc, "a>b=unbind");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(current.get(t) == null);
+    }
+}
+
+test "set: parseAndPut unbind sequence unbinds leader if not set" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a>b=unbind");
+    var current: *Set = &s;
+    {
+        const t: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(current.get(t) == null);
+    }
+}
+
+test "set: parseAndPut sequence preserves reverse mapping" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "a=new_window");
+    try s.parseAndPut(alloc, "ctrl+a>b=new_window");
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
+}
+
+test "set: put overwrites sequence" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "ctrl+a>b=new_window");
+    try s.put(alloc, .{
+        .mods = .{ .ctrl = true },
+        .key = .{ .translated = .a },
+    }, .{ .new_window = {} });
+
+    // Creates reverse mapping
+    {
+        const trigger = s.getTrigger(.{ .new_window = {} }).?;
+        try testing.expect(trigger.key.translated == .a);
+    }
 }
 
 test "set: maintains reverse mapping" {
@@ -1108,7 +1664,7 @@ test "set: maintains reverse mapping" {
     }
 
     // removal should replace
-    s.remove(.{ .key = .{ .translated = .b } });
+    s.remove(alloc, .{ .key = .{ .translated = .b } });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
         try testing.expect(trigger.key.translated == .a);
@@ -1144,11 +1700,11 @@ test "set: consumed state" {
     defer s.deinit(alloc);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
 
     try s.putUnconsumed(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(!s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action_unconsumed);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.getConsumed(.{ .key = .{ .translated = .a } }));
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
 }

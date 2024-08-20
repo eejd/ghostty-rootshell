@@ -179,7 +179,7 @@ pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type 
         pub fn deinit(self: Self) void {
             switch (self) {
                 .small, .stable => {},
-                .alloc => |v| v.alloc.free(v.alloc.data),
+                .alloc => |v| v.alloc.free(v.data),
             }
         }
 

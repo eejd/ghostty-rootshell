@@ -618,6 +618,36 @@ class: ?[:0]const u8 = null,
 /// or the alias. When debugging keybinds, the non-aliased modifier will always
 /// be used in output.
 ///
+/// You may also specify multiple triggers separated by `>` to require a
+/// sequence of triggers to activate the action. For example,
+/// `ctrl+a>n=new_window` will only trigger the `new_window` action if the
+/// user presses `ctrl+a` followed separately by `n`. In other software, this
+/// is sometimes called a leader key, a key chord, a key table, etc. There
+/// is no hardcoded limit on the number of parts in a sequence.
+///
+/// Warning: if you define a sequence as a CLI argument to `ghostty`,
+/// you probably have to quote the keybind since `>` is a special character
+/// in most shells. Example: ghostty --keybind='ctrl+a>n=new_window'
+///
+/// A trigger sequence has some special handling:
+///
+///   * Ghostty will wait an indefinite amount of time for the next key in
+///     the sequence. There is no way to specify a timeout. The only way to
+///     force the output of a prefix key is to assign another keybind to
+///     specifically output that key (i.e. `ctrl+a>ctrl+a=text:foo`) or
+///     press an unbound key which will send both keys to the program.
+///
+///   * If a prefix in a sequence is previously bound, the sequence will
+///     override the previous binding. For example, if `ctrl+a` is bound to
+///     `new_window` and `ctrl+a>n` is bound to `new_tab`, pressing `ctrl+a`
+///     will do nothing.
+///
+///   * Adding to the above, if a previously bound sequence prefix is
+///     used in a new, non-sequence binding, the entire previously bound
+///     sequence will be unbound. For example, if you bind `ctrl+a>n` and
+///     `ctrl+a>t`, and then bind `ctrl+a` directly, both `ctrl+a>n` and
+///     `ctrl+a>t` will become unbound.
+///
 /// Action is the action to take when the trigger is satisfied. It takes the
 /// format `action` or `action:param`. The latter form is only valid if the
 /// action requires a parameter.
@@ -3311,43 +3341,56 @@ pub const Keybinds = struct {
             return;
         }
 
-        const binding = try inputpkg.Binding.parse(value);
-        switch (binding.action) {
-            .unbind => self.set.remove(binding.trigger),
-            else => if (binding.consumed) {
-                try self.set.put(alloc, binding.trigger, binding.action);
-            } else {
-                try self.set.putUnconsumed(alloc, binding.trigger, binding.action);
-            },
-        }
+        // Let our much better tested binding package handle parsing and storage.
+        try self.set.parseAndPut(alloc, value);
     }
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
-        return .{
-            .set = .{
-                .bindings = try self.set.bindings.clone(alloc),
-                .reverse = try self.set.reverse.clone(alloc),
-                .unconsumed = try self.set.unconsumed.clone(alloc),
-            },
-        };
+        return .{ .set = try self.set.clone(alloc) };
     }
 
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Keybinds, other: Keybinds) bool {
-        const self_map = self.set.bindings;
-        const other_map = other.set.bindings;
+        return equalSet(&self.set, &other.set);
+    }
+
+    fn equalSet(
+        self: *const inputpkg.Binding.Set,
+        other: *const inputpkg.Binding.Set,
+    ) bool {
+        // Two keybinds are considered equal if their primary bindings
+        // are the same. We don't compare reverse mappings and such.
+        const self_map = &self.bindings;
+        const other_map = &other.bindings;
+
+        // If the count of mappings isn't identical they can't be equal
         if (self_map.count() != other_map.count()) return false;
 
         var it = self_map.iterator();
         while (it.next()) |self_entry| {
+            // If the trigger isn't in the other map, they can't be equal
             const other_entry = other_map.getEntry(self_entry.key_ptr.*) orelse
                 return false;
-            if (!equalField(
-                inputpkg.Binding.Action,
-                self_entry.value_ptr.*,
-                other_entry.value_ptr.*,
-            )) return false;
+
+            // If the entry types are different, they can't be equal
+            if (std.meta.activeTag(self_entry.value_ptr.*) !=
+                std.meta.activeTag(other_entry.value_ptr.*)) return false;
+
+            switch (self_entry.value_ptr.*) {
+                // They're equal if both leader sets are equal.
+                .leader => if (!equalSet(
+                    self_entry.value_ptr.*.leader,
+                    other_entry.value_ptr.*.leader,
+                )) return false,
+
+                // Actions are compared by field directly
+                inline .action, .action_unconsumed => |_, tag| if (!equalField(
+                    inputpkg.Binding.Action,
+                    @field(self_entry.value_ptr.*, @tagName(tag)),
+                    @field(other_entry.value_ptr.*, @tagName(tag)),
+                )) return false,
+            }
         }
 
         return true;
