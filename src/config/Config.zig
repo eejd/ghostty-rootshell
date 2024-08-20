@@ -3430,7 +3430,7 @@ pub const Keybinds = struct {
                 []const u8,
                 std.fmt.bufPrint(
                     &buf,
-                    "{}={}",
+                    "{}{}",
                     .{ k, v },
                 ) catch return error.OutOfMemory,
             );
