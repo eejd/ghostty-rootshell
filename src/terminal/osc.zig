@@ -1679,36 +1679,63 @@ test "OSC: kitty color protocol" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .kitty_color_protocol);
     try testing.expectEqual(@as(usize, 9), cmd.kitty_color_protocol.list.items.len);
-    try testing.expect(cmd.kitty_color_protocol.list.items[0] == .query);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .foreground), cmd.kitty_color_protocol.list.items[0].query);
-    try testing.expect(cmd.kitty_color_protocol.list.items[1] == .set);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .background), cmd.kitty_color_protocol.list.items[1].set.key);
-    try testing.expectEqual(@as(u8, 0xf0), cmd.kitty_color_protocol.list.items[1].set.color.r);
-    try testing.expectEqual(@as(u8, 0xf8), cmd.kitty_color_protocol.list.items[1].set.color.g);
-    try testing.expectEqual(@as(u8, 0xff), cmd.kitty_color_protocol.list.items[1].set.color.b);
-    try testing.expect(cmd.kitty_color_protocol.list.items[2] == .set);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .cursor), cmd.kitty_color_protocol.list.items[2].set.key);
-    try testing.expectEqual(@as(u8, 0xf0), cmd.kitty_color_protocol.list.items[2].set.color.r);
-    try testing.expectEqual(@as(u8, 0xf8), cmd.kitty_color_protocol.list.items[2].set.color.g);
-    try testing.expectEqual(@as(u8, 0xff), cmd.kitty_color_protocol.list.items[2].set.color.b);
-    try testing.expect(cmd.kitty_color_protocol.list.items[3] == .reset);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .cursor_text), cmd.kitty_color_protocol.list.items[3].reset);
-    try testing.expect(cmd.kitty_color_protocol.list.items[4] == .reset);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .visual_bell), cmd.kitty_color_protocol.list.items[4].reset);
-    try testing.expect(cmd.kitty_color_protocol.list.items[5] == .query);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .selection_background), cmd.kitty_color_protocol.list.items[5].query);
-    try testing.expect(cmd.kitty_color_protocol.list.items[6] == .set);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, .selection_background), cmd.kitty_color_protocol.list.items[6].set.key);
-    try testing.expectEqual(@as(u8, 0xaa), cmd.kitty_color_protocol.list.items[6].set.color.r);
-    try testing.expectEqual(@as(u8, 0xbb), cmd.kitty_color_protocol.list.items[6].set.color.g);
-    try testing.expectEqual(@as(u8, 0xcc), cmd.kitty_color_protocol.list.items[6].set.color.b);
-    try testing.expect(cmd.kitty_color_protocol.list.items[7] == .query);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(2)), cmd.kitty_color_protocol.list.items[7].query);
-    try testing.expect(cmd.kitty_color_protocol.list.items[8] == .set);
-    try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(3)), cmd.kitty_color_protocol.list.items[8].set.key);
-    try testing.expectEqual(@as(u8, 0xff), cmd.kitty_color_protocol.list.items[8].set.color.r);
-    try testing.expectEqual(@as(u8, 0xff), cmd.kitty_color_protocol.list.items[8].set.color.g);
-    try testing.expectEqual(@as(u8, 0xff), cmd.kitty_color_protocol.list.items[8].set.color.b);
+    {
+        const item = cmd.kitty_color_protocol.list.items[0];
+        try testing.expect(item == .query);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.foreground, item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[1];
+        try testing.expect(item == .set);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.background, item.set.key);
+        try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[2];
+        try testing.expect(item == .set);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.cursor, item.set.key);
+        try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[3];
+        try testing.expect(item == .reset);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.cursor_text, item.reset);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[4];
+        try testing.expect(item == .reset);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.visual_bell, item.reset);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[5];
+        try testing.expect(item == .query);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.selection_background, item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[6];
+        try testing.expect(item == .set);
+        try testing.expectEqual(Command.KittyColorProtocol.Kind.selection_background, item.set.key);
+        try testing.expectEqual(@as(u8, 0xaa), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xbb), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xcc), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[7];
+        try testing.expect(item == .query);
+        try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(2)), item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[8];
+        try testing.expect(item == .set);
+        try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(3)), item.set.key);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
 }
 
 test "OSC: kitty color protocol kind" {
