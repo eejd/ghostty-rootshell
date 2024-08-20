@@ -1174,6 +1174,8 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
 ///
 /// This can only be called from the main thread.
 pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
+    log.debug("set font size size={}", .{size.points});
+
     // Update our font size so future changes work
     self.font_size = size;
 

@@ -300,6 +300,14 @@ pub const Face = struct {
             .advance_x = 0,
         };
 
+        // If we're doing thicken, then getBoundsForGlyphs does not take
+        // into account the anti-aliasing that will be added to the glyph.
+        // We need to add some padding to allow that to happen. A padding of
+        // 2 is usually enough for anti-aliasing.
+        const padding_ctx: u32 = if (opts.thicken) 2 else 0;
+        const padded_width: u32 = width + (padding_ctx * 2);
+        const padded_height: u32 = height + (padding_ctx * 2);
+
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
             color: bool,
@@ -334,17 +342,17 @@ pub const Face = struct {
         // usually stabilizes pretty quickly and is very infrequent so I think
         // the allocation overhead is acceptable compared to the cost of
         // caching it forever or having to deal with a cache lifetime.
-        const buf = try alloc.alloc(u8, width * height * color.depth);
+        const buf = try alloc.alloc(u8, padded_width * padded_height * color.depth);
         defer alloc.free(buf);
         @memset(buf, 0);
 
         const context = macos.graphics.BitmapContext.context;
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
-            width,
-            height,
+            padded_width,
+            padded_height,
             8,
-            width * color.depth,
+            padded_width * color.depth,
             color.space,
             color.context_opts,
         );
@@ -359,8 +367,8 @@ pub const Face = struct {
         context.fillRect(ctx, .{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
-                .width = @floatFromInt(width),
-                .height = @floatFromInt(height),
+                .width = @floatFromInt(padded_width),
+                .height = @floatFromInt(padded_height),
             },
         });
 
@@ -386,10 +394,11 @@ pub const Face = struct {
         // are offset by bearings, so we have to undo those bearings in order
         // to get them to 0,0. We also add the padding so that they render
         // slightly off the edge of the bitmap.
+        const padding_ctx_f64: f64 = @floatFromInt(padding_ctx);
         self.font.drawGlyphs(&glyphs, &.{
             .{
-                .x = -1 * render_x,
-                .y = render_y,
+                .x = -1 * (render_x - padding_ctx_f64),
+                .y = render_y + padding_ctx_f64,
             },
         }, ctx);
 
@@ -401,8 +410,8 @@ pub const Face = struct {
             // Get the full padded region
             var region = try atlas.reserve(
                 alloc,
-                width + (padding * 2), // * 2 because left+right
-                height + (padding * 2), // * 2 because top+bottom
+                padded_width + (padding * 2), // * 2 because left+right
+                padded_height + (padding * 2), // * 2 because top+bottom
             );
 
             // Modify the region so that we remove the padding so that
@@ -427,11 +436,15 @@ pub const Face = struct {
             // ADD here because CoreText y is UP.
             const baseline_with_offset = baseline_from_bottom + glyph_ascent;
 
-            break :offset_y @intFromFloat(@ceil(baseline_with_offset));
+            // Add our context padding we may have created.
+            const baseline_with_padding = baseline_with_offset + padding_ctx_f64;
+
+            break :offset_y @intFromFloat(@ceil(baseline_with_padding));
         };
 
         const offset_x: i32 = offset_x: {
-            var result: i32 = @intFromFloat(render_x);
+            // Don't forget to apply our context padding if we have one
+            var result: i32 = @intFromFloat(render_x - padding_ctx_f64);
 
             // If our cell was resized to be wider then we center our
             // glyph in the cell.
@@ -462,8 +475,8 @@ pub const Face = struct {
         // });
 
         return .{
-            .width = width,
-            .height = height,
+            .width = padded_width,
+            .height = padded_height,
             .offset_x = offset_x,
             .offset_y = offset_y,
             .atlas_x = region.x,
