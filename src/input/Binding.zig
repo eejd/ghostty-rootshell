@@ -800,11 +800,20 @@ pub const Set = struct {
             _ = opts;
 
             switch (self) {
-                .leader => @panic("TODO"),
+                .leader => |set| {
+                    // the leader key was already printed.
+                    var iter = set.bindings.iterator();
+                    while (iter.next()) |binding| {
+                        try writer.print(
+                            ">{s}{s}",
+                            .{ binding.key_ptr.*, binding.value_ptr.* },
+                        );
+                    }
+                },
 
                 .action, .action_unconsumed => |action| {
                     // action implements the format
-                    try writer.print("{s}", .{action});
+                    try writer.print("={s}", .{action});
                 },
             }
         }
