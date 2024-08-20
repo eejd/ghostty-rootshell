@@ -124,10 +124,16 @@ pub fn init(self: *Window, app: *App) !void {
     // In debug we show a warning and apply the 'devel' class to the window.
     // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
-        const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
-        c.gtk_widget_set_margin_top(warning, 10);
-        c.gtk_widget_set_margin_bottom(warning, 10);
-        c.gtk_box_append(@ptrCast(box), warning);
+        const warning_text = "⚠️ You're running a debug build of Ghostty! Performance will be degraded.";
+        if (adwaita and c.ADW_MINOR_VERSION >= 3) {
+            const banner = c.adw_banner_new(warning_text);
+            c.gtk_box_append(@ptrCast(box), @ptrCast(banner));
+        } else {
+            const warning = c.gtk_label_new(warning_text);
+            c.gtk_widget_set_margin_top(warning, 10);
+            c.gtk_widget_set_margin_bottom(warning, 10);
+            c.gtk_box_append(@ptrCast(box), warning);
+        }
         c.gtk_widget_add_css_class(@ptrCast(gtk_window), "devel");
     }
 
@@ -253,8 +259,7 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
 /// Go to the next tab for a surface.
 pub fn gotoLastTab(self: *Window) void {
     const max = self.notebook.nPages()  -| 1;
-    c.gtk_notebook_set_current_page(self.notebook.gtk_notebook, max);
-    self.focusCurrentTab();
+    self.gotoTab(@intCast(max));
 }
 
 /// Go to the specific tab index.
@@ -528,6 +533,6 @@ fn actionSurface(self: *Window) ?*CoreSurface {
     return &tab.focus_child.core_surface;
 }
 
-pub fn userdataSelf(ud: *anyopaque) *Window {
+fn userdataSelf(ud: *anyopaque) *Window {
     return @ptrCast(@alignCast(ud));
 }

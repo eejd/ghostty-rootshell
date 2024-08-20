@@ -3,7 +3,6 @@ const c = @import("c.zig").c;
 const build_options = @import("build_options");
 
 const Window = @import("./Window.zig");
-const userdataSelf = Window.userdataSelf;
 const Tab = @import("./Tab.zig");
 
 const log = std.log.scoped(.gtk);
@@ -24,7 +23,7 @@ pub const Notebook = union(enum) {
 
             if (!window.app.config.@"gtk-titlebar" or c.ADW_MINOR_VERSION < 4) {
                 const tab_bar = c.adw_tab_bar_new();
-                c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
+                c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
                 c.adw_tab_bar_set_view(tab_bar, tab_view);
 
                 if (!window.app.config.@"gtk-wide-tabs")
@@ -310,7 +309,7 @@ fn gtkPageRemoved(
     _: c.guint,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    const self = userdataSelf(ud.?);
+    const self: *Window = @ptrCast(@alignCast(ud.?));
 
     const notebook: *c.GtkNotebook = self.notebook.gtk_notebook;
 
@@ -324,7 +323,7 @@ fn gtkPageRemoved(
 fn adwPageAttached(tab_view: *AdwTabView, page: *c.AdwTabPage, position: c_int, ud: ?*anyopaque) callconv(.C) void {
     _ = position;
     _ = tab_view;
-    const self = userdataSelf(ud.?);
+    const self: *Window = @ptrCast(@alignCast(ud.?));
 
     const child = c.adw_tab_page_get_child(page);
     const tab: *Tab = @ptrCast(@alignCast(c.g_object_get_data(@ptrCast(child), Tab.GHOSTTY_TAB) orelse return));
@@ -339,7 +338,7 @@ fn gtkPageAdded(
     page_idx: c.guint,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    const self = userdataSelf(ud.?);
+    const self: *Window = @ptrCast(@alignCast(ud.?));
 
     // The added page can come from another window with drag and drop, thus we migrate the tab
     // window to be self.
@@ -358,14 +357,14 @@ fn gtkPageAdded(
 }
 
 fn adwSelectPage(_: *c.GObject, _: *c.GParamSpec, ud: ?*anyopaque) void {
-    const window = userdataSelf(ud.?);
+    const window: *Window = @ptrCast(@alignCast(ud.?));
     const page = c.adw_tab_view_get_selected_page(window.notebook.adw_tab_view) orelse return;
     const title = c.adw_tab_page_get_title(page);
     c.gtk_window_set_title(window.window, title);
 }
 
 fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaque) callconv(.C) void {
-    const window = userdataSelf(ud.?);
+    const window: *Window = @ptrCast(@alignCast(ud.?));
     const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(window.notebook.gtk_notebook, page)));
     const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
     const label_text = c.gtk_label_get_text(gtk_label);
@@ -376,7 +375,7 @@ fn adwTabViewCreateWindow(
     _: *AdwTabView,
     ud: ?*anyopaque,
 ) callconv(.C) ?*AdwTabView {
-    const currentWindow = userdataSelf(ud.?);
+    const currentWindow: *Window = @ptrCast(@alignCast(ud.?));
     const window = createWindow(currentWindow) catch |err| {
         log.warn("error creating new window error={}", .{err});
         return null;
@@ -394,7 +393,7 @@ fn gtkNotebookCreateWindow(
         c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
     ));
 
-    const currentWindow = userdataSelf(ud.?);
+    const currentWindow: *Window = @ptrCast(@alignCast(ud.?));
     const window = createWindow(currentWindow) catch |err| {
         log.warn("error creating new window error={}", .{err});
         return null;

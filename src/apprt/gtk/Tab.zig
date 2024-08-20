@@ -55,24 +55,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .focus_child = undefined,
     };
 
-    // // Wide style GTK tabs
-    // if (window.app.config.@"gtk-wide-tabs") {
-    //     c.gtk_widget_set_hexpand(label_box_widget, 1);
-    //     c.gtk_widget_set_halign(label_box_widget, c.GTK_ALIGN_FILL);
-    //     c.gtk_widget_set_hexpand(label_text_widget, 1);
-    //     c.gtk_widget_set_halign(label_text_widget, c.GTK_ALIGN_FILL);
-
-    //     // This ensures that tabs are always equal width. If they're too
-    //     // long, they'll be truncated with an ellipsis.
-    //     c.gtk_label_set_max_width_chars(label_text, 1);
-    //     c.gtk_label_set_ellipsize(label_text, c.PANGO_ELLIPSIZE_END);
-
-    //     // We need to set a minimum width so that at a certain point
-    //     // the notebook will have an arrow button rather than shrinking tabs
-    //     // to an unreadably small size.
-    //     c.gtk_widget_set_size_request(label_text_widget, 100, 1);
-    // }
-
     // Create a Box in which we'll later keep either Surface or Split.
     // Using a box makes it easier to maintain the tab contents because
     // we never need to change the root widget of the notebook page (tab).
@@ -95,34 +77,6 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
     try window.notebook.addTab(self, "Ghostty");
-
-    // const notebook: *c.GtkNotebook = window.notebook.as_notebook();
-
-    // // Add the notebook page (create tab).
-    // const parent_page_idx = switch (window.app.config.@"window-new-tab-position") {
-    //     .current => c.gtk_notebook_get_current_page(notebook) + 1,
-    //     .end => c.gtk_notebook_get_n_pages(notebook),
-    // };
-
-    // const page_idx = c.gtk_notebook_insert_page(
-    //     notebook,
-    //     box_widget,
-    //     label_box_widget,
-    //     parent_page_idx,
-    // );
-    // if (page_idx < 0) {
-    //     log.warn("failed to add page to notebook", .{});
-    //     return error.GtkAppendPageFailed;
-    // }
-
-    // // Tab settings
-    // c.gtk_notebook_set_tab_reorderable(notebook, box_widget, 1);
-    // c.gtk_notebook_set_tab_detachable(notebook, box_widget, 1);
-
-    // // If we have multiple tabs, show the tab bar.
-    // if (c.gtk_notebook_get_n_pages(notebook) > 1) {
-    //     c.gtk_notebook_set_show_tabs(notebook, 1);
-    // }
 
     // Attach all events
     _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
@@ -171,7 +125,7 @@ pub fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
 
 fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     _ = v;
-    log.info("tab box destroy", .{});
+    log.debug("tab box destroy", .{});
 
     // When our box is destroyed, we want to destroy our tab, too.
     const tab: *Tab = @ptrCast(@alignCast(ud));
