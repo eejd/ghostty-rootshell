@@ -175,6 +175,10 @@ pub const Command = union(enum) {
 
     pub const KittyColorProtocol = struct {
         const Kind = enum(u9) {
+            // Make sure that this stays in sync with the higest numbered enum
+            // value.
+            const max: u9 = 263;
+
             // These _must_ start at 256 since enum values 0-255 are reserved
             // for the palette.
             foreground = 256,
@@ -187,9 +191,29 @@ pub const Command = union(enum) {
             second_transparent_background = 263,
             _,
 
-            // Make sure that this stays in sync with the higest numbered enum
-            // value.
-            const max: u9 = 263;
+            /// Return the palette index that this kind is representing
+            /// or null if its a special color.
+            pub fn palette(self: Kind) ?u8 {
+                return std.math.cast(u8, @intFromEnum(self)) orelse null;
+            }
+
+            pub fn format(
+                self: Kind,
+                comptime layout: []const u8,
+                opts: std.fmt.FormatOptions,
+                writer: anytype,
+            ) !void {
+                _ = layout;
+                _ = opts;
+
+                // Format as a number if its a palette color otherwise
+                // format as a string.
+                if (self.palette()) |idx| {
+                    try writer.print("{}", .{idx});
+                } else {
+                    try writer.print("{s}", .{@tagName(self)});
+                }
+            }
         };
 
         const Request = union(enum) {
@@ -1763,4 +1787,19 @@ test "OSC: kitty color protocol kind" {
 
     try std.testing.expect(min >= 256);
     try std.testing.expect(max == Command.KittyColorProtocol.Kind.max);
+}
+
+test "OSC: kitty color protocol kind string" {
+    const testing = std.testing;
+    const Kind = Command.KittyColorProtocol.Kind;
+
+    var buf: [256]u8 = undefined;
+    {
+        const actual = try std.fmt.bufPrint(&buf, "{}", .{Kind.foreground});
+        try testing.expectEqualStrings("foreground", actual);
+    }
+    {
+        const actual = try std.fmt.bufPrint(&buf, "{}", .{@as(Kind, @enumFromInt(42))});
+        try testing.expectEqualStrings("42", actual);
+    }
 }
