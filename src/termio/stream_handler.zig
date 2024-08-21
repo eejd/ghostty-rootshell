@@ -144,6 +144,38 @@ pub const StreamHandler = struct {
         self.termio_messaged = true;
     }
 
+    /// Send a renderer message and unlock the renderer state mutex
+    /// if necessary to ensure we don't deadlock.
+    ///
+    /// This assumes the renderer state mutex is locked.
+    inline fn rendererMessageWriter(
+        self: *StreamHandler,
+        msg: renderer.Message,
+    ) void {
+        // See termio.Mailbox.send for more details on how this works.
+
+        // Try instant first. If it works then we can return.
+        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) > 0) {
+            return;
+        }
+
+        // Instant would have blocked. Release the renderer mutex,
+        // wake up the renderer to allow it to process the message,
+        // and then try again.
+        self.renderer_state.mutex.unlock();
+        defer self.renderer_state.mutex.lock();
+        self.renderer_wakeup.notify() catch |err| {
+            // This is an EXTREMELY unlikely case. We still don't return
+            // and attempt to send the message because its most likely
+            // that everything is fine, but log in case a freeze happens.
+            log.warn(
+                "failed to notify renderer, may deadlock err={}",
+                .{err},
+            );
+        };
+        _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+    }
+
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
         var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
         defer cmd.deinit();
@@ -1279,7 +1311,7 @@ pub const StreamHandler = struct {
         for (request.list.items) |item| {
             switch (item) {
                 .query => |key| {
-                    const color = switch (key) {
+                    const color: terminal.color.RGB = switch (key) {
                         .foreground => self.foreground_color,
                         .background => self.background_color,
                         .cursor => self.cursor_color,
@@ -1305,42 +1337,27 @@ pub const StreamHandler = struct {
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .foreground_color = v.color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
                     .background => {
                         self.background_color = v.color;
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .background_color = v.color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
                     .cursor => {
                         self.cursor_color = v.color;
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .cursor_color = v.color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
 
                     else => if (v.key.palette()) |i| {
@@ -1361,42 +1378,27 @@ pub const StreamHandler = struct {
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .foreground_color = self.default_foreground_color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
                     .background => {
                         self.background_color = self.default_background_color;
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .background_color = self.default_background_color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
                     .cursor => {
                         self.cursor_color = self.default_cursor_color;
 
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
-                        const msg: renderer.Message = .{
+                        self.rendererMessageWriter(.{
                             .cursor_color = self.default_cursor_color,
-                        };
-                        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) == 0) {
-                            self.renderer_state.mutex.unlock();
-                            defer self.renderer_state.mutex.lock();
-                            _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
-                        }
+                        });
                     },
 
                     else => if (key.palette()) |i| {
@@ -1422,5 +1424,9 @@ pub const StreamHandler = struct {
                 .data = try buf.toOwnedSlice(),
             },
         });
+
+        // Note: we don't have to do a queueRender here because every
+        // processed stream will queue a render once it is done processing
+        // the read() syscall.
     }
 };
