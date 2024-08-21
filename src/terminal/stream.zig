@@ -1393,6 +1393,13 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
+                .kitty_color_protocol => |v| {
+                    if (@hasDecl(T, "sendKittyColorReport")) {
+                        try self.handler.sendKittyColorReport(v);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
                 .show_desktop_notification => |v| {
                     if (@hasDecl(T, "showDesktopNotification")) {
                         try self.handler.showDesktopNotification(v.title, v.body);

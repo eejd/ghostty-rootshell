@@ -144,6 +144,38 @@ pub const StreamHandler = struct {
         self.termio_messaged = true;
     }
 
+    /// Send a renderer message and unlock the renderer state mutex
+    /// if necessary to ensure we don't deadlock.
+    ///
+    /// This assumes the renderer state mutex is locked.
+    inline fn rendererMessageWriter(
+        self: *StreamHandler,
+        msg: renderer.Message,
+    ) void {
+        // See termio.Mailbox.send for more details on how this works.
+
+        // Try instant first. If it works then we can return.
+        if (self.renderer_mailbox.push(msg, .{ .instant = {} }) > 0) {
+            return;
+        }
+
+        // Instant would have blocked. Release the renderer mutex,
+        // wake up the renderer to allow it to process the message,
+        // and then try again.
+        self.renderer_state.mutex.unlock();
+        defer self.renderer_state.mutex.lock();
+        self.renderer_wakeup.notify() catch |err| {
+            // This is an EXTREMELY unlikely case. We still don't return
+            // and attempt to send the message because its most likely
+            // that everything is fine, but log in case a freeze happens.
+            log.warn(
+                "failed to notify renderer, may deadlock err={}",
+                .{err},
+            );
+        };
+        _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+    }
+
     pub fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
         var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
         defer cmd.deinit();
@@ -1272,5 +1304,136 @@ pub const StreamHandler = struct {
             .csi_18_t => self.messageWriter(.{ .size_report = .csi_18_t }),
             .csi_21_t => self.surfaceMessageWriter(.{ .report_title = .csi_21_t }),
         }
+    }
+
+    pub fn sendKittyColorReport(
+        self: *StreamHandler,
+        request: terminal.kitty.color.OSC,
+    ) !void {
+        var buf = std.ArrayList(u8).init(self.alloc);
+        defer buf.deinit();
+        const writer = buf.writer();
+        try writer.writeAll("\x1b[21");
+
+        for (request.list.items) |item| {
+            switch (item) {
+                .query => |key| {
+                    const color: terminal.color.RGB = switch (key) {
+                        .foreground => self.foreground_color,
+                        .background => self.background_color,
+                        .cursor => self.cursor_color,
+                        else => if (key.palette()) |idx|
+                            self.terminal.color_palette.colors[idx]
+                        else {
+                            log.warn("ignoring unsupported kitty color protocol key: {}", .{key});
+                            continue;
+                        },
+                    } orelse {
+                        log.warn("no color configured for: {s}", .{@tagName(key)});
+                        continue;
+                    };
+
+                    try writer.print(
+                        ";{}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                        .{ key, color.r, color.g, color.b },
+                    );
+                },
+                .set => |v| switch (v.key) {
+                    .foreground => {
+                        self.foreground_color = v.color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .foreground_color = v.color,
+                        });
+                    },
+                    .background => {
+                        self.background_color = v.color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .background_color = v.color,
+                        });
+                    },
+                    .cursor => {
+                        self.cursor_color = v.color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .cursor_color = v.color,
+                        });
+                    },
+
+                    else => if (v.key.palette()) |i| {
+                        self.terminal.flags.dirty.palette = true;
+                        self.terminal.color_palette.colors[i] = v.color;
+                        self.terminal.color_palette.mask.unset(i);
+                    } else {
+                        log.warn(
+                            "ignoring unsupported kitty color protocol key: {}",
+                            .{v.key},
+                        );
+                        continue;
+                    },
+                },
+                .reset => |key| switch (key) {
+                    .foreground => {
+                        self.foreground_color = self.default_foreground_color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .foreground_color = self.default_foreground_color,
+                        });
+                    },
+                    .background => {
+                        self.background_color = self.default_background_color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .background_color = self.default_background_color,
+                        });
+                    },
+                    .cursor => {
+                        self.cursor_color = self.default_cursor_color;
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(.{
+                            .cursor_color = self.default_cursor_color,
+                        });
+                    },
+
+                    else => if (key.palette()) |i| {
+                        self.terminal.flags.dirty.palette = true;
+                        self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                        self.terminal.color_palette.mask.unset(i);
+                    } else {
+                        log.warn(
+                            "ignoring unsupported kitty color protocol key: {}",
+                            .{key},
+                        );
+                        continue;
+                    },
+                },
+            }
+        }
+
+        try writer.writeAll(request.terminator.string());
+
+        self.messageWriter(.{
+            .write_alloc = .{
+                .alloc = self.alloc,
+                .data = try buf.toOwnedSlice(),
+            },
+        });
+
+        // Note: we don't have to do a queueRender here because every
+        // processed stream will queue a render once it is done processing
+        // the read() syscall.
     }
 };

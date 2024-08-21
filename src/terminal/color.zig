@@ -208,24 +208,41 @@ pub const RGB = struct {
     ///    where <red>, <green>, and <blue> are floating point values between
     ///    0.0 and 1.0 (inclusive).
     ///
-    /// 3. #hhhhhh
+    /// 3. #rgb, #rrggbb, #rrrgggbbb #rrrrggggbbbb
     ///
-    ///    where `h` is a single hexadecimal digit.
+    ///    where `r`, `g`, and `b` are a single hexadecimal digit.
+    ///    These specifiy a color with 4, 8, 12, and 16 bits of precision
+    ///    per color channel.
     pub fn parse(value: []const u8) !RGB {
         if (value.len == 0) {
             return error.InvalidFormat;
         }
 
         if (value[0] == '#') {
-            if (value.len != 7) {
-                return error.InvalidFormat;
-            }
+            switch (value.len) {
+                4 => return RGB{
+                    .r = try RGB.fromHex(value[1..2]),
+                    .g = try RGB.fromHex(value[2..3]),
+                    .b = try RGB.fromHex(value[3..4]),
+                },
+                7 => return RGB{
+                    .r = try RGB.fromHex(value[1..3]),
+                    .g = try RGB.fromHex(value[3..5]),
+                    .b = try RGB.fromHex(value[5..7]),
+                },
+                10 => return RGB{
+                    .r = try RGB.fromHex(value[1..4]),
+                    .g = try RGB.fromHex(value[4..7]),
+                    .b = try RGB.fromHex(value[7..10]),
+                },
+                13 => return RGB{
+                    .r = try RGB.fromHex(value[1..5]),
+                    .g = try RGB.fromHex(value[5..9]),
+                    .b = try RGB.fromHex(value[9..13]),
+                },
 
-            return RGB{
-                .r = try RGB.fromHex(value[1..3]),
-                .g = try RGB.fromHex(value[3..5]),
-                .b = try RGB.fromHex(value[5..7]),
-            };
+                else => return error.InvalidFormat,
+            }
         }
 
         // Check for X11 named colors. We allow whitespace around the edges
@@ -308,6 +325,9 @@ test "RGB.parse" {
     try testing.expectEqual(RGB{ .r = 127, .g = 160, .b = 0 }, try RGB.parse("rgb:7f/a0a0/0"));
     try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("rgb:f/ff/fff"));
     try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#ffffff"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#fff"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#fffffffff"));
+    try testing.expectEqual(RGB{ .r = 255, .g = 255, .b = 255 }, try RGB.parse("#ffffffffffff"));
     try testing.expectEqual(RGB{ .r = 255, .g = 0, .b = 16 }, try RGB.parse("#ff0010"));
 
     try testing.expectEqual(RGB{ .r = 0, .g = 0, .b = 0 }, try RGB.parse("black"));

@@ -9,6 +9,8 @@ const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
+const RGB = @import("color.zig").RGB;
+const kitty = @import("kitty.zig");
 
 const log = std.log.scoped(.osc);
 
@@ -137,6 +139,10 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
+    /// Kitty color protocl, OSC 21
+    /// https://sw.kovidgoyal.net/kitty/color-stack/#id1
+    kitty_color_protocol: kitty.color.OSC,
+
     /// Show a desktop notification (OSC 9 or OSC 777)
     show_desktop_notification: struct {
         title: []const u8,
@@ -251,6 +257,7 @@ pub const Parser = struct {
         @"13",
         @"133",
         @"2",
+        @"21",
         @"22",
         @"4",
         @"5",
@@ -310,6 +317,11 @@ pub const Parser = struct {
         // If the parser has no allocator then it is treated as if the
         // buffer is full.
         allocable_string,
+
+        // Kitty color protocol
+        // https://sw.kovidgoyal.net/kitty/color-stack/#id1
+        kitty_color_protocol_key,
+        kitty_color_protocol_value,
     };
 
     /// This must be called to clean up any allocated memory.
@@ -328,6 +340,12 @@ pub const Parser = struct {
             ptr.deinit(alloc);
             alloc.destroy(ptr);
             self.buf_dynamic = null;
+        }
+
+        // Some commands have their own memory management we need to clear.
+        switch (self.command) {
+            .kitty_color_protocol => |*v| v.list.deinit(),
+            else => {},
         }
     }
 
@@ -439,6 +457,7 @@ pub const Parser = struct {
             },
 
             .@"2" => switch (c) {
+                '1' => self.state = .@"21",
                 '2' => self.state = .@"22",
                 ';' => {
                     self.command = .{ .change_window_title = undefined };
@@ -448,6 +467,51 @@ pub const Parser = struct {
                     self.buf_start = self.buf_idx;
                 },
                 else => self.state = .invalid,
+            },
+
+            .@"21" => switch (c) {
+                ';' => kitty: {
+                    const alloc = self.alloc orelse {
+                        log.info("OSC 21 requires an allocator, but none was provided", .{});
+                        self.state = .invalid;
+                        break :kitty;
+                    };
+
+                    self.command = .{
+                        .kitty_color_protocol = .{
+                            .list = std.ArrayList(kitty.color.OSC.Request).init(alloc),
+                        },
+                    };
+
+                    self.state = .kitty_color_protocol_key;
+                    self.complete = true;
+                    self.buf_start = self.buf_idx;
+                },
+                else => self.state = .invalid,
+            },
+
+            .kitty_color_protocol_key => switch (c) {
+                ';' => {
+                    self.temp_state = .{ .key = self.buf[self.buf_start .. self.buf_idx - 1] };
+                    self.endKittyColorProtocolOption(.key_only, false);
+                    self.state = .kitty_color_protocol_key;
+                    self.buf_start = self.buf_idx;
+                },
+                '=' => {
+                    self.temp_state = .{ .key = self.buf[self.buf_start .. self.buf_idx - 1] };
+                    self.state = .kitty_color_protocol_value;
+                    self.buf_start = self.buf_idx;
+                },
+                else => {},
+            },
+
+            .kitty_color_protocol_value => switch (c) {
+                ';' => {
+                    self.endKittyColorProtocolOption(.key_and_value, false);
+                    self.state = .kitty_color_protocol_key;
+                    self.buf_start = self.buf_idx;
+                },
+                else => {},
             },
 
             .@"22" => switch (c) {
@@ -936,6 +1000,72 @@ pub const Parser = struct {
         self.temp_state.str.* = self.buf[self.buf_start..self.buf_idx];
     }
 
+    fn endKittyColorProtocolOption(self: *Parser, kind: enum { key_only, key_and_value }, final: bool) void {
+        if (self.temp_state.key.len == 0) {
+            log.warn("zero length key in kitty color protocol", .{});
+            return;
+        }
+
+        // For our key, we first try to parse it as a special key. If that
+        // doesn't work then we try to parse it as a number for a palette.
+        const key: kitty.color.Kind = std.meta.stringToEnum(
+            kitty.color.Kind,
+            self.temp_state.key,
+        ) orelse @enumFromInt(std.fmt.parseUnsigned(
+            u8,
+            self.temp_state.key,
+            10,
+        ) catch {
+            log.warn("unknown key in kitty color protocol: {s}", .{self.temp_state.key});
+            return;
+        });
+
+        const value = value: {
+            if (self.buf_start == self.buf_idx) break :value "";
+            if (final) break :value std.mem.trim(u8, self.buf[self.buf_start..self.buf_idx], " ");
+            break :value std.mem.trim(u8, self.buf[self.buf_start .. self.buf_idx - 1], " ");
+        };
+
+        switch (self.command) {
+            .kitty_color_protocol => |*v| {
+                // Cap our allocation amount for our list.
+                if (v.list.items.len >= @as(usize, kitty.color.Kind.max) * 2) {
+                    self.state = .invalid;
+                    log.warn("exceeded limit for number of keys in kitty color protocol, ignoring", .{});
+                    return;
+                }
+
+                if (kind == .key_only or value.len == 0) {
+                    v.list.append(.{ .reset = key }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
+                } else if (mem.eql(u8, "?", value)) {
+                    v.list.append(.{ .query = key }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
+                } else {
+                    v.list.append(.{
+                        .set = .{
+                            .key = key,
+                            .color = RGB.parse(value) catch |err| switch (err) {
+                                error.InvalidFormat => {
+                                    log.warn("invalid color format in kitty color protocol: {s}", .{value});
+                                    return;
+                                },
+                            },
+                        },
+                    }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
+                }
+            },
+            else => {},
+        }
+    }
+
     fn endAllocableString(self: *Parser) void {
         const list = self.buf_dynamic.?;
         self.temp_state.str.* = list.items;
@@ -958,11 +1088,14 @@ pub const Parser = struct {
             .hyperlink_uri => self.endHyperlink(),
             .string => self.endString(),
             .allocable_string => self.endAllocableString(),
+            .kitty_color_protocol_key => self.endKittyColorProtocolOption(.key_only, true),
+            .kitty_color_protocol_value => self.endKittyColorProtocolOption(.key_and_value, true),
             else => {},
         }
 
         switch (self.command) {
             .report_color => |*c| c.terminator = Terminator.init(terminator_ch),
+            .kitty_color_protocol => |*c| c.terminator = Terminator.init(terminator_ch),
             else => {},
         }
 
@@ -1496,4 +1629,86 @@ test "OSC: hyperlink end" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .hyperlink_end);
+}
+
+test "OSC: kitty color protocol" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .kitty_color_protocol);
+    try testing.expectEqual(@as(usize, 9), cmd.kitty_color_protocol.list.items.len);
+    {
+        const item = cmd.kitty_color_protocol.list.items[0];
+        try testing.expect(item == .query);
+        try testing.expectEqual(kitty.color.Kind.foreground, item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[1];
+        try testing.expect(item == .set);
+        try testing.expectEqual(kitty.color.Kind.background, item.set.key);
+        try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[2];
+        try testing.expect(item == .set);
+        try testing.expectEqual(kitty.color.Kind.cursor, item.set.key);
+        try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[3];
+        try testing.expect(item == .reset);
+        try testing.expectEqual(kitty.color.Kind.cursor_text, item.reset);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[4];
+        try testing.expect(item == .reset);
+        try testing.expectEqual(kitty.color.Kind.visual_bell, item.reset);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[5];
+        try testing.expect(item == .query);
+        try testing.expectEqual(kitty.color.Kind.selection_background, item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[6];
+        try testing.expect(item == .set);
+        try testing.expectEqual(kitty.color.Kind.selection_background, item.set.key);
+        try testing.expectEqual(@as(u8, 0xaa), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xbb), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xcc), item.set.color.b);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[7];
+        try testing.expect(item == .query);
+        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(2)), item.query);
+    }
+    {
+        const item = cmd.kitty_color_protocol.list.items[8];
+        try testing.expect(item == .set);
+        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(3)), item.set.key);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.r);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.g);
+        try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
+    }
+}
+
+test "OSC: kitty color protocol without allocator" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+    defer p.deinit();
+
+    const input = "21;foreground=?";
+    for (input) |ch| p.next(ch);
+    try testing.expect(p.end('\x1b') == null);
 }
