@@ -4,22 +4,22 @@ import SwiftUI
 import GhosttyKit
 
 /// The terminal controller is an NSWindowController that maps 1:1 to a terminal window.
-class TerminalController: NSWindowController, NSWindowDelegate, 
+class TerminalController: NSWindowController, NSWindowDelegate,
                           TerminalViewDelegate, TerminalViewModel,
                           ClipboardConfirmationViewDelegate
 {
     override var windowNibName: NSNib.Name? { "Terminal" }
-    
+
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.App
-    
+
     /// The currently focused surface.
     var focusedSurface: Ghostty.SurfaceView? = nil {
         didSet {
             syncFocusToSurfaceTree()
         }
     }
-    
+
     /// The surface tree for this window.
     @Published var surfaceTree: Ghostty.SplitNode? = nil {
         didSet {
@@ -32,25 +32,25 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         }
     }
-    
+
     /// Fullscreen state management.
     let fullscreenHandler = FullScreenHandler()
-    
+
     /// True when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
-    
+
     /// The clipboard confirmation window, if shown.
     private var clipboardConfirmation: ClipboardConfirmationController? = nil
-    
+
     /// This is set to true when we care about frame changes. This is a small optimization since
     /// this controller registers a listener for ALL frame change notifications and this lets us bail
     /// early if we don't care.
     private var tabListenForFrame: Bool = false
-    
+
     /// This is the hash value of the last tabGroup.windows array. We use this to detect order
     /// changes in the list.
     private var tabWindowsHash: Int = 0
-    
+
     /// This is set to false by init if the window managed by this controller should not be restorable.
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
@@ -60,20 +60,20 @@ class TerminalController: NSWindowController, NSWindowDelegate,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
     ) {
         self.ghostty = ghostty
-        
+
         // The window we manage is not restorable if we've specified a command
         // to execute. We do this because the restored window is meaningless at the
         // time of writing this: it'd just restore to a shell in the same directory
         // as the script. We may want to revisit this behavior when we have scrollback
         // restoration.
         self.restorable = (base?.command ?? "") == ""
-        
+
         super.init(window: nil)
-        
+
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
         self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
-        
+
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
         center.addObserver(
@@ -97,25 +97,25 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             name: NSView.frameDidChangeNotification,
             object: nil)
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
     }
-    
+
     deinit {
         // Remove all of our notificationcenter subscriptions
         let center = NotificationCenter.default
         center.removeObserver(self)
     }
-    
+
     //MARK: - Methods
-    
+
     func configDidReload() {
         guard let window = window as? TerminalWindow else { return }
         window.focusFollowsMouse = ghostty.config.focusFollowsMouse
         syncAppearance()
     }
-    
+
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
     /// changes, when a window is closed, and when tabs are reordered
@@ -129,7 +129,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = windows.count > 1
-        
+
         for (tab, window) in zip(1..., windows) {
             // We need to clear any windows beyond this because they have had
             // a keyEquivalent set previously.
@@ -158,7 +158,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.isOpaque = false
         }
     }
-    
+
     @objc private func onFrameDidChange(_ notification: NSNotification) {
         // This is a huge hack to set the proper shortcut for tab selection
         // on tab reordering using the mouse. There is no event, delegate, etc.
@@ -173,10 +173,10 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         tabWindowsHash = v
         self.relabelTabs()
     }
-    
+
     private func syncAppearance() {
         guard let window = self.window as? TerminalWindow else { return }
-        
+
         // If our window is not visible, then delay this. This is possible specifically
         // during state restoration but probably in other scenarios as well. To delay,
         // we just loop directly on the dispatch queue. We have to delay because some
@@ -186,14 +186,14 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             DispatchQueue.main.async { [weak self] in self?.syncAppearance() }
             return
         }
-        
+
         // Set the font for the window and tab titles.
         if let titleFontName = ghostty.config.windowTitleFontFamily {
             window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
         } else {
             window.titlebarFont = nil
         }
-        
+
         // If we have window transparency then set it transparent. Otherwise set it opaque.
         if (ghostty.config.backgroundOpacity < 1) {
             window.isOpaque = false
@@ -202,7 +202,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             // matches Terminal.app much more closer. This lets users transition from
             // Terminal.app more easily.
             window.backgroundColor = .white.withAlphaComponent(0.001)
-            
+
             ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
         } else {
             window.isOpaque = true
@@ -217,19 +217,19 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // because we handle it here.
         let backgroundColor = OSColor(ghostty.config.backgroundColor)
         window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
-        
+
         if (window.isOpaque) {
             // Bg color is only synced if we have no transparency. This is because
             // the transparency is handled at the surface level (window.backgroundColor
             // ignores alpha components)
             window.backgroundColor = backgroundColor
-            
+
             // If there is transparency, calling this will make the titlebar opaque
             // so we only call this if we are opaque.
             window.updateTabBar()
         }
     }
-    
+
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
     /// what surface is focused. This must be called whenever a surface OR window changes focus.
     private func syncFocusToSurfaceTree() {
@@ -246,25 +246,25 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
 
     //MARK: - NSWindowController
-    
+
     override func windowWillLoad() {
         // We do NOT want to cascade because we handle this manually from the manager.
         shouldCascadeWindows = false
     }
-    
+
     override func windowDidLoad() {
         guard let window = window as? TerminalWindow else { return }
-        
+
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
         if (restorable) {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
-        
+
         // If window decorations are disabled, remove our title
         if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
-        
+
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
         // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
@@ -277,7 +277,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         default:
             window.colorSpace = .sRGB
         }
-        
+
         // If we have only a single surface (no splits) and that surface requested
         // an initial size then we set it here now.
         if case let .leaf(leaf) = surfaceTree {
@@ -289,12 +289,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 frame.size.height -= leaf.surface.frame.size.height
                 frame.size.width += initialSize.width
                 frame.size.height += initialSize.height
-                
+
                 // We have no tabs and we are not a split, so set the initial size of the window.
                 window.setFrame(frame, display: true)
             }
         }
-        
+
         // Center the window to start, we'll move the window frame automatically
         // when cascading.
         window.center()
@@ -316,7 +316,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         } else if (ghostty.config.macosTitlebarStyle == "transparent") {
             window.transparentTabs = true
         }
-        
+
         if window.hasStyledTabs {
             // Set the background color of the window
             let backgroundColor = NSColor(ghostty.config.backgroundColor)
@@ -332,7 +332,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             viewModel: self,
             delegate: self
         ))
-        
+
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
         // it.
@@ -358,7 +358,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Apply any additional appearance-related properties to the new window.
         syncAppearance()
     }
-    
+
     // Shows the "+" button in the tab bar, responds to that click.
     override func newWindowForTab(_ sender: Any?) {
         // Trigger the ghostty core event logic for a new tab.
@@ -367,23 +367,23 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
 
     //MARK: - NSWindowDelegate
-    
+
     // This is called when performClose is called on a window (NOT when close()
     // is called directly). performClose is called primarily when UI elements such
     // as the "red X" are pressed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // We must have a window. Is it even possible not to?
         guard let window = self.window else { return true }
-        
+
         // If we have no surfaces, close.
         guard let node = self.surfaceTree else { return true }
-        
+
         // If we already have an alert, continue with it
         guard alert == nil else { return false }
-        
+
         // If our surfaces don't require confirmation, close.
         if (!node.needsConfirmQuit()) { return true }
-        
+
         // We require confirmation, so show an alert as long as we aren't already.
         let alert = NSAlert()
         alert.messageText = "Close Terminal?"
@@ -397,45 +397,45 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             switch (response) {
             case .alertFirstButtonReturn:
                 window.close()
-                
+
             default:
                 break
             }
         })
-        
+
         self.alert = alert
-        
+
         return false
     }
-    
+
     func windowWillClose(_ notification: Notification) {
         // I don't know if this is required anymore. We previously had a ref cycle between
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
         self.window?.contentView = nil
-        
+
         self.relabelTabs()
     }
-    
+
     func windowDidBecomeKey(_ notification: Notification) {
         self.relabelTabs()
         self.fixTabBar()
-        
+
         // Becoming/losing key means we have to notify our surface(s) that we have focus
         // so things like cursors blink, pty events are sent, etc.
         self.syncFocusToSurfaceTree()
     }
-    
+
     func windowDidResignKey(_ notification: Notification) {
         // Becoming/losing key means we have to notify our surface(s) that we have focus
         // so things like cursors blink, pty events are sent, etc.
         self.syncFocusToSurfaceTree()
     }
-    
+
     func windowDidMove(_ notification: Notification) {
         self.fixTabBar()
     }
-    
+
     func windowDidChangeOcclusionState(_ notification: Notification) {
         guard let surfaceTree = self.surfaceTree else { return }
         let visible = self.window?.occlusionState.contains(.visible) ?? false
@@ -452,24 +452,24 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         let data = TerminalRestorableState(from: self)
         data.encode(with: state)
     }
-    
+
     //MARK: - First Responder
-    
+
     @IBAction func newWindow(_ sender: Any?) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.newWindow(surface: surface)
     }
-    
+
     @IBAction func newTab(_ sender: Any?) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.newTab(surface: surface)
     }
-    
+
     @IBAction func close(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.requestClose(surface: surface)
     }
-    
+
     @IBAction func closeWindow(_ sender: Any) {
         guard let window = window else { return }
         guard let tabGroup = window.tabGroup else {
@@ -477,13 +477,13 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             window.performClose(sender)
             return
         }
-        
+
         // If have one window then we just do a normal close
         if tabGroup.windows.count == 1 {
             window.performClose(sender)
             return
         }
-        
+
         // Check if any windows require close confirmation.
         var needsConfirm: Bool = false
         for tabWindow in tabGroup.windows {
@@ -493,16 +493,16 @@ class TerminalController: NSWindowController, NSWindowDelegate,
                 break
             }
         }
-        
+
         // If none need confirmation then we can just close all the windows.
         if (!needsConfirm) {
             for tabWindow in tabGroup.windows {
                 tabWindow.close()
             }
-            
+
             return
         }
-        
+
         // If we need confirmation by any, show one confirmation for all windows
         // in the tab group.
         let alert = NSAlert()
@@ -519,42 +519,42 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             }
         })
     }
-    
+
     @IBAction func splitRight(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
     }
-    
+
     @IBAction func splitDown(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
     }
-    
+
     @IBAction func splitZoom(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.splitToggleZoom(surface: surface)
     }
-    
+
     @IBAction func splitMoveFocusPrevious(_ sender: Any) {
         splitMoveFocus(direction: .previous)
     }
-    
+
     @IBAction func splitMoveFocusNext(_ sender: Any) {
         splitMoveFocus(direction: .next)
     }
-    
+
     @IBAction func splitMoveFocusAbove(_ sender: Any) {
         splitMoveFocus(direction: .top)
     }
-    
+
     @IBAction func splitMoveFocusBelow(_ sender: Any) {
         splitMoveFocus(direction: .bottom)
     }
-    
+
     @IBAction func splitMoveFocusLeft(_ sender: Any) {
         splitMoveFocus(direction: .left)
     }
-    
+
     @IBAction func splitMoveFocusRight(_ sender: Any) {
         splitMoveFocus(direction: .right)
     }
@@ -588,12 +588,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let surface = focusedSurface?.surface else { return }
         ghostty.splitMoveFocus(surface: surface, direction: direction)
     }
-    
+
     @IBAction func toggleGhosttyFullScreen(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.toggleFullscreen(surface: surface)
     }
-    
+
     @IBAction func increaseFontSize(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.changeFontSize(surface: surface, .increase(1))
@@ -608,44 +608,44 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let surface = focusedSurface?.surface else { return }
         ghostty.changeFontSize(surface: surface, .reset)
     }
-    
+
     @IBAction func toggleTerminalInspector(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.toggleTerminalInspector(surface: surface)
     }
-    
+
     @objc func resetTerminal(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.resetTerminal(surface: surface)
     }
-    
+
     //MARK: - TerminalViewDelegate
-    
+
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         self.focusedSurface = to
     }
-    
+
     func titleDidChange(to: String) {
         guard let window = window as? TerminalWindow else { return }
-        
+
         // Set the main window title
         window.title = to
-        
+
         // Custom toolbar-based title used when titlebar tabs are enabled.
         if let toolbar = window.toolbar as? TerminalToolbar {
             toolbar.titleText = to
         }
     }
-    
+
     func cellSizeDidChange(to: NSSize) {
         guard ghostty.config.windowStepResize else { return }
         self.window?.contentResizeIncrements = to
     }
-    
+
     func lastSurfaceDidClose() {
         self.window?.close()
     }
-    
+
     func surfaceTreeDidChange() {
         // Whenever our surface tree changes in any way (new split, close split, etc.)
         // we want to invalidate our state.
@@ -658,7 +658,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
     }
 
     //MARK: - Clipboard Confirmation
-    
+
     func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest) {
         // End our clipboard confirmation no matter what
         guard let cc = self.clipboardConfirmation else { return }
@@ -688,30 +688,30 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             Ghostty.App.completeClipboardRequest(cc.surface, data: str, state: cc.state, confirmed: true)
         }
     }
-    
+
     //MARK: - Notifications
-    
+
     @objc private func onGotoTab(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
         guard let window = self.window else { return }
-        
+
         // Get the tab index from the notification
         guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
         guard let tabIndex = tabIndexAny as? Int32 else { return }
-        
+
         guard let windowController = window.windowController else { return }
         guard let tabGroup = windowController.window?.tabGroup else { return }
         let tabbedWindows = tabGroup.windows
-        
+
         // This will be the index we want to actual go to
         let finalIndex: Int
-        
+
         // An index that is invalid is used to signal some special values.
         if (tabIndex <= 0) {
             guard let selectedWindow = tabGroup.selectedWindow else { return }
             guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
-            
+
             if (tabIndex == GHOSTTY_TAB_PREVIOUS.rawValue) {
                 if (selectedIndex == 0) {
                     finalIndex = tabbedWindows.count - 1
@@ -731,51 +731,51 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             // Tabs are 0-indexed here, so we subtract one from the key the user hit.
             finalIndex = Int(tabIndex - 1)
         }
-        
+
         guard finalIndex >= 0 && finalIndex < tabbedWindows.count else { return }
         let targetWindow = tabbedWindows[finalIndex]
         targetWindow.makeKeyAndOrderFront(nil)
     }
 
-    
+
     @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
-        
+
         // We need a window to fullscreen
         guard let window = self.window else { return }
-        
+
         // Check whether we use non-native fullscreen
         guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
         guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? ghostty_non_native_fullscreen_e else { return }
         self.fullscreenHandler.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
-        
+
         // For some reason focus always gets lost when we toggle fullscreen, so we set it back.
         if let focusedSurface {
             Ghostty.moveFocus(to: focusedSurface)
         }
     }
-    
+
     @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
         guard let surface = target.surface else { return }
-        
+
         // We need a window
         guard let window = self.window else { return }
-        
+
         // Check whether we use non-native fullscreen
         guard let str = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStrKey] as? String else { return }
         guard let state = notification.userInfo?[Ghostty.Notification.ConfirmClipboardStateKey] as? UnsafeMutableRawPointer? else { return }
         guard let request = notification.userInfo?[Ghostty.Notification.ConfirmClipboardRequestKey] as? Ghostty.ClipboardRequest else { return }
-        
+
         // If we already have a clipboard confirmation view up, we ignore this request.
         // This shouldn't be possible...
         guard self.clipboardConfirmation == nil else {
             Ghostty.App.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
             return
         }
-        
+
         // Show our paste confirmation
         self.clipboardConfirmation = ClipboardConfirmationController(
             surface: surface,

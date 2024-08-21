@@ -61,7 +61,7 @@ extension Ghostty {
                     switch (node) {
                     case nil:
                         Color(.clear)
-                        
+
                     case .leaf(let leaf):
                         TerminalSplitLeaf(
                             leaf: leaf,
@@ -94,7 +94,7 @@ extension Ghostty {
                     .onReceive(pubFocus) { onZoomReset(notification: $0) }
             }
         }
-        
+
         func onZoom(notification: SwiftUI.Notification) {
             // Our node must be split to receive zooms. You can't zoom an unsplit terminal.
             if case .leaf = node {
@@ -182,14 +182,14 @@ extension Ghostty {
                 node = nil
                 return
             }
-            
+
             // If we don't have a window to attach our modal to, we also exit immediately.
             // This should NOT happen.
             guard let window = leaf.surface.window else {
                 node = nil
                 return
             }
-            
+
             // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
             // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
             // confirmationDialog allows the user to Cmd-W close the alert, but when doing
@@ -206,7 +206,7 @@ extension Ghostty {
                 switch (response) {
                 case .alertFirstButtonReturn:
                     node = nil
-                    
+
                 default:
                     break
                 }
@@ -277,7 +277,7 @@ extension Ghostty {
             parent.resize(direction: direction, amount: amount)
         }
     }
-    
+
     /// This represents a split view that is in the horizontal or vertical split state.
     private struct TerminalSplitContainer: View {
         @EnvironmentObject var ghostty: Ghostty.App
@@ -315,7 +315,7 @@ extension Ghostty {
                 )
             })
         }
-        
+
         private func closeableTopLeft() -> Binding<SplitNode?> {
             return .init(get: {
                 container.topLeft
@@ -324,7 +324,7 @@ extension Ghostty {
                     container.topLeft = newValue
                     return
                 }
-                
+
                 // Closing
                 container.topLeft.close()
                 node = container.bottomRight
@@ -346,7 +346,7 @@ extension Ghostty {
                 }
             })
         }
-        
+
         private func closeableBottomRight() -> Binding<SplitNode?> {
             return .init(get: {
                 container.bottomRight
@@ -355,7 +355,7 @@ extension Ghostty {
                     container.bottomRight = newValue
                     return
                 }
-                
+
                 // Closing
                 container.bottomRight.close()
                 node = container.topLeft
@@ -379,7 +379,7 @@ extension Ghostty {
         }
     }
 
-    
+
     /// This is like TerminalSplitRoot, but... not the root. This renders a SplitNode in any state but
     /// requires there be a binding to the parent node.
     private struct TerminalSplitNested: View {
@@ -410,7 +410,7 @@ extension Ghostty {
             .id(node)
         }
     }
-    
+
     /// When changing the split state, or going full screen (native or non), the terminal view
     /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
     /// figure it out so we're going to do this hacky thing to bring focus back to the terminal

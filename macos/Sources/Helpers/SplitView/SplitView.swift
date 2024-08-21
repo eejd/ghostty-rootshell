@@ -9,17 +9,17 @@ import Combine
 struct SplitView<L: View, R: View>: View {
     /// Direction of the split
     let direction: SplitViewDirection
-    
+
     /// Divider color
     let dividerColor: Color
-    
+
     /// If set, the split view supports programmatic resizing via events sent via the publisher.
     /// Minimum increment (in points) that this split can be resized by, in
     /// each direction. Both `height` and `width` should be whole numbers
     /// greater than or equal to 1.0
     let resizeIncrements: NSSize
     let resizePublisher: PassthroughSubject<Double, Never>
-    
+
     /// The left and right views to render.
     let left: L
     let right: R
@@ -34,13 +34,13 @@ struct SplitView<L: View, R: View>: View {
     /// be used for getting a resize handle. The total width/height of the splitter is the sum of both.
     private let splitterVisibleSize: CGFloat = 1
     private let splitterInvisibleSize: CGFloat = 6
-    
+
     var body: some View {
         GeometryReader { geo in
             let leftRect = self.leftRect(for: geo.size)
             let rightRect = self.rightRect(for: geo.size, leftRect: leftRect)
             let splitterPoint = self.splitterPoint(for: geo.size, leftRect: leftRect)
-            
+
             ZStack(alignment: .topLeading) {
                 left
                     .frame(width: leftRect.size.width, height: leftRect.size.height)
@@ -48,7 +48,7 @@ struct SplitView<L: View, R: View>: View {
                 right
                     .frame(width: rightRect.size.width, height: rightRect.size.height)
                     .offset(x: rightRect.origin.x, y: rightRect.origin.y)
-                Divider(direction: direction, 
+                Divider(direction: direction,
                         visibleSize: splitterVisibleSize,
                         invisibleSize: splitterInvisibleSize,
                         color: dividerColor)
@@ -60,11 +60,11 @@ struct SplitView<L: View, R: View>: View {
             }
         }
     }
-    
+
     /// Initialize a split view. This view isn't programmatically resizable; it can only be resized
     /// by manually dragging the divider.
-    init(_ direction: SplitViewDirection, 
-         _ split: Binding<CGFloat>, 
+    init(_ direction: SplitViewDirection,
+         _ split: Binding<CGFloat>,
          dividerColor: Color,
          @ViewBuilder left: (() -> L),
          @ViewBuilder right: (() -> R)) {
@@ -78,7 +78,7 @@ struct SplitView<L: View, R: View>: View {
             right: right
         )
     }
-    
+
     /// Initialize a split view that supports programmatic resizing.
     init(
         _ direction: SplitViewDirection,
@@ -97,7 +97,7 @@ struct SplitView<L: View, R: View>: View {
         self.left = left()
         self.right = right()
     }
-    
+
     private func resize(for size: CGSize, amount: Double) {
         let dim: CGFloat
         switch (direction) {
@@ -119,14 +119,14 @@ struct SplitView<L: View, R: View>: View {
                 case .horizontal:
                     let new = min(max(minSize, gesture.location.x), size.width - minSize)
                     split = new / size.width
-                    
+
                 case .vertical:
                     let new = min(max(minSize, gesture.location.y), size.height - minSize)
                     split = new / size.height
                 }
             }
     }
-    
+
     /// Calculates the bounding rect for the left view.
     private func leftRect(for size: CGSize) -> CGRect {
         // Initially the rect is the full size
@@ -136,16 +136,16 @@ struct SplitView<L: View, R: View>: View {
             result.size.width = result.size.width * split
             result.size.width -= splitterVisibleSize / 2
             result.size.width -= result.size.width.truncatingRemainder(dividingBy: self.resizeIncrements.width)
-            
+
         case .vertical:
             result.size.height = result.size.height * split
             result.size.height -= splitterVisibleSize / 2
             result.size.height -= result.size.height.truncatingRemainder(dividingBy: self.resizeIncrements.height)
         }
-        
+
         return result
     }
-    
+
     /// Calculates the bounding rect for the right view.
     private func rightRect(for size: CGSize, leftRect: CGRect) -> CGRect {
         // Initially the rect is the full size
@@ -157,22 +157,22 @@ struct SplitView<L: View, R: View>: View {
             result.origin.x += leftRect.size.width
             result.origin.x += splitterVisibleSize / 2
             result.size.width -= result.origin.x
-            
+
         case .vertical:
             result.origin.y += leftRect.size.height
             result.origin.y += splitterVisibleSize / 2
             result.size.height -= result.origin.y
         }
-        
+
         return result
     }
-    
+
     /// Calculates the point at which the splitter should be rendered.
     private func splitterPoint(for size: CGSize, leftRect: CGRect) -> CGPoint {
         switch (direction) {
         case .horizontal:
             return CGPoint(x: leftRect.size.width, y: size.height / 2)
-            
+
         case .vertical:
             return CGPoint(x: size.width / 2, y: leftRect.size.height)
         }

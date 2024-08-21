@@ -14,7 +14,7 @@ extension Ghostty {
     enum SplitNode: Equatable, Hashable, Codable, Sequence {
         case leaf(Leaf)
         case split(Container)
-        
+
         /// The parent of this node.
         var parent: Container? {
             get {
@@ -26,7 +26,7 @@ extension Ghostty {
                     return container.parent
                 }
             }
-            
+
             set {
                 switch (self) {
                 case .leaf(let leaf):
@@ -37,7 +37,7 @@ extension Ghostty {
                 }
             }
         }
-        
+
         /// Returns the view that would prefer receiving focus in this tree. This is always the
         /// top-left-most view. This is used when creating a split or closing a split to find the
         /// next view to send focus to.
@@ -51,16 +51,16 @@ extension Ghostty {
             case .split(let c):
                 container = c
             }
-            
+
             let node: SplitNode
             switch (direction) {
             case .previous, .top, .left:
                 node = container.bottomRight
-                
+
             case .next, .bottom, .right:
                 node = container.topLeft
             }
-            
+
             return node.preferredFocus(direction)
         }
 
@@ -95,7 +95,7 @@ extension Ghostty {
                 container.bottomRight.close()
             }
         }
-        
+
         /// Returns true if any surface in the split stack requires quit confirmation.
         func needsConfirmQuit() -> Bool {
             switch (self) {
@@ -119,7 +119,7 @@ extension Ghostty {
                     container.bottomRight.contains(view: view)
             }
         }
-        
+
         /// Find a surface view by UUID.
         func findUUID(uuid: UUID) -> SurfaceView? {
             switch (self) {
@@ -127,7 +127,7 @@ extension Ghostty {
                 if (leaf.surface.uuid == uuid) {
                     return leaf.surface
                 }
-                
+
                 return nil
 
             case .split(let container):
@@ -135,13 +135,13 @@ extension Ghostty {
                     container.bottomRight.findUUID(uuid: uuid)
             }
         }
-        
+
         // MARK: - Sequence
-        
+
         func makeIterator() -> IndexingIterator<[Leaf]> {
             return leaves().makeIterator()
         }
-        
+
         /// Return all the leaves in this split node. This isn't very efficient but our split trees are never super
         /// deep so its not an issue.
         private func leaves() -> [Leaf] {
@@ -153,9 +153,9 @@ extension Ghostty {
                 return container.topLeft.leaves() + container.bottomRight.leaves()
             }
         }
-        
+
         // MARK: - Equatable
-        
+
         static func == (lhs: SplitNode, rhs: SplitNode) -> Bool {
             switch (lhs, rhs) {
             case (.leaf(let lhs_v), .leaf(let rhs_v)):
@@ -178,27 +178,27 @@ extension Ghostty {
                 self.app = app
                 self.surface = SurfaceView(app, baseConfig: baseConfig, uuid: uuid)
             }
-            
+
             // MARK: - Hashable
-            
+
             func hash(into hasher: inout Hasher) {
                 hasher.combine(app)
                 hasher.combine(surface)
             }
-            
+
             // MARK: - Equatable
-            
+
             static func == (lhs: Leaf, rhs: Leaf) -> Bool {
                 return lhs.app == rhs.app && lhs.surface === rhs.surface
             }
-            
+
             // MARK: - Codable
-            
+
             enum CodingKeys: String, CodingKey {
                 case pwd
                 case uuid
             }
-            
+
             required convenience init(from decoder: Decoder) throws {
                 // Decoding uses the global Ghostty app
                 guard let del = NSApplication.shared.delegate,
@@ -206,15 +206,15 @@ extension Ghostty {
                       let app = appDel.ghostty.app else {
                     throw TerminalRestoreError.delegateInvalid
                 }
-                
+
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 let uuid = UUID(uuidString: try container.decode(String.self, forKey: .uuid))
                 var config = SurfaceConfiguration()
                 config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
-                
+
                 self.init(app, baseConfig: config, uuid: uuid)
             }
-            
+
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
                 try container.encode(surface.pwd, forKey: .pwd)
@@ -333,32 +333,32 @@ extension Ghostty {
             }
 
             // MARK: - Hashable
-            
+
             func hash(into hasher: inout Hasher) {
                 hasher.combine(app)
                 hasher.combine(direction)
                 hasher.combine(topLeft)
                 hasher.combine(bottomRight)
             }
-            
+
             // MARK: - Equatable
-            
+
             static func == (lhs: Container, rhs: Container) -> Bool {
                 return lhs.app == rhs.app &&
                     lhs.direction == rhs.direction &&
                     lhs.topLeft == rhs.topLeft &&
                     lhs.bottomRight == rhs.bottomRight
             }
-            
+
             // MARK: - Codable
-            
+
             enum CodingKeys: String, CodingKey {
                 case direction
                 case split
                 case topLeft
                 case bottomRight
             }
-            
+
             required init(from decoder: Decoder) throws {
                 // Decoding uses the global Ghostty app
                 guard let del = NSApplication.shared.delegate,
@@ -366,19 +366,19 @@ extension Ghostty {
                       let app = appDel.ghostty.app else {
                     throw TerminalRestoreError.delegateInvalid
                 }
-                
+
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 self.app = app
                 self.direction = try container.decode(SplitViewDirection.self, forKey: .direction)
                 self.split = try container.decode(CGFloat.self, forKey: .split)
                 self.topLeft = try container.decode(SplitNode.self, forKey: .topLeft)
                 self.bottomRight = try container.decode(SplitNode.self, forKey: .bottomRight)
-                
+
                 // Fix up the parent references
                 self.topLeft.parent = self
                 self.bottomRight.parent = self
             }
-            
+
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
                 try container.encode(direction, forKey: .direction)
@@ -429,7 +429,7 @@ extension Ghostty {
                 }
                 return clone
             }
-            
+
             /// True if there are no neighbors
             func isEmpty() -> Bool {
                 return self.previous == nil && self.next == nil

@@ -6,7 +6,7 @@ extension String {
         }
         return self.prefix(maxLength) + trailing
     }
-    
+
     #if canImport(AppKit)
     func temporaryFile(_ filename: String = "temp") -> URL {
         let url = FileManager.default.temporaryDirectory

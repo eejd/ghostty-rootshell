@@ -4,12 +4,12 @@ import Cocoa
 // in order to accommodate the titlebar tabs feature.
 class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     private let titleTextField = CenteredDynamicLabel(labelWithString: "👻 Ghostty")
-    
+
     var titleText: String {
         get {
             titleTextField.stringValue
         }
-        
+
         set {
             titleTextField.stringValue = newValue
         }
@@ -27,16 +27,16 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
-        
+
         delegate = self
-        
+
         if #available(macOS 13.0, *) {
             centeredItemIdentifiers.insert(.titleText)
         } else {
             centeredItemIdentifier = .titleText
         }
     }
-    
+
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
@@ -68,11 +68,11 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 
         return item
     }
-    
+
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         return [.titleText, .flexibleSpace, .space, .resetZoom]
     }
-    
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // These space items are here to ensure that the title remains centered when it starts
         // getting smaller than the max size so starts clipping. Lucky for us, two of the
@@ -88,11 +88,11 @@ fileprivate class CenteredDynamicLabel: NSTextField {
         // Truncate the title when it gets too long, cutting it off with an ellipsis.
         cell?.truncatesLastVisibleLine = true
         cell?.lineBreakMode = .byCharWrapping
-        
+
         // Make the text field as small as possible while fitting its text.
         setContentHuggingPriority(.required, for: .horizontal)
         cell?.alignment = .center
-        
+
         // We've changed some alignment settings, make sure the layout is updated immediately.
         needsLayout = true
     }

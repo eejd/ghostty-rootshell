@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct Ghostty_iOSApp: App {
     @StateObject private var ghostty_app = Ghostty.App()
-    
+
     var body: some Scene {
         WindowGroup {
             iOS_GhosttyTerminal()
@@ -14,12 +14,12 @@ struct Ghostty_iOSApp: App {
 
 struct iOS_GhosttyTerminal: View {
     @EnvironmentObject private var ghostty_app: Ghostty.App
-    
+
     var body: some View {
         ZStack {
             // Make sure that our background color extends to all parts of the screen
             Color(ghostty_app.config.backgroundColor).ignoresSafeArea()
- 
+
             Ghostty.Terminal()
         }
     }
@@ -27,7 +27,7 @@ struct iOS_GhosttyTerminal: View {
 
 struct iOS_GhosttyInitView: View {
     @EnvironmentObject private var ghostty_app: Ghostty.App
-    
+
     var body: some View {
         VStack {
             Image("AppIconImage")

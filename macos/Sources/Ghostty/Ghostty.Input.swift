@@ -16,7 +16,7 @@ extension Ghostty {
         if (mods.rawValue & GHOSTTY_MODS_SUPER.rawValue != 0) { flags.insert(.command) }
         return flags
     }
-    
+
     /// Translate event modifier flags to a ghostty mods enum.
     static func ghosttyMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
         var mods: UInt32 = GHOSTTY_MODS_NONE.rawValue
@@ -37,7 +37,7 @@ extension Ghostty {
 
         return ghostty_input_mods_e(mods)
     }
-    
+
     /// A map from the Ghostty key enum to the keyEquivalent string for shortcuts.
     static let keyToEquivalent: [ghostty_input_key_e : String] = [
         // 0-9
@@ -220,7 +220,7 @@ extension Ghostty {
         0x3B: GHOSTTY_KEY_SEMICOLON,
         0x2F: GHOSTTY_KEY_SLASH,
     ]
-    
+
     // Mapping of event keyCode to ghostty input key values. This is cribbed from
     // glfw mostly since we started as a glfw-based app way back in the day!
     static let keycodeToKey: [UInt16 : ghostty_input_key_e] = [
@@ -338,4 +338,3 @@ extension Ghostty {
         0x4E: GHOSTTY_KEY_KP_SUBTRACT,
     ];
 }
-

@@ -11,7 +11,7 @@ extension Ghostty {
         /// Same as SurfaceWrapper, see the doc comments there.
         @ObservedObject var surfaceView: SurfaceView
         var isSplit: Bool = false
-        
+
         // Maintain whether our view has focus or not
         @FocusState private var inspectorFocus: Bool
 
@@ -21,7 +21,7 @@ extension Ghostty {
         var body: some View {
             let center = NotificationCenter.default
             let pubInspector = center.publisher(for: Notification.didControlInspector, object: surfaceView)
-            
+
             ZStack {
                 if (!surfaceView.inspectorVisible) {
                     SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
@@ -51,28 +51,28 @@ extension Ghostty {
                 }
             }
         }
-        
+
         private func onControlInspector(_ notification: SwiftUI.Notification) {
             // Determine our mode
             guard let modeAny = notification.userInfo?["mode"] else { return }
             guard let mode = modeAny as? ghostty_inspector_mode_e else { return }
-            
+
             switch (mode) {
             case GHOSTTY_INSPECTOR_TOGGLE:
                 surfaceView.inspectorVisible = !surfaceView.inspectorVisible
-                
+
             case GHOSTTY_INSPECTOR_SHOW:
                 surfaceView.inspectorVisible = true
-                
+
             case GHOSTTY_INSPECTOR_HIDE:
                 surfaceView.inspectorVisible = false
-                
+
             default:
                 return
             }
         }
     }
-    
+
     struct InspectorViewRepresentable: NSViewRepresentable {
         /// The surface that this inspector represents.
         let surfaceView: SurfaceView
@@ -87,25 +87,25 @@ extension Ghostty {
             view.surfaceView = self.surfaceView
         }
     }
-    
+
     /// Inspector view is the view for the surface inspector (similar to a web inspector).
     class InspectorView: MTKView, NSTextInputClient {
         let commandQueue: MTLCommandQueue
-        
+
         var surfaceView: SurfaceView? = nil {
             didSet { surfaceViewDidChange() }
         }
-        
+
         private var inspector: ghostty_inspector_t? {
             guard let surfaceView = self.surfaceView else { return nil }
             return surfaceView.inspector
         }
-        
+
         private var markedText: NSMutableAttributedString = NSMutableAttributedString()
-        
+
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
-        
+
         override init(frame: CGRect, device: MTLDevice?) {
             // Initialize our Metal primitives
             guard
@@ -113,44 +113,44 @@ extension Ghostty {
               let commandQueue = device.makeCommandQueue() else {
                 fatalError("GPU not available")
             }
-            
+
             // Setup our properties before initializing the parent
             self.commandQueue = commandQueue
             super.init(frame: frame, device: device)
-            
+
             // This makes it so renders only happen when we request
             self.enableSetNeedsDisplay = true
             self.isPaused = true
-            
+
             // After initializing the parent we can set our own properties
             self.device = MTLCreateSystemDefaultDevice()
             self.clearColor = MTLClearColor(red: 0x28 / 0xFF, green: 0x2C / 0xFF, blue: 0x34 / 0xFF, alpha: 1.0)
-            
+
             // Setup our tracking areas for mouse events
             updateTrackingAreas()
         }
-        
+
         required init(coder: NSCoder) {
             fatalError("init(coder:) is not supported for this view")
         }
-        
+
         deinit {
             trackingAreas.forEach { removeTrackingArea($0) }
             NotificationCenter.default.removeObserver(self)
         }
-        
+
         // MARK: Internal Inspector Funcs
-        
+
         private func surfaceViewDidChange() {
             let center = NotificationCenter.default
             center.removeObserver(self)
-            
+
             guard let surfaceView = self.surfaceView else { return }
             guard let inspector = self.inspector else { return }
             guard let device = self.device else { return }
             let devicePtr = Unmanaged.passRetained(device).toOpaque()
             ghostty_inspector_metal_init(inspector, devicePtr)
-            
+
             // Register an observer for render requests
             center.addObserver(
                 self,
@@ -158,11 +158,11 @@ extension Ghostty {
                 name: Ghostty.Notification.inspectorNeedsDisplay,
                 object: surfaceView)
         }
-        
+
         @objc private func didRequestRender(notification: SwiftUI.Notification) {
             self.needsDisplay = true
         }
-        
+
         private func updateSize() {
             guard let inspector = self.inspector else { return }
 
@@ -175,9 +175,9 @@ extension Ghostty {
             // When our scale factor changes, so does our fb size so we send that too
             ghostty_inspector_set_size(inspector, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
         }
-        
+
         // MARK: NSView
-        
+
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if (result) {
@@ -197,7 +197,7 @@ extension Ghostty {
             }
             return result
         }
-        
+
         override func updateTrackingAreas() {
             // To update our tracking area we just recreate it all.
             trackingAreas.forEach { removeTrackingArea($0) }
@@ -207,7 +207,7 @@ extension Ghostty {
                 rect: frame,
                 options: [
                     .mouseMoved,
-                    
+
                     // Only send mouse events that happen in our visible (not obscured) rect
                     .inVisibleRect,
 
@@ -218,12 +218,12 @@ extension Ghostty {
                 owner: self,
                 userInfo: nil))
         }
-        
+
         override func viewDidChangeBackingProperties() {
             super.viewDidChangeBackingProperties()
             updateSize()
         }
-        
+
         override func mouseDown(with event: NSEvent) {
             guard let inspector = self.inspector else { return }
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
@@ -247,10 +247,10 @@ extension Ghostty {
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_inspector_mouse_button(inspector, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods)
         }
-        
+
         override func mouseMoved(with event: NSEvent) {
             guard let inspector = self.inspector else { return }
-            
+
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
             ghostty_inspector_mouse_pos(inspector, pos.x, frame.height - pos.y)
@@ -260,7 +260,7 @@ extension Ghostty {
         override func mouseDragged(with event: NSEvent) {
             self.mouseMoved(with: event)
         }
-        
+
         override func scrollWheel(with event: NSEvent) {
             guard let inspector = self.inspector else { return }
 
@@ -303,7 +303,7 @@ extension Ghostty {
 
             ghostty_inspector_mouse_scroll(inspector, x, y, mods)
         }
-        
+
         override func keyDown(with event: NSEvent) {
             let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             keyAction(action, event: event)
@@ -342,7 +342,7 @@ extension Ghostty {
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             ghostty_inspector_key(inspector, action, key, mods)
         }
-        
+
         // MARK: NSTextInputClient
 
         func hasMarkedText() -> Bool {
@@ -406,10 +406,10 @@ extension Ghostty {
             default:
                 return
             }
-            
+
             let len = chars.utf8CString.count
             if (len == 0) { return }
-            
+
             chars.withCString { ptr in
                 ghostty_inspector_text(inspector, ptr)
             }
@@ -419,25 +419,25 @@ extension Ghostty {
             // This currently just prevents NSBeep from interpretKeyEvents but in the future
             // we may want to make some of this work.
         }
-        
+
         // MARK: MTKView
-        
+
         override func draw(_ dirtyRect: NSRect) {
             guard
               let commandBuffer = self.commandQueue.makeCommandBuffer(),
               let descriptor = self.currentRenderPassDescriptor else {
                 return
             }
-            
+
             // If the inspector is nil, then our surface is freed and it is unsafe
             // to use.
             guard let inspector = self.inspector else { return }
-            
+
             // We always update our size because sometimes draw is called
             // between resize events and if our size is wrong with the underlying
             // drawable we will crash.
             updateSize()
-            
+
             // Render
             ghostty_inspector_metal_render(
                 inspector,

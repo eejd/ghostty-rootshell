@@ -2,7 +2,7 @@ extension Ghostty {
     struct Shell {
         // Characters to escape in the shell.
         static let escapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
-        
+
         /// Escape shell-sensitive characters in string.
         static func escape(_ str: String) -> String {
             var result = str
@@ -12,7 +12,7 @@ extension Ghostty {
                     with: "\\\(char)"
                 )
             }
-            
+
             return result
         }
     }

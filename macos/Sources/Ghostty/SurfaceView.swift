@@ -33,7 +33,7 @@ extension Ghostty {
             content(surfaceView)
         }
     }
-    
+
     struct SurfaceWrapper: View {
         // The surface to create a view for. This must be created upstream. As long as this
         // remains the same, the surface that is being rendered remains the same.
@@ -42,21 +42,21 @@ extension Ghostty {
         // True if this surface is part of a split view. This is important to know so
         // we know whether to dim the surface out of focus.
         var isSplit: Bool = false
-        
+
         // Maintain whether our view has focus or not
         @FocusState private var surfaceFocus: Bool
 
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
-        
+
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
-        
+
         @EnvironmentObject private var ghostty: Ghostty.App
-        
+
         var body: some View {
             let center = NotificationCenter.default
-            
+
             ZStack {
                 // We use a GeometryReader to get the frame bounds so that our metal surface
                 // is up to date. See TerminalSurfaceView for why we don't use the NSView
@@ -65,7 +65,7 @@ extension Ghostty {
                     // We use these notifications to determine when the window our surface is
                     // attached to is or is not focused.
                     let pubBecomeFocused = center.publisher(for: Notification.didBecomeFocusedSurface, object: surfaceView)
-                    
+
                     #if canImport(AppKit)
                     let pubBecomeKey = center.publisher(for: NSWindow.didBecomeKeyNotification)
                     let pubResign = center.publisher(for: NSWindow.didResignKeyNotification)
@@ -102,7 +102,7 @@ extension Ghostty {
                                     }
                                 }
                             }
-                            
+
                             return true
                         }
                     #endif
@@ -145,8 +145,8 @@ extension Ghostty {
                             // I don't know how older macOS versions behave but Ghostty only
                             // supports back to macOS 12 so its moot.
                         }
-                    
-                    // If our geo size changed then we show the resize overlay as configured. 
+
+                    // If our geo size changed then we show the resize overlay as configured.
                     if let surfaceSize = surfaceView.surfaceSize {
                         SurfaceResizeOverlay(
                             geoSize: geo.size,
@@ -155,11 +155,11 @@ extension Ghostty {
                             position: ghostty.config.resizeOverlayPosition,
                             duration: ghostty.config.resizeOverlayDuration,
                             focusInstant: surfaceView.focusInstant)
-                        
+
                     }
                 }
                 .ghosttySurfaceView(surfaceView)
-                
+
                 // If we have a URL from hovering a link, we show that.
                 if let url = surfaceView.hoverUrl {
                     let padding: CGFloat = 3
@@ -168,7 +168,7 @@ extension Ghostty {
                             Spacer()
                             VStack(alignment: .leading) {
                                 Spacer()
-                                
+
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(.background)
@@ -177,11 +177,11 @@ extension Ghostty {
                                     .opacity(isHoveringURLLeft ? 1 : 0)
                             }
                         }
-                        
+
                         HStack {
                             VStack(alignment: .leading) {
                                 Spacer()
-                                
+
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(.background)
@@ -196,7 +196,7 @@ extension Ghostty {
                         }
                     }
                 }
-                
+
                 // If our surface is not healthy, then we render an error view over it.
                 if (!surfaceView.healthy) {
                     Rectangle().fill(ghostty.config.backgroundColor)
@@ -222,7 +222,7 @@ extension Ghostty {
             }
         }
     }
-    
+
     struct SurfaceRendererUnhealthyView: View {
         var body: some View {
             HStack {
@@ -230,7 +230,7 @@ extension Ghostty {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 128, height: 128)
-                
+
                 VStack(alignment: .leading) {
                     Text("Oh, no. 😭").font(.title)
                     Text("""
@@ -244,7 +244,7 @@ extension Ghostty {
             .padding()
         }
     }
-    
+
     struct SurfaceErrorView: View {
         var body: some View {
             HStack {
@@ -252,7 +252,7 @@ extension Ghostty {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 128, height: 128)
-                
+
                 VStack(alignment: .leading) {
                     Text("Oh, no. 😭").font(.title)
                     Text("""
@@ -266,7 +266,7 @@ extension Ghostty {
             .padding()
         }
     }
-    
+
     // This is the resize overlay that shows on top of a surface to show the current
     // size during a resize operation.
     struct SurfaceResizeOverlay: View {
@@ -276,26 +276,26 @@ extension Ghostty {
         let position: Ghostty.Config.ResizeOverlayPosition
         let duration: UInt
         let focusInstant: Any?
-        
+
         // This is the last size that we processed. This is how we handle our
         // timer state.
         @State var lastSize: CGSize? = nil
-        
+
         // Ready is set to true after a short delay. This avoids some of the
         // challenges of initial view sizing from SwiftUI.
         @State var ready: Bool = false
-        
+
         // Fixed value set based on personal taste.
         private let padding: CGFloat = 5
-        
+
         // This computed boolean is set to true when the overlay should be hidden.
         private var hidden: Bool {
             // If we aren't ready yet then we wait...
             if (!ready) { return true; }
-            
+
             // Hidden if we already processed this size.
             if (lastSize == geoSize) { return true; }
-            
+
             // If we were focused recently we hide it as well. This avoids showing
             // the resize overlay when SwiftUI is lazily resizing.
             if #available(macOS 13, iOS 16, *) {
@@ -308,7 +308,7 @@ extension Ghostty {
                     }
                 }
             }
-            
+
             // Hidden depending on overlay config
             switch (overlay) {
             case .never: return true;
@@ -316,18 +316,18 @@ extension Ghostty {
             case .after_first: return lastSize == nil;
             }
         }
-        
+
         var body: some View {
             VStack {
                 if (!position.top()) {
                     Spacer()
                 }
-                
+
                 HStack {
                     if (!position.left()) {
                         Spacer()
                     }
-                    
+
                     Text(verbatim: "\(size.columns)c ⨯ \(size.rows)r")
                         .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                         .background(
@@ -337,12 +337,12 @@ extension Ghostty {
                         )
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    
+
                     if (!position.right()) {
                         Spacer()
                     }
                 }
-                
+
                 if (!position.bottom()) {
                     Spacer()
                 }
@@ -360,18 +360,18 @@ extension Ghostty {
                 // By ID-ing the task on the geoSize, we get the task to restart if our
                 // geoSize changes. This also ensures that future resize overlays are shown
                 // properly.
-                
+
                 // We only sleep if we're ready. If we're not ready then we want to set
                 // our last size right away to avoid a flash.
                 if (ready) {
                     try? await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000)
                 }
-                
+
                 lastSize = geoSize
             }
         }
     }
-    
+
     /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
     /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
     /// a split, a small preview pane, etc. It is ANYTHING that has a terminal drawn to it.
@@ -404,27 +404,27 @@ extension Ghostty {
             view.sizeDidChange(size)
         }
     }
-    
+
     /// The configuration for a surface. For any configuration not set, defaults will be chosen from
     /// libghostty, usually from the Ghostty configuration.
     struct SurfaceConfiguration {
         /// Explicit font size to use in points
         var fontSize: Float32? = nil
-        
+
         /// Explicit working directory to set
         var workingDirectory: String? = nil
-        
+
         /// Explicit command to set
         var command: String? = nil
-        
+
         init() {}
-        
+
         init(from config: ghostty_surface_config_s) {
             self.fontSize = config.font_size
             self.workingDirectory = String.init(cString: config.working_directory, encoding: .utf8)
             self.command = String.init(cString: config.command, encoding: .utf8)
         }
-        
+
         /// Returns the ghostty configuration for this surface configuration struct. The memory
         /// in the returned struct is only valid as long as this struct is retained.
         func ghosttyConfig(view: SurfaceView) -> ghostty_surface_config_s {
@@ -436,7 +436,7 @@ extension Ghostty {
                 nsview: Unmanaged.passUnretained(view).toOpaque()
             ))
             config.scale_factor = NSScreen.main!.backingScaleFactor
-            
+
             #elseif os(iOS)
             config.platform_tag = GHOSTTY_PLATFORM_IOS
             config.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
@@ -450,7 +450,7 @@ extension Ghostty {
             #else
             #error("unsupported target")
             #endif
-            
+
             if let fontSize = fontSize { config.font_size = fontSize }
             if let workingDirectory = workingDirectory {
                 config.working_directory = (workingDirectory as NSString).utf8String
@@ -458,7 +458,7 @@ extension Ghostty {
             if let command = command {
                 config.command = (command as NSString).utf8String
             }
-            
+
             return config
         }
     }

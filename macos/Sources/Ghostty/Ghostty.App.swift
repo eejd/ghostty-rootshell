@@ -5,7 +5,7 @@ import GhosttyKit
 protocol GhosttyAppDelegate: AnyObject {
     /// Called when the configuration did finish reloading.
     func configDidReload(_ app: Ghostty.App)
-    
+
     #if os(macOS)
     /// Called when a callback needs access to a specific surface. This should return nil
     /// when the surface is no longer valid.
@@ -20,18 +20,18 @@ extension Ghostty {
         enum Readiness: String {
             case loading, error, ready
         }
-        
+
         /// Optional delegate
         weak var delegate: GhosttyAppDelegate?
-        
+
         /// The readiness value of the state.
         @Published var readiness: Readiness = .loading
-        
+
         /// The global app configuration. This defines the app level configuration plus any behavior
         /// for new windows, tabs, etc. Note that when creating a new window, it may inherit some
         /// configuration (i.e. font size) from the previously focused window. This would override this.
         @Published private(set) var config: Config
-        
+
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
         @Published var app: ghostty_app_t? = nil {
@@ -40,13 +40,13 @@ extension Ghostty {
                 ghostty_app_free(old)
             }
         }
-        
+
         /// True if we need to confirm before quitting.
         var needsConfirmQuit: Bool {
             guard let app = app else { return false }
             return ghostty_app_needs_confirm_quit(app)
         }
-        
+
         init() {
             // Initialize ghostty global state. This happens once per process.
             if ghostty_init() != GHOSTTY_SUCCESS {
@@ -60,7 +60,7 @@ extension Ghostty {
                 readiness = .error
                 return
             }
-            
+
             // Create our "runtime" config. The "runtime" is the configuration that ghostty
             // uses to interface with the application runtime environment.
             var runtime_cfg = ghostty_runtime_config_s(
@@ -96,7 +96,7 @@ extension Ghostty {
                 update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) },
                 mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) }
             )
-            
+
             // Create the ghostty app.
             guard let app = ghostty_app_new(&runtime_cfg, config.config) else {
                 logger.critical("ghostty_app_new failed")
@@ -104,7 +104,7 @@ extension Ghostty {
                 return
             }
             self.app = app
-            
+
             #if os(macOS)
             // Subscribe to notifications for keyboard layout change so that we can update Ghostty.
             NotificationCenter.default.addObserver(
@@ -113,14 +113,14 @@ extension Ghostty {
                 name: NSTextInputContext.keyboardSelectionDidChangeNotification,
                 object: nil)
             #endif
-            
+
             self.readiness = .ready
         }
-        
+
         deinit {
             // This will force the didSet callbacks to run which free.
             self.app = nil
-            
+
             #if os(macOS)
             // Remove our observer
             NotificationCenter.default.removeObserver(
@@ -129,16 +129,16 @@ extension Ghostty {
                 object: nil)
             #endif
         }
-        
+
         // MARK: App Operations
-        
+
         func appTick() {
             guard let app = self.app else { return }
 
             // Tick our app, which lets us know if we want to quit
             let exit = ghostty_app_tick(app)
             if (!exit) { return }
-            
+
             // On iOS, applications do not terminate programmatically like they do
             // on macOS. On iOS, applications are only terminated when a user physically
             // closes the application (i.e. going to the home screen). If we request
@@ -152,7 +152,7 @@ extension Ghostty {
             NSApplication.shared.terminate(nil)
             #endif
         }
-        
+
         func openConfig() {
             guard let app = self.app else { return }
             ghostty_app_open_config(app)
@@ -162,7 +162,7 @@ extension Ghostty {
             guard let app = self.app else { return }
             ghostty_app_reload_config(app)
         }
-        
+
         /// Request that the given surface is closed. This will trigger the full normal surface close event
         /// cycle which will call our close surface callback.
         func requestClose(surface: ghostty_surface_t) {
@@ -205,14 +205,14 @@ extension Ghostty {
                 logger.warning("action failed action=\(action)")
             }
         }
-        
+
         func toggleFullscreen(surface: ghostty_surface_t) {
             let action = "toggle_fullscreen"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 logger.warning("action failed action=\(action)")
             }
         }
-        
+
         enum FontSizeModification {
             case increase(Int)
             case decrease(Int)
@@ -233,24 +233,24 @@ extension Ghostty {
                 logger.warning("action failed action=\(action)")
             }
         }
-        
+
         func toggleTerminalInspector(surface: ghostty_surface_t) {
             let action = "inspector:toggle"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 logger.warning("action failed action=\(action)")
             }
         }
-        
+
         func resetTerminal(surface: ghostty_surface_t) {
             let action = "reset"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 logger.warning("action failed action=\(action)")
             }
         }
-        
+
         #if os(iOS)
         // MARK: Ghostty Callbacks (iOS)
-        
+
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {}
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? { return nil }
         static func openConfig(_ userdata: UnsafeMutableRawPointer?) {}
@@ -262,27 +262,27 @@ extension Ghostty {
             location: ghostty_clipboard_e,
             state: UnsafeMutableRawPointer?
         ) {}
-        
+
         static func confirmReadClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             string: UnsafePointer<CChar>?,
             state: UnsafeMutableRawPointer?,
             request: ghostty_clipboard_request_e
         ) {}
-        
+
         static func writeClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             string: UnsafePointer<CChar>?,
             location: ghostty_clipboard_e,
             confirm: Bool
         ) {}
-        
+
         static func newSplit(
             _ userdata: UnsafeMutableRawPointer?,
-            direction: ghostty_split_direction_e, 
+            direction: ghostty_split_direction_e,
             config: ghostty_surface_config_s
         ) {}
-        
+
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {}
         static func newWindow(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {}
         static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {}
@@ -300,18 +300,18 @@ extension Ghostty {
         static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
         static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {}
         #endif
-        
+
         #if os(macOS)
-        
+
         // MARK: Notifications
-        
+
         // Called when the selected keyboard changes. We have to notify Ghostty so that
         // it can reload the keyboard mapping for input.
         @objc private func keyboardSelectionDidChange(notification: NSNotification) {
             guard let app = self.app else { return }
             ghostty_app_keyboard_changed(app)
         }
-        
+
         // MARK: Ghostty Callbacks (macOS)
 
         static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e, config: ghostty_surface_config_s) {
@@ -384,17 +384,17 @@ extension Ghostty {
             // to leak "state".
             let surfaceView = self.surfaceUserdata(from: userdata)
             guard let surface = surfaceView.surface else { return }
-            
+
             // We only support the standard clipboard
             if (location != GHOSTTY_CLIPBOARD_STANDARD) {
                 return completeClipboardRequest(surface, data: "", state: state)
             }
-            
+
             // Get our string
             let str = NSPasteboard.general.getOpinionatedStringContents() ?? ""
             completeClipboardRequest(surface, data: str, state: state)
         }
-        
+
         static func confirmReadClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             string: UnsafePointer<CChar>?,
@@ -414,7 +414,7 @@ extension Ghostty {
                 ]
             )
         }
-        
+
         static func completeClipboardRequest(
             _ surface: ghostty_surface_t,
             data: String,
@@ -439,7 +439,7 @@ extension Ghostty {
                 pb.setString(valueStr, forType: .string)
                 return
             }
-            
+
             NotificationCenter.default.post(
                 name: Notification.confirmClipboard,
                 object: surface,
@@ -483,7 +483,7 @@ extension Ghostty {
             // standpoint since we don't do this much.
             DispatchQueue.main.async { state.appTick() }
         }
-        
+
         static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {
             let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(
@@ -520,7 +520,7 @@ extension Ghostty {
                 ]
             )
         }
-        
+
         static func setInitialWindowSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
             // We need a window to set the frame
             let surfaceView = self.surfaceUserdata(from: userdata)
@@ -532,14 +532,14 @@ extension Ghostty {
             let backingSize = NSSize(width: Double(width), height: Double(height))
             surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
         }
-        
+
         static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {
             let surfaceView = self.surfaceUserdata(from: userdata)
             guard len > 0 else {
                 surfaceView.hoverUrl = nil
                 return
             }
-            
+
             let buffer = Data(bytes: uri!, count: len)
             surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
         }
@@ -593,7 +593,7 @@ extension Ghostty {
 
         static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
             let surface = self.surfaceUserdata(from: userdata)
-            
+
             guard let appState = self.appState(fromView: surface) else { return }
             guard appState.config.windowDecorations else {
                 let alert = NSAlert()
@@ -604,7 +604,7 @@ extension Ghostty {
                 _ = alert.runModal()
                 return
             }
-            
+
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewTab,
                 object: surface,
@@ -625,18 +625,18 @@ extension Ghostty {
                 ]
             )
         }
-        
+
         static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {
             let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
                 "mode": mode,
             ])
         }
-        
+
         static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {
             let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(
-                name: Notification.didUpdateRendererHealth, 
+                name: Notification.didUpdateRendererHealth,
                 object: surface,
                 userInfo: [
                     "health": health,
@@ -656,7 +656,7 @@ extension Ghostty {
         static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView {
             return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
-        
+
         #endif
     }
 }
