@@ -370,14 +370,17 @@ pub const Parser = struct {
         self.buf_start = 0;
         self.buf_idx = 0;
         self.complete = false;
-        if (self.command == .kitty_color_protocol) {
-            self.command.kitty_color_protocol.list.deinit();
-        }
         if (self.buf_dynamic) |ptr| {
             const alloc = self.alloc.?;
             ptr.deinit(alloc);
             alloc.destroy(ptr);
             self.buf_dynamic = null;
+        }
+
+        // Some commands have their own memory management we need to clear.
+        switch (self.command) {
+            .kitty_color_protocol => |*v| v.list.deinit(),
+            else => {},
         }
     }
 
@@ -502,10 +505,16 @@ pub const Parser = struct {
             },
 
             .@"21" => switch (c) {
-                ';' => {
+                ';' => kitty: {
+                    const alloc = self.alloc orelse {
+                        log.info("OSC 21 requires an allocator, but none was provided", .{});
+                        self.state = .invalid;
+                        break :kitty;
+                    };
+
                     self.command = .{
                         .kitty_color_protocol = .{
-                            .list = std.ArrayList(Command.KittyColorProtocol.Request).init(self.alloc.?),
+                            .list = std.ArrayList(Command.KittyColorProtocol.Request).init(alloc),
                         },
                     };
 
@@ -1032,19 +1041,19 @@ pub const Parser = struct {
             return;
         }
 
-        const key = key: {
-            break :key std.meta.stringToEnum(Command.KittyColorProtocol.Kind, self.temp_state.key) orelse {
-                const v = std.fmt.parseUnsigned(u9, self.temp_state.key, 10) catch {
-                    log.warn("unknown key in kitty color protocol: {s}", .{self.temp_state.key});
-                    return;
-                };
-                if (v > 255) {
-                    log.warn("unknown key in kitty color protocol: {s}", .{self.temp_state.key});
-                    return;
-                }
-                break :key @as(Command.KittyColorProtocol.Kind, @enumFromInt(v));
-            };
-        };
+        // For our key, we first try to parse it as a special key. If that
+        // doesn't work then we try to parse it as a number for a palette.
+        const key: Command.KittyColorProtocol.Kind = std.meta.stringToEnum(
+            Command.KittyColorProtocol.Kind,
+            self.temp_state.key,
+        ) orelse @enumFromInt(std.fmt.parseUnsigned(
+            u8,
+            self.temp_state.key,
+            10,
+        ) catch {
+            log.warn("unknown key in kitty color protocol: {s}", .{self.temp_state.key});
+            return;
+        });
 
         const value = value: {
             if (self.buf_start == self.buf_idx) break :value "";
@@ -1054,34 +1063,25 @@ pub const Parser = struct {
 
         switch (self.command) {
             .kitty_color_protocol => |*v| {
+                // Cap our allocation amount for our list.
                 if (v.list.items.len >= @as(usize, Command.KittyColorProtocol.Kind.max) * 2) {
                     self.state = .invalid;
                     log.warn("exceeded limit for number of keys in kitty color protocol, ignoring", .{});
                     return;
                 }
-                if (kind == .key_only) {
+
+                if (kind == .key_only or value.len == 0) {
                     v.list.append(.{ .reset = key }) catch |err| {
                         log.warn("unable to append kitty color protocol option: {}", .{err});
                         return;
                     };
-                    return;
-                }
-                if (value.len == 0) {
-                    v.list.append(.{ .reset = key }) catch |err| {
-                        log.warn("unable to append kitty color protocol option: {}", .{err});
-                        return;
-                    };
-                    return;
-                }
-                if (mem.eql(u8, "?", value)) {
+                } else if (mem.eql(u8, "?", value)) {
                     v.list.append(.{ .query = key }) catch |err| {
                         log.warn("unable to append kitty color protocol option: {}", .{err});
                         return;
                     };
-                    return;
-                }
-                v.list.append(
-                    .{
+                } else {
+                    v.list.append(.{
                         .set = .{
                             .key = key,
                             .color = RGB.parse(value) catch |err| switch (err) {
@@ -1091,12 +1091,11 @@ pub const Parser = struct {
                                 },
                             },
                         },
-                    },
-                ) catch |err| {
-                    log.warn("unable to append kitty color protocol option: {}", .{err});
-                    return;
-                };
-                return;
+                    }) catch |err| {
+                        log.warn("unable to append kitty color protocol option: {}", .{err});
+                        return;
+                    };
+                }
             },
             else => {},
         }
@@ -1736,6 +1735,17 @@ test "OSC: kitty color protocol" {
         try testing.expectEqual(@as(u8, 0xff), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
     }
+}
+
+test "OSC: kitty color protocol without allocator" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+    defer p.deinit();
+
+    const input = "21;foreground=?";
+    for (input) |ch| p.next(ch);
+    try testing.expect(p.end('\x1b') == null);
 }
 
 test "OSC: kitty color protocol kind" {
