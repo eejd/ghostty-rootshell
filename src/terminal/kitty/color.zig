@@ -56,12 +56,9 @@ pub const Kind = union(enum) {
         _ = layout;
         _ = opts;
 
-        // Format as a number if its a palette color otherwise
-        // format as a string.
-        if (self == .palette) {
-            try writer.print("{d}", .{self.palette});
-        } else {
-            try writer.print("{s}", .{@tagName(self.special)});
+        switch (self) {
+            .palette => |p| try writer.print("{d}", .{p}),
+            .special => |s| try writer.print("{s}", .{@tagName(s)}),
         }
     }
 };
