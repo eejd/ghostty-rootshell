@@ -1272,43 +1272,37 @@ pub const StreamHandler = struct {
 
     pub fn sendKittyColorReport(self: *StreamHandler, request: terminal.osc.Command.KittyColorProtocol) !void {
         var buf = std.ArrayList(u8).init(self.alloc);
-        errdefer buf.deinit();
+        defer buf.deinit();
         const writer = buf.writer();
         try writer.writeAll("\x1b[21");
 
         for (request.list.items) |item| {
             switch (item) {
                 .query => |key| {
-                    const i = @intFromEnum(key);
                     const color = switch (key) {
                         .foreground => self.foreground_color,
                         .background => self.background_color,
                         .cursor => self.cursor_color,
-                        else => color: {
-                            if (i > 255) {
-                                log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
-                                continue;
-                            }
-                            break :color self.terminal.color_palette.colors[i];
+                        else => if (key.palette()) |idx|
+                            self.terminal.color_palette.colors[idx]
+                        else {
+                            log.warn("ignoring unsupported kitty color protocol key: {}", .{key});
+                            continue;
                         },
                     } orelse {
                         log.warn("no color configured for: {s}", .{@tagName(key)});
                         continue;
                     };
-                    if (i <= 255)
-                        try writer.print(
-                            ";{d}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
-                            .{ i, color.r, color.g, color.b },
-                        )
-                    else
-                        try writer.print(
-                            ";{s}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
-                            .{ @tagName(key), color.r, color.g, color.b },
-                        );
+
+                    try writer.print(
+                        ";{}=rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                        .{ key, color.r, color.g, color.b },
+                    );
                 },
                 .set => |v| switch (v.key) {
                     .foreground => {
                         self.foreground_color = v.color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1322,6 +1316,7 @@ pub const StreamHandler = struct {
                     },
                     .background => {
                         self.background_color = v.color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1332,12 +1327,10 @@ pub const StreamHandler = struct {
                             defer self.renderer_state.mutex.lock();
                             _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
                         }
-                        _ = self.renderer_mailbox.push(.{
-                            .background_color = v.color,
-                        }, .{ .forever = {} });
                     },
                     .cursor => {
                         self.cursor_color = v.color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1349,20 +1342,23 @@ pub const StreamHandler = struct {
                             _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
                         }
                     },
-                    else => {
-                        const i = @intFromEnum(v.key);
-                        if (i > 255) {
-                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(v.key)});
-                            continue;
-                        }
+
+                    else => if (v.key.palette()) |i| {
                         self.terminal.flags.dirty.palette = true;
                         self.terminal.color_palette.colors[i] = v.color;
                         self.terminal.color_palette.mask.unset(i);
+                    } else {
+                        log.warn(
+                            "ignoring unsupported kitty color protocol key: {}",
+                            .{v.key},
+                        );
+                        continue;
                     },
                 },
                 .reset => |key| switch (key) {
                     .foreground => {
                         self.foreground_color = self.default_foreground_color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1376,6 +1372,7 @@ pub const StreamHandler = struct {
                     },
                     .background => {
                         self.background_color = self.default_background_color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1389,6 +1386,7 @@ pub const StreamHandler = struct {
                     },
                     .cursor => {
                         self.cursor_color = self.default_cursor_color;
+
                         // See messageWriter which has similar logic and
                         // explains why we may have to do this.
                         const msg: renderer.Message = .{
@@ -1400,15 +1398,17 @@ pub const StreamHandler = struct {
                             _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
                         }
                     },
-                    else => {
-                        const i = @intFromEnum(key);
-                        if (i > 255) {
-                            log.warn("ignoring unsupported kitty color protocol key: {s}", .{@tagName(key)});
-                            continue;
-                        }
+
+                    else => if (key.palette()) |i| {
                         self.terminal.flags.dirty.palette = true;
                         self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                         self.terminal.color_palette.mask.unset(i);
+                    } else {
+                        log.warn(
+                            "ignoring unsupported kitty color protocol key: {}",
+                            .{key},
+                        );
+                        continue;
                     },
                 },
             }
@@ -1416,13 +1416,11 @@ pub const StreamHandler = struct {
 
         try writer.writeAll(request.terminator.string());
 
-        const msg = termio.Message{
+        self.messageWriter(.{
             .write_alloc = .{
                 .alloc = self.alloc,
                 .data = try buf.toOwnedSlice(),
             },
-        };
-
-        self.messageWriter(msg);
+        });
     }
 };
