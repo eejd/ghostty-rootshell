@@ -18,27 +18,33 @@ pub const OSC = struct {
     terminator: Terminator = .st,
 };
 
-pub const Kind = enum(u9) {
-    // Make sure that this stays in sync with the highest numbered enum
-    // value.
-    pub const max: u9 = 263;
+pub const Special = enum {
+    foreground,
+    background,
+    selection_foreground,
+    selection_background,
+    cursor,
+    cursor_text,
+    visual_bell,
+    second_transparent_background,
+};
 
-    // These _must_ start at 256 since enum values 0-255 are reserved
-    // for the palette.
-    foreground = 256,
-    background = 257,
-    selection_foreground = 258,
-    selection_background = 259,
-    cursor = 260,
-    cursor_text = 261,
-    visual_bell = 262,
-    second_transparent_background = 263,
-    _,
+pub const Kind = union(enum) {
+    pub const max: usize = std.math.maxInt(u8) + @typeInfo(Special).Enum.fields.len;
 
-    /// Return the palette index that this kind is representing
-    /// or null if its a special color.
-    pub fn palette(self: Kind) ?u8 {
-        return std.math.cast(u8, @intFromEnum(self)) orelse null;
+    palette: u8,
+    special: Special,
+
+    pub fn parse(key: []const u8) ?Kind {
+        return kind: {
+            const s = std.meta.stringToEnum(Special, key) orelse {
+                const p = std.fmt.parseUnsigned(u8, key, 10) catch {
+                    break :kind null;
+                };
+                break :kind Kind{ .palette = p };
+            };
+            break :kind Kind{ .special = s };
+        };
     }
 
     pub fn format(
@@ -52,41 +58,24 @@ pub const Kind = enum(u9) {
 
         // Format as a number if its a palette color otherwise
         // format as a string.
-        if (self.palette()) |idx| {
-            try writer.print("{}", .{idx});
+        if (self == .palette) {
+            try writer.print("{d}", .{self.palette});
         } else {
-            try writer.print("{s}", .{@tagName(self)});
+            try writer.print("{s}", .{@tagName(self.special)});
         }
     }
 };
-
-test "OSC: kitty color protocol kind" {
-    const info = @typeInfo(Kind);
-
-    try std.testing.expectEqual(false, info.Enum.is_exhaustive);
-
-    var min: usize = std.math.maxInt(info.Enum.tag_type);
-    var max: usize = 0;
-
-    inline for (info.Enum.fields) |field| {
-        if (field.value > max) max = field.value;
-        if (field.value < min) min = field.value;
-    }
-
-    try std.testing.expect(min >= 256);
-    try std.testing.expect(max == Kind.max);
-}
 
 test "OSC: kitty color protocol kind string" {
     const testing = std.testing;
 
     var buf: [256]u8 = undefined;
     {
-        const actual = try std.fmt.bufPrint(&buf, "{}", .{Kind.foreground});
+        const actual = try std.fmt.bufPrint(&buf, "{}", .{Kind{ .special = .foreground }});
         try testing.expectEqualStrings("foreground", actual);
     }
     {
-        const actual = try std.fmt.bufPrint(&buf, "{}", .{@as(Kind, @enumFromInt(42))});
+        const actual = try std.fmt.bufPrint(&buf, "{}", .{Kind{ .palette = 42 }});
         try testing.expectEqualStrings("42", actual);
     }
 }

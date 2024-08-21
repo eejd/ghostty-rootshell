@@ -1319,17 +1319,18 @@ pub const StreamHandler = struct {
             switch (item) {
                 .query => |key| {
                     const color: terminal.color.RGB = switch (key) {
-                        .foreground => self.foreground_color,
-                        .background => self.background_color,
-                        .cursor => self.cursor_color,
-                        else => if (key.palette()) |idx|
-                            self.terminal.color_palette.colors[idx]
-                        else {
-                            log.warn("ignoring unsupported kitty color protocol key: {}", .{key});
-                            continue;
+                        .palette => |palette| self.terminal.color_palette.colors[palette],
+                        .special => |special| switch (special) {
+                            .foreground => self.foreground_color,
+                            .background => self.background_color,
+                            .cursor => self.cursor_color,
+                            else => {
+                                log.warn("ignoring unsupported kitty color protocol key: {}", .{key});
+                                continue;
+                            },
                         },
                     } orelse {
-                        log.warn("no color configured for: {s}", .{@tagName(key)});
+                        log.warn("no color configured for {}", .{key});
                         continue;
                     };
 
@@ -1339,85 +1340,83 @@ pub const StreamHandler = struct {
                     );
                 },
                 .set => |v| switch (v.key) {
-                    .foreground => {
-                        self.foreground_color = v.color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .foreground_color = v.color,
-                        });
-                    },
-                    .background => {
-                        self.background_color = v.color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .background_color = v.color,
-                        });
-                    },
-                    .cursor => {
-                        self.cursor_color = v.color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .cursor_color = v.color,
-                        });
-                    },
-
-                    else => if (v.key.palette()) |i| {
+                    .palette => |palette| {
                         self.terminal.flags.dirty.palette = true;
-                        self.terminal.color_palette.colors[i] = v.color;
-                        self.terminal.color_palette.mask.unset(i);
-                    } else {
-                        log.warn(
-                            "ignoring unsupported kitty color protocol key: {}",
-                            .{v.key},
-                        );
-                        continue;
+                        self.terminal.color_palette.colors[palette] = v.color;
+                        self.terminal.color_palette.mask.unset(palette);
+                    },
+                    .special => |special| {
+                        const msg: renderer.Message = switch (special) {
+                            .foreground => msg: {
+                                self.foreground_color = v.color;
+                                break :msg .{
+                                    .foreground_color = v.color,
+                                };
+                            },
+                            .background => msg: {
+                                self.background_color = v.color;
+                                break :msg .{
+                                    .background_color = v.color,
+                                };
+                            },
+                            .cursor => msg: {
+                                self.cursor_color = v.color;
+                                break :msg .{
+                                    .cursor_color = v.color,
+                                };
+                            },
+                            else => {
+                                log.warn(
+                                    "ignoring unsupported kitty color protocol key: {}",
+                                    .{v.key},
+                                );
+                                continue;
+                            },
+                        };
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(msg);
                     },
                 },
                 .reset => |key| switch (key) {
-                    .foreground => {
-                        self.foreground_color = self.default_foreground_color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .foreground_color = self.default_foreground_color,
-                        });
-                    },
-                    .background => {
-                        self.background_color = self.default_background_color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .background_color = self.default_background_color,
-                        });
-                    },
-                    .cursor => {
-                        self.cursor_color = self.default_cursor_color;
-
-                        // See messageWriter which has similar logic and
-                        // explains why we may have to do this.
-                        self.rendererMessageWriter(.{
-                            .cursor_color = self.default_cursor_color,
-                        });
-                    },
-
-                    else => if (key.palette()) |i| {
+                    .palette => |palette| {
                         self.terminal.flags.dirty.palette = true;
-                        self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
-                        self.terminal.color_palette.mask.unset(i);
-                    } else {
-                        log.warn(
-                            "ignoring unsupported kitty color protocol key: {}",
-                            .{key},
-                        );
-                        continue;
+                        self.terminal.color_palette.colors[palette] = self.terminal.default_palette[palette];
+                        self.terminal.color_palette.mask.unset(palette);
+                    },
+                    .special => |special| {
+                        const msg: renderer.Message = switch (special) {
+                            .foreground => msg: {
+                                self.foreground_color = self.default_foreground_color;
+                                break :msg .{
+                                    .foreground_color = self.default_foreground_color,
+                                };
+                            },
+                            .background => msg: {
+                                self.background_color = self.default_background_color;
+                                break :msg .{
+                                    .background_color = self.default_background_color,
+                                };
+                            },
+                            .cursor => msg: {
+                                self.cursor_color = self.default_cursor_color;
+                                break :msg .{
+                                    .cursor_color = self.default_cursor_color,
+                                };
+                            },
+                            else => {
+                                log.warn(
+                                    "ignoring unsupported kitty color protocol key: {}",
+                                    .{key},
+                                );
+                                continue;
+                            },
+                        };
+
+                        // See messageWriter which has similar logic and
+                        // explains why we may have to do this.
+                        self.rendererMessageWriter(msg);
                     },
                 },
             }
