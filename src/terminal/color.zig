@@ -211,7 +211,7 @@ pub const RGB = struct {
     /// 3. #rgb, #rrggbb, #rrrgggbbb #rrrrggggbbbb
     ///
     ///    where `r`, `g`, and `b` are a single hexadecimal digit.
-    ///    These specifiy a color with 4, 8, 12, and 16 bits of precision
+    ///    These specify a color with 4, 8, 12, and 16 bits of precision
     ///    per color channel.
     pub fn parse(value: []const u8) !RGB {
         if (value.len == 0) {

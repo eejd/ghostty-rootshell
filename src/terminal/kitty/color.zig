@@ -19,7 +19,7 @@ pub const OSC = struct {
 };
 
 pub const Kind = enum(u9) {
-    // Make sure that this stays in sync with the higest numbered enum
+    // Make sure that this stays in sync with the highest numbered enum
     // value.
     pub const max: u9 = 263;
 

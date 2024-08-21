@@ -139,7 +139,7 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
-    /// Kitty color protocl, OSC 21
+    /// Kitty color protocol, OSC 21
     /// https://sw.kovidgoyal.net/kitty/color-stack/#id1
     kitty_color_protocol: kitty.color.OSC,
 
