@@ -1302,7 +1302,10 @@ pub const StreamHandler = struct {
         }
     }
 
-    pub fn sendKittyColorReport(self: *StreamHandler, request: terminal.osc.Command.KittyColorProtocol) !void {
+    pub fn sendKittyColorReport(
+        self: *StreamHandler,
+        request: terminal.kitty.color.OSC,
+    ) !void {
         var buf = std.ArrayList(u8).init(self.alloc);
         defer buf.deinit();
         const writer = buf.writer();

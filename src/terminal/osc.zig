@@ -10,6 +10,7 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const RGB = @import("color.zig").RGB;
+const kitty = @import("kitty.zig");
 
 const log = std.log.scoped(.osc);
 
@@ -140,7 +141,7 @@ pub const Command = union(enum) {
 
     /// Kitty color protocl, OSC 21
     /// https://sw.kovidgoyal.net/kitty/color-stack/#id1
-    kitty_color_protocol: KittyColorProtocol,
+    kitty_color_protocol: kitty.color.OSC,
 
     /// Show a desktop notification (OSC 9 or OSC 777)
     show_desktop_notification: struct {
@@ -171,66 +172,6 @@ pub const Command = union(enum) {
                 .cursor => "12",
             };
         }
-    };
-
-    pub const KittyColorProtocol = struct {
-        const Kind = enum(u9) {
-            // Make sure that this stays in sync with the higest numbered enum
-            // value.
-            const max: u9 = 263;
-
-            // These _must_ start at 256 since enum values 0-255 are reserved
-            // for the palette.
-            foreground = 256,
-            background = 257,
-            selection_foreground = 258,
-            selection_background = 259,
-            cursor = 260,
-            cursor_text = 261,
-            visual_bell = 262,
-            second_transparent_background = 263,
-            _,
-
-            /// Return the palette index that this kind is representing
-            /// or null if its a special color.
-            pub fn palette(self: Kind) ?u8 {
-                return std.math.cast(u8, @intFromEnum(self)) orelse null;
-            }
-
-            pub fn format(
-                self: Kind,
-                comptime layout: []const u8,
-                opts: std.fmt.FormatOptions,
-                writer: anytype,
-            ) !void {
-                _ = layout;
-                _ = opts;
-
-                // Format as a number if its a palette color otherwise
-                // format as a string.
-                if (self.palette()) |idx| {
-                    try writer.print("{}", .{idx});
-                } else {
-                    try writer.print("{s}", .{@tagName(self)});
-                }
-            }
-        };
-
-        const Request = union(enum) {
-            query: Kind,
-            set: struct {
-                key: Kind,
-                color: RGB,
-            },
-            reset: Kind,
-        };
-
-        /// list of requests
-        list: std.ArrayList(Request),
-
-        /// We must reply with the same string terminator (ST) as used in the
-        /// request.
-        terminator: Terminator = .st,
     };
 };
 
@@ -538,7 +479,7 @@ pub const Parser = struct {
 
                     self.command = .{
                         .kitty_color_protocol = .{
-                            .list = std.ArrayList(Command.KittyColorProtocol.Request).init(alloc),
+                            .list = std.ArrayList(kitty.color.OSC.Request).init(alloc),
                         },
                     };
 
@@ -1067,8 +1008,8 @@ pub const Parser = struct {
 
         // For our key, we first try to parse it as a special key. If that
         // doesn't work then we try to parse it as a number for a palette.
-        const key: Command.KittyColorProtocol.Kind = std.meta.stringToEnum(
-            Command.KittyColorProtocol.Kind,
+        const key: kitty.color.Kind = std.meta.stringToEnum(
+            kitty.color.Kind,
             self.temp_state.key,
         ) orelse @enumFromInt(std.fmt.parseUnsigned(
             u8,
@@ -1088,7 +1029,7 @@ pub const Parser = struct {
         switch (self.command) {
             .kitty_color_protocol => |*v| {
                 // Cap our allocation amount for our list.
-                if (v.list.items.len >= @as(usize, Command.KittyColorProtocol.Kind.max) * 2) {
+                if (v.list.items.len >= @as(usize, kitty.color.Kind.max) * 2) {
                     self.state = .invalid;
                     log.warn("exceeded limit for number of keys in kitty color protocol, ignoring", .{});
                     return;
@@ -1705,12 +1646,12 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[0];
         try testing.expect(item == .query);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.foreground, item.query);
+        try testing.expectEqual(kitty.color.Kind.foreground, item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[1];
         try testing.expect(item == .set);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.background, item.set.key);
+        try testing.expectEqual(kitty.color.Kind.background, item.set.key);
         try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
@@ -1718,7 +1659,7 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[2];
         try testing.expect(item == .set);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.cursor, item.set.key);
+        try testing.expectEqual(kitty.color.Kind.cursor, item.set.key);
         try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
@@ -1726,22 +1667,22 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[3];
         try testing.expect(item == .reset);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.cursor_text, item.reset);
+        try testing.expectEqual(kitty.color.Kind.cursor_text, item.reset);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[4];
         try testing.expect(item == .reset);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.visual_bell, item.reset);
+        try testing.expectEqual(kitty.color.Kind.visual_bell, item.reset);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[5];
         try testing.expect(item == .query);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.selection_background, item.query);
+        try testing.expectEqual(kitty.color.Kind.selection_background, item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[6];
         try testing.expect(item == .set);
-        try testing.expectEqual(Command.KittyColorProtocol.Kind.selection_background, item.set.key);
+        try testing.expectEqual(kitty.color.Kind.selection_background, item.set.key);
         try testing.expectEqual(@as(u8, 0xaa), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xbb), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xcc), item.set.color.b);
@@ -1749,12 +1690,12 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[7];
         try testing.expect(item == .query);
-        try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(2)), item.query);
+        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(2)), item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[8];
         try testing.expect(item == .set);
-        try testing.expectEqual(@as(Command.KittyColorProtocol.Kind, @enumFromInt(3)), item.set.key);
+        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(3)), item.set.key);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
@@ -1770,36 +1711,4 @@ test "OSC: kitty color protocol without allocator" {
     const input = "21;foreground=?";
     for (input) |ch| p.next(ch);
     try testing.expect(p.end('\x1b') == null);
-}
-
-test "OSC: kitty color protocol kind" {
-    const info = @typeInfo(Command.KittyColorProtocol.Kind);
-
-    try std.testing.expectEqual(false, info.Enum.is_exhaustive);
-
-    var min: usize = std.math.maxInt(info.Enum.tag_type);
-    var max: usize = 0;
-
-    inline for (info.Enum.fields) |field| {
-        if (field.value > max) max = field.value;
-        if (field.value < min) min = field.value;
-    }
-
-    try std.testing.expect(min >= 256);
-    try std.testing.expect(max == Command.KittyColorProtocol.Kind.max);
-}
-
-test "OSC: kitty color protocol kind string" {
-    const testing = std.testing;
-    const Kind = Command.KittyColorProtocol.Kind;
-
-    var buf: [256]u8 = undefined;
-    {
-        const actual = try std.fmt.bufPrint(&buf, "{}", .{Kind.foreground});
-        try testing.expectEqualStrings("foreground", actual);
-    }
-    {
-        const actual = try std.fmt.bufPrint(&buf, "{}", .{@as(Kind, @enumFromInt(42))});
-        try testing.expectEqualStrings("42", actual);
-    }
 }
