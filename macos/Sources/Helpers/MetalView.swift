@@ -16,7 +16,7 @@ fileprivate struct MetalViewRepresentable<V: MTKView>: NSViewRepresentable {
     func makeNSView(context: Context) -> some NSView {
         metalView
     }
-    
+
     func updateNSView(_ view: NSViewType, context: Context) {
         updateMetalView()
     }

@@ -3,14 +3,14 @@ import SwiftUI
 struct SettingsView: View {
     // We need access to our app delegate to know if we're quitting or not.
     @EnvironmentObject private var appDelegate: AppDelegate
-    
+
     var body: some View {
         HStack {
             Image("AppIconImage")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 128, height: 128)
-            
+
             VStack(alignment: .leading) {
                 Text("Coming Soon. 🚧").font(.title)
                 Text("You can't configure settings in the GUI yet. To modify settings, " +

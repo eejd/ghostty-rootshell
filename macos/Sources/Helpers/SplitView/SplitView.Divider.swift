@@ -7,7 +7,7 @@ extension SplitView {
         let visibleSize: CGFloat
         let invisibleSize: CGFloat
         let color: Color
-        
+
         private var visibleWidth: CGFloat? {
             switch (direction) {
             case .horizontal:
@@ -16,7 +16,7 @@ extension SplitView {
                 return nil
             }
         }
-        
+
         private var visibleHeight: CGFloat? {
             switch (direction) {
             case .horizontal:
@@ -25,7 +25,7 @@ extension SplitView {
                 return visibleSize
             }
         }
-        
+
         private var invisibleWidth: CGFloat? {
             switch (direction) {
             case .horizontal:
@@ -34,7 +34,7 @@ extension SplitView {
                 return nil
             }
         }
-        
+
         private var invisibleHeight: CGFloat? {
             switch (direction) {
             case .horizontal:

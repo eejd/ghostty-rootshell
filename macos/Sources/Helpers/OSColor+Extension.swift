@@ -4,13 +4,13 @@ extension OSColor {
     var isLightColor: Bool {
         return self.luminance > 0.5
     }
-    
+
     var luminance: Double {
         var r: CGFloat = 0
         var g: CGFloat = 0
         var b: CGFloat = 0
         var a: CGFloat = 0
-        
+
         // getRed:green:blue:alpha requires sRGB space
         #if canImport(AppKit)
         guard let rgb = self.usingColorSpace(.sRGB) else { return 0 }

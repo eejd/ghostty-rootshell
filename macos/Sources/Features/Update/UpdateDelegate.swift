@@ -9,7 +9,7 @@ class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         // tip appcast URL since it is all we support.
         return "https://tip.files.ghostty.dev/appcast.xml"
     }
-    
+
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
         // When the updater is relaunching the application we want to get macOS
         // to invalidate and re-encode all of our restorable state so that when

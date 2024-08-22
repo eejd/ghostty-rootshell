@@ -10,20 +10,20 @@ class TerminalManager {
         let controller: TerminalController
         let closePublisher: AnyCancellable
     }
-    
+
     let ghostty: Ghostty.App
-    
+
     /// The currently focused surface of the main window.
     var focusedSurface: Ghostty.SurfaceView? { mainWindow?.controller.focusedSurface }
-    
+
     /// The set of windows we currently have.
     var windows: [Window] = []
-    
+
     // Keep track of the last point that our window was launched at so that new
     // windows "cascade" over each other and don't just launch directly on top
     // of each other.
     private static var lastCascadePoint = NSPoint(x: 0, y: 0)
-    
+
     /// Returns the main window of the managed window stack. If there is no window
     /// then an arbitrary window will be chosen.
     private var mainWindow: Window? {
@@ -32,14 +32,14 @@ class TerminalManager {
                 return window
             }
         }
-        
+
         // If we have no main window, just use the last window.
         return windows.last
     }
-    
+
     init(_ ghostty: Ghostty.App) {
         self.ghostty = ghostty
-        
+
         let center = NotificationCenter.default
         center.addObserver(
             self,
@@ -52,32 +52,32 @@ class TerminalManager {
             name: Ghostty.Notification.ghosttyNewWindow,
             object: nil)
     }
-    
+
     deinit {
         let center = NotificationCenter.default
         center.removeObserver(self)
     }
-    
+
     // MARK: - Window Management
-    
+
     /// Create a new terminal window.
     func newWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
         let c = createWindow(withBaseConfig: base)
         let window = c.window!
-        
+
         // We want to go fullscreen if we're configured for new windows to go fullscreen
         var toggleFullScreen = ghostty.config.windowFullscreen
-        
+
         // If the previous focused window prior to creating this window is fullscreen,
         // then this window also becomes fullscreen.
         if let parent = focusedSurface?.window, parent.styleMask.contains(.fullScreen) {
             toggleFullScreen = true
         }
-        
+
         if (toggleFullScreen && !window.styleMask.contains(.fullScreen)) {
             window.toggleFullScreen(nil)
         }
-        
+
         // We're dispatching this async because otherwise the lastCascadePoint doesn't
         // take effect. Our best theory is there is some next-event-loop-tick logic
         // that Cocoa is doing that we need to be after.
@@ -86,11 +86,11 @@ class TerminalManager {
             if (!window.styleMask.contains(.fullScreen)) {
                 Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
             }
-            
+
             c.showWindow(self)
         }
     }
-    
+
     /// Creates a new tab in the current main window. If there are no windows, a window
     /// is created.
     func newTab(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil) {
@@ -99,11 +99,11 @@ class TerminalManager {
             newWindow(withBaseConfig: base)
             return
         }
-        
+
         // Create a new window and add it to the parent
         newTab(to: parent, withBaseConfig: base)
     }
-    
+
     private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
         // If our parent is in non-native fullscreen, then new tabs do not work.
         // See: https://github.com/mitchellh/ghostty/issues/392
@@ -117,15 +117,15 @@ class TerminalManager {
             alert.beginSheetModal(for: parent)
             return
         }
-        
+
         // Create a new window and add it to the parent
         let controller = createWindow(withBaseConfig: base)
         let window = controller.window!
-        
+
         // If the parent is miniaturized, then macOS exhibits really strange behaviors
         // so we have to bring it back out.
         if (parent.isMiniaturized) { parent.deminiaturize(self) }
-        
+
         // If our parent tab group already has this window, macOS added it and
         // we need to remove it so we can set the correct order in the next line.
         // If we don't do this, macOS gets really confused and the tabbedWindows
@@ -136,12 +136,12 @@ class TerminalManager {
         if let tg = parent.tabGroup, tg.windows.firstIndex(of: window) != nil {
             tg.removeWindow(window)
         }
-        
+
         // Our windows start out invisible. We need to make it visible. If we
         // don't do this then various features such as window blur won't work because
         // the macOS APIs only work on a visible window.
         controller.showWindow(self)
-        
+
         // Add the window to the tab group and show it.
         switch ghostty.config.windowNewTabPosition {
         case "end":
@@ -158,14 +158,14 @@ class TerminalManager {
         }
 
         window.makeKeyAndOrderFront(self)
-        
+
         // It takes an event loop cycle until the macOS tabGroup state becomes
         // consistent which causes our tab labeling to be off when the "+" button
         // is used in the tab bar. This fixes that. If we can find a more robust
         // solution we should do that.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { controller.relabelTabs() }
     }
-    
+
     /// Creates a window controller, adds it to our managed list, and returns it.
     func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
                       withSurfaceTree tree: Ghostty.SplitNode? = nil) -> TerminalController {
@@ -181,25 +181,25 @@ class TerminalManager {
             guard let c = window.windowController as? TerminalController else { return }
             self.removeWindow(c)
         }
-        
+
         // Keep track of every window we manage
         windows.append(Window(
             controller: c,
             closePublisher: pubClose
         ))
-        
+
         return c
     }
-    
+
     func removeWindow(_ controller: TerminalController) {
         // Remove it from our managed set
         guard let idx = self.windows.firstIndex(where: { $0.controller == controller }) else { return }
         let w = self.windows[idx]
         self.windows.remove(at: idx)
-        
+
         // Ensure any publishers we have are cancelled
         w.closePublisher.cancel()
-        
+
         // If we remove a window, we reset the cascade point to the key window so that
         // the next window cascade's from that one.
         if let focusedWindow = NSApplication.shared.keyWindow {
@@ -210,19 +210,19 @@ class TerminalManager {
                 Self.lastCascadePoint = focusedWindow.cascadeTopLeft(from: NSZeroPoint)
                 return
             }
-            
+
             // If we are the focused window, then we set the last cascade point to
             // our own frame so that it shows up in the same spot.
             let frame = focusedWindow.frame
             Self.lastCascadePoint = NSPoint(x: frame.minX, y: frame.maxY)
         }
-        
+
         // I don't think we strictly have to do this but if a window is
         // closed I want to make sure that the app state is invalided so
         // we don't reopen closed windows.
         NSApplication.shared.invalidateRestorableState()
     }
-    
+
     /// Close all windows, asking for confirmation if necessary.
     func closeAllWindows() {
         var needsConfirm: Bool = false
@@ -232,15 +232,15 @@ class TerminalManager {
                 break
             }
         }
-    
+
         if (!needsConfirm) {
             for w in self.windows {
                 w.controller.close()
             }
-            
+
             return
         }
-        
+
         // If we don't have a main window, we just close all windows because
         // we have no window to show the modal on top of. I'm sure there's a way
         // to do an app-level alert but I don't know how and this case should never
@@ -249,10 +249,10 @@ class TerminalManager {
             for w in self.windows {
                 w.controller.close()
             }
-            
+
             return
         }
-        
+
         // If we need confirmation by any, show one confirmation for all windows
         let alert = NSAlert()
         alert.messageText = "Close All Windows?"
@@ -268,29 +268,29 @@ class TerminalManager {
             }
         })
     }
-    
+
     /// Relabels all the tabs with the proper keyboard shortcut.
     func relabelAllTabs() {
         for w in windows {
             w.controller.relabelTabs()
         }
     }
-    
+
     // MARK: - Notifications
-    
+
     @objc private func onNewWindow(notification: SwiftUI.Notification) {
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? Ghostty.SurfaceConfiguration
         self.newWindow(withBaseConfig: config)
     }
-    
+
     @objc private func onNewTab(notification: SwiftUI.Notification) {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
         guard let window = surfaceView.window else { return }
-        
+
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? Ghostty.SurfaceConfiguration
-        
+
         self.newTab(to: window, withBaseConfig: config)
     }
 }

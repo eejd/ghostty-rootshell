@@ -3,13 +3,13 @@ import AppKit
 
 class ServiceProvider: NSObject {
     static private let errorNoString = NSString(string: "Could not load any text from the clipboard.")
-    
+
     /// The target for an open operation
     enum OpenTarget {
         case tab
         case window
     }
-    
+
     @objc func openTab(
         _ pasteboard: NSPasteboard,
         userData: String?,
@@ -17,7 +17,7 @@ class ServiceProvider: NSObject {
     ) {
         openTerminalFromPasteboard(pasteboard: pasteboard, target: .tab, error: error)
     }
-    
+
     @objc func openWindow(
         _ pasteboard: NSPasteboard,
         userData: String?,
@@ -37,10 +37,10 @@ class ServiceProvider: NSObject {
             return
         }
         let filePaths = objs.map { $0.path }.compactMap { $0 }
-        
+
         openTerminal(filePaths, target: target)
     }
-    
+
     private func openTerminal(_ paths: [String], target: OpenTarget) {
         guard let delegateRaw = NSApp.delegate else { return }
         guard let delegate = delegateRaw as? AppDelegate else { return }
@@ -51,7 +51,7 @@ class ServiceProvider: NSObject {
             var isDirectory = ObjCBool(true)
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { continue }
             guard isDirectory.boolValue else { continue }
-            
+
             // Build our config
             var config = Ghostty.SurfaceConfiguration()
             config.workingDirectory = path

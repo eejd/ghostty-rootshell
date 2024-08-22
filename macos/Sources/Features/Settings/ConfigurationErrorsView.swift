@@ -6,7 +6,7 @@ protocol ConfigurationErrorsViewModel: ObservableObject {
 
 struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
     @ObservedObject var model: ViewModel
-    
+
     var body: some View {
         VStack {
             HStack {
@@ -15,7 +15,7 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
                     .font(.system(size: 52))
                     .padding()
                     .frame(alignment: .center)
-                
+
                 Text("""
                     ^[\(model.errors.count) error(s) were](inflect: true) found while loading the configuration. \
                     Please review the errors below and reload your configuration or ignore the erroneous lines.
@@ -34,7 +34,7 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
-                        
+
                         Spacer()
                     }
                     .padding(.all)
@@ -42,7 +42,7 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
                     .background(Color(.controlBackgroundColor))
                 }
             }
-            
+
             HStack {
                 Spacer()
                 Button("Ignore") { model.errors = [] }
@@ -52,7 +52,7 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
         }
         .frame(minWidth: 480, maxWidth: 960, minHeight: 270)
     }
-    
+
     private func reloadConfig() {
         guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
         delegate.reloadConfig(nil)
