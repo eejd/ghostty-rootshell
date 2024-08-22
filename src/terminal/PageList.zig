@@ -6,6 +6,7 @@ const PageList = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const color = @import("color.zig");
 const fastmem = @import("../fastmem.zig");
 const kitty = @import("kitty.zig");
 const point = @import("point.zig");
@@ -3238,7 +3239,11 @@ pub const Pin = struct {
     /// Returns true if the row of this pin should never have its background
     /// color extended for filling padding space in the renderer. This is
     /// a set of heuristics that help making our padding look better.
-    pub fn neverExtendBg(self: Pin) bool {
+    pub fn neverExtendBg(
+        self: Pin,
+        palette: *const color.Palette,
+        default_background: color.RGB,
+    ) bool {
         // Any semantic prompts should not have their background extended
         // because prompts often contain special formatting (such as
         // powerline) that looks bad when extended.
@@ -3253,8 +3258,12 @@ pub const Pin = struct {
             // extend because the default background color probably looks
             // good enough as an extension.
             switch (cell.content_tag) {
-                // We assume bg color cells are setting non-default colors.
-                .bg_color_palette, .bg_color_rgb => {},
+                // If it is a background color cell, we check the color.
+                .bg_color_palette, .bg_color_rgb => {
+                    const s = self.style(cell);
+                    const bg = s.bg(cell, palette) orelse return true;
+                    if (bg.eql(default_background)) return true;
+                },
 
                 // If its a codepoint cell we can check the style.
                 .codepoint, .codepoint_grapheme => {
@@ -3272,8 +3281,13 @@ pub const Pin = struct {
                         else => {},
                     }
 
+                    // Never extend cell that has a default background.
+                    // A default background is if there is no background
+                    // on the style OR the explicitly set background
+                    // matches our default background.
                     const s = self.style(cell);
-                    if (s.bg_color == .none) return true;
+                    const bg = s.bg(cell, palette) orelse return true;
+                    if (bg.eql(default_background)) return true;
                 },
             }
         }

@@ -2224,9 +2224,15 @@ fn rebuildCells(
 
             // Apply heuristics for padding extension.
             .extend => if (y == 0) {
-                self.uniforms.padding_extend.up = !row.neverExtendBg();
+                self.uniforms.padding_extend.up = !row.neverExtendBg(
+                    color_palette,
+                    self.background_color,
+                );
             } else if (y == self.cells.size.rows - 1) {
-                self.uniforms.padding_extend.down = !row.neverExtendBg();
+                self.uniforms.padding_extend.down = !row.neverExtendBg(
+                    color_palette,
+                    self.background_color,
+                );
             },
         }
 
