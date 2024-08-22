@@ -1319,6 +1319,20 @@ fn resizeInternal(
         };
     }
 
+    // If we have a hyperlink, release it from the old page
+    // and then we need to re-add it to the new page. This needs
+    // to happen because resize below typically reallocates a
+    // new page so the old hyperlink is invalid.
+    const hyperlink_ = self.cursor.hyperlink;
+    if (self.cursor.hyperlink_id != 0) {
+        // Note we do NOT use endHyperlink because we want to keep
+        // our allocated self.cursor.hyperlink valid.
+        var page = &self.cursor.page_pin.page.data;
+        page.hyperlink_set.release(page.memory, self.cursor.hyperlink_id);
+        self.cursor.hyperlink_id = 0;
+        self.cursor.hyperlink = null;
+    }
+
     // Perform the resize operation.
     try self.pages.resize(.{
         .rows = rows,
@@ -1337,6 +1351,19 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
+
+    // Fix up our hyperlink if we had one.
+    if (hyperlink_) |link| {
+        self.startHyperlink(link.uri, link.id) catch |err| {
+            // This shouldn't happen because startHyperlink should handle
+            // resizing. This only happens if we're truly out of RAM. Degrade
+            // to forgetting the hyperlink.
+            log.err("failed to update hyperlink on resize err={}", .{err});
+        };
+
+        // Remove our old link
+        link.destroy(self.alloc);
+    }
 }
 
 /// Set a style attribute for the current cursor.
@@ -8094,6 +8121,41 @@ test "Screen: hyperlink reuse" {
     // Reuse the same hyperlink, expect we have the same ID
     try s.startHyperlink("http://example.com", null);
     try testing.expectEqual(id, s.cursor.hyperlink_id);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+
+    s.endHyperlink();
+    try testing.expect(s.cursor.hyperlink_id == 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(0, page.hyperlink_set.count());
+    }
+}
+
+test "Screen: hyperlink cursor state on resize" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // This test depends on underlying PageList implementation so
+    // it may be invalid one day. It's here to document/verify the
+    // current behavior.
+
+    var s = try init(alloc, 5, 10, 0);
+    defer s.deinit();
+
+    // Start a hyperlink
+    try s.startHyperlink("http://example.com", null);
+    try testing.expect(s.cursor.hyperlink_id != 0);
+    {
+        const page = &s.cursor.page_pin.page.data;
+        try testing.expectEqual(1, page.hyperlink_set.count());
+    }
+
+    // Resize. Any column growth will trigger a page to be reallocated.
+    try s.resize(10, 10);
+    try testing.expect(s.cursor.hyperlink_id != 0);
     {
         const page = &s.cursor.page_pin.page.data;
         try testing.expectEqual(1, page.hyperlink_set.count());
