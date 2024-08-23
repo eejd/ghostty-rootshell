@@ -52,10 +52,17 @@ const c = @cImport({
 ///
 /// The specific styles (bold, italic, bold italic) do not need to be
 /// explicitly set. If a style is not set, then the regular style (font-family)
-/// will be searched for stylistic variants. If an italic style is not found,
-/// Ghostty will auto-italicize the regular style by applying a slant. If
-/// a bold style is not found, Ghostty will look for another monospace
-/// font.
+/// will be searched for stylistic variants. If a stylistic variant is not
+/// found, Ghostty will use the regular style. This prevents falling back to a
+/// different font family just to get a style such as bold. This also applies
+/// if you explictly speciy a font family for a style. For example, if you
+/// set `font-family-bold = FooBar` and "FooBar" cannot be found, Ghostty will
+/// use whatever font is set for `font-family` for the bold style.
+///
+/// Finally, some styles may be synthesized if they are not supported.
+/// For example, if a font does not have an italic style and no alternative
+/// italic font is specified, Ghostty will synthesize an italic style by
+/// applying a slant to the regular style.
 ///
 /// You can disable styles completely by using the `font-style` set of
 /// configurations. See the documentation for `font-style` for more information.
