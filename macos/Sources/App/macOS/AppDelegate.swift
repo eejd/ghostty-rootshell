@@ -208,6 +208,12 @@ class AppDelegate: NSObject,
         // of focusing one of them.
         guard !flag else { return true }
 
+        // If we have any windows in our terminal manager we don't do anything.
+        // This is possible with flag set to false if there a race where the
+        // window is still initializing and is not visible but the user clicked
+        // the dock icon.
+        guard terminalManager.windows.count == 0 else { return true }
+
         // No visible windows, open a new one.
         terminalManager.newWindow()
         return false
