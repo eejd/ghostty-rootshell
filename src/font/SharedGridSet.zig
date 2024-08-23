@@ -218,15 +218,6 @@ fn collection(
             load_options.faceOptions(),
         ) },
     );
-    _ = try c.add(
-        self.alloc,
-        .bold,
-        .{ .fallback_loaded = try Face.init(
-            self.font_lib,
-            face_bold_ttf,
-            load_options.faceOptions(),
-        ) },
-    );
 
     // On macOS, always search for and add the Apple Emoji font
     // as our preferred emoji font for fallback. We do this in case
@@ -271,8 +262,9 @@ fn collection(
         );
     }
 
-    // Auto-italicize
-    try c.autoItalicize(self.alloc);
+    // Complete our styles to ensure we have something to satisfy every
+    // possible style request.
+    try c.completeStyles(self.alloc);
 
     return c;
 }

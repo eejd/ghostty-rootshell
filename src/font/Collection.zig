@@ -117,28 +117,37 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
         break :item item;
     };
 
-    return switch (item.*) {
+    return self.getFaceFromEntry(item);
+}
+
+/// Get the face from an entry.
+///
+/// This entry must not be an alias.
+fn getFaceFromEntry(self: *Collection, entry: *Entry) !*Face {
+    assert(entry.* != .alias);
+
+    return switch (entry.*) {
         inline .deferred, .fallback_deferred => |*d, tag| deferred: {
             const opts = self.load_options orelse
                 return error.DeferredLoadingUnavailable;
             const face = try d.load(opts.library, opts.faceOptions());
             d.deinit();
-            item.* = switch (tag) {
+            entry.* = switch (tag) {
                 .deferred => .{ .loaded = face },
                 .fallback_deferred => .{ .fallback_loaded = face },
                 else => unreachable,
             };
 
             break :deferred switch (tag) {
-                .deferred => &item.loaded,
-                .fallback_deferred => &item.fallback_loaded,
+                .deferred => &entry.loaded,
+                .fallback_deferred => &entry.fallback_loaded,
                 else => unreachable,
             };
         },
 
         .loaded, .fallback_loaded => |*f| f,
 
-        // When setting `item` above, we ensure we don't end up with
+        // When setting `entry` above, we ensure we don't end up with
         // an alias.
         .alias => unreachable,
     };
@@ -188,51 +197,48 @@ pub fn hasCodepoint(
     return list.at(index.idx).hasCodepoint(cp, p_mode);
 }
 
+pub const CompleteError = Allocator.Error || error{
+    DefaultUnavailable,
+};
+
 /// Ensure we have an option for all styles in the collection, such
 /// as italic and bold.
 ///
 /// This requires that a regular font face is already loaded.
 /// This is asserted. If a font style is missing, we will synthesize
 /// it if possible. Otherwise, we will use the regular font style.
-pub fn completeStyles(self: *Collection, alloc: Allocator) !void {
-    const regular_list = self.faces.getPtr(.regular);
-    assert(regular_list.items.len > 0);
+pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
+    // If every style has at least one entry then we're done!
+    // This is the most common case.
+    empty: {
+        var it = self.faces.iterator();
+        while (it.next()) |entry| {
+            if (entry.value.count() == 0) break :empty;
+        }
 
-    // If we don't have bold, use the regular font.
-    const bold_list = self.faces.getPtr(.bold);
-    if (bold_list.items.len == 0) {}
-
-    _ = alloc;
-}
-
-/// Automatically create an italicized font from the regular
-/// font face if we don't have one already. If we already have
-/// an italicized font face, this does nothing.
-pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
-    // If we have an italic font, do nothing.
-    const italic_list = self.faces.getPtr(.italic);
-    if (italic_list.count() > 0) return;
-
-    // Not all font backends support auto-italicization.
-    if (comptime !@hasDecl(Face, "italicize")) {
-        log.warn(
-            "no italic font face available, italics will not render",
-            .{},
-        );
         return;
     }
 
-    // Our regular font. If we have no regular font we also do nothing.
-    const regular = regular: {
-        const list = self.faces.get(.regular);
-        if (list.count() == 0) return;
+    // Find the first regular face that has non-colorized text glyphs.
+    // This is the font we want to fallback to. This may not be index zero
+    // if a user configures something like an Emoji font first.
+    const regular_entry: *Entry = entry: {
+        const list = self.faces.getPtr(.regular);
+        assert(list.count() > 0);
 
         // Find our first regular face that has text glyphs.
-        for (0..list.count()) |i| {
-            const face = try self.getFace(.{
-                .style = .regular,
-                .idx = @intCast(i),
-            });
+        var it = list.iterator(0);
+        while (it.next()) |entry| {
+            // Load our face. If we fail to load it, we just skip it and
+            // continue on to try the next one.
+            const face = self.getFaceFromEntry(entry) catch |err| {
+                log.warn("error loading regular entry={d} err={}", .{
+                    it.index - 1,
+                    err,
+                });
+
+                continue;
+            };
 
             // We have two conditionals here. The color check is obvious:
             // we want to auto-italicize a normal text font. The second
@@ -242,25 +248,62 @@ pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
             // it's a reasonable heuristic and the first case will match 99%
             // of the time.
             if (!face.hasColor() or face.glyphIndex('A') != null) {
-                break :regular face;
+                break :entry entry;
             }
         }
 
-        // No regular text face found.
-        return;
+        // No regular text face found. We can't provide any fallback.
+        return error.DefaultUnavailable;
     };
+
+    // If we don't have italic, attempt to create a synthetic italic face.
+    // If we can't create a synthetic italic face, we'll just use the regular
+    // face for italic.
+    const italic_list = self.faces.getPtr(.italic);
+    if (italic_list.count() == 0) italic: {
+        const synthetic = self.syntheticItalic(regular_entry) catch |err| {
+            log.warn("failed to create synthetic italic, italic style will not be available err={}", .{err});
+            try italic_list.append(alloc, .{ .alias = regular_entry });
+            break :italic;
+        };
+
+        log.info("synthetic italic face created", .{});
+        try italic_list.append(alloc, .{ .loaded = synthetic });
+    }
+
+    // If we don't have bold, use the regular font.
+    const bold_list = self.faces.getPtr(.bold);
+    if (bold_list.count() == 0) {
+        log.warn("bold style not available, using regular font", .{});
+        try bold_list.append(alloc, .{ .alias = regular_entry });
+    }
+
+    // If we don't have bold italic, use the regular italic font.
+    const bold_italic_list = self.faces.getPtr(.bold_italic);
+    if (bold_italic_list.count() == 0) {
+        log.warn("bold italic style not available, using italic font", .{});
+        try bold_italic_list.append(alloc, .{ .alias = italic_list.at(0) });
+    }
+}
+
+// Create an synthetic italic font face from the given entry and return it.
+fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
+    // Not all font backends support auto-italicization.
+    if (comptime !@hasDecl(Face, "italicize")) return error.SyntheticItalicUnavailable;
 
     // We require loading options to auto-italicize.
     const opts = self.load_options orelse return error.DeferredLoadingUnavailable;
 
     // Try to italicize it.
+    const regular = try self.getFaceFromEntry(entry);
     const face = try regular.italicize(opts.faceOptions());
-    try italic_list.append(alloc, .{ .loaded = face });
 
     var buf: [256]u8 = undefined;
     if (face.name(&buf)) |name| {
         log.info("font auto-italicized: {s}", .{name});
     } else |_| {}
+
+    return face;
 }
 
 /// Update the size of all faces in the collection. This will
@@ -632,9 +675,7 @@ test getIndex {
     }
 }
 
-test autoItalicize {
-    if (comptime !@hasDecl(Face, "italicize")) return error.SkipZigTest;
-
+test completeStyles {
     const testing = std.testing;
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
@@ -652,9 +693,13 @@ test autoItalicize {
         .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
     ) });
 
+    try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) == null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) == null);
-    try c.autoItalicize(alloc);
+    try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) == null);
+    try c.completeStyles(alloc);
+    try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) != null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) != null);
+    try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) != null);
 }
 
 test setSize {
