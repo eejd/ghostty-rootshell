@@ -16,6 +16,7 @@
 const Collection = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("main.zig");
 const options = font.options;
@@ -104,7 +105,21 @@ pub fn add(
 pub fn getFace(self: *Collection, index: Index) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const list = self.faces.getPtr(index.style);
-    const item = &list.items[index.idx];
+    const item: *Entry = item: {
+        var item = &list.items[index.idx];
+        switch (item.*) {
+            .alias => |ptr| item = ptr,
+
+            .deferred,
+            .fallback_deferred,
+            .loaded,
+            .fallback_loaded,
+            => {},
+        }
+        assert(item.* != .alias);
+        break :item item;
+    };
+
     return switch (item.*) {
         inline .deferred, .fallback_deferred => |*d, tag| deferred: {
             const opts = self.load_options orelse
@@ -125,6 +140,10 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
         },
 
         .loaded, .fallback_loaded => |*f| f,
+
+        // When setting `item` above, we ensure we don't end up with
+        // an alias.
+        .alias => unreachable,
     };
 }
 
@@ -166,6 +185,23 @@ pub fn hasCodepoint(
     const list = self.faces.get(index.style);
     if (index.idx >= list.items.len) return false;
     return list.items[index.idx].hasCodepoint(cp, p_mode);
+}
+
+/// Ensure we have an option for all styles in the collection, such
+/// as italic and bold.
+///
+/// This requires that a regular font face is already loaded.
+/// This is asserted. If a font style is missing, we will synthesize
+/// it if possible. Otherwise, we will use the regular font style.
+pub fn completeStyles(self: *Collection, alloc: Allocator) !void {
+    const regular_list = self.faces.getPtr(.regular);
+    assert(regular_list.items.len > 0);
+
+    // If we don't have bold, use the regular font.
+    const bold_list = self.faces.getPtr(.bold);
+    if (bold_list.items.len == 0) {}
+
+    _ = alloc;
 }
 
 /// Automatically create an italicized font from the regular
@@ -243,10 +279,16 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
     var it = self.faces.iterator();
     while (it.next()) |entry| {
         for (entry.value.items) |*elem| switch (elem.*) {
-            .deferred, .fallback_deferred => continue,
             .loaded, .fallback_loaded => |*f| try f.setSize(
                 opts.faceOptions(),
             ),
+
+            // Deferred aren't loaded so we don't need to set their size.
+            // The size for when they're loaded is set since `opts` changed.
+            .deferred, .fallback_deferred => continue,
+
+            // Alias faces don't own their size.
+            .alias => continue,
         };
     }
 }
@@ -318,6 +360,10 @@ pub const Entry = union(enum) {
     fallback_deferred: DeferredFace,
     fallback_loaded: Face,
 
+    // An alias to another entry. This is used to share the same face,
+    // avoid memory duplication. An alias must point to a non-alias entry.
+    alias: *Entry,
+
     pub fn deinit(self: *Entry) void {
         switch (self.*) {
             inline .deferred,
@@ -325,6 +371,10 @@ pub const Entry = union(enum) {
             .fallback_deferred,
             .fallback_loaded,
             => |*v| v.deinit(),
+
+            // Aliased fonts are not owned by this entry so we let them
+            // be deallocated by the owner.
+            .alias => {},
         }
     }
 
@@ -333,6 +383,7 @@ pub const Entry = union(enum) {
         return switch (self) {
             .deferred, .fallback_deferred => true,
             .loaded, .fallback_loaded => false,
+            .alias => |v| v.isDeferred(),
         };
     }
 
@@ -343,6 +394,8 @@ pub const Entry = union(enum) {
         p_mode: PresentationMode,
     ) bool {
         return switch (self) {
+            .alias => |v| v.hasCodepoint(cp, p_mode),
+
             // Non-fallback fonts require explicit presentation matching but
             // otherwise don't care about presentation
             .deferred => |v| switch (p_mode) {
