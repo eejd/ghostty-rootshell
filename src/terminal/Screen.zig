@@ -906,12 +906,19 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     assert(other.x < self.pages.cols);
     assert(other.y < self.pages.rows);
 
+    // End any currently active hyperlink on our cursor.
+    self.endHyperlink();
+
     const old = self.cursor;
     self.cursor = other;
     errdefer self.cursor = old;
 
     // Keep our old style ID so it can be properly cleaned up below.
     self.cursor.style_id = old.style_id;
+
+    // Hyperlinks will be managed separately below.
+    self.cursor.hyperlink_id = 0;
+    self.cursor.hyperlink = null;
 
     // Keep our old page pin and X/Y because:
     // 1. The old style will need to be cleaned up from the page it's from.
@@ -927,6 +934,27 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
 
     // Move to the correct location to match the other cursor.
     self.cursorAbsolute(other.x, other.y);
+
+    // If the other cursor had a hyperlink, add it to ours.
+    if (other.hyperlink_id != 0) {
+        // Get the hyperlink from the other cursor's page.
+        const other_page = &other.page_pin.page.data;
+        const other_link = other_page.hyperlink_set.get(other_page.memory, other.hyperlink_id);
+
+        const uri = other_link.uri.offset.ptr(other_page.memory)[0..other_link.uri.len];
+        const id_ = switch (other_link.id) {
+            .explicit => |id| id.offset.ptr(other_page.memory)[0..id.len],
+            .implicit => null,
+        };
+
+        // And it to our cursor.
+        self.startHyperlink(uri, id_) catch |err| {
+            // This shouldn't happen because startHyperlink should handle
+            // resizing. This only happens if we're truly out of RAM. Degrade
+            // to forgetting the hyperlink.
+            log.err("failed to update hyperlink on cursor change err={}", .{err});
+        };
+    }
 }
 
 /// Always use this to write to cursor.page_pin.*.
