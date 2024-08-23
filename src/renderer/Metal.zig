@@ -891,6 +891,14 @@ pub fn updateFrame(
 
     // Update all our data as tightly as possible within the mutex.
     var critical: Critical = critical: {
+        // const start = try std.time.Instant.now();
+        // const start_micro = std.time.microTimestamp();
+        // defer {
+        //     const end = std.time.Instant.now() catch unreachable;
+        //     // "[updateFrame critical time] <START us>\t<TIME_TAKEN us>"
+        //     std.log.err("[updateFrame critical time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
+        // }
+
         state.mutex.lock();
         defer state.mutex.unlock();
 
