@@ -40,21 +40,18 @@ faces: StyleArray,
 load_options: ?LoadOptions = null,
 
 /// Initialize an empty collection.
-pub fn init(
-    alloc: Allocator,
-) !Collection {
+pub fn init() Collection {
     // Initialize our styles array, preallocating some space that is
     // likely to be used.
-    var faces = StyleArray.initFill(.{});
-    for (&faces.values) |*v| try v.ensureTotalCapacityPrecise(alloc, 2);
-    return .{ .faces = faces };
+    return .{ .faces = StyleArray.initFill(.{}) };
 }
 
 pub fn deinit(self: *Collection, alloc: Allocator) void {
     var it = self.faces.iterator();
-    while (it.next()) |entry| {
-        for (entry.value.items) |*item| item.deinit();
-        entry.value.deinit(alloc);
+    while (it.next()) |array| {
+        var entry_it = array.value.iterator(0);
+        while (entry_it.next()) |entry| entry.deinit();
+        array.value.deinit(alloc);
     }
 
     if (self.load_options) |*v| v.deinit(alloc);
@@ -85,14 +82,14 @@ pub fn add(
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
-    if (list.items.len >= Index.Special.start - 1)
+    const idx = list.count();
+    if (idx >= Index.Special.start - 1)
         return error.CollectionFull;
 
     // If this is deferred and we don't have load options, we can't.
     if (face.isDeferred() and self.load_options == null)
         return error.DeferredLoadingUnavailable;
 
-    const idx = list.items.len;
     try list.append(alloc, face);
     return .{ .style = style, .idx = @intCast(idx) };
 }
@@ -106,7 +103,7 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const list = self.faces.getPtr(index.style);
     const item: *Entry = item: {
-        var item = &list.items[index.idx];
+        var item = list.at(index.idx);
         switch (item.*) {
             .alias => |ptr| item = ptr,
 
@@ -159,13 +156,17 @@ pub fn getIndex(
     style: Style,
     p_mode: PresentationMode,
 ) ?Index {
-    for (self.faces.get(style).items, 0..) |elem, i| {
-        if (elem.hasCodepoint(cp, p_mode)) {
+    var i: usize = 0;
+    var it = self.faces.get(style).constIterator(0);
+    while (it.next()) |entry| {
+        if (entry.hasCodepoint(cp, p_mode)) {
             return .{
                 .style = style,
                 .idx = @intCast(i),
             };
         }
+
+        i += 1;
     }
 
     // Not found
@@ -183,8 +184,8 @@ pub fn hasCodepoint(
     p_mode: PresentationMode,
 ) bool {
     const list = self.faces.get(index.style);
-    if (index.idx >= list.items.len) return false;
-    return list.items[index.idx].hasCodepoint(cp, p_mode);
+    if (index.idx >= list.count()) return false;
+    return list.at(index.idx).hasCodepoint(cp, p_mode);
 }
 
 /// Ensure we have an option for all styles in the collection, such
@@ -210,7 +211,7 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) !void {
 pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
     // If we have an italic font, do nothing.
     const italic_list = self.faces.getPtr(.italic);
-    if (italic_list.items.len > 0) return;
+    if (italic_list.count() > 0) return;
 
     // Not all font backends support auto-italicization.
     if (comptime !@hasDecl(Face, "italicize")) {
@@ -224,10 +225,10 @@ pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
     // Our regular font. If we have no regular font we also do nothing.
     const regular = regular: {
         const list = self.faces.get(.regular);
-        if (list.items.len == 0) return;
+        if (list.count() == 0) return;
 
         // Find our first regular face that has text glyphs.
-        for (0..list.items.len) |i| {
+        for (0..list.count()) |i| {
             const face = try self.getFace(.{
                 .style = .regular,
                 .idx = @intCast(i),
@@ -277,8 +278,9 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
 
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
-    while (it.next()) |entry| {
-        for (entry.value.items) |*elem| switch (elem.*) {
+    while (it.next()) |array| {
+        var entry_it = array.value.iterator(0);
+        while (entry_it.next()) |entry| switch (entry.*) {
             .loaded, .fallback_loaded => |*f| try f.setSize(
                 opts.faceOptions(),
             ),
@@ -299,7 +301,12 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
 /// styles are typically loaded for a terminal session. The overhead per
 /// style even if it is not used or barely used is minimal given the
 /// small style count.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(Entry));
+///
+/// We use a segmented list because the entry values must be pointer-stable
+/// to support the "alias" field in Entry. SegmentedList also lets us do
+/// a prealloc which is great for performance since most happy path cases
+/// do not use many font fallbacks.
+const StyleArray = std.EnumArray(Style, std.SegmentedList(Entry, 4));
 
 /// Load options are used to configure all the details a Collection
 /// needs to load deferred faces.
@@ -520,7 +527,7 @@ test init {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 }
 
@@ -532,7 +539,7 @@ test "add full" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     for (0..Index.Special.start - 1) |_| {
@@ -558,7 +565,7 @@ test "add deferred without loading options" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     try testing.expectError(error.DeferredLoadingUnavailable, c.add(
@@ -578,7 +585,7 @@ test getFace {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     const idx = try c.add(alloc, .regular, .{ .loaded = try Face.init(
@@ -602,7 +609,7 @@ test getIndex {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
@@ -635,7 +642,7 @@ test autoItalicize {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -658,7 +665,7 @@ test setSize {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -681,7 +688,7 @@ test hasCodepoint {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -705,7 +712,7 @@ test "hasCodepoint emoji default graphical" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 

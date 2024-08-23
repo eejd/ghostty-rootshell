@@ -325,7 +325,7 @@ const TestMode = enum { normal };
 fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
     const testFont = @import("test.zig").fontRegular;
 
-    var c = try Collection.init(alloc);
+    var c = Collection.init();
     c.load_options = .{ .library = lib };
 
     switch (mode) {

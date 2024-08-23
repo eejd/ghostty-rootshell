@@ -1746,7 +1746,7 @@ fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
     var lib = try Library.init();
     errdefer lib.deinit();
 
-    var c = try Collection.init(alloc);
+    var c = Collection.init();
     c.load_options = .{ .library = lib };
 
     // Setup group

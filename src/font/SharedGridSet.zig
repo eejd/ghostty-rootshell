@@ -167,7 +167,7 @@ fn collection(
         .metric_modifiers = key.metric_modifiers,
     };
 
-    var c = try Collection.init(self.alloc);
+    var c = Collection.init();
     errdefer c.deinit(self.alloc);
     c.load_options = load_options;
 

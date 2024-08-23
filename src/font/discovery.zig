@@ -453,22 +453,22 @@ pub const CoreText = struct {
             // here.
 
             if (desc.bold and desc.italic) {
-                const items = collection.faces.get(.bold_italic).items;
-                if (items.len > 0) {
+                const entries = collection.faces.get(.bold_italic);
+                if (entries.count() > 0) {
                     break :original try collection.getFace(.{ .style = .bold_italic });
                 }
             }
 
             if (desc.bold) {
-                const items = collection.faces.get(.bold).items;
-                if (items.len > 0) {
+                const entries = collection.faces.get(.bold);
+                if (entries.count() > 0) {
                     break :original try collection.getFace(.{ .style = .bold });
                 }
             }
 
             if (desc.italic) {
-                const items = collection.faces.get(.italic).items;
-                if (items.len > 0) {
+                const entries = collection.faces.get(.italic);
+                if (entries.count() > 0) {
                     break :original try collection.getFace(.{ .style = .italic });
                 }
             }

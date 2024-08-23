@@ -383,7 +383,7 @@ test getIndex {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try Collection.init(alloc);
+    var c = Collection.init();
     c.load_options = .{ .library = lib };
 
     {
@@ -464,7 +464,7 @@ test "getIndex disabled font style" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try Collection.init(alloc);
+    var c = Collection.init();
     c.load_options = .{ .library = lib };
 
     _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
@@ -516,7 +516,7 @@ test "getIndex box glyph" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    const c = try Collection.init(alloc);
+    const c = Collection.init();
 
     var r: CodepointResolver = .{
         .collection = c,
