@@ -1296,9 +1296,15 @@ pub fn rebuildCells(
 
             // Apply heuristics for padding extension.
             .extend => if (y == 0) {
-                self.padding_extend_top = !row.neverExtendBg();
+                self.padding_extend_top = !row.neverExtendBg(
+                    color_palette,
+                    self.background_color,
+                );
             } else if (y == self.grid_size.rows - 1) {
-                self.padding_extend_bottom = !row.neverExtendBg();
+                self.padding_extend_bottom = !row.neverExtendBg(
+                    color_palette,
+                    self.background_color,
+                );
             },
         }
 
