@@ -416,93 +416,25 @@ pub fn clone(
             chunk.page.data.capacity,
             &page_size,
         );
-        assert(page.data.capacity.rows >= chunk.page.data.capacity.rows);
+        assert(page.data.capacity.rows >= chunk.end - chunk.start);
         defer page.data.assertIntegrity();
-        page.data.size.rows = chunk.page.data.size.rows;
+        page.data.size.rows = chunk.end - chunk.start;
         try page.data.cloneFrom(
             &chunk.page.data,
-            0,
-            chunk.page.data.size.rows,
+            chunk.start,
+            chunk.end,
         );
 
         page_list.append(page);
 
-        // If this is a full page then we're done.
-        if (chunk.fullPage()) {
-            total_rows += page.data.size.rows;
+        total_rows += page.data.size.rows;
 
-            // Updating tracked pins is easy, we just change the page
-            // pointer but all offsets remain the same.
-            if (opts.tracked_pins) |remap| {
-                const pin_keys = self.tracked_pins.keys();
-                for (pin_keys) |p| {
-                    if (p.page != chunk.page) continue;
-                    const new_p = try pool.pins.create();
-                    new_p.* = p.*;
-                    new_p.page = page;
-                    try remap.putNoClobber(p, new_p);
-                    try tracked_pins.putNoClobber(pool.alloc, new_p, {});
-                }
-            }
-
-            continue;
-        }
-
-        // If this is just a shortened chunk off the end we can just
-        // shorten the size. We don't worry about clearing memory here because
-        // as the page grows the memory will be reclaimable because the data
-        // is still valid.
-        if (chunk.start == 0) {
-            page.data.size.rows = @intCast(chunk.end);
-            total_rows += chunk.end;
-
-            // Updating tracked pins for the pins that are in the shortened chunk.
-            if (opts.tracked_pins) |remap| {
-                const pin_keys = self.tracked_pins.keys();
-                for (pin_keys) |p| {
-                    if (p.page != chunk.page or
-                        p.y >= chunk.end) continue;
-                    const new_p = try pool.pins.create();
-                    new_p.* = p.*;
-                    new_p.page = page;
-                    try remap.putNoClobber(p, new_p);
-                    try tracked_pins.putNoClobber(pool.alloc, new_p, {});
-                }
-            }
-
-            continue;
-        }
-
-        // We want to maintain the dirty bits from the original page so
-        // instead of setting a range we grab the dirty bit and then
-        // set it on the new page in the new location.
-        var dirty = page.data.dirtyBitSet();
-
-        // Kind of slow, we want to shift the rows up in the page up to
-        // end and then resize down.
-        const rows = page.data.rows.ptr(page.data.memory);
-        const len = chunk.end - chunk.start;
-        for (0..len) |i| {
-            const src: *Row = &rows[i + chunk.start];
-            const dst: *Row = &rows[i];
-            const old_dst = dst.*;
-            dst.* = src.*;
-            src.* = old_dst;
-            dirty.setValue(i, dirty.isSet(i + chunk.start));
-        }
-
-        // We need to clear the rows we're about to truncate.
-        for (len..page.data.size.rows) |i| {
-            page.data.clearCells(&rows[i], 0, page.data.size.cols);
-        }
-
-        page.data.size.rows = @intCast(len);
-        total_rows += len;
-
-        // Updating tracked pins
+        // Remap our tracked pins by changing the page and
+        // offsetting the Y position based on the chunk start.
         if (opts.tracked_pins) |remap| {
             const pin_keys = self.tracked_pins.keys();
             for (pin_keys) |p| {
+                // We're only interested in pins that were within the chunk.
                 if (p.page != chunk.page or
                     p.y < chunk.start or
                     p.y >= chunk.end) continue;
