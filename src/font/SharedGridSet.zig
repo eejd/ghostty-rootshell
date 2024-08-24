@@ -187,20 +187,56 @@ fn collection(
         inline for (@typeInfo(Style).Enum.fields) |field| {
             const style = @field(Style, field.name);
             for (key.descriptorsForStyle(style)) |desc| {
-                var disco_it = try disco.discover(self.alloc, desc);
-                defer disco_it.deinit();
-                if (try disco_it.next()) |face| {
-                    log.info("font {s}: {s}", .{
-                        field.name,
-                        try face.name(&name_buf),
-                    });
+                {
+                    var disco_it = try disco.discover(self.alloc, desc);
+                    defer disco_it.deinit();
+                    if (try disco_it.next()) |face| {
+                        log.info("font {s}: {s}", .{
+                            field.name,
+                            try face.name(&name_buf),
+                        });
 
-                    _ = try c.add(
-                        self.alloc,
-                        style,
-                        .{ .deferred = face },
-                    );
-                } else log.warn("font-family {s} not found: {s}", .{
+                        _ = try c.add(
+                            self.alloc,
+                            style,
+                            .{ .deferred = face },
+                        );
+
+                        continue;
+                    }
+                }
+
+                // If there are variation configurations and we didn't find
+                // the font, then we retry the discovery with all stylistic
+                // bits set to false. This is because some fonts may not
+                // set the stylistic bit in their table but still support
+                // axes to mimic the style. At the time of writing, Berkeley
+                // Mono Variable is like this. See #2140.
+                if (style != .regular and desc.variations.len > 0) {
+                    var disco_it = try disco.discover(self.alloc, desc: {
+                        var copy = desc;
+                        copy.bold = false;
+                        copy.italic = false;
+                        break :desc copy;
+                    });
+                    defer disco_it.deinit();
+                    if (try disco_it.next()) |face| {
+                        log.info("font {s}: {s}", .{
+                            field.name,
+                            try face.name(&name_buf),
+                        });
+
+                        _ = try c.add(
+                            self.alloc,
+                            style,
+                            .{ .deferred = face },
+                        );
+
+                        continue;
+                    }
+                }
+
+                log.warn("font-family {s} not found: {s}", .{
                     field.name,
                     desc.family.?,
                 });
