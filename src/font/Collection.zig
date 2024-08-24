@@ -346,10 +346,11 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
 /// small style count.
 ///
 /// We use a segmented list because the entry values must be pointer-stable
-/// to support the "alias" field in Entry. SegmentedList also lets us do
-/// a prealloc which is great for performance since most happy path cases
-/// do not use many font fallbacks.
-const StyleArray = std.EnumArray(Style, std.SegmentedList(Entry, 4));
+/// to support the "alias" field in Entry.
+///
+/// WARNING: We cannot use any prealloc yet for the segmented list because
+/// the collection is copied around by value and pointers aren't stable.
+const StyleArray = std.EnumArray(Style, std.SegmentedList(Entry, 0));
 
 /// Load options are used to configure all the details a Collection
 /// needs to load deferred faces.
