@@ -260,7 +260,8 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     // If we can't create a synthetic italic face, we'll just use the regular
     // face for italic.
     const italic_list = self.faces.getPtr(.italic);
-    if (italic_list.count() == 0) italic: {
+    const have_italic = italic_list.count() > 0;
+    if (!have_italic) italic: {
         const synthetic = self.syntheticItalic(regular_entry) catch |err| {
             log.warn("failed to create synthetic italic, italic style will not be available err={}", .{err});
             try italic_list.append(alloc, .{ .alias = regular_entry });
@@ -273,7 +274,8 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
 
     // If we don't have bold, use the regular font.
     const bold_list = self.faces.getPtr(.bold);
-    if (bold_list.count() == 0) bold: {
+    const have_bold = bold_list.count() > 0;
+    if (!have_bold) bold: {
         const synthetic = self.syntheticBold(regular_entry) catch |err| {
             log.warn("failed to create synthetic bold, bold style will not be available err={}", .{err});
             try bold_list.append(alloc, .{ .alias = regular_entry });
@@ -284,29 +286,45 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
         try bold_list.append(alloc, .{ .loaded = synthetic });
     }
 
-    // If we don't have bold italic, use the regular italic font.
+    // If we don't have bold italic, we attempt to synthesize a bold variant
+    // of the italic font. If we can't do that, we'll use the italic font.
     const bold_italic_list = self.faces.getPtr(.bold_italic);
-    if (bold_italic_list.count() == 0) {
-        log.warn("bold italic style not available, using italic font", .{});
+    if (bold_italic_list.count() == 0) bold_italic: {
+        // Prefer to synthesize on top of the face we already had. If we
+        // have bold then we try to synthesize italic on top of bold.
+        if (have_bold) {
+            if (self.syntheticItalic(bold_list.at(0))) |synthetic| {
+                log.info("synthetic bold italic face created from bold", .{});
+                try bold_italic_list.append(alloc, .{ .loaded = synthetic });
+                break :bold_italic;
+            } else |_| {}
 
-        // Nested alias isn't allowed so if the italic entry is an
-        // alias then we use the aliased entry.
-        const italic_entry = italic_list.at(0);
-        switch (italic_entry.*) {
-            .alias => |v| try bold_italic_list.append(
-                alloc,
-                .{ .alias = v },
-            ),
-
-            .loaded,
-            .fallback_loaded,
-            .deferred,
-            .fallback_deferred,
-            => try bold_italic_list.append(
-                alloc,
-                .{ .alias = italic_entry },
-            ),
+            // If synthesizing italic failed, then we try to synthesize
+            // boldon whatever italic font we have.
         }
+
+        // Nested alias isn't allowed so we need to unwrap the italic entry.
+        const base_entry = base: {
+            const italic_entry = italic_list.at(0);
+            break :base switch (italic_entry.*) {
+                .alias => |v| v,
+
+                .loaded,
+                .fallback_loaded,
+                .deferred,
+                .fallback_deferred,
+                => italic_entry,
+            };
+        };
+
+        if (self.syntheticBold(base_entry)) |synthetic| {
+            log.info("synthetic bold italic face created from italic", .{});
+            try bold_italic_list.append(alloc, .{ .loaded = synthetic });
+            break :bold_italic;
+        } else |_| {}
+
+        log.warn("bold italic style not available, using italic font", .{});
+        try bold_italic_list.append(alloc, .{ .alias = base_entry });
     }
 }
 
