@@ -282,7 +282,25 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     const bold_italic_list = self.faces.getPtr(.bold_italic);
     if (bold_italic_list.count() == 0) {
         log.warn("bold italic style not available, using italic font", .{});
-        try bold_italic_list.append(alloc, .{ .alias = italic_list.at(0) });
+
+        // Nested alias isn't allowed so if the italic entry is an
+        // alias then we use the aliased entry.
+        const italic_entry = italic_list.at(0);
+        switch (italic_entry.*) {
+            .alias => |v| try bold_italic_list.append(
+                alloc,
+                .{ .alias = v },
+            ),
+
+            .loaded,
+            .fallback_loaded,
+            .deferred,
+            .fallback_deferred,
+            => try bold_italic_list.append(
+                alloc,
+                .{ .alias = italic_entry },
+            ),
+        }
     }
 }
 
