@@ -481,7 +481,7 @@ pub const Key = struct {
                 .style = style,
                 .size = font_size.points,
                 .bold = style == null,
-                .variations = config.@"font-variation".list.items,
+                .variations = config.@"font-variation-bold".list.items,
             });
         }
         for (config.@"font-family-italic".list.items) |family| {
@@ -491,7 +491,7 @@ pub const Key = struct {
                 .style = style,
                 .size = font_size.points,
                 .italic = style == null,
-                .variations = config.@"font-variation".list.items,
+                .variations = config.@"font-variation-italic".list.items,
             });
         }
         for (config.@"font-family-bold-italic".list.items) |family| {
@@ -502,7 +502,7 @@ pub const Key = struct {
                 .size = font_size.points,
                 .bold = style == null,
                 .italic = style == null,
-                .variations = config.@"font-variation".list.items,
+                .variations = config.@"font-variation-bold-italic".list.items,
             });
         }
 
