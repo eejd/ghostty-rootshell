@@ -55,7 +55,7 @@ const c = @cImport({
 /// will be searched for stylistic variants. If a stylistic variant is not
 /// found, Ghostty will use the regular style. This prevents falling back to a
 /// different font family just to get a style such as bold. This also applies
-/// if you explictly speciy a font family for a style. For example, if you
+/// if you explicitly specify a font family for a style. For example, if you
 /// set `font-family-bold = FooBar` and "FooBar" cannot be found, Ghostty will
 /// use whatever font is set for `font-family` for the bold style.
 ///
