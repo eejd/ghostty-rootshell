@@ -16,6 +16,7 @@
 const Collection = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const font = @import("main.zig");
 const options = font.options;
@@ -39,21 +40,18 @@ faces: StyleArray,
 load_options: ?LoadOptions = null,
 
 /// Initialize an empty collection.
-pub fn init(
-    alloc: Allocator,
-) !Collection {
+pub fn init() Collection {
     // Initialize our styles array, preallocating some space that is
     // likely to be used.
-    var faces = StyleArray.initFill(.{});
-    for (&faces.values) |*v| try v.ensureTotalCapacityPrecise(alloc, 2);
-    return .{ .faces = faces };
+    return .{ .faces = StyleArray.initFill(.{}) };
 }
 
 pub fn deinit(self: *Collection, alloc: Allocator) void {
     var it = self.faces.iterator();
-    while (it.next()) |entry| {
-        for (entry.value.items) |*item| item.deinit();
-        entry.value.deinit(alloc);
+    while (it.next()) |array| {
+        var entry_it = array.value.iterator(0);
+        while (entry_it.next()) |entry| entry.deinit();
+        array.value.deinit(alloc);
     }
 
     if (self.load_options) |*v| v.deinit(alloc);
@@ -84,14 +82,14 @@ pub fn add(
     const list = self.faces.getPtr(style);
 
     // We have some special indexes so we must never pass those.
-    if (list.items.len >= Index.Special.start - 1)
+    const idx = list.count();
+    if (idx >= Index.Special.start - 1)
         return error.CollectionFull;
 
     // If this is deferred and we don't have load options, we can't.
     if (face.isDeferred() and self.load_options == null)
         return error.DeferredLoadingUnavailable;
 
-    const idx = list.items.len;
     try list.append(alloc, face);
     return .{ .style = style, .idx = @intCast(idx) };
 }
@@ -104,27 +102,54 @@ pub fn add(
 pub fn getFace(self: *Collection, index: Index) !*Face {
     if (index.special() != null) return error.SpecialHasNoFace;
     const list = self.faces.getPtr(index.style);
-    const item = &list.items[index.idx];
-    return switch (item.*) {
+    const item: *Entry = item: {
+        var item = list.at(index.idx);
+        switch (item.*) {
+            .alias => |ptr| item = ptr,
+
+            .deferred,
+            .fallback_deferred,
+            .loaded,
+            .fallback_loaded,
+            => {},
+        }
+        assert(item.* != .alias);
+        break :item item;
+    };
+
+    return self.getFaceFromEntry(item);
+}
+
+/// Get the face from an entry.
+///
+/// This entry must not be an alias.
+fn getFaceFromEntry(self: *Collection, entry: *Entry) !*Face {
+    assert(entry.* != .alias);
+
+    return switch (entry.*) {
         inline .deferred, .fallback_deferred => |*d, tag| deferred: {
             const opts = self.load_options orelse
                 return error.DeferredLoadingUnavailable;
             const face = try d.load(opts.library, opts.faceOptions());
             d.deinit();
-            item.* = switch (tag) {
+            entry.* = switch (tag) {
                 .deferred => .{ .loaded = face },
                 .fallback_deferred => .{ .fallback_loaded = face },
                 else => unreachable,
             };
 
             break :deferred switch (tag) {
-                .deferred => &item.loaded,
-                .fallback_deferred => &item.fallback_loaded,
+                .deferred => &entry.loaded,
+                .fallback_deferred => &entry.fallback_loaded,
                 else => unreachable,
             };
         },
 
         .loaded, .fallback_loaded => |*f| f,
+
+        // When setting `entry` above, we ensure we don't end up with
+        // an alias.
+        .alias => unreachable,
     };
 }
 
@@ -140,13 +165,17 @@ pub fn getIndex(
     style: Style,
     p_mode: PresentationMode,
 ) ?Index {
-    for (self.faces.get(style).items, 0..) |elem, i| {
-        if (elem.hasCodepoint(cp, p_mode)) {
+    var i: usize = 0;
+    var it = self.faces.get(style).constIterator(0);
+    while (it.next()) |entry| {
+        if (entry.hasCodepoint(cp, p_mode)) {
             return .{
                 .style = style,
                 .idx = @intCast(i),
             };
         }
+
+        i += 1;
     }
 
     // Not found
@@ -164,38 +193,52 @@ pub fn hasCodepoint(
     p_mode: PresentationMode,
 ) bool {
     const list = self.faces.get(index.style);
-    if (index.idx >= list.items.len) return false;
-    return list.items[index.idx].hasCodepoint(cp, p_mode);
+    if (index.idx >= list.count()) return false;
+    return list.at(index.idx).hasCodepoint(cp, p_mode);
 }
 
-/// Automatically create an italicized font from the regular
-/// font face if we don't have one already. If we already have
-/// an italicized font face, this does nothing.
-pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
-    // If we have an italic font, do nothing.
-    const italic_list = self.faces.getPtr(.italic);
-    if (italic_list.items.len > 0) return;
+pub const CompleteError = Allocator.Error || error{
+    DefaultUnavailable,
+};
 
-    // Not all font backends support auto-italicization.
-    if (comptime !@hasDecl(Face, "italicize")) {
-        log.warn(
-            "no italic font face available, italics will not render",
-            .{},
-        );
+/// Ensure we have an option for all styles in the collection, such
+/// as italic and bold.
+///
+/// This requires that a regular font face is already loaded.
+/// This is asserted. If a font style is missing, we will synthesize
+/// it if possible. Otherwise, we will use the regular font style.
+pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
+    // If every style has at least one entry then we're done!
+    // This is the most common case.
+    empty: {
+        var it = self.faces.iterator();
+        while (it.next()) |entry| {
+            if (entry.value.count() == 0) break :empty;
+        }
+
         return;
     }
 
-    // Our regular font. If we have no regular font we also do nothing.
-    const regular = regular: {
-        const list = self.faces.get(.regular);
-        if (list.items.len == 0) return;
+    // Find the first regular face that has non-colorized text glyphs.
+    // This is the font we want to fallback to. This may not be index zero
+    // if a user configures something like an Emoji font first.
+    const regular_entry: *Entry = entry: {
+        const list = self.faces.getPtr(.regular);
+        assert(list.count() > 0);
 
         // Find our first regular face that has text glyphs.
-        for (0..list.items.len) |i| {
-            const face = try self.getFace(.{
-                .style = .regular,
-                .idx = @intCast(i),
-            });
+        var it = list.iterator(0);
+        while (it.next()) |entry| {
+            // Load our face. If we fail to load it, we just skip it and
+            // continue on to try the next one.
+            const face = self.getFaceFromEntry(entry) catch |err| {
+                log.warn("error loading regular entry={d} err={}", .{
+                    it.index - 1,
+                    err,
+                });
+
+                continue;
+            };
 
             // We have two conditionals here. The color check is obvious:
             // we want to auto-italicize a normal text font. The second
@@ -205,25 +248,80 @@ pub fn autoItalicize(self: *Collection, alloc: Allocator) !void {
             // it's a reasonable heuristic and the first case will match 99%
             // of the time.
             if (!face.hasColor() or face.glyphIndex('A') != null) {
-                break :regular face;
+                break :entry entry;
             }
         }
 
-        // No regular text face found.
-        return;
+        // No regular text face found. We can't provide any fallback.
+        return error.DefaultUnavailable;
     };
+
+    // If we don't have italic, attempt to create a synthetic italic face.
+    // If we can't create a synthetic italic face, we'll just use the regular
+    // face for italic.
+    const italic_list = self.faces.getPtr(.italic);
+    if (italic_list.count() == 0) italic: {
+        const synthetic = self.syntheticItalic(regular_entry) catch |err| {
+            log.warn("failed to create synthetic italic, italic style will not be available err={}", .{err});
+            try italic_list.append(alloc, .{ .alias = regular_entry });
+            break :italic;
+        };
+
+        log.info("synthetic italic face created", .{});
+        try italic_list.append(alloc, .{ .loaded = synthetic });
+    }
+
+    // If we don't have bold, use the regular font.
+    const bold_list = self.faces.getPtr(.bold);
+    if (bold_list.count() == 0) {
+        log.warn("bold style not available, using regular font", .{});
+        try bold_list.append(alloc, .{ .alias = regular_entry });
+    }
+
+    // If we don't have bold italic, use the regular italic font.
+    const bold_italic_list = self.faces.getPtr(.bold_italic);
+    if (bold_italic_list.count() == 0) {
+        log.warn("bold italic style not available, using italic font", .{});
+
+        // Nested alias isn't allowed so if the italic entry is an
+        // alias then we use the aliased entry.
+        const italic_entry = italic_list.at(0);
+        switch (italic_entry.*) {
+            .alias => |v| try bold_italic_list.append(
+                alloc,
+                .{ .alias = v },
+            ),
+
+            .loaded,
+            .fallback_loaded,
+            .deferred,
+            .fallback_deferred,
+            => try bold_italic_list.append(
+                alloc,
+                .{ .alias = italic_entry },
+            ),
+        }
+    }
+}
+
+// Create an synthetic italic font face from the given entry and return it.
+fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
+    // Not all font backends support auto-italicization.
+    if (comptime !@hasDecl(Face, "italicize")) return error.SyntheticItalicUnavailable;
 
     // We require loading options to auto-italicize.
     const opts = self.load_options orelse return error.DeferredLoadingUnavailable;
 
     // Try to italicize it.
+    const regular = try self.getFaceFromEntry(entry);
     const face = try regular.italicize(opts.faceOptions());
-    try italic_list.append(alloc, .{ .loaded = face });
 
     var buf: [256]u8 = undefined;
     if (face.name(&buf)) |name| {
         log.info("font auto-italicized: {s}", .{name});
     } else |_| {}
+
+    return face;
 }
 
 /// Update the size of all faces in the collection. This will
@@ -241,12 +339,19 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
 
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
-    while (it.next()) |entry| {
-        for (entry.value.items) |*elem| switch (elem.*) {
-            .deferred, .fallback_deferred => continue,
+    while (it.next()) |array| {
+        var entry_it = array.value.iterator(0);
+        while (entry_it.next()) |entry| switch (entry.*) {
             .loaded, .fallback_loaded => |*f| try f.setSize(
                 opts.faceOptions(),
             ),
+
+            // Deferred aren't loaded so we don't need to set their size.
+            // The size for when they're loaded is set since `opts` changed.
+            .deferred, .fallback_deferred => continue,
+
+            // Alias faces don't own their size.
+            .alias => continue,
         };
     }
 }
@@ -257,7 +362,13 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
 /// styles are typically loaded for a terminal session. The overhead per
 /// style even if it is not used or barely used is minimal given the
 /// small style count.
-const StyleArray = std.EnumArray(Style, std.ArrayListUnmanaged(Entry));
+///
+/// We use a segmented list because the entry values must be pointer-stable
+/// to support the "alias" field in Entry.
+///
+/// WARNING: We cannot use any prealloc yet for the segmented list because
+/// the collection is copied around by value and pointers aren't stable.
+const StyleArray = std.EnumArray(Style, std.SegmentedList(Entry, 0));
 
 /// Load options are used to configure all the details a Collection
 /// needs to load deferred faces.
@@ -318,6 +429,10 @@ pub const Entry = union(enum) {
     fallback_deferred: DeferredFace,
     fallback_loaded: Face,
 
+    // An alias to another entry. This is used to share the same face,
+    // avoid memory duplication. An alias must point to a non-alias entry.
+    alias: *Entry,
+
     pub fn deinit(self: *Entry) void {
         switch (self.*) {
             inline .deferred,
@@ -325,6 +440,10 @@ pub const Entry = union(enum) {
             .fallback_deferred,
             .fallback_loaded,
             => |*v| v.deinit(),
+
+            // Aliased fonts are not owned by this entry so we let them
+            // be deallocated by the owner.
+            .alias => {},
         }
     }
 
@@ -333,6 +452,7 @@ pub const Entry = union(enum) {
         return switch (self) {
             .deferred, .fallback_deferred => true,
             .loaded, .fallback_loaded => false,
+            .alias => |v| v.isDeferred(),
         };
     }
 
@@ -343,6 +463,8 @@ pub const Entry = union(enum) {
         p_mode: PresentationMode,
     ) bool {
         return switch (self) {
+            .alias => |v| v.hasCodepoint(cp, p_mode),
+
             // Non-fallback fonts require explicit presentation matching but
             // otherwise don't care about presentation
             .deferred => |v| switch (p_mode) {
@@ -467,7 +589,7 @@ test init {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 }
 
@@ -479,7 +601,7 @@ test "add full" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     for (0..Index.Special.start - 1) |_| {
@@ -505,7 +627,7 @@ test "add deferred without loading options" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     try testing.expectError(error.DeferredLoadingUnavailable, c.add(
@@ -525,7 +647,7 @@ test getFace {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     const idx = try c.add(alloc, .regular, .{ .loaded = try Face.init(
@@ -549,7 +671,7 @@ test getIndex {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
 
     _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
@@ -572,9 +694,7 @@ test getIndex {
     }
 }
 
-test autoItalicize {
-    if (comptime !@hasDecl(Face, "italicize")) return error.SkipZigTest;
-
+test completeStyles {
     const testing = std.testing;
     const alloc = testing.allocator;
     const testFont = @import("test.zig").fontRegular;
@@ -582,7 +702,7 @@ test autoItalicize {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -592,9 +712,13 @@ test autoItalicize {
         .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
     ) });
 
+    try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) == null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) == null);
-    try c.autoItalicize(alloc);
+    try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) == null);
+    try c.completeStyles(alloc);
+    try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) != null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) != null);
+    try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) != null);
 }
 
 test setSize {
@@ -605,7 +729,7 @@ test setSize {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -628,7 +752,7 @@ test hasCodepoint {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
@@ -652,7 +776,7 @@ test "hasCodepoint emoji default graphical" {
     var lib = try Library.init();
     defer lib.deinit();
 
-    var c = try init(alloc);
+    var c = init();
     defer c.deinit(alloc);
     c.load_options = .{ .library = lib };
 
