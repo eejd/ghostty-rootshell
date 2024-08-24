@@ -169,7 +169,7 @@ pub const Face = struct {
 
     /// Return a new face that is the same as this but has a transformation
     /// matrix applied to italicize it.
-    pub fn italicize(self: *const Face, opts: font.face.Options) !Face {
+    pub fn syntheticItalic(self: *const Face, opts: font.face.Options) !Face {
         const ct_font = try self.font.copyWithAttributes(0.0, &italic_skew, null);
         errdefer ct_font.release();
         return try initFont(ct_font, opts);

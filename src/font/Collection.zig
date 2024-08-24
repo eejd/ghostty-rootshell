@@ -306,19 +306,19 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
 
 // Create an synthetic italic font face from the given entry and return it.
 fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
-    // Not all font backends support auto-italicization.
-    if (comptime !@hasDecl(Face, "italicize")) return error.SyntheticItalicUnavailable;
+    // Not all font backends support synthetic italicization.
+    if (comptime !@hasDecl(Face, "syntheticItalic")) return error.SyntheticItalicUnavailable;
 
-    // We require loading options to auto-italicize.
+    // We require loading options to create a synthetic italic face.
     const opts = self.load_options orelse return error.DeferredLoadingUnavailable;
 
     // Try to italicize it.
     const regular = try self.getFaceFromEntry(entry);
-    const face = try regular.italicize(opts.faceOptions());
+    const face = try regular.syntheticItalic(opts.faceOptions());
 
     var buf: [256]u8 = undefined;
     if (face.name(&buf)) |name| {
-        log.info("font auto-italicized: {s}", .{name});
+        log.info("font synthetic italic created family={s}", .{name});
     } else |_| {}
 
     return face;
