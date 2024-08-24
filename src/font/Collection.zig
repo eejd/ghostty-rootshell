@@ -300,7 +300,7 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
             } else |_| {}
 
             // If synthesizing italic failed, then we try to synthesize
-            // boldon whatever italic font we have.
+            // bold on whatever italic font we have.
         }
 
         // Nested alias isn't allowed so we need to unwrap the italic entry.
@@ -328,7 +328,7 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     }
 }
 
-// Create an synthetic italic font face from the given entry and return it.
+// Create a synthetic bold font face from the given entry and return it.
 fn syntheticBold(self: *Collection, entry: *Entry) !Face {
     // Not all font backends support synthetic bold.
     if (comptime !@hasDecl(Face, "syntheticBold")) return error.SyntheticBoldUnavailable;
@@ -348,7 +348,7 @@ fn syntheticBold(self: *Collection, entry: *Entry) !Face {
     return face;
 }
 
-// Create an synthetic italic font face from the given entry and return it.
+// Create a synthetic italic font face from the given entry and return it.
 fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
     // Not all font backends support synthetic italicization.
     if (comptime !@hasDecl(Face, "syntheticItalic")) return error.SyntheticItalicUnavailable;

@@ -187,7 +187,7 @@ pub const Face = struct {
         errdefer ct_font.release();
         var face = try initFont(ct_font, opts);
 
-        // TO determine our synthetic bold line width we get a multiplier
+        // To determine our synthetic bold line width we get a multiplier
         // from the font size in points. This is a heuristic that is based
         // on the fact that a line width of 1 looks good to me at 12 points
         // and we want to scale that up roughly linearly with the font size.
