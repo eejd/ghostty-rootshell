@@ -24,6 +24,10 @@ pub const Face = struct {
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
 
+    /// True if this font face should be rasterized with a synthetic bold
+    /// effect. This is used for fonts that don't have a bold variant.
+    synthetic_bold: ?f64 = null,
+
     /// If the face can possibly be colored, then this is the state
     /// used to check for color information. This is null if the font
     /// can't possibly be colored (i.e. doesn't have SVG, sbix, etc
@@ -169,10 +173,29 @@ pub const Face = struct {
 
     /// Return a new face that is the same as this but has a transformation
     /// matrix applied to italicize it.
-    pub fn italicize(self: *const Face, opts: font.face.Options) !Face {
+    pub fn syntheticItalic(self: *const Face, opts: font.face.Options) !Face {
         const ct_font = try self.font.copyWithAttributes(0.0, &italic_skew, null);
         errdefer ct_font.release();
         return try initFont(ct_font, opts);
+    }
+
+    /// Return a new face that is the same as this but applies a synthetic
+    /// bold effect to it. This is useful for fonts that don't have a bold
+    /// variant.
+    pub fn syntheticBold(self: *const Face, opts: font.face.Options) !Face {
+        const ct_font = try self.font.copyWithAttributes(0.0, null, null);
+        errdefer ct_font.release();
+        var face = try initFont(ct_font, opts);
+
+        // To determine our synthetic bold line width we get a multiplier
+        // from the font size in points. This is a heuristic that is based
+        // on the fact that a line width of 1 looks good to me at 12 points
+        // and we want to scale that up roughly linearly with the font size.
+        const points_f64: f64 = @floatCast(opts.size.points);
+        const line_width = @max(points_f64 / 12.0, 1);
+        face.synthetic_bold = line_width;
+
+        return face;
     }
 
     /// Returns the font name. If allocation is required, buf will be used,
@@ -300,11 +323,23 @@ pub const Face = struct {
             .advance_x = 0,
         };
 
-        // If we're doing thicken, then getBoundsForGlyphs does not take
-        // into account the anti-aliasing that will be added to the glyph.
-        // We need to add some padding to allow that to happen. A padding of
-        // 2 is usually enough for anti-aliasing.
-        const padding_ctx: u32 = if (opts.thicken) 2 else 0;
+        // Additional padding we need to add to the bitmap context itself
+        // due to the glyph being larger than standard.
+        const padding_ctx: u32 = padding_ctx: {
+            // If we're doing thicken, then getBoundsForGlyphs does not take
+            // into account the anti-aliasing that will be added to the glyph.
+            // We need to add some padding to allow that to happen. A padding of
+            // 2 is usually enough for anti-aliasing.
+            var result: u32 = if (opts.thicken) 2 else 0;
+
+            // If we have a synthetic bold, add padding for the stroke width
+            if (self.synthetic_bold) |line_width| {
+                // x2 for top and bottom padding
+                result += @intFromFloat(@ceil(line_width) * 2);
+            }
+
+            break :padding_ctx result;
+        };
         const padded_width: u32 = width + (padding_ctx * 2);
         const padded_height: u32 = height + (padding_ctx * 2);
 
@@ -388,6 +423,13 @@ pub const Face = struct {
         } else {
             context.setGrayFillColor(ctx, 1, 1);
             context.setGrayStrokeColor(ctx, 1, 1);
+        }
+
+        // If we are drawing with synthetic bold then use a fill stroke
+        // which strokes the outlines of the glyph making a more bold look.
+        if (self.synthetic_bold) |line_width| {
+            context.setTextDrawingMode(ctx, .fill_stroke);
+            context.setLineWidth(ctx, line_width);
         }
 
         // We want to render the glyphs at (0,0), but the glyphs themselves

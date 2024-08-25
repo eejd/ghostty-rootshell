@@ -62,7 +62,9 @@ const c = @cImport({
 /// Finally, some styles may be synthesized if they are not supported.
 /// For example, if a font does not have an italic style and no alternative
 /// italic font is specified, Ghostty will synthesize an italic style by
-/// applying a slant to the regular style.
+/// applying a slant to the regular style. If you want to disable these
+/// synthesized styles then you can use the `font-style` configurations
+/// as documented below.
 ///
 /// You can disable styles completely by using the `font-style` set of
 /// configurations. See the documentation for `font-style` for more information.
