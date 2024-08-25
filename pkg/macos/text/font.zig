@@ -145,7 +145,7 @@ pub const Font = opaque {
         );
     }
 
-    pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) attr.Value() {
+    pub fn copyAttribute(self: *Font, comptime attr: text.FontAttribute) ?attr.Value() {
         return @ptrFromInt(@intFromPtr(c.CTFontCopyAttribute(
             @ptrCast(self),
             @ptrCast(attr.key()),

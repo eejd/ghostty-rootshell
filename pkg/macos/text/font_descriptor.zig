@@ -54,7 +54,7 @@ pub const FontDescriptor = opaque {
         c.CFRelease(self);
     }
 
-    pub fn copyAttribute(self: *const FontDescriptor, comptime attr: FontAttribute) attr.Value() {
+    pub fn copyAttribute(self: *const FontDescriptor, comptime attr: FontAttribute) ?attr.Value() {
         return @ptrFromInt(@intFromPtr(c.CTFontDescriptorCopyAttribute(
             @ptrCast(self),
             @ptrCast(attr.key()),
@@ -153,7 +153,7 @@ pub const FontAttribute = enum {
             .enabled => *foundation.Number,
             .downloadable => *anyopaque, // CFBoolean
             .downloaded => *anyopaque, // CFBoolean
-            .variation_axes => ?*foundation.Array,
+            .variation_axes => *foundation.Array,
         };
     }
 };
