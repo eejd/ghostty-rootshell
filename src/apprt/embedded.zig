@@ -1981,7 +1981,8 @@ pub const CAPI = struct {
             // at 1x but callers of this should be using scaled or apply
             // scale themselves.
             const size: f32 = size: {
-                const num = face.font.copyAttribute(.size);
+                const num = face.font.copyAttribute(.size) orelse
+                    break :size 12;
                 defer num.release();
                 var v: f32 = 12;
                 _ = num.getValue(.float, &v);

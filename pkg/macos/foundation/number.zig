@@ -15,7 +15,7 @@ pub const Number = opaque {
         )))) orelse Allocator.Error.OutOfMemory;
     }
 
-    pub fn getValue(self: *Number, comptime t: NumberType, ptr: *t.ValueType()) bool {
+    pub fn getValue(self: *const Number, comptime t: NumberType, ptr: *t.ValueType()) bool {
         return c.CFNumberGetValue(
             @ptrCast(self),
             @intFromEnum(t),

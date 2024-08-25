@@ -613,7 +613,7 @@ pub const CoreText = struct {
         // Get our symbolic traits for the descriptor so we can compare
         // boolean attributes like bold, monospace, etc.
         const symbolic_traits: macos.text.FontSymbolicTraits = traits: {
-            const traits = ct_desc.copyAttribute(.traits);
+            const traits = ct_desc.copyAttribute(.traits) orelse break :traits .{};
             defer traits.release();
 
             const key = macos.text.FontTraitKey.symbolic.key();
@@ -626,7 +626,8 @@ pub const CoreText = struct {
         score_acc.monospace = symbolic_traits.monospace;
 
         score_acc.style = style: {
-            const style = ct_desc.copyAttribute(.style_name);
+            const style = ct_desc.copyAttribute(.style_name) orelse
+                break :style .unmatched;
             defer style.release();
 
             // If we have a specific desired style, attempt to search for that.
