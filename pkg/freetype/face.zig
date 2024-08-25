@@ -14,6 +14,11 @@ pub const Face = struct {
         _ = c.FT_Done_Face(self.handle);
     }
 
+    /// Increment the counter of the face.
+    pub fn ref(self: Face) void {
+        _ = c.FT_Reference_Face(self.handle);
+    }
+
     /// A macro that returns true whenever a face object contains some
     /// embedded bitmaps. See the available_sizes field of the FT_FaceRec structure.
     pub fn hasFixedSizes(self: Face) bool {
@@ -169,6 +174,20 @@ pub const Face = struct {
             coords.ptr,
         );
         return intToError(res);
+    }
+
+    /// Set the transformation that is applied to glyph images when they are
+    /// loaded into a glyph slot through FT_Load_Glyph.
+    pub fn setTransform(
+        self: Face,
+        matrix: ?*const c.FT_Matrix,
+        delta: ?*const c.FT_Vector,
+    ) void {
+        c.FT_Set_Transform(
+            self.handle,
+            @constCast(@ptrCast(matrix)),
+            @constCast(@ptrCast(delta)),
+        );
     }
 };
 
