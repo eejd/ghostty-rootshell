@@ -37,6 +37,17 @@ pub const Face = struct {
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
 
+    /// Set to true to apply a synthetic italic to the face.
+    synthetic_italic: bool = false,
+
+    /// The matrix applied to a regular font to create a synthetic italic.
+    const italic_matrix: freetype.c.FT_Matrix = .{
+        .xx = 0x10000,
+        .xy = 0x044ED, // approx. tan(15)
+        .yx = 0,
+        .yy = 0x10000,
+    };
+
     /// Initialize a new font face with the given source in-memory.
     pub fn initFile(lib: Library, path: [:0]const u8, index: i32, opts: font.face.Options) !Face {
         const face = try lib.lib.initFace(path, index);
@@ -117,6 +128,24 @@ pub const Face = struct {
         }
 
         return "";
+    }
+
+    /// Return a new face that is the same as this but has a transformation
+    /// matrix applied to italicize it.
+    pub fn syntheticItalic(self: *const Face, opts: font.face.Options) !Face {
+        // Increase face ref count
+        self.face.ref();
+        errdefer self.face.deinit();
+
+        var f = try initFace(
+            .{ .lib = self.lib },
+            self.face,
+            opts,
+        );
+        errdefer f.deinit();
+        f.synthetic_italic = true;
+
+        return f;
     }
 
     /// Resize the font in-place. If this succeeds, the caller is responsible
@@ -246,6 +275,12 @@ pub const Face = struct {
     ) !Glyph {
         const metrics = opts.grid_metrics orelse self.metrics;
 
+        // If we have synthetic italic, then we apply a transformation matrix.
+        // We have to undo this because synthetic italic works by increasing
+        // the ref count of the base face.
+        if (self.synthetic_italic) self.face.setTransform(&italic_matrix, null);
+        defer if (self.synthetic_italic) self.face.setTransform(null, null);
+
         // If our glyph has color, we want to render the color
         try self.face.loadGlyph(glyph_index, .{
             .render = true,
@@ -265,7 +300,7 @@ pub const Face = struct {
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
-        if (bitmap_ft.rows == 0) return Glyph{
+        if (bitmap_ft.rows == 0) return .{
             .width = 0,
             .height = 0,
             .offset_x = 0,
