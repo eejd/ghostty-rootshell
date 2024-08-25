@@ -1006,19 +1006,10 @@ pub const Parser = struct {
             return;
         }
 
-        // For our key, we first try to parse it as a special key. If that
-        // doesn't work then we try to parse it as a number for a palette.
-        const key: kitty.color.Kind = std.meta.stringToEnum(
-            kitty.color.Kind,
-            self.temp_state.key,
-        ) orelse @enumFromInt(std.fmt.parseUnsigned(
-            u8,
-            self.temp_state.key,
-            10,
-        ) catch {
+        const key = kitty.color.Kind.parse(self.temp_state.key) orelse {
             log.warn("unknown key in kitty color protocol: {s}", .{self.temp_state.key});
             return;
-        });
+        };
 
         const value = value: {
             if (self.buf_start == self.buf_idx) break :value "";
@@ -1633,6 +1624,7 @@ test "OSC: hyperlink end" {
 
 test "OSC: kitty color protocol" {
     const testing = std.testing;
+    const Kind = kitty.color.Kind;
 
     var p: Parser = .{ .alloc = testing.allocator };
     defer p.deinit();
@@ -1646,12 +1638,12 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[0];
         try testing.expect(item == .query);
-        try testing.expectEqual(kitty.color.Kind.foreground, item.query);
+        try testing.expectEqual(Kind{ .special = .foreground }, item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[1];
         try testing.expect(item == .set);
-        try testing.expectEqual(kitty.color.Kind.background, item.set.key);
+        try testing.expectEqual(Kind{ .special = .background }, item.set.key);
         try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
@@ -1659,7 +1651,7 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[2];
         try testing.expect(item == .set);
-        try testing.expectEqual(kitty.color.Kind.cursor, item.set.key);
+        try testing.expectEqual(Kind{ .special = .cursor }, item.set.key);
         try testing.expectEqual(@as(u8, 0xf0), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xf8), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
@@ -1667,22 +1659,22 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[3];
         try testing.expect(item == .reset);
-        try testing.expectEqual(kitty.color.Kind.cursor_text, item.reset);
+        try testing.expectEqual(Kind{ .special = .cursor_text }, item.reset);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[4];
         try testing.expect(item == .reset);
-        try testing.expectEqual(kitty.color.Kind.visual_bell, item.reset);
+        try testing.expectEqual(Kind{ .special = .visual_bell }, item.reset);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[5];
         try testing.expect(item == .query);
-        try testing.expectEqual(kitty.color.Kind.selection_background, item.query);
+        try testing.expectEqual(Kind{ .special = .selection_background }, item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[6];
         try testing.expect(item == .set);
-        try testing.expectEqual(kitty.color.Kind.selection_background, item.set.key);
+        try testing.expectEqual(Kind{ .special = .selection_background }, item.set.key);
         try testing.expectEqual(@as(u8, 0xaa), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xbb), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xcc), item.set.color.b);
@@ -1690,12 +1682,12 @@ test "OSC: kitty color protocol" {
     {
         const item = cmd.kitty_color_protocol.list.items[7];
         try testing.expect(item == .query);
-        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(2)), item.query);
+        try testing.expectEqual(Kind{ .palette = 2 }, item.query);
     }
     {
         const item = cmd.kitty_color_protocol.list.items[8];
         try testing.expect(item == .set);
-        try testing.expectEqual(@as(kitty.color.Kind, @enumFromInt(3)), item.set.key);
+        try testing.expectEqual(Kind{ .palette = 3 }, item.set.key);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.r);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.g);
         try testing.expectEqual(@as(u8, 0xff), item.set.color.b);
