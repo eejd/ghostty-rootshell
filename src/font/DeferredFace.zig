@@ -107,7 +107,8 @@ pub fn familyName(self: DeferredFace, buf: []u8) ![]const u8 {
         .coretext_harfbuzz,
         .coretext_noshape,
         => if (self.ct) |ct| {
-            const family_name = ct.font.copyAttribute(.family_name);
+            const family_name = ct.font.copyAttribute(.family_name) orelse
+                return "unknown";
             return family_name.cstringPtr(.utf8) orelse unsupported: {
                 break :unsupported family_name.cstring(buf, .utf8) orelse
                     return error.OutOfMemory;
@@ -204,7 +205,8 @@ fn loadCoreTextFreetype(
     const ct = self.ct.?;
 
     // Get the URL for the font so we can get the filepath
-    const url = ct.font.copyAttribute(.url);
+    const url = ct.font.copyAttribute(.url) orelse
+        return error.FontHasNoFile;
     defer url.release();
 
     // Get the path from the URL
@@ -229,10 +231,50 @@ fn loadCoreTextFreetype(
     // the end for a zero so we set that up here.
     buf[path_slice.len] = 0;
 
-    // TODO: face index 0 is not correct long term and we should switch
-    // to using CoreText for rendering, too.
+    // Face index 0 is not always correct. We don't ship this configuration
+    // in a release build. Users should use the pure CoreText builds.
     //std.log.warn("path={s}", .{path_slice});
-    return try Face.initFile(lib, buf[0..path_slice.len :0], 0, opts);
+    var face = try Face.initFile(lib, buf[0..path_slice.len :0], 0, opts);
+    errdefer face.deinit();
+
+    // If our ct font has variations, apply them to the face.
+    if (ct.font.copyAttribute(.variation)) |variations| vars: {
+        defer variations.release();
+        if (variations.getCount() == 0) break :vars;
+
+        // This configuration is just used for testing so we don't want to
+        // have to pass a full allocator through so use the stack. We
+        // shouldn't have a lot of variations and if we do we should use
+        // another mechanism.
+        //
+        // On macOS the default stack size for a thread is 512KB and the main
+        // thread gets megabytes so 16KB is a safe stack allocation.
+        var data: [1024 * 16]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&data);
+        const alloc = fba.allocator();
+
+        var face_vars = std.ArrayList(font.face.Variation).init(alloc);
+        const kav = try variations.getKeysAndValues(alloc);
+        for (kav.keys, kav.values) |key, value| {
+            const num: *const macos.foundation.Number = @ptrCast(key.?);
+            const val: *const macos.foundation.Number = @ptrCast(value.?);
+
+            var num_i32: i32 = undefined;
+            if (!num.getValue(.sint32, &num_i32)) continue;
+
+            var val_f64: f64 = undefined;
+            if (!val.getValue(.float64, &val_f64)) continue;
+
+            try face_vars.append(.{
+                .id = @bitCast(num_i32),
+                .value = val_f64,
+            });
+        }
+
+        try face.setVariations(face_vars.items, opts);
+    }
+
+    return face;
 }
 
 fn loadWebCanvas(
