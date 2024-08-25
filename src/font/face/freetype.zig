@@ -38,7 +38,10 @@ pub const Face = struct {
     quirks_disable_default_font_features: bool = false,
 
     /// Set to true to apply a synthetic italic to the face.
-    synthetic_italic: bool = false,
+    synthetic: packed struct {
+        italic: bool = false,
+        bold: bool = false,
+    } = .{},
 
     /// The matrix applied to a regular font to create a synthetic italic.
     const italic_matrix: freetype.c.FT_Matrix = .{
@@ -130,6 +133,25 @@ pub const Face = struct {
         return "";
     }
 
+    /// Return a new face that is the same as this but also has synthetic
+    /// bold applied.
+    pub fn syntheticBold(self: *const Face, opts: font.face.Options) !Face {
+        // Increase face ref count
+        self.face.ref();
+        errdefer self.face.deinit();
+
+        var f = try initFace(
+            .{ .lib = self.lib },
+            self.face,
+            opts,
+        );
+        errdefer f.deinit();
+        f.synthetic = self.synthetic;
+        f.synthetic.bold = true;
+
+        return f;
+    }
+
     /// Return a new face that is the same as this but has a transformation
     /// matrix applied to italicize it.
     pub fn syntheticItalic(self: *const Face, opts: font.face.Options) !Face {
@@ -143,7 +165,8 @@ pub const Face = struct {
             opts,
         );
         errdefer f.deinit();
-        f.synthetic_italic = true;
+        f.synthetic = self.synthetic;
+        f.synthetic.italic = true;
 
         return f;
     }
@@ -278,13 +301,16 @@ pub const Face = struct {
         // If we have synthetic italic, then we apply a transformation matrix.
         // We have to undo this because synthetic italic works by increasing
         // the ref count of the base face.
-        if (self.synthetic_italic) self.face.setTransform(&italic_matrix, null);
-        defer if (self.synthetic_italic) self.face.setTransform(null, null);
+        if (self.synthetic.italic) self.face.setTransform(&italic_matrix, null);
+        defer if (self.synthetic.italic) self.face.setTransform(null, null);
 
         // If our glyph has color, we want to render the color
         try self.face.loadGlyph(glyph_index, .{
-            .render = true,
             .color = self.face.hasColor(),
+
+            // If we have synthetic bold, we have to set some additional
+            // glyph properties before render so we don't render here.
+            .render = !self.synthetic.bold,
 
             // Disable bitmap strikes for now since it causes issues with
             // our cell metrics and rasterization. In the future, this is
@@ -294,12 +320,23 @@ pub const Face = struct {
             // often colored bitmaps, which we support.
             .no_bitmap = !self.face.hasColor(),
         });
-
         const glyph = self.face.handle.*.glyph;
-        const bitmap_ft = glyph.*.bitmap;
+
+        // For synthetic bold, we embolden the glyph and render it.
+        if (self.synthetic.bold) {
+            // We need to scale the embolden amount based on the font size.
+            // This is a heuristic I found worked well across a variety of
+            // founts: 1 pixel per 64 units of height.
+            const height: f64 = @floatFromInt(self.face.handle.*.size.*.metrics.height);
+            const ratio: f64 = 64.0 / 2048.0;
+            const amount = @ceil(height * ratio);
+            _ = freetype.c.FT_Outline_Embolden(&glyph.*.outline, @intFromFloat(amount));
+            try self.face.renderGlyph(.normal);
+        }
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
+        const bitmap_ft = glyph.*.bitmap;
         if (bitmap_ft.rows == 0) return .{
             .width = 0,
             .height = 0,

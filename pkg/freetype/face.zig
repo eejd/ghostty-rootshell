@@ -95,6 +95,14 @@ pub const Face = struct {
         ));
     }
 
+    /// Convert a given glyph image to a bitmap.
+    pub fn renderGlyph(self: Face, render_mode: RenderMode) Error!void {
+        return intToError(c.FT_Render_Glyph(
+            self.handle.*.glyph,
+            @intFromEnum(render_mode),
+        ));
+    }
+
     /// Return a pointer to a given SFNT table stored within a face.
     pub fn getSfntTable(self: Face, comptime tag: SfntTag) ?*tag.DataType() {
         return @ptrCast(@alignCast(c.FT_Get_Sfnt_Table(
@@ -229,6 +237,16 @@ pub const Encoding = enum(u31) {
     adobe_latin_1 = c.FT_ENCODING_ADOBE_LATIN_1,
     old_latin_2 = c.FT_ENCODING_OLD_LATIN_2,
     apple_roman = c.FT_ENCODING_APPLE_ROMAN,
+};
+
+/// https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_render_mode
+pub const RenderMode = enum(c_uint) {
+    normal = c.FT_RENDER_MODE_NORMAL,
+    light = c.FT_RENDER_MODE_LIGHT,
+    mono = c.FT_RENDER_MODE_MONO,
+    lcd = c.FT_RENDER_MODE_LCD,
+    lcd_v = c.FT_RENDER_MODE_LCD_V,
+    sdf = c.FT_RENDER_MODE_SDF,
 };
 
 /// A list of bit field constants for FT_Load_Glyph to indicate what kind of
