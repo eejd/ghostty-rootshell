@@ -36,8 +36,8 @@ pub const Kind = union(enum) {
     special: Special,
 
     pub fn parse(key: []const u8) ?Kind {
-        if (std.meta.stringToEnum(Special, key)) |s| return Kind{ .special = s };
-        return Kind{ .palette = std.fmt.parseUnsigned(u8, key, 10) catch return null };
+        if (std.meta.stringToEnum(Special, key)) |s| return .{ .special = s };
+        return .{ .palette = std.fmt.parseUnsigned(u8, key, 10) catch return null };
     }
 
     pub fn format(

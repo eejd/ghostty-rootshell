@@ -1345,25 +1345,20 @@ pub const StreamHandler = struct {
                         self.terminal.color_palette.colors[palette] = v.color;
                         self.terminal.color_palette.mask.unset(palette);
                     },
+
                     .special => |special| {
                         const msg: renderer.Message = switch (special) {
                             .foreground => msg: {
                                 self.foreground_color = v.color;
-                                break :msg .{
-                                    .foreground_color = v.color,
-                                };
+                                break :msg .{ .foreground_color = v.color };
                             },
                             .background => msg: {
                                 self.background_color = v.color;
-                                break :msg .{
-                                    .background_color = v.color,
-                                };
+                                break :msg .{ .background_color = v.color };
                             },
                             .cursor => msg: {
                                 self.cursor_color = v.color;
-                                break :msg .{
-                                    .cursor_color = v.color,
-                                };
+                                break :msg .{ .cursor_color = v.color };
                             },
                             else => {
                                 log.warn(
@@ -1385,25 +1380,20 @@ pub const StreamHandler = struct {
                         self.terminal.color_palette.colors[palette] = self.terminal.default_palette[palette];
                         self.terminal.color_palette.mask.unset(palette);
                     },
+
                     .special => |special| {
                         const msg: renderer.Message = switch (special) {
                             .foreground => msg: {
                                 self.foreground_color = self.default_foreground_color;
-                                break :msg .{
-                                    .foreground_color = self.default_foreground_color,
-                                };
+                                break :msg .{ .foreground_color = self.default_foreground_color };
                             },
                             .background => msg: {
                                 self.background_color = self.default_background_color;
-                                break :msg .{
-                                    .background_color = self.default_background_color,
-                                };
+                                break :msg .{ .background_color = self.default_background_color };
                             },
                             .cursor => msg: {
                                 self.cursor_color = self.default_cursor_color;
-                                break :msg .{
-                                    .cursor_color = self.default_cursor_color,
-                                };
+                                break :msg .{ .cursor_color = self.default_cursor_color };
                             },
                             else => {
                                 log.warn(
