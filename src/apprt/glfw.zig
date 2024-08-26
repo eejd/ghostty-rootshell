@@ -551,7 +551,16 @@ pub const Surface = struct {
     /// surface initialization time. This may be called before "self"
     /// is fully initialized.
     pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
-        self.window.setSize(.{ .width = width, .height = height });
+        const monitor = self.window.getMonitor() orelse glfw.Monitor.getPrimary() orelse {
+            log.warn("window is not on a monitor, not setting initial size", .{});
+            return;
+        };
+
+        const workarea = monitor.getWorkarea();
+        self.window.setSize(.{
+            .width = @min(width, workarea.width),
+            .height = @min(height, workarea.height),
+        });
     }
 
     /// Set the cell size. Unused by GLFW.

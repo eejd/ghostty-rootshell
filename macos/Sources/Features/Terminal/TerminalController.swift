@@ -281,14 +281,15 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // If we have only a single surface (no splits) and that surface requested
         // an initial size then we set it here now.
         if case let .leaf(leaf) = surfaceTree {
-            if let initialSize = leaf.surface.initialSize {
+            if let initialSize = leaf.surface.initialSize,
+               let screen = window.screen ?? NSScreen.main {
                 // Setup our frame. We need to first subtract the views frame so that we can
                 // just get the chrome frame so that we only affect the surface view size.
                 var frame = window.frame
                 frame.size.width -= leaf.surface.frame.size.width
                 frame.size.height -= leaf.surface.frame.size.height
-                frame.size.width += initialSize.width
-                frame.size.height += initialSize.height
+                frame.size.width += min(initialSize.width, screen.frame.width)
+                frame.size.height += min(initialSize.height, screen.frame.height)
 
                 // We have no tabs and we are not a split, so set the initial size of the window.
                 window.setFrame(frame, display: true)
