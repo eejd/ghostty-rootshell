@@ -16,7 +16,7 @@ pub const ftplugin =
     \\endif
     \\let b:did_ftplugin = 1
     \\
-    \\setlocal commentstring=#%s
+    \\setlocal commentstring=#\ %s
     \\setlocal iskeyword+=-
     \\
     \\" Use syntax keywords for completion
