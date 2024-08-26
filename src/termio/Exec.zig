@@ -1066,11 +1066,15 @@ const Subprocess = struct {
         self.screen_size = screen_size;
 
         if (self.pty) |*pty| {
+            // It is theoretically possible for the grid or screen size to
+            // exceed u16, although the terminal in that case isn't very
+            // usable. This should be protected upstream but we still clamp
+            // in case there is a bad caller which has happened before.
             try pty.setSize(.{
-                .ws_row = @intCast(grid_size.rows),
-                .ws_col = @intCast(grid_size.columns),
-                .ws_xpixel = @intCast(screen_size.width),
-                .ws_ypixel = @intCast(screen_size.height),
+                .ws_row = std.math.cast(u16, grid_size.rows) orelse std.math.maxInt(u16),
+                .ws_col = std.math.cast(u16, grid_size.columns) orelse std.math.maxInt(u16),
+                .ws_xpixel = std.math.cast(u16, screen_size.width) orelse std.math.maxInt(u16),
+                .ws_ypixel = std.math.cast(u16, screen_size.height) orelse std.math.maxInt(u16),
             });
         }
     }
