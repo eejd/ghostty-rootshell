@@ -840,6 +840,8 @@ keybind: Keybinds = .{},
 @"window-colorspace": WindowColorspace = .srgb,
 
 /// The initial window size. This size is in terminal grid cells by default.
+/// Both values must be set to take effect. If only one value is set, it is
+/// ignored.
 ///
 /// We don't currently support specifying a size in pixels but a future change
 /// can enable that. If this isn't specified, the app runtime will determine
@@ -849,6 +851,9 @@ keybind: Keybinds = .{},
 /// size. For example, a tiling window manager may force the window to be a
 /// certain size to fit within the grid. There is nothing Ghostty will do about
 /// this, but it will make an effort.
+///
+/// Sizes larger than the screen size will be clamped to the screen size.
+/// This can be used to create a maximized-by-default window size.
 ///
 /// This will not affect new tabs, splits, or other nested terminal elements.
 /// This only affects the initial window size of any new window. Changing this
