@@ -189,10 +189,12 @@ pub const Face = struct {
 
         // To determine our synthetic bold line width we get a multiplier
         // from the font size in points. This is a heuristic that is based
-        // on the fact that a line width of 1 looks good to me at 12 points
-        // and we want to scale that up roughly linearly with the font size.
+        // on the fact that a line width of 1 looks good to me at a certain
+        // point size. We want to scale that up roughly linearly with the
+        // font size.
         const points_f64: f64 = @floatCast(opts.size.points);
-        const line_width = @max(points_f64 / 12.0, 1);
+        const line_width = @max(points_f64 / 14.0, 1);
+        // log.debug("synthetic bold line width={}", .{line_width});
         face.synthetic_bold = line_width;
 
         return face;
