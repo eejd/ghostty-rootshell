@@ -1080,8 +1080,14 @@ pub const Page = struct {
     }
 
     /// Set the hyperlink for the given cell. If the cell already has a
-    /// hyperlink, then this will handle memory management for the prior
-    /// hyperlink.
+    /// hyperlink, then this will handle memory management and refcount
+    /// update for the prior hyperlink.
+    ///
+    /// DOES NOT increment the reference count for the new hyperlink!
+    ///
+    /// Caller is responsible for updating the refcount in the hyperlink
+    /// set as necessary by calling `use` if the id was not acquired with
+    /// `add`.
     pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) !void {
         defer self.assertIntegrity();
 
@@ -1090,6 +1096,13 @@ pub const Page = struct {
         const gop = try map.getOrPut(cell_offset);
 
         if (gop.found_existing) {
+            // Always release the old hyperlink, because even if it's actually
+            // the same as the one we're setting, we'd end up double-counting
+            // if we left the reference count be, because the caller does not
+            // know whether it's the same and will have increased the count
+            // outside of this function.
+            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
+
             // If the hyperlink matches then we don't need to do anything.
             if (gop.value_ptr.* == id) {
                 // It is possible for cell hyperlink to be false but row
@@ -1102,13 +1115,9 @@ pub const Page = struct {
                 cell.hyperlink = true;
                 return;
             }
-
-            // Different hyperlink, we need to release the old one
-            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
         }
 
-        // Increase ref count for our new hyperlink and set it
-        self.hyperlink_set.use(self.memory, id);
+        // Set the hyperlink on the cell and in the map.
         gop.value_ptr.* = id;
         cell.hyperlink = true;
         row.hyperlink = true;

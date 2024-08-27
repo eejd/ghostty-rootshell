@@ -1755,7 +1755,8 @@ pub fn cursorSetHyperlink(self: *Screen) !void {
         self.cursor.page_cell,
         self.cursor.hyperlink_id,
     )) {
-        // Success!
+        // Success, increase the refcount for the hyperlink.
+        page.hyperlink_set.use(page.memory, self.cursor.hyperlink_id);
         return;
     } else |err| switch (err) {
         // hyperlink_map is out of space, realloc the page to be larger
