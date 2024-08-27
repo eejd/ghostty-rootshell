@@ -18,6 +18,7 @@ const Collection = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const config = @import("../config.zig");
 const font = @import("main.zig");
 const options = font.options;
 const DeferredFace = font.DeferredFace;
@@ -207,7 +208,11 @@ pub const CompleteError = Allocator.Error || error{
 /// This requires that a regular font face is already loaded.
 /// This is asserted. If a font style is missing, we will synthesize
 /// it if possible. Otherwise, we will use the regular font style.
-pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
+pub fn completeStyles(
+    self: *Collection,
+    alloc: Allocator,
+    synthetic_config: config.FontSyntheticStyle,
+) CompleteError!void {
     // If every style has at least one entry then we're done!
     // This is the most common case.
     empty: {
@@ -262,6 +267,12 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     const italic_list = self.faces.getPtr(.italic);
     const have_italic = italic_list.count() > 0;
     if (!have_italic) italic: {
+        if (!synthetic_config.italic) {
+            log.info("italic style not available and synthetic italic disabled", .{});
+            try italic_list.append(alloc, .{ .alias = regular_entry });
+            break :italic;
+        }
+
         const synthetic = self.syntheticItalic(regular_entry) catch |err| {
             log.warn("failed to create synthetic italic, italic style will not be available err={}", .{err});
             try italic_list.append(alloc, .{ .alias = regular_entry });
@@ -276,6 +287,12 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     const bold_list = self.faces.getPtr(.bold);
     const have_bold = bold_list.count() > 0;
     if (!have_bold) bold: {
+        if (!synthetic_config.bold) {
+            log.info("bold style not available and synthetic bold disabled", .{});
+            try bold_list.append(alloc, .{ .alias = regular_entry });
+            break :bold;
+        }
+
         const synthetic = self.syntheticBold(regular_entry) catch |err| {
             log.warn("failed to create synthetic bold, bold style will not be available err={}", .{err});
             try bold_list.append(alloc, .{ .alias = regular_entry });
@@ -290,6 +307,12 @@ pub fn completeStyles(self: *Collection, alloc: Allocator) CompleteError!void {
     // of the italic font. If we can't do that, we'll use the italic font.
     const bold_italic_list = self.faces.getPtr(.bold_italic);
     if (bold_italic_list.count() == 0) bold_italic: {
+        if (!synthetic_config.@"bold-italic") {
+            log.info("bold italic style not available and synthetic bold italic disabled", .{});
+            try bold_italic_list.append(alloc, .{ .alias = regular_entry });
+            break :bold_italic;
+        }
+
         // Prefer to synthesize on top of the face we already had. If we
         // have bold then we try to synthesize italic on top of bold.
         if (have_bold) {
@@ -759,7 +782,7 @@ test completeStyles {
     try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) == null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) == null);
     try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) == null);
-    try c.completeStyles(alloc);
+    try c.completeStyles(alloc, .{});
     try testing.expect(c.getIndex('A', .bold, .{ .any = {} }) != null);
     try testing.expect(c.getIndex('A', .italic, .{ .any = {} }) != null);
     try testing.expect(c.getIndex('A', .bold_italic, .{ .any = {} }) != null);

@@ -128,7 +128,7 @@ pub fn ref(
         // Build our collection. This is the expensive operation that
         // involves finding fonts, loading them (maybe, some are deferred),
         // etc.
-        var c = try self.collection(&key, font_size);
+        var c = try self.collection(&key, font_size, config);
         errdefer c.deinit(self.alloc);
 
         // Setup our enabled/disabled styles
@@ -156,6 +156,7 @@ fn collection(
     self: *SharedGridSet,
     key: *const Key,
     size: DesiredSize,
+    config: *const DerivedConfig,
 ) !Collection {
     // A quick note on memory management:
     // - font_lib is owned by the SharedGridSet
@@ -300,7 +301,7 @@ fn collection(
 
     // Complete our styles to ensure we have something to satisfy every
     // possible style request.
-    try c.completeStyles(self.alloc);
+    try c.completeStyles(self.alloc, config.@"font-synthetic-style");
 
     return c;
 }
@@ -386,6 +387,7 @@ pub const DerivedConfig = struct {
     @"font-variation-italic": configpkg.RepeatableFontVariation,
     @"font-variation-bold-italic": configpkg.RepeatableFontVariation,
     @"font-codepoint-map": configpkg.RepeatableCodepointMap,
+    @"font-synthetic-style": configpkg.FontSyntheticStyle,
     @"adjust-cell-width": ?Metrics.Modifier,
     @"adjust-cell-height": ?Metrics.Modifier,
     @"adjust-font-baseline": ?Metrics.Modifier,
@@ -416,6 +418,7 @@ pub const DerivedConfig = struct {
             .@"font-variation-italic" = try config.@"font-variation-italic".clone(alloc),
             .@"font-variation-bold-italic" = try config.@"font-variation-bold-italic".clone(alloc),
             .@"font-codepoint-map" = try config.@"font-codepoint-map".clone(alloc),
+            .@"font-synthetic-style" = config.@"font-synthetic-style",
             .@"adjust-cell-width" = config.@"adjust-cell-width",
             .@"adjust-cell-height" = config.@"adjust-cell-height",
             .@"adjust-font-baseline" = config.@"adjust-font-baseline",
