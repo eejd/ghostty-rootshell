@@ -240,6 +240,9 @@ pub const Action = union(enum) {
     /// Go to the next tab.
     next_tab: void,
 
+    /// Go to the last tab (the one with the highest index)
+    last_tab: void,
+
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 

@@ -795,31 +795,7 @@ pub fn hasTabs(self: *const Surface) bool {
     return window.hasTabs();
 }
 
-pub fn gotoPreviousTab(self: *Surface) void {
-    const window = self.container.window() orelse {
-        log.info(
-            "gotoPreviousTab invalid for container={s}",
-            .{@tagName(self.container)},
-        );
-        return;
-    };
-
-    window.gotoPreviousTab(self);
-}
-
-pub fn gotoNextTab(self: *Surface) void {
-    const window = self.container.window() orelse {
-        log.info(
-            "gotoNextTab invalid for container={s}",
-            .{@tagName(self.container)},
-        );
-        return;
-    };
-
-    window.gotoNextTab(self);
-}
-
-pub fn gotoTab(self: *Surface, n: usize) void {
+pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
     const window = self.container.window() orelse {
         log.info(
             "gotoTab invalid for container={s}",
@@ -828,7 +804,12 @@ pub fn gotoTab(self: *Surface, n: usize) void {
         return;
     };
 
-    window.gotoTab(n);
+    switch (tab) {
+        .previous => window.gotoPreviousTab(self),
+        .next => window.gotoNextTab(self),
+        .last => window.gotoLastTab(),
+        else => window.gotoTab(@intCast(@intFromEnum(tab))),
+    }
 }
 
 pub fn setShouldClose(self: *Surface) void {

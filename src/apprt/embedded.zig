@@ -108,7 +108,7 @@ pub const App = struct {
         toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
         /// Goto tab
-        goto_tab: ?*const fn (SurfaceUD, GotoTab) callconv(.C) void = null,
+        goto_tab: ?*const fn (SurfaceUD, apprt.GotoTab) callconv(.C) void = null,
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
@@ -133,13 +133,6 @@ pub const App = struct {
         /// parameter. The link target will be null if the mouse is no longer
         /// over a link.
         mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
-    };
-
-    /// Special values for the goto_tab callback.
-    const GotoTab = enum(i32) {
-        previous = -1,
-        next = -2,
-        _,
     };
 
     core_app: *CoreApp,
@@ -994,36 +987,13 @@ pub const Surface = struct {
         };
     }
 
-    pub fn gotoTab(self: *Surface, n: usize) void {
+    pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
         const func = self.app.opts.goto_tab orelse {
             log.info("runtime embedder does not goto_tab", .{});
             return;
         };
 
-        const idx = std.math.cast(i32, n) orelse {
-            log.warn("cannot cast tab index to i32 n={}", .{n});
-            return;
-        };
-
-        func(self.userdata, @enumFromInt(idx));
-    }
-
-    pub fn gotoPreviousTab(self: *Surface) void {
-        const func = self.app.opts.goto_tab orelse {
-            log.info("runtime embedder does not goto_tab", .{});
-            return;
-        };
-
-        func(self.userdata, .previous);
-    }
-
-    pub fn gotoNextTab(self: *Surface) void {
-        const func = self.app.opts.goto_tab orelse {
-            log.info("runtime embedder does not goto_tab", .{});
-            return;
-        };
-
-        func(self.userdata, .next);
+        func(self.userdata, tab);
     }
 
     pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
