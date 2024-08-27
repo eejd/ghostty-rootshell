@@ -288,6 +288,13 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
     self.focusCurrentTab();
 }
 
+/// Go to the next tab for a surface.
+pub fn gotoLastTab(self: *Window) void {
+    const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
+    c.gtk_notebook_set_current_page(self.notebook, max);
+    self.focusCurrentTab();
+}
+
 /// Go to the specific tab index.
 pub fn gotoTab(self: *Window, n: usize) void {
     if (n == 0) return;
