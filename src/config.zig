@@ -14,6 +14,7 @@ pub const formatEntry = formatter.formatEntry;
 pub const ClipboardAccess = Config.ClipboardAccess;
 pub const CopyOnSelect = Config.CopyOnSelect;
 pub const CustomShaderAnimation = Config.CustomShaderAnimation;
+pub const FontSyntheticStyle = Config.FontSyntheticStyle;
 pub const FontStyle = Config.FontStyle;
 pub const Keybinds = Config.Keybinds;
 pub const MouseShiftCapture = Config.MouseShiftCapture;
