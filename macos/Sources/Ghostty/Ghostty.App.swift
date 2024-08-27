@@ -379,14 +379,6 @@ extension Ghostty {
             )
         }
 
-        static func gotoLastTab(_ userdata: UnsafeMutableRawPointer?) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(
-                name: Notification.ghosttyGotoTab,
-                object: surface
-            )
-        }
-
         static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) {
             // If we don't even have a surface, something went terrible wrong so we have
             // to leak "state".
