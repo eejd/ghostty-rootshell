@@ -98,9 +98,9 @@ pub const Contents = struct {
     /// struck through characters, at least one of which is a multi-glyph
     /// composite.
     ///
-    /// Rows are indexed as Contents.fg_rows[y + 1], because the first list in
-    /// the pool is reserved for the cursor, which must be the first item in
-    /// the buffer.
+    /// Rows are indexed as Contents.fg_rows[y]. There are always "rows + 1"
+    /// lists in the pool, because the last list is reserved for the cursor.
+    /// The cursor is last so that it is drawn on top of all other content.
     ///
     /// Must be initialized by calling resize on the Contents struct before
     /// calling any operations.
@@ -125,7 +125,7 @@ pub const Contents = struct {
         const bg_cells = try alloc.alloc(mtl_shaders.CellBg, cell_count);
         errdefer alloc.free(bg_cells);
 
-        @memset(bg_cells, .{0, 0, 0, 0});
+        @memset(bg_cells, .{ 0, 0, 0, 0 });
 
         // The foreground lists can hold 3 types of items:
         // - Glyphs
@@ -137,7 +137,7 @@ pub const Contents = struct {
         // form a single grapheme, and multi-substitutions in fonts, the number
         // of glyphs in a row is theoretically unlimited.
         //
-        // We have size.rows + 1 lists because index 0 is used for a special
+        // We have size.rows + 1 lists because index `size.rows` is used for a special
         // list containing the cursor cell which needs to be first in the buffer.
         var fg_rows = try ArrayListPool(mtl_shaders.CellText).init(alloc, size.rows + 1, size.columns * 3);
         errdefer fg_rows.deinit(alloc);
@@ -152,8 +152,8 @@ pub const Contents = struct {
         // replace it with a smaller list. This is technically a tiny bit of
         // extra work but resize is not a hot function so it's worth it to not
         // waste the memory.
-        self.fg_rows.lists[0].deinit(alloc);
-        self.fg_rows.lists[0] = try std.ArrayListUnmanaged(mtl_shaders.CellText).initCapacity(alloc, 1);
+        self.fg_rows.lists[size.rows].deinit(alloc);
+        self.fg_rows.lists[size.rows] = try std.ArrayListUnmanaged(mtl_shaders.CellText).initCapacity(alloc, 1);
     }
 
     /// Reset the cell contents to an empty state without resizing.
@@ -164,11 +164,9 @@ pub const Contents = struct {
 
     /// Set the cursor value. If the value is null then the cursor is hidden.
     pub fn setCursor(self: *Contents, v: ?mtl_shaders.CellText) void {
-        self.fg_rows.lists[0].clearRetainingCapacity();
-
-        if (v) |cell| {
-            self.fg_rows.lists[0].appendAssumeCapacity(cell);
-        }
+        const idx = self.size.rows;
+        self.fg_rows.lists[idx].clearRetainingCapacity();
+        if (v) |cell| self.fg_rows.lists[idx].appendAssumeCapacity(cell);
     }
 
     /// Access a background cell. Prefer this function over direct indexing
@@ -199,7 +197,7 @@ pub const Contents = struct {
             // We have a special list containing the cursor cell at the start
             // of our fg row pool, so we need to add 1 to the y to get the
             // correct index.
-            => try self.fg_rows.lists[y + 1].append(alloc, cell),
+            => try self.fg_rows.lists[y].append(alloc, cell),
         }
     }
 
@@ -212,7 +210,7 @@ pub const Contents = struct {
         // We have a special list containing the cursor cell at the start
         // of our fg row pool, so we need to add 1 to the y to get the
         // correct index.
-        self.fg_rows.lists[y + 1].clearRetainingCapacity();
+        self.fg_rows.lists[y].clearRetainingCapacity();
     }
 };
 
@@ -229,14 +227,14 @@ test Contents {
 
     // We should start off empty after resizing.
     for (0..rows) |y| {
-        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+            try testing.expectEqual(.{ 0, 0, 0, 0 }, c.bgCell(y, x).*);
         }
     }
     // And the cursor row should have a capacity of 1 and also be empty.
-    try testing.expect(c.fg_rows.lists[0].capacity == 1);
-    try testing.expect(c.fg_rows.lists[0].items.len == 0);
+    try testing.expect(c.fg_rows.lists[rows].capacity == 1);
+    try testing.expect(c.fg_rows.lists[rows].items.len == 0);
 
     // Add some contents.
     const bg_cell: mtl_shaders.CellBg = .{ 0, 0, 0, 1 };
@@ -249,14 +247,14 @@ test Contents {
     try c.add(alloc, .text, fg_cell);
     try testing.expectEqual(bg_cell, c.bgCell(1, 4).*);
     // The fg row index is offset by 1 because of the cursor list.
-    try testing.expectEqual(fg_cell, c.fg_rows.lists[2].items[0]);
+    try testing.expectEqual(fg_cell, c.fg_rows.lists[1].items[0]);
 
     // And we should be able to clear it.
     c.clear(1);
     for (0..rows) |y| {
-        try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
+        try testing.expect(c.fg_rows.lists[y].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+            try testing.expectEqual(.{ 0, 0, 0, 0 }, c.bgCell(y, x).*);
         }
     }
 
@@ -267,11 +265,11 @@ test Contents {
         .color = .{ 0, 0, 0, 1 },
     };
     c.setCursor(cursor_cell);
-    try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
+    try testing.expectEqual(cursor_cell, c.fg_rows.lists[rows].items[0]);
 
     // And remove it.
     c.setCursor(null);
-    try testing.expectEqual(0, c.fg_rows.lists[0].items.len);
+    try testing.expectEqual(0, c.fg_rows.lists[rows].items.len);
 }
 
 test "Contents clear retains other content" {
@@ -310,8 +308,7 @@ test "Contents clear retains other content" {
 
     // Row 2 should still contain its cells.
     try testing.expectEqual(bg_cell_2, c.bgCell(2, 4).*);
-    // Fg row index is +1 because of cursor list at start
-    try testing.expectEqual(fg_cell_2, c.fg_rows.lists[3].items[0]);
+    try testing.expectEqual(fg_cell_2, c.fg_rows.lists[2].items[0]);
 }
 
 test "Contents clear last added content" {
@@ -350,6 +347,5 @@ test "Contents clear last added content" {
 
     // Row 1 should still contain its cells.
     try testing.expectEqual(bg_cell_1, c.bgCell(1, 4).*);
-    // Fg row index is +1 because of cursor list at start
-    try testing.expectEqual(fg_cell_1, c.fg_rows.lists[2].items[0]);
+    try testing.expectEqual(fg_cell_1, c.fg_rows.lists[1].items[0]);
 }
