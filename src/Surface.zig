@@ -3411,9 +3411,9 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 }
             }
 
-            if (@hasDecl(apprt.Surface, "gotoPreviousTab")) {
-                self.rt_surface.gotoPreviousTab();
-            } else log.warn("runtime doesn't implement gotoPreviousTab", .{});
+            if (@hasDecl(apprt.Surface, "gotoTab")) {
+                self.rt_surface.gotoTab(.previous);
+            } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
         .next_tab => {
@@ -3424,9 +3424,9 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 }
             }
 
-            if (@hasDecl(apprt.Surface, "gotoNextTab")) {
-                self.rt_surface.gotoNextTab();
-            } else log.warn("runtime doesn't implement gotoNextTab", .{});
+            if (@hasDecl(apprt.Surface, "gotoTab")) {
+                self.rt_surface.gotoTab(.next);
+            } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
         .last_tab => {
@@ -3437,14 +3437,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 }
             }
 
-            if (@hasDecl(apprt.Surface, "gotoLastTab")) {
-                self.rt_surface.gotoLastTab();
-            } else log.warn("runtime doesn't implement gotoLastTab", .{});
+            if (@hasDecl(apprt.Surface, "gotoTab")) {
+                self.rt_surface.gotoTab(.last);
+            } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
         .goto_tab => |n| {
             if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(n);
+                self.rt_surface.gotoTab(@enumFromInt(n));
             } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
