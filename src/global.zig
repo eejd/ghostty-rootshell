@@ -7,6 +7,7 @@ const fontconfig = @import("fontconfig");
 const glslang = @import("glslang");
 const harfbuzz = @import("harfbuzz");
 const oni = @import("oniguruma");
+const sentry = @import("sentry.zig");
 const renderer = @import("renderer.zig");
 const xev = @import("xev");
 
@@ -117,6 +118,18 @@ pub const GlobalState = struct {
         // First things first, we fix our file descriptors
         internal_os.fixMaxFiles();
 
+        // Initialize our crash reporting.
+        try sentry.init();
+
+        // const sentrylib = @import("sentry");
+        // if (sentrylib.captureEvent(sentrylib.Value.initMessageEvent(
+        //     .info,
+        //     null,
+        //     "hello, world",
+        // ))) |uuid| {
+        //     std.log.warn("uuid={s}", .{uuid.string()});
+        // } else std.log.warn("failed to capture event", .{});
+
         // We need to make sure the process locale is set properly. Locale
         // affects a lot of behaviors in a shell.
         try internal_os.ensureLocale(self.alloc);
@@ -137,6 +150,9 @@ pub const GlobalState = struct {
     /// doing so in dev modes will check for memory leaks.
     pub fn deinit(self: *GlobalState) void {
         if (self.resources_dir) |dir| self.alloc.free(dir);
+
+        // Flush our crash logs
+        sentry.deinit();
 
         if (self.gpa) |*value| {
             // We want to ensure that we deinit the GPA because this is

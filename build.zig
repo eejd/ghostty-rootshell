@@ -1001,6 +1001,10 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const sentry_dep = b.dependency("sentry", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const zlib_dep = b.dependency("zlib", .{
         .target = target,
         .optimize = optimize,
@@ -1104,6 +1108,7 @@ fn addDeps(
     step.root_module.addImport("xev", libxev_dep.module("xev"));
     step.root_module.addImport("opengl", opengl_dep.module("opengl"));
     step.root_module.addImport("pixman", pixman_dep.module("pixman"));
+    step.root_module.addImport("sentry", sentry_dep.module("sentry"));
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
 
@@ -1199,6 +1204,10 @@ fn addDeps(
             // Fontconfig
             step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
         }
+
+        // Sentry
+        step.linkLibrary(sentry_dep.artifact("sentry"));
+        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
     }
 
     if (!lib) {
