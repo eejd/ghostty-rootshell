@@ -1156,6 +1156,10 @@ fn addDeps(
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
     try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
 
+    // Sentry
+    step.linkLibrary(sentry_dep.artifact("sentry"));
+    try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
+
     // Dynamic link
     if (!config.static) {
         step.addIncludePath(freetype_dep.path(""));
@@ -1204,10 +1208,6 @@ fn addDeps(
             // Fontconfig
             step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
         }
-
-        // Sentry
-        step.linkLibrary(sentry_dep.artifact("sentry"));
-        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
     }
 
     if (!lib) {
