@@ -29,6 +29,17 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
+    // Linux-only
+    if (target.result.os.tag == .linux) {
+        lib.addCSourceFiles(.{
+            .root = upstream.path(""),
+            .files = &.{
+                "vendor/stb_sprintf.c",
+            },
+            .flags = flags.items,
+        });
+    }
+
     // Symbolizer
     if (target.result.os.tag == .windows) {
         lib.addCSourceFiles(.{
