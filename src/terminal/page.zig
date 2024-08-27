@@ -745,15 +745,17 @@ pub const Page = struct {
                 if (src_cell.hyperlink) hyperlink: {
                     dst_row.hyperlink = true;
 
-                    // Fast-path: same page we can move it directly
+                    const id = other.lookupHyperlink(src_cell).?;
+
+                    // Fast-path: same page we can add with the same id.
                     if (other == self) {
-                        self.moveHyperlink(src_cell, dst_cell);
+                        self.hyperlink_set.use(self.memory, id);
+                        try self.setHyperlink(dst_row, dst_cell, id);
                         break :hyperlink;
                     }
 
                     // Slow-path: get the hyperlink from the other page,
                     // add it, and migrate.
-                    const id = other.lookupHyperlink(src_cell).?;
 
                     const dst_link = dst_link: {
                         // Fast path is we just dupe the hyperlink because
