@@ -808,7 +808,7 @@ pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
         .previous => window.gotoPreviousTab(self),
         .next => window.gotoNextTab(self),
         .last => window.gotoLastTab(),
-        else => window.gotoTab(@intFromEnum(tab)),
+        else => window.gotoTab(@intCast(@intFromEnum(tab))),
     }
 }
 
