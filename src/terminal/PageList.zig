@@ -948,17 +948,15 @@ const ReflowCursor = struct {
                 },
             }
 
-            // Prevent integrity checks from tripping
-            // while copying graphemes and hyperlinks.
-            if (comptime std.debug.runtime_safety) {
-                self.page_cell.style_id = stylepkg.default_id;
-            }
+            // These will create issues by trying to clone managed memory that
+            // isn't set if the current dst row needs to be moved to a new page.
+            // They'll be fixed once we do properly copy the relevant memory.
+            self.page_cell.content_tag = .codepoint;
+            self.page_cell.hyperlink = false;
+            self.page_cell.style_id = stylepkg.default_id;
 
             // Copy grapheme data.
             if (cell.content_tag == .codepoint_grapheme) {
-                // The tag is asserted to be .codepoint in setGraphemes.
-                self.page_cell.content_tag = .codepoint;
-
                 // Copy the graphemes
                 const cps = src_page.lookupGrapheme(cell).?;
 
@@ -980,8 +978,6 @@ const ReflowCursor = struct {
                         try self.moveLastRowToNewPage(list, cap);
                     }
                 }
-
-                self.page_row.grapheme = true;
 
                 // This shouldn't fail since we made sure we have space above.
                 try self.page.setGraphemes(self.page_row, self.page_cell, cps);
@@ -1014,8 +1010,6 @@ const ReflowCursor = struct {
                         .{ .page = self.page },
                     );
                 } orelse src_id;
-
-                self.page_row.hyperlink = true;
 
                 // We expect this to succeed due to the
                 // hyperlinkCapacity check we did before.
