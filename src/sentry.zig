@@ -47,13 +47,13 @@ pub fn init(gpa: Allocator) !void {
     // Debug logging for Sentry
     sentry.c.sentry_options_set_debug(opts, @intFromBool(true));
 
+    // Initialize
+    if (sentry.c.sentry_init(opts) != 0) return error.SentryInitFailed;
+
     // Setup some basic tags that we always want present
     sentry.setTag("app-runtime", @tagName(build_config.app_runtime));
     sentry.setTag("font-backend", @tagName(build_config.font_backend));
     sentry.setTag("renderer", @tagName(build_config.renderer));
-
-    // Initialize
-    if (sentry.c.sentry_init(opts) != 0) return error.SentryInitFailed;
 
     // Log some information about sentry
     log.debug("sentry initialized database={s}", .{cache_dir});
