@@ -14,6 +14,10 @@ pub fn captureEvent(value: Value) ?UUID {
     return uuid;
 }
 
+pub fn setTag(key: []const u8, value: []const u8) void {
+    c.sentry_set_tag_n(key.ptr, key.len, value.ptr, value.len);
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }
