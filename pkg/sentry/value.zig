@@ -31,4 +31,8 @@ pub const Value = struct {
     pub fn incref(self: Value) Value {
         c.sentry_value_incref(self.value);
     }
+
+    pub fn isNull(self: Value) bool {
+        return c.sentry_value_is_null(self.value) != 0;
+    }
 };

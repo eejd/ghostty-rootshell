@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c.zig").c;
+const Value = @import("value.zig").Value;
 
 /// sentry_envelope_t
 pub const Envelope = opaque {
@@ -14,5 +15,11 @@ pub const Envelope = opaque {
             path.ptr,
             path.len,
         ) != 0) return error.WriteFailed;
+    }
+
+    pub fn event(self: *Envelope) ?Value {
+        const val: Value = .{ .value = c.sentry_envelope_get_event(@ptrCast(self)) };
+        if (val.isNull()) return null;
+        return val;
     }
 };
