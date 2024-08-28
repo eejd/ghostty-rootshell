@@ -7,6 +7,14 @@ pub fn build(b: *std.Build) !void {
     const transport = b.option(Transport, "transport", "Transport") orelse .none;
 
     const upstream = b.dependency("sentry", .{});
+
+    const module = b.addModule("sentry", .{
+        .root_source_file = b.path("main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addIncludePath(upstream.path("include"));
+
     const lib = b.addStaticLibrary(.{
         .name = "sentry",
         .target = target,
@@ -15,9 +23,11 @@ pub fn build(b: *std.Build) !void {
     lib.linkLibC();
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(upstream.path("src"));
-
-    const module = b.addModule("sentry", .{ .root_source_file = b.path("main.zig") });
-    module.addIncludePath(upstream.path("include"));
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, module);
+    }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
