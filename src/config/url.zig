@@ -22,8 +22,13 @@ const oni = @import("oniguruma");
 ///
 /// There are many complicated cases where these heuristics break down, but
 /// handling them well requires a non-regex approach.
-pub const regex = "(?:" ++ url_scheme ++ ")(?:[\\w\\-.~:/?#\\[\\]@!$&*+,;=%]+(?:\\(\\w*\\))?)+(?<!\\.)";
-const url_scheme = "https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:";
+pub const regex =
+    "(?:" ++ url_schemes ++
+    \\)(?:[\w\-.~:/?#\[\]@!$&*+,;=%]+(?:\(\w*\))?)+(?<!\.)
+;
+const url_schemes =
+    \\https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:
+;
 
 test "url regex" {
     const testing = std.testing;
