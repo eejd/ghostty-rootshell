@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const build_config = @import("build_config.zig");
 const sentry = @import("sentry");
 const internal_os = @import("os/main.zig");
+const state = &@import("global.zig").state;
 
 const log = std.log.scoped(.sentry);
 
@@ -61,10 +62,42 @@ pub fn deinit() void {
 }
 
 pub const Transport = struct {
-    pub fn send(envelope: *sentry.Envelope, state: ?*anyopaque) callconv(.C) void {
-        _ = state;
+    pub fn send(envelope: *sentry.Envelope, ud: ?*anyopaque) callconv(.C) void {
+        _ = ud;
         defer envelope.deinit();
 
-        log.warn("sending envelope", .{});
+        // Call our internal impl. If it fails there is nothing we can do
+        // but log to the user.
+        sendInternal(envelope) catch |err| {
+            log.warn("failed to persist crash report err={}", .{err});
+        };
+    }
+
+    /// Implementation of send but we can use Zig errors.
+    fn sendInternal(envelope: *sentry.Envelope) !void {
+        var arena = std.heap.ArenaAllocator.init(state.alloc);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Generate a UUID for this envelope. The envelope DOES have an event_id
+        // header but I don't think there is any public API way to get it
+        // afaict so we generate a new UUID for the filename just so we don't
+        // conflict.
+        const uuid = sentry.UUID.init();
+
+        // Get our XDG state directory where we'll store the crash reports.
+        // This directory must exist for writing to work.
+        const crash_dir = try internal_os.xdg.state(alloc, .{ .subdir = "ghostty/crash" });
+        try std.fs.cwd().makePath(crash_dir);
+
+        // Build our final path and write to it.
+        const path = try std.fs.path.join(alloc, &.{
+            crash_dir,
+            try std.fmt.allocPrint(alloc, "{s}.ghosttycrash", .{uuid.string()}),
+        });
+        log.debug("writing crash report to disk path={s}", .{path});
+        try envelope.writeToFile(path);
+
+        log.warn("crash report written to disk path={s}", .{path});
     }
 };

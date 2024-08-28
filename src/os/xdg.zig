@@ -37,6 +37,15 @@ pub fn cache(alloc: Allocator, opts: Options) ![]u8 {
     });
 }
 
+/// Get the XDG state directory. The returned value is allocated.
+pub fn state(alloc: Allocator, opts: Options) ![]u8 {
+    return try dir(alloc, opts, .{
+        .env = "XDG_STATE_HOME",
+        .windows_env = "LOCALAPPDATA",
+        .default_subdir = ".local/state",
+    });
+}
+
 const InternalOptions = struct {
     env: []const u8,
     windows_env: []const u8,

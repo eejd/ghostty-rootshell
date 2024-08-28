@@ -6,6 +6,10 @@ const c = @import("c.zig").c;
 pub const UUID = struct {
     value: c.sentry_uuid_t,
 
+    pub fn init() UUID {
+        return .{ .value = c.sentry_uuid_new_v4() };
+    }
+
     pub fn isNil(self: UUID) bool {
         return c.sentry_uuid_is_nil(&self.value) != 0;
     }
