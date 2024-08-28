@@ -2447,6 +2447,118 @@ test "Page cloneRowFrom partial grapheme in non-copied dest region" {
     try testing.expectEqual(@as(usize, 2), page2.graphemeCount());
 }
 
+test "Page cloneRowFrom partial hyperlink in same page copy" {
+    var page = try Page.init(.{ .cols = 10, .rows = 10 });
+    defer page.deinit();
+
+    // We need to create a hyperlink.
+    const hyperlink_id = try page.hyperlink_set.addContext(
+        page.memory,
+        .{ .id = .{ .implicit = 0 }, .uri = .{} },
+        .{ .page = &page },
+    );
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+
+        // Hyperlink in a single cell
+        {
+            const rac = page.getRowAndCell(7, y);
+            try page.setHyperlink(rac.row, rac.cell, hyperlink_id);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
+
+    // Clone into the same page
+    try page.clonePartialRowFrom(
+        &page,
+        page.getRow(1),
+        page.getRow(0),
+        2,
+        8,
+    );
+
+    // Read it again
+    {
+        const y = 1;
+        for (0..page.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 8) @intCast(x + 1) else 0;
+            const rac = page.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+        {
+            const rac = page.getRowAndCell(7, y);
+            try testing.expect(rac.row.hyperlink);
+            try testing.expect(rac.cell.hyperlink);
+        }
+    }
+    try testing.expectEqual(@as(usize, 2), page.hyperlinkCount());
+}
+
+test "Page cloneRowFrom partial hyperlink in same page omit" {
+    var page = try Page.init(.{ .cols = 10, .rows = 10 });
+    defer page.deinit();
+
+    // We need to create a hyperlink.
+    const hyperlink_id = try page.hyperlink_set.addContext(
+        page.memory,
+        .{ .id = .{ .implicit = 0 }, .uri = .{} },
+        .{ .page = &page },
+    );
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+
+        // Hyperlink in a single cell
+        {
+            const rac = page.getRowAndCell(7, y);
+            try page.setHyperlink(rac.row, rac.cell, hyperlink_id);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
+
+    // Clone into the same page
+    try page.clonePartialRowFrom(
+        &page,
+        page.getRow(1),
+        page.getRow(0),
+        2,
+        6,
+    );
+
+    // Read it again
+    {
+        const y = 1;
+        for (0..page.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 6) @intCast(x + 1) else 0;
+            const rac = page.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+        {
+            const rac = page.getRowAndCell(7, y);
+            try testing.expect(!rac.row.hyperlink);
+            try testing.expect(!rac.cell.hyperlink);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
+}
+
 test "Page moveCells text-only" {
     var page = try Page.init(.{
         .cols = 10,
