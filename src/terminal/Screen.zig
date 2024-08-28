@@ -902,7 +902,11 @@ fn cursorDownOrScroll(self: *Screen) !void {
 
 /// Copy another cursor. The cursor can be on any screen but the x/y
 /// must be within our screen bounds.
-pub fn cursorCopy(self: *Screen, other: Cursor) !void {
+pub fn cursorCopy(self: *Screen, other: Cursor, opts: struct {
+    /// Copy the hyperlink from the other cursor. If not set, this will
+    /// clear our current hyperlink.
+    hyperlink: bool = true,
+}) !void {
     assert(other.x < self.pages.cols);
     assert(other.y < self.pages.rows);
 
@@ -936,7 +940,7 @@ pub fn cursorCopy(self: *Screen, other: Cursor) !void {
     self.cursorAbsolute(other.x, other.y);
 
     // If the other cursor had a hyperlink, add it to ours.
-    if (other.hyperlink_id != 0) {
+    if (opts.hyperlink and other.hyperlink_id != 0) {
         // Get the hyperlink from the other cursor's page.
         const other_page = &other.page_pin.page.data;
         const other_link = other_page.hyperlink_set.get(other_page.memory, other.hyperlink_id);
@@ -2905,7 +2909,7 @@ test "Screen cursorCopy x/y" {
 
     var s2 = try Screen.init(alloc, 10, 10, 0);
     defer s2.deinit();
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expect(s2.cursor.x == 2);
     try testing.expect(s2.cursor.y == 3);
     try s2.testWriteString("Hello");
@@ -2934,7 +2938,7 @@ test "Screen cursorCopy style deref" {
     try testing.expect(s2.cursor.style.flags.bold);
 
     // Copy default style, should release our style
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expect(!s2.cursor.style.flags.bold);
     try testing.expectEqual(@as(usize, 0), page.styles.count());
 }
@@ -3000,7 +3004,7 @@ test "Screen cursorCopy style deref new page" {
 
     // Copy the cursor for the first screen. This should release
     // the style from page 1 and move the cursor back to page 0.
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expect(!s2.cursor.style.flags.bold);
     try testing.expectEqual(@as(usize, 0), page.styles.count());
     // The page after the page the cursor is now in should be page 1.
@@ -3021,7 +3025,7 @@ test "Screen cursorCopy style copy" {
     var s2 = try Screen.init(alloc, 10, 10, 0);
     defer s2.deinit();
     const page = &s2.cursor.page_pin.page.data;
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expect(s2.cursor.style.flags.bold);
     try testing.expectEqual(@as(usize, 1), page.styles.count());
 }
@@ -3043,7 +3047,7 @@ test "Screen cursorCopy hyperlink deref" {
     try testing.expect(s2.cursor.hyperlink_id != 0);
 
     // Copy a cursor with no hyperlink, should release our hyperlink.
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expectEqual(@as(usize, 0), page.hyperlink_set.count());
     try testing.expect(s2.cursor.hyperlink_id == 0);
 }
@@ -3109,7 +3113,7 @@ test "Screen cursorCopy hyperlink deref new page" {
 
     // Copy the cursor for the first screen. This should release
     // the hyperlink from page 1 and move the cursor back to page 0.
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expectEqual(@as(usize, 0), page.hyperlink_set.count());
     try testing.expect(s2.cursor.hyperlink_id == 0);
     // The page after the page the cursor is now in should be page 1.
@@ -3139,9 +3143,34 @@ test "Screen cursorCopy hyperlink copy" {
     try testing.expect(s2.cursor.hyperlink_id == 0);
 
     // Copy the cursor with the hyperlink.
-    try s2.cursorCopy(s.cursor);
+    try s2.cursorCopy(s.cursor, .{});
     try testing.expectEqual(@as(usize, 1), page.hyperlink_set.count());
     try testing.expect(s2.cursor.hyperlink_id != 0);
+}
+
+test "Screen cursorCopy hyperlink copy disabled" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 10, 10, 0);
+    defer s.deinit();
+
+    // Create a hyperlink for the cursor.
+    try s.startHyperlink("https://example.com/", null);
+    try testing.expectEqual(@as(usize, 1), s.cursor.page_pin.page.data.hyperlink_set.count());
+    try testing.expect(s.cursor.hyperlink_id != 0);
+
+    var s2 = try Screen.init(alloc, 10, 10, 0);
+    defer s2.deinit();
+    const page = &s2.cursor.page_pin.page.data;
+
+    try testing.expectEqual(@as(usize, 0), page.hyperlink_set.count());
+    try testing.expect(s2.cursor.hyperlink_id == 0);
+
+    // Copy the cursor with the hyperlink.
+    try s2.cursorCopy(s.cursor, .{ .hyperlink = false });
+    try testing.expectEqual(@as(usize, 0), page.hyperlink_set.count());
+    try testing.expect(s2.cursor.hyperlink_id == 0);
 }
 
 test "Screen style basics" {

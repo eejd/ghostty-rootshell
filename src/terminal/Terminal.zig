@@ -2472,11 +2472,10 @@ pub fn alternateScreen(
     // Mark our terminal as dirty
     self.flags.dirty.clear = true;
 
-    // We always end hyperlink state
-    self.screen.endHyperlink();
-
     // Bring our pen with us
-    self.screen.cursorCopy(old.cursor) catch |err| {
+    self.screen.cursorCopy(old.cursor, .{
+        .hyperlink = false,
+    }) catch |err| {
         log.warn("cursor copy failed entering alt screen err={}", .{err});
     };
 
