@@ -1317,6 +1317,9 @@ keybind: Keybinds = .{},
 /// `false` to restore the macOS *Alt* key unicode sequences but this will break
 /// terminal sequences expecting *Alt* to work.
 ///
+/// The values `left` or `right` enable this for the left or right *Option*
+/// key, respectively.
+///
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
 /// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
 ///
