@@ -1004,7 +1004,7 @@ fn addDeps(
     const sentry_dep = b.dependency("sentry", .{
         .target = target,
         .optimize = optimize,
-        .backend = .inproc,
+        .backend = .breakpad,
     });
     const zlib_dep = b.dependency("zlib", .{
         .target = target,

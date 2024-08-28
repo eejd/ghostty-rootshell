@@ -9,5 +9,6 @@
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },
+        .breakpad = .{ .path = "../breakpad" },
     },
 }

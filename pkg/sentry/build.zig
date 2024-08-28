@@ -161,13 +161,21 @@ pub fn build(b: *std.Build) !void {
             .flags = flags.items,
         }),
 
-        .breakpad => lib.addCSourceFiles(.{
-            .root = upstream.path(""),
-            .files = &.{
-                "src/backends/sentry_backend_breakpad.cpp",
-            },
-            .flags = flags.items,
-        }),
+        .breakpad => {
+            lib.addCSourceFiles(.{
+                .root = upstream.path(""),
+                .files = &.{
+                    "src/backends/sentry_backend_breakpad.cpp",
+                },
+                .flags = flags.items,
+            });
+
+            const breakpad_dep = b.dependency("breakpad", .{
+                .target = target,
+                .optimize = optimize,
+            });
+            lib.linkLibrary(breakpad_dep.artifact("breakpad"));
+        },
 
         .inproc => lib.addCSourceFiles(.{
             .root = upstream.path(""),
