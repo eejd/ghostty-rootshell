@@ -227,7 +227,7 @@ pub fn RefCountedSet(
             }
 
             // If the item already exists, return it.
-            if (self.lookup(base, value, ctx)) |id| {
+            if (self.lookupContext(base, value, ctx)) |id| {
                 // Notify the context that the value is "deleted" because
                 // we're reusing the existing value in the set. This allows
                 // callers to clean up any resources associated with the value.
@@ -453,7 +453,10 @@ pub fn RefCountedSet(
 
         /// Find an item in the table and return its ID.
         /// If the item does not exist in the table, null is returned.
-        fn lookup(self: *Self, base: anytype, value: T, ctx: Context) ?Id {
+        pub fn lookup(self: *const Self, base: anytype, value: T) ?Id {
+            return self.lookupContext(base, value, self.context);
+        }
+        pub fn lookupContext(self: *const Self, base: anytype, value: T, ctx: Context) ?Id {
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
 
@@ -504,7 +507,7 @@ pub fn RefCountedSet(
         /// is ignored and the existing item's ID is returned.
         fn upsert(self: *Self, base: anytype, value: T, new_id: Id, ctx: Context) Id {
             // If the item already exists, return it.
-            if (self.lookup(base, value, ctx)) |id| {
+            if (self.lookupContext(base, value, ctx)) |id| {
                 // Notify the context that the value is "deleted" because
                 // we're reusing the existing value in the set. This allows
                 // callers to clean up any resources associated with the value.
@@ -519,7 +522,7 @@ pub fn RefCountedSet(
         /// Insert the given value into the hash table with the given ID.
         /// asserts that the value is not already present in the table.
         fn insert(self: *Self, base: anytype, value: T, new_id: Id, ctx: Context) Id {
-            assert(self.lookup(base, value, ctx) == null);
+            assert(self.lookupContext(base, value, ctx) == null);
 
             const table = self.table.ptr(base);
             const items = self.items.ptr(base);
