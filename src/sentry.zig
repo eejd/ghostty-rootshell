@@ -82,7 +82,7 @@ pub const Transport = struct {
     /// Implementation of send but we can use Zig errors.
     fn sendInternal(envelope: *sentry.Envelope) !void {
         // If our envelope doesn't have an event then we don't do anything.
-        if (envelope.event() == null) return;
+        // TODO: figure out how to not encode empty envelopes.
 
         var arena = std.heap.ArenaAllocator.init(state.alloc);
         defer arena.deinit();

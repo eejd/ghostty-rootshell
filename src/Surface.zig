@@ -1333,6 +1333,8 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !InputEffect {
+    // To test crash reporting
+    if (true) @panic("OH NO");
     // log.debug("text keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.

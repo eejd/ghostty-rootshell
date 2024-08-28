@@ -32,6 +32,21 @@ pub fn build(b: *std.Build) !void {
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{});
+    if (target.result.os.tag == .windows) {
+        try flags.appendSlice(&.{
+            "-DSENTRY_WITH_UNWINDER_DBGHELP",
+        });
+    } else {
+        try flags.appendSlice(&.{
+            "-DSENTRY_WITH_UNWINDER_LIBBACKTRACE",
+        });
+    }
+    switch (backend) {
+        .crashpad => try flags.append("-DSENTRY_BACKEND_CRASHPAD"),
+        .breakpad => try flags.append("-DSENTRY_BACKEND_BREAKPAD"),
+        .inproc => try flags.append("-DSENTRY_BACKEND_INPROC"),
+        .none => {},
+    }
 
     lib.addCSourceFiles(.{
         .root = upstream.path(""),
@@ -50,7 +65,7 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    // Symbolizer
+    // Symbolizer + Unwinder
     if (target.result.os.tag == .windows) {
         lib.addCSourceFiles(.{
             .root = upstream.path(""),
@@ -69,6 +84,7 @@ pub fn build(b: *std.Build) !void {
                 "src/sentry_unix_pageallocator.c",
                 "src/path/sentry_path_unix.c",
                 "src/symbolizer/sentry_symbolizer_unix.c",
+                "src/unwinder/sentry_unwinder_libbacktrace.c",
             },
             .flags = flags.items,
         });
