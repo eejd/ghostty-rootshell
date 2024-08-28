@@ -140,7 +140,8 @@ pub const Cell = struct {
                 _ = cimgui.c.igColorEdit3(
                     "color_fg",
                     &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_DisplayHex |
+                        cimgui.c.ImGuiColorEditFlags_NoPicker |
                         cimgui.c.ImGuiColorEditFlags_NoLabel,
                 );
             },
@@ -154,7 +155,8 @@ pub const Cell = struct {
                 _ = cimgui.c.igColorEdit3(
                     "color_fg",
                     &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_DisplayHex |
+                        cimgui.c.ImGuiColorEditFlags_NoPicker |
                         cimgui.c.ImGuiColorEditFlags_NoLabel,
                 );
             },
@@ -177,7 +179,8 @@ pub const Cell = struct {
                 _ = cimgui.c.igColorEdit3(
                     "color_bg",
                     &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_DisplayHex |
+                        cimgui.c.ImGuiColorEditFlags_NoPicker |
                         cimgui.c.ImGuiColorEditFlags_NoLabel,
                 );
             },
@@ -191,7 +194,8 @@ pub const Cell = struct {
                 _ = cimgui.c.igColorEdit3(
                     "color_bg",
                     &color,
-                    cimgui.c.ImGuiColorEditFlags_NoPicker |
+                    cimgui.c.ImGuiColorEditFlags_DisplayHex |
+                        cimgui.c.ImGuiColorEditFlags_NoPicker |
                         cimgui.c.ImGuiColorEditFlags_NoLabel,
                 );
             },
