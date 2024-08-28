@@ -1198,12 +1198,12 @@ pub fn reverseIndex(self: *Terminal) void {
     self.scrollDown(1);
 }
 
-// Set Cursor Position. Move cursor to the position indicated
-// by row and column (1-indexed). If column is 0, it is adjusted to 1.
-// If column is greater than the right-most column it is adjusted to
-// the right-most column. If row is 0, it is adjusted to 1. If row is
-// greater than the bottom-most row it is adjusted to the bottom-most
-// row.
+/// Set Cursor Position. Move cursor to the position indicated
+/// by row and column (1-indexed). If column is 0, it is adjusted to 1.
+/// If column is greater than the right-most column it is adjusted to
+/// the right-most column. If row is 0, it is adjusted to 1. If row is
+/// greater than the bottom-most row it is adjusted to the bottom-most
+/// row.
 pub fn setCursorPos(self: *Terminal, row_req: usize, col_req: usize) void {
     // If cursor origin mode is set the cursor row will be moved relative to
     // the top margin row and adjusted to be above or at bottom-most row in
@@ -2473,12 +2473,11 @@ pub fn alternateScreen(
     self.flags.dirty.clear = true;
 
     // Bring our pen with us
-    self.screen.cursorCopy(old.cursor) catch |err| {
+    self.screen.cursorCopy(old.cursor, .{
+        .hyperlink = false,
+    }) catch |err| {
         log.warn("cursor copy failed entering alt screen err={}", .{err});
     };
-
-    // We always end hyperlink state
-    self.screen.endHyperlink();
 
     if (options.clear_on_enter) {
         self.eraseDisplay(.complete, false);

@@ -745,15 +745,17 @@ pub const Page = struct {
                 if (src_cell.hyperlink) hyperlink: {
                     dst_row.hyperlink = true;
 
-                    // Fast-path: same page we can move it directly
+                    const id = other.lookupHyperlink(src_cell).?;
+
+                    // Fast-path: same page we can add with the same id.
                     if (other == self) {
-                        self.moveHyperlink(src_cell, dst_cell);
+                        self.hyperlink_set.use(self.memory, id);
+                        try self.setHyperlink(dst_row, dst_cell, id);
                         break :hyperlink;
                     }
 
                     // Slow-path: get the hyperlink from the other page,
                     // add it, and migrate.
-                    const id = other.lookupHyperlink(src_cell).?;
 
                     const dst_link = dst_link: {
                         // Fast path is we just dupe the hyperlink because
@@ -1080,8 +1082,14 @@ pub const Page = struct {
     }
 
     /// Set the hyperlink for the given cell. If the cell already has a
-    /// hyperlink, then this will handle memory management for the prior
-    /// hyperlink.
+    /// hyperlink, then this will handle memory management and refcount
+    /// update for the prior hyperlink.
+    ///
+    /// DOES NOT increment the reference count for the new hyperlink!
+    ///
+    /// Caller is responsible for updating the refcount in the hyperlink
+    /// set as necessary by calling `use` if the id was not acquired with
+    /// `add`.
     pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) !void {
         defer self.assertIntegrity();
 
@@ -1090,6 +1098,13 @@ pub const Page = struct {
         const gop = try map.getOrPut(cell_offset);
 
         if (gop.found_existing) {
+            // Always release the old hyperlink, because even if it's actually
+            // the same as the one we're setting, we'd end up double-counting
+            // if we left the reference count be, because the caller does not
+            // know whether it's the same and will have increased the count
+            // outside of this function.
+            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
+
             // If the hyperlink matches then we don't need to do anything.
             if (gop.value_ptr.* == id) {
                 // It is possible for cell hyperlink to be false but row
@@ -1102,13 +1117,9 @@ pub const Page = struct {
                 cell.hyperlink = true;
                 return;
             }
-
-            // Different hyperlink, we need to release the old one
-            self.hyperlink_set.release(self.memory, gop.value_ptr.*);
         }
 
-        // Increase ref count for our new hyperlink and set it
-        self.hyperlink_set.use(self.memory, id);
+        // Set the hyperlink on the cell and in the map.
         gop.value_ptr.* = id;
         cell.hyperlink = true;
         row.hyperlink = true;
@@ -2434,6 +2445,118 @@ test "Page cloneRowFrom partial grapheme in non-copied dest region" {
         }
     }
     try testing.expectEqual(@as(usize, 2), page2.graphemeCount());
+}
+
+test "Page cloneRowFrom partial hyperlink in same page copy" {
+    var page = try Page.init(.{ .cols = 10, .rows = 10 });
+    defer page.deinit();
+
+    // We need to create a hyperlink.
+    const hyperlink_id = try page.hyperlink_set.addContext(
+        page.memory,
+        .{ .id = .{ .implicit = 0 }, .uri = .{} },
+        .{ .page = &page },
+    );
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+
+        // Hyperlink in a single cell
+        {
+            const rac = page.getRowAndCell(7, y);
+            try page.setHyperlink(rac.row, rac.cell, hyperlink_id);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
+
+    // Clone into the same page
+    try page.clonePartialRowFrom(
+        &page,
+        page.getRow(1),
+        page.getRow(0),
+        2,
+        8,
+    );
+
+    // Read it again
+    {
+        const y = 1;
+        for (0..page.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 8) @intCast(x + 1) else 0;
+            const rac = page.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+        {
+            const rac = page.getRowAndCell(7, y);
+            try testing.expect(rac.row.hyperlink);
+            try testing.expect(rac.cell.hyperlink);
+        }
+    }
+    try testing.expectEqual(@as(usize, 2), page.hyperlinkCount());
+}
+
+test "Page cloneRowFrom partial hyperlink in same page omit" {
+    var page = try Page.init(.{ .cols = 10, .rows = 10 });
+    defer page.deinit();
+
+    // We need to create a hyperlink.
+    const hyperlink_id = try page.hyperlink_set.addContext(
+        page.memory,
+        .{ .id = .{ .implicit = 0 }, .uri = .{} },
+        .{ .page = &page },
+    );
+
+    // Write
+    {
+        const y = 0;
+        for (0..page.size.cols) |x| {
+            const rac = page.getRowAndCell(x, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = @intCast(x + 1) },
+            };
+        }
+
+        // Hyperlink in a single cell
+        {
+            const rac = page.getRowAndCell(7, y);
+            try page.setHyperlink(rac.row, rac.cell, hyperlink_id);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
+
+    // Clone into the same page
+    try page.clonePartialRowFrom(
+        &page,
+        page.getRow(1),
+        page.getRow(0),
+        2,
+        6,
+    );
+
+    // Read it again
+    {
+        const y = 1;
+        for (0..page.size.cols) |x| {
+            const expected: u21 = if (x >= 2 and x < 6) @intCast(x + 1) else 0;
+            const rac = page.getRowAndCell(x, y);
+            try testing.expectEqual(expected, rac.cell.content.codepoint);
+        }
+        {
+            const rac = page.getRowAndCell(7, y);
+            try testing.expect(!rac.row.hyperlink);
+            try testing.expect(!rac.cell.hyperlink);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), page.hyperlinkCount());
 }
 
 test "Page moveCells text-only" {
