@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 const sentry = @import("sentry");
 const internal_os = @import("os/main.zig");
@@ -16,6 +17,9 @@ const log = std.log.scoped(.sentry);
 /// It is up to the user to grab the logs and manually send them to us
 /// (or they own Sentry instance) if they want to.
 pub fn init(gpa: Allocator) !void {
+    // Not supported on Windows currently, doesn't build.
+    if (comptime builtin.os.tag == .windows) return;
+
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -58,6 +62,8 @@ pub fn init(gpa: Allocator) !void {
 /// Process-wide deinitialization of our Sentry client. This ensures all
 /// our data is flushed.
 pub fn deinit() void {
+    if (comptime builtin.os.tag == .windows) return;
+
     _ = sentry.c.sentry_close();
 }
 

@@ -58,6 +58,7 @@ pub fn build(b: *std.Build) !void {
                 "src/sentry_windows_dbghelp.c",
                 "src/path/sentry_path_windows.c",
                 "src/symbolizer/sentry_symbolizer_windows.c",
+                "src/unwinder/sentry_unwinder_dbghelp.c",
             },
             .flags = flags.items,
         });
