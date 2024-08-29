@@ -34,6 +34,10 @@ extension Ghostty {
         // on supported platforms.
         @Published var focusInstant: Any? = nil
 
+        // Returns sizing information for the surface. This is the raw C
+        // structure because I'm lazy.
+        @Published var surfaceSize: ghostty_surface_size_s? = nil
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
@@ -55,14 +59,6 @@ extension Ghostty {
             if (v.count == 0) { return nil }
             return v
         }
-
-        // Returns sizing information for the surface. This is the raw C
-        // structure because I'm lazy.
-        var surfaceSize: ghostty_surface_size_s? {
-            guard let surface = self.surface else { return nil }
-            return ghostty_surface_size(surface)
-        }
-
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {
@@ -229,7 +225,7 @@ extension Ghostty {
             // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
             // The size represents our final size we're going for.
             let scaledSize = self.convertToBacking(size)
-            ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
+            setSurfaceSize(width: UInt32(scaledSize.width), height: UInt32(scaledSize.height))
 
             // Frame changes do not always call mouseEntered/mouseExited, so we do some
             // calculations ourself to call those events.
@@ -249,6 +245,16 @@ extension Ghostty {
                 // we'll get a mouseEntered.
                 mouseExited(with: NSEvent())
             }
+        }
+
+        private func setSurfaceSize(width: UInt32, height: UInt32) {
+            guard let surface = self.surface else { return }
+
+            // Update our core surface
+            ghostty_surface_set_size(surface, width, height)
+
+            // Update our cached size metrics
+            self.surfaceSize = ghostty_surface_size(surface)
         }
 
         func setCursorShape(_ shape: ghostty_mouse_shape_e) {
@@ -441,7 +447,7 @@ extension Ghostty {
             ghostty_surface_set_content_scale(surface, xScale, yScale)
 
             // When our scale factor changes, so does our fb size so we send that too
-            ghostty_surface_set_size(surface, UInt32(fbFrame.size.width), UInt32(fbFrame.size.height))
+            setSurfaceSize(width: UInt32(fbFrame.size.width), height: UInt32(fbFrame.size.height))
         }
 
         override func updateLayer() {
