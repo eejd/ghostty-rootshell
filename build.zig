@@ -1161,6 +1161,13 @@ fn addDeps(
         // Sentry
         step.linkLibrary(sentry_dep.artifact("sentry"));
         try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
+
+        // We also need to include breakpad in the static libs.
+        const breakpad_dep = sentry_dep.builder.dependency("breakpad", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        try static_libs.append(breakpad_dep.artifact("breakpad").getEmittedBin());
     }
 
     // Dynamic link
