@@ -175,6 +175,10 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             });
             lib.linkLibrary(breakpad_dep.artifact("breakpad"));
+
+            // We need to add this because Sentry includes some breakpad
+            // headers that include this vendored file...
+            lib.addIncludePath(breakpad_dep.path("vendor"));
         },
 
         .inproc => lib.addCSourceFiles(.{
