@@ -20,6 +20,14 @@ pub fn init(gpa: Allocator) !void {
     // Not supported on Windows currently, doesn't build.
     if (comptime builtin.os.tag == .windows) return;
 
+    // const start = try std.time.Instant.now();
+    // const start_micro = std.time.microTimestamp();
+    // defer {
+    //     const end = std.time.Instant.now() catch unreachable;
+    //     // "[updateFrame critical time] <START us>\t<TIME_TAKEN us>"
+    //     std.log.err("[sentry init time] start={}us duration={}ns", .{ start_micro, end.since(start) / std.time.ns_per_us });
+    // }
+
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
