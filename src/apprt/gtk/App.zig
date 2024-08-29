@@ -825,17 +825,52 @@ fn gtkActionQuit(
     };
 }
 
+/// Action sent by the window manager asking us to present a specific surface to
+/// the user. Usually because the user clicked on a desktop notification.
+fn gtkActionPresentSurface(
+    _: *c.GSimpleAction,
+    parameter: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+
+    // Make sure that we've receiived a u64 from the system.
+    if (c.g_variant_is_of_type(parameter, c.G_VARIANT_TYPE("t")) == 0) {
+        return;
+    }
+
+    // Convert that u64 to pointer to a core surface.
+    const surface: *CoreSurface = @ptrFromInt(c.g_variant_get_uint64(parameter));
+
+    // Send a message through the core app mailbox rather than presenting the
+    // surface directly so that it can validate that the surface pointer is
+    // valid. We could get an invalid pointer if a desktop notification outlives
+    // a Ghostty instance and a new one starts up, or there are multiple Ghostty
+    // instances running.
+    _ = self.core_app.mailbox.push(
+        .{
+            .surface_message = .{
+                .surface = surface,
+                .message = .{ .present_surface = {} },
+            },
+        },
+        .{ .forever = {} },
+    );
+}
+
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
     const actions = .{
-        .{ "quit", &gtkActionQuit },
-        .{ "open_config", &gtkActionOpenConfig },
-        .{ "reload_config", &gtkActionReloadConfig },
+        .{ "quit", &gtkActionQuit, null },
+        .{ "open_config", &gtkActionOpenConfig, null },
+        .{ "reload_config", &gtkActionReloadConfig, null },
+        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
+        .{ "present-surface", &gtkActionPresentSurface, c.G_VARIANT_TYPE("t") },
     };
 
     inline for (actions) |entry| {
-        const action = c.g_simple_action_new(entry[0], null);
+        const action = c.g_simple_action_new(entry[0], entry[2]);
         defer c.g_object_unref(action);
         _ = c.g_signal_connect_data(
             action,

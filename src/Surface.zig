@@ -816,6 +816,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .renderer_health => |health| self.updateRendererHealth(health),
 
         .report_color_scheme => try self.reportColorScheme(),
+
+        .present_surface => try self.presentSurface(),
     }
 }
 
@@ -4156,6 +4158,14 @@ fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
         .type = .main,
         .surface = self,
     };
+}
+
+/// Tell the surface to present itself to the user. This may involve raising the
+/// window and switching tabs.
+fn presentSurface(self: *Surface) !void {
+    if (@hasDecl(apprt.Surface, "presentSurface")) {
+        self.rt_surface.presentSurface();
+    } else log.warn("runtime doesn't support presentSurface", .{});
 }
 
 pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");
