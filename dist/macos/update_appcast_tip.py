@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 now = datetime.now(timezone.utc)
 build = os.environ["GHOSTTY_BUILD"]
 commit = os.environ["GHOSTTY_COMMIT"]
+commit_long = os.environ["GHOSTTY_COMMIT_LONG"]
 repo = "https://github.com/ghostty-org/ghostty"
 
 # Read our sign_update output
@@ -83,7 +84,7 @@ elem.text = "12.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
 <p>
-Automated build from commit <code><a href="{repo}/commits/{commit}">{commit}</a></code>
+Automated build from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
 on {now.strftime('%Y-%m-%d')}.
 </p>
 <p>
@@ -93,7 +94,7 @@ commit history <a href="{repo}">on GitHub</a> for all changes.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
-elem.set("url", f"https://tip.files.ghostty.dev/{build}/ghostty-macos-universal.zip")
+elem.set("url", f"https://tip.files.ghostty.dev/{commit_long}/ghostty-macos-universal.zip")
 elem.set("type", "application/octet-stream")
 for key, value in attrs.items():
     elem.set(key, value)
