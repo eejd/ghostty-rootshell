@@ -433,7 +433,7 @@ pub fn clonePool(
 /// Adjust the capacity of a page within the pagelist of this screen.
 /// This handles some accounting if the page being modified is the
 /// cursor page.
-fn adjustCapacity(
+pub fn adjustCapacity(
     self: *Screen,
     page: *PageList.List.Node,
     adjustment: PageList.AdjustCapacity,
@@ -1792,7 +1792,7 @@ pub fn cursorSetHyperlink(self: *Screen) !void {
         return;
     } else |err| switch (err) {
         // hyperlink_map is out of space, realloc the page to be larger
-        error.OutOfMemory => {
+        error.HyperlinkMapOutOfMemory => {
             _ = try self.adjustCapacity(
                 self.cursor.page_pin.page,
                 .{ .hyperlink_bytes = page.capacity.hyperlink_bytes * 2 },

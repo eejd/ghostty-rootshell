@@ -611,7 +611,27 @@ pub const Page = struct {
         return result;
     }
 
-    pub const CloneFromError = Allocator.Error || style.Set.AddError;
+    pub const StyleSetError = error{
+        StyleSetOutOfMemory,
+        StyleSetNeedsRehash,
+    };
+
+    pub const HyperlinkError = error{
+        StringAllocOutOfMemory,
+        HyperlinkSetOutOfMemory,
+        HyperlinkSetNeedsRehash,
+        HyperlinkMapOutOfMemory,
+    };
+
+    pub const GraphemeError = error{
+        GraphemeMapOutOfMemory,
+        GraphemeAllocOutOfMemory,
+    };
+
+    pub const CloneFromError =
+        StyleSetError ||
+        HyperlinkError ||
+        GraphemeError;
 
     /// Clone the contents of another page into this page. The capacities
     /// can be different, but the size of the other page must fit into
@@ -731,6 +751,16 @@ pub const Page = struct {
             // get all of that right.
             for (cells, other_cells) |*dst_cell, *src_cell| {
                 dst_cell.* = src_cell.*;
+
+                // Reset any managed memory markers on the cell so that we don't
+                // hit an integrity check if we have to return an error because
+                // the page can't fit the new memory.
+                dst_cell.hyperlink = false;
+                dst_cell.style_id = style.default_id;
+                if (dst_cell.content_tag == .codepoint_grapheme) {
+                    dst_cell.content_tag = .codepoint;
+                }
+
                 if (src_cell.hasGrapheme()) {
                     // To prevent integrity checks flipping. This will
                     // get fixed up when we check the style id below.
@@ -738,13 +768,12 @@ pub const Page = struct {
                         dst_cell.style_id = style.default_id;
                     }
 
-                    dst_cell.content_tag = .codepoint; // required for appendGrapheme
+                    // Copy the grapheme codepoints
                     const cps = other.lookupGrapheme(src_cell).?;
-                    for (cps) |cp| try self.appendGrapheme(dst_row, dst_cell, cp);
+
+                    try self.setGraphemes(dst_row, dst_cell, cps);
                 }
                 if (src_cell.hyperlink) hyperlink: {
-                    dst_row.hyperlink = true;
-
                     const id = other.lookupHyperlink(src_cell).?;
 
                     // Fast-path: same page we can add with the same id.
@@ -757,55 +786,60 @@ pub const Page = struct {
                     // Slow-path: get the hyperlink from the other page,
                     // add it, and migrate.
 
-                    const dst_link = dst_link: {
-                        // Fast path is we just dupe the hyperlink because
-                        // it doesn't require traversal through the hyperlink
-                        // map. If the add below already contains it then it'll
-                        // call the deleted context callback and we'll free
-                        // this back.
-                        const other_link = other.hyperlink_set.get(other.memory, id);
-                        if (other_link.dupe(other, self)) |dst_link| {
-                            break :dst_link dst_link;
-                        } else |err| switch (err) {
-                            // If this happens, the only possible valid outcome is
-                            // that it is because this link is already in our set
-                            // and our memory is full because we already have it.
-                            // Any other outcome is an integrity violation.
-                            error.OutOfMemory => {},
+                    // If our page can't support an additional cell with
+                    // a hyperlink then we have to return an error.
+                    if (self.hyperlinkCount() >= self.hyperlinkCapacity() - 1) {
+                        // The hyperlink map capacity needs to be increased.
+                        return error.HyperlinkMapOutOfMemory;
+                    }
+
+                    const other_link = other.hyperlink_set.get(other.memory, id);
+                    const dst_id = dst_id: {
+                        // First check if the link already exists in our page,
+                        // and increment its refcount if so, since we're about
+                        // to use it.
+                        if (self.hyperlink_set.lookupContext(
+                            self.memory,
+                            other_link.*,
+                            .{ .page = @constCast(other) },
+                            // `lookupContext` uses the context for hashing, and
+                            // that doesn't write to the page, so this constCast
+                            // is completely safe.
+                        )) |i| {
+                            self.hyperlink_set.use(self.memory, i);
+                            break :dst_id i;
                         }
 
-                        // Slow, the only way to really find our link is to
-                        // traverse over the map, which includes dupes...
-                        const dst_map = self.hyperlink_map.map(self.memory);
-                        var it = dst_map.valueIterator();
-                        while (it.next()) |existing_id| {
-                            const existing_link = self.hyperlink_set.get(
-                                self.memory,
-                                existing_id.*,
-                            );
+                        // If we don't have this link in our page yet then
+                        // we need to clone it over and add it to our set.
 
-                            if (existing_link.eql(
-                                self.memory,
-                                other_link,
-                                other.memory,
-                            )) {
-                                break :dst_link existing_link.*;
-                            }
-                        }
+                        // Clone the link.
+                        const dst_link = other_link.dupe(other, self) catch |e| {
+                            comptime assert(@TypeOf(e) == error{OutOfMemory});
+                            // The string alloc capacity needs to be increased.
+                            return error.StringAllocOutOfMemory;
+                        };
 
-                        // There is no other valid scenario where we don't
-                        // have the memory to dupe a hyperlink since we allocate
-                        // cloned pages with enough capacity to contain their
-                        // contents.
-                        unreachable;
+                        // Add it, preferring to use the same ID as the other
+                        // page, since this *probably* speeds up full-page
+                        // clones.
+                        //
+                        // TODO(qwerasd): verify the assumption that `addWithId`
+                        // is ever actually useful, I think it may not be.
+                        break :dst_id self.hyperlink_set.addWithIdContext(
+                            self.memory,
+                            dst_link,
+                            id,
+                            .{ .page = self },
+                        ) catch |e| switch (e) {
+                            // The hyperlink set capacity needs to be increased.
+                            error.OutOfMemory => return error.HyperlinkSetOutOfMemory,
+
+                            // The hyperlink set needs to be rehashed.
+                            error.NeedsRehash => return error.HyperlinkSetNeedsRehash,
+                        } orelse id;
                     };
 
-                    const dst_id = try self.hyperlink_set.addWithIdContext(
-                        self.memory,
-                        dst_link,
-                        id,
-                        .{ .page = self },
-                    ) orelse id;
                     try self.setHyperlink(dst_row, dst_cell, dst_id);
                 }
                 if (src_cell.style_id != style.default_id) style: {
@@ -822,11 +856,17 @@ pub const Page = struct {
                     // Slow path: Get the style from the other
                     // page and add it to this page's style set.
                     const other_style = other.styles.get(other.memory, src_cell.style_id);
-                    dst_cell.style_id = try self.styles.addWithId(
+                    dst_cell.style_id = self.styles.addWithId(
                         self.memory,
                         other_style.*,
                         src_cell.style_id,
-                    ) orelse src_cell.style_id;
+                    ) catch |e| switch (e) {
+                        // The style set capacity needs to be increased.
+                        error.OutOfMemory => return error.StyleSetOutOfMemory,
+
+                        // The style set needs to be rehashed.
+                        error.NeedsRehash => return error.StyleSetNeedsRehash,
+                    } orelse src_cell.style_id;
                 }
                 if (src_cell.codepoint() == kitty.graphics.unicode.placeholder) {
                     dst_row.kitty_virtual_placeholder = true;
@@ -1090,12 +1130,16 @@ pub const Page = struct {
     /// Caller is responsible for updating the refcount in the hyperlink
     /// set as necessary by calling `use` if the id was not acquired with
     /// `add`.
-    pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) !void {
+    pub fn setHyperlink(self: *Page, row: *Row, cell: *Cell, id: hyperlink.Id) error{HyperlinkMapOutOfMemory}!void {
         defer self.assertIntegrity();
 
         const cell_offset = getOffset(Cell, self.memory, cell);
         var map = self.hyperlink_map.map(self.memory);
-        const gop = try map.getOrPut(cell_offset);
+        const gop = map.getOrPut(cell_offset) catch |e| {
+            comptime assert(@TypeOf(e) == error{OutOfMemory});
+            // The hyperlink map capacity needs to be increased.
+            return error.HyperlinkMapOutOfMemory;
+        };
 
         if (gop.found_existing) {
             // Always release the old hyperlink, because even if it's actually
@@ -1160,7 +1204,7 @@ pub const Page = struct {
 
     /// Set the graphemes for the given cell. This asserts that the cell
     /// has no graphemes set, and only contains a single codepoint.
-    pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) Allocator.Error!void {
+    pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) GraphemeError!void {
         defer self.assertIntegrity();
 
         assert(cell.codepoint() > 0);
@@ -1169,14 +1213,22 @@ pub const Page = struct {
         const cell_offset = getOffset(Cell, self.memory, cell);
         var map = self.grapheme_map.map(self.memory);
 
-        const slice = try self.grapheme_alloc.alloc(u21, self.memory, cps.len);
+        const slice = self.grapheme_alloc.alloc(u21, self.memory, cps.len) catch |e| {
+            comptime assert(@TypeOf(e) == error{OutOfMemory});
+            // The grapheme alloc capacity needs to be increased.
+            return error.GraphemeAllocOutOfMemory;
+        };
         errdefer self.grapheme_alloc.free(self.memory, slice);
         @memcpy(slice, cps);
 
-        try map.putNoClobber(cell_offset, .{
+        map.putNoClobber(cell_offset, .{
             .offset = getOffset(u21, self.memory, @ptrCast(slice.ptr)),
             .len = slice.len,
-        });
+        }) catch |e| {
+            comptime assert(@TypeOf(e) == error{OutOfMemory});
+            // The grapheme map capacity needs to be increased.
+            return error.GraphemeMapOutOfMemory;
+        };
         errdefer map.remove(cell_offset);
 
         cell.content_tag = .codepoint_grapheme;
