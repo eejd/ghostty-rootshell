@@ -1404,6 +1404,11 @@ fn rowWillBeShifted(
     }
 }
 
+// TODO(qwerasd): `insertLines` and `deleteLines` are 99% identical,
+// the majority of their logic can (and should) be abstracted in to
+// a single shared helper function, probably on `Screen` not here.
+// I'm just too lazy to do that rn :p
+
 /// Insert amount lines at the current cursor row. The contents of the line
 /// at the current cursor row and below (to the bottom-most line in the
 /// scrolling region) are shifted down by amount lines. The contents of the
@@ -1435,6 +1440,18 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     // Scrolling dirties the images because it updates their placements pins.
     self.screen.kitty_images.dirty = true;
 
+    // At the end we need to return the cursor to the row it started on.
+    const start_y = self.screen.cursor.y;
+    defer {
+        self.screen.cursorAbsolute(self.scrolling_region.left, start_y);
+        // Always unset pending wrap
+        self.screen.cursor.pending_wrap = false;
+    }
+
+    // We have a slower path if we have left or right scroll margins.
+    const left_right = self.scrolling_region.left > 0 or
+        self.scrolling_region.right < self.cols - 1;
+
     // Remaining rows from our cursor to the bottom of the scroll region.
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
@@ -1442,121 +1459,135 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     // region. So we take whichever is smaller.
     const adjusted_count = @min(count, rem);
 
-    // top is just the cursor position. insertLines starts at the cursor
-    // so this is our top. We want to shift lines down, down to the bottom
-    // of the scroll region.
-    const top = self.screen.cursor.page_pin.*;
+    // Create a new tracked pin which we'll use to navigate the page list
+    // so that if we need to adjust capacity it will be properly tracked.
+    var cur_p = self.screen.pages.trackPin(
+        self.screen.cursor.page_pin.down(rem - 1).?,
+    ) catch |err| {
+        std.log.err("TODO: insertLines handle trackPin error err={}", .{err});
+        @panic("TODO: insertLines handle trackPin error");
+    };
+    defer self.screen.pages.untrackPin(cur_p);
 
-    // This is the amount of space at the bottom of the scroll region
-    // that will NOT be blank, so we need to shift the correct lines down.
-    // "scroll_amount" is the number of such lines.
-    const scroll_amount = rem - adjusted_count;
-    if (scroll_amount > 0) {
-        // If we have left/right scroll margins we have a slower path.
-        const left_right = self.scrolling_region.left > 0 or
-            self.scrolling_region.right < self.cols - 1;
+    // Our current y position relative to the cursor
+    var y: usize = rem;
 
-        const bot = top.down(scroll_amount - 1).?;
-        var it = bot.rowIterator(.left_up, top);
-        while (it.next()) |p| {
-            const dst_p = p.down(adjusted_count).?;
-            const src_rac = p.rowAndCell();
-            const dst_rac = dst_p.rowAndCell();
-            const src: *Row = src_rac.row;
-            const dst: *Row = dst_rac.row;
+    // Traverse from the bottom up
+    while (y > 0) {
+        const cur_rac = cur_p.rowAndCell();
+        const cur_row: *Row = cur_rac.row;
 
-            self.rowWillBeShifted(&p.page.data, src);
-            self.rowWillBeShifted(&dst_p.page.data, dst);
+        // Mark the row as dirty
+        cur_p.markDirty();
 
-            // Mark both our src/dst as dirty
-            p.markDirty();
-            dst_p.markDirty();
+        // If this is one of the lines we need to shift, do so
+        if (y > adjusted_count) {
+            const off_p = cur_p.up(adjusted_count).?;
+            const off_rac = off_p.rowAndCell();
+            const off_row: *Row = off_rac.row;
+
+            self.rowWillBeShifted(&cur_p.page.data, cur_row);
+            self.rowWillBeShifted(&off_p.page.data, off_row);
 
             // If our scrolling region is full width, then we unset wrap.
             if (!left_right) {
-                dst.wrap = false;
-                src.wrap = false;
-                dst.wrap_continuation = false;
-                src.wrap_continuation = false;
+                off_row.wrap = false;
+                cur_row.wrap = false;
+                off_row.wrap_continuation = false;
+                cur_row.wrap_continuation = false;
             }
+
+            const src_p = off_p;
+            const src_row = off_row;
+            const dst_p = cur_p;
+            const dst_row = cur_row;
 
             // If our page doesn't match, then we need to do a copy from
             // one page to another. This is the slow path.
-            if (dst_p.page != p.page) {
+            if (src_p.page != dst_p.page) {
                 dst_p.page.data.clonePartialRowFrom(
-                    &p.page.data,
-                    dst,
-                    src,
+                    &src_p.page.data,
+                    dst_row,
+                    src_row,
                     self.scrolling_region.left,
                     self.scrolling_region.right + 1,
                 ) catch |err| {
-                    std.log.warn("TODO: insertLines handle clone error err={}", .{err});
-                    @panic("TODO");
+                    const cap = dst_p.page.data.capacity;
+                    // Adjust our page capacity to make
+                    // room for we didn't have space for
+                    _ = self.screen.adjustCapacity(
+                        dst_p.page,
+                        switch (err) {
+                            // Rehash the sets
+                            error.StyleSetNeedsRehash,
+                            error.HyperlinkSetNeedsRehash,
+                            => .{},
+
+                            // Increase style memory
+                            error.StyleSetOutOfMemory,
+                            => .{.styles = cap.styles * 2 },
+
+                            // Increase string memory
+                            error.StringAllocOutOfMemory,
+                            => .{ .string_bytes = cap.string_bytes * 2 },
+
+                            // Increase hyperlink memory
+                            error.HyperlinkSetOutOfMemory,
+                            error.HyperlinkMapOutOfMemory,
+                            => .{ .hyperlink_bytes = cap.hyperlink_bytes * 2 },
+
+                            // Increase grapheme memory
+                            error.GraphemeMapOutOfMemory,
+                            error.GraphemeAllocOutOfMemory,
+                            => .{ .grapheme_bytes = cap.grapheme_bytes * 2 },
+                        },
+                    ) catch |e| {
+                        std.log.err("TODO: insertLines handle adjustCapacity error err={}", .{e});
+                        @panic("TODO: insertLines handle adjustCapacity error");
+                    };
+                    // Continue the loop to try handling this row again.
+                    continue;
                 };
+            } else {
+                if (!left_right) {
+                    // Swap the src/dst cells. This ensures that our dst gets the
+                    // proper shifted rows and src gets non-garbage cell data that
+                    // we can clear.
+                    const dst = dst_row.*;
+                    dst_row.* = src_row.*;
+                    src_row.* = dst;
 
-                continue;
+                    // Ensure what we did didn't corrupt the page
+                    cur_p.page.data.assertIntegrity();
+                } else {
+                    // Left/right scroll margins we have to
+                    // copy cells, which is much slower...
+                    const page = &cur_p.page.data;
+                    page.moveCells(
+                        src_row,
+                        self.scrolling_region.left,
+                        dst_row,
+                        self.scrolling_region.left,
+                        (self.scrolling_region.right - self.scrolling_region.left) + 1,
+                    );
+                }
             }
-
-            if (!left_right) {
-                // Swap the src/dst cells. This ensures that our dst gets the proper
-                // shifted rows and src gets non-garbage cell data that we can clear.
-                const dst_row = dst.*;
-                dst.* = src.*;
-                src.* = dst_row;
-
-                // Ensure what we did didn't corrupt the page
-                p.page.data.assertIntegrity();
-                continue;
-            }
-
-            // Left/right scroll margins we have to copy cells, which is much slower...
-            const page = &p.page.data;
-            page.moveCells(
-                src,
-                self.scrolling_region.left,
-                dst,
-                self.scrolling_region.left,
-                (self.scrolling_region.right - self.scrolling_region.left) + 1,
+        } else {
+            // Clear the cells for this row, it has been shifted.
+            const page = &cur_p.page.data;
+            const cells = page.getCells(cur_row);
+            self.screen.clearCells(
+                page,
+                cur_row,
+                cells[self.scrolling_region.left .. self.scrolling_region.right + 1],
             );
         }
 
-        // The operations above can prune our cursor style so we need to
-        // update. This should never fail because the above can only FREE
-        // memory.
-        self.screen.manualStyleUpdate() catch |err| {
-            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
-            self.screen.cursor.style = .{};
-            self.screen.manualStyleUpdate() catch unreachable;
-        };
+        // We have successfully processed a line.
+        y -= 1;
+        // Move our pin up to the next row.
+        if (cur_p.up(1)) |p| cur_p.* = p;
     }
-
-    // Inserted lines should keep our bg color
-    const bot = top.down(adjusted_count - 1).?;
-    var it = top.rowIterator(.right_down, bot);
-    while (it.next()) |p| {
-        const row: *Row = p.rowAndCell().row;
-
-        // This row is now dirty
-        p.markDirty();
-
-        // Clear the src row.
-        const page = &p.page.data;
-        const cells = page.getCells(row);
-        const cells_write = cells[self.scrolling_region.left .. self.scrolling_region.right + 1];
-        self.screen.clearCells(page, row, cells_write);
-    }
-
-    // Move the cursor to the left margin. But importantly this also
-    // forces screen.cursor.page_cell to reload because the rows above
-    // shifted cell ofsets so this will ensure the cursor is pointing
-    // to the correct cell.
-    self.screen.cursorAbsolute(
-        self.scrolling_region.left,
-        self.screen.cursor.y,
-    );
-
-    // Always unset pending wrap
-    self.screen.cursor.pending_wrap = false;
 }
 
 /// Removes amount lines from the current cursor row down. The remaining lines
@@ -1575,9 +1606,9 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 /// cleared space is colored according to the current SGR state.
 ///
 /// Moves the cursor to the left margin.
-pub fn deleteLines(self: *Terminal, count_req: usize) void {
+pub fn deleteLines(self: *Terminal, count: usize) void {
     // Rare, but happens
-    if (count_req == 0) return;
+    if (count == 0) return;
 
     // If the cursor is outside the scroll region we do nothing.
     if (self.screen.cursor.y < self.scrolling_region.top or
@@ -1588,125 +1619,154 @@ pub fn deleteLines(self: *Terminal, count_req: usize) void {
     // Scrolling dirties the images because it updates their placements pins.
     self.screen.kitty_images.dirty = true;
 
-    // top is just the cursor position. insertLines starts at the cursor
-    // so this is our top. We want to shift lines down, down to the bottom
-    // of the scroll region.
-    const top = self.screen.cursor.page_pin.*;
+    // At the end we need to return the cursor to the row it started on.
+    const start_y = self.screen.cursor.y;
+    defer {
+        self.screen.cursorAbsolute(self.scrolling_region.left, start_y);
+        // Always unset pending wrap
+        self.screen.cursor.pending_wrap = false;
+    }
+
+    // We have a slower path if we have left or right scroll margins.
+    const left_right = self.scrolling_region.left > 0 or
+        self.scrolling_region.right < self.cols - 1;
 
     // Remaining rows from our cursor to the bottom of the scroll region.
     const rem = self.scrolling_region.bottom - self.screen.cursor.y + 1;
 
-    // The maximum we can delete is the remaining lines in the scroll region.
-    const count = @min(count_req, rem);
+    // We can only insert lines up to our remaining lines in the scroll
+    // region. So we take whichever is smaller.
+    const adjusted_count = @min(count, rem);
 
-    // This is the amount of space at the bottom of the scroll region
-    // that will NOT be blank, so we need to shift the correct lines down.
-    // "scroll_amount" is the number of such lines.
-    const scroll_amount = rem - count;
-    if (scroll_amount > 0) {
-        // If we have left/right scroll margins we have a slower path.
-        const left_right = self.scrolling_region.left > 0 or
-            self.scrolling_region.right < self.cols - 1;
+    // Create a new tracked pin which we'll use to navigate the page list
+    // so that if we need to adjust capacity it will be properly tracked.
+    var cur_p = self.screen.pages.trackPin(
+        self.screen.cursor.page_pin.*,
+    ) catch |err| {
+        std.log.err("TODO: deleteLines handle trackPin error err={}", .{err});
+        @panic("TODO: deleteLines handle trackPin error");
+    };
+    defer self.screen.pages.untrackPin(cur_p);
 
-        const bot = top.down(scroll_amount - 1).?;
-        var it = top.rowIterator(.right_down, bot);
-        while (it.next()) |p| {
-            const src_p = p.down(count).?;
-            const src_rac = src_p.rowAndCell();
-            const dst_rac = p.rowAndCell();
-            const src: *Row = src_rac.row;
-            const dst: *Row = dst_rac.row;
+    // Our current y position relative to the cursor
+    var y: usize = 0;
 
-            // Mark both our src/dst as dirty
-            p.markDirty();
-            src_p.markDirty();
+    // Traverse from the top down
+    while (y < rem) {
+        const cur_rac = cur_p.rowAndCell();
+        const cur_row: *Row = cur_rac.row;
 
-            self.rowWillBeShifted(&src_p.page.data, src);
-            self.rowWillBeShifted(&p.page.data, dst);
+        // Mark the row as dirty
+        cur_p.markDirty();
+
+        // If this is one of the lines we need to shift, do so
+        if (y < rem - adjusted_count) {
+            const off_p = cur_p.down(adjusted_count).?;
+            const off_rac = off_p.rowAndCell();
+            const off_row: *Row = off_rac.row;
+
+            self.rowWillBeShifted(&cur_p.page.data, cur_row);
+            self.rowWillBeShifted(&off_p.page.data, off_row);
 
             // If our scrolling region is full width, then we unset wrap.
             if (!left_right) {
-                dst.wrap = false;
-                src.wrap = false;
-                dst.wrap_continuation = false;
-                src.wrap_continuation = false;
+                off_row.wrap = false;
+                cur_row.wrap = false;
+                off_row.wrap_continuation = false;
+                cur_row.wrap_continuation = false;
             }
 
-            if (src_p.page != p.page) {
-                p.page.data.clonePartialRowFrom(
+            const src_p = off_p;
+            const src_row = off_row;
+            const dst_p = cur_p;
+            const dst_row = cur_row;
+
+            // If our page doesn't match, then we need to do a copy from
+            // one page to another. This is the slow path.
+            if (src_p.page != dst_p.page) {
+                dst_p.page.data.clonePartialRowFrom(
                     &src_p.page.data,
-                    dst,
-                    src,
+                    dst_row,
+                    src_row,
                     self.scrolling_region.left,
                     self.scrolling_region.right + 1,
                 ) catch |err| {
-                    std.log.warn("TODO: deleteLines handle clone error err={}", .{err});
-                    @panic("TODO");
+                    const cap = dst_p.page.data.capacity;
+                    // Adjust our page capacity to make
+                    // room for we didn't have space for
+                    _ = self.screen.adjustCapacity(
+                        dst_p.page,
+                        switch (err) {
+                            // Rehash the sets
+                            error.StyleSetNeedsRehash,
+                            error.HyperlinkSetNeedsRehash,
+                            => .{},
+
+                            // Increase style memory
+                            error.StyleSetOutOfMemory,
+                            => .{.styles = cap.styles * 2 },
+
+                            // Increase string memory
+                            error.StringAllocOutOfMemory,
+                            => .{ .string_bytes = cap.string_bytes * 2 },
+
+                            // Increase hyperlink memory
+                            error.HyperlinkSetOutOfMemory,
+                            error.HyperlinkMapOutOfMemory,
+                            => .{ .hyperlink_bytes = cap.hyperlink_bytes * 2 },
+
+                            // Increase grapheme memory
+                            error.GraphemeMapOutOfMemory,
+                            error.GraphemeAllocOutOfMemory,
+                            => .{ .grapheme_bytes = cap.grapheme_bytes * 2 },
+                        },
+                    ) catch |e| {
+                        std.log.err("TODO: deleteLines handle adjustCapacity error err={}", .{e});
+                        @panic("TODO: deleteLines handle adjustCapacity error");
+                    };
+                    // Continue the loop to try handling this row again.
+                    continue;
                 };
+            } else {
+                if (!left_right) {
+                    // Swap the src/dst cells. This ensures that our dst gets the
+                    // proper shifted rows and src gets non-garbage cell data that
+                    // we can clear.
+                    const dst = dst_row.*;
+                    dst_row.* = src_row.*;
+                    src_row.* = dst;
 
-                continue;
+                    // Ensure what we did didn't corrupt the page
+                    cur_p.page.data.assertIntegrity();
+                } else {
+                    // Left/right scroll margins we have to
+                    // copy cells, which is much slower...
+                    const page = &cur_p.page.data;
+                    page.moveCells(
+                        src_row,
+                        self.scrolling_region.left,
+                        dst_row,
+                        self.scrolling_region.left,
+                        (self.scrolling_region.right - self.scrolling_region.left) + 1,
+                    );
+                }
             }
-
-            if (!left_right) {
-                // Swap the src/dst cells. This ensures that our dst gets the proper
-                // shifted rows and src gets non-garbage cell data that we can clear.
-                const dst_row = dst.*;
-                dst.* = src.*;
-                src.* = dst_row;
-
-                // Ensure what we did didn't corrupt the page
-                p.page.data.assertIntegrity();
-                continue;
-            }
-
-            // Left/right scroll margins we have to copy cells, which is much slower...
-            const page = &p.page.data;
-            page.moveCells(
-                src,
-                self.scrolling_region.left,
-                dst,
-                self.scrolling_region.left,
-                (self.scrolling_region.right - self.scrolling_region.left) + 1,
+        } else {
+            // Clear the cells for this row, it's from out of bounds.
+            const page = &cur_p.page.data;
+            const cells = page.getCells(cur_row);
+            self.screen.clearCells(
+                page,
+                cur_row,
+                cells[self.scrolling_region.left .. self.scrolling_region.right + 1],
             );
         }
 
-        // The operations above can prune our cursor style so we need to
-        // update. This should never fail because the above can only FREE
-        // memory.
-        self.screen.manualStyleUpdate() catch |err| {
-            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
-            self.screen.cursor.style = .{};
-            self.screen.manualStyleUpdate() catch unreachable;
-        };
+        // We have successfully processed a line.
+        y += 1;
+        // Move our pin down to the next row.
+        if (cur_p.down(1)) |p| cur_p.* = p;
     }
-
-    const clear_top = top.down(scroll_amount).?;
-    const bot = top.down(rem - 1).?;
-    var it = clear_top.rowIterator(.right_down, bot);
-    while (it.next()) |p| {
-        const row: *Row = p.rowAndCell().row;
-
-        // This row is now dirty
-        p.markDirty();
-
-        // Clear the src row.
-        const page = &p.page.data;
-        const cells = page.getCells(row);
-        const cells_write = cells[self.scrolling_region.left .. self.scrolling_region.right + 1];
-        self.screen.clearCells(page, row, cells_write);
-    }
-
-    // Move the cursor to the left margin. But importantly this also
-    // forces screen.cursor.page_cell to reload because the rows above
-    // shifted cell ofsets so this will ensure the cursor is pointing
-    // to the correct cell.
-    self.screen.cursorAbsolute(
-        self.scrolling_region.left,
-        self.screen.cursor.y,
-    );
-
-    // Always unset pending wrap
-    self.screen.cursor.pending_wrap = false;
 }
 
 /// Inserts spaces at current cursor position moving existing cell contents
