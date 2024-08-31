@@ -10,7 +10,14 @@ const state = &@import("../global.zig").state;
 
 const log = std.log.scoped(.sentry);
 
+/// The global state for the Sentry SDK. This is unavoidable since crash
+/// handling is a global process-wide thing.
+var init_thread: ?std.Thread = null;
+
 /// Process-wide initialization of our Sentry client.
+///
+/// This should only be called from one thread, and deinit should be called
+/// from the same thread that calls init to avoid data races.
 ///
 /// PRIVACY NOTE: I want to make it very clear that Ghostty by default does
 /// NOT send any data over the network. We use the Sentry native SDK to collect
@@ -29,6 +36,24 @@ pub fn init(gpa: Allocator) !void {
     //     std.log.err("[sentry init time] start={}us duration={}ns", .{ start_micro, end.since(start) / std.time.ns_per_us });
     // }
 
+    // Must only start once
+    assert(init_thread == null);
+
+    // We use a thread for initializing Sentry because initialization takes
+    // ~2k ns on my M3 Max. That's not a LOT of time but it's enough to be
+    // 90% of our pre-App startup time. Everything Sentry is doing initially
+    // is safe to do on a separate thread and fast enough that its very
+    // likely to be done before a crash occurs.
+    const thr = try std.Thread.spawn(
+        .{},
+        initThread,
+        .{gpa},
+    );
+    thr.setName("sentry-init") catch {};
+    init_thread = thr;
+}
+
+fn initThread(gpa: Allocator) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -73,6 +98,11 @@ pub fn init(gpa: Allocator) !void {
 pub fn deinit() void {
     if (comptime builtin.os.tag == .windows) return;
 
+    // If we're still initializing then wait for init to finish. This
+    // is highly unlikely since init is a very fast operation but we want
+    // to avoid the possibility.
+    const thr = init_thread orelse return;
+    thr.join();
     _ = sentry.c.sentry_close();
 }
 
