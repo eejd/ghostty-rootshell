@@ -19,14 +19,34 @@ branch: []const u8,
 pub fn detect(b: *std.Build) !Version {
     // Execute a bunch of git commands to determine the automatic version.
     var code: u8 = 0;
-    const branch = try b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "rev-parse", "--abbrev-ref", "HEAD" }, &code, .Ignore);
+    const branch: []const u8 = b.runAllowFail(
+        &[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "rev-parse", "--abbrev-ref", "HEAD" },
+        &code,
+        .Ignore,
+    ) catch |err| switch (err) {
+        error.FileNotFound => return error.GitNotFound,
+        else => return err,
+    };
 
     const short_hash = short_hash: {
-        const output = try b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "log", "--pretty=format:%h", "-n", "1" }, &code, .Ignore);
+        const output = b.runAllowFail(
+            &[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "log", "--pretty=format:%h", "-n", "1" },
+            &code,
+            .Ignore,
+        ) catch |err| switch (err) {
+            error.FileNotFound => return error.GitNotFound,
+            else => return err,
+        };
+
         break :short_hash std.mem.trimRight(u8, output, "\r\n ");
     };
 
-    const tag = b.runAllowFail(&[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "describe", "--exact-match", "--tags" }, &code, .Ignore) catch |err| switch (err) {
+    const tag = b.runAllowFail(
+        &[_][]const u8{ "git", "-C", b.build_root.path orelse ".", "describe", "--exact-match", "--tags" },
+        &code,
+        .Ignore,
+    ) catch |err| switch (err) {
+        error.FileNotFound => return error.GitNotFound,
         error.ExitCodeFailure => "", // expected
         else => return err,
     };
@@ -39,6 +59,7 @@ pub fn detect(b: *std.Build) !Version {
         "--quiet",
         "--exit-code",
     }, &code, .Ignore) catch |err| switch (err) {
+        error.FileNotFound => return error.GitNotFound,
         error.ExitCodeFailure => {}, // expected
         else => return err,
     };

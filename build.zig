@@ -177,7 +177,18 @@ pub fn build(b: *std.Build) !void {
     config.version = if (version_string) |v|
         try std.SemanticVersion.parse(v)
     else version: {
-        const vsn = try Version.detect(b);
+        const vsn = Version.detect(b) catch |err| switch (err) {
+            // If Git isn't available we just make an unknown dev version.
+            error.GitNotFound => break :version .{
+                .major = app_version.major,
+                .minor = app_version.minor,
+                .patch = app_version.patch,
+                .pre = "dev",
+                .build = "0000000",
+            },
+
+            else => return err,
+        };
         if (vsn.tag) |tag| {
             // Tip releases behave just like any other pre-release so we skip.
             if (!std.mem.eql(u8, tag, "tip")) {
