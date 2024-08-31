@@ -78,8 +78,10 @@ fn initThread(gpa: Allocator) !void {
         cache_dir.len,
     );
 
-    // Debug logging for Sentry
-    sentry.c.sentry_options_set_debug(opts, @intFromBool(true));
+    if (comptime builtin.mode == .Debug) {
+        // Debug logging for Sentry
+        sentry.c.sentry_options_set_debug(opts, @intFromBool(true));
+    }
 
     // Initialize
     if (sentry.c.sentry_init(opts) != 0) return error.SentryInitFailed;

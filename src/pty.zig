@@ -137,6 +137,25 @@ const PosixPty = struct {
     /// This should be called prior to exec in the forked child process
     /// in order to setup the tty properly.
     pub fn childPreExec(self: Pty) !void {
+        // Reset our signals
+        var sa: posix.Sigaction = .{
+            .handler = .{ .handler = posix.SIG.DFL },
+            .mask = posix.empty_sigset,
+            .flags = 0,
+        };
+        try posix.sigaction(posix.SIG.ABRT, &sa, null);
+        try posix.sigaction(posix.SIG.ALRM, &sa, null);
+        try posix.sigaction(posix.SIG.BUS, &sa, null);
+        try posix.sigaction(posix.SIG.CHLD, &sa, null);
+        try posix.sigaction(posix.SIG.FPE, &sa, null);
+        try posix.sigaction(posix.SIG.HUP, &sa, null);
+        try posix.sigaction(posix.SIG.ILL, &sa, null);
+        try posix.sigaction(posix.SIG.INT, &sa, null);
+        try posix.sigaction(posix.SIG.SEGV, &sa, null);
+        try posix.sigaction(posix.SIG.TRAP, &sa, null);
+        try posix.sigaction(posix.SIG.TERM, &sa, null);
+        try posix.sigaction(posix.SIG.QUIT, &sa, null);
+
         // Create a new process group
         if (setsid() < 0) return error.ProcessGroupFailed;
 
