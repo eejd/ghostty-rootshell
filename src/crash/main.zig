@@ -4,7 +4,12 @@
 
 const sentry_envelope = @import("sentry_envelope.zig");
 
-pub const SentryEnvelope = sentry_envelope.Envelope;
+pub const sentry = @import("sentry.zig");
+pub const Envelope = sentry_envelope.Envelope;
+
+// The main init/deinit functions for global state.
+pub const init = sentry.init;
+pub const deinit = sentry.deinit;
 
 test {
     @import("std").testing.refAllDecls(@This());

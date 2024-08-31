@@ -2,10 +2,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
-const build_config = @import("build_config.zig");
+const build_config = @import("../build_config.zig");
 const sentry = @import("sentry");
-const internal_os = @import("os/main.zig");
-const state = &@import("global.zig").state;
+const internal_os = @import("../os/main.zig");
+const state = &@import("../global.zig").state;
 
 const log = std.log.scoped(.sentry);
 

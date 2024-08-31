@@ -7,7 +7,7 @@ const fontconfig = @import("fontconfig");
 const glslang = @import("glslang");
 const harfbuzz = @import("harfbuzz");
 const oni = @import("oniguruma");
-const sentry = @import("sentry.zig");
+const crash = @import("crash/main.zig");
 const renderer = @import("renderer.zig");
 const xev = @import("xev");
 
@@ -127,7 +127,7 @@ pub const GlobalState = struct {
         internal_os.fixMaxFiles();
 
         // Initialize our crash reporting.
-        try sentry.init(self.alloc);
+        try crash.init(self.alloc);
 
         // const sentrylib = @import("sentry");
         // if (sentrylib.captureEvent(sentrylib.Value.initMessageEvent(
@@ -160,7 +160,7 @@ pub const GlobalState = struct {
         if (self.resources_dir) |dir| self.alloc.free(dir);
 
         // Flush our crash logs
-        sentry.deinit();
+        crash.deinit();
 
         if (self.gpa) |*value| {
             // We want to ensure that we deinit the GPA because this is
