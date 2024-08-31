@@ -14,8 +14,8 @@ pub const UUID = struct {
         return c.sentry_uuid_is_nil(&self.value) != 0;
     }
 
-    pub fn string(self: UUID) [37]u8 {
-        var buf: [37]u8 = undefined;
+    pub fn string(self: UUID) [36:0]u8 {
+        var buf: [36:0]u8 = undefined;
         c.sentry_uuid_as_string(&self.value, &buf);
         return buf;
     }

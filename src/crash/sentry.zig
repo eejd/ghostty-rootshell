@@ -94,8 +94,21 @@ pub const Transport = struct {
         defer arena.deinit();
         const alloc = arena.allocator();
 
-        // Some envelopes don't contain a crash report. Discord them.
-        if (try shouldDiscard(alloc, envelope)) {
+        // Parse into an envelope structure
+        const json = envelope.serialize();
+        defer sentry.free(@ptrCast(json.ptr));
+        var parsed: crash.Envelope = parsed: {
+            var fbs = std.io.fixedBufferStream(json);
+            break :parsed try crash.Envelope.parse(alloc, fbs.reader());
+        };
+        defer parsed.deinit();
+
+        // If our envelope doesn't have an event then we don't do anything.
+        // To figure this out we first encode it into a string, parse it,
+        // and check if it has an event. Kind of wasteful but the best
+        // option we have at the time of writing this since the C API doesn't
+        // expose this information.
+        if (try shouldDiscard(&parsed)) {
             log.info("sentry envelope does not contain crash, discarding", .{});
             return;
         }
@@ -116,28 +129,16 @@ pub const Transport = struct {
             crash_dir,
             try std.fmt.allocPrint(alloc, "{s}.ghosttycrash", .{uuid.string()}),
         });
-        log.debug("writing crash report to disk path={s}", .{path});
-        try envelope.writeToFile(path);
+        const file = try std.fs.cwd().createFile(path, .{});
+        defer file.close();
+        try file.writer().writeAll(json);
 
         log.warn("crash report written to disk path={s}", .{path});
     }
 
-    fn shouldDiscard(alloc: Allocator, envelope: *sentry.Envelope) !bool {
-        // If our envelope doesn't have an event then we don't do anything.
-        // To figure this out we first encode it into a string, parse it,
-        // and check if it has an event. Kind of wasteful but the best
-        // option we have at the time of writing this since the C API doesn't
-        // expose this information.
-        const json = envelope.serialize();
-        defer sentry.free(@ptrCast(json.ptr));
-
-        // Parse into an envelope structure
-        var fbs = std.io.fixedBufferStream(json);
-        var parsed = try crash.Envelope.parse(alloc, fbs.reader());
-        defer parsed.deinit();
-
+    fn shouldDiscard(envelope: *const crash.Envelope) !bool {
         // If we have an event item then we're good.
-        for (parsed.items) |item| {
+        for (envelope.items) |item| {
             if (item.type == .event) return false;
         }
 
