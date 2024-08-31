@@ -1758,6 +1758,8 @@ pub const AdjustCapacity = struct {
     string_bytes: ?usize = null,
 };
 
+pub const AdjustCapacityError = Allocator.Error || Page.CloneFromError;
+
 /// Adjust the capcaity of the given page in the list. This should
 /// be used in cases where OutOfMemory is returned by some operation
 /// i.e to increase style counts, grapheme counts, etc.
@@ -1778,25 +1780,31 @@ pub fn adjustCapacity(
     self: *PageList,
     page: *List.Node,
     adjustment: AdjustCapacity,
-) !*List.Node {
+) AdjustCapacityError!*List.Node {
     // We always start with the base capacity of the existing page. This
     // ensures we never shrink from what we need.
     var cap = page.data.capacity;
 
+    // All ceilPowerOfTwo is unreachable because we're always same or less
+    // bit width so maxInt is always possible.
     if (adjustment.styles) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        comptime assert(@bitSizeOf(@TypeOf(v)) <= @bitSizeOf(usize));
+        const aligned = std.math.ceilPowerOfTwo(usize, v) catch unreachable;
         cap.styles = @max(cap.styles, aligned);
     }
     if (adjustment.grapheme_bytes) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        comptime assert(@bitSizeOf(@TypeOf(v)) <= @bitSizeOf(usize));
+        const aligned = std.math.ceilPowerOfTwo(usize, v) catch unreachable;
         cap.grapheme_bytes = @max(cap.grapheme_bytes, aligned);
     }
     if (adjustment.hyperlink_bytes) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        comptime assert(@bitSizeOf(@TypeOf(v)) <= @bitSizeOf(usize));
+        const aligned = std.math.ceilPowerOfTwo(usize, v) catch unreachable;
         cap.hyperlink_bytes = @max(cap.hyperlink_bytes, aligned);
     }
     if (adjustment.string_bytes) |v| {
-        const aligned = try std.math.ceilPowerOfTwo(usize, v);
+        comptime assert(@bitSizeOf(@TypeOf(v)) <= @bitSizeOf(usize));
+        const aligned = std.math.ceilPowerOfTwo(usize, v) catch unreachable;
         cap.string_bytes = @max(cap.string_bytes, aligned);
     }
 
@@ -1830,7 +1838,7 @@ pub fn adjustCapacity(
 fn createPage(
     self: *PageList,
     cap: Capacity,
-) !*List.Node {
+) Allocator.Error!*List.Node {
     // log.debug("create page cap={}", .{cap});
     return try createPageExt(&self.pool, cap, &self.page_size);
 }
@@ -1839,7 +1847,7 @@ fn createPageExt(
     pool: *MemoryPool,
     cap: Capacity,
     total_size: ?*usize,
-) !*List.Node {
+) Allocator.Error!*List.Node {
     var page = try pool.nodes.create();
     errdefer pool.nodes.destroy(page);
 
@@ -2292,7 +2300,7 @@ pub fn pin(self: *const PageList, pt: point.Point) ?Pin {
 /// automatically updated as the pagelist is modified. If the point the
 /// pin points to is removed completely, the tracked pin will be updated
 /// to the top-left of the screen.
-pub fn trackPin(self: *PageList, p: Pin) !*Pin {
+pub fn trackPin(self: *PageList, p: Pin) Allocator.Error!*Pin {
     if (comptime std.debug.runtime_safety) assert(self.pinIsValid(p));
 
     // Create our tracked pin
