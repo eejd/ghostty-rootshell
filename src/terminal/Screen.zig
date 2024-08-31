@@ -437,7 +437,7 @@ pub fn adjustCapacity(
     self: *Screen,
     page: *PageList.List.Node,
     adjustment: PageList.AdjustCapacity,
-) !*PageList.List.Node {
+) PageList.AdjustCapacityError!*PageList.List.Node {
     // If the page being modified isn't our cursor page then
     // this is a quick operation because we have no additional
     // accounting.

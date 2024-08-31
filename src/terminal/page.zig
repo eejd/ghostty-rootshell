@@ -708,7 +708,7 @@ pub const Page = struct {
         const cells = dst_row.cells.ptr(self.memory)[x_start..x_end];
 
         // If our destination has styles or graphemes then we need to
-        // clear some state.
+        // clear some state. This will free up the managed memory as well.
         if (dst_row.managedMemory()) self.clearCells(dst_row, x_start, x_end);
 
         // Copy all the row metadata but keep our cells offset
@@ -771,6 +771,8 @@ pub const Page = struct {
                     // Copy the grapheme codepoints
                     const cps = other.lookupGrapheme(src_cell).?;
 
+                    // Safe to use setGraphemes because we cleared all
+                    // managed memory for our destination cell range.
                     try self.setGraphemes(dst_row, dst_cell, cps);
                 }
                 if (src_cell.hyperlink) hyperlink: {
@@ -801,10 +803,11 @@ pub const Page = struct {
                         if (self.hyperlink_set.lookupContext(
                             self.memory,
                             other_link.*,
-                            .{ .page = @constCast(other) },
+
                             // `lookupContext` uses the context for hashing, and
                             // that doesn't write to the page, so this constCast
                             // is completely safe.
+                            .{ .page = @constCast(other) },
                         )) |i| {
                             self.hyperlink_set.use(self.memory, i);
                             break :dst_id i;

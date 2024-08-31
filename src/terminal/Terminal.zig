@@ -1444,6 +1444,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     const start_y = self.screen.cursor.y;
     defer {
         self.screen.cursorAbsolute(self.scrolling_region.left, start_y);
+
         // Always unset pending wrap
         self.screen.cursor.pending_wrap = false;
     }
@@ -1464,8 +1465,15 @@ pub fn insertLines(self: *Terminal, count: usize) void {
     var cur_p = self.screen.pages.trackPin(
         self.screen.cursor.page_pin.down(rem - 1).?,
     ) catch |err| {
-        std.log.err("TODO: insertLines handle trackPin error err={}", .{err});
-        @panic("TODO: insertLines handle trackPin error");
+        comptime assert(@TypeOf(err) == error{OutOfMemory});
+
+        // This error scenario means that our GPA is OOM. This is not a
+        // situation we can gracefully handle. We can't just ignore insertLines
+        // because it'll result in a corrupted screen. Ideally in the future
+        // we flag the state as broken and show an error message to the user.
+        // For now, we panic.
+        log.err("insertLines trackPin error err={}", .{err});
+        @panic("insertLines trackPin OOM");
     };
     defer self.screen.pages.untrackPin(cur_p);
 
@@ -1525,7 +1533,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
 
                             // Increase style memory
                             error.StyleSetOutOfMemory,
-                            => .{.styles = cap.styles * 2 },
+                            => .{ .styles = cap.styles * 2 },
 
                             // Increase string memory
                             error.StringAllocOutOfMemory,
@@ -1541,10 +1549,27 @@ pub fn insertLines(self: *Terminal, count: usize) void {
                             error.GraphemeAllocOutOfMemory,
                             => .{ .grapheme_bytes = cap.grapheme_bytes * 2 },
                         },
-                    ) catch |e| {
-                        std.log.err("TODO: insertLines handle adjustCapacity error err={}", .{e});
-                        @panic("TODO: insertLines handle adjustCapacity error");
+                    ) catch |e| switch (e) {
+                        // This shouldn't be possible because above we're only
+                        // adjusting capacity _upwards_. So it should have all
+                        // the existing capacity it had to fit the adjusted
+                        // data. Panic since we don't expect this.
+                        error.StyleSetOutOfMemory,
+                        error.StyleSetNeedsRehash,
+                        error.StringAllocOutOfMemory,
+                        error.HyperlinkSetOutOfMemory,
+                        error.HyperlinkSetNeedsRehash,
+                        error.HyperlinkMapOutOfMemory,
+                        error.GraphemeMapOutOfMemory,
+                        error.GraphemeAllocOutOfMemory,
+                        => @panic("adjustCapacity resulted in capacity errors"),
+
+                        // The system allocator is OOM. We can't currently do
+                        // anything graceful here. We panic.
+                        error.OutOfMemory,
+                        => @panic("adjustCapacity system allocator OOM"),
                     };
+
                     // Continue the loop to try handling this row again.
                     continue;
                 };
@@ -1643,8 +1668,10 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
     var cur_p = self.screen.pages.trackPin(
         self.screen.cursor.page_pin.*,
     ) catch |err| {
-        std.log.err("TODO: deleteLines handle trackPin error err={}", .{err});
-        @panic("TODO: deleteLines handle trackPin error");
+        // See insertLines
+        comptime assert(@TypeOf(err) == error{OutOfMemory});
+        log.err("deleteLines trackPin error err={}", .{err});
+        @panic("deleteLines trackPin OOM");
     };
     defer self.screen.pages.untrackPin(cur_p);
 
@@ -1704,7 +1731,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
 
                             // Increase style memory
                             error.StyleSetOutOfMemory,
-                            => .{.styles = cap.styles * 2 },
+                            => .{ .styles = cap.styles * 2 },
 
                             // Increase string memory
                             error.StringAllocOutOfMemory,
@@ -1720,10 +1747,22 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
                             error.GraphemeAllocOutOfMemory,
                             => .{ .grapheme_bytes = cap.grapheme_bytes * 2 },
                         },
-                    ) catch |e| {
-                        std.log.err("TODO: deleteLines handle adjustCapacity error err={}", .{e});
-                        @panic("TODO: deleteLines handle adjustCapacity error");
+                    ) catch |e| switch (e) {
+                        // See insertLines which has the same error capture.
+                        error.StyleSetOutOfMemory,
+                        error.StyleSetNeedsRehash,
+                        error.StringAllocOutOfMemory,
+                        error.HyperlinkSetOutOfMemory,
+                        error.HyperlinkSetNeedsRehash,
+                        error.HyperlinkMapOutOfMemory,
+                        error.GraphemeMapOutOfMemory,
+                        error.GraphemeAllocOutOfMemory,
+                        => @panic("adjustCapacity resulted in capacity errors"),
+
+                        error.OutOfMemory,
+                        => @panic("adjustCapacity system allocator OOM"),
                     };
+
                     // Continue the loop to try handling this row again.
                     continue;
                 };
