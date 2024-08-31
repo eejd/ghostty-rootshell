@@ -5,6 +5,7 @@ const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const sentry = @import("sentry");
 const internal_os = @import("../os/main.zig");
+const crash = @import("main.zig");
 const state = &@import("../global.zig").state;
 
 const log = std.log.scoped(.sentry);
@@ -89,12 +90,15 @@ pub const Transport = struct {
 
     /// Implementation of send but we can use Zig errors.
     fn sendInternal(envelope: *sentry.Envelope) !void {
-        // If our envelope doesn't have an event then we don't do anything.
-        // TODO: figure out how to not encode empty envelopes.
-
         var arena = std.heap.ArenaAllocator.init(state.alloc);
         defer arena.deinit();
         const alloc = arena.allocator();
+
+        // Some envelopes don't contain a crash report. Discord them.
+        if (try shouldDiscard(alloc, envelope)) {
+            log.info("sentry envelope does not contain crash, discarding", .{});
+            return;
+        }
 
         // Generate a UUID for this envelope. The envelope DOES have an event_id
         // header but I don't think there is any public API way to get it
@@ -116,5 +120,27 @@ pub const Transport = struct {
         try envelope.writeToFile(path);
 
         log.warn("crash report written to disk path={s}", .{path});
+    }
+
+    fn shouldDiscard(alloc: Allocator, envelope: *sentry.Envelope) !bool {
+        // If our envelope doesn't have an event then we don't do anything.
+        // To figure this out we first encode it into a string, parse it,
+        // and check if it has an event. Kind of wasteful but the best
+        // option we have at the time of writing this since the C API doesn't
+        // expose this information.
+        const json = envelope.serialize();
+        defer sentry.free(@ptrCast(json.ptr));
+
+        // Parse into an envelope structure
+        var fbs = std.io.fixedBufferStream(json);
+        var parsed = try crash.Envelope.parse(alloc, fbs.reader());
+        defer parsed.deinit();
+
+        // If we have an event item then we're good.
+        for (parsed.items) |item| {
+            if (item.type == .event) return false;
+        }
+
+        return true;
     }
 };

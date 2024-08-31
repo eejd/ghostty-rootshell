@@ -138,10 +138,13 @@ pub const Envelope = struct {
 
         // Parse the header JSON
         const headers: std.json.ObjectMap = headers: {
+            const line = std.mem.trim(u8, buf.items, " \t");
+            if (line.len == 0) return null;
+
             const value = try std.json.parseFromSliceLeaky(
                 std.json.Value,
                 alloc,
-                buf.items,
+                line,
                 .{ .allocate = .alloc_if_needed },
             );
 
@@ -255,6 +258,23 @@ test "Envelope parse session" {
         \\{}
         \\{"type":"session","length":218}
         \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 1), v.items.len);
+    try testing.expectEqual(ItemType.session, v.items[0].type);
+}
+
+test "Envelope parse end in new line" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+        \\
     );
     var v = try Envelope.parse(alloc, fbs.reader());
     defer v.deinit();

@@ -17,6 +17,12 @@ pub const Envelope = opaque {
         ) != 0) return error.WriteFailed;
     }
 
+    pub fn serialize(self: *Envelope) []u8 {
+        var len: usize = 0;
+        const ptr = c.sentry_envelope_serialize(@ptrCast(self), &len).?;
+        return ptr[0..len];
+    }
+
     pub fn event(self: *Envelope) ?Value {
         const val: Value = .{ .value = c.sentry_envelope_get_event(@ptrCast(self)) };
         if (val.isNull()) return null;
