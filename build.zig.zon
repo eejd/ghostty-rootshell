@@ -41,6 +41,10 @@
         .simdutf = .{ .path = "./pkg/simdutf" },
         .utfcpp = .{ .path = "./pkg/utfcpp" },
         .zlib = .{ .path = "./pkg/zlib" },
+        .wuffs = .{
+            .url = "https://github.com/google/wuffs/archive/refs/tags/v0.4.0-alpha.8.tar.gz",
+            .hash = "12200984439edc817fbcbbaff564020e5104a0d04a2d0f53080700827052de700462",
+        },
 
         // Shader translation
         .glslang = .{ .path = "./pkg/glslang" },

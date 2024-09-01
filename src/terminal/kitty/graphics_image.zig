@@ -10,7 +10,7 @@ const command = @import("graphics_command.zig");
 const point = @import("../point.zig");
 const PageList = @import("../PageList.zig");
 const internal_os = @import("../../os/main.zig");
-const stb = @import("../../stb/main.zig");
+const wuffs = @import("../../wuffs/main.zig");
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -412,47 +412,27 @@ pub const LoadingImage = struct {
     fn decodePng(self: *LoadingImage, alloc: Allocator) !void {
         assert(self.image.format == .png);
 
-        // Decode PNG
-        var width: c_int = 0;
-        var height: c_int = 0;
-        var bpp: c_int = 0;
-        const data = stb.stbi_load_from_memory(
-            self.data.items.ptr,
-            @intCast(self.data.items.len),
-            &width,
-            &height,
-            &bpp,
-            0,
-        ) orelse return error.InvalidData;
-        defer stb.stbi_image_free(data);
-        const len: usize = @intCast(width * height * bpp);
-        if (len > max_size) {
-            log.warn("png image too large size={} max_size={}", .{ len, max_size });
-            return error.InvalidData;
-        }
+        const result = wuffs.png.decode(alloc, self.data.items) catch |err| switch (err) {
+            error.WuffsError => return error.InvalidData,
+            else => |e| return e,
+        };
+        defer alloc.free(result.data);
 
-        // Validate our bpp
-        if (bpp < 1 or bpp > 4) {
-            log.warn("png with unsupported bpp={}", .{bpp});
-            return error.UnsupportedDepth;
+        if (result.data.len > max_size) {
+            log.warn("png image too large size={} max_size={}", .{ result.data.len, max_size });
+            return error.InvalidData;
         }
 
         // Replace our data
         self.data.deinit(alloc);
         self.data = .{};
-        try self.data.ensureUnusedCapacity(alloc, len);
-        try self.data.appendSlice(alloc, data[0..len]);
+        try self.data.ensureUnusedCapacity(alloc, result.data.len);
+        try self.data.appendSlice(alloc, result.data[0..result.data.len]);
 
         // Store updated image dimensions
-        self.image.width = @intCast(width);
-        self.image.height = @intCast(height);
-        self.image.format = switch (bpp) {
-            1 => .gray,
-            2 => .gray_alpha,
-            3 => .rgb,
-            4 => .rgba,
-            else => unreachable, // validated above
-        };
+        self.image.width = result.width;
+        self.image.height = result.height;
+        self.image.format = .rgba;
     }
 };
 
@@ -792,6 +772,6 @@ test "image load: png, not compressed, regular file" {
     var img = try loading.complete(alloc);
     defer img.deinit(alloc);
     try testing.expect(img.compression == .none);
-    try testing.expect(img.format == .rgb);
+    try testing.expect(img.format == .rgba);
     try tmp_dir.dir.access(path, .{});
 }

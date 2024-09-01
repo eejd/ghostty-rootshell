@@ -1038,6 +1038,7 @@ fn addDeps(
         .images = false,
         .text_input = false,
     });
+    const wuffs_dep = b.dependency("wuffs", .{});
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
@@ -1061,6 +1062,21 @@ fn addDeps(
     if (step.rootModuleTarget().os.tag == .linux) {
         step.addIncludePath(b.path("src/apprt/gtk"));
     }
+
+    step.addIncludePath(wuffs_dep.path("release/c"));
+    step.addCSourceFile(
+        .{
+            .file = wuffs_dep.path("release/c/wuffs-v0.4.c"),
+            .flags = f: {
+                const flags = @import("src/wuffs/defs.zig").build;
+                var a: [flags.len][]const u8 = undefined;
+                inline for (flags, 0..) |flag, i| {
+                    a[i] = "-D" ++ flag ++ "=1";
+                }
+                break :f &a;
+            },
+        },
+    );
 
     // C++ files
     step.linkLibCpp();
