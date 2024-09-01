@@ -80,6 +80,9 @@ pub const Message = union(enum) {
         runtime_ms: u64,
     },
 
+    /// The surface gained or lost focus.
+    focused: bool,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 
