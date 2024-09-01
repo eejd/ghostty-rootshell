@@ -563,6 +563,10 @@ fn resizeCols(
 ) !void {
     assert(cols != self.cols);
 
+    // Update our cols. We have to do this early because grow() that we
+    // may call below relies on this to calculate the proper page size.
+    self.cols = cols;
+
     // If we have a cursor position (x,y), then we try under any col resizing
     // to keep the same number remaining active rows beneath it. This is a
     // very special case if you can imagine clearing the screen (i.e.
@@ -675,9 +679,6 @@ fn resizeCols(
             req_rows -= 1;
         }
     }
-
-    // Update our cols
-    self.cols = cols;
 }
 
 // We use a cursor to track where we are in the src/dst. This is very
@@ -6149,6 +6150,70 @@ test "PageList resize reflow more cols wrapped rows" {
         try testing.expectEqual(@as(usize, 4), cells.len);
         try testing.expectEqual(@as(u21, 'A'), cells[0].content.codepoint);
         try testing.expectEqual(@as(u21, 'A'), cells[2].content.codepoint);
+    }
+}
+
+test "PageList resize reflow more cols creates multiple pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // We want a wide viewport so our row limit is rather small. This will
+    // force the reflow below to create multiple pages, which we assert.
+    const cap = cap: {
+        var current: size.CellCountInt = 100;
+        while (true) : (current += 100) {
+            const cap = try std_capacity.adjust(.{ .cols = current });
+            if (cap.rows < 100) break :cap cap;
+        }
+        unreachable;
+    };
+
+    var s = try init(alloc, cap.cols, cap.rows, null);
+    defer s.deinit();
+
+    // Wrap every other row so every line is wrapped for reflow
+    {
+        try testing.expect(s.pages.first == s.pages.last);
+        const page = &s.pages.first.?.data;
+        for (0..s.rows) |y| {
+            if (y % 2 == 0) {
+                const rac = page.getRowAndCell(0, y);
+                rac.row.wrap = true;
+            } else {
+                const rac = page.getRowAndCell(0, y);
+                rac.row.wrap_continuation = true;
+            }
+
+            const rac = page.getRowAndCell(0, y);
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 'A' },
+            };
+        }
+    }
+
+    // Resize
+    const newcap = try cap.adjust(.{ .cols = cap.cols + 100 });
+    try testing.expect(newcap.rows < cap.rows);
+    try s.resize(.{ .cols = newcap.cols, .reflow = true });
+    try testing.expectEqual(@as(usize, newcap.cols), s.cols);
+    try testing.expectEqual(@as(usize, cap.rows), s.totalRows());
+
+    {
+        var count: usize = 0;
+        var it = s.pages.first;
+        while (it) |page| : (it = page.next) {
+            count += 1;
+
+            // All pages should have the new capacity
+            try testing.expectEqual(newcap.cols, page.data.capacity.cols);
+            try testing.expectEqual(newcap.rows, page.data.capacity.rows);
+        }
+
+        // We should have more than one page, meaning we created at least
+        // one page. This is the critical aspect of this test so if this
+        // ever goes false we need to adjust this test.
+        try testing.expect(count > 1);
     }
 }
 
