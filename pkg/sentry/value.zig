@@ -24,6 +24,22 @@ pub const Value = struct {
         ) };
     }
 
+    pub fn initObject() Value {
+        return .{ .value = c.sentry_value_new_object() };
+    }
+
+    pub fn initString(value: []const u8) Value {
+        return .{ .value = c.sentry_value_new_string_n(value.ptr, value.len) };
+    }
+
+    pub fn initBool(value: bool) Value {
+        return .{ .value = c.sentry_value_new_bool(@intFromBool(value)) };
+    }
+
+    pub fn initInt32(value: i32) Value {
+        return .{ .value = c.sentry_value_new_int32(value) };
+    }
+
     pub fn decref(self: Value) void {
         c.sentry_value_decref(self.value);
     }
@@ -34,5 +50,15 @@ pub const Value = struct {
 
     pub fn isNull(self: Value) bool {
         return c.sentry_value_is_null(self.value) != 0;
+    }
+
+    /// sentry_value_set_by_key_n
+    pub fn setByKey(self: Value, key: []const u8, value: Value) void {
+        _ = c.sentry_value_set_by_key_n(
+            self.value,
+            key.ptr,
+            key.len,
+            value.value,
+        );
     }
 };

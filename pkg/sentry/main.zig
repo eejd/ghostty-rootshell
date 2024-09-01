@@ -14,6 +14,14 @@ pub fn captureEvent(value: Value) ?UUID {
     return uuid;
 }
 
+pub fn setContext(key: []const u8, value: Value) void {
+    c.sentry_set_context_n(key.ptr, key.len, value.value);
+}
+
+pub fn removeContext(key: []const u8) void {
+    c.sentry_remove_context_n(key.ptr, key.len);
+}
+
 pub fn setTag(key: []const u8, value: []const u8) void {
     c.sentry_set_tag_n(key.ptr, key.len, value.ptr, value.len);
 }

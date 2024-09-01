@@ -7,12 +7,29 @@ const sentry = @import("sentry");
 const internal_os = @import("../os/main.zig");
 const crash = @import("main.zig");
 const state = &@import("../global.zig").state;
+const Surface = @import("../Surface.zig");
 
 const log = std.log.scoped(.sentry);
 
 /// The global state for the Sentry SDK. This is unavoidable since crash
 /// handling is a global process-wide thing.
 var init_thread: ?std.Thread = null;
+
+/// Thread-local state that can be set by thread main functions so that
+/// crashes have more context.
+///
+/// This is a hack over Sentry native SDK limitations. The native SDK has
+/// one global scope for all threads and no support for thread-local scopes.
+/// This means that if we want to set thread-specific data we have to do it
+/// on our own in the on crash callback.
+pub const ThreadState = struct {
+    /// The surface that this thread is attached to.
+    surface: *Surface,
+};
+
+/// See ThreadState. This should only ever be set by the owner of the
+/// thread entry function.
+threadlocal var thread_state: ?ThreadState = null;
 
 /// Process-wide initialization of our Sentry client.
 ///
@@ -70,6 +87,10 @@ fn initThread(gpa: Allocator) !void {
     );
     sentry.c.sentry_options_set_transport(opts, @ptrCast(transport));
 
+    // Set our crash callback. See beforeSend for more details on what we
+    // do here and why we use this.
+    sentry.c.sentry_options_set_before_send(opts, beforeSend, null);
+
     // Determine the Sentry cache directory.
     const cache_dir = try internal_os.xdg.cache(alloc, .{ .subdir = "ghostty/sentry" });
     sentry.c.sentry_options_set_database_path_n(
@@ -107,6 +128,63 @@ pub fn deinit() void {
     const thr = init_thread orelse return;
     thr.join();
     _ = sentry.c.sentry_close();
+}
+
+fn beforeSend(
+    event_val: sentry.c.sentry_value_t,
+    _: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.C) sentry.c.sentry_value_t {
+    // The native SDK at the time of writing doesn't support thread-local
+    // scopes. The full SDK has one global scope. So we use the beforeSend
+    // handler to set thread-specific data such as window size, grid size,
+    // etc. that we can use to debug crashes.
+
+    const thr_state = thread_state orelse {
+        // If we don't have thread state we note this in the context
+        // so we can see that but don't do anything else.
+        const obj = sentry.Value.initObject();
+        errdefer obj.decref();
+        obj.setByKey("unknown", sentry.Value.initBool(true));
+        sentry.setContext("surface", obj);
+        return event_val;
+    };
+
+    // Read the surface data. This is likely unsafe because on a crash
+    // other threads can continue running. We don't have race-safe way to
+    // access this data so this might be corrupted but it's most likely fine.
+    {
+        const obj = sentry.Value.initObject();
+        errdefer obj.decref();
+        const surface = thr_state.surface;
+        obj.setByKey(
+            "screen-width",
+            sentry.Value.initInt32(std.math.cast(i32, surface.screen_size.width) orelse -1),
+        );
+        obj.setByKey(
+            "screen-height",
+            sentry.Value.initInt32(std.math.cast(i32, surface.screen_size.height) orelse -1),
+        );
+        obj.setByKey(
+            "grid-columns",
+            sentry.Value.initInt32(std.math.cast(i32, surface.grid_size.columns) orelse -1),
+        );
+        obj.setByKey(
+            "grid-rows",
+            sentry.Value.initInt32(std.math.cast(i32, surface.grid_size.rows) orelse -1),
+        );
+        obj.setByKey(
+            "cell-width",
+            sentry.Value.initInt32(std.math.cast(i32, surface.cell_size.width) orelse -1),
+        );
+        obj.setByKey(
+            "cell-height",
+            sentry.Value.initInt32(std.math.cast(i32, surface.cell_size.height) orelse -1),
+        );
+        sentry.setContext("dimensions", obj);
+    }
+
+    return event_val;
 }
 
 pub const Transport = struct {
