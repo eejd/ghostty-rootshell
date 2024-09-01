@@ -4,6 +4,7 @@
 const PageList = @This();
 
 const std = @import("std");
+const build_config = @import("../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const color = @import("color.zig");
@@ -1293,7 +1294,7 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
             },
         }
 
-        if (comptime std.debug.runtime_safety) {
+        if (build_config.slow_runtime_safety) {
             assert(self.totalRows() >= self.rows);
         }
     }
@@ -2301,7 +2302,7 @@ pub fn pin(self: *const PageList, pt: point.Point) ?Pin {
 /// pin points to is removed completely, the tracked pin will be updated
 /// to the top-left of the screen.
 pub fn trackPin(self: *PageList, p: Pin) Allocator.Error!*Pin {
-    if (comptime std.debug.runtime_safety) assert(self.pinIsValid(p));
+    if (build_config.slow_runtime_safety) assert(self.pinIsValid(p));
 
     // Create our tracked pin
     const tracked = try self.pool.pins.create();
@@ -2963,7 +2964,7 @@ pub fn pageIterator(
     else
         self.getBottomRight(tl_pt) orelse return .{ .row = null };
 
-    if (comptime std.debug.runtime_safety) {
+    if (build_config.slow_runtime_safety) {
         assert(tl_pin.eql(bl_pin) or tl_pin.before(bl_pin));
     }
 
@@ -3279,7 +3280,7 @@ pub const Pin = struct {
     // Note: this is primarily unit tested as part of the Kitty
     // graphics deletion code.
     pub fn isBetween(self: Pin, top: Pin, bottom: Pin) bool {
-        if (comptime std.debug.runtime_safety) {
+        if (build_config.slow_runtime_safety) {
             if (top.page == bottom.page) {
                 // If top is bottom, must be ordered.
                 assert(top.y <= bottom.y);

@@ -135,7 +135,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // In debug we show a warning. This is a really common issue where
     // people build from source in debug and performance is really bad.
-    if (builtin.mode == .Debug) {
+    if (comptime std.debug.runtime_safety) {
         const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
         c.gtk_widget_set_margin_top(warning, 10);
         c.gtk_widget_set_margin_bottom(warning, 10);
