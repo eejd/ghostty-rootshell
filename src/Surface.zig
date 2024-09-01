@@ -1333,8 +1333,6 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !InputEffect {
-    // To test crash reporting
-    if (true) @panic("OH NO");
     // log.debug("text keyCallback event={}", .{event});
 
     // Setup our inspector event if we have an inspector.
@@ -3674,6 +3672,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .quit => try self.app.setQuit(),
+
+        .crash => @panic("crash binding action, crashing intentionally"),
 
         .adjust_selection => |direction| {
             self.renderer_state.mutex.lock();

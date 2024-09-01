@@ -300,6 +300,13 @@ pub const Action = union(enum) {
     /// Quit ghostty.
     quit: void,
 
+    /// Crash ghostty. This is funny, but is used for testing crash handling.
+    /// It is shipped in production builds because sometimes we need to
+    /// test crash handling works for a user who may have some specific
+    /// configuration. This is not bound by default and I recommend not
+    /// binding it.
+    crash: void,
+
     pub const CursorKey = struct {
         normal: []const u8,
         application: []const u8,
