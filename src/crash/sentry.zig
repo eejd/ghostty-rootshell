@@ -87,6 +87,7 @@ fn initThread(gpa: Allocator) !void {
     if (sentry.c.sentry_init(opts) != 0) return error.SentryInitFailed;
 
     // Setup some basic tags that we always want present
+    sentry.setTag("build-mode", build_config.mode_string);
     sentry.setTag("app-runtime", @tagName(build_config.app_runtime));
     sentry.setTag("font-backend", @tagName(build_config.font_backend));
     sentry.setTag("renderer", @tagName(build_config.renderer));
