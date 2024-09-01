@@ -5,6 +5,7 @@ pub const Thread = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const xev = @import("xev");
+const crash = @import("../crash/main.zig");
 const renderer = @import("../renderer.zig");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
@@ -190,6 +191,12 @@ pub fn threadMain(self: *Thread) void {
 
 fn threadMain_(self: *Thread) !void {
     defer log.debug("renderer thread exited", .{});
+
+    // Setup our crash metadata
+    crash.sentry.thread_state = .{
+        .surface = self.renderer.surface_mailbox.surface,
+    };
+    defer crash.sentry.thread_state = null;
 
     // Run our loop start/end callbacks if the renderer cares.
     const has_loop = @hasDecl(renderer.Renderer, "loopEnter");

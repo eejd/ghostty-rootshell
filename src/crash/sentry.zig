@@ -29,7 +29,7 @@ pub const ThreadState = struct {
 
 /// See ThreadState. This should only ever be set by the owner of the
 /// thread entry function.
-threadlocal var thread_state: ?ThreadState = null;
+pub threadlocal var thread_state: ?ThreadState = null;
 
 /// Process-wide initialization of our Sentry client.
 ///
@@ -140,15 +140,10 @@ fn beforeSend(
     // handler to set thread-specific data such as window size, grid size,
     // etc. that we can use to debug crashes.
 
-    const thr_state = thread_state orelse {
-        // If we don't have thread state we note this in the context
-        // so we can see that but don't do anything else.
-        const obj = sentry.Value.initObject();
-        errdefer obj.decref();
-        obj.setByKey("unknown", sentry.Value.initBool(true));
-        sentry.setContext("surface", obj);
-        return event_val;
-    };
+    // If we don't have thread state we can't reliably determine
+    // metadata such as surface dimensions. In the future we can probably
+    // drop full app state (all surfaces, all windows, etc.).
+    const thr_state = thread_state orelse return event_val;
 
     // Read the surface data. This is likely unsafe because on a crash
     // other threads can continue running. We don't have race-safe way to
