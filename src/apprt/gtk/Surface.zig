@@ -21,7 +21,8 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
-const c = @import("c.zig").c;
+const cpkg = @import("c.zig");
+const c = cpkg.c;
 const x11 = @import("x11.zig");
 
 const log = std.log.scoped(.gtk_surface);
@@ -822,9 +823,15 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-    // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
-    // can support fractional scaling.
-    const gtk_scale: f32 = @floatFromInt(c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area)));
+    const gtk_scale: f32 = scale: {
+        if (comptime cpkg.gtkVersionAtLeast(4, 12)) {
+            const native = c.gtk_widget_get_native(@ptrCast(self.gl_area));
+            const surface = c.gtk_native_get_surface(native);
+            break :scale @floatCast(c.gdk_surface_get_scale(surface));
+        } else {
+            break :scale @floatFromInt(c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area)));
+        }
+    };
 
     // If we are on X11, we also have to scale using Xft.dpi
     const xft_dpi_scale = if (!x11.is_current_display_server()) 1.0 else xft_scale: {
