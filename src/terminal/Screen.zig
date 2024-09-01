@@ -1,6 +1,7 @@
 const Screen = @This();
 
 const std = @import("std");
+const build_config = @import("../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const ansi = @import("ansi.zig");
@@ -253,7 +254,7 @@ pub fn deinit(self: *Screen) void {
 /// tests. This only asserts the screen specific data so callers should
 /// ensure they're also calling page integrity checks if necessary.
 pub fn assertIntegrity(self: *const Screen) void {
-    if (comptime std.debug.runtime_safety) {
+    if (build_config.slow_runtime_safety) {
         assert(self.cursor.x < self.pages.cols);
         assert(self.cursor.y < self.pages.rows);
 
@@ -714,7 +715,7 @@ pub fn cursorDownScroll(self: *Screen) !void {
 
         // These assertions help catch some pagelist math errors. Our
         // x/y should be unchanged after the grow.
-        if (comptime std.debug.runtime_safety) {
+        if (build_config.slow_runtime_safety) {
             const active = self.pages.pointFromPin(
                 .active,
                 page_pin,

@@ -1149,10 +1149,8 @@ pub fn index(self: *Terminal) !void {
         // up by 1, so we need to move it back down. A `cursorReload`
         // would be better option but this is more efficient and this is
         // a super hot path so we do this instead.
-        if (comptime std.debug.runtime_safety) {
-            assert(self.screen.cursor.x == old_cursor.x);
-            assert(self.screen.cursor.y == old_cursor.y);
-        }
+        assert(self.screen.cursor.x == old_cursor.x);
+        assert(self.screen.cursor.y == old_cursor.y);
         self.screen.cursor.y -= 1;
         self.screen.cursorDown(1);
 

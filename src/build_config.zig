@@ -104,6 +104,19 @@ pub const app_runtime: apprt.Runtime = config.app_runtime;
 pub const font_backend: font.Backend = config.font_backend;
 pub const renderer: rendererpkg.Impl = config.renderer;
 
+/// True if we should have "slow" runtime safety checks. The initial motivation
+/// for this was terminal page/pagelist integrity checks. These were VERY
+/// slow but very thorough. But they made it so slow that the terminal couldn't
+/// be used for real work. We'd love to have an option to run a build with
+/// safety checks that could be used for real work. This lets us do that.
+pub const slow_runtime_safety = std.debug.runtime_safety and switch (builtin.mode) {
+    .Debug => true,
+    .ReleaseSafe,
+    .ReleaseSmall,
+    .ReleaseFast,
+    => false,
+};
+
 pub const Artifact = enum {
     /// Standalone executable
     exe,
