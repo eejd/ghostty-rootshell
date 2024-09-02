@@ -445,6 +445,38 @@ and more use cases. At the time of writing this, `libghostty` is very
 Mac-centric -- particularly around rendering -- and we have work to do to
 expand this to other platforms.
 
+## Crash Reports
+
+Ghostty has a built-in crash reporter that will generate and save crash
+reports to disk. The crash reports are saved to the `$XDG_STATE_HOME/ghostty/crash`
+directory. If `$XDG_STATE_HOME` is not set, the default is `~/.local/state`.
+**Crash reports are _not_ automatically sent anywhere off your machine.**
+
+Crash reports are only generated the next time Ghostty is started after a
+crash. If Ghostty crashes and you want to generate a crash report, you must
+restart Ghostty at least once. You should see a message in the log that a
+crash report was generated.
+
+> [!NOTE]
+>
+> A future version of Ghostty will make the crash reports more easily
+> viewable through the CLI and GUI. For now, you must manually check the
+> directory.
+
+Crash reports end in the `.ghosttycrash` extension. The crash reports are
+in [Sentry envelope format](https://develop.sentry.dev/sdk/envelopes/). You
+can upload these to your own Sentry account to view their contents, but the
+format is also publicly documented so any other available tools can also
+be used. A future version of Ghostty will show you the contents of the
+crash report directly in the terminal.
+
+If Ghostty crashed, you can help the project by attaching the crash report
+to a GitHub issue. The crash report doesn't contain any purposefully
+sensitive information, but it may contain paths to files on your system,
+information about your OS, or other details you may not want to share.
+If you are concerned about this, you're welcome to transfer the crash report
+privately to me.
+
 ## Developing Ghostty
 
 To build Ghostty, you need [Zig 0.13](https://ziglang.org/) installed.
