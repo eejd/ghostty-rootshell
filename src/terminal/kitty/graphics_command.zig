@@ -451,8 +451,19 @@ pub const Transmission = struct {
             };
         }
 
-        if (kv.get('m')) |v| {
-            result.more_chunks = v > 0;
+        // If the transmission medium is a local-only medium, ignore the "m"
+        // key. The Kitty graphics protocol specification does not explicitly
+        // call out this behavior (although the "m" key is only mentioned in
+        // connection with remote clients) but that's how it's implemented in
+        // Kitty and at least one client (mpv) relies on this behavior when
+        // using the shared memory transmission medium.
+        //
+        // https://sw.kovidgoyal.net/kitty/graphics-protocol/#the-transmission-medium
+        // https://github.com/kovidgoyal/kitty/blob/ccc3bee9af794f332b4e9adcd714a649f639c397/kitty/graphics.c#L547-L592
+        if (result.medium == .direct) {
+            if (kv.get('m')) |v| {
+                result.more_chunks = v > 0;
+            }
         }
 
         return result;
@@ -909,6 +920,40 @@ test "transmission command" {
     try testing.expectEqual(Transmission.Format.rgb, v.format);
     try testing.expectEqual(@as(u32, 10), v.width);
     try testing.expectEqual(@as(u32, 20), v.height);
+}
+
+test "transmission ignores 'm' if medium is not direct" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=t,t=t,m=1";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .transmit);
+    const v = command.control.transmit;
+    try testing.expectEqual(Transmission.Medium.temporary_file, v.medium);
+    try testing.expect(!v.more_chunks);
+}
+
+test "transmission respects 'm' if medium is direct" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=t,t=d,m=1";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .transmit);
+    const v = command.control.transmit;
+    try testing.expectEqual(Transmission.Medium.direct, v.medium);
+    try testing.expect(v.more_chunks);
 }
 
 test "query command" {
