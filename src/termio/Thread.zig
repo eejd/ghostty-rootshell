@@ -203,6 +203,7 @@ fn threadMain_(self: *Thread, io: *termio.Termio) !void {
 
     // Setup our crash metadata
     crash.sentry.thread_state = .{
+        .type = .io,
         .surface = io.surface_mailbox.surface,
     };
     defer crash.sentry.thread_state = null;

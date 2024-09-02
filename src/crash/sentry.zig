@@ -23,8 +23,13 @@ var init_thread: ?std.Thread = null;
 /// This means that if we want to set thread-specific data we have to do it
 /// on our own in the on crash callback.
 pub const ThreadState = struct {
+    /// Thread type, used to tag the crash
+    type: Type,
+
     /// The surface that this thread is attached to.
     surface: *Surface,
+
+    pub const Type = enum { main, renderer, io };
 };
 
 /// See ThreadState. This should only ever be set by the owner of the
@@ -156,6 +161,14 @@ fn beforeSend(
         event.set("contexts", obj);
         break :contexts obj;
     };
+    const tags = event.get("tags") orelse tags: {
+        const obj = sentry.Value.initObject();
+        event.set("tags", obj);
+        break :tags obj;
+    };
+
+    // Store our thread type
+    tags.set("thread-type", sentry.Value.initString(@tagName(thr_state.type)));
 
     // Read the surface data. This is likely unsafe because on a crash
     // other threads can continue running. We don't have race-safe way to
@@ -189,7 +202,7 @@ fn beforeSend(
             sentry.Value.initInt32(std.math.cast(i32, surface.cell_size.height) orelse -1),
         );
 
-        contexts.set("dimensions", obj);
+        contexts.set("Dimensions", obj);
     }
 
     return event_val;
