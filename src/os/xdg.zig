@@ -21,17 +21,54 @@ pub const Options = struct {
 
 /// Get the XDG user config directory. The returned value is allocated.
 pub fn config(alloc: Allocator, opts: Options) ![]u8 {
+    return try dir(alloc, opts, .{
+        .env = "XDG_CONFIG_HOME",
+        .windows_env = "LOCALAPPDATA",
+        .default_subdir = ".config",
+    });
+}
+
+/// Get the XDG cache directory. The returned value is allocated.
+pub fn cache(alloc: Allocator, opts: Options) ![]u8 {
+    return try dir(alloc, opts, .{
+        .env = "XDG_CACHE_HOME",
+        .windows_env = "LOCALAPPDATA",
+        .default_subdir = ".cache",
+    });
+}
+
+/// Get the XDG state directory. The returned value is allocated.
+pub fn state(alloc: Allocator, opts: Options) ![]u8 {
+    return try dir(alloc, opts, .{
+        .env = "XDG_STATE_HOME",
+        .windows_env = "LOCALAPPDATA",
+        .default_subdir = ".local/state",
+    });
+}
+
+const InternalOptions = struct {
+    env: []const u8,
+    windows_env: []const u8,
+    default_subdir: []const u8,
+};
+
+/// Unified helper to get XDG directories that follow a common pattern.
+fn dir(
+    alloc: Allocator,
+    opts: Options,
+    internal_opts: InternalOptions,
+) ![]u8 {
     // First check the env var. On Windows we have to allocate so this tracks
     // both whether we have the env var and whether we own it.
     // on Windows we treat `LOCALAPPDATA` as a fallback for `XDG_CONFIG_HOME`
     const env_, const owned = switch (builtin.os.tag) {
-        else => .{ posix.getenv("XDG_CONFIG_HOME"), false },
+        else => .{ posix.getenv(internal_opts.env), false },
         .windows => windows: {
-            if (std.process.getEnvVarOwned(alloc, "XDG_CONFIG_HOME")) |env| {
+            if (std.process.getEnvVarOwned(alloc, internal_opts.env)) |env| {
                 break :windows .{ env, true };
             } else |err| switch (err) {
                 error.EnvironmentVariableNotFound => {
-                    if (std.process.getEnvVarOwned(alloc, "LOCALAPPDATA")) |env| {
+                    if (std.process.getEnvVarOwned(alloc, internal_opts.windows_env)) |env| {
                         break :windows .{ env, true };
                     } else |err2| switch (err2) {
                         error.EnvironmentVariableNotFound => break :windows .{ null, false },
@@ -60,7 +97,7 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
     if (opts.home) |home| {
         return try std.fs.path.join(alloc, &[_][]const u8{
             home,
-            ".config",
+            internal_opts.default_subdir,
             opts.subdir orelse "",
         });
     }
@@ -70,7 +107,7 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
     if (try homedir.home(&buf)) |home| {
         return try std.fs.path.join(alloc, &[_][]const u8{
             home,
-            ".config",
+            internal_opts.default_subdir,
             opts.subdir orelse "",
         });
     }

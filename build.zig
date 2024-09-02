@@ -1012,6 +1012,11 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const sentry_dep = b.dependency("sentry", .{
+        .target = target,
+        .optimize = optimize,
+        .backend = .breakpad,
+    });
     const zlib_dep = b.dependency("zlib", .{
         .target = target,
         .optimize = optimize,
@@ -1115,6 +1120,7 @@ fn addDeps(
     step.root_module.addImport("xev", libxev_dep.module("xev"));
     step.root_module.addImport("opengl", opengl_dep.module("opengl"));
     step.root_module.addImport("pixman", pixman_dep.module("pixman"));
+    step.root_module.addImport("sentry", sentry_dep.module("sentry"));
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
 
@@ -1161,6 +1167,19 @@ fn addDeps(
     // Spirv-Cross
     step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
     try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
+
+    if (target.result.os.tag != .windows) {
+        // Sentry
+        step.linkLibrary(sentry_dep.artifact("sentry"));
+        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
+
+        // We also need to include breakpad in the static libs.
+        const breakpad_dep = sentry_dep.builder.dependency("breakpad", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        try static_libs.append(breakpad_dep.artifact("breakpad").getEmittedBin());
+    }
 
     // Dynamic link
     if (!config.static) {

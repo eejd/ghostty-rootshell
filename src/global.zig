@@ -7,6 +7,7 @@ const fontconfig = @import("fontconfig");
 const glslang = @import("glslang");
 const harfbuzz = @import("harfbuzz");
 const oni = @import("oniguruma");
+const crash = @import("crash/main.zig");
 const renderer = @import("renderer.zig");
 const xev = @import("xev");
 
@@ -39,6 +40,14 @@ pub const GlobalState = struct {
 
     /// Initialize the global state.
     pub fn init(self: *GlobalState) !void {
+        // const start = try std.time.Instant.now();
+        // const start_micro = std.time.microTimestamp();
+        // defer {
+        //     const end = std.time.Instant.now() catch unreachable;
+        //     // "[updateFrame critical time] <START us>\t<TIME_TAKEN us>"
+        //     std.log.err("[global init time] start={}us duration={}ns", .{ start_micro, end.since(start) / std.time.ns_per_us });
+        // }
+
         // Initialize ourself to nothing so we don't have any extra state.
         // IMPORTANT: this MUST be initialized before any log output because
         // the log function uses the global state.
@@ -117,6 +126,18 @@ pub const GlobalState = struct {
         // First things first, we fix our file descriptors
         internal_os.fixMaxFiles();
 
+        // Initialize our crash reporting.
+        try crash.init(self.alloc);
+
+        // const sentrylib = @import("sentry");
+        // if (sentrylib.captureEvent(sentrylib.Value.initMessageEvent(
+        //     .info,
+        //     null,
+        //     "hello, world",
+        // ))) |uuid| {
+        //     std.log.warn("uuid={s}", .{uuid.string()});
+        // } else std.log.warn("failed to capture event", .{});
+
         // We need to make sure the process locale is set properly. Locale
         // affects a lot of behaviors in a shell.
         try internal_os.ensureLocale(self.alloc);
@@ -137,6 +158,9 @@ pub const GlobalState = struct {
     /// doing so in dev modes will check for memory leaks.
     pub fn deinit(self: *GlobalState) void {
         if (self.resources_dir) |dir| self.alloc.free(dir);
+
+        // Flush our crash logs
+        crash.deinit();
 
         if (self.gpa) |*value| {
             // We want to ensure that we deinit the GPA because this is

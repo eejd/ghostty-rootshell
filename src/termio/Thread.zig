@@ -15,6 +15,7 @@ const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
 const builtin = @import("builtin");
 const xev = @import("xev");
+const crash = @import("../crash/main.zig");
 const termio = @import("../termio.zig");
 const BlockingQueue = @import("../blocking_queue.zig").BlockingQueue;
 
@@ -200,6 +201,13 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
 fn threadMain_(self: *Thread, io: *termio.Termio) !void {
     defer log.debug("IO thread exited", .{});
 
+    // Setup our crash metadata
+    crash.sentry.thread_state = .{
+        .type = .io,
+        .surface = io.surface_mailbox.surface,
+    };
+    defer crash.sentry.thread_state = null;
+
     // Get the mailbox. This must be an SPSC mailbox for threading.
     const mailbox = switch (io.mailbox) {
         .spsc => |*v| v,
@@ -261,6 +269,7 @@ fn drainMailbox(
 
         log.debug("mailbox message={}", .{message});
         switch (message) {
+            .crash => @panic("crash request, crashing intentionally"),
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);
                 try io.changeConfig(data, config.ptr);

@@ -181,6 +181,7 @@ test {
 
     // Libraries
     _ = @import("segmented_pool.zig");
+    _ = @import("crash/main.zig");
     _ = @import("inspector/main.zig");
     _ = @import("terminal/main.zig");
     _ = @import("terminfo/main.zig");
