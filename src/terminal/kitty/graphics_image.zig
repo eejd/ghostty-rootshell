@@ -10,7 +10,7 @@ const command = @import("graphics_command.zig");
 const point = @import("../point.zig");
 const PageList = @import("../PageList.zig");
 const internal_os = @import("../../os/main.zig");
-const wuffs = @import("../../wuffs/main.zig");
+const wuffs = @import("wuffs");
 
 const log = std.log.scoped(.kitty_gfx);
 

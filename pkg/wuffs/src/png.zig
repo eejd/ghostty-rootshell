@@ -10,8 +10,6 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
     height: u32,
     data: []const u8,
 } {
-    log.info("data is {d} bytes", .{data.len});
-
     // Work around some weirdness in WUFFS/Zig, there are some structs that
     // are defined as "extern" by the Zig compiler which means that Zig won't
     // allocate them on the stack at compile time. WUFFS has functions for
@@ -32,12 +30,12 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }
 
-    var source_buffer = std.mem.zeroes(c.wuffs_base__io_buffer);
+    var source_buffer: c.wuffs_base__io_buffer = undefined;
     source_buffer.data.ptr = @constCast(@ptrCast(data.ptr));
     source_buffer.data.len = data.len;
     source_buffer.meta.wi = data.len;
@@ -45,7 +43,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
     source_buffer.meta.pos = 0;
     source_buffer.meta.closed = true;
 
-    var image_config = std.mem.zeroes(c.wuffs_base__image_config);
+    var image_config: c.wuffs_base__image_config = undefined;
     {
         const status = c.wuffs_png__decoder__decode_image_config(
             decoder,
@@ -54,7 +52,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }
@@ -70,9 +68,10 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         height,
     );
 
-    const color = c.wuffs_base__color_u32_argb_premul;
-
-    const destination = try alloc.alloc(u8, width * height * @sizeOf(color));
+    const destination = try alloc.alloc(
+        u8,
+        width * height * @sizeOf(c.wuffs_base__color_u32_argb_premul),
+    );
     errdefer alloc.free(destination);
 
     // temporary buffer for intermediate processing of image
@@ -87,7 +86,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         work_buffer.len,
     );
 
-    var pixel_buffer = std.mem.zeroes(c.wuffs_base__pixel_buffer);
+    var pixel_buffer: c.wuffs_base__pixel_buffer = undefined;
     {
         const status = c.wuffs_base__pixel_buffer__set_from_slice(
             &pixel_buffer,
@@ -96,12 +95,12 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }
 
-    var frame_config = std.mem.zeroes(c.wuffs_base__frame_config);
+    var frame_config: c.wuffs_base__frame_config = undefined;
     {
         const status = c.wuffs_png__decoder__decode_frame_config(
             decoder,
@@ -110,7 +109,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }
@@ -126,7 +125,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }

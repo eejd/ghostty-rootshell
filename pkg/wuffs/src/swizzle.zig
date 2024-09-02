@@ -62,6 +62,7 @@ fn swizzle(
     std.debug.assert(c.wuffs_base__pixel_format__bits_per_pixel(&src_fmt) % 8 == 0);
 
     const src_size = c.wuffs_base__pixel_format__bits_per_pixel(&src_fmt) / 8;
+
     std.debug.assert(src.len % src_size == 0);
 
     const dst = try alloc.alloc(u8, src.len * dst_size / src_size);
@@ -85,7 +86,7 @@ fn swizzle(
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.err("{s}", .{e});
+            log.warn("{s}", .{e});
             return error.WuffsError;
         }
     }
