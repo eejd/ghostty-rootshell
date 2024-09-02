@@ -12,12 +12,12 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
 } {
     log.info("data is {d} bytes", .{data.len});
 
-    // Work around some wierdness in WUFFS/Zig, there are some structs that
+    // Work around some weirdness in WUFFS/Zig, there are some structs that
     // are defined as "extern" by the Zig compiler which means that Zig won't
     // allocate them on the stack at compile time. WUFFS has functions for
     // dynamically allocating these structs but they use the C malloc/free. This
     // gets around that by using the Zig allocator to allocate enough memory for
-    // the struct and then casts it to the appropropriate pointer.
+    // the struct and then casts it to the appropriate pointer.
 
     const decoder_buf = try alloc.alloc(u8, c.sizeof__wuffs_png__decoder());
     defer alloc.free(decoder_buf);
