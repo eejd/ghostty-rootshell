@@ -277,3 +277,45 @@ pub const Transport = struct {
         return true;
     }
 };
+
+pub const CrashReport = struct {
+    name: []const u8,
+    mtime: i128,
+};
+
+pub fn listCrashReports(alloc: std.mem.Allocator) !?[]CrashReport {
+    const crash_dir = try internal_os.xdg.state(alloc, .{ .subdir = "ghostty/crash" });
+    defer alloc.free(crash_dir);
+
+    var dir = std.fs.openDirAbsolute(crash_dir, .{ .iterate = true }) catch return null;
+
+    defer dir.close();
+
+    var list = std.ArrayList(CrashReport).init(alloc);
+    errdefer {
+        for (list.items) |item| {
+            alloc.free(item.name);
+        }
+        list.deinit();
+    }
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        switch (entry.kind) {
+            .file => {
+                if (std.mem.endsWith(u8, entry.name, ".ghosttycrash")) {
+                    const stat = dir.statFile(entry.name) catch continue;
+                    try list.append(.{
+                        .name = try alloc.dupe(u8, entry.name),
+                        .mtime = stat.mtime,
+                    });
+                }
+            },
+            else => {},
+        }
+    }
+
+    if (list.items.len == 0) return null;
+
+    return try list.toOwnedSlice();
+}

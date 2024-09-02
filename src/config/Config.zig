@@ -4126,6 +4126,10 @@ pub const Duration = struct {
         return self.duration == other.duration;
     }
 
+    pub fn round(self: Duration, to: u64) Duration {
+        return .{ .duration = self.duration / to * to };
+    }
+
     pub fn parseCLI(input: ?[]const u8) !Duration {
         var remaining = input orelse return error.ValueRequired;
 
