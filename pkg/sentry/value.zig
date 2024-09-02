@@ -53,12 +53,23 @@ pub const Value = struct {
     }
 
     /// sentry_value_set_by_key_n
-    pub fn setByKey(self: Value, key: []const u8, value: Value) void {
+    pub fn set(self: Value, key: []const u8, value: Value) void {
         _ = c.sentry_value_set_by_key_n(
             self.value,
             key.ptr,
             key.len,
             value.value,
         );
+    }
+
+    /// sentry_value_set_by_key_n
+    pub fn get(self: Value, key: []const u8) ?Value {
+        const val: Value = .{ .value = c.sentry_value_get_by_key_n(
+            self.value,
+            key.ptr,
+            key.len,
+        ) };
+        if (val.isNull()) return null;
+        return val;
     }
 };

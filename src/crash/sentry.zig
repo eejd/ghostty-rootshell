@@ -143,7 +143,19 @@ fn beforeSend(
     // If we don't have thread state we can't reliably determine
     // metadata such as surface dimensions. In the future we can probably
     // drop full app state (all surfaces, all windows, etc.).
-    const thr_state = thread_state orelse return event_val;
+    const thr_state = thread_state orelse {
+        log.debug("no thread state, skipping crash metadata", .{});
+        return event_val;
+    };
+
+    // Get our event contexts. At this point Sentry has already merged
+    // all the contexts so we should have this key. If not, we create it.
+    const event: sentry.Value = .{ .value = event_val };
+    const contexts = event.get("contexts") orelse contexts: {
+        const obj = sentry.Value.initObject();
+        event.set("contexts", obj);
+        break :contexts obj;
+    };
 
     // Read the surface data. This is likely unsafe because on a crash
     // other threads can continue running. We don't have race-safe way to
@@ -152,31 +164,32 @@ fn beforeSend(
         const obj = sentry.Value.initObject();
         errdefer obj.decref();
         const surface = thr_state.surface;
-        obj.setByKey(
+        obj.set(
             "screen-width",
             sentry.Value.initInt32(std.math.cast(i32, surface.screen_size.width) orelse -1),
         );
-        obj.setByKey(
+        obj.set(
             "screen-height",
             sentry.Value.initInt32(std.math.cast(i32, surface.screen_size.height) orelse -1),
         );
-        obj.setByKey(
+        obj.set(
             "grid-columns",
             sentry.Value.initInt32(std.math.cast(i32, surface.grid_size.columns) orelse -1),
         );
-        obj.setByKey(
+        obj.set(
             "grid-rows",
             sentry.Value.initInt32(std.math.cast(i32, surface.grid_size.rows) orelse -1),
         );
-        obj.setByKey(
+        obj.set(
             "cell-width",
             sentry.Value.initInt32(std.math.cast(i32, surface.cell_size.width) orelse -1),
         );
-        obj.setByKey(
+        obj.set(
             "cell-height",
             sentry.Value.initInt32(std.math.cast(i32, surface.cell_size.height) orelse -1),
         );
-        sentry.setContext("dimensions", obj);
+
+        contexts.set("dimensions", obj);
     }
 
     return event_val;
