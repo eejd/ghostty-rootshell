@@ -270,6 +270,8 @@ fn drainMailbox(self: *Thread) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
+            .crash => @panic("crash request, crashing intentionally"),
+
             .visible => |v| {
                 // Set our visible state
                 self.flags.visible = v;

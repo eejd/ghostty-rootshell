@@ -3673,7 +3673,19 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .quit => try self.app.setQuit(),
 
-        .crash => @panic("crash binding action, crashing intentionally"),
+        .crash => |location| switch (location) {
+            .main => @panic("crash binding action, crashing intentionally"),
+
+            .render => {
+                _ = self.renderer_thread.mailbox.push(.{ .crash = {} }, .{ .forever = {} });
+                self.queueRender() catch |err| {
+                    // Not a big deal if this fails.
+                    log.warn("failed to notify renderer of crash message err={}", .{err});
+                };
+            },
+
+            .io => self.io.queueMessage(.{ .crash = {} }, .unlocked),
+        },
 
         .adjust_selection => |direction| {
             self.renderer_state.mutex.lock();

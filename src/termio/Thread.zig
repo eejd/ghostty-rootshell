@@ -268,6 +268,7 @@ fn drainMailbox(
 
         log.debug("mailbox message={}", .{message});
         switch (message) {
+            .crash => @panic("crash request, crashing intentionally"),
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);
                 try io.changeConfig(data, config.ptr);

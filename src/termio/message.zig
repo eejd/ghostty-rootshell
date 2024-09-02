@@ -29,6 +29,10 @@ pub const Message = union(enum) {
         padding: renderer.Padding,
     };
 
+    /// Purposely crash the renderer. This is used for testing and debugging.
+    /// See the "crash" binding action.
+    crash: void,
+
     /// The derived configuration to update the implementation with. This
     /// is allocated via the allocator and is expected to be freed when done.
     change_config: struct {

@@ -8,6 +8,10 @@ const terminal = @import("../terminal/main.zig");
 
 /// The messages that can be sent to a renderer thread.
 pub const Message = union(enum) {
+    /// Purposely crash the renderer. This is used for testing and debugging.
+    /// See the "crash" binding action.
+    crash: void,
+
     /// A change in state in the window focus that this renderer is
     /// rendering within. This is only sent when a change is detected so
     /// the renderer is expected to handle all of these.

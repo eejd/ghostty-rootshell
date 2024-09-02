@@ -300,12 +300,27 @@ pub const Action = union(enum) {
     /// Quit ghostty.
     quit: void,
 
-    /// Crash ghostty. This is funny, but is used for testing crash handling.
-    /// It is shipped in production builds because sometimes we need to
-    /// test crash handling works for a user who may have some specific
-    /// configuration. This is not bound by default and I recommend not
-    /// binding it.
-    crash: void,
+    /// Crash ghostty in the desired thread for the focused surface.
+    ///
+    /// WARNING: This is a hard crash (panic) and data can be lost.
+    ///
+    /// The purpose of this action is to test crash handling. For some
+    /// users, it may be useful to test crash reporting functionality in
+    /// order to determine if it all works as expected.
+    ///
+    /// The value determines the crash location:
+    ///
+    ///   - "main" - crash on the main (GUI) thread.
+    ///   - "io" - crash on the IO thread for the focused surface.
+    ///   - "render" - crash on the render thread for the focused surface.
+    ///
+    crash: CrashThread,
+
+    pub const CrashThread = enum {
+        main,
+        io,
+        render,
+    };
 
     pub const CursorKey = struct {
         normal: []const u8,
