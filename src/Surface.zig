@@ -22,6 +22,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const global_state = &@import("global.zig").state;
 const oni = @import("oniguruma");
+const crash = @import("crash/main.zig");
 const unicode = @import("unicode/main.zig");
 const renderer = @import("renderer.zig");
 const termio = @import("termio.zig");
@@ -1218,6 +1219,10 @@ fn queueRender(self: *Surface) !void {
 }
 
 pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     const new_screen_size: renderer.ScreenSize = .{
         .width = size.width,
         .height = size.height,
@@ -1273,6 +1278,10 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 /// The preedit input must be UTF-8 encoded.
 pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     // log.debug("text preeditCallback value={any}", .{preedit_});
+
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
 
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
@@ -1334,6 +1343,10 @@ pub fn keyCallback(
     event: input.KeyEvent,
 ) !InputEffect {
     // log.debug("text keyCallback event={}", .{event});
+
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
 
     // Setup our inspector event if we have an inspector.
     var insp_ev: ?inspector.key.Event = if (self.inspector != null) ev: {
@@ -1729,6 +1742,10 @@ fn encodeKey(
 /// if bracketed mode is on this will do a bracketed paste. Otherwise,
 /// this will filter newlines to '\r'.
 pub fn textCallback(self: *Surface, text: []const u8) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     try self.completeClipboardPaste(text, true);
 }
 
@@ -1736,6 +1753,10 @@ pub fn textCallback(self: *Surface, text: []const u8) !void {
 /// of focus state. This is used to pause rendering when the surface
 /// is not visible, and also re-render when it becomes visible again.
 pub fn occlusionCallback(self: *Surface, visible: bool) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     _ = self.renderer_thread.mailbox.push(.{
         .visible = visible,
     }, .{ .forever = {} });
@@ -1743,6 +1764,10 @@ pub fn occlusionCallback(self: *Surface, visible: bool) !void {
 }
 
 pub fn focusCallback(self: *Surface, focused: bool) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // Notify our render thread of the new state
     _ = self.renderer_thread.mailbox.push(.{
         .focus = focused,
@@ -1813,6 +1838,10 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
 }
 
 pub fn refreshCallback(self: *Surface) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // The point of this callback is to schedule a render, so do that.
     try self.queueRender();
 }
@@ -1824,6 +1853,10 @@ pub fn scrollCallback(
     scroll_mods: input.ScrollMods,
 ) !void {
     // log.info("SCROLL: xoff={} yoff={} mods={}", .{ xoff, yoff, scroll_mods });
+
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
 
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
@@ -1980,6 +2013,10 @@ pub fn scrollCallback(
 /// This is called when the content scale of the surface changes. The surface
 /// can then update any DPI-sensitive state.
 pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // Calculate the new DPI
     const x_dpi = content_scale.x * font.face.default_dpi;
     const y_dpi = content_scale.y * font.face.default_dpi;
@@ -2293,6 +2330,10 @@ pub fn mouseButtonCallback(
     button: input.MouseButton,
     mods: input.Mods,
 ) !bool {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // log.debug("mouse action={} button={} mods={}", .{ action, button, mods });
 
     // If we have an inspector, we always queue a render
@@ -2790,6 +2831,10 @@ pub fn mousePressureCallback(
     stage: input.MousePressureStage,
     pressure: f64,
 ) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // We don't currently use the pressure value for anything. In the
     // future, we could report this to applications using new mouse
     // events or utilize it for some custom UI.
@@ -2824,6 +2869,10 @@ pub fn cursorPosCallback(
     self: *Surface,
     pos: apprt.CursorPos,
 ) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
@@ -3229,6 +3278,10 @@ fn dragLeftClickBefore(
 /// Call to notify Ghostty that the color scheme for the terminal has
 /// changed.
 pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
+    // Crash metadata in case we crash in here
+    crash.sentry.thread_state = self.crashThreadState();
+    defer crash.sentry.thread_state = null;
+
     // If our scheme didn't change, then we don't do anything.
     if (self.color_scheme == scheme) return;
 
@@ -4095,6 +4148,13 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
     self.app.last_notification_time = now;
     self.app.last_notification_digest = new_digest;
     try self.rt_surface.showDesktopNotification(title, body);
+}
+
+fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
+    return .{
+        .type = .main,
+        .surface = self,
+    };
 }
 
 pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");
