@@ -20,7 +20,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
     const decoder_buf = try alloc.alloc(u8, c.sizeof__wuffs_png__decoder());
     defer alloc.free(decoder_buf);
 
-    const decoder: ?*c.wuffs_png__decoder = @constCast(@ptrCast(decoder_buf));
+    const decoder: ?*c.wuffs_png__decoder = @ptrCast(decoder_buf);
     {
         const status = c.wuffs_png__decoder__initialize(
             decoder,
