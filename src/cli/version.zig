@@ -10,7 +10,17 @@ pub fn run(alloc: Allocator) !u8 {
     _ = alloc;
 
     const stdout = std.io.getStdOut().writer();
+    const tty = std.io.getStdOut().isTty();
+
+    if (tty) if (build_config.version.build) |commit_hash| {
+        try stdout.print(
+            "\x1b]8;;https://github.com/ghostty-org/ghostty/commit/{s}\x1b\\",
+            .{commit_hash},
+        );
+    };
     try stdout.print("Ghostty {s}\n\n", .{build_config.version_string});
+    if (tty) try stdout.print("\x1b]8;;\x1b\\", .{});
+
     try stdout.print("Build Config\n", .{});
     try stdout.print("  - Zig version: {s}\n", .{builtin.zig_version_string});
     try stdout.print("  - build mode : {}\n", .{builtin.mode});
