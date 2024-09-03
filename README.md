@@ -471,11 +471,17 @@ be used. A future version of Ghostty will show you the contents of the
 crash report directly in the terminal.
 
 If Ghostty crashed, you can help the project by attaching the crash report
-to a GitHub issue. The crash report doesn't contain any purposefully
-sensitive information, but it may contain paths to files on your system,
-information about your OS, or other details you may not want to share.
-If you are concerned about this, you're welcome to transfer the crash report
-privately to me.
+to a GitHub issue.
+
+> [!WARNING]
+>
+> The crash report can contain sensitive information. The report may contain
+> file paths (such as for stack traces), environment variables when Ghostty
+> was launched, and other information. Please review the crash report before
+> sharing it. We are working to improve the crash report system to scrub
+> some of this information. For example, we have no interest in environment
+> variables at all but [Breakpad](https://chromium.googlesource.com/breakpad/breakpad)
+> automatically includes them.
 
 ## Developing Ghostty
 
