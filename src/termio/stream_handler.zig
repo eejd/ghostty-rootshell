@@ -304,7 +304,7 @@ pub const StreamHandler = struct {
                     try resp.encode(buf_stream.writer());
                     const final = buf_stream.getWritten();
                     if (final.len > 2) {
-                        // log.warn("kitty graphics response: {s}", .{std.fmt.fmtSliceHexLower(final)});
+                        log.debug("kitty graphics response: {s}", .{std.fmt.fmtSliceHexLower(final)});
                         self.messageWriter(try termio.Message.writeReq(self.alloc, final));
                     }
                 }

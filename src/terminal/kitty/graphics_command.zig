@@ -256,16 +256,22 @@ pub const Response = struct {
         // We only encode a result if we have either an id or an image number.
         if (self.id == 0 and self.image_number == 0) return;
 
+        // Used to cheaply keep track if we need to add a comma before
+        // the next key-value pair.
+        var prior: bool = false;
+
         try writer.writeAll("\x1b_G");
         if (self.id > 0) {
+            prior = true;
             try writer.print("i={}", .{self.id});
         }
         if (self.image_number > 0) {
-            if (self.id > 0) try writer.writeByte(',');
+            if (prior) try writer.writeByte(',') else prior = true;
             try writer.print("I={}", .{self.image_number});
         }
         if (self.placement_id > 0) {
-            try writer.print(",p={}", .{self.placement_id});
+            if (prior) try writer.writeByte(',') else prior = true;
+            try writer.print("p={}", .{self.placement_id});
         }
         try writer.writeByte(';');
         try writer.writeAll(self.message);

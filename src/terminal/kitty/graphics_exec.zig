@@ -140,12 +140,13 @@ fn transmit(
     // If there are more chunks expected we do not respond.
     if (load.more) return .{};
 
-    // After the image is added, set the ID in case it changed
-    result.id = load.image.id;
+    // If our image has no ID or number, we don't respond at all. Conversely,
+    // if we have either an ID or number, we always respond.
+    if (load.image.id == 0 and load.image.number == 0) return .{};
 
-    // If the original request had an image number, then we respond.
-    // Otherwise, we don't respond.
-    if (load.image.number == 0) return .{};
+    // After the image is added, set the ID in case it changed.
+    // The resulting image number and placement ID never change.
+    result.id = load.image.id;
 
     return result;
 }
@@ -177,7 +178,7 @@ fn display(
     else
         storage.imageByNumber(d.image_number);
     const img = img_ orelse {
-        result.message = "EINVAL: image not found";
+        result.message = "ENOENT: image not found";
         return result;
     };
 
@@ -253,8 +254,7 @@ fn display(
         },
     }
 
-    // Display does not result in a response on success
-    return .{};
+    return result;
 }
 
 /// Display a previously transmitted image.
