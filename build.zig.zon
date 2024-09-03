@@ -40,6 +40,7 @@
         .sentry = .{ .path = "./pkg/sentry" },
         .simdutf = .{ .path = "./pkg/simdutf" },
         .utfcpp = .{ .path = "./pkg/utfcpp" },
+        .wuffs = .{ .path = "./pkg/wuffs" },
         .zlib = .{ .path = "./pkg/zlib" },
 
         // Shader translation

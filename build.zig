@@ -1038,6 +1038,10 @@ fn addDeps(
         .images = false,
         .text_input = false,
     });
+    const wuffs_dep = b.dependency("wuffs", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
@@ -1123,6 +1127,7 @@ fn addDeps(
     step.root_module.addImport("sentry", sentry_dep.module("sentry"));
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+    step.root_module.addImport("wuffs", wuffs_dep.module("wuffs"));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
