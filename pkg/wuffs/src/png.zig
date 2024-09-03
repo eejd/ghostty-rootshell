@@ -1,11 +1,12 @@
 const std = @import("std");
-
+const Allocator = std.mem.Allocator;
 const c = @import("c.zig").c;
 const Error = @import("error.zig").Error;
 
 const log = std.log.scoped(.wuffs_png);
 
-pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
+/// Decode a PNG image.
+pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     width: u32,
     height: u32,
     data: []const u8,
@@ -30,18 +31,20 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.warn("{s}", .{e});
+            log.warn("decode err={s}", .{e});
             return error.WuffsError;
         }
     }
 
-    var source_buffer: c.wuffs_base__io_buffer = undefined;
-    source_buffer.data.ptr = @constCast(@ptrCast(data.ptr));
-    source_buffer.data.len = data.len;
-    source_buffer.meta.wi = data.len;
-    source_buffer.meta.ri = 0;
-    source_buffer.meta.pos = 0;
-    source_buffer.meta.closed = true;
+    var source_buffer: c.wuffs_base__io_buffer = .{
+        .data = .{ .ptr = @constCast(@ptrCast(data.ptr)), .len = data.len },
+        .meta = .{
+            .wi = data.len,
+            .ri = 0,
+            .pos = 0,
+            .closed = true,
+        },
+    };
 
     var image_config: c.wuffs_base__image_config = undefined;
     {
@@ -52,7 +55,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.warn("{s}", .{e});
+            log.warn("decode err={s}", .{e});
             return error.WuffsError;
         }
     }
@@ -95,7 +98,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.warn("{s}", .{e});
+            log.warn("decode err={s}", .{e});
             return error.WuffsError;
         }
     }
@@ -109,7 +112,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.warn("{s}", .{e});
+            log.warn("decode err={s}", .{e});
             return error.WuffsError;
         }
     }
@@ -125,7 +128,7 @@ pub fn decode(alloc: std.mem.Allocator, data: []const u8) Error!struct {
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
-            log.warn("{s}", .{e});
+            log.warn("decode err={s}", .{e});
             return error.WuffsError;
         }
     }

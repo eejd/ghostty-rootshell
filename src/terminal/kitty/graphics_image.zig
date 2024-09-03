@@ -412,9 +412,12 @@ pub const LoadingImage = struct {
     fn decodePng(self: *LoadingImage, alloc: Allocator) !void {
         assert(self.image.format == .png);
 
-        const result = wuffs.png.decode(alloc, self.data.items) catch |err| switch (err) {
+        const result = wuffs.png.decode(
+            alloc,
+            self.data.items,
+        ) catch |err| switch (err) {
             error.WuffsError => return error.InvalidData,
-            else => |e| return e,
+            error.OutOfMemory => return error.OutOfMemory,
         };
         defer alloc.free(result.data);
 
