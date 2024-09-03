@@ -50,6 +50,11 @@ const c = @cImport({
 /// font. This is particularly useful for multiple languages, symbolic fonts,
 /// etc.
 ///
+/// Notes on emoji specifically: On macOS, Ghostty by default will always use
+/// Apple Color Emoji and on Linux will always use Noto Emoji. You can
+/// override this behavior by specifying a font family here that contains
+/// emoji glyphs.
+///
 /// The specific styles (bold, italic, bold italic) do not need to be
 /// explicitly set. If a style is not set, then the regular style (font-family)
 /// will be searched for stylistic variants. If a stylistic variant is not
