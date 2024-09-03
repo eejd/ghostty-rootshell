@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -13,18 +13,16 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
+    var flags = std.ArrayList([]const u8).init(b.allocator);
+    defer flags.deinit();
+    try flags.append("-DWUFFS_IMPLEMENTATION");
+    inline for (@import("src/c.zig").defines) |key| {
+        try flags.append("-D" ++ key);
+    }
+
     module.addIncludePath(wuffs.path("release/c"));
-    module.addCSourceFile(
-        .{
-            .file = wuffs.path("release/c/wuffs-v0.4.c"),
-            .flags = f: {
-                const flags = @import("src/defs.zig").build;
-                var a: [flags.len][]const u8 = undefined;
-                inline for (flags, 0..) |flag, i| {
-                    a[i] = "-D" ++ flag ++ "=1";
-                }
-                break :f &a;
-            },
-        },
-    );
+    module.addCSourceFile(.{
+        .file = wuffs.path("release/c/wuffs-v0.4.c"),
+        .flags = flags.items,
+    });
 }
