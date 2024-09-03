@@ -1226,9 +1226,9 @@ pub fn Stream(comptime Handler: type) type {
                                 1;
 
                             const mode: kitty.KeySetMode = switch (number) {
-                                0 => .set,
-                                1 => .@"or",
-                                2 => .not,
+                                1 => .set,
+                                2 => .@"or",
+                                3 => .not,
                                 else => {
                                     log.warn("invalid setKittyKeyboard command: {}", .{input});
                                     break :set;
