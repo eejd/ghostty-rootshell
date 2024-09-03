@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const objc = @import("objc");
+const wuffs = @import("wuffs");
 
 const mtl = @import("api.zig");
 
@@ -301,9 +302,8 @@ pub const Image = union(enum) {
             // RGB needs to be converted to RGBA because Metal textures
             // don't support RGB.
             .pending_rgb => |*p| {
-                // Note: this is the slowest possible way to do this...
                 const data = p.dataSlice(3);
-                const rgba = try rgbToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.rgbToRgba(alloc, data);
                 alloc.free(data);
                 p.data = rgba.ptr;
                 self.* = .{ .pending_rgba = p.* };
@@ -311,7 +311,7 @@ pub const Image = union(enum) {
 
             .replace_rgb => |*r| {
                 const data = r.pending.dataSlice(3);
-                const rgba = try rgbToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.rgbToRgba(alloc, data);
                 alloc.free(data);
                 r.pending.data = rgba.ptr;
                 self.* = .{ .replace_rgba = r.* };
@@ -320,7 +320,7 @@ pub const Image = union(enum) {
             // Gray and Gray+Alpha need to be converted to RGBA, too.
             .pending_gray => |*p| {
                 const data = p.dataSlice(1);
-                const rgba = try grayToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.gToRgba(alloc, data);
                 alloc.free(data);
                 p.data = rgba.ptr;
                 self.* = .{ .pending_rgba = p.* };
@@ -328,7 +328,7 @@ pub const Image = union(enum) {
 
             .replace_gray => |*r| {
                 const data = r.pending.dataSlice(2);
-                const rgba = try grayToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.gToRgba(alloc, data);
                 alloc.free(data);
                 r.pending.data = rgba.ptr;
                 self.* = .{ .replace_rgba = r.* };
@@ -336,7 +336,7 @@ pub const Image = union(enum) {
 
             .pending_gray_alpha => |*p| {
                 const data = p.dataSlice(2);
-                const rgba = try gaToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.gaToRgba(alloc, data);
                 alloc.free(data);
                 p.data = rgba.ptr;
                 self.* = .{ .pending_rgba = p.* };
@@ -344,62 +344,12 @@ pub const Image = union(enum) {
 
             .replace_gray_alpha => |*r| {
                 const data = r.pending.dataSlice(2);
-                const rgba = try gaToRgba(alloc, data);
+                const rgba = try wuffs.swizzle.gaToRgba(alloc, data);
                 alloc.free(data);
                 r.pending.data = rgba.ptr;
                 self.* = .{ .replace_rgba = r.* };
             },
         }
-    }
-
-    fn grayToRgba(alloc: Allocator, data: []const u8) ![]u8 {
-        const pixels = data.len;
-        var rgba = try alloc.alloc(u8, pixels * 4);
-        errdefer alloc.free(rgba);
-        var i: usize = 0;
-        while (i < pixels) : (i += 1) {
-            const rgba_i = i * 4;
-            rgba[rgba_i] = data[i];
-            rgba[rgba_i + 1] = data[i];
-            rgba[rgba_i + 2] = data[i];
-            rgba[rgba_i + 3] = 255;
-        }
-
-        return rgba;
-    }
-
-    fn gaToRgba(alloc: Allocator, data: []const u8) ![]u8 {
-        const pixels = data.len / 2;
-        var rgba = try alloc.alloc(u8, pixels * 4);
-        errdefer alloc.free(rgba);
-        var i: usize = 0;
-        while (i < pixels) : (i += 1) {
-            const data_i = i * 2;
-            const rgba_i = i * 4;
-            rgba[rgba_i] = data[data_i];
-            rgba[rgba_i + 1] = data[data_i];
-            rgba[rgba_i + 2] = data[data_i];
-            rgba[rgba_i + 3] = data[data_i + 1];
-        }
-
-        return rgba;
-    }
-
-    fn rgbToRgba(alloc: Allocator, data: []const u8) ![]u8 {
-        const pixels = data.len / 3;
-        var rgba = try alloc.alloc(u8, pixels * 4);
-        errdefer alloc.free(rgba);
-        var i: usize = 0;
-        while (i < pixels) : (i += 1) {
-            const data_i = i * 3;
-            const rgba_i = i * 4;
-            rgba[rgba_i] = data[data_i];
-            rgba[rgba_i + 1] = data[data_i + 1];
-            rgba[rgba_i + 2] = data[data_i + 2];
-            rgba[rgba_i + 3] = 255;
-        }
-
-        return rgba;
     }
 
     /// Upload the pending image to the GPU and change the state of this
