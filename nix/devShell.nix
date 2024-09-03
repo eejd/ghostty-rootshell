@@ -23,7 +23,6 @@
   wraptest,
   zig,
   zip,
-  zls,
   llvmPackages_latest,
   bzip2,
   expat,
@@ -108,11 +107,6 @@ in
         # wasm
         wabt
         wasmtime
-      ]
-      ++ lib.optionals (!(stdenv.isLinux && stdenv.isAarch64)) [
-        # This is currently broken on aarch64 linux. Once this is
-        # fixed we can remove this conditional.
-        zls
       ]
       ++ lib.optionals stdenv.isLinux [
         # My nix shell environment installs the non-interactive version

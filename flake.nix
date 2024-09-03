@@ -16,11 +16,6 @@
         flake-compat.follows = "";
       };
     };
-
-    zls = {
-      url = "github:zigtools/zls/master";
-      inputs.nixpkgs.follows = "nixpkgs-stable";
-    };
   };
 
   outputs = {
@@ -28,7 +23,6 @@
     nixpkgs-unstable,
     nixpkgs-stable,
     zig,
-    zls,
     ...
   }:
     builtins.foldl' nixpkgs-stable.lib.recursiveUpdate {} (builtins.map (system: let
@@ -37,7 +31,6 @@
     in {
       devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
         inherit (pkgs-unstable) tracy;
-        inherit (zls.packages.${system}) zls;
 
         zig = zig.packages.${system}."0.13.0";
         wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
