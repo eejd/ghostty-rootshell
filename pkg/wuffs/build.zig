@@ -13,6 +13,11 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
 
+    if (target.result.isDarwin()) {
+        const apple_sdk = @import("apple_sdk");
+        try apple_sdk.addPaths(b, module);
+    }
+
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.append("-DWUFFS_IMPLEMENTATION");
