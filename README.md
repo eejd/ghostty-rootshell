@@ -476,11 +476,11 @@ to a GitHub issue.
 > [!WARNING]
 >
 > The crash report can contain sensitive information. The report may contain
-> file paths (such as for stack traces), environment variables when Ghostty
-> was launched, and other information. Please review the crash report before
-> sharing it. We are working to improve the crash report system to scrub
-> some of this information. For example, we have no interest in environment
-> variables at all but [Breakpad](https://chromium.googlesource.com/breakpad/breakpad)
+> file paths (such as for stack traces), environment variables, and other
+> information. Please review the crash report before sharing it. We are working
+> to improve the crash report system to scrub some of this information. For
+> example, we have no interest in environment variables at all but
+> [Breakpad](https://chromium.googlesource.com/breakpad/breakpad)
 > automatically includes them.
 
 ## Developing Ghostty
