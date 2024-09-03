@@ -177,7 +177,7 @@ fn display(
     else
         storage.imageByNumber(d.image_number);
     const img = img_ orelse {
-        result.message = "EINVAL: image not found";
+        result.message = "ENOENT: image not found";
         return result;
     };
 
