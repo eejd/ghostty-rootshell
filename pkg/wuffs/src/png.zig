@@ -80,7 +80,13 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     // temporary buffer for intermediate processing of image
     const work_buffer = try alloc.alloc(
         u8,
-        c.wuffs_png__decoder__workbuf_len(decoder).max_incl,
+
+        // The type of this is a u64 on all systems but our allocator
+        // uses a usize which is a u32 on 32-bit systems.
+        std.math.cast(
+            usize,
+            c.wuffs_png__decoder__workbuf_len(decoder).max_incl,
+        ) orelse return error.OutOfMemory,
     );
     defer alloc.free(work_buffer);
 
