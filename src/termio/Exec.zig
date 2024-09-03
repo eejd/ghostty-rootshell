@@ -12,6 +12,7 @@ const posix = std.posix;
 const xev = @import("xev");
 const build_config = @import("../build_config.zig");
 const configpkg = @import("../config.zig");
+const crash = @import("../crash/main.zig");
 const fastmem = @import("../fastmem.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
@@ -1184,6 +1185,13 @@ pub const ReadThread = struct {
         // Always close our end of the pipe when we exit.
         defer posix.close(quit);
 
+        // Setup our crash metadata
+        crash.sentry.thread_state = .{
+            .type = .io,
+            .surface = io.surface_mailbox.surface,
+        };
+        defer crash.sentry.thread_state = null;
+
         // First thing, we want to set the fd to non-blocking. We do this
         // so that we can try to read from the fd in a tight loop and only
         // check the quit fd occasionally.
@@ -1264,6 +1272,13 @@ pub const ReadThread = struct {
     fn threadMainWindows(fd: posix.fd_t, io: *termio.Termio, quit: posix.fd_t) void {
         // Always close our end of the pipe when we exit.
         defer posix.close(quit);
+
+        // Setup our crash metadata
+        crash.sentry.thread_state = .{
+            .type = .io,
+            .surface = io.surface_mailbox.surface,
+        };
+        defer crash.sentry.thread_state = null;
 
         var buf: [1024]u8 = undefined;
         while (true) {
