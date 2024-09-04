@@ -69,6 +69,14 @@ pub const Parser = struct {
         self.data.deinit();
     }
 
+    /// Parse a complete command string.
+    pub fn parseString(alloc: Allocator, data: []const u8) !Command {
+        var parser = init(alloc);
+        defer parser.deinit();
+        for (data) |c| try parser.feed(c);
+        return try parser.complete();
+    }
+
     /// Feed a single byte to the parser.
     ///
     /// The first byte to start parsing should be the byte immediately following
@@ -281,6 +289,11 @@ pub const Response = struct {
     /// Returns true if this response is not an error.
     pub fn ok(self: Response) bool {
         return std.mem.eql(u8, self.message, "OK");
+    }
+
+    /// Empty response
+    pub fn empty(self: Response) bool {
+        return self.id == 0 and self.image_number == 0;
     }
 };
 
