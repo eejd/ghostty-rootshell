@@ -128,7 +128,7 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
             decoder,
             &pixel_buffer,
             &source_buffer,
-            c.WUFFS_BASE__PIXEL_BLEND__SRC_OVER,
+            c.WUFFS_BASE__PIXEL_BLEND__SRC,
             work_slice,
             null,
         );

@@ -82,7 +82,7 @@ fn swizzle(
             c.wuffs_base__empty_slice_u8(),
             src_fmt,
             c.wuffs_base__empty_slice_u8(),
-            c.WUFFS_BASE__PIXEL_BLEND__SRC_OVER,
+            c.WUFFS_BASE__PIXEL_BLEND__SRC,
         );
         if (!c.wuffs_base__status__is_ok(&status)) {
             const e = c.wuffs_base__status__message(&status);
