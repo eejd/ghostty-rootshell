@@ -597,12 +597,12 @@ pub fn deinit(self: *Surface) void {
     if (self.cgroup_path) |path| self.app.core_app.alloc.free(path);
 
     // Free all our GTK stuff
+    //
+    // Note we don't do anything with the "unfocused_overlay" because
+    // it is attached to the overlay which by this point has been destroyed
+    // and therefore the unfocused_overlay has been destroyed as well.
     c.g_object_unref(self.im_context);
     if (self.cursor) |cursor| c.g_object_unref(cursor);
-    if (self.unfocused_widget) |widget| {
-        c.gtk_overlay_remove_overlay(self.overlay, widget);
-        self.unfocused_widget = null;
-    }
     self.resize_overlay.deinit();
 }
 
