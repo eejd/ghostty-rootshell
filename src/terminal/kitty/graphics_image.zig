@@ -36,10 +36,14 @@ pub const LoadingImage = struct {
     /// so that we display the image after it is fully loaded.
     display: ?command.Display = null,
 
+    /// Quiet is the quiet settings for the initial load command. This is
+    /// used if q isn't set on subsequent chunks.
+    quiet: command.Command.Quiet,
+
     /// Initialize a chunked immage from the first image transmission.
     /// If this is a multi-chunk image, this should only be the FIRST
     /// chunk.
-    pub fn init(alloc: Allocator, cmd: *command.Command) !LoadingImage {
+    pub fn init(alloc: Allocator, cmd: *const command.Command) !LoadingImage {
         // Build our initial image from the properties sent via the control.
         // These can be overwritten by the data loading process. For example,
         // PNG loading sets the width/height from the data.
@@ -55,6 +59,7 @@ pub const LoadingImage = struct {
             },
 
             .display = cmd.display(),
+            .quiet = cmd.quiet,
         };
 
         // Special case for the direct medium, we just add the chunk directly.

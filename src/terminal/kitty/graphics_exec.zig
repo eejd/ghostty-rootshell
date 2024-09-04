@@ -25,7 +25,7 @@ const log = std.log.scoped(.kitty_gfx);
 pub fn execute(
     alloc: Allocator,
     terminal: *Terminal,
-    cmd: *Command,
+    cmd: *const Command,
 ) ?Response {
     // If storage is disabled then we disable the full protocol. This means
     // we don't even respond to queries so the terminal completely acts as
@@ -40,11 +40,35 @@ pub fn execute(
         cmd.control,
     });
 
+    // The quiet settings used to control the response. We have to make this
+    // a var because in certain special cases (namely chunked transmissions)
+    // this can change.
+    var quiet = cmd.quiet;
+
     const resp_: ?Response = switch (cmd.control) {
         .query => query(alloc, cmd),
-        .transmit, .transmit_and_display => transmit(alloc, terminal, cmd),
         .display => display(alloc, terminal, cmd),
         .delete => delete(alloc, terminal, cmd),
+
+        .transmit, .transmit_and_display => resp: {
+            // If we're transmitting, then our `q` setting value is complicated.
+            // The `q` setting inherits the value from the starting command
+            // unless `q` is set >= 1 on this command. If it is, then we save
+            // that as the new `q` setting.
+            const storage = &terminal.screen.kitty_images;
+            if (storage.loading) |loading| switch (cmd.quiet) {
+                // q=0 we use whatever the start command value is
+                .no => quiet = loading.quiet,
+
+                // q>=1 we use the new value, but we should already be set to it
+                inline .ok, .failures => |tag| {
+                    assert(quiet == tag);
+                    loading.quiet = tag;
+                },
+            };
+
+            break :resp transmit(alloc, terminal, cmd);
+        },
 
         .transmit_animation_frame,
         .control_animation,
@@ -58,8 +82,8 @@ pub fn execute(
             log.warn("erroneous kitty graphics response: {s}", .{resp.message});
         }
 
-        return switch (cmd.quiet) {
-            .no => resp,
+        return switch (quiet) {
+            .no => if (resp.empty()) null else resp,
             .ok => if (resp.ok()) null else resp,
             .failures => null,
         };
@@ -72,7 +96,7 @@ pub fn execute(
 /// This command is used to attempt to load an image and respond with
 /// success/error but does not persist any of the command to the terminal
 /// state.
-fn query(alloc: Allocator, cmd: *Command) Response {
+fn query(alloc: Allocator, cmd: *const Command) Response {
     const t = cmd.control.query;
 
     // Query requires image ID. We can't actually send a response without
@@ -106,7 +130,7 @@ fn query(alloc: Allocator, cmd: *Command) Response {
 fn transmit(
     alloc: Allocator,
     terminal: *Terminal,
-    cmd: *Command,
+    cmd: *const Command,
 ) Response {
     const t = cmd.transmission().?;
     var result: Response = .{
@@ -261,7 +285,7 @@ fn display(
 fn delete(
     alloc: Allocator,
     terminal: *Terminal,
-    cmd: *Command,
+    cmd: *const Command,
 ) Response {
     const storage = &terminal.screen.kitty_images;
     storage.delete(alloc, terminal, cmd.control.delete);
@@ -273,7 +297,7 @@ fn delete(
 fn loadAndAddImage(
     alloc: Allocator,
     terminal: *Terminal,
-    cmd: *Command,
+    cmd: *const Command,
 ) !struct {
     image: Image,
     more: bool = false,
@@ -359,5 +383,95 @@ fn encodeError(r: *Response, err: EncodeableError) void {
         error.UnsupportedDepth => r.message = "EINVAL: unsupported pixel depth",
         error.DimensionsRequired => r.message = "EINVAL: dimensions required",
         error.DimensionsTooLarge => r.message = "EINVAL: dimensions too large",
+    }
+}
+
+test "kittygfx more chunks with q=1" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    // Initial chunk has q=1
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "a=T,f=24,t=d,i=1,s=1,v=2,c=10,r=1,m=1,q=1;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
+    }
+
+    // Subsequent chunk has no q but should respect initial
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "m=0;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
+    }
+}
+
+test "kittygfx more chunks with q=0" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    // Initial chunk has q=0
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "a=t,f=24,t=d,s=1,v=2,c=10,r=1,m=1,i=1,q=0;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
+    }
+
+    // Subsequent chunk has no q so should respond OK
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "m=0;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd).?;
+        try testing.expect(resp.ok());
+    }
+}
+
+test "kittygfx more chunks with chunk increasing q" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    // Initial chunk has q=0
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "a=t,f=24,t=d,s=1,v=2,c=10,r=1,m=1,i=1,q=0;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
+    }
+
+    // Subsequent chunk sets q=1 so should not respond
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "m=0,q=1;////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
     }
 }
