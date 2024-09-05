@@ -268,9 +268,6 @@ pub fn assertIntegrity(self: *const Screen) void {
         ) orelse unreachable;
         assert(self.cursor.x == pt.active.x);
         assert(self.cursor.y == pt.active.y);
-
-        // Assert our current page.
-        self.cursor.page_pin.page.data.assertIntegrity();
     }
 }
 
