@@ -75,6 +75,12 @@ usually processed quickly, but sometimes it may take a day or two. In very
 rare cases, we pause vouches to ensure the stability of the beta. But that's
 very rare and has only happened a handful of times.
 
+Anyone you vouch is your responsibility, so please make sure they're a good
+fit for the beta and will follow the rules. There is no limit on the number
+of people you can vouch in total, but we do rate limit the number of vouches
+you can do. If any mods feel you're vouching for too many people, they may
+reject your requests.
+
 ### I want to help, what can I work on?
 
 I'd really love that, I want to foster a healthy contributing community
