@@ -8909,6 +8909,126 @@ test "Terminal: deleteChars split wide character tail" {
     }
 }
 
+test "Terminal: deleteChars wide char boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 1, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // EXPLANATION(qwerasd):
+    //
+    // There are 3 or 4 boundaries to be concerned with in deleteChars,
+    // depending on how you count them. Consider the following terminal:
+    //
+    //   +--------+
+    // 0 |.ABCDEF.|
+    //   : ^      : (^ = cursor)
+    //   +--------+
+    //
+    // if we DCH 3 we get
+    //
+    //   +--------+
+    // 0 |.DEF....|
+    //   +--------+
+    //
+    // The boundaries exist at the following points then:
+    //
+    //   +--------+
+    // 0 |.ABCDEF.|
+    //   :11 22 33:
+    //   +--------+
+    //
+    // I'm counting 2 for double since it's both the end of the deleted
+    // content and the start of the content that is shifted in to place.
+    //
+    // Now consider wide characters (represented as `WW`) at these boundaries:
+    //
+    //   +--------+
+    // 0 |WWaWWbWW|
+    //   : ^      : (^ = cursor)
+    //   : ^^^    : (^ = deleted by DCH 3)
+    //   +--------+
+    //
+    // -> DCH 3
+    // -> The first 2 wide characters are split & destroyed (verified in xterm)
+    //
+    //   +--------+
+    // 0 |..bWW...|
+    //   +--------+
+
+    try t.printString("😀a😀b😀");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("😀a😀b😀", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.deleteChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  b😀", str);
+    }
+}
+
+test "Terminal: deleteChars wide char wrap boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // EXPLANATION(qwerasd):
+    // (cont. from "Terminal: deleteChars wide char boundary conditions")
+    //
+    // Additionally consider soft-wrapped wide chars (`H` = spacer head):
+    //
+    //   +--------+
+    // 0 |.......H…
+    // 1 …WWabcdeH…
+    //   : ^      : (^ = cursor)
+    //   : ^^^    : (^ = deleted by DCH 3)
+    // 2 …WW......|
+    //   +--------+
+    //
+    // -> DCH 3
+    // -> First wide character split and destroyed, including spacer head,
+    //    second spacer head removed (verified in xterm).
+    // -> Wrap state of row reset
+    //
+    //   +--------+
+    // 0 |........|
+    // 1 |.cde....|
+    // 2 |WW......|
+    //   +--------+
+    //
+
+    try t.printString(".......😀abcde😀......");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n😀abcde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......😀abcde😀......", unwrapped);
+    }
+
+    t.setCursorPos(2, 2);
+    t.deleteChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n cde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......\n cde\n😀......", unwrapped);
+    }
+}
+
 test "Terminal: saveCursor" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 3, .rows = 3 });
