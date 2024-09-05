@@ -2272,8 +2272,13 @@ pub fn decaln(self: *Terminal) !void {
     // Move our cursor to the top-left
     self.setCursorPos(1, 1);
 
-    // Erase the display which will deallocate graphemes, styles, etc.
-    self.eraseDisplay(.complete, false);
+    // Use clearRows instead of eraseDisplay because we must NOT respect
+    // protected attributes here.
+    self.screen.clearRows(
+        .{ .active = .{} },
+        null,
+        false,
+    );
 
     // Fill with Es by moving the cursor but reset it after.
     while (true) {
@@ -2285,7 +2290,9 @@ pub fn decaln(self: *Terminal) !void {
             .content_tag = .codepoint,
             .content = .{ .codepoint = 'E' },
             .style_id = self.screen.cursor.style_id,
-            .protected = self.screen.cursor.protected,
+
+            // DECALN does not respect protected state. Verified with xterm.
+            .protected = false,
         });
 
         // If we have a ref-counted style, increase
@@ -2297,6 +2304,9 @@ pub fn decaln(self: *Terminal) !void {
             );
             row.styled = true;
         }
+
+        // We messed with the page so assert its integrity here.
+        page.assertIntegrity();
 
         self.screen.cursorMarkDirty();
         if (self.screen.cursor.y == self.rows - 1) break;
@@ -8027,6 +8037,42 @@ test "Terminal: decaln preserves color" {
             .g = 0,
             .b = 0,
         }, list_cell.cell.content.color_rgb);
+    }
+}
+
+test "Terminal: DECALN resets graphemes with protected mode" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 3, .rows = 3 });
+    defer t.deinit(alloc);
+
+    // Add protected mode. A previous version of DECALN accidentally preserved
+    // protected mode which left dangling managed memory.
+    t.setProtectedMode(.iso);
+
+    // This is: 👨‍👩‍👧 (which may or may not render correctly)
+    t.modes.set(.grapheme_cluster, true);
+    try t.print(0x1F468);
+    try t.print(0x200D);
+    try t.print(0x1F469);
+    try t.print(0x200D);
+    try t.print(0x1F467);
+
+    try t.decaln();
+
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.x);
+    try testing.expect(t.screen.cursor.protected);
+    try testing.expect(t.screen.protected_mode == .iso);
+
+    for (0..t.rows) |y| try testing.expect(t.isDirty(.{ .active = .{
+        .x = 0,
+        .y = @intCast(y),
+    } }));
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("EEE\nEEE\nEEE", str);
     }
 }
 
