@@ -61,10 +61,19 @@ share feedback, discuss issues, ask questions and talk to other testers.
 
 ### Can I Invite a Friend?
 
-Yes, if you have any friends you'd like to add to the beta, please ask
-them to join the Discord server: [discord.gg/ghostty](https://discord.gg/ghostty).
-After that, vouch for them in the [#beta channel](https://discord.com/channels/1005603569187160125/1005603569711452192) and I or the mods will add them to the beta
-immediately. Friends of beta testers do not have to wait in the queue.
+Yes, if you have any friends you'd like to add to the beta, you can use
+the `/vouch` command in the Ghostty Discord server and mods will be notified
+of your vouch request.
+
+If the username of your friend doesn't show up for the `/vouch` command,
+it means they either haven't joined the Discord yet or they haven't accepted
+the server rules. Please ask them to join the Discord and accept the rules
+and then try again.
+
+Vouches are handled on a as-available basis, so please be patient. They're
+usually processed quickly, but sometimes it may take a day or two. In very
+rare cases, we pause vouches to ensure the stability of the beta. But that's
+very rare and has only happened a handful of times.
 
 ### I want to help, what can I work on?
 
