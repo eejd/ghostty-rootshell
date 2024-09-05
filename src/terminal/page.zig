@@ -289,6 +289,7 @@ pub const Page = struct {
         UnmarkedGraphemeRow,
         MissingGraphemeData,
         InvalidGraphemeCount,
+        UnmarkedGraphemeCell,
         MissingStyle,
         UnmarkedStyleRow,
         MismatchedStyleRef,
@@ -368,6 +369,8 @@ pub const Page = struct {
         var hyperlinks_seen = std.AutoHashMap(hyperlink.Id, usize).init(alloc);
         defer hyperlinks_seen.deinit();
 
+        const grapheme_count = self.graphemeCount();
+
         const rows = self.rows.ptr(self.memory)[0..self.size.rows];
         for (rows, 0..) |*row, y| {
             const graphemes_start = graphemes_seen;
@@ -385,6 +388,17 @@ pub const Page = struct {
                     };
 
                     graphemes_seen += 1;
+                } else if (grapheme_count > 0) {
+                    // It should not have grapheme data if it isn't marked.
+                    // The grapheme_count check above is just an optimization
+                    // to speed up integrity checks.
+                    if (self.lookupGrapheme(cell) != null) {
+                        log.warn(
+                            "page integrity violation y={} x={} cell not marked as grapheme",
+                            .{ y, x },
+                        );
+                        return IntegrityError.UnmarkedGraphemeCell;
+                    }
                 }
 
                 if (cell.style_id != style.default_id) {
