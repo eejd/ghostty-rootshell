@@ -116,6 +116,9 @@ flags: packed struct {
     /// if the configuration allows it.
     mouse_shift_capture: enum(u2) { null, false, true } = .null,
 
+    /// True if the window is focused.
+    focused: bool = true,
+
     /// Dirty flags for the renderer.
     dirty: Dirty = .{},
 } = .{},

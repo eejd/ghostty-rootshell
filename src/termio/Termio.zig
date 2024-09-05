@@ -521,6 +521,12 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
     try self.backend.childExitedAbnormally(self.alloc, t, exit_code, runtime_ms);
 }
 
+/// Called when focus is gained or lost (when focus events are enabled)
+pub fn focusGained(self: *Termio, td: *ThreadData, focused: bool) !void {
+    const seq = if (focused) "\x1b[I" else "\x1b[O";
+    try self.queueWrite(td, seq, false);
+}
+
 /// Process output from the pty. This is the manual API that users can
 /// call with pty data but it is also called by the read thread when using
 /// an exec subprocess.

@@ -637,6 +637,10 @@ pub const StreamHandler = struct {
                 .size_report = .mode_2048,
             }),
 
+            .focus_event => if (enabled) self.messageWriter(.{
+                .focused = self.terminal.flags.focused,
+            }),
+
             .mouse_event_x10 => {
                 if (enabled) {
                     self.terminal.flags.mouse_event = .x10;

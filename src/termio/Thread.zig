@@ -283,6 +283,7 @@ fn drainMailbox(
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .child_exited_abnormally => |v| try io.childExitedAbnormally(v.exit_code, v.runtime_ms),
+            .focused => |v| try io.focusGained(data, v),
             .write_small => |v| try io.queueWrite(
                 data,
                 v.data[0..v.len],
