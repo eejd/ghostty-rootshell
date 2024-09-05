@@ -331,6 +331,16 @@ pub const Parser = struct {
 
     /// Reset the parser start.
     pub fn reset(self: *Parser) void {
+        // If the state is already empty then we do nothing because
+        // we may touch uninitialized memory.
+        if (self.state == .empty) {
+            assert(self.buf_start == 0);
+            assert(self.buf_idx == 0);
+            assert(!self.complete);
+            assert(self.buf_dynamic == null);
+            return;
+        }
+
         self.state = .empty;
         self.buf_start = 0;
         self.buf_idx = 0;
@@ -1703,4 +1713,20 @@ test "OSC: kitty color protocol without allocator" {
     const input = "21;foreground=?";
     for (input) |ch| p.next(ch);
     try testing.expect(p.end('\x1b') == null);
+}
+
+test "OSC: kitty color protocol double reset" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .kitty_color_protocol);
+
+    p.reset();
+    p.reset();
 }
