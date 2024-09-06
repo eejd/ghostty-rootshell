@@ -493,6 +493,7 @@ pub const Parser = struct {
                         },
                     };
 
+                    self.temp_state = .{ .key = "" };
                     self.state = .kitty_color_protocol_key;
                     self.complete = true;
                     self.buf_start = self.buf_idx;
@@ -1729,4 +1730,18 @@ test "OSC: kitty color protocol double reset" {
 
     p.reset();
     p.reset();
+}
+
+test "OSC: kitty color protocol no key" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "21;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .kitty_color_protocol);
+    try testing.expectEqual(0, cmd.kitty_color_protocol.list.items.len);
 }
