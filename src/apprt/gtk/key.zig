@@ -20,7 +20,13 @@ pub fn accelFromTrigger(buf: []u8, trigger: input.Binding.Trigger) !?[:0]const u
             try writer.writeAll(std.mem.sliceTo(c.gdk_keyval_name(keyval), 0));
         },
 
-        .unicode => |cp| try writer.print("{u}", .{cp}),
+        .unicode => |cp| {
+            if (c.gdk_keyval_name(cp)) |name| {
+                try writer.writeAll(std.mem.sliceTo(name, 0));
+            } else {
+                try writer.print("{u}", .{cp});
+            }
+        },
     }
 
     // We need to make the string null terminated.
@@ -73,6 +79,11 @@ test "accelFromTrigger" {
     try testing.expectEqualStrings("<Super>q", (try accelFromTrigger(&buf, .{
         .mods = .{ .super = true },
         .key = .{ .translated = .q },
+    })).?);
+
+    try testing.expectEqualStrings("<Shift><Ctrl><Alt><Super>backslash", (try accelFromTrigger(&buf, .{
+        .mods = .{ .ctrl = true, .alt = true, .super = true, .shift = true },
+        .key = .{ .unicode = 92 },
     })).?);
 }
 
