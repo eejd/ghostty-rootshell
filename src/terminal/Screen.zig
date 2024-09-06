@@ -1041,6 +1041,17 @@ pub fn cursorMarkDirty(self: *Screen) void {
     self.cursor.page_pin.markDirty();
 }
 
+/// Reset the cursor row's soft-wrap state and the cursor's pending wrap.
+/// Also clears spacer heads from the cursor row and prior row as necessary.
+pub fn cursorResetWrap(self: *Screen) void {
+    // Handle boundary conditions on left and right of the row.
+    self.splitCellBoundary(self.cursor.page_pin.*, 0);
+    self.splitCellBoundary(self.cursor.page_pin.*, self.cursor.page_pin.page.data.size.cols);
+
+    self.cursor.page_pin.resetWrap();
+    self.cursor.pending_wrap = false;
+}
+
 /// Options for scrolling the viewport of the terminal grid. The reason
 /// we have this in addition to PageList.Scroll is because we have additional
 /// scroll behaviors that are not part of the PageList.Scroll enum.
@@ -1279,6 +1290,118 @@ pub fn clearPrompt(self: *Screen) void {
             p.page.data.clearCells(row, 0, p.page.data.size.cols);
             p.page.data.assertIntegrity();
         }
+    }
+}
+
+/// Clean up boundary conditions where a cell will become discontiguous with
+/// a neighboring cell because either one of them will be moved and/or cleared.
+///
+/// Handles the boundary between the cell at `x` and the cell at `x - 1`.
+///
+/// So, for example, when moving a region of cells [a, b] (inclusive), call this
+/// function with `x = a` and `x = b + 1`. It is okay if `x` is out of bounds by
+/// 1, this will be interpreted correctly.
+///
+/// DOES NOT MODIFY ROW WRAP STATE! See `resetWrap` for that.
+///
+/// The following boundary conditions are handled:
+///
+/// - `x - 1` is a wide character and `x` is a spacer tail:
+///   o Both cells will be cleared.
+///   o If `x - 1` is the start of the row and was wrapped from a previous row
+///     then the previous row is checked for a spacer head, which is cleared if
+///     present.
+///
+/// - `x == 0` and is a wide character:
+///   o If the row is a wrap continuation then the previous row will be checked
+///     for a spacer head, which is cleared if present.
+///
+/// - `x == cols` and `x - 1` is a spacer head:
+///   o `x - 1` will be cleared.
+pub fn splitCellBoundary(
+    self: *Screen,
+    row: Pin,
+    x: size.CellCountInt,
+) void {
+    row.page.data.pauseIntegrityChecks(true);
+    defer row.page.data.pauseIntegrityChecks(false);
+
+    const rac = row.rowAndCell();
+    const cells = row.cells(.all);
+    const cols = row.page.data.size.cols;
+
+    // `x` may be up to an INCLUDING `cols`, since that signifies splitting
+    // the boundary to the right of the final cell in the row.
+    assert(x <= cols);
+
+    // [ A B C D E F|]
+    //              ^ Boundary between final cell and row end.
+    if (x == cols) {
+        // Spacer head at end of wrapped row.
+        if (cells[cols - 1].wide == .spacer_head) {
+            self.clearCells(
+                &row.page.data,
+                rac.row,
+                cells[cols - 1 ..][0..1],
+            );
+        }
+
+        return;
+    }
+
+    // [|A B C D E F ]
+    //  ^ Boundary between first cell and row start.
+    //
+    //  OR
+    //
+    // [ A|B C D E F ]
+    //    ^ Boundary between first cell and second cell.
+    //
+    // First cell may be a wrapped wide cell with a spacer
+    // head on the previous row that needs to be cleared.
+    if (x == 0 or x == 1) {
+        // If the first cell in a row is wide the previous row
+        // may have a spacer head which needs to be cleared.
+        if (cells[0].wide == .wide and rac.row.wrap_continuation) {
+            if (row.up(1)) |p_row| {
+                const p_rac = p_row.rowAndCell();
+                const p_cells = p_row.cells(.all);
+                const p_cell = p_cells[p_row.page.data.size.cols - 1];
+                if (p_cell.wide == .spacer_head) {
+                    self.clearCells(
+                        &p_row.page.data,
+                        p_rac.row,
+                        p_cells[p_row.page.data.size.cols - 1 ..][0..1],
+                    );
+                }
+            }
+        }
+
+        // If x is 0 then we're done.
+        if (x == 0) return;
+    }
+
+    // [ ... X|Y ... ]
+    //        ^ Boundary between two cells in the middle of the row.
+    assert(x > 0);
+    assert(x < cols);
+
+    const left = cells[x - 1];
+    switch (left.wide) {
+        // There should not be spacer heads in the middle of the row.
+        .spacer_head => unreachable,
+
+        // We don't need to do anything for narrow cells or spacer tails.
+        .narrow, .spacer_tail => {},
+
+        // A wide char would be split, so must be cleared.
+        .wide => {
+            self.clearCells(
+                &row.page.data,
+                rac.row,
+                cells[x - 1 ..][0..2],
+            );
+        },
     }
 }
 
