@@ -417,7 +417,7 @@ pub const ObjectMapUnmanaged = std.StringArrayHashMapUnmanaged(std.json.Value);
 
 /// The options we must use for serialization.
 const json_opts: std.json.StringifyOptions = .{
-    // This is the default but I want to be explicit beacuse its
+    // This is the default but I want to be explicit because its
     // VERY important for the correctness of the envelope. This is
     // the only whitespace type in std.json that doesn't emit newlines.
     // All JSON headers in the envelope must be on a single line.
