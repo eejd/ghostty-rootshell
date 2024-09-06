@@ -1042,58 +1042,32 @@ pub fn cursorMarkDirty(self: *Screen) void {
 }
 
 /// Reset the cursor row's soft-wrap state and the cursor's pending wrap.
-/// Also clears spacer heads from the cursor row and prior row as necessary.
+/// Also handles clearing the spacer head on the cursor row and resetting
+/// the wrap_continuation flag on the next row if necessary.
 pub fn cursorResetWrap(self: *Screen) void {
     // Reset the cursor's pending wrap state
     self.cursor.pending_wrap = false;
 
     const page_row = self.cursor.page_row;
 
-    if (!(page_row.wrap or page_row.wrap_continuation)) return;
-
-    const cells = self.cursor.page_pin.cells(.all);
-
-    // The previous row does not wrap and this row is not wrapped to
-    if (page_row.wrap_continuation) {
-        page_row.wrap_continuation = false;
-
-        if (self.cursor.page_pin.up(1)) |prev_row| {
-            const p_rac = prev_row.rowAndCell();
-            p_rac.row.wrap = false;
-
-            // If the first cell in a row is wide the previous row
-            // may have a spacer head which needs to be cleared.
-            if (cells[0].wide == .wide) {
-                const p_cells = prev_row.cells(.all);
-                const p_cell = p_cells[prev_row.page.data.size.cols - 1];
-                if (p_cell.wide == .spacer_head) {
-                    self.clearCells(
-                        &prev_row.page.data,
-                        p_rac.row,
-                        p_cells[prev_row.page.data.size.cols - 1 ..][0..1],
-                    );
-                }
-            }
-        }
-    }
+    if (!page_row.wrap) return;
 
     // This row does not wrap and the next row is not wrapped to
-    if (page_row.wrap) {
-        page_row.wrap = false;
+    page_row.wrap = false;
 
-        if (self.cursor.page_pin.down(1)) |next_row| {
-            next_row.rowAndCell().row.wrap_continuation = false;
-        }
+    if (self.cursor.page_pin.down(1)) |next_row| {
+        next_row.rowAndCell().row.wrap_continuation = false;
+    }
 
-        // If the last cell in the row is a spacer head we need to clear it.
-        const cell = cells[self.cursor.page_pin.page.data.size.cols - 1];
-        if (cell.wide == .spacer_head) {
-            self.clearCells(
-                &self.cursor.page_pin.page.data,
-                page_row,
-                cells[self.cursor.page_pin.page.data.size.cols - 1 ..][0..1],
-            );
-        }
+    // If the last cell in the row is a spacer head we need to clear it.
+    const cells = self.cursor.page_pin.cells(.all);
+    const cell = cells[self.cursor.page_pin.page.data.size.cols - 1];
+    if (cell.wide == .spacer_head) {
+        self.clearCells(
+            &self.cursor.page_pin.page.data,
+            page_row,
+            cells[self.cursor.page_pin.page.data.size.cols - 1 ..][0..1],
+        );
     }
 }
 

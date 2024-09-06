@@ -6083,7 +6083,7 @@ test "Terminal: eraseChars wide char wrap boundary conditions" {
 
         const unwrapped = try t.plainStringUnwrapped(alloc);
         defer testing.allocator.free(unwrapped);
-        try testing.expectEqualStrings(".......\n    cde\n😀......", unwrapped);
+        try testing.expectEqualStrings(".......     cde\n😀......", unwrapped);
     }
 }
 
@@ -9049,7 +9049,7 @@ test "Terminal: deleteChars wide char wrap boundary conditions" {
 
         const unwrapped = try t.plainStringUnwrapped(alloc);
         defer testing.allocator.free(unwrapped);
-        try testing.expectEqualStrings(".......\n cde\n😀......", unwrapped);
+        try testing.expectEqualStrings(".......  cde\n😀......", unwrapped);
     }
 }
 
