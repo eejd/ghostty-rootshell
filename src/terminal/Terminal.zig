@@ -9053,6 +9053,49 @@ test "Terminal: deleteChars wide char wrap boundary conditions" {
     }
 }
 
+test "Terminal: deleteChars wide char across right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // scroll region
+    //    VVVVVV
+    //  +-######-+
+    //  |.abcdeWW|
+    //  : ^      : (^ = cursor)
+    //  +--------+
+    //
+    // DCH 1
+
+    try t.printString("123456橋");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 7);
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("123456橋", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.deleteChars(1);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    // NOTE: This behavior is slightly inconsistent with xterm. xterm
+    // _visually_ splits the wide character (half the wide character shows
+    // up in col 6 and half in col 8). In all other wide char split scenarios,
+    // xterm clears the cell. Therefore, we've chosen to clear the cell here.
+    // Given we have space, we also could actually preserve it, but I haven't
+    // yet found a terminal that behaves that way. We should be open to
+    // revisiting this behavior but for now we're going with the simpler
+    // impl.
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("13456", str);
+    }
+}
+
 test "Terminal: saveCursor" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 3, .rows = 3 });
