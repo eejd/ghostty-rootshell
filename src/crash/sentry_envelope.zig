@@ -165,6 +165,15 @@ pub const Envelope = struct {
                 };
                 try payload.append(byte);
             }
+
+            // The next byte must be a newline.
+            if (reader.readByte()) |byte| {
+                if (byte != '\n') return error.EnvelopeItemPayloadNoNewline;
+            } else |err| switch (err) {
+                error.EndOfStream => {},
+                else => return err,
+            }
+
             break :payload try payload.toOwnedSlice();
         } else payload: {
             // The payload is the next line ending in `\n`. It is required.
@@ -451,6 +460,44 @@ test "Envelope parse session" {
     try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
 }
 
+test "Envelope parse multiple" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 2), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
+    try testing.expectEqual(ItemType.attachment, v.items.items[1].encoded.type);
+}
+
+test "Envelope parse multiple no length" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session"}
+        \\{}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 2), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
+    try testing.expectEqual(ItemType.attachment, v.items.items[1].encoded.type);
+}
+
 test "Envelope parse end in new line" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -542,3 +589,39 @@ test "Envelope serialize session" {
         \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
     , std.mem.trim(u8, output.items, "\n"));
 }
+
+// // Uncomment this test if you want to extract a minidump file from an
+// // existing envelope. This is useful for getting new test contents.
+// test "Envelope extract mdmp" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var fbs = std.io.fixedBufferStream(@embedFile("in.crash"));
+//     var v = try Envelope.parse(alloc, fbs.reader());
+//     defer v.deinit();
+//
+//     try testing.expect(v.items.items.len > 0);
+//     for (v.items.items, 0..) |*item, i| {
+//         if (item.encoded.type != .attachment) {
+//             log.warn("ignoring item type={} i={}", .{ item.encoded.type, i });
+//             continue;
+//         }
+//
+//         try item.decode(v.allocator());
+//         const attach = item.attachment;
+//         const attach_type = attach.type orelse {
+//             log.warn("attachment missing type i={}", .{i});
+//             continue;
+//         };
+//         if (!std.mem.eql(u8, attach_type, "event.minidump")) {
+//             log.warn("ignoring attachment type={s} i={}", .{ attach_type, i });
+//             continue;
+//         }
+//
+//         log.warn("found minidump i={}", .{i});
+//         var f = try std.fs.cwd().createFile("out.mdmp", .{});
+//         defer f.close();
+//         try f.writer().writeAll(attach.payload);
+//         return;
+//     }
+// }
