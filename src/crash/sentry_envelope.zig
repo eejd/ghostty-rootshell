@@ -211,6 +211,29 @@ pub const Envelope = struct {
     pub fn deinit(self: *Envelope) void {
         self.arena.deinit();
     }
+
+    /// Encode the envelope to the given writer.
+    pub fn encode(self: *const Envelope, writer: anytype) !void {
+        const json_opts: std.json.StringifyOptions = .{
+            // This is the default but I want to be explicit beacuse its
+            // VERY important for the correctness of the envelope. This is
+            // the only whitespace type in std.json that doesn't emit newlines.
+            // All JSON headers in the envelope must be on a single line.
+            .whitespace = .minified,
+        };
+
+        // Header line first
+        try std.json.stringify(std.json.Value{ .object = self.headers }, json_opts, writer);
+        try writer.writeByte('\n');
+
+        // Write each item
+        for (self.items, 0..) |*item, idx| {
+            if (idx > 0) try writer.writeByte('\n');
+            try std.json.stringify(std.json.Value{ .object = item.headers }, json_opts, writer);
+            try writer.writeByte('\n');
+            try writer.writeAll(item.payload);
+        }
+    }
 };
 
 /// The various item types that can be in an envelope. This is a point
@@ -281,4 +304,46 @@ test "Envelope parse end in new line" {
 
     try testing.expectEqual(@as(usize, 1), v.items.len);
     try testing.expectEqual(ItemType.session, v.items[0].type);
+}
+
+test "Envelope encode empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    var output = std.ArrayList(u8).init(alloc);
+    defer output.deinit();
+    try v.encode(output.writer());
+
+    try testing.expectEqualStrings(
+        \\{}
+    , std.mem.trim(u8, output.items, "\n"));
+}
+
+test "Envelope encode session" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    var output = std.ArrayList(u8).init(alloc);
+    defer output.deinit();
+    try v.encode(output.writer());
+
+    try testing.expectEqualStrings(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+    , std.mem.trim(u8, output.items, "\n"));
 }
