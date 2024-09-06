@@ -6063,6 +6063,60 @@ test "Terminal: eraseChars protected attributes ignored with dec set" {
     }
 }
 
+test "Terminal: eraseChars wide char boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 1, .cols = 8 });
+    defer t.deinit(alloc);
+
+    try t.printString("😀a😀b😀");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("😀a😀b😀", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.eraseChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("     b😀", str);
+    }
+}
+
+test "Terminal: eraseChars wide char wrap boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    try t.printString(".......😀abcde😀......");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n😀abcde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......😀abcde😀......", unwrapped);
+    }
+
+    t.setCursorPos(2, 2);
+    t.eraseChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n    cde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......\n    cde\n😀......", unwrapped);
+    }
+}
+
 test "Terminal: reverseIndex" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 2, .rows = 5 });
