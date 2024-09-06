@@ -2,6 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const log = std.log.scoped(.sentry_envelope);
+
 /// The Sentry Envelope format: https://develop.sentry.dev/sdk/envelopes/
 ///
 /// The envelope is our primary crash report format since use the Sentry
@@ -24,7 +26,7 @@ pub const Envelope = struct {
     headers: std.json.ObjectMap,
 
     /// The items in the envelope in the order they're encoded.
-    items: []const Item,
+    items: std.ArrayListUnmanaged(Item),
 
     /// Parse an envelope from a reader.
     ///
@@ -89,11 +91,14 @@ pub const Envelope = struct {
     fn parseItems(
         alloc: Allocator,
         reader: anytype,
-    ) ![]const Item {
-        var items = std.ArrayList(Item).init(alloc);
-        defer items.deinit();
-        while (try parseOneItem(alloc, reader)) |item| try items.append(item);
-        return try items.toOwnedSlice();
+    ) !std.ArrayListUnmanaged(Item) {
+        var items: std.ArrayListUnmanaged(Item) = .{};
+        errdefer items.deinit(alloc);
+        while (try parseOneItem(alloc, reader)) |item| {
+            try items.append(alloc, item);
+        }
+
+        return items;
     }
 
     fn parseOneItem(
@@ -187,16 +192,42 @@ pub const Envelope = struct {
         self.arena.deinit();
     }
 
-    /// Encode the envelope to the given writer.
-    pub fn encode(self: *const Envelope, writer: anytype) !void {
+    /// The arena allocator associated with this envelope
+    pub fn allocator(self: *Envelope) Allocator {
+        return self.arena.allocator();
+    }
+
+    /// Serialize the envelope to the given writer.
+    ///
+    /// This will convert all decoded items to encoded items and
+    /// therefore may allocate.
+    pub fn serialize(
+        self: *Envelope,
+        writer: anytype,
+    ) !void {
         // Header line first
-        try std.json.stringify(std.json.Value{ .object = self.headers }, json_opts, writer);
+        try std.json.stringify(
+            std.json.Value{ .object = self.headers },
+            json_opts,
+            writer,
+        );
         try writer.writeByte('\n');
 
         // Write each item
-        for (self.items, 0..) |*item, idx| {
+        const alloc = self.allocator();
+        for (self.items.items, 0..) |*item, idx| {
             if (idx > 0) try writer.writeByte('\n');
-            try item.encode(writer);
+
+            const encoded = try item.encode(alloc);
+            assert(item.* == .encoded);
+
+            try std.json.stringify(
+                std.json.Value{ .object = encoded.headers },
+                json_opts,
+                writer,
+            );
+            try writer.writeByte('\n');
+            try writer.writeAll(encoded.payload);
         }
     }
 };
@@ -239,15 +270,18 @@ pub const Item = union(enum) {
     encoded: EncodedItem,
     attachment: Attachment,
 
+    /// Convert the item to an encoded item. This modify the item
+    /// in place.
     pub fn encode(
-        self: Item,
-        writer: anytype,
-    ) !void {
-        switch (self) {
-            inline .encoded,
-            .attachment,
-            => |v| try v.encode(writer),
-        }
+        self: *Item,
+        alloc: Allocator,
+    ) !EncodedItem {
+        const result: EncodedItem = switch (self.*) {
+            .encoded => |v| return v,
+            .attachment => |*v| try v.encode(alloc),
+        };
+        self.* = .{ .encoded = result };
+        return result;
     }
 
     /// Returns the type of item represented here, whether
@@ -256,6 +290,43 @@ pub const Item = union(enum) {
         return switch (self) {
             .encoded => |v| v.type,
             .attachment => .attachment,
+        };
+    }
+
+    pub const DecodeError = Allocator.Error || error{
+        MissingRequiredField,
+        InvalidFieldType,
+        UnsupportedType,
+    };
+
+    /// Decode the item if it is encoded. This will modify itself.
+    /// If the item is already decoded this does nothing.
+    ///
+    /// The allocator argument should be an arena-style allocator,
+    /// typically the allocator associated with the Envelope.
+    ///
+    /// If the decoding fails because the item is in an invalid
+    /// state (i.e. its missing a required field) then this will
+    /// error but the encoded item will remain unmodified. This
+    /// allows the caller to handle the error without corrupting the
+    /// envelope.
+    ///
+    /// If decoding fails, the allocator may still allocate so the
+    /// allocator should be an arena-style allocator.
+    pub fn decode(self: *Item, alloc: Allocator) DecodeError!void {
+        // Get our encoded item. If we're not encoded we're done.
+        const encoded: EncodedItem = switch (self.*) {
+            .encoded => |v| v,
+            else => return,
+        };
+
+        // Decode the item.
+        self.* = switch (encoded.type) {
+            .attachment => .{ .attachment = try Attachment.decode(
+                alloc,
+                encoded,
+            ) },
+            else => return error.UnsupportedType,
         };
     }
 };
@@ -267,19 +338,6 @@ pub const EncodedItem = struct {
     headers: std.json.ObjectMap,
     type: ItemType,
     payload: []const u8,
-
-    pub fn encode(
-        self: EncodedItem,
-        writer: anytype,
-    ) !void {
-        try std.json.stringify(
-            std.json.Value{ .object = self.headers },
-            json_opts,
-            writer,
-        );
-        try writer.writeByte('\n');
-        try writer.writeAll(self.payload);
-    }
 };
 
 /// An arbitrary file attachment.
@@ -296,18 +354,58 @@ pub const Attachment = struct {
     type: ?[]const u8 = null,
 
     /// Additional headers for the attachment.
-    header_extra: ObjectMapUnmanaged = .{},
+    headers_extra: ObjectMapUnmanaged = .{},
 
     /// The data for the attachment.
     payload: []const u8,
 
+    pub fn decode(
+        alloc: Allocator,
+        item: EncodedItem,
+    ) Item.DecodeError!Attachment {
+        _ = alloc;
+
+        return .{
+            .filename = if (item.headers.get("filename")) |v| switch (v) {
+                .string => |str| str,
+                else => return error.InvalidFieldType,
+            } else return error.MissingRequiredField,
+
+            .type = if (item.headers.get("attachment_type")) |v| switch (v) {
+                .string => |str| str,
+                else => return error.InvalidFieldType,
+            } else null,
+
+            .headers_extra = item.headers.unmanaged,
+            .payload = item.payload,
+        };
+    }
+
     pub fn encode(
-        self: Attachment,
-        writer: anytype,
-    ) !void {
-        _ = self;
-        _ = writer;
-        @panic("TODO");
+        self: *Attachment,
+        alloc: Allocator,
+    ) !EncodedItem {
+        try self.headers_extra.put(
+            alloc,
+            "filename",
+            .{ .string = self.filename },
+        );
+
+        if (self.type) |v| {
+            try self.headers_extra.put(
+                alloc,
+                "attachment_type",
+                .{ .string = v },
+            );
+        } else {
+            _ = self.headers_extra.swapRemove("attachment_type");
+        }
+
+        return .{
+            .headers = self.headers_extra.promote(alloc),
+            .type = .attachment,
+            .payload = self.payload,
+        };
     }
 };
 
@@ -349,8 +447,8 @@ test "Envelope parse session" {
     var v = try Envelope.parse(alloc, fbs.reader());
     defer v.deinit();
 
-    try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].encoded.type);
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
 }
 
 test "Envelope parse end in new line" {
@@ -366,11 +464,44 @@ test "Envelope parse end in new line" {
     var v = try Envelope.parse(alloc, fbs.reader());
     defer v.deinit();
 
-    try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].encoded.type);
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
 }
 
-test "Envelope encode empty" {
+test "Envelope parse attachment" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+
+    var item = &v.items.items[0];
+    try testing.expectEqual(ItemType.attachment, item.encoded.type);
+    try item.decode(v.allocator());
+    try testing.expect(item.* == .attachment);
+    try testing.expectEqualStrings("test.txt", item.attachment.filename);
+
+    // Serialization test
+    {
+        var output = std.ArrayList(u8).init(alloc);
+        defer output.deinit();
+        try v.serialize(output.writer());
+        try testing.expectEqualStrings(
+            \\{}
+            \\{"type":"attachment","length":4,"filename":"test.txt"}
+            \\ABCD
+        , std.mem.trim(u8, output.items, "\n"));
+    }
+}
+
+test "Envelope serialize empty" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -382,14 +513,14 @@ test "Envelope encode empty" {
 
     var output = std.ArrayList(u8).init(alloc);
     defer output.deinit();
-    try v.encode(output.writer());
+    try v.serialize(output.writer());
 
     try testing.expectEqualStrings(
         \\{}
     , std.mem.trim(u8, output.items, "\n"));
 }
 
-test "Envelope encode session" {
+test "Envelope serialize session" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -403,7 +534,7 @@ test "Envelope encode session" {
 
     var output = std.ArrayList(u8).init(alloc);
     defer output.deinit();
-    try v.encode(output.writer());
+    try v.serialize(output.writer());
 
     try testing.expectEqualStrings(
         \\{}

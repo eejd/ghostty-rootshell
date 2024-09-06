@@ -270,7 +270,7 @@ pub const Transport = struct {
 
     fn shouldDiscard(envelope: *const crash.Envelope) !bool {
         // If we have an event item then we're good.
-        for (envelope.items) |item| {
+        for (envelope.items.items) |item| {
             if (item.itemType() == .event) return false;
         }
 
