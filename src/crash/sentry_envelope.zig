@@ -2,6 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const log = std.log.scoped(.sentry_envelope);
+
 /// The Sentry Envelope format: https://develop.sentry.dev/sdk/envelopes/
 ///
 /// The envelope is our primary crash report format since use the Sentry
@@ -16,40 +18,15 @@ const Allocator = std.mem.Allocator;
 /// currently but can be added later). It is incomplete; I only implemented
 /// what I needed at the time.
 pub const Envelope = struct {
-    // Developer note: this struct is really geared towards decoding an
-    // already-encoded envelope vs. building up an envelope from rich
-    // data types. I think it can be used for both I just didn't have
-    // the latter need.
-    //
-    // If I were to make that ability more enjoyable I'd probably change
-    // Item below a tagged union of either an "EncodedItem" (which is the
-    // current Item type) or a "DecodedItem" which is a union(ItemType)
-    // to its rich data type. This would allow the user to cheaply append
-    // items to the envelope without paying the encoding cost until
-    // serialization time.
-    //
-    // The way it is now, the user has to encode every entry as they build
-    // the envelope, which is probably fine but I wanted to write this down
-    // for my future self or some future contributor since it is fresh
-    // in my mind. Cheers.
-
-    /// The arena that the envelope is allocated in.
+    /// The arena that the envelope is allocated in. All items are welcome
+    /// to use this allocator for their data, which is freed on deinit.
     arena: std.heap.ArenaAllocator,
 
     /// The headers of the envelope decoded into a json ObjectMap.
     headers: std.json.ObjectMap,
 
     /// The items in the envelope in the order they're encoded.
-    items: []const Item,
-
-    /// An encoded item. It is "encoded" in the sense that the payload
-    /// is a byte slice. The headers are "decoded" into a json ObjectMap
-    /// but that's still a pretty low-level representation.
-    pub const Item = struct {
-        headers: std.json.ObjectMap,
-        type: ItemType,
-        payload: []const u8,
-    };
+    items: std.ArrayListUnmanaged(Item),
 
     /// Parse an envelope from a reader.
     ///
@@ -114,11 +91,14 @@ pub const Envelope = struct {
     fn parseItems(
         alloc: Allocator,
         reader: anytype,
-    ) ![]const Item {
-        var items = std.ArrayList(Item).init(alloc);
-        defer items.deinit();
-        while (try parseOneItem(alloc, reader)) |item| try items.append(item);
-        return try items.toOwnedSlice();
+    ) !std.ArrayListUnmanaged(Item) {
+        var items: std.ArrayListUnmanaged(Item) = .{};
+        errdefer items.deinit(alloc);
+        while (try parseOneItem(alloc, reader)) |item| {
+            try items.append(alloc, item);
+        }
+
+        return items;
     }
 
     fn parseOneItem(
@@ -185,6 +165,15 @@ pub const Envelope = struct {
                 };
                 try payload.append(byte);
             }
+
+            // The next byte must be a newline.
+            if (reader.readByte()) |byte| {
+                if (byte != '\n') return error.EnvelopeItemPayloadNoNewline;
+            } else |err| switch (err) {
+                error.EndOfStream => {},
+                else => return err,
+            }
+
             break :payload try payload.toOwnedSlice();
         } else payload: {
             // The payload is the next line ending in `\n`. It is required.
@@ -201,15 +190,54 @@ pub const Envelope = struct {
             break :payload try payload.toOwnedSlice();
         };
 
-        return .{
+        return .{ .encoded = .{
             .headers = headers,
             .type = typ,
             .payload = payload,
-        };
+        } };
     }
 
     pub fn deinit(self: *Envelope) void {
         self.arena.deinit();
+    }
+
+    /// The arena allocator associated with this envelope
+    pub fn allocator(self: *Envelope) Allocator {
+        return self.arena.allocator();
+    }
+
+    /// Serialize the envelope to the given writer.
+    ///
+    /// This will convert all decoded items to encoded items and
+    /// therefore may allocate.
+    pub fn serialize(
+        self: *Envelope,
+        writer: anytype,
+    ) !void {
+        // Header line first
+        try std.json.stringify(
+            std.json.Value{ .object = self.headers },
+            json_opts,
+            writer,
+        );
+        try writer.writeByte('\n');
+
+        // Write each item
+        const alloc = self.allocator();
+        for (self.items.items, 0..) |*item, idx| {
+            if (idx > 0) try writer.writeByte('\n');
+
+            const encoded = try item.encode(alloc);
+            assert(item.* == .encoded);
+
+            try std.json.stringify(
+                std.json.Value{ .object = encoded.headers },
+                json_opts,
+                writer,
+            );
+            try writer.writeByte('\n');
+            try writer.writeAll(encoded.payload);
+        }
     }
 };
 
@@ -239,6 +267,172 @@ pub const ItemType = enum {
     check_in,
 };
 
+/// An item in the envelope. An item can be either in an encoded
+/// or decoded state. The encoded state lets us parse the envelope
+/// more cheaply since we can defer the full decoding of the item
+/// until we need it.
+///
+/// The decoded state is more ergonomic to work with and lets us
+/// easily build up new items and defer encoding until serialization
+/// time.
+pub const Item = union(enum) {
+    encoded: EncodedItem,
+    attachment: Attachment,
+
+    /// Convert the item to an encoded item. This modify the item
+    /// in place.
+    pub fn encode(
+        self: *Item,
+        alloc: Allocator,
+    ) !EncodedItem {
+        const result: EncodedItem = switch (self.*) {
+            .encoded => |v| return v,
+            .attachment => |*v| try v.encode(alloc),
+        };
+        self.* = .{ .encoded = result };
+        return result;
+    }
+
+    /// Returns the type of item represented here, whether
+    /// it is an encoded item or not.
+    pub fn itemType(self: Item) ItemType {
+        return switch (self) {
+            .encoded => |v| v.type,
+            .attachment => .attachment,
+        };
+    }
+
+    pub const DecodeError = Allocator.Error || error{
+        MissingRequiredField,
+        InvalidFieldType,
+        UnsupportedType,
+    };
+
+    /// Decode the item if it is encoded. This will modify itself.
+    /// If the item is already decoded this does nothing.
+    ///
+    /// The allocator argument should be an arena-style allocator,
+    /// typically the allocator associated with the Envelope.
+    ///
+    /// If the decoding fails because the item is in an invalid
+    /// state (i.e. its missing a required field) then this will
+    /// error but the encoded item will remain unmodified. This
+    /// allows the caller to handle the error without corrupting the
+    /// envelope.
+    ///
+    /// If decoding fails, the allocator may still allocate so the
+    /// allocator should be an arena-style allocator.
+    pub fn decode(self: *Item, alloc: Allocator) DecodeError!void {
+        // Get our encoded item. If we're not encoded we're done.
+        const encoded: EncodedItem = switch (self.*) {
+            .encoded => |v| v,
+            else => return,
+        };
+
+        // Decode the item.
+        self.* = switch (encoded.type) {
+            .attachment => .{ .attachment = try Attachment.decode(
+                alloc,
+                encoded,
+            ) },
+            else => return error.UnsupportedType,
+        };
+    }
+};
+
+/// An encoded item. It is "encoded" in the sense that the payload
+/// is a byte slice. The headers are "decoded" into a json ObjectMap
+/// but that's still a pretty low-level representation.
+pub const EncodedItem = struct {
+    headers: std.json.ObjectMap,
+    type: ItemType,
+    payload: []const u8,
+};
+
+/// An arbitrary file attachment.
+///
+/// https://develop.sentry.dev/sdk/envelopes/#attachment
+pub const Attachment = struct {
+    /// "filename" field is the name of the uploaded file without
+    /// a path component.
+    filename: []const u8,
+
+    /// A special "type" associated with the attachment. This
+    /// is documented on the Sentry website. In the future we should
+    /// make this an enum.
+    type: ?[]const u8 = null,
+
+    /// Additional headers for the attachment.
+    headers_extra: ObjectMapUnmanaged = .{},
+
+    /// The data for the attachment.
+    payload: []const u8,
+
+    pub fn decode(
+        alloc: Allocator,
+        item: EncodedItem,
+    ) Item.DecodeError!Attachment {
+        _ = alloc;
+
+        return .{
+            .filename = if (item.headers.get("filename")) |v| switch (v) {
+                .string => |str| str,
+                else => return error.InvalidFieldType,
+            } else return error.MissingRequiredField,
+
+            .type = if (item.headers.get("attachment_type")) |v| switch (v) {
+                .string => |str| str,
+                else => return error.InvalidFieldType,
+            } else null,
+
+            .headers_extra = item.headers.unmanaged,
+            .payload = item.payload,
+        };
+    }
+
+    pub fn encode(
+        self: *Attachment,
+        alloc: Allocator,
+    ) !EncodedItem {
+        try self.headers_extra.put(
+            alloc,
+            "filename",
+            .{ .string = self.filename },
+        );
+
+        if (self.type) |v| {
+            try self.headers_extra.put(
+                alloc,
+                "attachment_type",
+                .{ .string = v },
+            );
+        } else {
+            _ = self.headers_extra.swapRemove("attachment_type");
+        }
+
+        return .{
+            .headers = self.headers_extra.promote(alloc),
+            .type = .attachment,
+            .payload = self.payload,
+        };
+    }
+};
+
+/// Same as std.json.ObjectMap but unmanaged. This lets us store
+/// them alongside all our items without the overhead of duplicated
+/// allocators. Additional, items do not own their own memory so this
+/// makes it clear that deinit of an item will not free the memory.
+pub const ObjectMapUnmanaged = std.StringArrayHashMapUnmanaged(std.json.Value);
+
+/// The options we must use for serialization.
+const json_opts: std.json.StringifyOptions = .{
+    // This is the default but I want to be explicit because its
+    // VERY important for the correctness of the envelope. This is
+    // the only whitespace type in std.json that doesn't emit newlines.
+    // All JSON headers in the envelope must be on a single line.
+    .whitespace = .minified,
+};
+
 test "Envelope parse" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -262,8 +456,46 @@ test "Envelope parse session" {
     var v = try Envelope.parse(alloc, fbs.reader());
     defer v.deinit();
 
-    try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].type);
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
+}
+
+test "Envelope parse multiple" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 2), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
+    try testing.expectEqual(ItemType.attachment, v.items.items[1].encoded.type);
+}
+
+test "Envelope parse multiple no length" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session"}
+        \\{}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 2), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
+    try testing.expectEqual(ItemType.attachment, v.items.items[1].encoded.type);
 }
 
 test "Envelope parse end in new line" {
@@ -279,6 +511,117 @@ test "Envelope parse end in new line" {
     var v = try Envelope.parse(alloc, fbs.reader());
     defer v.deinit();
 
-    try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].type);
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+    try testing.expectEqual(ItemType.session, v.items.items[0].encoded.type);
 }
+
+test "Envelope parse attachment" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"attachment","length":4,"filename":"test.txt"}
+        \\ABCD
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    try testing.expectEqual(@as(usize, 1), v.items.items.len);
+
+    var item = &v.items.items[0];
+    try testing.expectEqual(ItemType.attachment, item.encoded.type);
+    try item.decode(v.allocator());
+    try testing.expect(item.* == .attachment);
+    try testing.expectEqualStrings("test.txt", item.attachment.filename);
+
+    // Serialization test
+    {
+        var output = std.ArrayList(u8).init(alloc);
+        defer output.deinit();
+        try v.serialize(output.writer());
+        try testing.expectEqualStrings(
+            \\{}
+            \\{"type":"attachment","length":4,"filename":"test.txt"}
+            \\ABCD
+        , std.mem.trim(u8, output.items, "\n"));
+    }
+}
+
+test "Envelope serialize empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    var output = std.ArrayList(u8).init(alloc);
+    defer output.deinit();
+    try v.serialize(output.writer());
+
+    try testing.expectEqualStrings(
+        \\{}
+    , std.mem.trim(u8, output.items, "\n"));
+}
+
+test "Envelope serialize session" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var fbs = std.io.fixedBufferStream(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+    );
+    var v = try Envelope.parse(alloc, fbs.reader());
+    defer v.deinit();
+
+    var output = std.ArrayList(u8).init(alloc);
+    defer output.deinit();
+    try v.serialize(output.writer());
+
+    try testing.expectEqualStrings(
+        \\{}
+        \\{"type":"session","length":218}
+        \\{"init":true,"sid":"c148cc2f-5f9f-4231-575c-2e85504d6434","status":"abnormal","errors":0,"started":"2024-08-29T02:38:57.607016Z","duration":0.000343,"attrs":{"release":"0.1.0-HEAD+d37b7d09","environment":"production"}}
+    , std.mem.trim(u8, output.items, "\n"));
+}
+
+// // Uncomment this test if you want to extract a minidump file from an
+// // existing envelope. This is useful for getting new test contents.
+// test "Envelope extract mdmp" {
+//     const testing = std.testing;
+//     const alloc = testing.allocator;
+//
+//     var fbs = std.io.fixedBufferStream(@embedFile("in.crash"));
+//     var v = try Envelope.parse(alloc, fbs.reader());
+//     defer v.deinit();
+//
+//     try testing.expect(v.items.items.len > 0);
+//     for (v.items.items, 0..) |*item, i| {
+//         if (item.encoded.type != .attachment) {
+//             log.warn("ignoring item type={} i={}", .{ item.encoded.type, i });
+//             continue;
+//         }
+//
+//         try item.decode(v.allocator());
+//         const attach = item.attachment;
+//         const attach_type = attach.type orelse {
+//             log.warn("attachment missing type i={}", .{i});
+//             continue;
+//         };
+//         if (!std.mem.eql(u8, attach_type, "event.minidump")) {
+//             log.warn("ignoring attachment type={s} i={}", .{ attach_type, i });
+//             continue;
+//         }
+//
+//         log.warn("found minidump i={}", .{i});
+//         var f = try std.fs.cwd().createFile("out.mdmp", .{});
+//         defer f.close();
+//         try f.writer().writeAll(attach.payload);
+//         return;
+//     }
+// }
