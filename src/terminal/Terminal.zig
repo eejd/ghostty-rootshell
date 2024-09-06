@@ -1917,18 +1917,9 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
     // We can only insert blanks up to our remaining cols
     const count = @min(count_req, rem);
 
-    self.screen.splitCellBoundary(
-        self.screen.cursor.page_pin.*,
-        self.screen.cursor.x,
-    );
-    self.screen.splitCellBoundary(
-        self.screen.cursor.page_pin.*,
-        self.screen.cursor.x + count,
-    );
-    self.screen.splitCellBoundary(
-        self.screen.cursor.page_pin.*,
-        self.scrolling_region.right + 1,
-    );
+    self.screen.splitCellBoundary(self.screen.cursor.x);
+    self.screen.splitCellBoundary(self.screen.cursor.x + count);
+    self.screen.splitCellBoundary(self.scrolling_region.right + 1);
 
     // This is the amount of space at the right of the scroll region
     // that will NOT be blank, so we need to shift the correct cols right.
@@ -1982,14 +1973,8 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
     // TODO(qwerasd): This isn't actually correct if you take in to account
     // protected modes. We need to figure out how to make `clearCells` or at
     // least `clearUnprotectedCells` handle boundary conditions...
-    self.screen.splitCellBoundary(
-        self.screen.cursor.page_pin.*,
-        self.screen.cursor.x,
-    );
-    self.screen.splitCellBoundary(
-        self.screen.cursor.page_pin.*,
-        end,
-    );
+    self.screen.splitCellBoundary(self.screen.cursor.x);
+    self.screen.splitCellBoundary(end);
 
     // Reset our row's soft-wrap.
     self.screen.cursorResetWrap();

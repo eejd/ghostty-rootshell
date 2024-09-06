@@ -3172,34 +3172,6 @@ pub const Pin = struct {
         set.set(self.y);
     }
 
-    /// Resets the soft-wrap state of the row this pin is on, appropriately
-    /// handling the wrap and wrap_continuation flags for the previous and
-    /// next row as well.
-    ///
-    /// DOES NOT handle clearing spacer heads.
-    /// Use `Screen.splitCellBoundary` for that.
-    ///
-    /// TODO: test
-    pub fn resetWrap(self: Pin) void {
-        const rac = self.rowAndCell();
-
-        // This row does not wrap
-        rac.row.wrap = false;
-
-        // This row is not wrapped to
-        rac.row.wrap_continuation = false;
-
-        // The previous row does not wrap to this row
-        if (self.up(1)) |prev_row| {
-            prev_row.rowAndCell().row.wrap = false;
-        }
-
-        // The next row is not wrapped to
-        if (self.down(1)) |next_row| {
-            next_row.rowAndCell().row.wrap_continuation = false;
-        }
-    }
-
     /// Returns true if the row of this pin should never have its background
     /// color extended for filling padding space in the renderer. This is
     /// a set of heuristics that help making our padding look better.

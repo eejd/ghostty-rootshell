@@ -1044,12 +1044,57 @@ pub fn cursorMarkDirty(self: *Screen) void {
 /// Reset the cursor row's soft-wrap state and the cursor's pending wrap.
 /// Also clears spacer heads from the cursor row and prior row as necessary.
 pub fn cursorResetWrap(self: *Screen) void {
-    // Handle boundary conditions on left and right of the row.
-    self.splitCellBoundary(self.cursor.page_pin.*, 0);
-    self.splitCellBoundary(self.cursor.page_pin.*, self.cursor.page_pin.page.data.size.cols);
-
-    self.cursor.page_pin.resetWrap();
+    // Reset the cursor's pending wrap state
     self.cursor.pending_wrap = false;
+
+    const page_row = self.cursor.page_row;
+
+    if (!(page_row.wrap or page_row.wrap_continuation)) return;
+
+    const cells = self.cursor.page_pin.cells(.all);
+
+    // The previous row does not wrap and this row is not wrapped to
+    if (page_row.wrap_continuation) {
+        page_row.wrap_continuation = false;
+
+        if (self.cursor.page_pin.up(1)) |prev_row| {
+            const p_rac = prev_row.rowAndCell();
+            p_rac.row.wrap = false;
+
+            // If the first cell in a row is wide the previous row
+            // may have a spacer head which needs to be cleared.
+            if (cells[0].wide == .wide) {
+                const p_cells = prev_row.cells(.all);
+                const p_cell = p_cells[prev_row.page.data.size.cols - 1];
+                if (p_cell.wide == .spacer_head) {
+                    self.clearCells(
+                        &prev_row.page.data,
+                        p_rac.row,
+                        p_cells[prev_row.page.data.size.cols - 1 ..][0..1],
+                    );
+                }
+            }
+        }
+    }
+
+    // This row does not wrap and the next row is not wrapped to
+    if (page_row.wrap) {
+        page_row.wrap = false;
+
+        if (self.cursor.page_pin.down(1)) |next_row| {
+            next_row.rowAndCell().row.wrap_continuation = false;
+        }
+
+        // If the last cell in the row is a spacer head we need to clear it.
+        const cell = cells[self.cursor.page_pin.page.data.size.cols - 1];
+        if (cell.wide == .spacer_head) {
+            self.clearCells(
+                &self.cursor.page_pin.page.data,
+                page_row,
+                cells[self.cursor.page_pin.page.data.size.cols - 1 ..][0..1],
+            );
+        }
+    }
 }
 
 /// Options for scrolling the viewport of the terminal grid. The reason
@@ -1296,6 +1341,8 @@ pub fn clearPrompt(self: *Screen) void {
 /// Clean up boundary conditions where a cell will become discontiguous with
 /// a neighboring cell because either one of them will be moved and/or cleared.
 ///
+/// For performance reasons this is specialized to operate on the cursor row.
+///
 /// Handles the boundary between the cell at `x` and the cell at `x - 1`.
 ///
 /// So, for example, when moving a region of cells [a, b] (inclusive), call this
@@ -1320,15 +1367,14 @@ pub fn clearPrompt(self: *Screen) void {
 ///   o `x - 1` will be cleared.
 pub fn splitCellBoundary(
     self: *Screen,
-    row: Pin,
     x: size.CellCountInt,
 ) void {
-    row.page.data.pauseIntegrityChecks(true);
-    defer row.page.data.pauseIntegrityChecks(false);
+    const page = &self.cursor.page_pin.page.data;
 
-    const rac = row.rowAndCell();
-    const cells = row.cells(.all);
-    const cols = row.page.data.size.cols;
+    page.pauseIntegrityChecks(true);
+    defer page.pauseIntegrityChecks(false);
+
+    const cols = self.cursor.page_pin.page.data.size.cols;
 
     // `x` may be up to an INCLUDING `cols`, since that signifies splitting
     // the boundary to the right of the final cell in the row.
@@ -1337,11 +1383,15 @@ pub fn splitCellBoundary(
     // [ A B C D E F|]
     //              ^ Boundary between final cell and row end.
     if (x == cols) {
+        if (!self.cursor.page_row.wrap) return;
+
+        const cells = self.cursor.page_pin.cells(.all);
+
         // Spacer head at end of wrapped row.
         if (cells[cols - 1].wide == .spacer_head) {
             self.clearCells(
-                &row.page.data,
-                rac.row,
+                page,
+                self.cursor.page_row,
                 cells[cols - 1 ..][0..1],
             );
         }
@@ -1359,11 +1409,13 @@ pub fn splitCellBoundary(
     //
     // First cell may be a wrapped wide cell with a spacer
     // head on the previous row that needs to be cleared.
-    if (x == 0 or x == 1) {
+    if ((x == 0 or x == 1) and self.cursor.page_row.wrap_continuation) {
+        const cells = self.cursor.page_pin.cells(.all);
+
         // If the first cell in a row is wide the previous row
         // may have a spacer head which needs to be cleared.
-        if (cells[0].wide == .wide and rac.row.wrap_continuation) {
-            if (row.up(1)) |p_row| {
+        if (cells[0].wide == .wide) {
+            if (self.cursor.page_pin.up(1)) |p_row| {
                 const p_rac = p_row.rowAndCell();
                 const p_cells = p_row.cells(.all);
                 const p_cell = p_cells[p_row.page.data.size.cols - 1];
@@ -1376,32 +1428,36 @@ pub fn splitCellBoundary(
                 }
             }
         }
-
-        // If x is 0 then we're done.
-        if (x == 0) return;
     }
+
+    // If x is 0 then we're done.
+    if (x == 0) return;
 
     // [ ... X|Y ... ]
     //        ^ Boundary between two cells in the middle of the row.
-    assert(x > 0);
-    assert(x < cols);
+    {
+        assert(x > 0);
+        assert(x < cols);
 
-    const left = cells[x - 1];
-    switch (left.wide) {
-        // There should not be spacer heads in the middle of the row.
-        .spacer_head => unreachable,
+        const cells = self.cursor.page_pin.cells(.all);
 
-        // We don't need to do anything for narrow cells or spacer tails.
-        .narrow, .spacer_tail => {},
+        const left = cells[x - 1];
+        switch (left.wide) {
+            // There should not be spacer heads in the middle of the row.
+            .spacer_head => unreachable,
 
-        // A wide char would be split, so must be cleared.
-        .wide => {
-            self.clearCells(
-                &row.page.data,
-                rac.row,
-                cells[x - 1 ..][0..2],
-            );
-        },
+            // We don't need to do anything for narrow cells or spacer tails.
+            .narrow, .spacer_tail => {},
+
+            // A wide char would be split, so must be cleared.
+            .wide => {
+                self.clearCells(
+                    page,
+                    self.cursor.page_row,
+                    cells[x - 1 ..][0..2],
+                );
+            },
+        }
     }
 }
 
