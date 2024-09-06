@@ -16,24 +16,8 @@ const Allocator = std.mem.Allocator;
 /// currently but can be added later). It is incomplete; I only implemented
 /// what I needed at the time.
 pub const Envelope = struct {
-    // Developer note: this struct is really geared towards decoding an
-    // already-encoded envelope vs. building up an envelope from rich
-    // data types. I think it can be used for both I just didn't have
-    // the latter need.
-    //
-    // If I were to make that ability more enjoyable I'd probably change
-    // Item below a tagged union of either an "EncodedItem" (which is the
-    // current Item type) or a "DecodedItem" which is a union(ItemType)
-    // to its rich data type. This would allow the user to cheaply append
-    // items to the envelope without paying the encoding cost until
-    // serialization time.
-    //
-    // The way it is now, the user has to encode every entry as they build
-    // the envelope, which is probably fine but I wanted to write this down
-    // for my future self or some future contributor since it is fresh
-    // in my mind. Cheers.
-
-    /// The arena that the envelope is allocated in.
+    /// The arena that the envelope is allocated in. All items are welcome
+    /// to use this allocator for their data, which is freed on deinit.
     arena: std.heap.ArenaAllocator,
 
     /// The headers of the envelope decoded into a json ObjectMap.
@@ -41,15 +25,6 @@ pub const Envelope = struct {
 
     /// The items in the envelope in the order they're encoded.
     items: []const Item,
-
-    /// An encoded item. It is "encoded" in the sense that the payload
-    /// is a byte slice. The headers are "decoded" into a json ObjectMap
-    /// but that's still a pretty low-level representation.
-    pub const Item = struct {
-        headers: std.json.ObjectMap,
-        type: ItemType,
-        payload: []const u8,
-    };
 
     /// Parse an envelope from a reader.
     ///
@@ -201,11 +176,11 @@ pub const Envelope = struct {
             break :payload try payload.toOwnedSlice();
         };
 
-        return .{
+        return .{ .encoded = .{
             .headers = headers,
             .type = typ,
             .payload = payload,
-        };
+        } };
     }
 
     pub fn deinit(self: *Envelope) void {
@@ -214,14 +189,6 @@ pub const Envelope = struct {
 
     /// Encode the envelope to the given writer.
     pub fn encode(self: *const Envelope, writer: anytype) !void {
-        const json_opts: std.json.StringifyOptions = .{
-            // This is the default but I want to be explicit beacuse its
-            // VERY important for the correctness of the envelope. This is
-            // the only whitespace type in std.json that doesn't emit newlines.
-            // All JSON headers in the envelope must be on a single line.
-            .whitespace = .minified,
-        };
-
         // Header line first
         try std.json.stringify(std.json.Value{ .object = self.headers }, json_opts, writer);
         try writer.writeByte('\n');
@@ -229,9 +196,7 @@ pub const Envelope = struct {
         // Write each item
         for (self.items, 0..) |*item, idx| {
             if (idx > 0) try writer.writeByte('\n');
-            try std.json.stringify(std.json.Value{ .object = item.headers }, json_opts, writer);
-            try writer.writeByte('\n');
-            try writer.writeAll(item.payload);
+            try item.encode(writer);
         }
     }
 };
@@ -262,6 +227,105 @@ pub const ItemType = enum {
     check_in,
 };
 
+/// An item in the envelope. An item can be either in an encoded
+/// or decoded state. The encoded state lets us parse the envelope
+/// more cheaply since we can defer the full decoding of the item
+/// until we need it.
+///
+/// The decoded state is more ergonomic to work with and lets us
+/// easily build up new items and defer encoding until serialization
+/// time.
+pub const Item = union(enum) {
+    encoded: EncodedItem,
+    attachment: Attachment,
+
+    pub fn encode(
+        self: Item,
+        writer: anytype,
+    ) !void {
+        switch (self) {
+            inline .encoded,
+            .attachment,
+            => |v| try v.encode(writer),
+        }
+    }
+
+    /// Returns the type of item represented here, whether
+    /// it is an encoded item or not.
+    pub fn itemType(self: Item) ItemType {
+        return switch (self) {
+            .encoded => |v| v.type,
+            .attachment => .attachment,
+        };
+    }
+};
+
+/// An encoded item. It is "encoded" in the sense that the payload
+/// is a byte slice. The headers are "decoded" into a json ObjectMap
+/// but that's still a pretty low-level representation.
+pub const EncodedItem = struct {
+    headers: std.json.ObjectMap,
+    type: ItemType,
+    payload: []const u8,
+
+    pub fn encode(
+        self: EncodedItem,
+        writer: anytype,
+    ) !void {
+        try std.json.stringify(
+            std.json.Value{ .object = self.headers },
+            json_opts,
+            writer,
+        );
+        try writer.writeByte('\n');
+        try writer.writeAll(self.payload);
+    }
+};
+
+/// An arbitrary file attachment.
+///
+/// https://develop.sentry.dev/sdk/envelopes/#attachment
+pub const Attachment = struct {
+    /// "filename" field is the name of the uploaded file without
+    /// a path component.
+    filename: []const u8,
+
+    /// A special "type" associated with the attachment. This
+    /// is documented on the Sentry website. In the future we should
+    /// make this an enum.
+    type: ?[]const u8 = null,
+
+    /// Additional headers for the attachment.
+    header_extra: ObjectMapUnmanaged = .{},
+
+    /// The data for the attachment.
+    payload: []const u8,
+
+    pub fn encode(
+        self: Attachment,
+        writer: anytype,
+    ) !void {
+        _ = self;
+        _ = writer;
+        @panic("TODO");
+    }
+};
+
+/// Same as std.json.ObjectMap but unmanaged. This lets us store
+/// them alongside all our items without the overhead of duplicated
+/// allocators. Additional, items do not own their own memory so this
+/// makes it clear that deinit of an item will not free the memory.
+pub const ObjectMapUnmanaged = std.StringArrayHashMapUnmanaged(std.json.Value);
+
+/// The options we must use for serialization.
+const json_opts: std.json.StringifyOptions = .{
+    // This is the default but I want to be explicit beacuse its
+    // VERY important for the correctness of the envelope. This is
+    // the only whitespace type in std.json that doesn't emit newlines.
+    // All JSON headers in the envelope must be on a single line.
+    .whitespace = .minified,
+};
+
 test "Envelope parse" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -286,7 +350,7 @@ test "Envelope parse session" {
     defer v.deinit();
 
     try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].type);
+    try testing.expectEqual(ItemType.session, v.items[0].encoded.type);
 }
 
 test "Envelope parse end in new line" {
@@ -303,7 +367,7 @@ test "Envelope parse end in new line" {
     defer v.deinit();
 
     try testing.expectEqual(@as(usize, 1), v.items.len);
-    try testing.expectEqual(ItemType.session, v.items[0].type);
+    try testing.expectEqual(ItemType.session, v.items[0].encoded.type);
 }
 
 test "Envelope encode empty" {
