@@ -71,8 +71,21 @@ pub fn renderGlyph(
         else => |width| self.width * width,
     };
 
+    // It should be impossible for this to be null and we assert that
+    // in runtime safety modes but in case it is its not worth memory
+    // corruption so we return a valid, blank glyph.
+    const kind = Kind.init(cp) orelse return .{
+        .width = 0,
+        .height = 0,
+        .offset_x = 0,
+        .offset_y = 0,
+        .atlas_x = 0,
+        .atlas_y = 0,
+        .advance_x = 0,
+    };
+
     // Safe to ".?" because of the above assertion.
-    return switch (Kind.init(cp).?) {
+    return switch (kind) {
         .box => box: {
             const thickness = switch (cp) {
                 @intFromEnum(Sprite.cursor_rect),
