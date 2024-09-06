@@ -1044,6 +1044,11 @@ pub fn cursorMarkDirty(self: *Screen) void {
 /// Reset the cursor row's soft-wrap state and the cursor's pending wrap.
 /// Also handles clearing the spacer head on the cursor row and resetting
 /// the wrap_continuation flag on the next row if necessary.
+///
+/// NOTE(qwerasd): This method is not scrolling region aware, and cannot be
+/// since it's on Screen not Terminal. This needs to be addressed down the
+/// line. Not an extremely urgent issue since it's an edge case of an edge
+/// case, but not ideal.
 pub fn cursorResetWrap(self: *Screen) void {
     // Reset the cursor's pending wrap state
     self.cursor.pending_wrap = false;
@@ -1323,7 +1328,7 @@ pub fn clearPrompt(self: *Screen) void {
 /// function with `x = a` and `x = b + 1`. It is okay if `x` is out of bounds by
 /// 1, this will be interpreted correctly.
 ///
-/// DOES NOT MODIFY ROW WRAP STATE! See `resetWrap` for that.
+/// DOES NOT MODIFY ROW WRAP STATE! See `cursorResetWrap` for that.
 ///
 /// The following boundary conditions are handled:
 ///
@@ -1339,6 +1344,11 @@ pub fn clearPrompt(self: *Screen) void {
 ///
 /// - `x == cols` and `x - 1` is a spacer head:
 ///   o `x - 1` will be cleared.
+///
+/// NOTE(qwerasd): This method is not scrolling region aware, and cannot be
+/// since it's on Screen not Terminal. This needs to be addressed down the
+/// line. Not an extremely urgent issue since it's an edge case of an edge
+/// case, but not ideal.
 pub fn splitCellBoundary(
     self: *Screen,
     x: size.CellCountInt,
