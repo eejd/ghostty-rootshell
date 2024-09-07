@@ -1907,28 +1907,19 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
     if (self.screen.cursor.x < self.scrolling_region.left or
         self.screen.cursor.x > self.scrolling_region.right) return;
 
-    // This resets the soft-wrap of this line
-    self.screen.cursor.page_row.wrap = false;
-
-    // This resets the pending wrap state
-    self.screen.cursor.pending_wrap = false;
-
     // left is just the cursor position but as a multi-pointer
     const left: [*]Cell = @ptrCast(self.screen.cursor.page_cell);
     var page = &self.screen.cursor.page_pin.page.data;
-
-    // If our X is a wide spacer tail then we need to erase the
-    // previous cell too so we don't split a multi-cell character.
-    if (self.screen.cursor.page_cell.wide == .spacer_tail) {
-        assert(self.screen.cursor.x > 0);
-        self.screen.clearCells(page, self.screen.cursor.page_row, (left - 1)[0..2]);
-    }
 
     // Remaining cols from our cursor to the right margin.
     const rem = self.scrolling_region.right - self.screen.cursor.x + 1;
 
     // We can only insert blanks up to our remaining cols
     const count = @min(count_req, rem);
+
+    self.screen.splitCellBoundary(self.screen.cursor.x);
+    self.screen.splitCellBoundary(self.screen.cursor.x + count);
+    self.screen.splitCellBoundary(self.scrolling_region.right + 1);
 
     // This is the amount of space at the right of the scroll region
     // that will NOT be blank, so we need to shift the correct cols right.
@@ -1941,35 +1932,6 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
 
         const right: [*]Cell = left + (scroll_amount - 1);
 
-        const end: *Cell = @ptrCast(right + count);
-        switch (end.wide) {
-            .narrow, .wide => {},
-
-            // If our end is a spacer head then we need to clear it since
-            // spacer heads must be at the end.
-            .spacer_head => {
-                self.screen.clearCells(page, self.screen.cursor.page_row, end[0..1]);
-            },
-
-            // If our last cell we're shifting is wide, then we need to clear
-            // it to be empty so we don't split the multi-cell char.
-            .spacer_tail => {
-                const wide: [*]Cell = right + count - 1;
-                assert(wide[0].wide == .wide);
-                self.screen.clearCells(page, self.screen.cursor.page_row, wide[0..2]);
-            },
-        }
-
-        // If our first cell is a wide char then we need to also clear
-        // the spacer tail following it.
-        if (x[0].wide == .wide) {
-            self.screen.clearCells(
-                page,
-                self.screen.cursor.page_row,
-                x[0..2],
-            );
-        }
-
         while (@intFromPtr(x) <= @intFromPtr(right)) : (x += 1) {
             const src: *Cell = @ptrCast(x + count);
             const dst: *Cell = @ptrCast(x);
@@ -1980,18 +1942,15 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
     // Insert blanks. The blanks preserve the background color.
     self.screen.clearCells(page, self.screen.cursor.page_row, x[0 .. rem - scroll_amount]);
 
+    // Our row's soft-wrap is always reset.
+    self.screen.cursorResetWrap();
+
     // Our row is always dirty
     self.screen.cursorMarkDirty();
 }
 
 pub fn eraseChars(self: *Terminal, count_req: usize) void {
     const count = @max(count_req, 1);
-
-    // This resets the soft-wrap of this line
-    self.screen.cursor.page_row.wrap = false;
-
-    // This resets the pending wrap state
-    self.screen.cursor.pending_wrap = false;
 
     // Our last index is at most the end of the number of chars we have
     // in the current line.
@@ -2008,6 +1967,17 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
 
         break :end end;
     };
+
+    // Handle any boundary conditions on the edges of the erased area.
+    //
+    // TODO(qwerasd): This isn't actually correct if you take in to account
+    // protected modes. We need to figure out how to make `clearCells` or at
+    // least `clearUnprotectedCells` handle boundary conditions...
+    self.screen.splitCellBoundary(self.screen.cursor.x);
+    self.screen.splitCellBoundary(end);
+
+    // Reset our row's soft-wrap.
+    self.screen.cursorResetWrap();
 
     // Mark our cursor row as dirty
     self.screen.cursorMarkDirty();
@@ -2051,8 +2021,8 @@ pub fn eraseLine(
                 x -= 1;
             }
 
-            // This resets the soft-wrap of this line
-            self.screen.cursor.page_row.wrap = false;
+            // Reset our row's soft-wrap.
+            self.screen.cursorResetWrap();
 
             break :right .{ x, self.cols };
         },
@@ -6063,6 +6033,60 @@ test "Terminal: eraseChars protected attributes ignored with dec set" {
     }
 }
 
+test "Terminal: eraseChars wide char boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 1, .cols = 8 });
+    defer t.deinit(alloc);
+
+    try t.printString("😀a😀b😀");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("😀a😀b😀", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.eraseChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("     b😀", str);
+    }
+}
+
+test "Terminal: eraseChars wide char wrap boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    try t.printString(".......😀abcde😀......");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n😀abcde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......😀abcde😀......", unwrapped);
+    }
+
+    t.setCursorPos(2, 2);
+    t.eraseChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n    cde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......     cde\n😀......", unwrapped);
+    }
+}
+
 test "Terminal: reverseIndex" {
     const alloc = testing.allocator;
     var t = try init(alloc, .{ .cols = 2, .rows = 5 });
@@ -8906,6 +8930,169 @@ test "Terminal: deleteChars split wide character tail" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("0", str);
+    }
+}
+
+test "Terminal: deleteChars wide char boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 1, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // EXPLANATION(qwerasd):
+    //
+    // There are 3 or 4 boundaries to be concerned with in deleteChars,
+    // depending on how you count them. Consider the following terminal:
+    //
+    //   +--------+
+    // 0 |.ABCDEF.|
+    //   : ^      : (^ = cursor)
+    //   +--------+
+    //
+    // if we DCH 3 we get
+    //
+    //   +--------+
+    // 0 |.DEF....|
+    //   +--------+
+    //
+    // The boundaries exist at the following points then:
+    //
+    //   +--------+
+    // 0 |.ABCDEF.|
+    //   :11 22 33:
+    //   +--------+
+    //
+    // I'm counting 2 for double since it's both the end of the deleted
+    // content and the start of the content that is shifted in to place.
+    //
+    // Now consider wide characters (represented as `WW`) at these boundaries:
+    //
+    //   +--------+
+    // 0 |WWaWWbWW|
+    //   : ^      : (^ = cursor)
+    //   : ^^^    : (^ = deleted by DCH 3)
+    //   +--------+
+    //
+    // -> DCH 3
+    // -> The first 2 wide characters are split & destroyed (verified in xterm)
+    //
+    //   +--------+
+    // 0 |..bWW...|
+    //   +--------+
+
+    try t.printString("😀a😀b😀");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("😀a😀b😀", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.deleteChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("  b😀", str);
+    }
+}
+
+test "Terminal: deleteChars wide char wrap boundary conditions" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // EXPLANATION(qwerasd):
+    // (cont. from "Terminal: deleteChars wide char boundary conditions")
+    //
+    // Additionally consider soft-wrapped wide chars (`H` = spacer head):
+    //
+    //   +--------+
+    // 0 |.......H…
+    // 1 …WWabcdeH…
+    //   : ^      : (^ = cursor)
+    //   : ^^^    : (^ = deleted by DCH 3)
+    // 2 …WW......|
+    //   +--------+
+    //
+    // -> DCH 3
+    // -> First wide character split and destroyed, including spacer head,
+    //    second spacer head removed (verified in xterm).
+    // -> Wrap state of row reset
+    //
+    //   +--------+
+    // 0 |........|
+    // 1 |.cde....|
+    // 2 |WW......|
+    //   +--------+
+    //
+
+    try t.printString(".......😀abcde😀......");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n😀abcde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......😀abcde😀......", unwrapped);
+    }
+
+    t.setCursorPos(2, 2);
+    t.deleteChars(3);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings(".......\n cde\n😀......", str);
+
+        const unwrapped = try t.plainStringUnwrapped(alloc);
+        defer testing.allocator.free(unwrapped);
+        try testing.expectEqualStrings(".......  cde\n😀......", unwrapped);
+    }
+}
+
+test "Terminal: deleteChars wide char across right margin" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 8 });
+    defer t.deinit(alloc);
+
+    // scroll region
+    //    VVVVVV
+    //  +-######-+
+    //  |.abcdeWW|
+    //  : ^      : (^ = cursor)
+    //  +--------+
+    //
+    // DCH 1
+
+    try t.printString("123456橋");
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(2, 7);
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("123456橋", str);
+    }
+
+    t.setCursorPos(1, 2);
+    t.deleteChars(1);
+    t.screen.cursor.page_pin.page.data.assertIntegrity();
+
+    // NOTE: This behavior is slightly inconsistent with xterm. xterm
+    // _visually_ splits the wide character (half the wide character shows
+    // up in col 6 and half in col 8). In all other wide char split scenarios,
+    // xterm clears the cell. Therefore, we've chosen to clear the cell here.
+    // Given we have space, we also could actually preserve it, but I haven't
+    // yet found a terminal that behaves that way. We should be open to
+    // revisiting this behavior but for now we're going with the simpler
+    // impl.
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("13456", str);
     }
 }
 

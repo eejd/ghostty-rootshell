@@ -1041,6 +1041,41 @@ pub fn cursorMarkDirty(self: *Screen) void {
     self.cursor.page_pin.markDirty();
 }
 
+/// Reset the cursor row's soft-wrap state and the cursor's pending wrap.
+/// Also handles clearing the spacer head on the cursor row and resetting
+/// the wrap_continuation flag on the next row if necessary.
+///
+/// NOTE(qwerasd): This method is not scrolling region aware, and cannot be
+/// since it's on Screen not Terminal. This needs to be addressed down the
+/// line. Not an extremely urgent issue since it's an edge case of an edge
+/// case, but not ideal.
+pub fn cursorResetWrap(self: *Screen) void {
+    // Reset the cursor's pending wrap state
+    self.cursor.pending_wrap = false;
+
+    const page_row = self.cursor.page_row;
+
+    if (!page_row.wrap) return;
+
+    // This row does not wrap and the next row is not wrapped to
+    page_row.wrap = false;
+
+    if (self.cursor.page_pin.down(1)) |next_row| {
+        next_row.rowAndCell().row.wrap_continuation = false;
+    }
+
+    // If the last cell in the row is a spacer head we need to clear it.
+    const cells = self.cursor.page_pin.cells(.all);
+    const cell = cells[self.cursor.page_pin.page.data.size.cols - 1];
+    if (cell.wide == .spacer_head) {
+        self.clearCells(
+            &self.cursor.page_pin.page.data,
+            page_row,
+            cells[self.cursor.page_pin.page.data.size.cols - 1 ..][0..1],
+        );
+    }
+}
+
 /// Options for scrolling the viewport of the terminal grid. The reason
 /// we have this in addition to PageList.Scroll is because we have additional
 /// scroll behaviors that are not part of the PageList.Scroll enum.
@@ -1278,6 +1313,134 @@ pub fn clearPrompt(self: *Screen) void {
             const row = p.rowAndCell().row;
             p.page.data.clearCells(row, 0, p.page.data.size.cols);
             p.page.data.assertIntegrity();
+        }
+    }
+}
+
+/// Clean up boundary conditions where a cell will become discontiguous with
+/// a neighboring cell because either one of them will be moved and/or cleared.
+///
+/// For performance reasons this is specialized to operate on the cursor row.
+///
+/// Handles the boundary between the cell at `x` and the cell at `x - 1`.
+///
+/// So, for example, when moving a region of cells [a, b] (inclusive), call this
+/// function with `x = a` and `x = b + 1`. It is okay if `x` is out of bounds by
+/// 1, this will be interpreted correctly.
+///
+/// DOES NOT MODIFY ROW WRAP STATE! See `cursorResetWrap` for that.
+///
+/// The following boundary conditions are handled:
+///
+/// - `x - 1` is a wide character and `x` is a spacer tail:
+///   o Both cells will be cleared.
+///   o If `x - 1` is the start of the row and was wrapped from a previous row
+///     then the previous row is checked for a spacer head, which is cleared if
+///     present.
+///
+/// - `x == 0` and is a wide character:
+///   o If the row is a wrap continuation then the previous row will be checked
+///     for a spacer head, which is cleared if present.
+///
+/// - `x == cols` and `x - 1` is a spacer head:
+///   o `x - 1` will be cleared.
+///
+/// NOTE(qwerasd): This method is not scrolling region aware, and cannot be
+/// since it's on Screen not Terminal. This needs to be addressed down the
+/// line. Not an extremely urgent issue since it's an edge case of an edge
+/// case, but not ideal.
+pub fn splitCellBoundary(
+    self: *Screen,
+    x: size.CellCountInt,
+) void {
+    const page = &self.cursor.page_pin.page.data;
+
+    page.pauseIntegrityChecks(true);
+    defer page.pauseIntegrityChecks(false);
+
+    const cols = self.cursor.page_pin.page.data.size.cols;
+
+    // `x` may be up to an INCLUDING `cols`, since that signifies splitting
+    // the boundary to the right of the final cell in the row.
+    assert(x <= cols);
+
+    // [ A B C D E F|]
+    //              ^ Boundary between final cell and row end.
+    if (x == cols) {
+        if (!self.cursor.page_row.wrap) return;
+
+        const cells = self.cursor.page_pin.cells(.all);
+
+        // Spacer head at end of wrapped row.
+        if (cells[cols - 1].wide == .spacer_head) {
+            self.clearCells(
+                page,
+                self.cursor.page_row,
+                cells[cols - 1 ..][0..1],
+            );
+        }
+
+        return;
+    }
+
+    // [|A B C D E F ]
+    //  ^ Boundary between first cell and row start.
+    //
+    //  OR
+    //
+    // [ A|B C D E F ]
+    //    ^ Boundary between first cell and second cell.
+    //
+    // First cell may be a wrapped wide cell with a spacer
+    // head on the previous row that needs to be cleared.
+    if ((x == 0 or x == 1) and self.cursor.page_row.wrap_continuation) {
+        const cells = self.cursor.page_pin.cells(.all);
+
+        // If the first cell in a row is wide the previous row
+        // may have a spacer head which needs to be cleared.
+        if (cells[0].wide == .wide) {
+            if (self.cursor.page_pin.up(1)) |p_row| {
+                const p_rac = p_row.rowAndCell();
+                const p_cells = p_row.cells(.all);
+                const p_cell = p_cells[p_row.page.data.size.cols - 1];
+                if (p_cell.wide == .spacer_head) {
+                    self.clearCells(
+                        &p_row.page.data,
+                        p_rac.row,
+                        p_cells[p_row.page.data.size.cols - 1 ..][0..1],
+                    );
+                }
+            }
+        }
+    }
+
+    // If x is 0 then we're done.
+    if (x == 0) return;
+
+    // [ ... X|Y ... ]
+    //        ^ Boundary between two cells in the middle of the row.
+    {
+        assert(x > 0);
+        assert(x < cols);
+
+        const cells = self.cursor.page_pin.cells(.all);
+
+        const left = cells[x - 1];
+        switch (left.wide) {
+            // There should not be spacer heads in the middle of the row.
+            .spacer_head => unreachable,
+
+            // We don't need to do anything for narrow cells or spacer tails.
+            .narrow, .spacer_tail => {},
+
+            // A wide char would be split, so must be cleared.
+            .wide => {
+                self.clearCells(
+                    page,
+                    self.cursor.page_row,
+                    cells[x - 1 ..][0..2],
+                );
+            },
         }
     }
 }
