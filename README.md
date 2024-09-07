@@ -591,6 +591,18 @@ On Arch Linux, use
 sudo pacman -S gtk4 libadwaita
 ```
 
+On Fedora Atomic variants, use
+
+```
+sudo dnf install gtk4-devel zig libadwaita-devel
+```
+
+On Fedora Atomic variants, use
+
+```
+rpm-ostree install gtk4-devel zig libadwaita-devel
+```
+
 If you're planning to use a build from source as your daily driver,
 I recommend using the `-p` (prefix) flag for `zig build` to install
 Ghostty into `~/.local`. This will setup the proper FHS directory structure
