@@ -591,7 +591,7 @@ On Arch Linux, use
 sudo pacman -S gtk4 libadwaita
 ```
 
-On Fedora Atomic variants, use
+On Fedora variants, use
 
 ```
 sudo dnf install gtk4-devel zig libadwaita-devel
