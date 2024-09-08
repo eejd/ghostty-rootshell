@@ -53,10 +53,36 @@ pub fn Reader(comptime Source: type) type {
         const SourceReader = @typeInfo(@TypeOf(SourceCallable.reader)).Fn.return_type.?;
         const SourceSeeker = @typeInfo(@TypeOf(SourceCallable.seekableStream)).Fn.return_type.?;
 
-        /// The reader type for stream reading. This is a LimitedReader so
+        /// The reader type for stream reading. This has some other methods so
         /// you must still call reader() on the result to get the actual
         /// reader to read the data.
-        pub const StreamReader = std.io.LimitedReader(SourceReader);
+        pub const StreamReader = struct {
+            source: Source,
+            directory: external.Directory,
+
+            /// Should not be accessed directly. This is setup whenever
+            /// reader() is called.
+            limit_reader: LimitedReader = undefined,
+
+            const LimitedReader = std.io.LimitedReader(SourceReader);
+            pub const Reader = LimitedReader.Reader;
+
+            /// Returns a Reader implementation that reads the bytes of the
+            /// stream.
+            ///
+            /// The reader is dependent on the state of Source so any
+            /// state-changing operations on Source will invalidate the
+            /// reader. For example, making another reader, reading another
+            /// stream directory, closing the source, etc.
+            pub fn reader(self: *StreamReader) LimitedReader.Reader {
+                try self.source.seekableStream().seekTo(self.directory.location.rva);
+                self.limit_reader = .{
+                    .inner_reader = self.source.reader(),
+                    .bytes_left = self.directory.location.data_size,
+                };
+                return self.limit_reader.reader();
+            }
+        };
 
         /// Initialize a reader. The source must remain available for the entire
         /// lifetime of the reader. The reader does not take ownership of the
@@ -80,10 +106,9 @@ pub fn Reader(comptime Source: type) type {
             self: *const Self,
             dir: external.Directory,
         ) SourceSeeker.SeekError!StreamReader {
-            try self.source.seekableStream().seekTo(dir.location.rva);
             return .{
-                .inner_reader = self.source.reader(),
-                .bytes_left = dir.location.data_size,
+                .source = self.source,
+                .directory = dir,
             };
         }
 
