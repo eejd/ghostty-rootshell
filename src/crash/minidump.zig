@@ -1,7 +1,7 @@
-const minidump = @import("minidump/minidump.zig");
+const reader = @import("minidump/reader.zig");
 
 pub const stream = @import("minidump/stream.zig");
-pub const Minidump = minidump.Minidump;
+pub const Reader = reader.Reader;
 
 test {
     @import("std").testing.refAllDecls(@This());
