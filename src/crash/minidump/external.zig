@@ -34,3 +34,27 @@ pub const LocationDescriptor = extern struct {
     data_size: u32,
     rva: u32,
 };
+
+/// https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_memory_descriptor
+pub const MemoryDescriptor = extern struct {
+    start_of_memory_range: u64,
+    memory: LocationDescriptor,
+};
+
+/// https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_thread_list
+pub const ThreadList = extern struct {
+    number_of_threads: u32,
+
+    // This struct has a trailing array of `Thread` structs.
+};
+
+/// https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_thread
+pub const Thread = extern struct {
+    thread_id: u32,
+    suspend_count: u32,
+    priority_class: u32,
+    priority: u32,
+    teb: u64,
+    stack: MemoryDescriptor,
+    thread_context: LocationDescriptor,
+};

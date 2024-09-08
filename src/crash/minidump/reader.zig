@@ -25,7 +25,7 @@ pub const ReadError = error{
 /// to be aware since custom stream types are allowed), its possible any stream
 /// type can define their own pointers and offsets. So, the source must always
 /// be available so callers can decode the streams as needed.
-pub fn Reader(comptime Source: type) type {
+pub fn Reader(comptime S: type) type {
     return struct {
         const Self = @This();
 
@@ -53,11 +53,15 @@ pub fn Reader(comptime Source: type) type {
         const SourceReader = @typeInfo(@TypeOf(SourceCallable.reader)).Fn.return_type.?;
         const SourceSeeker = @typeInfo(@TypeOf(SourceCallable.seekableStream)).Fn.return_type.?;
 
+        /// The source type for the reader.
+        pub const Source = S;
+
         /// The reader type for stream reading. This has some other methods so
         /// you must still call reader() on the result to get the actual
         /// reader to read the data.
         pub const StreamReader = struct {
             source: Source,
+            endian: std.builtin.Endian,
             directory: external.Directory,
 
             /// Should not be accessed directly. This is setup whenever
@@ -81,6 +85,11 @@ pub fn Reader(comptime Source: type) type {
                     .bytes_left = self.directory.location.data_size,
                 };
                 return self.limit_reader.reader();
+            }
+
+            /// Seeks the source to the location of the directory.
+            pub fn seekToPayload(self: *StreamReader) !void {
+                try self.source.seekableStream().seekTo(self.directory.location.rva);
             }
         };
 
@@ -129,6 +138,7 @@ pub fn Reader(comptime Source: type) type {
         ) SourceSeeker.SeekError!StreamReader {
             return .{
                 .source = self.source,
+                .endian = self.endian,
                 .directory = dir,
             };
         }
@@ -182,7 +192,7 @@ fn readHeader(comptime T: type, source: T) !struct {
 }
 
 // Uncomment to dump some debug information for a minidump file.
-test "Minidump debug" {
+test "minidump debug" {
     var fbs = std.io.fixedBufferStream(@embedFile("../testdata/macos.dmp"));
     const r = try Reader(*@TypeOf(fbs)).init(&fbs);
     var it = r.streamIterator();
@@ -191,7 +201,7 @@ test "Minidump debug" {
     }
 }
 
-test "Minidump read" {
+test "minidump read" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
