@@ -84,6 +84,19 @@ pub fn Reader(comptime Source: type) type {
             }
         };
 
+        /// Iterator type to read over the streams in the minidump file.
+        pub const StreamIterator = struct {
+            reader: *const Self,
+            i: u32 = 0,
+
+            pub fn next(self: *StreamIterator) !?StreamReader {
+                if (self.i >= self.reader.stream_count) return null;
+                const dir = try self.reader.directory(self.i);
+                self.i += 1;
+                return try self.reader.streamReader(dir);
+            }
+        };
+
         /// Initialize a reader. The source must remain available for the entire
         /// lifetime of the reader. The reader does not take ownership of the
         /// source so if it has resources that need to be cleaned up, the caller
@@ -96,6 +109,14 @@ pub fn Reader(comptime Source: type) type {
                 .stream_count = header.stream_count,
                 .stream_directory_rva = header.stream_directory_rva,
             };
+        }
+
+        /// Return an interator to read over the streams in the minidump file.
+        /// This is very similar to using a simple for loop to stream_count
+        /// and calling directory() on each index, but is more idiomatic
+        /// Zig.
+        pub fn streamIterator(self: *const Self) StreamIterator {
+            return .{ .reader = self };
         }
 
         /// Return a StreamReader for the given directory type. This streams
@@ -164,9 +185,9 @@ fn readHeader(comptime T: type, source: T) !struct {
 test "Minidump debug" {
     var fbs = std.io.fixedBufferStream(@embedFile("../testdata/macos.dmp"));
     const r = try Reader(*@TypeOf(fbs)).init(&fbs);
-    for (0..r.stream_count) |i| {
-        const dir = try r.directory(i);
-        log.warn("directory i={} dir={}", .{ i, dir });
+    var it = r.streamIterator();
+    while (try it.next()) |s| {
+        log.warn("directory i={} dir={}", .{ it.i - 1, s.directory });
     }
 }
 
