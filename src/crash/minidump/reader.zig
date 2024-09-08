@@ -111,7 +111,7 @@ pub fn Reader(comptime Source: type) type {
             };
         }
 
-        /// Return an interator to read over the streams in the minidump file.
+        /// Return an iterator to read over the streams in the minidump file.
         /// This is very similar to using a simple for loop to stream_count
         /// and calling directory() on each index, but is more idiomatic
         /// Zig.
@@ -122,7 +122,7 @@ pub fn Reader(comptime Source: type) type {
         /// Return a StreamReader for the given directory type. This streams
         /// from the underlying source so the returned reader is only valid
         /// as long as the source is unmodified (i.e. the source is not
-        /// closed, the source is not seeked, etc.).
+        /// closed, the source seek position is not moved, etc.).
         pub fn streamReader(
             self: *const Self,
             dir: external.Directory,
