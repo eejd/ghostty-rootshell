@@ -44,8 +44,7 @@ pub const MemoryDescriptor = extern struct {
 /// https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_thread_list
 pub const ThreadList = extern struct {
     number_of_threads: u32,
-
-    // This struct has a trailing array of `Thread` structs.
+    threads: [1]Thread,
 };
 
 /// https://learn.microsoft.com/en-us/windows/win32/api/minidumpapiset/ns-minidumpapiset-minidump_thread

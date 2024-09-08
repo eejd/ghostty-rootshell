@@ -13,6 +13,7 @@ const log = std.log.scoped(.minidump_reader);
 pub const ReadError = error{
     InvalidHeader,
     InvalidVersion,
+    StreamSizeMismatch,
 };
 
 /// Reader creates a new minidump reader for the given source type. The
@@ -55,6 +56,9 @@ pub fn Reader(comptime S: type) type {
 
         /// The source type for the reader.
         pub const Source = S;
+
+        /// The stream types for reading
+        pub const ThreadList = stream.thread_list.ThreadListReader(Self);
 
         /// The reader type for stream reading. This has some other methods so
         /// you must still call reader() on the result to get the actual
