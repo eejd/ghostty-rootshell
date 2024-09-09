@@ -89,6 +89,7 @@ pub fn ThreadListReader(comptime R: type) type {
 
 test "minidump: threadlist" {
     const testing = std.testing;
+    const alloc = testing.allocator;
 
     var fbs = std.io.fixedBufferStream(@embedFile("../testdata/macos.dmp"));
     const R = Reader(*@TypeOf(fbs));
@@ -107,5 +108,10 @@ test "minidump: threadlist" {
     for (0..v.count) |i| {
         const t = try v.thread(i);
         log.warn("thread i={} thread={}", .{ i, t });
+
+        // Read our stack memory
+        var stack_reader = try r.locationReader(t.stack.memory);
+        const bytes = try stack_reader.reader().readAllAlloc(alloc, t.stack.memory.data_size);
+        defer alloc.free(bytes);
     }
 }

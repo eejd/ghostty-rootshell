@@ -54,6 +54,9 @@ pub fn Reader(comptime S: type) type {
         const SourceReader = @typeInfo(@TypeOf(SourceCallable.reader)).Fn.return_type.?;
         const SourceSeeker = @typeInfo(@TypeOf(SourceCallable.seekableStream)).Fn.return_type.?;
 
+        /// A limited reader for reading data from the source.
+        pub const LimitedReader = std.io.LimitedReader(SourceReader);
+
         /// The source type for the reader.
         pub const Source = S;
 
@@ -72,7 +75,6 @@ pub fn Reader(comptime S: type) type {
             /// reader() is called.
             limit_reader: LimitedReader = undefined,
 
-            const LimitedReader = std.io.LimitedReader(SourceReader);
             pub const Reader = LimitedReader.Reader;
 
             /// Returns a Reader implementation that reads the bytes of the
@@ -163,6 +165,19 @@ pub fn Reader(comptime S: type) type {
                 external.Directory,
                 self.endian,
             );
+        }
+
+        /// Return a reader for the given location descriptor. This is only
+        /// valid until the reader source is modified in some way.
+        pub fn locationReader(
+            self: *const Self,
+            loc: external.LocationDescriptor,
+        ) !LimitedReader {
+            try self.source.seekableStream().seekTo(loc.rva);
+            return .{
+                .inner_reader = self.source.reader(),
+                .bytes_left = loc.data_size,
+            };
         }
     };
 }
