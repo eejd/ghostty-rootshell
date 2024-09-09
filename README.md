@@ -470,18 +470,18 @@ format is also publicly documented so any other available tools can also
 be used. A future version of Ghostty will show you the contents of the
 crash report directly in the terminal.
 
-If Ghostty crashed, you can help the project by attaching the crash report
-to a GitHub issue.
+If Ghostty crashed, you can help the project by sending the crash report
+to a maintainer. We do not recommend uploading crash reports directly
+to public locations such as GitHub Issues because they can contain
+sensitive information (see the warning below).
 
 > [!WARNING]
 >
-> The crash report can contain sensitive information. The report may contain
-> file paths (such as for stack traces), environment variables, and other
-> information. Please review the crash report before sharing it. We are working
-> to improve the crash report system to scrub some of this information. For
-> example, we have no interest in environment variables at all but
-> [Breakpad](https://chromium.googlesource.com/breakpad/breakpad)
-> automatically includes them.
+> The crash report can contain sensitive information. The report doesn't
+> purposely contain sensitive information, but it does contain the full
+> stack memory of each thread at the time of the crash. This information
+> is used to rebuild the stack trace but can also contain sensitive data
+> depending when the crash occurred.
 
 ## Developing Ghostty
 
