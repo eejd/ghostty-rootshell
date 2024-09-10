@@ -584,6 +584,28 @@ sudo apt install libgtk-4-dev libadwaita-1-dev git
 > There is an [open issue](https://gitlab.gnome.org/GNOME/gtk/-/issues/6589/note_2072039)
 > to track this GTK bug. You can workaround this issue by running ghostty with
 > `GDK_DEBUG=gl-disable-gles ghostty`
+>
+> However, that fix may not work for you if the GTK version Ghostty is compiled
+> against is too old, which mainly currently happens with development builds on NixOS.
+>
+> If your build of Ghostty immediately crashes after launch, try looking
+> through the debug output. If running `./zig-out/bin/ghostty 2>&1 | grep "Unrecognized value"`
+> result in the line `Unrecognized value "gl-disable-gles". Try GDK_DEBUG=help`,
+> then the GTK version used is too old.
+>
+> To fix this, you might need to manually tie the `nixpkgs-stable` inputs to your
+> system's `nixpkgs` in `flake.nix`:
+>
+> ```nix
+> {
+>   inputs = {
+>     # nixpkgs-stable.url = "github:nixos/nixpkgs/release-23.05";
+>
+>     # Assumes your system nixpkgs is called "nixpkgs"
+>     nixpkgs-stable.url = "nixpkgs";
+>   }
+> }
+> ```
 
 On Arch Linux, use
 
@@ -749,13 +771,20 @@ Below is an example:
 
     # NOTE: This will require your git SSH access to the repo.
     #
-    # WARNING: Do NOT pin the `nixpkgs` input, as that will
+    # WARNING:
+    # Do NOT pin the `nixpkgs` input, as that will
     # declare the cache useless. If you do, you will have
     # to compile LLVM, Zig and Ghostty itself on your machine,
     # which will take a very very long time.
-    ghostty = {
-      url = "git+ssh://git@github.com/ghostty-org/ghostty";
-    };
+    #
+    # Additionally, if you use NixOS, be sure to **NOT**
+    # run `nixos-rebuild` as root! Root has a different Git config
+    # that will ignore any SSH keys configured for the current user,
+    # denying access to the repository.
+    #
+    # Instead, either run `nix flake update` or `nixos-rebuild build`
+    # as the current user, and then run `sudo nixos-rebuild switch`.
+    ghostty.url = "git+ssh://git@github.com/ghostty-org/ghostty";
   };
 
   outputs = { nixpkgs, ghostty, ... }: {
