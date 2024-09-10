@@ -475,3 +475,23 @@ test "kittygfx more chunks with chunk increasing q" {
         try testing.expect(resp == null);
     }
 }
+
+test "kittygfx default format is rgba" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    const cmd = try command.Parser.parseString(
+        alloc,
+        "a=t,t=d,i=1,s=1,v=2,c=10,r=1;///////////",
+    );
+    defer cmd.deinit(alloc);
+    const resp = execute(alloc, &t, &cmd).?;
+    try testing.expect(resp.ok());
+
+    const storage = &t.screen.kitty_images;
+    const img = storage.imageById(1).?;
+    try testing.expectEqual(command.Transmission.Format.rgba, img.format);
+}

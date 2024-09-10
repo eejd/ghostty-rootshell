@@ -366,7 +366,7 @@ pub const Command = struct {
 };
 
 pub const Transmission = struct {
-    format: Format = .rgb, // f
+    format: Format = .rgba, // f
     medium: Medium = .direct, // t
     width: u32 = 0, // s
     height: u32 = 0, // v
