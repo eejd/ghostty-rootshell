@@ -595,6 +595,7 @@ sudo apt install libgtk-4-dev libadwaita-1-dev git
 >
 > To fix this, you might need to manually tie the `nixpkgs-stable` inputs to your
 > system's `nixpkgs` in `flake.nix`:
+>
 > ```nix
 > {
 >   inputs = {
@@ -604,6 +605,7 @@ sudo apt install libgtk-4-dev libadwaita-1-dev git
 >     nixpkgs-stable.url = "nixpkgs";
 >   }
 > }
+> ```
 
 On Arch Linux, use
 
