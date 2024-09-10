@@ -932,7 +932,7 @@ pub fn hasSelection(self: *const Surface) bool {
 }
 
 /// Returns the selected text. This is allocated.
-pub fn selectionString(self: *Surface, alloc: Allocator) !?[]const u8 {
+pub fn selectionString(self: *Surface, alloc: Allocator) !?[:0]const u8 {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const sel = self.io.terminal.screen.selection orelse return null;
