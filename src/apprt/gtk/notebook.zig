@@ -8,7 +8,7 @@ const adwaita = @import("adwaita.zig");
 
 const log = std.log.scoped(.gtk);
 
-const AdwTabView = if (adwaita.comptimeEnabled()) c.AdwTabView else anyopaque;
+const AdwTabView = if (adwaita.versionAtLeast(0, 0, 0)) c.AdwTabView else anyopaque;
 
 /// An abstraction over the GTK notebook and Adwaita tab view to manage
 /// all the terminal tabs in a window.
@@ -94,7 +94,7 @@ pub const Notebook = union(enum) {
     pub fn nPages(self: Notebook) c_int {
         return switch (self) {
             .gtk_notebook => |notebook| c.gtk_notebook_get_n_pages(notebook),
-            .adw_tab_view => |tab_view| if (comptime adwaita.comptimeEnabled())
+            .adw_tab_view => |tab_view| if (comptime adwaita.versionAtLeast(0, 0, 0))
                 c.adw_tab_view_get_n_pages(tab_view)
             else
                 unreachable,
@@ -104,7 +104,7 @@ pub const Notebook = union(enum) {
     pub fn currentPage(self: Notebook) c_int {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page = c.adw_tab_view_get_selected_page(tab_view);
                 return c.adw_tab_view_get_page_position(tab_view, page);
             },
@@ -116,7 +116,7 @@ pub const Notebook = union(enum) {
     pub fn currentTab(self: Notebook) ?*Tab {
         const child = switch (self) {
             .adw_tab_view => |tab_view| child: {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page = c.adw_tab_view_get_selected_page(tab_view) orelse return null;
                 const child = c.adw_tab_page_get_child(page);
                 break :child child;
@@ -136,7 +136,7 @@ pub const Notebook = union(enum) {
     pub fn gotoNthTab(self: Notebook, position: c_int) void {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page_to_select = c.adw_tab_view_get_nth_page(tab_view, position);
                 c.adw_tab_view_set_selected_page(tab_view, page_to_select);
             },
@@ -147,7 +147,7 @@ pub const Notebook = union(enum) {
     pub fn getTabPosition(self: Notebook, tab: *Tab) ?c_int {
         return switch (self) {
             .adw_tab_view => |tab_view| page_idx: {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box)) orelse return null;
                 break :page_idx c.adw_tab_view_get_page_position(tab_view, page);
             },
@@ -186,7 +186,7 @@ pub const Notebook = union(enum) {
     pub fn setTabLabel(self: Notebook, tab: *Tab, title: [:0]const u8) void {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box));
                 c.adw_tab_page_set_title(page, title.ptr);
             },
@@ -198,7 +198,7 @@ pub const Notebook = union(enum) {
         const box_widget: *c.GtkWidget = @ptrCast(tab.box);
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
 
                 const page = c.adw_tab_view_append(tab_view, box_widget);
                 c.adw_tab_page_set_title(page, title.ptr);
@@ -269,7 +269,7 @@ pub const Notebook = union(enum) {
         const window = tab.window;
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (comptime !adwaita.comptimeEnabled()) unreachable;
+                if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
 
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box)) orelse return;
                 c.adw_tab_view_close_page(tab_view, page);

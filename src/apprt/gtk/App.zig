@@ -149,7 +149,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         });
 
         // If not libadwaita, create a standard GTK application.
-        if ((comptime adwaita.comptimeEnabled()) and
+        if ((comptime adwaita.versionAtLeast(0, 0, 0)) and
             !adwaita.enabled(&config))
         {
             break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(

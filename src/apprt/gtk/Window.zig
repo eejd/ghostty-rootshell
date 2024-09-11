@@ -60,10 +60,10 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // Create the window
-    const adw_window = (comptime adwaita.comptimeEnabled()) and
+    const adw_window =
+        (comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&app.config) and
         app.config.@"gtk-titlebar" and
-        (comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.versionAtLeast(1, 4, 0);
     const window: *c.GtkWidget = if (adw_window)
         c.adw_application_window_new(app.app)
@@ -127,8 +127,7 @@ pub fn init(self: *Window, app: *App) !void {
     // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
         const warning_text = "⚠️ You're running a debug build of Ghostty! Performance will be degraded.";
-        if ((comptime adwaita.comptimeEnabled()) and
-            (comptime adwaita.versionAtLeast(1, 3, 0)) and
+        if ((comptime adwaita.versionAtLeast(1, 3, 0)) and
             adwaita.enabled(&app.config) and
             adwaita.versionAtLeast(1, 3, 0))
         {
@@ -161,8 +160,7 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if ((comptime adwaita.comptimeEnabled()) and
-        (comptime adwaita.versionAtLeast(1, 4, 0)) and
+    if ((comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&app.config) and
         adwaita.versionAtLeast(1, 4, 0) and
         app.config.@"gtk-titlebar" and
