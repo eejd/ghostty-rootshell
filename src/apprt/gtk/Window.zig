@@ -132,6 +132,7 @@ pub fn init(self: *Window, app: *App) !void {
             adwaita.versionAtLeast(1, 3, 0))
         {
             const banner = c.adw_banner_new(warning_text);
+            c.adw_banner_set_revealed(@ptrCast(banner), 1);
             c.gtk_box_append(@ptrCast(box), @ptrCast(banner));
         } else {
             const warning = c.gtk_label_new(warning_text);
