@@ -107,6 +107,18 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
+    // If we're using libadwaita, log the version
+    if ((comptime adwaita.versionAtLeast(0, 0, 0)) and
+        adwaita.enabled(&config))
+    {
+        log.info("libadwaita version build={s} runtime={}.{}.{}", .{
+            c.ADW_VERSION_S,
+            c.adw_get_major_version(),
+            c.adw_get_minor_version(),
+            c.adw_get_micro_version(),
+        });
+    }
+
     // The "none" cursor is used for hiding the cursor
     const cursor_none = c.gdk_cursor_new_from_name("none", null);
     errdefer if (cursor_none) |cursor| c.g_object_unref(cursor);
