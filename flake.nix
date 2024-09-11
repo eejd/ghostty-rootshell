@@ -7,7 +7,7 @@
     # We want to stay as up to date as possible but need to be careful that the
     # glibc versions used by our dependencies from Nix are compatible with the
     # system glibc that the user is building for.
-    nixpkgs-stable.url = "github:nixos/nixpkgs/release-23.05";
+    nixpkgs-stable.url = "github:nixos/nixpkgs/release-24.05";
 
     zig = {
       url = "github:mitchellh/zig-overlay";
@@ -38,7 +38,7 @@
 
       packages.${system} = let
         mkArgs = optimize: {
-          inherit (pkgs-unstable) zig_0_13 lib;
+          inherit (pkgs-unstable) zig_0_13;
           inherit optimize;
 
           revision = self.shortRev or self.dirtyShortRev or "dirty";
