@@ -1,50 +1,32 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const c = @import("c.zig").c;
-const build_options = @import("build_options");
 
-const Window = @import("./Window.zig");
-const Tab = @import("./Tab.zig");
+const Window = @import("Window.zig");
+const Tab = @import("Tab.zig");
+const adwaita = @import("adwaita.zig");
 
 const log = std.log.scoped(.gtk);
 
-const AdwTabView = if (build_options.libadwaita) c.AdwTabView else anyopaque;
+const AdwTabView = if (adwaita.comptimeEnabled()) c.AdwTabView else anyopaque;
 
+/// An abstraction over the GTK notebook and Adwaita tab view to manage
+/// all the terminal tabs in a window.
 pub const Notebook = union(enum) {
     adw_tab_view: *AdwTabView,
     gtk_notebook: *c.GtkNotebook,
 
     pub fn create(window: *Window, box: *c.GtkWidget) @This() {
         const app = window.app;
+        if (adwaita.enabled(&app.config)) return initAdw(window, box);
+        return initGtk(window, box);
+    }
 
-        const adwaita = build_options.libadwaita and app.config.@"gtk-adwaita";
-
-        if (adwaita) {
-            const tab_view = c.adw_tab_view_new().?;
-
-            c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_view)));
-            if (!window.app.config.@"gtk-titlebar" or c.ADW_MINOR_VERSION < 4) {
-                const tab_bar = c.adw_tab_bar_new();
-
-                switch (app.config.@"gtk-tabs-location") {
-                    // left and right is not supported in libadwaita.
-                    .top, .left, .right => c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
-                    .bottom => c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
-                }
-                c.adw_tab_bar_set_view(tab_bar, tab_view);
-
-                if (!window.app.config.@"gtk-wide-tabs")
-                    c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
-            }
-
-            _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
-            _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
-            _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
-
-            return .{ .adw_tab_view = tab_view };
-        }
+    fn initGtk(window: *Window, box: *c.GtkWidget) Notebook {
+        const app = window.app;
 
         // Create a notebook to hold our tabs.
-        const notebook_widget = c.gtk_notebook_new();
+        const notebook_widget: *c.GtkWidget = c.gtk_notebook_new();
         const notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
         const notebook_tab_pos: c_uint = switch (app.config.@"gtk-tabs-location") {
             .top => c.GTK_POS_TOP,
@@ -75,44 +57,74 @@ pub const Notebook = union(enum) {
         return .{ .gtk_notebook = notebook };
     }
 
-    pub fn asWidget(self: Notebook) *c.GtkWidget {
-        return switch (self) {
-            .adw_tab_view => |ptr| @ptrCast(@alignCast(ptr)),
-            .gtk_notebook => |ptr| @ptrCast(@alignCast(ptr)),
-        };
+    fn initAdw(window: *Window, box: *c.GtkWidget) Notebook {
+        const app = window.app;
+        assert(adwaita.enabled(&app.config));
+
+        const tab_view: *c.AdwTabView = c.adw_tab_view_new().?;
+        c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_view)));
+        if (comptime !adwaita.versionAtLeast(1, 4, 0) or
+            !adwaita.versionAtLeast(1, 4, 0) or
+            !app.config.@"gtk-titlebar")
+        {
+            const tab_bar: *c.AdwTabBar = c.adw_tab_bar_new().?;
+            switch (app.config.@"gtk-tabs-location") {
+                // left and right is not supported in libadwaita.
+                .top,
+                .left,
+                .right,
+                => c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+
+                .bottom => c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+            }
+            c.adw_tab_bar_set_view(tab_bar, tab_view);
+
+            if (!app.config.@"gtk-wide-tabs") {
+                c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+            }
+        }
+
+        _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
+        _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
+
+        return .{ .adw_tab_view = tab_view };
     }
 
     pub fn nPages(self: Notebook) c_int {
         return switch (self) {
-            .adw_tab_view => |tab_view| if (build_options.libadwaita) c.adw_tab_view_get_n_pages(tab_view) else unreachable,
             .gtk_notebook => |notebook| c.gtk_notebook_get_n_pages(notebook),
+            .adw_tab_view => |tab_view| if (comptime adwaita.comptimeEnabled())
+                c.adw_tab_view_get_n_pages(tab_view)
+            else
+                unreachable,
         };
     }
 
     pub fn currentPage(self: Notebook) c_int {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
                 const page = c.adw_tab_view_get_selected_page(tab_view);
                 return c.adw_tab_view_get_page_position(tab_view, page);
             },
+
             .gtk_notebook => |notebook| return c.gtk_notebook_get_current_page(notebook),
         }
     }
 
     pub fn currentTab(self: Notebook) ?*Tab {
-        log.info("self = {}", .{self});
         const child = switch (self) {
             .adw_tab_view => |tab_view| child: {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
                 const page = c.adw_tab_view_get_selected_page(tab_view) orelse return null;
                 const child = c.adw_tab_page_get_child(page);
                 break :child child;
             },
+
             .gtk_notebook => |notebook| child: {
                 const page = self.currentPage();
                 if (page == -1) return null;
-                log.info("currentPage_page_idx = {}", .{page});
                 break :child c.gtk_notebook_get_nth_page(notebook, page);
             },
         };
@@ -124,7 +136,7 @@ pub const Notebook = union(enum) {
     pub fn gotoNthTab(self: Notebook, position: c_int) void {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
                 const page_to_select = c.adw_tab_view_get_nth_page(tab_view, position);
                 c.adw_tab_view_set_selected_page(tab_view, page_to_select);
             },
@@ -135,7 +147,7 @@ pub const Notebook = union(enum) {
     pub fn getTabPosition(self: Notebook, tab: *Tab) ?c_int {
         return switch (self) {
             .adw_tab_view => |tab_view| page_idx: {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box)) orelse return null;
                 break :page_idx c.adw_tab_view_get_page_position(tab_view, page);
             },
@@ -174,7 +186,7 @@ pub const Notebook = union(enum) {
     pub fn setTabLabel(self: Notebook, tab: *Tab, title: [:0]const u8) void {
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box));
                 c.adw_tab_page_set_title(page, title.ptr);
             },
@@ -186,7 +198,7 @@ pub const Notebook = union(enum) {
         const box_widget: *c.GtkWidget = @ptrCast(tab.box);
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
 
                 const page = c.adw_tab_view_append(tab_view, box_widget);
                 c.adw_tab_page_set_title(page, title.ptr);
@@ -257,7 +269,7 @@ pub const Notebook = union(enum) {
         const window = tab.window;
         switch (self) {
             .adw_tab_view => |tab_view| {
-                if (!build_options.libadwaita) unreachable;
+                if (comptime !adwaita.comptimeEnabled()) unreachable;
 
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box)) orelse return;
                 c.adw_tab_view_close_page(tab_view, page);

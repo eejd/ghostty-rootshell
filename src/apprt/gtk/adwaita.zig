@@ -3,6 +3,11 @@ const c = @import("c.zig").c;
 const build_options = @import("build_options");
 const Config = @import("../../config.zig").Config;
 
+/// Returns true if Ghostty is configured to build with libadwaita.
+pub fn comptimeEnabled() bool {
+    return build_options.libadwaita;
+}
+
 /// Returns true if Ghostty is configured to build with libadwaita and
 /// the configuration has enabled adwaita.
 pub fn enabled(config: *const Config) bool {

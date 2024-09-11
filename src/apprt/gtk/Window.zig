@@ -8,7 +8,6 @@ const Window = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("../../build_config.zig");
-const build_options = @import("build_options");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const configpkg = @import("../../config.zig");
@@ -61,9 +60,10 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // Create the window
-    const adw_window = adwaita.enabled(&app.config) and
+    const adw_window = (comptime adwaita.comptimeEnabled()) and
+        adwaita.enabled(&app.config) and
         app.config.@"gtk-titlebar" and
-        comptime adwaita.versionAtLeast(1, 4, 0) and
+        (comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.versionAtLeast(1, 4, 0);
     const window: *c.GtkWidget = if (adw_window)
         c.adw_application_window_new(app.app)
@@ -127,8 +127,9 @@ pub fn init(self: *Window, app: *App) !void {
     // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
         const warning_text = "⚠️ You're running a debug build of Ghostty! Performance will be degraded.";
-        if (adwaita.enabled(&app.config) and
-            comptime adwaita.versionAtLeast(1, 3, 0) and
+        if ((comptime adwaita.comptimeEnabled()) and
+            (comptime adwaita.versionAtLeast(1, 3, 0)) and
+            adwaita.enabled(&app.config) and
             adwaita.versionAtLeast(1, 3, 0))
         {
             const banner = c.adw_banner_new(warning_text);
@@ -160,11 +161,12 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if (adwaita.enabled(&app.config) and
+    if ((comptime adwaita.comptimeEnabled()) and
+        (comptime adwaita.versionAtLeast(1, 4, 0)) and
+        adwaita.enabled(&app.config) and
+        adwaita.versionAtLeast(1, 4, 0) and
         app.config.@"gtk-titlebar" and
-        header != null and
-        comptime adwaita.versionAtLeast(1, 4, 0) and
-        adwaita.versionAtLeast(1, 4, 0))
+        header != null)
     {
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 

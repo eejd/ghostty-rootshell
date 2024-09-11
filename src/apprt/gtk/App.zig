@@ -21,8 +21,7 @@ const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
 
-const build_options = @import("build_options");
-
+const adwaita = @import("adwaita.zig");
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
@@ -143,8 +142,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
 
     // Create our GTK Application which encapsulates our process.
     const app: *c.GtkApplication = app: {
-        const adwaita = build_options.libadwaita and config.@"gtk-adwaita";
-
         log.debug("creating GTK application id={s} single-instance={} adwaita={}", .{
             app_id,
             single_instance,
@@ -152,10 +149,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         });
 
         // If not libadwaita, create a standard GTK application.
-        if (!adwaita) break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-            app_id.ptr,
-            app_flags,
-        ))) orelse return error.GtkInitFailed;
+        if ((comptime adwaita.comptimeEnabled()) and
+            !adwaita.enabled(&config))
+        {
+            break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
+                app_id.ptr,
+                app_flags,
+            ))) orelse return error.GtkInitFailed;
+        }
 
         // Use libadwaita if requested. Using an AdwApplication lets us use
         // Adwaita widgets and access things such as the color scheme.
