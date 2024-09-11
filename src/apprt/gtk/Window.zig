@@ -183,6 +183,14 @@ pub fn init(self: *Window, app: *App) !void {
         }
         c.adw_toolbar_view_set_content(toolbar_view, box);
 
+        const toolbar_style: c.AdwToolbarStyle = switch (self.app.config.@"adw-toolbar-style") {
+            .flat => c.ADW_TOOLBAR_FLAT,
+            .raised => c.ADW_TOOLBAR_RAISED,
+            .@"raised-border" => c.ADW_TOOLBAR_RAISED_BORDER,
+        };
+        c.adw_toolbar_view_set_top_bar_style(toolbar_view, toolbar_style);
+        c.adw_toolbar_view_set_bottom_bar_style(toolbar_view, toolbar_style);
+
         c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
     } else {
         // The box is our main child

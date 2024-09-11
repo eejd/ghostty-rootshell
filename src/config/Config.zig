@@ -1426,6 +1426,12 @@ keybind: Keybinds = .{},
 /// back to `top`.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
+/// Determines the appearance of the top and bottom bars when using the adwaita tab bar.
+/// If set to `flat`, top and bottom bars are flat with the terminal window.
+/// If set to `raised`, top and bottom bars cast a shadow on the terminal area.
+/// `raised-border` is similar to `raised` but the shadow is replaced with a more subtle border.
+@"adw-toolbar-style": AdwToolBarStyle = .raised,
+
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
 /// If you set this to `false` then tabs will only take up space they need,
@@ -4062,6 +4068,13 @@ pub const GtkTabsLocation = enum {
     bottom,
     left,
     right,
+};
+
+/// See adw-toolbar-style
+pub const AdwToolBarStyle = enum {
+    flat,
+    raised,
+    @"raised-border",
 };
 
 /// See mouse-shift-capture
