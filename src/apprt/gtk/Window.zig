@@ -21,6 +21,7 @@ const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
+const adwaita = @import("adwaita.zig");
 const Notebook = @import("./notebook.zig").Notebook;
 
 const log = std.log.scoped(.gtk);
@@ -59,10 +60,11 @@ pub fn init(self: *Window, app: *App) !void {
         .context_menu = undefined,
     };
 
-    const adwaita = build_options.libadwaita and app.config.@"gtk-adwaita";
-
     // Create the window
-    const adw_window = adwaita and app.config.@"gtk-titlebar" and c.ADW_MINOR_VERSION >= 4;
+    const adw_window = adwaita.enabled(&app.config) and
+        app.config.@"gtk-titlebar" and
+        comptime adwaita.versionAtLeast(1, 4, 0) and
+        adwaita.versionAtLeast(1, 4, 0);
     const window: *c.GtkWidget = if (adw_window)
         c.adw_application_window_new(app.app)
     else
@@ -125,7 +127,10 @@ pub fn init(self: *Window, app: *App) !void {
     // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
         const warning_text = "⚠️ You're running a debug build of Ghostty! Performance will be degraded.";
-        if (adwaita and c.ADW_MINOR_VERSION >= 3) {
+        if (adwaita.enabled(&app.config) and
+            comptime adwaita.versionAtLeast(1, 3, 0) and
+            adwaita.versionAtLeast(1, 3, 0))
+        {
             const banner = c.adw_banner_new(warning_text);
             c.gtk_box_append(@ptrCast(box), @ptrCast(banner));
         } else {
@@ -155,7 +160,12 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if (build_options.libadwaita and app.config.@"gtk-adwaita" and app.config.@"gtk-titlebar" and header != null and c.ADW_MINOR_VERSION >= 4) {
+    if (adwaita.enabled(&app.config) and
+        app.config.@"gtk-titlebar" and
+        header != null and
+        comptime adwaita.versionAtLeast(1, 4, 0) and
+        adwaita.versionAtLeast(1, 4, 0))
+    {
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
         const header_widget: *c.GtkWidget = @ptrCast(@alignCast(header.?));
