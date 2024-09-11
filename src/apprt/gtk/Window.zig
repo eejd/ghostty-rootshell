@@ -138,7 +138,6 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     self.notebook = Notebook.create(self, box);
-    c.gtk_box_append(@ptrCast(box), self.notebook.as_widget());
 
     self.context_menu = c.gtk_popover_menu_new_from_model(@ptrCast(@alignCast(self.app.context_menu)));
     c.gtk_widget_set_parent(self.context_menu, window);
@@ -158,14 +157,20 @@ pub fn init(self: *Window, app: *App) !void {
 
     if (build_options.libadwaita and app.config.@"gtk-adwaita" and app.config.@"gtk-titlebar" and header != null and c.ADW_MINOR_VERSION >= 4) {
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
-        c.adw_toolbar_view_add_top_bar(toolbar_view, @ptrCast(@alignCast(header.?)));
 
+        const header_widget: *c.GtkWidget = @ptrCast(@alignCast(header.?));
+        c.adw_toolbar_view_add_top_bar(toolbar_view, header_widget);
         const tab_bar = c.adw_tab_bar_new();
         c.adw_tab_bar_set_view(tab_bar, self.notebook.adw_tab_view);
 
         if (!app.config.@"gtk-wide-tabs") c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
 
-        c.adw_toolbar_view_add_top_bar(toolbar_view, @ptrCast(@alignCast(tab_bar)));
+        const tab_bar_widget: *c.GtkWidget = @ptrCast(@alignCast(tab_bar));
+        switch (self.app.config.@"gtk-tabs-location") {
+            // left and right is not supported in libadwaita.
+            .top, .left, .right => c.adw_toolbar_view_add_top_bar(toolbar_view, tab_bar_widget),
+            .bottom => c.adw_toolbar_view_add_bottom_bar(toolbar_view, tab_bar_widget),
+        }
         c.adw_toolbar_view_set_content(toolbar_view, box);
 
         c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
@@ -258,7 +263,7 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
 
 /// Go to the next tab for a surface.
 pub fn gotoLastTab(self: *Window) void {
-    const max = self.notebook.nPages()  -| 1;
+    const max = self.notebook.nPages() -| 1;
     self.gotoTab(@intCast(max));
 }
 

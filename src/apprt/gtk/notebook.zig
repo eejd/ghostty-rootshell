@@ -19,11 +19,17 @@ pub const Notebook = union(enum) {
         const adwaita = build_options.libadwaita and app.config.@"gtk-adwaita";
 
         if (adwaita) {
-            const tab_view = c.adw_tab_view_new();
+            const tab_view = c.adw_tab_view_new().?;
 
+            c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_view)));
             if (!window.app.config.@"gtk-titlebar" or c.ADW_MINOR_VERSION < 4) {
                 const tab_bar = c.adw_tab_bar_new();
-                c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar)));
+
+                switch (app.config.@"gtk-tabs-location") {
+                    // left and right is not supported in libadwaita.
+                    .top, .left, .right => c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+                    .bottom => c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+                }
                 c.adw_tab_bar_set_view(tab_bar, tab_view);
 
                 if (!window.app.config.@"gtk-wide-tabs")
@@ -34,7 +40,7 @@ pub const Notebook = union(enum) {
             _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
             _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
 
-            return .{ .adw_tab_view = tab_view.? };
+            return .{ .adw_tab_view = tab_view };
         }
 
         // Create a notebook to hold our tabs.
@@ -59,19 +65,17 @@ pub const Notebook = union(enum) {
         c.gtk_widget_set_vexpand(notebook_widget, 1);
         c.gtk_widget_set_hexpand(notebook_widget, 1);
 
-        // If we are in fullscreen mode, new windows start fullscreen.
-        if (app.config.fullscreen) c.gtk_window_fullscreen(window.window);
-
         // All of our events
         _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), window, null, c.G_CONNECT_DEFAULT);
 
+        c.gtk_box_append(@ptrCast(box), notebook_widget);
         return .{ .gtk_notebook = notebook };
     }
 
-    pub fn as_widget(self: Notebook) *c.GtkWidget {
+    pub fn asWidget(self: Notebook) *c.GtkWidget {
         return switch (self) {
             .adw_tab_view => |ptr| @ptrCast(@alignCast(ptr)),
             .gtk_notebook => |ptr| @ptrCast(@alignCast(ptr)),
