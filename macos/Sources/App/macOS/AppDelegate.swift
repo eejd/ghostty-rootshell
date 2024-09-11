@@ -75,6 +75,9 @@ class AppDelegate: NSObject,
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
+            // Important: we must not start the updater here because we need to read our configuration
+            // first to determine whether we're automatically checking, downloading, etc. The updater
+            // is started later in applicationDidFinishLaunching
             startingUpdater: false,
             updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
