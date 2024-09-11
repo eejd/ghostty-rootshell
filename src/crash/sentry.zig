@@ -253,12 +253,12 @@ pub const Transport = struct {
 
         // Get our XDG state directory where we'll store the crash reports.
         // This directory must exist for writing to work.
-        const crash_dir = try internal_os.xdg.state(alloc, .{ .subdir = "ghostty/crash" });
-        try std.fs.cwd().makePath(crash_dir);
+        const dir = try crash.defaultDir(alloc);
+        try std.fs.cwd().makePath(dir.path);
 
         // Build our final path and write to it.
         const path = try std.fs.path.join(alloc, &.{
-            crash_dir,
+            dir.path,
             try std.fmt.allocPrint(alloc, "{s}.ghosttycrash", .{uuid.string()}),
         });
         const file = try std.fs.cwd().createFile(path, .{});
