@@ -132,6 +132,7 @@ pub fn init(self: *Window, app: *App) !void {
             adwaita.versionAtLeast(1, 3, 0))
         {
             const banner = c.adw_banner_new(warning_text);
+            c.adw_banner_set_revealed(@ptrCast(banner), 1);
             c.gtk_box_append(@ptrCast(box), @ptrCast(banner));
         } else {
             const warning = c.gtk_label_new(warning_text);
@@ -182,6 +183,14 @@ pub fn init(self: *Window, app: *App) !void {
             .bottom => c.adw_toolbar_view_add_bottom_bar(toolbar_view, tab_bar_widget),
         }
         c.adw_toolbar_view_set_content(toolbar_view, box);
+
+        const toolbar_style: c.AdwToolbarStyle = switch (self.app.config.@"adw-toolbar-style") {
+            .flat => c.ADW_TOOLBAR_FLAT,
+            .raised => c.ADW_TOOLBAR_RAISED,
+            .@"raised-border" => c.ADW_TOOLBAR_RAISED_BORDER,
+        };
+        c.adw_toolbar_view_set_top_bar_style(toolbar_view, toolbar_style);
+        c.adw_toolbar_view_set_bottom_bar_style(toolbar_view, toolbar_style);
 
         c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
     } else {
