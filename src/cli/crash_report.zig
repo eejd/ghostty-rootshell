@@ -1,16 +1,11 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 const Config = @import("../config.zig").Config;
-const sentry = @import("../crash/sentry.zig");
+const crash = @import("../crash/main.zig");
 
 pub const Options = struct {
-    /// View the crash report locally (unimplemented).
-    view: ?[:0]const u8 = null,
-
-    /// Send the crash report to the Ghostty community (unimplemented).
-    send: ?[:0]const u8 = null,
-
     pub fn deinit(self: Options) void {
         _ = self;
     }
@@ -22,14 +17,18 @@ pub const Options = struct {
     }
 };
 
-/// The `crash-report command is used to list/view/send crash reports.
+/// The `crash-report` command is used to inspect and send crash reports.
 ///
-/// When executed without any arguments, this will list any existing crash reports.
+/// When executed without any arguments, this will list existing crash reports.
 ///
-/// The `--view` argument can be used to inspect a particular crash report.
-///
-/// The `--send` argument can be used to send a crash report to the Ghostty community.
-pub fn run(alloc: std.mem.Allocator) !u8 {
+/// This command currently only supports listing crash reports. Viewing
+/// and sending crash reports is unimplemented and will be added in the future.
+pub fn run(alloc_gpa: Allocator) !u8 {
+    // Use an arena for the whole command to avoid manual memory management.
+    var arena = std.heap.ArenaAllocator.init(alloc_gpa);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
     var opts: Options = .{};
     defer opts.deinit();
 
@@ -39,47 +38,43 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
         try args.parse(Options, alloc, &opts, &iter);
     }
 
-    const stdout = std.io.getStdOut().writer();
+    const crash_dir = try crash.defaultDir(alloc);
+    var reports = std.ArrayList(crash.Report).init(alloc);
 
-    if (opts.view) |_| {
-        try stdout.writeAll("viewing crash reports is unimplemented\n");
-        return 1;
+    var it = try crash_dir.iterator();
+    while (try it.next()) |report| try reports.append(.{
+        .name = try alloc.dupe(u8, report.name),
+        .mtime = report.mtime,
+    });
+
+    const stdout = std.io.getStdOut();
+
+    // If we have no reports, then we're done. If we have a tty then we
+    // print a message, otherwise we do nothing.
+    if (reports.items.len == 0) {
+        if (std.posix.isatty(stdout.handle)) {
+            try stdout.writeAll("No crash reports! 👻");
+        }
+        return 0;
     }
 
-    if (opts.send) |_| {
-        try stdout.writeAll("sending crash reports is unimplemented\n");
-        return 1;
-    }
+    std.mem.sort(crash.Report, reports.items, {}, lt);
 
-    if (try sentry.listCrashReports(alloc)) |reports| {
-        defer {
-            for (reports) |report| {
-                alloc.free(report.name);
-            }
-            alloc.free(reports);
-        }
-
-        std.mem.sort(sentry.CrashReport, reports, {}, lt);
-        try stdout.print("\n       {d:} crash reports!\n\n", .{reports.len});
-
-        for (reports, 0..) |report, count| {
-            var buf: [128]u8 = undefined;
-            const now = std.time.nanoTimestamp();
-            const diff = now - report.mtime;
-            const since = if (diff < 0) "now" else s: {
-                const d = Config.Duration{ .duration = @intCast(diff) };
-                break :s try std.fmt.bufPrint(&buf, "{s} ago", .{d.round(std.time.ns_per_s)});
-            };
-            try stdout.print("{d: >4} — {s} ({s})\n", .{ count, report.name, since });
-        }
-        try stdout.writeAll("\n");
-    } else {
-        try stdout.writeAll("\n       No crash reports! 👻\n\n");
+    const writer = stdout.writer();
+    for (reports.items) |report| {
+        var buf: [128]u8 = undefined;
+        const now = std.time.nanoTimestamp();
+        const diff = now - report.mtime;
+        const since = if (diff <= 0) "now" else s: {
+            const d = Config.Duration{ .duration = @intCast(diff) };
+            break :s try std.fmt.bufPrint(&buf, "{s} ago", .{d.round(std.time.ns_per_s)});
+        };
+        try writer.print("{s} ({s})\n", .{ report.name, since });
     }
 
     return 0;
 }
 
-fn lt(_: void, lhs: sentry.CrashReport, rhs: sentry.CrashReport) bool {
+fn lt(_: void, lhs: crash.Report, rhs: crash.Report) bool {
     return lhs.mtime > rhs.mtime;
 }

@@ -8,6 +8,7 @@ const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
 const vaxis = @import("vaxis");
 const input = @import("../input.zig");
+const tui = @import("tui.zig");
 const Binding = input.Binding;
 
 pub const Options = struct {
@@ -61,12 +62,8 @@ pub fn run(alloc: Allocator) !u8 {
 
     const stdout = std.io.getStdOut();
 
-    const can_pretty_print = switch (builtin.os.tag) {
-        .ios, .tvos, .watchos => false,
-        else => true,
-    };
     // Despite being under the posix namespace, this also works on Windows as of zig 0.13.0
-    if (can_pretty_print and !opts.plain and std.posix.isatty(stdout.handle)) {
+    if (tui.can_pretty_print and !opts.plain and std.posix.isatty(stdout.handle)) {
         return prettyPrint(alloc, config.keybind);
     } else {
         try config.keybind.formatEntryDocs(
