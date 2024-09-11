@@ -63,7 +63,7 @@ pub const Notebook = union(enum) {
 
         const tab_view: *c.AdwTabView = c.adw_tab_view_new().?;
         c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_view)));
-        if (comptime !adwaita.versionAtLeast(1, 4, 0) or
+        if ((comptime !adwaita.versionAtLeast(1, 4, 0)) or
             !adwaita.versionAtLeast(1, 4, 0) or
             !app.config.@"gtk-titlebar")
         {
