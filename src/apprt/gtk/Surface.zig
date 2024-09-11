@@ -894,7 +894,7 @@ fn updateTitleLabels(self: *Surface) void {
 
     // If we have a tab and are the focused child, then we have to update the tab
     if (self.container.tab()) |tab| {
-        if (tab.focus_child == self) c.gtk_label_set_text(tab.label_text, title.ptr);
+        if (tab.focus_child == self) tab.setLabelText(title);
     }
 
     // If we have a window and are focused, then we have to update the window title.

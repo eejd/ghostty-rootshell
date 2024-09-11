@@ -20,6 +20,8 @@ const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
+const adwaita = @import("adwaita.zig");
+const Notebook = @import("./notebook.zig").Notebook;
 
 const log = std.log.scoped(.gtk);
 
@@ -29,7 +31,8 @@ app: *App,
 window: *c.GtkWindow,
 
 /// The notebook (tab grouping) for this window.
-notebook: *c.GtkNotebook,
+/// can be either c.GtkNotebook or c.AdwTabView.
+notebook: Notebook,
 
 context_menu: *c.GtkWidget,
 
@@ -57,9 +60,18 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // Create the window
-    const window = c.gtk_application_window_new(app.app);
+    const adw_window =
+        (comptime adwaita.versionAtLeast(1, 4, 0)) and
+        adwaita.enabled(&app.config) and
+        app.config.@"gtk-titlebar" and
+        adwaita.versionAtLeast(1, 4, 0);
+    const window: *c.GtkWidget = if (adw_window)
+        c.adw_application_window_new(app.app)
+    else
+        c.gtk_application_window_new(app.app);
+
     const gtk_window: *c.GtkWindow = @ptrCast(window);
-    errdefer c.gtk_window_destroy(gtk_window);
+    errdefer if (adw_window) c.adw_application_window_destroy(window) else c.gtk_application_window_destroy(gtk_window);
     self.window = gtk_window;
     c.gtk_window_set_title(gtk_window, "Ghostty");
     c.gtk_window_set_default_size(gtk_window, 1000, 600);
@@ -75,6 +87,8 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
+    var header: ?*c.GtkHeaderBar = null;
+
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
     const display = c.gdk_display_get_default();
@@ -85,8 +99,7 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header = c.gtk_header_bar_new();
-        c.gtk_window_set_titlebar(gtk_window, header);
+        header = @ptrCast(c.gtk_header_bar_new());
         {
             const btn = c.gtk_menu_button_new();
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
@@ -107,41 +120,29 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_window_set_decorated(gtk_window, 0);
     }
 
-    // Create a notebook to hold our tabs.
-    const notebook_widget = c.gtk_notebook_new();
-    const notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
-    self.notebook = notebook;
-    const notebook_tab_pos: c_uint = switch (app.config.@"gtk-tabs-location") {
-        .top => c.GTK_POS_TOP,
-        .bottom => c.GTK_POS_BOTTOM,
-        .left => c.GTK_POS_LEFT,
-        .right => c.GTK_POS_RIGHT,
-    };
-    c.gtk_notebook_set_tab_pos(notebook, notebook_tab_pos);
-    c.gtk_notebook_set_scrollable(notebook, 1);
-    c.gtk_notebook_set_show_tabs(notebook, 0);
-    c.gtk_notebook_set_show_border(notebook, 0);
-
-    // This enables all Ghostty terminal tabs to be exchanged across windows.
-    c.gtk_notebook_set_group_name(notebook, "ghostty-terminal-tabs");
-
-    // This is important so the notebook expands to fit available space.
-    // Otherwise, it will be zero/zero in the box below.
-    c.gtk_widget_set_vexpand(notebook_widget, 1);
-    c.gtk_widget_set_hexpand(notebook_widget, 1);
-
     // Create our box which will hold our widgets.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
-    // In debug we show a warning. This is a really common issue where
-    // people build from source in debug and performance is really bad.
+    // In debug we show a warning and apply the 'devel' class to the window.
+    // This is a really common issue where people build from source in debug and performance is really bad.
     if (comptime std.debug.runtime_safety) {
-        const warning = c.gtk_label_new("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
-        c.gtk_widget_set_margin_top(warning, 10);
-        c.gtk_widget_set_margin_bottom(warning, 10);
-        c.gtk_box_append(@ptrCast(box), warning);
+        const warning_text = "⚠️ You're running a debug build of Ghostty! Performance will be degraded.";
+        if ((comptime adwaita.versionAtLeast(1, 3, 0)) and
+            adwaita.enabled(&app.config) and
+            adwaita.versionAtLeast(1, 3, 0))
+        {
+            const banner = c.adw_banner_new(warning_text);
+            c.gtk_box_append(@ptrCast(box), @ptrCast(banner));
+        } else {
+            const warning = c.gtk_label_new(warning_text);
+            c.gtk_widget_set_margin_top(warning, 10);
+            c.gtk_widget_set_margin_bottom(warning, 10);
+            c.gtk_box_append(@ptrCast(box), warning);
+        }
+        c.gtk_widget_add_css_class(@ptrCast(gtk_window), "devel");
     }
-    c.gtk_box_append(@ptrCast(box), notebook_widget);
+
+    self.notebook = Notebook.create(self, box);
 
     self.context_menu = c.gtk_popover_menu_new_from_model(@ptrCast(@alignCast(self.app.context_menu)));
     c.gtk_widget_set_parent(self.context_menu, window);
@@ -155,16 +156,39 @@ pub fn init(self: *Window, app: *App) !void {
     _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), self, null, c.G_CONNECT_DEFAULT);
-    _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), self, null, c.G_CONNECT_DEFAULT);
 
     // Our actions for the menu
     initActions(self);
 
-    // The box is our main child
-    c.gtk_window_set_child(gtk_window, box);
+    if ((comptime adwaita.versionAtLeast(1, 4, 0)) and
+        adwaita.enabled(&app.config) and
+        adwaita.versionAtLeast(1, 4, 0) and
+        app.config.@"gtk-titlebar" and
+        header != null)
+    {
+        const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
+
+        const header_widget: *c.GtkWidget = @ptrCast(@alignCast(header.?));
+        c.adw_toolbar_view_add_top_bar(toolbar_view, header_widget);
+        const tab_bar = c.adw_tab_bar_new();
+        c.adw_tab_bar_set_view(tab_bar, self.notebook.adw_tab_view);
+
+        if (!app.config.@"gtk-wide-tabs") c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+
+        const tab_bar_widget: *c.GtkWidget = @ptrCast(@alignCast(tab_bar));
+        switch (self.app.config.@"gtk-tabs-location") {
+            // left and right is not supported in libadwaita.
+            .top, .left, .right => c.adw_toolbar_view_add_top_bar(toolbar_view, tab_bar_widget),
+            .bottom => c.adw_toolbar_view_add_bottom_bar(toolbar_view, tab_bar_widget),
+        }
+        c.adw_toolbar_view_set_content(toolbar_view, box);
+
+        c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
+    } else {
+        // The box is our main child
+        c.gtk_window_set_child(gtk_window, box);
+        if (header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
+    }
 
     // Show the window
     c.gtk_widget_show(window);
@@ -219,33 +243,12 @@ pub fn newTab(self: *Window, parent: ?*CoreSurface) !void {
 /// Close the tab for the given notebook page. This will automatically
 /// handle closing the window if there are no more tabs.
 pub fn closeTab(self: *Window, tab: *Tab) void {
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
-
-    // Find page and tab which we're closing
-    const page_idx = getNotebookPageIndex(page);
-
-    // Remove the page. This will destroy the GTK widgets in the page which
-    // will trigger Tab cleanup.
-    c.gtk_notebook_remove_page(self.notebook, page_idx);
-
-    const remaining = c.gtk_notebook_get_n_pages(self.notebook);
-    switch (remaining) {
-        // If we have no more tabs we close the window
-        0 => c.gtk_window_destroy(self.window),
-
-        // If we have one more tab we hide the tab bar
-        1 => c.gtk_notebook_set_show_tabs(self.notebook, 0),
-
-        else => {},
-    }
-
-    // If we have remaining tabs, we need to make sure we grab focus.
-    if (remaining > 0) self.focusCurrentTab();
+    self.notebook.closeTab(tab);
 }
 
 /// Returns true if this window has any tabs.
 pub fn hasTabs(self: *const Window) bool {
-    return c.gtk_notebook_get_n_pages(self.notebook) > 1;
+    return self.notebook.nPages() > 0;
 }
 
 /// Go to the previous tab for a surface.
@@ -254,20 +257,7 @@ pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
         return;
     };
-
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
-    const page_idx = getNotebookPageIndex(page);
-
-    // The next index is the previous or we wrap around.
-    const next_idx = if (page_idx > 0) page_idx - 1 else next_idx: {
-        const max = c.gtk_notebook_get_n_pages(self.notebook);
-        break :next_idx max -| 1;
-    };
-
-    // Do nothing if we have one tab
-    if (next_idx == page_idx) return;
-
-    c.gtk_notebook_set_current_page(self.notebook, next_idx);
+    self.notebook.gotoPreviousTab(tab);
     self.focusCurrentTab();
 }
 
@@ -277,31 +267,23 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
         return;
     };
-
-    const page = c.gtk_notebook_get_page(self.notebook, @ptrCast(tab.box)) orelse return;
-    const page_idx = getNotebookPageIndex(page);
-    const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
-    const next_idx = if (page_idx < max) page_idx + 1 else 0;
-    if (next_idx == page_idx) return;
-
-    c.gtk_notebook_set_current_page(self.notebook, next_idx);
+    self.notebook.gotoNextTab(tab);
     self.focusCurrentTab();
 }
 
 /// Go to the next tab for a surface.
 pub fn gotoLastTab(self: *Window) void {
-    const max = c.gtk_notebook_get_n_pages(self.notebook) -| 1;
-    c.gtk_notebook_set_current_page(self.notebook, max);
-    self.focusCurrentTab();
+    const max = self.notebook.nPages() -| 1;
+    self.gotoTab(@intCast(max));
 }
 
 /// Go to the specific tab index.
 pub fn gotoTab(self: *Window, n: usize) void {
     if (n == 0) return;
-    const max = c.gtk_notebook_get_n_pages(self.notebook);
+    const max = self.notebook.nPages();
     const page_idx = std.math.cast(c_int, n - 1) orelse return;
     if (page_idx < max) {
-        c.gtk_notebook_set_current_page(self.notebook, page_idx);
+        self.notebook.gotoNthTab(page_idx);
         self.focusCurrentTab();
     }
 }
@@ -326,12 +308,8 @@ pub fn toggleWindowDecorations(self: *Window) void {
 }
 
 /// Grabs focus on the currently selected tab.
-fn focusCurrentTab(self: *Window) void {
-    const page_idx = c.gtk_notebook_get_current_page(self.notebook);
-    const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return,
-    ));
+pub fn focusCurrentTab(self: *Window) void {
+    const tab = self.notebook.currentTab() orelse return;
     const gl_area = @as(*c.GtkWidget, @ptrCast(tab.focus_child.gl_area));
     _ = c.gtk_widget_grab_focus(gl_area);
 }
@@ -345,79 +323,6 @@ fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
-}
-
-fn gtkPageAdded(
-    notebook: *c.GtkNotebook,
-    _: *c.GtkWidget,
-    page_idx: c.guint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-
-    // The added page can come from another window with drag and drop, thus we migrate the tab
-    // window to be self.
-    const page = c.gtk_notebook_get_nth_page(notebook, @intCast(page_idx));
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return,
-    ));
-    tab.window = self;
-
-    // Whenever a new page is added, we always grab focus of the
-    // currently selected page. This was added specifically so that when
-    // we drag a tab out to create a new window ("create-window" event)
-    // we grab focus in the new window. Without this, the terminal didn't
-    // have focus.
-    self.focusCurrentTab();
-}
-
-fn gtkPageRemoved(
-    _: *c.GtkNotebook,
-    _: *c.GtkWidget,
-    _: c.guint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-
-    // Hide the tab bar if we only have one tab after removal
-    const remaining = c.gtk_notebook_get_n_pages(self.notebook);
-    if (remaining == 1) {
-        c.gtk_notebook_set_show_tabs(self.notebook, 0);
-    }
-}
-
-fn gtkSwitchPage(_: *c.GtkNotebook, page: *c.GtkWidget, _: usize, ud: ?*anyopaque) callconv(.C) void {
-    const self = userdataSelf(ud.?);
-    const gtk_label_box = @as(*c.GtkWidget, @ptrCast(c.gtk_notebook_get_tab_label(self.notebook, page)));
-    const gtk_label = @as(*c.GtkLabel, @ptrCast(c.gtk_widget_get_first_child(gtk_label_box)));
-    const label_text = c.gtk_label_get_text(gtk_label);
-    c.gtk_window_set_title(self.window, label_text);
-}
-
-fn gtkNotebookCreateWindow(
-    _: *c.GtkNotebook,
-    page: *c.GtkWidget,
-    ud: ?*anyopaque,
-) callconv(.C) ?*c.GtkNotebook {
-    // The tab for the page is stored in the widget data.
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
-    ));
-
-    const currentWindow = userdataSelf(ud.?);
-    const alloc = currentWindow.app.core_app.alloc;
-    const app = currentWindow.app;
-
-    // Create a new window
-    const window = Window.create(alloc, app) catch |err| {
-        log.warn("error creating new window error={}", .{err});
-        return null;
-    };
-
-    // And add it to the new window.
-    tab.window = window;
-
-    return window.notebook;
 }
 
 fn gtkRefocusTerm(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
@@ -499,19 +404,6 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     const alloc = self.app.core_app.alloc;
     self.deinit();
     alloc.destroy(self);
-}
-
-fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
-    var value: c.GValue = std.mem.zeroes(c.GValue);
-    defer c.g_value_unset(&value);
-    _ = c.g_value_init(&value, c.G_TYPE_INT);
-    c.g_object_get_property(
-        @ptrCast(@alignCast(page)),
-        "position",
-        &value,
-    );
-
-    return c.g_value_get_int(&value);
 }
 
 fn gtkActionAbout(
@@ -652,11 +544,7 @@ fn gtkActionReset(
 
 /// Returns the surface to use for an action.
 fn actionSurface(self: *Window) ?*CoreSurface {
-    const page_idx = c.gtk_notebook_get_current_page(self.notebook);
-    const page = c.gtk_notebook_get_nth_page(self.notebook, page_idx);
-    const tab: *Tab = @ptrCast(@alignCast(
-        c.g_object_get_data(@ptrCast(page), Tab.GHOSTTY_TAB) orelse return null,
-    ));
+    const tab = self.notebook.currentTab() orelse return null;
     return &tab.focus_child.core_surface;
 }
 

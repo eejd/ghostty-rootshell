@@ -1421,6 +1421,9 @@ keybind: Keybinds = .{},
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
 /// Top, bottom, left, and right are supported. The default is top.
+///
+/// If this option has value `left` or `right` when using `libadwaita`, it falls
+/// back to `top`.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
