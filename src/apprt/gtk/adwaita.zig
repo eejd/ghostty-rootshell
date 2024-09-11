@@ -43,7 +43,13 @@ pub fn versionAtLeast(
     // We use the functions instead of the constants such as
     // c.ADW_MINOR_VERSION because the function gets the actual
     // runtime version.
-    return c.adw_get_major_version() >= major and
-        c.adw_get_minor_version() >= minor and
-        c.adw_get_micro_version() >= micro;
+    if (c.adw_get_major_version() >= major) {
+        if (c.adw_get_major_version() > major) return true;
+        if (c.adw_get_minor_version() >= minor) {
+            if (c.adw_get_minor_version() > minor) return true;
+            return c.adw_get_micro_version() >= micro;
+        }
+    }
+
+    return false;
 }
