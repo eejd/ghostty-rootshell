@@ -360,12 +360,29 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v;
         }
+
+        var autoUpdate: AutoUpdate {
+            let defaultValue = AutoUpdate.check
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "auto-update"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return AutoUpdate(rawValue: str) ?? defaultValue
+        }
     }
 }
 
 // MARK: Configuration Enums
 
 extension Ghostty.Config {
+    enum AutoUpdate : String {
+        case off
+        case check
+        case download
+    }
+
     enum ResizeOverlay : String {
         case always
         case never

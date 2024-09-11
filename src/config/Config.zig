@@ -1462,6 +1462,30 @@ term: []const u8 = "xterm-ghostty",
 /// running. Defaults to an empty string if not set.
 @"enquiry-response": []const u8 = "",
 
+/// Control the auto-update functionality of Ghostty. This is only supported
+/// on macOS currently, since Linux builds are distributed via package
+/// managers that are not centrally controlled by Ghostty.
+///
+/// Checking or downloading an update does not send any information to
+/// the project beyond standard network information mandated by the
+/// underlying protocols. To put it another way: Ghostty doesn't explicitly
+/// add any tracking to the update process. The update process works by
+/// downloading information about the latest version and comparing it
+/// client-side to the current version.
+///
+/// Valid values are:
+///
+///  * `off` - Disable auto-updates.
+///  * `check` - Check for updates and notify the user if an update is
+///    available, but do not automatically download or install the update.
+///  * `download` - Check for updates, automatically download the update,
+///    notify the user, but do not automatically install the update.
+///
+/// The default value is `check`.
+///
+/// Changing this value at runtime works after a small delay.
+@"auto-update": AutoUpdate = .check,
+
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 
@@ -4094,6 +4118,13 @@ pub const LinuxCgroup = enum {
     never,
     always,
     @"single-instance",
+};
+
+/// See auto-updates
+pub const AutoUpdate = enum {
+    off,
+    check,
+    download,
 };
 
 pub const Duration = struct {

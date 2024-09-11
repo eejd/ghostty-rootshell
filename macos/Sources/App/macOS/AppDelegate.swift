@@ -75,7 +75,10 @@ class AppDelegate: NSObject,
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            // Important: we must not start the updater here because we need to read our configuration
+            // first to determine whether we're automatically checking, downloading, etc. The updater
+            // is started later in applicationDidFinishLaunching
+            startingUpdater: false,
             updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
@@ -108,6 +111,9 @@ class AppDelegate: NSObject,
 
         // Initial config loading
         configDidReload(ghostty)
+
+        // Start our update checker.
+        updaterController.startUpdater()
 
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
@@ -375,6 +381,12 @@ class AppDelegate: NSObject,
         case "default": fallthrough
         default: UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
         }
+
+        // Sync our auto-update settings
+        updaterController.updater.automaticallyChecksForUpdates =
+            ghostty.config.autoUpdate == .check || ghostty.config.autoUpdate == .download
+        updaterController.updater.automaticallyDownloadsUpdates =
+            ghostty.config.autoUpdate == .download
 
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts()
