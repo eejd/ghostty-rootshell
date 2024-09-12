@@ -30,6 +30,10 @@ app: *App,
 /// Our window
 window: *c.GtkWindow,
 
+/// The header bar for the window. This is possibly null since it can be
+/// disabled using gtk-titlebar.
+header: ?*c.GtkHeaderBar,
+
 /// The notebook (tab grouping) for this window.
 /// can be either c.GtkNotebook or c.AdwTabView.
 notebook: Notebook,
@@ -55,23 +59,23 @@ pub fn init(self: *Window, app: *App) !void {
     self.* = .{
         .app = app,
         .window = undefined,
+        .header = null,
         .notebook = undefined,
         .context_menu = undefined,
     };
 
     // Create the window
-    const adw_window =
-        (comptime adwaita.versionAtLeast(1, 4, 0)) and
-        adwaita.enabled(&app.config) and
-        app.config.@"gtk-titlebar" and
-        adwaita.versionAtLeast(1, 4, 0);
-    const window: *c.GtkWidget = if (adw_window)
+    const window: *c.GtkWidget = if (self.isAdwWindow())
         c.adw_application_window_new(app.app)
     else
         c.gtk_application_window_new(app.app);
 
     const gtk_window: *c.GtkWindow = @ptrCast(window);
-    errdefer if (adw_window) c.adw_application_window_destroy(window) else c.gtk_application_window_destroy(gtk_window);
+    errdefer if (self.isAdwWindow()) {
+        c.adw_application_window_destroy(window);
+    } else {
+        c.gtk_application_window_destroy(gtk_window);
+    };
     self.window = gtk_window;
     c.gtk_window_set_title(gtk_window, "Ghostty");
     c.gtk_window_set_default_size(gtk_window, 1000, 600);
@@ -87,8 +91,6 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_set_opacity(@ptrCast(window), app.config.@"background-opacity");
     }
 
-    var header: ?*c.GtkHeaderBar = null;
-
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
     const display = c.gdk_display_get_default();
@@ -99,7 +101,7 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        header = @ptrCast(c.gtk_header_bar_new());
+        const header: *c.GtkHeaderBar = @ptrCast(c.gtk_header_bar_new());
         {
             const btn = c.gtk_menu_button_new();
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
@@ -113,6 +115,8 @@ pub fn init(self: *Window, app: *App) !void {
             c.gtk_header_bar_pack_end(@ptrCast(header), btn);
             _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
         }
+
+        self.header = header;
     }
 
     // If we are disabling decorations then disable them right away.
@@ -161,15 +165,10 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if ((comptime adwaita.versionAtLeast(1, 4, 0)) and
-        adwaita.enabled(&app.config) and
-        adwaita.versionAtLeast(1, 4, 0) and
-        app.config.@"gtk-titlebar" and
-        header != null)
-    {
+    if (self.hasAdwToolbar()) {
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
-        const header_widget: *c.GtkWidget = @ptrCast(@alignCast(header.?));
+        const header_widget: *c.GtkWidget = @ptrCast(@alignCast(self.header.?));
         c.adw_toolbar_view_add_top_bar(toolbar_view, header_widget);
         const tab_bar = c.adw_tab_bar_new();
         c.adw_tab_bar_set_view(tab_bar, self.notebook.adw_tab_view);
@@ -192,11 +191,16 @@ pub fn init(self: *Window, app: *App) !void {
         c.adw_toolbar_view_set_top_bar_style(toolbar_view, toolbar_style);
         c.adw_toolbar_view_set_bottom_bar_style(toolbar_view, toolbar_style);
 
+        // If we are not decorated then we hide the titlebar.
+        if (!app.config.@"window-decoration") {
+            c.gtk_widget_set_visible(header_widget, 0);
+        }
+
         c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
     } else {
         // The box is our main child
         c.gtk_window_set_child(gtk_window, box);
-        if (header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
+        if (self.header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
     }
 
     // Show the window
@@ -237,6 +241,21 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     c.gtk_widget_unparent(@ptrCast(self.context_menu));
+}
+
+/// Returns true if this window should use an Adwaita window.
+fn isAdwWindow(self: *Window) bool {
+    return (comptime adwaita.versionAtLeast(1, 4, 0)) and
+        adwaita.enabled(&self.app.config) and
+        self.app.config.@"gtk-titlebar" and
+        adwaita.versionAtLeast(1, 4, 0);
+}
+
+fn hasAdwToolbar(self: *Window) bool {
+    return ((comptime adwaita.versionAtLeast(1, 4, 0)) and
+        adwaita.enabled(&self.app.config) and
+        adwaita.versionAtLeast(1, 4, 0) and
+        self.app.config.@"gtk-titlebar");
 }
 
 /// Add a new tab to this window.
@@ -309,10 +328,17 @@ pub fn toggleFullscreen(self: *Window, _: configpkg.NonNativeFullscreen) void {
 
 /// Toggle the window decorations for this window.
 pub fn toggleWindowDecorations(self: *Window) void {
-    if (c.gtk_window_get_decorated(self.window) == 0) {
-        c.gtk_window_set_decorated(self.window, 1);
-    } else {
-        c.gtk_window_set_decorated(self.window, 0);
+    const old_decorated = c.gtk_window_get_decorated(self.window) == 1;
+    const new_decorated = !old_decorated;
+    c.gtk_window_set_decorated(self.window, @intFromBool(new_decorated));
+
+    // If we have a titlebar, then we also show/hide it depending on the
+    // decorated state. GTK tends to consider the titlebar part of the frame
+    // and hides it with decorations, but libadwaita doesn't. This makes it
+    // explicit.
+    if (self.header) |v| {
+        const widget: *c.GtkWidget = @alignCast(@ptrCast(v));
+        c.gtk_widget_set_visible(widget, @intFromBool(new_decorated));
     }
 }
 
