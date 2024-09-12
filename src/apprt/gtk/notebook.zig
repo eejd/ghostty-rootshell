@@ -198,7 +198,10 @@ pub const Notebook = union(enum) {
         }
     }
 
-    pub fn addTab(self: Notebook, tab: *Tab, title: [:0]const u8) !void {
+    /// Adds a new tab with the given title to the notebook. If the notebook
+    /// is an adwaita tab view, this will return an AdwTabPage. If the notebook
+    /// is a GTK notebook, this will return null.
+    pub fn addTab(self: Notebook, tab: *Tab, title: [:0]const u8) !?*c.GObject {
         const box_widget: *c.GtkWidget = @ptrCast(tab.box);
         switch (self) {
             .adw_tab_view => |tab_view| {
@@ -209,6 +212,8 @@ pub const Notebook = union(enum) {
 
                 // Switch to the new tab
                 c.adw_tab_view_set_selected_page(tab_view, page);
+
+                return @ptrCast(@alignCast(page));
             },
             .gtk_notebook => |notebook| {
                 // Build the tab label
@@ -265,6 +270,8 @@ pub const Notebook = union(enum) {
 
                 // Switch to the new tab
                 c.gtk_notebook_set_current_page(notebook, page_idx);
+
+                return null;
             },
         }
     }
