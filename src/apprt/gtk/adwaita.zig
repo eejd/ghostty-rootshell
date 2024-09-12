@@ -8,7 +8,10 @@ const Config = @import("../../config.zig").Config;
 ///
 /// For a comptime version of this function, use `versionAtLeast` in
 /// a comptime context with all the version numbers set to 0.
-pub fn enabled(config: *const Config) bool {
+///
+/// This must be `inline` so that the comptime check noops conditional
+/// paths that are not enabled.
+pub inline fn enabled(config: *const Config) bool {
     return build_options.libadwaita and
         config.@"gtk-adwaita";
 }

@@ -108,9 +108,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     // If we're using libadwaita, log the version
-    if ((comptime adwaita.versionAtLeast(0, 0, 0)) and
-        adwaita.enabled(&config))
-    {
+    if (adwaita.enabled(&config)) {
         log.info("libadwaita version build={s} runtime={}.{}.{}", .{
             c.ADW_VERSION_S,
             c.adw_get_major_version(),
@@ -161,7 +159,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         });
 
         // If not libadwaita, create a standard GTK application.
-        if ((comptime adwaita.versionAtLeast(0, 0, 0)) and
+        if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
             !adwaita.enabled(&config))
         {
             break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
