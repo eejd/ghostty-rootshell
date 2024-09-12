@@ -47,6 +47,10 @@ pub const Notebook = union(enum) {
         c.gtk_widget_set_vexpand(notebook_widget, 1);
         c.gtk_widget_set_hexpand(notebook_widget, 1);
 
+        // Remove the background from the stack widget
+        const stack = c.gtk_widget_get_last_child(notebook_widget);
+        c.gtk_widget_add_css_class(stack, "transparent");
+
         // All of our events
         _ = c.g_signal_connect_data(notebook, "page-added", c.G_CALLBACK(&gtkPageAdded), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "page-removed", c.G_CALLBACK(&gtkPageRemoved), window, null, c.G_CONNECT_DEFAULT);
