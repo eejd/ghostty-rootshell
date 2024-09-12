@@ -25,6 +25,7 @@ pub fn detect(b: *std.Build) !Version {
         .Ignore,
     ) catch |err| switch (err) {
         error.FileNotFound => return error.GitNotFound,
+        error.ExitCodeFailure => return error.GitNotRepository,
         else => return err,
     };
 
