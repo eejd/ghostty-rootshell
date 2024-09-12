@@ -179,7 +179,9 @@ pub fn build(b: *std.Build) !void {
     else version: {
         const vsn = Version.detect(b) catch |err| switch (err) {
             // If Git isn't available we just make an unknown dev version.
-            error.GitNotFound => break :version .{
+            error.GitNotFound,
+            error.GitNotRepository,
+            => break :version .{
                 .major = app_version.major,
                 .minor = app_version.minor,
                 .patch = app_version.patch,
