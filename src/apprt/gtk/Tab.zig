@@ -38,8 +38,9 @@ elem: Surface.Container.Elem,
 focus_child: *Surface,
 
 /// If the notebook implementation is AdwTabView, then this is the tab's
-/// AdwTabPage.
-tab_page: *c.GObject,
+/// AdwTabPage. If we have libadwaita disabled then this will be undefined
+/// memory and is unsafe to use.
+adw_tab_page: *c.GObject,
 
 pub fn create(alloc: Allocator, window: *Window, parent_: ?*CoreSurface) !*Tab {
     var tab = try alloc.create(Tab);
@@ -57,7 +58,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .box = undefined,
         .elem = undefined,
         .focus_child = undefined,
-        .tab_page = undefined,
+        .adw_tab_page = undefined,
     };
 
     // Create a Box in which we'll later keep either Surface or Split.
@@ -81,7 +82,9 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
 
     // Set the userdata of the box to point to this tab.
     c.g_object_set_data(@ptrCast(box_widget), GHOSTTY_TAB, self);
-    self.tab_page = try window.notebook.addTab(self, "Ghostty");
+    if (try window.notebook.addTab(self, "Ghostty")) |page| {
+        self.adw_tab_page = page;
+    }
 
     // Attach all events
     _ = c.g_signal_connect_data(box_widget, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
