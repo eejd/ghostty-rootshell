@@ -179,7 +179,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.adw_style_manager_set_color_scheme(
             style_manager,
             switch (config.@"window-theme") {
-                .auto => auto: {
+                .auto, .ghostty => auto: {
                     const lum = config.background.toTerminalRGB().perceivedLuminance();
                     break :auto if (lum > 0.5)
                         c.ADW_COLOR_SCHEME_PREFER_LIGHT
@@ -417,11 +417,19 @@ fn syncActionAccelerator(
 }
 
 fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
-    const fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
+    const unfocused_fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
+    const headerbar_background = config.background;
+    const headerbar_foreground = config.foreground;
+
     const fmt =
         \\widget.unfocused-split {{
         \\ opacity: {d:.2};
         \\ background-color: rgb({d},{d},{d});
+        \\}}
+        \\window.ghostty-theme-inherit headerbar,
+        \\window.ghostty-theme-inherit toolbarview > revealer > windowhandle {{
+        \\ background-color: rgb({d},{d},{d});
+        \\ color: rgb({d},{d},{d});
         \\}}
     ;
     // The length required is always less than the length of the pre-formatted string:
@@ -434,9 +442,15 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         fmt,
         .{
             1.0 - config.@"unfocused-split-opacity",
-            fill.r,
-            fill.g,
-            fill.b,
+            unfocused_fill.r,
+            unfocused_fill.g,
+            unfocused_fill.b,
+            headerbar_background.r,
+            headerbar_background.g,
+            headerbar_background.b,
+            headerbar_foreground.r,
+            headerbar_foreground.g,
+            headerbar_foreground.b,
         },
     );
     // Clears any previously loaded CSS from this provider
