@@ -128,6 +128,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
+    c.gtk_init();
+    const display = c.gdk_display_get_default();
+
     // If we're using libadwaita, log the version
     if (adwaita.enabled(&config)) {
         log.info("libadwaita version build={s} runtime={}.{}.{}", .{
@@ -183,6 +186,51 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
             !adwaita.enabled(&config))
         {
+            {
+                const provider = c.gtk_css_provider_new();
+                defer c.g_object_unref(provider);
+                switch (config.@"window-theme") {
+                    .system, .light => {},
+                    .dark => {
+                        c.gtk_css_provider_load_from_resource(
+                            provider,
+                            "/com/mitchellh/ghostty/style-dark.css",
+                        );
+                        c.gtk_style_context_add_provider_for_display(
+                            display,
+                            @ptrCast(provider),
+                            c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
+                        );
+                    },
+                    .auto => {
+                        const lum = config.background.toTerminalRGB().perceivedLuminance();
+                        if (lum <= 0.5) {
+                            c.gtk_css_provider_load_from_resource(
+                                provider,
+                                "/com/mitchellh/ghostty/style-dark.css",
+                            );
+                            c.gtk_style_context_add_provider_for_display(
+                                display,
+                                @ptrCast(provider),
+                                c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
+                            );
+                        }
+                    },
+                }
+            }
+
+            {
+                const provider = c.gtk_css_provider_new();
+                defer c.g_object_unref(provider);
+
+                c.gtk_css_provider_load_from_resource(provider, "/com/mitchellh/ghostty/style.css");
+                c.gtk_style_context_add_provider_for_display(
+                    display,
+                    @ptrCast(provider),
+                    c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+                );
+            }
+
             break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
                 app_id.ptr,
                 app_flags,
@@ -277,7 +325,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // keyboard state but the block does more than that (i.e. setting up
     // WM_CLASS).
     const x11_xkb: ?x11.Xkb = x11_xkb: {
-        const display = c.gdk_display_get_default();
         if (!x11.is_display(display)) break :x11_xkb null;
 
         // Set the X11 window class property (WM_CLASS) if are are on an X11
@@ -335,7 +382,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         );
     }
 
+    // Internally, GTK ensures that only one instance of this provider exists in the provider list
+    // for the display.
     const css_provider = c.gtk_css_provider_new();
+    c.gtk_style_context_add_provider_for_display(
+        display,
+        @ptrCast(css_provider),
+        c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
+    );
     try loadRuntimeCss(&config, css_provider);
 
     return .{

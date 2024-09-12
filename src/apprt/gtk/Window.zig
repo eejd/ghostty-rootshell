@@ -111,11 +111,6 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_remove_css_class(@ptrCast(window), "background");
     }
 
-    // Internally, GTK ensures that only one instance of this provider exists in the provider list
-    // for the display.
-    const display = c.gdk_display_get_default();
-    c.gtk_style_context_add_provider_for_display(display, @ptrCast(app.css_provider), c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-
     // Create our box which will hold our widgets in the main content area.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
