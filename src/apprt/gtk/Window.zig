@@ -23,8 +23,6 @@ const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
 const Notebook = @import("./notebook.zig").Notebook;
 
-const HeaderBar = if (adwaita.versionAtLeast(0, 0, 0)) c.AdwHeaderBar else c.GtkHeaderBar;
-
 const log = std.log.scoped(.gtk);
 
 app: *App,
@@ -33,8 +31,9 @@ app: *App,
 window: *c.GtkWindow,
 
 /// The header bar for the window. This is possibly null since it can be
-/// disabled using gtk-titlebar.
-header: ?*HeaderBar,
+/// disabled using gtk-titlebar. This is either an AdwHeaderBar or
+/// GtkHeaderBar depending on if adw is enabled and linked.
+header: ?*c.GtkWidget,
 
 /// The notebook (tab grouping) for this window.
 /// can be either c.GtkNotebook or c.AdwTabView.
@@ -103,7 +102,7 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header: *HeaderBar = if (self.isAdwWindow())
+        const header: *c.GtkWidget = if (self.isAdwWindow())
             @ptrCast(c.adw_header_bar_new())
         else
             @ptrCast(c.gtk_header_bar_new());
