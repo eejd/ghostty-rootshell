@@ -23,6 +23,8 @@ const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
 const Notebook = @import("./notebook.zig").Notebook;
 
+const HeaderBar = if (adwaita.versionAtLeast(0, 0, 0)) c.AdwHeaderBar else c.GtkHeaderBar;
+
 const log = std.log.scoped(.gtk);
 
 app: *App,
@@ -32,7 +34,7 @@ window: *c.GtkWindow,
 
 /// The header bar for the window. This is possibly null since it can be
 /// disabled using gtk-titlebar.
-header: ?*c.GtkHeaderBar,
+header: ?*HeaderBar,
 
 /// The notebook (tab grouping) for this window.
 /// can be either c.GtkNotebook or c.AdwTabView.
@@ -101,19 +103,29 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header: *c.GtkHeaderBar = @ptrCast(c.gtk_header_bar_new());
+        const header: *HeaderBar = if (self.isAdwWindow())
+            @ptrCast(c.adw_header_bar_new())
+        else
+            @ptrCast(c.gtk_header_bar_new());
+
         {
             const btn = c.gtk_menu_button_new();
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
             c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
             c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
-            c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+            if (self.isAdwWindow())
+                c.adw_header_bar_pack_end(@ptrCast(header), btn)
+            else
+                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
         }
         {
             const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
             c.gtk_widget_set_tooltip_text(btn, "New Tab");
-            c.gtk_header_bar_pack_end(@ptrCast(header), btn);
             _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
+            if (self.isAdwWindow())
+                c.adw_header_bar_pack_end(@ptrCast(header), btn)
+            else
+                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
         }
 
         self.header = header;
