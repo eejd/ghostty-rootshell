@@ -97,6 +97,16 @@ pub fn init(self: *Window, app: *App) !void {
     const display = c.gdk_display_get_default();
     c.gtk_style_context_add_provider_for_display(display, @ptrCast(app.css_provider), c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
+    // Create our box which will hold our widgets.
+    const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
+
+    var tab_overview: *c.GtkWidget = undefined;
+    if (self.isAdwWindow()) {
+        tab_overview = c.adw_tab_overview_new();
+        c.adw_tab_overview_set_enable_new_tab(@ptrCast(tab_overview), 1);
+        _ = c.g_signal_connect_data(tab_overview, "create-tab", c.G_CALLBACK(&newTabFromOverview), self, null, c.G_CONNECT_DEFAULT);
+    }
+
     // gtk-titlebar can be used to disable the header bar (but keep
     // the window manager's decorations). We create this no matter if we
     // are decorated or not because we can have a keybind to toggle the
@@ -117,6 +127,14 @@ pub fn init(self: *Window, app: *App) !void {
             else
                 c.gtk_header_bar_pack_end(@ptrCast(header), btn);
         }
+        if (self.isAdwWindow()) {
+            const btn = c.gtk_toggle_button_new();
+            c.gtk_widget_set_tooltip_text(btn, "Show Open Tabs");
+            c.gtk_button_set_icon_name(@ptrCast(btn), "view-grid-symbolic");
+            c.gtk_widget_set_focus_on_click(btn, c.FALSE);
+            c.adw_header_bar_pack_end(@ptrCast(header), btn);
+            _ = c.g_object_bind_property(btn, "active", tab_overview, "open", c.G_BINDING_BIDIRECTIONAL | c.G_BINDING_SYNC_CREATE);
+        }
         {
             const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
             c.gtk_widget_set_tooltip_text(btn, "New Tab");
@@ -134,9 +152,6 @@ pub fn init(self: *Window, app: *App) !void {
     if (!app.config.@"window-decoration") {
         c.gtk_window_set_decorated(gtk_window, 0);
     }
-
-    // Create our box which will hold our widgets.
-    const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
     // In debug we show a warning and apply the 'devel' class to the window.
     // This is a really common issue where people build from source in debug and performance is really bad.
@@ -180,6 +195,7 @@ pub fn init(self: *Window, app: *App) !void {
     initActions(self);
 
     if (self.hasAdwToolbar()) {
+        c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.adw_tab_view);
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
         const header_widget: *c.GtkWidget = @ptrCast(@alignCast(self.header.?));
@@ -210,7 +226,8 @@ pub fn init(self: *Window, app: *App) !void {
             c.gtk_widget_set_visible(header_widget, 0);
         }
 
-        c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(toolbar_view)));
+        c.adw_tab_overview_set_child(@ptrCast(tab_overview), @ptrCast(@alignCast(toolbar_view)));
+        c.adw_application_window_set_content(@ptrCast(gtk_window), @ptrCast(@alignCast(tab_overview)));
     } else {
         // The box is our main child
         c.gtk_window_set_child(gtk_window, box);
@@ -377,6 +394,16 @@ fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
+}
+
+/// Create a new tab from the AdwTabOverview. We can't copy gtkTabNewClick
+/// because we need to return an AdwTabPage from this function.
+fn newTabFromOverview(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) ?*c.GObject {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return null));
+    const alloc = self.app.core_app.alloc;
+    const surface = self.actionSurface() orelse return null;
+    const tab = Tab.create(alloc, self, surface) catch return null;
+    return tab.tab_page;
 }
 
 fn gtkRefocusTerm(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
