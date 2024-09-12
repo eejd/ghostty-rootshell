@@ -537,20 +537,43 @@ fn gtkActionAbout(
 ) callconv(.C) void {
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
 
-    c.gtk_show_about_dialog(
-        self.window,
-        "program-name",
-        "Ghostty",
-        "logo-icon-name",
-        "com.mitchellh.ghostty",
-        "title",
-        "About Ghostty",
-        "version",
-        build_config.version_string.ptr,
-        "website",
-        "https://github.com/ghostty-org/ghostty",
-        @as(?*anyopaque, null),
-    );
+    const name = "Ghostty";
+    const icon = "com.mitchellh.ghostty";
+    const website = "https://github.com/ghostty-org/ghostty";
+
+    if (self.isAdwWindow()) {
+        c.adw_show_about_dialog(
+            @ptrCast(self.window),
+            "application-name",
+            name,
+            "developer-name",
+            "Ghostty Developers",
+            "application-icon",
+            icon,
+            "version",
+            build_config.version_string.ptr,
+            "issue-url",
+            "https://github.com/ghostty-org/ghostty/issues",
+            "website",
+            website,
+            @as(?*anyopaque, null),
+        );
+    } else {
+        c.gtk_show_about_dialog(
+            self.window,
+            "program-name",
+            name,
+            "logo-icon-name",
+            icon,
+            "title",
+            "About Ghostty",
+            "version",
+            build_config.version_string.ptr,
+            "website",
+            website,
+            @as(?*anyopaque, null),
+        );
+    }
 }
 
 fn gtkActionClose(
