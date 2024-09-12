@@ -244,14 +244,19 @@ pub fn deinit(self: *Window) void {
 }
 
 /// Returns true if this window should use an Adwaita window.
-fn isAdwWindow(self: *Window) bool {
+///
+/// This must be `inline` so that the comptime check noops conditional
+/// paths that are not enabled.
+inline fn isAdwWindow(self: *Window) bool {
     return (comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&self.app.config) and
         self.app.config.@"gtk-titlebar" and
         adwaita.versionAtLeast(1, 4, 0);
 }
 
-fn hasAdwToolbar(self: *Window) bool {
+/// This must be `inline` so that the comptime check noops conditional
+/// paths that are not enabled.
+inline fn hasAdwToolbar(self: *Window) bool {
     return ((comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&self.app.config) and
         adwaita.versionAtLeast(1, 4, 0) and
