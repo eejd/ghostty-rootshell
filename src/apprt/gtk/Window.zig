@@ -87,6 +87,11 @@ pub fn init(self: *Window, app: *App) !void {
 
     c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
 
+    // Apply class to color headerbar if window-theme is set to `ghostty`.
+    if (app.config.@"window-theme" == .ghostty) {
+        c.gtk_widget_add_css_class(@ptrCast(gtk_window), "ghostty-theme-inherit");
+    }
+
     // Remove the window's background if any of the widgets need to be transparent
     if (app.config.@"background-opacity" < 1) {
         c.gtk_widget_remove_css_class(@ptrCast(window), "background");

@@ -859,6 +859,9 @@ keybind: Keybinds = .{},
 ///   * `system` - Use the system theme.
 ///   * `light` - Use the light theme regardless of system theme.
 ///   * `dark` - Use the dark theme regardless of system theme.
+///   * `ghostty` - Use the background and foreground colors specified in the
+///     Ghostty configuration. This is only supported on Linux builds with
+///     libadwaita and `gtk-adwaita` enabled.
 ///
 /// On macOS, if `macos-titlebar-style` is "tabs", the window theme will be
 /// automatically set based on the luminosity of the terminal background color.
@@ -4046,6 +4049,7 @@ pub const WindowTheme = enum {
     system,
     light,
     dark,
+    ghostty,
 };
 
 /// See window-colorspace
