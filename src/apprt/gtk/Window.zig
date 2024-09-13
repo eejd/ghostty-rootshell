@@ -444,7 +444,7 @@ fn gtkNewTabFromOverview(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) ?*c.GObj
     assert(self.isAdwWindow());
 
     const alloc = self.app.core_app.alloc;
-    const surface = self.actionSurface() orelse return null;
+    const surface = self.actionSurface();
     const tab = Tab.create(alloc, self, surface) catch return null;
     return tab.adw_tab_page;
 }
