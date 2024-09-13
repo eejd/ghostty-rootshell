@@ -198,6 +198,13 @@ pub const Notebook = union(enum) {
         }
     }
 
+    fn newTabInsertPosition(self: Notebook, tab: *Tab) c_int {
+        return switch (tab.window.app.config.@"window-new-tab-position") {
+            .current => self.currentPage() + 1,
+            .end => self.nPages(),
+        };
+    }
+
     /// Adds a new tab with the given title to the notebook. If the notebook
     /// is an adwaita tab view, this will return an AdwTabPage. If the notebook
     /// is a GTK notebook, this will return null.
@@ -207,7 +214,7 @@ pub const Notebook = union(enum) {
             .adw_tab_view => |tab_view| {
                 if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
 
-                const page = c.adw_tab_view_append(tab_view, box_widget);
+                const page = c.adw_tab_view_insert(tab_view, box_widget, self.newTabInsertPosition(tab));
                 c.adw_tab_page_set_title(page, title.ptr);
 
                 // Switch to the new tab
@@ -248,12 +255,11 @@ pub const Notebook = union(enum) {
                 c.gtk_button_set_has_frame(label_close, 0);
                 c.gtk_box_append(label_box, label_close_widget);
 
-                const parent_page_idx = self.nPages();
                 const page_idx = c.gtk_notebook_insert_page(
                     notebook,
                     box_widget,
                     label_box_widget,
-                    parent_page_idx,
+                    self.newTabInsertPosition(tab),
                 );
 
                 // Clicks

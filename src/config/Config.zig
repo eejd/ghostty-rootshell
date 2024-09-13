@@ -949,8 +949,6 @@ keybind: Keybinds = .{},
 ///     or at the end if there are no focused tabs.
 ///
 ///   * `end` - Insert the new tab at the end of the tab list.
-///
-/// This configuration currently only works with GTK.
 @"window-new-tab-position": WindowNewTabPosition = .current,
 
 /// This controls when resize overlays are shown. Resize overlays are a
