@@ -353,6 +353,13 @@ pub fn reloadConfig(self: *App) !?*const Config {
         log.warn("error handling configuration changes err={}", .{err});
     };
 
+    if (adwaita.enabled(&self.config)) {
+        if (self.core_app.focusedSurface()) |core_surface| {
+            const surface = core_surface.rt_surface;
+            if (surface.container.window()) |window| window.onConfigReloaded();
+        }
+    }
+
     return &self.config;
 }
 

@@ -41,6 +41,10 @@ notebook: Notebook,
 
 context_menu: *c.GtkWidget,
 
+/// The libadwaita widget for receiving toast send requests. If libadwaita is
+/// not used, this is null and unused.
+toast_overlay: ?*c.GtkWidget,
+
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -63,6 +67,7 @@ pub fn init(self: *Window, app: *App) !void {
         .header = null,
         .notebook = undefined,
         .context_menu = undefined,
+        .toast_overlay = undefined,
     };
 
     // Create the window
@@ -201,9 +206,15 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_box_append(@ptrCast(box), warning_box);
     }
 
+    self.toast_overlay = if (self.isAdwWindow())
+        c.adw_toast_overlay_new()
+    else
+        null;
+
     // Setup our notebook
     self.notebook = Notebook.create(self);
-    c.gtk_box_append(@ptrCast(box), self.notebook.asWidget());
+    c.adw_toast_overlay_set_child(@ptrCast(self.toast_overlay), @ptrCast(@alignCast(self.notebook.asWidget())));
+    c.gtk_box_append(@ptrCast(box), self.toast_overlay);
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
@@ -462,6 +473,18 @@ pub fn focusCurrentTab(self: *Window) void {
     _ = c.gtk_widget_grab_focus(gl_area);
 }
 
+pub fn onConfigReloaded(self: *Window) void {
+    self.sendToast("Reloaded the configuration");
+}
+
+fn sendToast(self: *Window, title: [:0]const u8) void {
+    if (self.toast_overlay) |toast_overlay| {
+        const toast = c.adw_toast_new(title);
+        c.adw_toast_set_timeout(toast, 3);
+        c.adw_toast_overlay_add_toast(@ptrCast(toast_overlay), toast);
+    }
+}
+
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
 // sends an undefined value.
 fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
@@ -697,6 +720,10 @@ fn gtkActionCopy(
         log.warn("error performing binding action error={}", .{err});
         return;
     };
+
+    if (self.isAdwWindow()) {
+        self.sendToast("Copied to clipboard");
+    }
 }
 
 fn gtkActionPaste(
