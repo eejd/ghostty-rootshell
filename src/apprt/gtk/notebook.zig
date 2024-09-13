@@ -16,7 +16,7 @@ pub const Notebook = union(enum) {
     adw_tab_view: *AdwTabView,
     gtk_notebook: *c.GtkNotebook,
 
-    pub fn create(window: *Window) @This() {
+    pub fn create(window: *Window) Notebook {
         const app = window.app;
         if (adwaita.enabled(&app.config)) return initAdw(window);
         return initGtk(window);
@@ -60,13 +60,6 @@ pub const Notebook = union(enum) {
         return .{ .gtk_notebook = notebook };
     }
 
-    pub fn asWidget(self: Notebook) *c.GtkWidget {
-        return switch (self) {
-            .adw_tab_view => |tab_view| @ptrCast(@alignCast(tab_view)),
-            .gtk_notebook => |notebook| @ptrCast(@alignCast(notebook)),
-        };
-    }
-
     fn initAdw(window: *Window) Notebook {
         const app = window.app;
         assert(adwaita.enabled(&app.config));
@@ -78,6 +71,13 @@ pub const Notebook = union(enum) {
         _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
 
         return .{ .adw_tab_view = tab_view };
+    }
+
+    pub fn asWidget(self: Notebook) *c.GtkWidget {
+        return switch (self) {
+            .adw_tab_view => |tab_view| @ptrCast(@alignCast(tab_view)),
+            .gtk_notebook => |notebook| @ptrCast(@alignCast(notebook)),
+        };
     }
 
     pub fn nPages(self: Notebook) c_int {

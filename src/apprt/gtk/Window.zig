@@ -281,9 +281,15 @@ pub fn init(self: *Window, app: *App) !void {
                     .top,
                     .left,
                     .right,
-                    => c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+                    => c.gtk_box_prepend(
+                        @ptrCast(box),
+                        @ptrCast(@alignCast(tab_bar)),
+                    ),
 
-                    .bottom => c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
+                    .bottom => c.gtk_box_append(
+                        @ptrCast(box),
+                        @ptrCast(@alignCast(tab_bar)),
+                    ),
                 }
                 c.adw_tab_bar_set_view(tab_bar, tab_view);
 
@@ -291,7 +297,8 @@ pub fn init(self: *Window, app: *App) !void {
                     c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
                 }
             },
-            else => {},
+
+            .gtk_notebook => {},
         }
 
         // The box is our main child
