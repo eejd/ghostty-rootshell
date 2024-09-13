@@ -16,13 +16,13 @@ pub const Notebook = union(enum) {
     adw_tab_view: *AdwTabView,
     gtk_notebook: *c.GtkNotebook,
 
-    pub fn create(window: *Window, box: *c.GtkWidget) @This() {
+    pub fn create(window: *Window) Notebook {
         const app = window.app;
-        if (adwaita.enabled(&app.config)) return initAdw(window, box);
-        return initGtk(window, box);
+        if (adwaita.enabled(&app.config)) return initAdw(window);
+        return initGtk(window);
     }
 
-    fn initGtk(window: *Window, box: *c.GtkWidget) Notebook {
+    fn initGtk(window: *Window) Notebook {
         const app = window.app;
 
         // Create a notebook to hold our tabs.
@@ -57,42 +57,27 @@ pub const Notebook = union(enum) {
         _ = c.g_signal_connect_data(notebook, "switch-page", c.G_CALLBACK(&gtkSwitchPage), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(notebook, "create-window", c.G_CALLBACK(&gtkNotebookCreateWindow), window, null, c.G_CONNECT_DEFAULT);
 
-        c.gtk_box_append(@ptrCast(box), notebook_widget);
         return .{ .gtk_notebook = notebook };
     }
 
-    fn initAdw(window: *Window, box: *c.GtkWidget) Notebook {
+    fn initAdw(window: *Window) Notebook {
         const app = window.app;
         assert(adwaita.enabled(&app.config));
 
         const tab_view: *c.AdwTabView = c.adw_tab_view_new().?;
-        c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_view)));
-        if ((comptime !adwaita.versionAtLeast(1, 4, 0)) or
-            !adwaita.versionAtLeast(1, 4, 0) or
-            !app.config.@"gtk-titlebar")
-        {
-            const tab_bar: *c.AdwTabBar = c.adw_tab_bar_new().?;
-            switch (app.config.@"gtk-tabs-location") {
-                // left and right is not supported in libadwaita.
-                .top,
-                .left,
-                .right,
-                => c.gtk_box_prepend(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
-
-                .bottom => c.gtk_box_append(@ptrCast(box), @ptrCast(@alignCast(tab_bar))),
-            }
-            c.adw_tab_bar_set_view(tab_bar, tab_view);
-
-            if (!app.config.@"gtk-wide-tabs") {
-                c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
-            }
-        }
 
         _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(tab_view, "notify::selected-page", c.G_CALLBACK(&adwSelectPage), window, null, c.G_CONNECT_DEFAULT);
 
         return .{ .adw_tab_view = tab_view };
+    }
+
+    pub fn asWidget(self: Notebook) *c.GtkWidget {
+        return switch (self) {
+            .adw_tab_view => |tab_view| @ptrCast(@alignCast(tab_view)),
+            .gtk_notebook => |notebook| @ptrCast(@alignCast(notebook)),
+        };
     }
 
     pub fn nPages(self: Notebook) c_int {

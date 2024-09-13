@@ -197,7 +197,8 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     // Setup our notebook
-    self.notebook = Notebook.create(self, box);
+    self.notebook = Notebook.create(self);
+    c.gtk_box_append(@ptrCast(box), self.notebook.asWidget());
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
@@ -270,6 +271,36 @@ pub fn init(self: *Window, app: *App) !void {
             );
         }
     } else {
+        switch (self.notebook) {
+            .adw_tab_view => |tab_view| if (comptime adwaita.versionAtLeast(0, 0, 0)) {
+                // In earlier adwaita versions, we need to add the tabbar manually since we do not use
+                // an AdwToolbarView.
+                const tab_bar: *c.AdwTabBar = c.adw_tab_bar_new().?;
+                switch (app.config.@"gtk-tabs-location") {
+                    // left and right is not supported in libadwaita.
+                    .top,
+                    .left,
+                    .right,
+                    => c.gtk_box_prepend(
+                        @ptrCast(box),
+                        @ptrCast(@alignCast(tab_bar)),
+                    ),
+
+                    .bottom => c.gtk_box_append(
+                        @ptrCast(box),
+                        @ptrCast(@alignCast(tab_bar)),
+                    ),
+                }
+                c.adw_tab_bar_set_view(tab_bar, tab_view);
+
+                if (!app.config.@"gtk-wide-tabs") {
+                    c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
+                }
+            },
+
+            .gtk_notebook => {},
+        }
+
         // The box is our main child
         c.gtk_window_set_child(gtk_window, box);
         if (self.header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
