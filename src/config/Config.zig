@@ -806,7 +806,7 @@ keybind: Keybinds = .{},
 /// * The nearest row contains a perfect fit powerline character. These
 ///   don't look good extended.
 ///
-@"window-padding-color": WindowPaddingColor = .extend,
+@"window-padding-color": WindowPaddingColor = .background,
 
 /// Synchronize rendering with the screen refresh rate. If true, this will
 /// minimize tearing and align redraws with the screen but may cause input
