@@ -382,8 +382,8 @@ fn updateConfigErrors(self: *App) !void {
 
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
-    try self.syncActionAccelerator("app.open_config", .{ .open_config = {} });
-    try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
+    try self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
+    try self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
     try self.syncActionAccelerator("win.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
@@ -870,8 +870,8 @@ fn initActions(self: *App) void {
     // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
     const actions = .{
         .{ "quit", &gtkActionQuit, null },
-        .{ "open_config", &gtkActionOpenConfig, null },
-        .{ "reload_config", &gtkActionReloadConfig, null },
+        .{ "open-config", &gtkActionOpenConfig, null },
+        .{ "reload-config", &gtkActionReloadConfig, null },
         .{ "present-surface", &gtkActionPresentSurface, c.G_VARIANT_TYPE("t") },
     };
 
@@ -912,8 +912,8 @@ fn initMenu(self: *App) void {
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
-        c.g_menu_append(section, "Open Configuration", "app.open_config");
-        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
+        c.g_menu_append(section, "Open Configuration", "app.open-config");
+        c.g_menu_append(section, "Reload Configuration", "app.reload-config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
 
