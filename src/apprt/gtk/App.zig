@@ -861,11 +861,17 @@ fn gtkActionPresentSurface(
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
+    // The set of actions. Each action has (in order):
+    // [0] The action name
+    // [1] The callback function
+    // [2] The GVariantType of the parameter
+    //
+    // For action names:
+    // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
     const actions = .{
         .{ "quit", &gtkActionQuit, null },
         .{ "open_config", &gtkActionOpenConfig, null },
         .{ "reload_config", &gtkActionReloadConfig, null },
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
         .{ "present-surface", &gtkActionPresentSurface, c.G_VARIANT_TYPE("t") },
     };
 

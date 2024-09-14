@@ -1146,12 +1146,10 @@ pub fn showDesktopNotification(
 
     const notification = c.g_notification_new(t.ptr);
     defer c.g_object_unref(notification);
-
     c.g_notification_set_body(notification, body.ptr);
 
     const icon = c.g_themed_icon_new("com.mitchellh.ghostty");
     defer c.g_object_unref(icon);
-
     c.g_notification_set_icon(notification, icon);
 
     const pointer = c.g_variant_new_uint64(@intFromPtr(&self.core_surface));

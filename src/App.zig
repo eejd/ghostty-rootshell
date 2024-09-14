@@ -178,15 +178,6 @@ pub fn focusedSurface(self: *const App) ?*Surface {
     return surface;
 }
 
-/// Is this the last focused surface. This is only valid while on the main
-/// thread before tick is called.
-pub fn isFocused(self: *const App, surface: *const Surface) bool {
-    if (!self.hasSurface(surface)) return false;
-    const focused = self.focused_surface orelse return false;
-    if (!self.hasSurface(focused)) return false;
-    return surface == focused;
-}
-
 /// Returns true if confirmation is needed to quit the app. It is up to
 /// the apprt to call this.
 pub fn needsConfirmQuit(self: *const App) bool {
