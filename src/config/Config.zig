@@ -513,9 +513,16 @@ palette: Palette = .{},
 ///
 /// If you're using the `ghostty` CLI there is also a shortcut to run a command
 /// with arguments directly: you can use the `-e` flag. For example: `ghostty -e
-/// fish --with --custom --args`. The `-e` flag also automatically sets
-/// `gtk-single-instance = false` (no matter what) to ensure that a new
-/// instance is launched and the CLI args are respected.
+/// fish --with --custom --args`. The `-e` flag automatically forces some
+/// other behaviors as well:
+///
+///   * `gtk-single-instance=false` - This ensures that a new instance is
+///     launched and the CLI args are respected.
+///
+///   * `quit-after-last-window-closed=true` - This ensures that the Ghostty
+///     process will exit when the command exits. Additionally, the
+///     `quit-after-last-window-closed-delay` is unset.
+///
 command: ?[]const u8 = null,
 
 /// If true, keep the terminal open after the command exits. Normally, the
@@ -2543,10 +2550,10 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
 
         self.command = command.items[0 .. command.items.len - 1];
 
-        // When "-e" is used on the command line then we always disabled
-        // single instance mode because single instance mode is incompatible
-        // with CLI flags.
+        // See "command" docs for the implied configurations and why.
         self.@"gtk-single-instance" = .false;
+        self.@"quit-after-last-window-closed" = true;
+        self.@"quit-after-last-window-closed-delay" = null;
 
         // Do not continue, we consumed everything.
         return false;
