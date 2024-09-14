@@ -1144,19 +1144,26 @@ pub fn showDesktopNotification(
         else => title,
     };
 
-    const notif = c.g_notification_new(t.ptr);
-    defer c.g_object_unref(notif);
-    c.g_notification_set_body(notif, body.ptr);
+    const notification = c.g_notification_new(t.ptr);
+    defer c.g_object_unref(notification);
+    c.g_notification_set_body(notification, body.ptr);
 
     const icon = c.g_themed_icon_new("com.mitchellh.ghostty");
     defer c.g_object_unref(icon);
-    c.g_notification_set_icon(notif, icon);
+    c.g_notification_set_icon(notification, icon);
+
+    const pointer = c.g_variant_new_uint64(@intFromPtr(&self.core_surface));
+    c.g_notification_set_default_action_and_target_value(
+        notification,
+        "app.present-surface",
+        pointer,
+    );
 
     const g_app: *c.GApplication = @ptrCast(self.app.app);
 
     // We set the notification ID to the body content. If the content is the
     // same, this notification may replace a previous notification
-    c.g_application_send_notification(g_app, body.ptr, notif);
+    c.g_application_send_notification(g_app, body.ptr, notification);
 }
 
 fn showContextMenu(self: *Surface, x: f32, y: f32) void {
@@ -1966,4 +1973,15 @@ fn translateMods(state: c.GdkModifierType) input.Mods {
     // Lock is dependent on the X settings but we just assume caps lock.
     if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;
     return mods;
+}
+
+pub fn presentSurface(self: *Surface) void {
+    if (self.container.window()) |window| {
+        if (self.container.tab()) |tab| {
+            if (window.notebook.getTabPosition(tab)) |position|
+                window.notebook.gotoNthTab(position);
+        }
+        c.gtk_window_present(window.window);
+    }
+    self.grabFocus();
 }

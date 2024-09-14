@@ -382,8 +382,8 @@ fn updateConfigErrors(self: *App) !void {
 
 fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
-    try self.syncActionAccelerator("app.open_config", .{ .open_config = {} });
-    try self.syncActionAccelerator("app.reload_config", .{ .reload_config = {} });
+    try self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
+    try self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
     try self.syncActionAccelerator("win.toggle_inspector", .{ .inspector = .toggle });
     try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
     try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
@@ -825,17 +825,58 @@ fn gtkActionQuit(
     };
 }
 
+/// Action sent by the window manager asking us to present a specific surface to
+/// the user. Usually because the user clicked on a desktop notification.
+fn gtkActionPresentSurface(
+    _: *c.GSimpleAction,
+    parameter: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud orelse return));
+
+    // Make sure that we've receiived a u64 from the system.
+    if (c.g_variant_is_of_type(parameter, c.G_VARIANT_TYPE("t")) == 0) {
+        return;
+    }
+
+    // Convert that u64 to pointer to a core surface.
+    const surface: *CoreSurface = @ptrFromInt(c.g_variant_get_uint64(parameter));
+
+    // Send a message through the core app mailbox rather than presenting the
+    // surface directly so that it can validate that the surface pointer is
+    // valid. We could get an invalid pointer if a desktop notification outlives
+    // a Ghostty instance and a new one starts up, or there are multiple Ghostty
+    // instances running.
+    _ = self.core_app.mailbox.push(
+        .{
+            .surface_message = .{
+                .surface = surface,
+                .message = .{ .present_surface = {} },
+            },
+        },
+        .{ .forever = {} },
+    );
+}
+
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
+    // The set of actions. Each action has (in order):
+    // [0] The action name
+    // [1] The callback function
+    // [2] The GVariantType of the parameter
+    //
+    // For action names:
+    // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
     const actions = .{
-        .{ "quit", &gtkActionQuit },
-        .{ "open_config", &gtkActionOpenConfig },
-        .{ "reload_config", &gtkActionReloadConfig },
+        .{ "quit", &gtkActionQuit, null },
+        .{ "open-config", &gtkActionOpenConfig, null },
+        .{ "reload-config", &gtkActionReloadConfig, null },
+        .{ "present-surface", &gtkActionPresentSurface, c.G_VARIANT_TYPE("t") },
     };
 
     inline for (actions) |entry| {
-        const action = c.g_simple_action_new(entry[0], null);
+        const action = c.g_simple_action_new(entry[0], entry[2]);
         defer c.g_object_unref(action);
         _ = c.g_signal_connect_data(
             action,
@@ -871,8 +912,8 @@ fn initMenu(self: *App) void {
         defer c.g_object_unref(section);
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
-        c.g_menu_append(section, "Open Configuration", "app.open_config");
-        c.g_menu_append(section, "Reload Configuration", "app.reload_config");
+        c.g_menu_append(section, "Open Configuration", "app.open-config");
+        c.g_menu_append(section, "Reload Configuration", "app.reload-config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
 

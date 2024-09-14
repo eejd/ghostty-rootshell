@@ -61,6 +61,10 @@ pub const Message = union(enum) {
     /// Report the color scheme
     report_color_scheme: void,
 
+    /// Tell the surface to present itself to the user. This may require raising
+    /// a window and switching tabs.
+    present_surface: void,
+
     pub const ReportTitleStyle = enum {
         csi_21_t,
 
