@@ -478,11 +478,10 @@ pub fn onConfigReloaded(self: *Window) void {
 }
 
 fn sendToast(self: *Window, title: [:0]const u8) void {
-    if (self.toast_overlay) |toast_overlay| {
-        const toast = c.adw_toast_new(title);
-        c.adw_toast_set_timeout(toast, 3);
-        c.adw_toast_overlay_add_toast(@ptrCast(toast_overlay), toast);
-    }
+    const toast_overlay = self.toast_overlay orelse return;
+    const toast = c.adw_toast_new(title);
+    c.adw_toast_set_timeout(toast, 3);
+    c.adw_toast_overlay_add_toast(@ptrCast(toast_overlay), toast);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
