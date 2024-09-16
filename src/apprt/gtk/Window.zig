@@ -218,7 +218,10 @@ pub fn init(self: *Window, app: *App) !void {
         );
         c.gtk_box_append(@ptrCast(box), toast_overlay);
         break :toast toast_overlay;
-    } else null;
+    } else toast: {
+        c.gtk_box_append(@ptrCast(box), self.notebook.asWidget());
+        break :toast null;
+    };
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
