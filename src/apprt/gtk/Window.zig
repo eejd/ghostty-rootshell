@@ -485,6 +485,7 @@ pub fn onConfigReloaded(self: *Window) void {
 }
 
 fn sendToast(self: *Window, title: [:0]const u8) void {
+    if (comptime !adwaita.versionAtLeast(0, 0, 0)) return;
     const toast_overlay = self.toast_overlay orelse return;
     const toast = c.adw_toast_new(title);
     c.adw_toast_set_timeout(toast, 3);
