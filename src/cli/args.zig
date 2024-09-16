@@ -268,7 +268,13 @@ fn parseIntoField(
                         value orelse return error.ValueRequired,
                     ),
 
-                    else => unreachable,
+                    .Union => try parseTaggedUnion(
+                        Field,
+                        alloc,
+                        value orelse return error.ValueRequired,
+                    ),
+
+                    else => @compileError("unsupported field type"),
                 },
             };
 
@@ -277,6 +283,52 @@ fn parseIntoField(
     }
 
     return error.InvalidField;
+}
+
+fn parseTaggedUnion(comptime T: type, alloc: Allocator, v: []const u8) !T {
+    const info = @typeInfo(T).Union;
+    assert(@typeInfo(info.tag_type.?) == .Enum);
+
+    // Get the union tag that is being set. We support values with no colon
+    // if the value is void so its not an error to have no colon.
+    const colon_idx = mem.indexOf(u8, v, ":") orelse v.len;
+    const tag_str = std.mem.trim(u8, v[0..colon_idx], whitespace);
+    const value = if (colon_idx < v.len) v[colon_idx + 1 ..] else "";
+
+    // Find the field in the union that matches the tag.
+    inline for (info.fields) |field| {
+        if (mem.eql(u8, field.name, tag_str)) {
+            // Special case void types where we don't need a value.
+            if (field.type == void) {
+                if (value.len > 0) return error.InvalidValue;
+                return @unionInit(T, field.name, {});
+            }
+
+            // We need to create a struct that looks like this union field.
+            // This lets us use parseIntoField as if its a dedicated struct.
+            const Target = @Type(.{ .Struct = .{
+                .layout = .auto,
+                .fields = &.{.{
+                    .name = field.name,
+                    .type = field.type,
+                    .default_value = null,
+                    .is_comptime = false,
+                    .alignment = @alignOf(field.type),
+                }},
+                .decls = &.{},
+                .is_tuple = false,
+            } });
+
+            // Parse the value into the struct
+            var t: Target = undefined;
+            try parseIntoField(Target, alloc, &t, field.name, value);
+
+            // Build our union
+            return @unionInit(T, field.name, @field(t, field.name));
+        }
+    }
+
+    return error.InvalidValue;
 }
 
 fn parsePackedStruct(comptime T: type, v: []const u8) !T {
@@ -739,6 +791,99 @@ test "parseIntoField: struct with parse func with unsupported error tracking" {
     try testing.expectError(
         error.InvalidValue,
         parseIntoField(@TypeOf(data), alloc, &data, "a", "42"),
+    );
+}
+
+test "parseIntoField: tagged union" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        value: union(enum) {
+            a: u8,
+            b: u8,
+            c: void,
+            d: []const u8,
+        } = undefined,
+    } = .{};
+
+    // Set one field
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "a:1");
+    try testing.expectEqual(1, data.value.a);
+
+    // Set another
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "b:2");
+    try testing.expectEqual(2, data.value.b);
+
+    // Set void field
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "c");
+    try testing.expectEqual({}, data.value.c);
+
+    // Set string field
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "d:hello");
+    try testing.expectEqualStrings("hello", data.value.d);
+}
+
+test "parseIntoField: tagged union unknown filed" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        value: union(enum) {
+            a: u8,
+            b: u8,
+        } = undefined,
+    } = .{};
+
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "value", "c:1"),
+    );
+}
+
+test "parseIntoField: tagged union invalid field value" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        value: union(enum) {
+            a: u8,
+            b: u8,
+        } = undefined,
+    } = .{};
+
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "value", "a:hello"),
+    );
+}
+
+test "parseIntoField: tagged union missing tag" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        value: union(enum) {
+            a: u8,
+            b: u8,
+        } = undefined,
+    } = .{};
+
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "value", "a"),
+    );
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "value", ":a"),
     );
 }
 
