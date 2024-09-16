@@ -80,10 +80,17 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // Create the window
-    const window: *c.GtkWidget = if (self.isAdwWindow())
-        c.adw_application_window_new(app.app)
-    else
-        c.gtk_application_window_new(app.app);
+    const window: *c.GtkWidget = window: {
+        if (self.isAdwWindow()) {
+            const window = c.adw_application_window_new(app.app);
+            c.gtk_widget_add_css_class(@ptrCast(window), "adw");
+            break :window window;
+        } else {
+            const window = c.gtk_application_window_new(app.app);
+            c.gtk_widget_add_css_class(@ptrCast(window), "gtk");
+            break :window window;
+        }
+    };
 
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer if (self.isAdwWindow()) {
