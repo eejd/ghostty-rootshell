@@ -90,18 +90,24 @@ pub const Notebook = union(enum) {
         };
     }
 
-    pub fn currentPage(self: Notebook) c_int {
+    /// Returns the index of the currently selected page.
+    /// Returns null if the notebook has no pages.
+    fn currentPage(self: Notebook) ?c_int {
         switch (self) {
             .adw_tab_view => |tab_view| {
                 if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
-                const page = c.adw_tab_view_get_selected_page(tab_view);
+                const page = c.adw_tab_view_get_selected_page(tab_view) orelse return null;
                 return c.adw_tab_view_get_page_position(tab_view, page);
             },
 
-            .gtk_notebook => |notebook| return c.gtk_notebook_get_current_page(notebook),
+            .gtk_notebook => |notebook| {
+                const current = c.gtk_notebook_get_current_page(notebook);
+                return if (current == -1) null else current;
+            },
         }
     }
 
+    /// Returns the currently selected tab or null if there are none.
     pub fn currentTab(self: Notebook) ?*Tab {
         const child = switch (self) {
             .adw_tab_view => |tab_view| child: {
@@ -112,8 +118,7 @@ pub const Notebook = union(enum) {
             },
 
             .gtk_notebook => |notebook| child: {
-                const page = self.currentPage();
-                if (page == -1) return null;
+                const page = self.currentPage() orelse return null;
                 break :child c.gtk_notebook_get_nth_page(notebook, page);
             },
         };
@@ -184,9 +189,10 @@ pub const Notebook = union(enum) {
     }
 
     fn newTabInsertPosition(self: Notebook, tab: *Tab) c_int {
+        const numPages = self.nPages();
         return switch (tab.window.app.config.@"window-new-tab-position") {
-            .current => self.currentPage() + 1,
-            .end => self.nPages(),
+            .current => if (self.currentPage()) |page| page + 1 else numPages,
+            .end => numPages,
         };
     }
 
@@ -313,7 +319,7 @@ pub const Notebook = union(enum) {
         }
     }
 
-    pub fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
+    fn getNotebookPageIndex(page: *c.GtkNotebookPage) c_int {
         var value: c.GValue = std.mem.zeroes(c.GValue);
         defer c.g_value_unset(&value);
         _ = c.g_value_init(&value, c.G_TYPE_INT);
