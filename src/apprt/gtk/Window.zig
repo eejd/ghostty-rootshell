@@ -727,9 +727,7 @@ fn gtkActionCopy(
         return;
     };
 
-    if (self.isAdwWindow()) {
-        self.sendToast("Copied to clipboard");
-    }
+    self.sendToast("Copied to clipboard");
 }
 
 fn gtkActionPaste(
