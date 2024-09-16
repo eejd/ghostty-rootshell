@@ -210,7 +210,7 @@ pub fn init(self: *Window, app: *App) !void {
     self.notebook = Notebook.create(self);
 
     // Setup our toast overlay if we have one
-    self.toast_overlay = if (self.isAdwWindow()) toast: {
+    self.toast_overlay = if (adwaita.enabled(&self.app.config)) toast: {
         const toast_overlay = c.adw_toast_overlay_new();
         c.adw_toast_overlay_set_child(
             @ptrCast(toast_overlay),
@@ -218,7 +218,10 @@ pub fn init(self: *Window, app: *App) !void {
         );
         c.gtk_box_append(@ptrCast(box), toast_overlay);
         break :toast toast_overlay;
-    } else null;
+    } else toast: {
+        c.gtk_box_append(@ptrCast(box), self.notebook.asWidget());
+        break :toast null;
+    };
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
@@ -482,6 +485,7 @@ pub fn onConfigReloaded(self: *Window) void {
 }
 
 fn sendToast(self: *Window, title: [:0]const u8) void {
+    if (comptime !adwaita.versionAtLeast(0, 0, 0)) return;
     const toast_overlay = self.toast_overlay orelse return;
     const toast = c.adw_toast_new(title);
     c.adw_toast_set_timeout(toast, 3);
@@ -724,9 +728,7 @@ fn gtkActionCopy(
         return;
     };
 
-    if (self.isAdwWindow()) {
-        self.sendToast("Copied to clipboard");
-    }
+    self.sendToast("Copied to clipboard");
 }
 
 fn gtkActionPaste(
