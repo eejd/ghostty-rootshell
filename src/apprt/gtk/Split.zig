@@ -22,8 +22,8 @@ pub const Orientation = enum {
 
     pub fn fromDirection(direction: apprt.action.SplitDirection) Orientation {
         return switch (direction) {
-            .right => .horizontal,
-            .down => .vertical,
+            .right, .left => .horizontal,
+            .down, .up => .vertical,
         };
     }
 
@@ -80,8 +80,8 @@ pub fn init(
 
     // Create the actual GTKPaned, attach the proper children.
     const orientation: c_uint = switch (direction) {
-        .right => c.GTK_ORIENTATION_HORIZONTAL,
-        .down => c.GTK_ORIENTATION_VERTICAL,
+        .right, .left => c.GTK_ORIENTATION_HORIZONTAL,
+        .down, .up => c.GTK_ORIENTATION_VERTICAL,
     };
     const paned = c.gtk_paned_new(orientation);
     errdefer c.g_object_unref(paned);
@@ -94,14 +94,25 @@ pub fn init(
     // we're inheriting its parent. The sibling points to its location
     // in the split, and the surface points to the other location.
     const container = sibling.container;
-    sibling.container = .{ .split_tl = &self.top_left };
-    surface.container = .{ .split_br = &self.bottom_right };
+    const tl: *Surface, const br: *Surface = switch (direction) {
+        .right, .down => right_down: {
+            sibling.container = .{ .split_tl = &self.top_left };
+            surface.container = .{ .split_br = &self.bottom_right };
+            break :right_down .{ sibling, surface };
+        },
+
+        .left, .up => left_up: {
+            sibling.container = .{ .split_br = &self.bottom_right };
+            surface.container = .{ .split_tl = &self.top_left };
+            break :left_up .{ surface, sibling };
+        },
+    };
 
     self.* = .{
         .paned = @ptrCast(paned),
         .container = container,
-        .top_left = .{ .surface = sibling },
-        .bottom_right = .{ .surface = surface },
+        .top_left = .{ .surface = tl },
+        .bottom_right = .{ .surface = br },
         .orientation = Orientation.fromDirection(direction),
     };
 

@@ -768,6 +768,8 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
     try self.syncActionAccelerator("win.split_right", .{ .new_split = .right });
     try self.syncActionAccelerator("win.split_down", .{ .new_split = .down });
+    try self.syncActionAccelerator("win.split_left", .{ .new_split = .left });
+    try self.syncActionAccelerator("win.split_up", .{ .new_split = .up });
     try self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = {} });
     try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
     try self.syncActionAccelerator("win.reset", .{ .reset = {} });

@@ -272,6 +272,8 @@ pub const Action = union(Key) {
 pub const SplitDirection = enum(c_int) {
     right,
     down,
+    left,
+    up,
 };
 
 // This is made extern (c_int) to make interop easier with our embedded
