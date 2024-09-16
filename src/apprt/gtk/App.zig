@@ -202,7 +202,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                             c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
                         );
                     },
-                    .auto => {
+                    .auto, .ghostty => {
                         const lum = config.background.toTerminalRGB().perceivedLuminance();
                         if (lum <= 0.5) {
                             c.gtk_css_provider_load_from_resource(
