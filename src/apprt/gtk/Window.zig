@@ -210,7 +210,7 @@ pub fn init(self: *Window, app: *App) !void {
     self.notebook = Notebook.create(self);
 
     // Setup our toast overlay if we have one
-    self.toast_overlay = if (self.isAdwWindow()) toast: {
+    self.toast_overlay = if (adwaita.enabled(&self.app.config)) toast: {
         const toast_overlay = c.adw_toast_overlay_new();
         c.adw_toast_overlay_set_child(
             @ptrCast(toast_overlay),
