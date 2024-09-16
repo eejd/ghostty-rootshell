@@ -206,15 +206,19 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_box_append(@ptrCast(box), warning_box);
     }
 
-    self.toast_overlay = if (self.isAdwWindow())
-        c.adw_toast_overlay_new()
-    else
-        null;
-
     // Setup our notebook
     self.notebook = Notebook.create(self);
-    c.adw_toast_overlay_set_child(@ptrCast(self.toast_overlay), @ptrCast(@alignCast(self.notebook.asWidget())));
-    c.gtk_box_append(@ptrCast(box), self.toast_overlay);
+
+    // Setup our toast overlay if we have one
+    self.toast_overlay = if (self.isAdwWindow()) toast: {
+        const toast_overlay = c.adw_toast_overlay_new();
+        c.adw_toast_overlay_set_child(
+            @ptrCast(toast_overlay),
+            @ptrCast(@alignCast(self.notebook.asWidget())),
+        );
+        c.gtk_box_append(@ptrCast(box), toast_overlay);
+        break :toast toast_overlay;
+    } else null;
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
