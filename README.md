@@ -471,10 +471,12 @@ The `ghostty +crash-report` CLI command can be used to list any crash reports.
 A future version of Ghostty will show you the contents of the crash report
 directly in the terminal.
 
-If Ghostty crashed, you can help the project by sending the crash report
-to a maintainer. We do not recommend uploading crash reports directly
-to public locations such as GitHub Issues because they can contain
-sensitive information (see the warning below).
+To send the crash report to the Ghostty project, you can use the following
+CLI command using the [Sentry CLI](https://docs.sentry.io/cli/installation/):
+
+```shell-session
+SENTRY_DSN=https://e914ee84fd895c4fe324afa3e53dac76@o4507352570920960.ingest.us.sentry.io/4507850923638784 sentry-cli send-envelope --raw <path to ghostty crash>
+```
 
 > [!WARNING]
 >
