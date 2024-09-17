@@ -1087,6 +1087,10 @@ keybind: Keybinds = .{},
 /// `config-file` directive. For command-line arguments, paths are relative to
 /// the current working directory.
 ///
+/// Prepend a ? character to the file path to suppress errors if the file does
+/// not exist. If you want to include a file that begins with a literal ?
+/// character, surround the file path in double quotes (").
+///
 /// Cycles are not allowed. If a cycle is detected, an error will be logged and
 /// the configuration file will be ignored.
 @"config-file": RepeatablePath = .{},
@@ -2258,12 +2262,20 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     defer loaded.deinit();
 
     const cwd = std.fs.cwd();
-    var i: usize = 0;
-    while (i < self.@"config-file".value.list.items.len) : (i += 1) {
-        const path = self.@"config-file".value.list.items[i];
+    for (0..self.@"config-file".value.list.items.len) |i| {
+        const optional, const path = blk: {
+            const path = self.@"config-file".value.list.items[i];
+            if (path.len == 0) {
+                continue;
+            }
 
-        // Error paths
-        if (path.len == 0) continue;
+            break :blk if (path[0] == '?')
+                .{ true, path[1..] }
+            else if (path[0] == '"' and path[path.len - 1] == '"')
+                .{ false, path[1 .. path.len - 1] }
+            else
+                .{ false, path };
+        };
 
         // All paths should already be absolute at this point because
         // they're fixed up after each load.
@@ -2282,13 +2294,15 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         }
 
         var file = cwd.openFile(path, .{}) catch |err| {
-            try self._errors.add(arena_alloc, .{
-                .message = try std.fmt.allocPrintZ(
-                    arena_alloc,
-                    "error opening config-file {s}: {}",
-                    .{ path, err },
-                ),
-            });
+            if (err != error.FileNotFound or !optional) {
+                try self._errors.add(arena_alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        arena_alloc,
+                        "error opening config-file {s}: {}",
+                        .{ path, err },
+                    ),
+                });
+            }
             continue;
         };
         defer file.close();
@@ -3261,14 +3275,37 @@ pub const RepeatablePath = struct {
         var dir = try std.fs.cwd().openDir(base, .{});
         defer dir.close();
 
-        for (self.value.list.items, 0..) |path, i| {
+        for (0..self.value.list.items.len) |i| {
+            const optional, const path = blk: {
+                const path = self.value.list.items[i];
+                if (path.len == 0) {
+                    continue;
+                }
+
+                break :blk if (path[0] == '?')
+                    .{ true, path[1..] }
+                else if (path[0] == '"' and path[path.len - 1] == '"')
+                    .{ false, path[1 .. path.len - 1] }
+                else
+                    .{ false, path };
+            };
+
             // If it is already absolute we can ignore it.
-            if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
+            if (std.fs.path.isAbsolute(path)) continue;
 
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
             var buf: [std.fs.max_path_bytes]u8 = undefined;
-            const abs = dir.realpath(path, &buf) catch |err| {
+            const abs = dir.realpath(path, &buf) catch |err| abs: {
+                if (err == error.FileNotFound and optional) {
+                    // The file doesn't exist. Try to resolve the relative path
+                    // another way.
+                    const resolved = try std.fs.path.resolve(alloc, &.{ base, path });
+                    defer alloc.free(resolved);
+                    @memcpy(buf[0..resolved.len], resolved);
+                    break :abs buf[0..resolved.len];
+                }
+
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
