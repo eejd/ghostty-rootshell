@@ -2262,7 +2262,12 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     defer loaded.deinit();
 
     const cwd = std.fs.cwd();
-    for (0..self.@"config-file".value.list.items.len) |i| {
+
+    // We must use a while below and not a for(items) because we
+    // may add items to the list while iterating for recursive
+    // config-file entries.
+    var i: usize = 0;
+    while (i < self.@"config-file".value.list.items.len) : (i += 1) {
         const optional, const path = blk: {
             const path = self.@"config-file".value.list.items[i];
             if (path.len == 0) {
