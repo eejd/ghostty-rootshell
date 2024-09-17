@@ -353,8 +353,14 @@ pub const Parser = struct {
         }
 
         // Some commands have their own memory management we need to clear.
+        // After cleaning up these command, we reset the command to
+        // some nonsense (but valid) command so we don't double free.
+        const default: Command = .{ .hyperlink_end = {} };
         switch (self.command) {
-            .kitty_color_protocol => |*v| v.list.deinit(),
+            .kitty_color_protocol => |*v| {
+                v.list.deinit();
+                self.command = default;
+            },
             else => {},
         }
     }
@@ -1729,6 +1735,27 @@ test "OSC: kitty color protocol double reset" {
     try testing.expect(cmd == .kitty_color_protocol);
 
     p.reset();
+    p.reset();
+}
+
+test "OSC: kitty color protocol reset after invalid" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .kitty_color_protocol);
+
+    p.reset();
+
+    try testing.expectEqual(Parser.State.empty, p.state);
+    p.next('X');
+    try testing.expectEqual(Parser.State.invalid, p.state);
+
     p.reset();
 }
 
