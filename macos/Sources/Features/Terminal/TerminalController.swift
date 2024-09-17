@@ -634,6 +634,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         // Custom toolbar-based title used when titlebar tabs are enabled.
         if let toolbar = window.toolbar as? TerminalToolbar {
+            if (window.titlebarTabs) {
+                // Updating the title text as above automatically reveals the
+                // native title view in macOS 15.0 and above. Since we're using
+                // a custom view instead, we need to re-hide it.
+                window.titleVisibility = .hidden
+            }
             toolbar.titleText = to
         }
     }
