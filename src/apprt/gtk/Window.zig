@@ -571,6 +571,7 @@ fn adwTabOverviewOpen(
 fn adwTabOverviewFocusTimer(
     self: *Window,
 ) callconv(.C) c.gboolean {
+    self.adw_tab_overview_focus_timer = null;
     self.focusCurrentTab();
 
     // Remove the timer
