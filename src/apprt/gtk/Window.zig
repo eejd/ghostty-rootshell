@@ -45,6 +45,9 @@ context_menu: *c.GtkWidget,
 /// not used, this is null and unused.
 toast_overlay: ?*c.GtkWidget,
 
+/// See adwTabOverviewOpen for why we have this.
+adw_tab_overview_focus_timer: ?c.guint = null,
+
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -118,6 +121,14 @@ pub fn init(self: *Window, app: *App) !void {
             tab_overview,
             "create-tab",
             c.G_CALLBACK(&gtkNewTabFromOverview),
+            self,
+            null,
+            c.G_CONNECT_DEFAULT,
+        );
+        _ = c.g_signal_connect_data(
+            tab_overview,
+            "notify::open",
+            c.G_CALLBACK(&adwTabOverviewOpen),
             self,
             null,
             c.G_CONNECT_DEFAULT,
@@ -367,6 +378,10 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     c.gtk_widget_unparent(@ptrCast(self.context_menu));
+
+    if (self.adw_tab_overview_focus_timer) |timer| {
+        _ = c.g_source_remove(timer);
+    }
 }
 
 /// Returns true if this window should use an Adwaita window.
@@ -514,6 +529,51 @@ fn gtkNewTabFromOverview(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) ?*c.AdwT
     const surface = self.actionSurface();
     const tab = Tab.create(alloc, self, surface) catch return null;
     return c.adw_tab_view_get_page(self.notebook.adw_tab_view, @ptrCast(@alignCast(tab.box)));
+}
+
+fn adwTabOverviewOpen(
+    object: *c.GObject,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) void {
+    const tab_overview: *c.AdwTabOverview = @ptrCast(@alignCast(object));
+
+    // We only care about when the tab overview is closed.
+    if (c.adw_tab_overview_get_open(tab_overview) == 1) {
+        return;
+    }
+
+    // On tab overview close, focus is sometimes lost. This is an
+    // upstream issue in libadwaita[1]. When this is resolved we
+    // can put a runtime version check here to avoid this workaround.
+    //
+    // Our workaround is to start a timer after 500ms to refocus
+    // the currently selected tab. We choose 500ms because the adw
+    // animation is 400ms.
+    //
+    // [1]: https://gitlab.gnome.org/GNOME/libadwaita/-/issues/670
+    const window: *Window = @ptrCast(@alignCast(ud.?));
+
+    // If we have an old timer remove it
+    if (window.adw_tab_overview_focus_timer) |timer| {
+        _ = c.g_source_remove(timer);
+    }
+
+    // Restart our timer
+    window.adw_tab_overview_focus_timer = c.g_timeout_add(
+        500,
+        @ptrCast(&adwTabOverviewFocusTimer),
+        window,
+    );
+}
+
+fn adwTabOverviewFocusTimer(
+    self: *Window,
+) callconv(.C) c.gboolean {
+    self.focusCurrentTab();
+
+    // Remove the timer
+    return 0;
 }
 
 fn gtkRefocusTerm(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
