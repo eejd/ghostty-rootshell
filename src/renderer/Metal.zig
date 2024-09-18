@@ -347,7 +347,7 @@ pub const DerivedConfig = struct {
     bold_is_bright: bool,
     min_contrast: f32,
     padding_color: configpkg.WindowPaddingColor,
-    custom_shaders: std.ArrayListUnmanaged([:0]const u8),
+    custom_shaders: configpkg.RepeatablePath,
     links: link.Set,
     vsync: bool,
 
@@ -360,7 +360,7 @@ pub const DerivedConfig = struct {
         const alloc = arena.allocator();
 
         // Copy our shaders
-        const custom_shaders = try config.@"custom-shader".value.list.clone(alloc);
+        const custom_shaders = try config.@"custom-shader".clone(alloc);
 
         // Copy our font features
         const font_features = try config.@"font-feature".list.clone(alloc);
@@ -540,7 +540,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // Load our custom shaders
     const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
         arena_alloc,
-        options.config.custom_shaders.items,
+        options.config.custom_shaders,
         .msl,
     ) catch |err| err: {
         log.warn("error loading custom shaders err={}", .{err});
