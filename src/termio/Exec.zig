@@ -21,11 +21,15 @@ const terminal = @import("../terminal/main.zig");
 const termio = @import("../termio.zig");
 const Command = @import("../Command.zig");
 const SegmentedPool = @import("../segmented_pool.zig").SegmentedPool;
-const Pty = @import("../pty.zig").Pty;
+const ptypkg = @import("../pty.zig");
+const Pty = ptypkg.Pty;
 const EnvMap = std.process.EnvMap;
 const windows = internal_os.windows;
 
 const log = std.log.scoped(.io_exec);
+
+/// The termios poll rate in milliseconds.
+const TERMIOS_POLL_MS = 200;
 
 /// The subprocess state for our exec backend.
 subprocess: Subprocess,
@@ -114,6 +118,12 @@ pub fn threadEnter(
     var process = try xev.Process.init(pid);
     errdefer process.deinit();
 
+    // Start our timer to read termios state changes. This is used
+    // to detect things such as when password input is being done
+    // so we can render the terminal in a different way.
+    var termios_timer = try xev.Timer.init();
+    errdefer termios_timer.deinit();
+
     // Start our read thread
     const read_thread = try std.Thread.spawn(
         .{},
@@ -131,7 +141,9 @@ pub fn threadEnter(
         .process = process,
         .read_thread = read_thread,
         .read_thread_pipe = pipe[1],
-        .read_thread_fd = if (builtin.os.tag == .windows) pty_fds.read else {},
+        .read_thread_fd = pty_fds.read,
+        .termios_timer = termios_timer,
+        .renderer_wakeup = io.renderer_wakeup,
     } };
 
     // Start our process watcher
@@ -142,6 +154,20 @@ pub fn threadEnter(
         td,
         processExit,
     );
+
+    // Start our termios timer. We only support this on Windows.
+    // Fundamentally, we could support this on Windows so we're just
+    // waiting for someone to implement it.
+    if (comptime builtin.os.tag != .windows) {
+        termios_timer.run(
+            td.loop,
+            &td.backend.exec.termios_timer_c,
+            TERMIOS_POLL_MS,
+            termio.Termio.ThreadData,
+            td,
+            termiosTimer,
+        );
+    }
 }
 
 pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
@@ -168,6 +194,32 @@ pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
     }
 
     exec.read_thread.join();
+}
+
+pub fn focusGained(
+    self: *Exec,
+    td: *termio.Termio.ThreadData,
+    focused: bool,
+) !void {
+    _ = self;
+
+    assert(td.backend == .exec);
+    const execdata = &td.backend.exec;
+
+    if (!focused) {
+        // Flag the timer to end on the next iteration. This is
+        // a lot cheaper than doing full timer cancellation.
+        execdata.termios_timer_running = false;
+    } else {
+        // If we're focused, we want to start our termios timer. We
+        // only do this if it isn't already running. We use the termios
+        // callback because that'll trigger an immediate state check AND
+        // start the timer.
+        if (execdata.termios_timer_c.state() != .active) {
+            execdata.termios_timer_running = true;
+            _ = termiosTimer(td, undefined, undefined, {});
+        }
+    }
 }
 
 pub fn resize(
@@ -359,6 +411,85 @@ fn processExit(
     return .disarm;
 }
 
+fn termiosTimer(
+    td_: ?*termio.Termio.ThreadData,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
+    // log.debug("termios timer fired", .{});
+
+    // This should never happen because we guard starting our
+    // timer on windows but we want this assertion to fire if
+    // we ever do start the timer on windows.
+    // TODO: support on windows
+    if (comptime builtin.os.tag == .windows) {
+        @panic("termios timer not implemented on Windows");
+    }
+
+    _ = r catch |err| switch (err) {
+        // This is sent when our timer is canceled. That's fine.
+        error.Canceled => return .disarm,
+
+        else => {
+            log.warn("error in termios timer callback err={}", .{err});
+            @panic("crash in termios timer callback");
+        },
+    };
+
+    const td = td_.?;
+    assert(td.backend == .exec);
+    const exec = &td.backend.exec;
+
+    // This is kind of hacky but we rebuild a Pty struct to get the
+    // termios data.
+    const mode: ptypkg.Mode = (Pty{
+        .master = exec.read_thread_fd,
+        .slave = undefined,
+    }).getMode() catch |err| err: {
+        log.warn("error getting termios mode err={}", .{err});
+
+        // If we have an error we return the default mode values
+        // which are the likely values.
+        break :err .{};
+    };
+
+    // If the mode changed, then we process it.
+    if (!std.meta.eql(mode, exec.termios_mode)) {
+        log.debug("termios change mode={}", .{mode});
+        exec.termios_mode = mode;
+
+        {
+            td.renderer_state.mutex.lock();
+            defer td.renderer_state.mutex.unlock();
+            const t = td.renderer_state.terminal;
+
+            // We assume we're in some sort of password input if we're
+            // in canonical mode and not echoing. This is a heuristic.
+            t.flags.password_input = mode.canonical and !mode.echo;
+        }
+
+        // Notify the renderer of our state change
+        exec.renderer_wakeup.notify() catch |err| {
+            log.warn("error notifying renderer err={}", .{err});
+        };
+    }
+
+    // Repeat the timer
+    if (exec.termios_timer_running) {
+        exec.termios_timer.run(
+            td.loop,
+            &exec.termios_timer_c,
+            TERMIOS_POLL_MS,
+            termio.Termio.ThreadData,
+            td,
+            termiosTimer,
+        );
+    }
+
+    return .disarm;
+}
+
 pub fn queueWrite(
     self: *Exec,
     alloc: Allocator,
@@ -498,7 +629,19 @@ pub const ThreadData = struct {
     /// Reader thread state
     read_thread: std.Thread,
     read_thread_pipe: posix.fd_t,
-    read_thread_fd: if (builtin.os.tag == .windows) posix.fd_t else void,
+    read_thread_fd: posix.fd_t,
+
+    /// The timer to detect termios state changes.
+    termios_timer: xev.Timer,
+    termios_timer_c: xev.Completion = .{},
+    termios_timer_running: bool = true,
+
+    /// The last known termios mode. Used for change detection
+    /// to prevent unnecessary locking of expensive mutexes.
+    termios_mode: ptypkg.Mode = .{},
+
+    /// The handle to wake up the renderer.
+    renderer_wakeup: xev.Async,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         posix.close(self.read_thread_pipe);
@@ -514,6 +657,9 @@ pub const ThreadData = struct {
 
         // Stop our write stream
         self.write_stream.deinit();
+
+        // Stop our termios timer
+        self.termios_timer.deinit();
     }
 };
 

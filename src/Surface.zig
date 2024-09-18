@@ -1826,17 +1826,12 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Schedule render which also drains our mailbox
     try self.queueRender();
 
-    // Update the focus state and notify the terminal about the focus event if
-    // it is requesting it
+    // Update the focus state and notify the terminal
     {
         self.renderer_state.mutex.lock();
         self.io.terminal.flags.focused = focused;
-        const focus_event = self.io.terminal.modes.get(.focus_event);
         self.renderer_state.mutex.unlock();
-
-        if (focus_event) {
-            self.io.queueMessage(.{ .focused = focused }, .unlocked);
-        }
+        self.io.queueMessage(.{ .focused = focused }, .unlocked);
     }
 }
 

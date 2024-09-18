@@ -523,8 +523,18 @@ pub fn childExitedAbnormally(self: *Termio, exit_code: u32, runtime_ms: u64) !vo
 
 /// Called when focus is gained or lost (when focus events are enabled)
 pub fn focusGained(self: *Termio, td: *ThreadData, focused: bool) !void {
-    const seq = if (focused) "\x1b[I" else "\x1b[O";
-    try self.queueWrite(td, seq, false);
+    self.renderer_state.mutex.lock();
+    const focus_event = self.renderer_state.terminal.modes.get(.focus_event);
+    self.renderer_state.mutex.unlock();
+
+    // If we have focus events enabled, we send the focus event.
+    if (focus_event) {
+        const seq = if (focused) "\x1b[I" else "\x1b[O";
+        try self.queueWrite(td, seq, false);
+    }
+
+    // We always notify our backend of focus changes.
+    try self.backend.focusGained(td, focused);
 }
 
 /// Process output from the pty. This is the manual API that users can
