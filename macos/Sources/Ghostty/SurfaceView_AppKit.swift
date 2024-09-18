@@ -971,12 +971,12 @@ extension Ghostty {
             menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
 
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Split Right", action: #selector(TerminalController.splitRight(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Split Down", action: #selector(TerminalController.splitDown(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Right", action: #selector(splitRight(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Down", action: #selector(splitDown(_:)), keyEquivalent: "")
 
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Reset Terminal", action: #selector(TerminalController.resetTerminal(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(TerminalController.toggleTerminalInspector(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Reset Terminal", action: #selector(resetTerminal(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(toggleTerminalInspector(_:)), keyEquivalent: "")
 
             return menu
         }
@@ -1011,6 +1011,32 @@ extension Ghostty {
         @IBAction override func selectAll(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "select_all"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+
+        @IBAction func splitRight(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_RIGHT)
+        }
+
+        @IBAction func splitDown(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DOWN)
+        }
+
+        @objc func resetTerminal(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            let action = "reset"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+
+        @objc func toggleTerminalInspector(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            let action = "inspector:toggle"
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
