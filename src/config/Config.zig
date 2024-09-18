@@ -2246,7 +2246,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     }
 
     // Config files loaded from the CLI args are relative to pwd
-    if (self.@"config-file".value.list.items.len > 0) {
+    if (self.@"config-file".value.items.len > 0) {
         var buf: [std.fs.max_path_bytes]u8 = undefined;
         try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
     }
@@ -2254,7 +2254,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
 
 /// Load and parse the config files that were added in the "config-file" key.
 pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
-    if (self.@"config-file".value.list.items.len == 0) return;
+    if (self.@"config-file".value.items.len == 0) return;
     const arena_alloc = self._arena.?.allocator();
 
     // Keeps track of loaded files to prevent cycles.
@@ -2267,20 +2267,14 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     // may add items to the list while iterating for recursive
     // config-file entries.
     var i: usize = 0;
-    while (i < self.@"config-file".value.list.items.len) : (i += 1) {
-        const optional, const path = blk: {
-            const path = self.@"config-file".value.list.items[i];
-            if (path.len == 0) {
-                continue;
-            }
-
-            break :blk if (path[0] == '?')
-                .{ true, path[1..] }
-            else if (path[0] == '"' and path[path.len - 1] == '"')
-                .{ false, path[1 .. path.len - 1] }
-            else
-                .{ false, path };
+    while (i < self.@"config-file".value.items.len) : (i += 1) {
+        const path, const optional = switch (self.@"config-file".value.items[i]) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
         };
+
+        // Error paths
+        if (path.len == 0) continue;
 
         // All paths should already be absolute at this point because
         // they're fixed up after each load.
@@ -3246,27 +3240,86 @@ pub const RepeatableString = struct {
 pub const RepeatablePath = struct {
     const Self = @This();
 
-    value: RepeatableString = .{},
+    const Path = union(enum) {
+        /// No error if the file does not exist.
+        optional: [:0]const u8,
+
+        /// The file is required to exist.
+        required: [:0]const u8,
+    };
+
+    value: std.ArrayListUnmanaged(Path) = .{},
 
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
-        return self.value.parseCLI(alloc, input);
+        const value, const optional = if (input) |value| blk: {
+            if (value.len == 0) {
+                self.value.clearRetainingCapacity();
+                return;
+            }
+
+            break :blk if (value[0] == '?')
+                .{ value[1..], true }
+            else if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"')
+                .{ value[1 .. value.len - 1], false }
+            else
+                .{ value, false };
+        } else return error.ValueRequired;
+
+        if (value.len == 0) {
+            // This handles the case of zero length paths after removing any ?
+            // prefixes or surrounding quotes. In this case, we don't reset the
+            // list.
+            return;
+        }
+
+        const item: Path = if (optional)
+            .{ .optional = try alloc.dupeZ(u8, value) }
+        else
+            .{ .required = try alloc.dupeZ(u8, value) };
+
+        try self.value.append(alloc, item);
     }
 
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) !Self {
+        const value = try self.value.clone(alloc);
+        for (value.items) |*item| {
+            switch (item.*) {
+                .optional, .required => |*path| path.* = try alloc.dupeZ(u8, path.*),
+            }
+        }
+
         return .{
-            .value = try self.value.clone(alloc),
+            .value = value,
         };
     }
 
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Self, other: Self) bool {
-        return self.value.equal(other.value);
+        if (self.value.items.len != other.value.items.len) return false;
+        for (self.value.items, other.value.items) |a, b| {
+            if (!std.meta.eql(a, b)) return false;
+        }
+
+        return true;
     }
 
     /// Used by Formatter
     pub fn formatEntry(self: Self, formatter: anytype) !void {
-        try self.value.formatEntry(formatter);
+        if (self.value.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [std.fs.max_path_bytes + 1]u8 = undefined;
+        for (self.value.items) |item| {
+            const value = switch (item) {
+                .optional => |path| try std.fmt.bufPrint(&buf, "?{s}", .{path}),
+                .required => |path| path,
+            };
+
+            try formatter.formatEntry([]const u8, value);
+        }
     }
 
     /// Expand all the paths relative to the base directory.
@@ -3280,29 +3333,19 @@ pub const RepeatablePath = struct {
         var dir = try std.fs.cwd().openDir(base, .{});
         defer dir.close();
 
-        for (0..self.value.list.items.len) |i| {
-            const optional, const path = blk: {
-                const path = self.value.list.items[i];
-                if (path.len == 0) {
-                    continue;
-                }
-
-                break :blk if (path[0] == '?')
-                    .{ true, path[1..] }
-                else if (path[0] == '"' and path[path.len - 1] == '"')
-                    .{ false, path[1 .. path.len - 1] }
-                else
-                    .{ false, path };
+        for (0..self.value.items.len) |i| {
+            const path = switch (self.value.items[i]) {
+                .optional, .required => |path| path,
             };
 
             // If it is already absolute we can ignore it.
-            if (std.fs.path.isAbsolute(path)) continue;
+            if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
 
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
             var buf: [std.fs.max_path_bytes]u8 = undefined;
             const abs = dir.realpath(path, &buf) catch |err| abs: {
-                if (err == error.FileNotFound and optional) {
+                if (err == error.FileNotFound) {
                     // The file doesn't exist. Try to resolve the relative path
                     // another way.
                     const resolved = try std.fs.path.resolve(alloc, &.{ base, path });
@@ -3314,20 +3357,98 @@ pub const RepeatablePath = struct {
                 try errors.add(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
-                        "error resolving config-file {s}: {}",
+                        "error resolving file path {s}: {}",
                         .{ path, err },
                     ),
                 });
-                self.value.list.items[i] = "";
+
+                // Blank this path so that we don't attempt to resolve it again
+                self.value.items[i] = .{ .required = "" };
+
                 continue;
             };
 
             log.debug(
-                "expanding config-file path relative={s} abs={s}",
+                "expanding file path relative={s} abs={s}",
                 .{ path, abs },
             );
-            self.value.list.items[i] = try alloc.dupeZ(u8, abs);
+
+            switch (self.value.items[i]) {
+                .optional, .required => |*p| p.* = try alloc.dupeZ(u8, abs),
+            }
         }
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "config.1");
+        try list.parseCLI(alloc, "?config.2");
+        try list.parseCLI(alloc, "\"?config.3\"");
+
+        // Zero-length values, ignored
+        try list.parseCLI(alloc, "?");
+        try list.parseCLI(alloc, "\"\"");
+
+        try testing.expectEqual(@as(usize, 3), list.value.items.len);
+
+        const Tag = std.meta.Tag(Path);
+        try testing.expectEqual(Tag.required, @as(Tag, list.value.items[0]));
+        try testing.expectEqualStrings("config.1", list.value.items[0].required);
+
+        try testing.expectEqual(Tag.optional, @as(Tag, list.value.items[1]));
+        try testing.expectEqualStrings("config.2", list.value.items[1].optional);
+
+        try testing.expectEqual(Tag.required, @as(Tag, list.value.items[2]));
+        try testing.expectEqualStrings("?config.3", list.value.items[2].required);
+
+        try list.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), list.value.items.len);
+    }
+
+    test "formatConfig empty" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var list: Self = .{};
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = \n", buf.items);
+    }
+
+    test "formatConfig single item" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = A\n", buf.items);
+    }
+
+    test "formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+        try list.parseCLI(alloc, "?B");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = A\na = ?B\n", buf.items);
     }
 };
 

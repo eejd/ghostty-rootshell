@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const glslang = @import("glslang");
 const spvcross = @import("spirv_cross");
+const configpkg = @import("../config.zig");
 
 const log = std.log.scoped(.shadertoy);
 
@@ -15,15 +16,26 @@ pub const Target = enum { glsl, msl };
 /// format. The shader order is preserved.
 pub fn loadFromFiles(
     alloc_gpa: Allocator,
-    paths: []const []const u8,
+    paths: configpkg.RepeatablePath,
     target: Target,
 ) ![]const [:0]const u8 {
     var list = std.ArrayList([:0]const u8).init(alloc_gpa);
     defer list.deinit();
     errdefer for (list.items) |shader| alloc_gpa.free(shader);
 
-    for (paths) |path| {
-        const shader = try loadFromFile(alloc_gpa, path, target);
+    for (paths.value.items) |item| {
+        const path, const optional = switch (item) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
+        };
+
+        const shader = loadFromFile(alloc_gpa, path, target) catch |err| {
+            if (err == error.FileNotFound and optional) {
+                continue;
+            }
+
+            return err;
+        };
         log.info("loaded custom shader path={s}", .{path});
         try list.append(shader);
     }
