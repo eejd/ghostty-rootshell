@@ -143,6 +143,7 @@ pub fn threadEnter(
         .read_thread_pipe = pipe[1],
         .read_thread_fd = pty_fds.read,
         .termios_timer = termios_timer,
+        .renderer_wakeup = io.renderer_wakeup,
     } };
 
     // Start our process watcher
@@ -425,7 +426,26 @@ fn termiosTimer(
         break :err .{};
     };
 
-    log.warn("termios mode={}", .{mode});
+    // If the mode changed, then we process it.
+    if (!std.meta.eql(mode, exec.termios_mode)) {
+        log.debug("termios change mode={}", .{mode});
+        exec.termios_mode = mode;
+
+        {
+            td.renderer_state.mutex.lock();
+            defer td.renderer_state.mutex.unlock();
+            const t = td.renderer_state.terminal;
+
+            // We assume we're in some sort of password input if we're
+            // in canonical mode and not echoing. This is a heuristic.
+            t.flags.password_input = mode.canonical and !mode.echo;
+        }
+
+        // Notify the renderer of our state change
+        exec.renderer_wakeup.notify() catch |err| {
+            log.warn("error notifying renderer err={}", .{err});
+        };
+    }
 
     // Repeat the timer
     exec.termios_timer.run(
@@ -584,6 +604,13 @@ pub const ThreadData = struct {
     /// The timer to detect termios state changes.
     termios_timer: xev.Timer,
     termios_timer_c: xev.Completion = .{},
+
+    /// The last known termios mode. Used for change detection
+    /// to prevent unnecessary locking of expensive mutexes.
+    termios_mode: ptypkg.Mode = .{},
+
+    /// The handle to wake up the renderer.
+    renderer_wakeup: xev.Async,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         posix.close(self.read_thread_pipe);

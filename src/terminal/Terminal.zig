@@ -119,6 +119,11 @@ flags: packed struct {
     /// True if the window is focused.
     focused: bool = true,
 
+    /// True if the terminal is in a password entry mode. This is set
+    /// to true based on termios state. This is set
+    /// to true based on termios state.
+    password_input: bool = false,
+
     /// Dirty flags for the renderer.
     dirty: Dirty = .{},
 } = .{},
