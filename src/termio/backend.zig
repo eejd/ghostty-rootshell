@@ -62,6 +62,16 @@ pub const Backend = union(Kind) {
         }
     }
 
+    pub fn focusGained(
+        self: *Backend,
+        td: *termio.Termio.ThreadData,
+        focused: bool,
+    ) !void {
+        switch (self.*) {
+            .exec => |*exec| try exec.focusGained(td, focused),
+        }
+    }
+
     pub fn resize(
         self: *Backend,
         grid_size: renderer.GridSize,

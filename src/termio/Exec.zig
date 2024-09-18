@@ -196,6 +196,32 @@ pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
     exec.read_thread.join();
 }
 
+pub fn focusGained(
+    self: *Exec,
+    td: *termio.Termio.ThreadData,
+    focused: bool,
+) !void {
+    _ = self;
+
+    assert(td.backend == .exec);
+    const execdata = &td.backend.exec;
+
+    if (!focused) {
+        // Flag the timer to end on the next iteration. This is
+        // a lot cheaper than doing full timer cancellation.
+        execdata.termios_timer_running = false;
+    } else {
+        // If we're focused, we want to start our termios timer. We
+        // only do this if it isn't already running. We use the termios
+        // callback because that'll trigger an immediate state check AND
+        // start the timer.
+        if (execdata.termios_timer_c.state() != .active) {
+            execdata.termios_timer_running = true;
+            _ = termiosTimer(td, undefined, undefined, {});
+        }
+    }
+}
+
 pub fn resize(
     self: *Exec,
     grid_size: renderer.GridSize,
@@ -391,6 +417,8 @@ fn termiosTimer(
     _: *xev.Completion,
     r: xev.Timer.RunError!void,
 ) xev.CallbackAction {
+    // log.debug("termios timer fired", .{});
+
     // This should never happen because we guard starting our
     // timer on windows but we want this assertion to fire if
     // we ever do start the timer on windows.
@@ -448,14 +476,16 @@ fn termiosTimer(
     }
 
     // Repeat the timer
-    exec.termios_timer.run(
-        td.loop,
-        &exec.termios_timer_c,
-        TERMIOS_POLL_MS,
-        termio.Termio.ThreadData,
-        td,
-        termiosTimer,
-    );
+    if (exec.termios_timer_running) {
+        exec.termios_timer.run(
+            td.loop,
+            &exec.termios_timer_c,
+            TERMIOS_POLL_MS,
+            termio.Termio.ThreadData,
+            td,
+            termiosTimer,
+        );
+    }
 
     return .disarm;
 }
@@ -604,6 +634,7 @@ pub const ThreadData = struct {
     /// The timer to detect termios state changes.
     termios_timer: xev.Timer,
     termios_timer_c: xev.Completion = .{},
+    termios_timer_running: bool = true,
 
     /// The last known termios mode. Used for change detection
     /// to prevent unnecessary locking of expensive mutexes.
