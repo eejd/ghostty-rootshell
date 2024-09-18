@@ -360,7 +360,7 @@ pub const DerivedConfig = struct {
         const alloc = arena.allocator();
 
         // Copy our shaders
-        const custom_shaders = try config.@"custom-shader".value.clone(alloc);
+        const custom_shaders = try config.@"custom-shader".clone(alloc);
 
         // Copy our font features
         const font_features = try config.@"font-feature".list.clone(alloc);
@@ -549,7 +549,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
 
     // If we have custom shaders then setup our state
     var custom_shader_state: ?CustomShaderState = state: {
-        if (custom_shaders.value.items.len == 0) break :state null;
+        if (custom_shaders.len == 0) break :state null;
 
         // Build our sampler for our texture
         var sampler = try mtl_sampler.Sampler.init(gpu_state.device);
