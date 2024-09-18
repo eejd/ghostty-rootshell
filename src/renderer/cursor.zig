@@ -6,10 +6,14 @@ const State = @import("State.zig");
 /// This is a superset of terminal cursor styles since the renderer supports
 /// some additional cursor states such as the hollow block.
 pub const Style = enum {
+    // Typical cursor input styles
     block,
     block_hollow,
     bar,
     underline,
+
+    // Special cursor styles
+    lock,
 
     /// Create a cursor style from the terminal style request.
     pub fn fromTerminal(term: terminal.CursorStyle) ?Style {

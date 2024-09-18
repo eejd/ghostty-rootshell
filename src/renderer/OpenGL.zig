@@ -767,11 +767,14 @@ pub fn updateFrame(
         errdefer screen_copy.deinit();
 
         // Whether to draw our cursor or not.
-        const cursor_style = renderer.cursorStyle(
-            state,
-            self.focused,
-            cursor_blink_visible,
-        );
+        const cursor_style = if (state.terminal.flags.password_input)
+            .lock
+        else
+            renderer.cursorStyle(
+                state,
+                self.focused,
+                cursor_blink_visible,
+            );
 
         // Get our preedit state
         const preedit: ?renderer.State.Preedit = preedit: {
@@ -1537,24 +1540,52 @@ fn addCursor(
         break :alpha @intFromFloat(@ceil(alpha));
     };
 
-    const sprite: font.Sprite = switch (cursor_style) {
-        .block => .cursor_rect,
-        .block_hollow => .cursor_hollow_rect,
-        .bar => .cursor_bar,
-        .underline => .underline,
-    };
+    const render = switch (cursor_style) {
+        .block,
+        .block_hollow,
+        .bar,
+        .underline,
+        => render: {
+            const sprite: font.Sprite = switch (cursor_style) {
+                .block => .cursor_rect,
+                .block_hollow => .cursor_hollow_rect,
+                .bar => .cursor_bar,
+                .underline => .underline,
+                .lock => unreachable,
+            };
 
-    const render = self.font_grid.renderGlyph(
-        self.alloc,
-        font.sprite_index,
-        @intFromEnum(sprite),
-        .{
-            .cell_width = if (wide) 2 else 1,
-            .grid_metrics = self.grid_metrics,
+            break :render self.font_grid.renderGlyph(
+                self.alloc,
+                font.sprite_index,
+                @intFromEnum(sprite),
+                .{
+                    .cell_width = if (wide) 2 else 1,
+                    .grid_metrics = self.grid_metrics,
+                },
+            ) catch |err| {
+                log.warn("error rendering cursor glyph err={}", .{err});
+                return null;
+            };
         },
-    ) catch |err| {
-        log.warn("error rendering cursor glyph err={}", .{err});
-        return null;
+
+        .lock => self.font_grid.renderCodepoint(
+            self.alloc,
+            0xF023, // lock symbol
+            .regular,
+            .text,
+            .{
+                .cell_width = if (wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        ) catch |err| {
+            log.warn("error rendering cursor glyph err={}", .{err});
+            return null;
+        } orelse {
+            // This should never happen because we embed nerd
+            // fonts so we just log and return instead of fallback.
+            log.warn("failed to find lock symbol for cursor codepoint=0xF023", .{});
+            return null;
+        },
     };
 
     try self.cells.append(self.alloc, .{

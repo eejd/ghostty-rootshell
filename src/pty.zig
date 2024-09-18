@@ -55,6 +55,11 @@ const NullPty = struct {
         _ = self;
     }
 
+    pub fn getMode(self: Pty) error{GetModeFailed}!Mode {
+        _ = self;
+        return .{};
+    }
+
     pub fn setSize(self: *Pty, size: winsize) !void {
         _ = self;
         _ = size;
