@@ -21,6 +21,20 @@ pub const Pty = switch (builtin.os.tag) {
     else => PosixPty,
 };
 
+/// The modes of a pty. Not all of these modes are supported on
+/// all platforms but all platforms share the same mode struct.
+///
+/// The default values of fields in this struct are set to the
+/// most typical values for a pty. This makes it easier for cross-platform
+/// code which doesn't support all of the modes to work correctly.
+pub const Mode = packed struct {
+    /// ICANON on POSIX
+    canonical: bool = true,
+
+    /// ECHO on POSIX
+    echo: bool = true,
+};
+
 // A pty implementation that does nothing.
 //
 // TODO: This should be removed. This is only temporary until we have
@@ -117,6 +131,17 @@ const PosixPty = struct {
         _ = posix.system.close(self.master);
         _ = posix.system.close(self.slave);
         self.* = undefined;
+    }
+
+    pub fn getMode(self: Pty) error{GetModeFailed}!Mode {
+        var attrs: c.termios = undefined;
+        if (c.tcgetattr(self.master, &attrs) != 0)
+            return error.GetModeFailed;
+
+        return .{
+            .canonical = (attrs.c_lflag & c.ICANON) != 0,
+            .echo = (attrs.c_lflag & c.ECHO) != 0,
+        };
     }
 
     /// Return the size of the pty.
