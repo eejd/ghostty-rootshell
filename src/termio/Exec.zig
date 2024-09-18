@@ -29,7 +29,7 @@ const windows = internal_os.windows;
 const log = std.log.scoped(.io_exec);
 
 /// The termios poll rate in milliseconds.
-const TERMIOS_POLL_MS = 500;
+const TERMIOS_POLL_MS = 200;
 
 /// The subprocess state for our exec backend.
 subprocess: Subprocess,
