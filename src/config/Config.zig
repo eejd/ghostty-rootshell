@@ -3314,7 +3314,15 @@ pub const RepeatablePath = struct {
         var buf: [std.fs.max_path_bytes + 1]u8 = undefined;
         for (self.value.items) |item| {
             const value = switch (item) {
-                .optional => |path| try std.fmt.bufPrint(&buf, "?{s}", .{path}),
+                .optional => |path| std.fmt.bufPrint(
+                    &buf,
+                    "?{s}",
+                    .{path},
+                ) catch |err| switch (err) {
+                    // Required for builds on Linux where NoSpaceLeft
+                    // isn't an allowed error for fmt.
+                    error.NoSpaceLeft => return error.OutOfMemory,
+                },
                 .required => |path| path,
             };
 
