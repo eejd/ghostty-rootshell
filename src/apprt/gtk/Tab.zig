@@ -35,7 +35,7 @@ elem: Surface.Container.Elem,
 // We'll update this every time a Surface gains focus, so that we have it
 // when we switch to another Tab. Then when we switch back to this tab, we
 // can easily re-focus that terminal.
-focus_child: *Surface,
+focus_child: ?*Surface,
 
 pub fn create(alloc: Allocator, window: *Window, parent_: ?*CoreSurface) !*Tab {
     var tab = try alloc.create(Tab);
@@ -52,7 +52,7 @@ pub fn init(self: *Tab, window: *Window, parent_: ?*CoreSurface) !void {
         .label_text = undefined,
         .box = undefined,
         .elem = undefined,
-        .focus_child = undefined,
+        .focus_child = null,
     };
 
     // Create a Box in which we'll later keep either Surface or Split.

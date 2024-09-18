@@ -476,7 +476,8 @@ pub fn toggleWindowDecorations(self: *Window) void {
 /// Grabs focus on the currently selected tab.
 pub fn focusCurrentTab(self: *Window) void {
     const tab = self.notebook.currentTab() orelse return;
-    const gl_area = @as(*c.GtkWidget, @ptrCast(tab.focus_child.gl_area));
+    const surface = tab.focus_child orelse return;
+    const gl_area = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
     _ = c.gtk_widget_grab_focus(gl_area);
 }
 
@@ -760,7 +761,8 @@ fn gtkActionReset(
 /// Returns the surface to use for an action.
 fn actionSurface(self: *Window) ?*CoreSurface {
     const tab = self.notebook.currentTab() orelse return null;
-    return &tab.focus_child.core_surface;
+    const surface = tab.focus_child orelse return null;
+    return &surface.core_surface;
 }
 
 fn userdataSelf(ud: *anyopaque) *Window {
