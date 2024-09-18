@@ -299,6 +299,7 @@ pub fn init(self: *Window, app: *App) !void {
                 // In earlier adwaita versions, we need to add the tabbar manually since we do not use
                 // an AdwToolbarView.
                 const tab_bar: *c.AdwTabBar = c.adw_tab_bar_new().?;
+                c.gtk_widget_add_css_class(@ptrCast(@alignCast(tab_bar)), "inline");
                 switch (app.config.@"gtk-tabs-location") {
                     // left and right is not supported in libadwaita.
                     .top,

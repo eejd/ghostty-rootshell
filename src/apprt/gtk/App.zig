@@ -434,7 +434,8 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         \\ background-color: rgb({d},{d},{d});
         \\}}
         \\window.ghostty-theme-inherit headerbar,
-        \\window.ghostty-theme-inherit toolbarview > revealer > windowhandle {{
+        \\window.ghostty-theme-inherit toolbarview > revealer > windowhandle,
+        \\window.ghostty-theme-inherit box > tabbar {{
         \\ background-color: rgb({d},{d},{d});
         \\ color: rgb({d},{d},{d});
         \\}}
