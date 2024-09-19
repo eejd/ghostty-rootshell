@@ -12,7 +12,7 @@ import OSLog
 // it. You have to yield secure input on application deactivation (because
 // it'll affect other apps) and reacquire on reactivation, and every enable
 // needs to be balanced with a disable.
-class SecureInput {
+class SecureInput : ObservableObject {
     static let shared = SecureInput()
 
     private static let logger = Logger(
@@ -31,7 +31,7 @@ class SecureInput {
     private var scoped: [ObjectIdentifier: Bool] = [:]
 
     // This is set to true when we've successfully called EnableSecureInput.
-    private var enabled: Bool = false
+    @Published private(set) var enabled: Bool = false
 
     // This is true if we want to enable secure input. We want to enable
     // secure input if its enabled globally or any of the scoped objects are
