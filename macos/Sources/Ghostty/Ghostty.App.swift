@@ -95,6 +95,7 @@ extension Ghostty {
                     App.showUserNotification(userdata, title: title, body: body) },
                 update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) },
                 mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) },
+                set_password_input_cb: { userdata, value in App.setPasswordInput(userdata, value: value) },
                 toggle_secure_input_cb: { App.toggleSecureInput() }
             )
 
@@ -300,6 +301,7 @@ extension Ghostty {
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {}
         static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
         static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {}
+        static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {}
         static func toggleSecureInput() {}
         #endif
 
@@ -544,6 +546,11 @@ extension Ghostty {
 
             let buffer = Data(bytes: uri!, count: len)
             surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
+        }
+
+        static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {
+            let surfaceView = self.surfaceUserdata(from: userdata)
+            surfaceView.passwordInput = value
         }
 
         static func toggleSecureInput() {

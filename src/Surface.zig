@@ -837,6 +837,11 @@ fn passwordInput(self: *Surface, v: bool) !void {
         self.io.terminal.flags.password_input = v;
     }
 
+    // Notify our apprt so it can do whatever it wants.
+    if (@hasDecl(apprt.Surface, "setPasswordInput")) {
+        self.rt_surface.setPasswordInput(v);
+    }
+
     try self.queueRender();
 }
 

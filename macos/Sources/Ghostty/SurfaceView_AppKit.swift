@@ -42,6 +42,21 @@ extension Ghostty {
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
 
+        // Set whether the surface is currently on a password input or not. This is
+        // detected with the set_password_input_cb on the Ghostty state.
+        var passwordInput: Bool = false {
+            didSet {
+                // We need to update our state within the SecureInput manager.
+                let input = SecureInput.shared
+                let id = ObjectIdentifier(self)
+                if (passwordInput) {
+                    input.setScoped(id, focused: focused)
+                } else {
+                    input.removeScoped(id)
+                }
+            }
+        }
+
         // Returns true if quit confirmation is required for this surface to
         // exit safely.
         var needsConfirmQuit: Bool {
@@ -59,6 +74,7 @@ extension Ghostty {
             if (v.count == 0) { return nil }
             return v
         }
+
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {
@@ -185,6 +201,9 @@ extension Ghostty {
                 mouseExited(with: NSEvent())
             }
 
+            // Remove ourselves from secure input if we have to
+            SecureInput.shared.removeScoped(ObjectIdentifier(self))
+
             guard let surface = self.surface else { return }
             ghostty_surface_free(surface)
         }
@@ -208,6 +227,11 @@ extension Ghostty {
             guard self.focused != focused else { return }
             self.focused = focused
             ghostty_surface_set_focus(surface, focused)
+
+            // Update our secure input state if we are a password input
+            if (passwordInput) {
+                SecureInput.shared.setScoped(ObjectIdentifier(self), focused: focused)
+            }
 
             // On macOS 13+ we can store our continuous clock...
             if #available(macOS 13, iOS 16, *) {
