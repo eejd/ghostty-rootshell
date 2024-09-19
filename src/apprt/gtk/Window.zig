@@ -21,7 +21,7 @@ const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
-const Notebook = @import("./notebook.zig").Notebook;
+const Notebook = @import("notebook.zig").Notebook;
 
 const log = std.log.scoped(.gtk);
 
