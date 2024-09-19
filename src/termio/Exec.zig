@@ -211,12 +211,17 @@ pub fn focusGained(
         // a lot cheaper than doing full timer cancellation.
         execdata.termios_timer_running = false;
     } else {
+        // Always set this to true. There is a race condition if we lose
+        // focus and regain focus before the termios timer ticks where
+        // if we don't set this unconditionaly the timer will end on
+        // the next iteration.
+        execdata.termios_timer_running = true;
+
         // If we're focused, we want to start our termios timer. We
         // only do this if it isn't already running. We use the termios
         // callback because that'll trigger an immediate state check AND
         // start the timer.
         if (execdata.termios_timer_c.state() != .active) {
-            execdata.termios_timer_running = true;
             _ = termiosTimer(td, undefined, undefined, {});
         }
     }
