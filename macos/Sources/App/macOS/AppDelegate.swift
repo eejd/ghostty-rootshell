@@ -22,6 +22,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCheckForUpdates: NSMenuItem?
     @IBOutlet private var menuOpenConfig: NSMenuItem?
     @IBOutlet private var menuReloadConfig: NSMenuItem?
+    @IBOutlet private var menuSecureInput: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
 
     @IBOutlet private var menuNewWindow: NSMenuItem?
@@ -294,6 +295,8 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
+        // TODO: sync secure keyboard entry toggle
+
         // This menu item is NOT synced with the configuration because it disables macOS
         // global fullscreen keyboard shortcut. The shortcut in the Ghostty config will continue
         // to work but it won't be reflected in the menu item.
@@ -483,5 +486,11 @@ class AppDelegate: NSObject,
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/ghostty-org/ghostty") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @IBAction func toggleSecureInput(_ sender: Any) {
+        let input = SecureInput.shared
+        input.global.toggle()
+        self.menuSecureInput?.state = if (input.global) { .on } else { .off }
     }
 }
