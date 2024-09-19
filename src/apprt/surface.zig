@@ -65,6 +65,11 @@ pub const Message = union(enum) {
     /// a window and switching tabs.
     present_surface: void,
 
+    /// Notifies the surface that password input has started within
+    /// the terminal. This should always be followed by a false value
+    /// unless the surface exits.
+    password_input: bool,
+
     pub const ReportTitleStyle = enum {
         csi_21_t,
 

@@ -818,7 +818,26 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .report_color_scheme => try self.reportColorScheme(),
 
         .present_surface => try self.presentSurface(),
+
+        .password_input => |v| try self.passwordInput(v),
     }
+}
+
+/// Called when the terminal detects there is a password input prompt.
+fn passwordInput(self: *Surface, v: bool) !void {
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // If our password input state is unchanged then we don't
+        // waste time doing anything more.
+        const old = self.io.terminal.flags.password_input;
+        if (old == v) return;
+
+        self.io.terminal.flags.password_input = v;
+    }
+
+    try self.queueRender();
 }
 
 /// Sends a DSR response for the current color scheme to the pty.
