@@ -213,7 +213,7 @@ pub fn focusGained(
     } else {
         // Always set this to true. There is a race condition if we lose
         // focus and regain focus before the termios timer ticks where
-        // if we don't set this unconditionaly the timer will end on
+        // if we don't set this unconditionally the timer will end on
         // the next iteration.
         execdata.termios_timer_running = true;
 
