@@ -143,7 +143,6 @@ pub fn threadEnter(
         .read_thread_pipe = pipe[1],
         .read_thread_fd = pty_fds.read,
         .termios_timer = termios_timer,
-        .renderer_wakeup = io.renderer_wakeup,
     } };
 
     // Start our process watcher
@@ -460,24 +459,31 @@ fn termiosTimer(
     };
 
     // If the mode changed, then we process it.
-    if (!std.meta.eql(mode, exec.termios_mode)) {
+    if (!std.meta.eql(mode, exec.termios_mode)) mode_change: {
         log.debug("termios change mode={}", .{mode});
         exec.termios_mode = mode;
 
+        // We assume we're in some sort of password input if we're
+        // in canonical mode and not echoing. This is a heuristic.
+        const password_input = mode.canonical and !mode.echo;
+
+        // If our password input state changed on the terminal then
+        // we notify the surface.
         {
             td.renderer_state.mutex.lock();
             defer td.renderer_state.mutex.unlock();
             const t = td.renderer_state.terminal;
-
-            // We assume we're in some sort of password input if we're
-            // in canonical mode and not echoing. This is a heuristic.
-            t.flags.password_input = mode.canonical and !mode.echo;
+            if (t.flags.password_input == password_input) {
+                break :mode_change;
+            }
         }
 
-        // Notify the renderer of our state change
-        exec.renderer_wakeup.notify() catch |err| {
-            log.warn("error notifying renderer err={}", .{err});
-        };
+        // We have to notify the surface that we're in password input.
+        // We must block on this because the balanced true/false state
+        // of this is critical to apprt behavior.
+        _ = td.surface_mailbox.push(.{
+            .password_input = password_input,
+        }, .{ .forever = {} });
     }
 
     // Repeat the timer
@@ -644,9 +650,6 @@ pub const ThreadData = struct {
     /// The last known termios mode. Used for change detection
     /// to prevent unnecessary locking of expensive mutexes.
     termios_mode: ptypkg.Mode = .{},
-
-    /// The handle to wake up the renderer.
-    renderer_wakeup: xev.Async,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         posix.close(self.read_thread_pipe);
