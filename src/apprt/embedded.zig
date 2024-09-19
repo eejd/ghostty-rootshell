@@ -133,6 +133,9 @@ pub const App = struct {
         /// parameter. The link target will be null if the mouse is no longer
         /// over a link.
         mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
+
+        /// Toggle secure input for the application.
+        toggle_secure_input: ?*const fn () callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -1003,6 +1006,15 @@ pub const Surface = struct {
         };
 
         func(self.userdata, nonNativeFullscreen);
+    }
+
+    pub fn toggleSecureInput(self: *Surface) void {
+        const func = self.app.opts.toggle_secure_input orelse {
+            log.info("runtime embedder does not toggle_secure_input", .{});
+            return;
+        };
+
+        func();
     }
 
     pub fn newTab(self: *const Surface) !void {

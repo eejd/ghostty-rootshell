@@ -94,7 +94,8 @@ extension Ghostty {
                 show_desktop_notification_cb: { userdata, title, body in
                     App.showUserNotification(userdata, title: title, body: body) },
                 update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) },
-                mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) }
+                mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) },
+                toggle_secure_input_cb: { App.toggleSecureInput() }
             )
 
             // Create the ghostty app.
@@ -299,6 +300,7 @@ extension Ghostty {
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {}
         static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
         static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {}
+        static func toggleSecureInput() {}
         #endif
 
         #if os(macOS)
@@ -542,6 +544,11 @@ extension Ghostty {
 
             let buffer = Data(bytes: uri!, count: len)
             surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
+        }
+
+        static func toggleSecureInput() {
+            guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+            appDelegate.toggleSecureInput(self)
         }
 
         static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {

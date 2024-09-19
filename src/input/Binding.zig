@@ -297,6 +297,16 @@ pub const Action = union(enum) {
     /// Toggle window decorations on and off. This only works on Linux.
     toggle_window_decorations: void,
 
+    /// Toggle secure input mode on or off. This is used to prevent apps
+    /// that monitor input from seeing what you type. This is useful for
+    /// entering passwords or other sensitive information.
+    ///
+    /// This applies to the entire application, not just the focused
+    /// terminal. You must toggle it off to disable it, or quit Ghostty.
+    ///
+    /// This only works on macOS, since this is a system API on macOS.
+    toggle_secure_input: void,
+
     /// Quit ghostty.
     quit: void,
 

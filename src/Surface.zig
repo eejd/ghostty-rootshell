@@ -3717,6 +3717,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleWindowDecorations", .{});
         },
 
+        .toggle_secure_input => {
+            if (@hasDecl(apprt.Surface, "toggleSecureInput")) {
+                self.rt_surface.toggleSecureInput();
+            } else log.warn("runtime doesn't implement toggleSecureInput", .{});
+        },
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {

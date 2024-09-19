@@ -295,7 +295,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
-        // TODO: sync secure keyboard entry toggle
+        syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
 
         // This menu item is NOT synced with the configuration because it disables macOS
         // global fullscreen keyboard shortcut. The shortcut in the Ghostty config will continue
