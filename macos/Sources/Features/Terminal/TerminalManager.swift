@@ -142,19 +142,24 @@ class TerminalManager {
         // the macOS APIs only work on a visible window.
         controller.showWindow(self)
 
-        // Add the window to the tab group and show it.
-        switch ghostty.config.windowNewTabPosition {
-        case "end":
-            // If we already have a tab group and we want the new tab to open at the end,
-            // then we use the last window in the tab group as the parent.
-            if let last = parent.tabGroup?.windows.last {
-                last.addTabbedWindow(window, ordered: .above)
-            } else {
-                fallthrough
+        // If we have the "hidden" titlebar style we want to create new
+        // tabs as windows instead, so just skip adding it to the parent.
+        if (ghostty.config.macosTitlebarStyle != "hidden") {
+            // Add the window to the tab group and show it.
+            switch ghostty.config.windowNewTabPosition {
+            case "end":
+                // If we already have a tab group and we want the new tab to open at the end,
+                // then we use the last window in the tab group as the parent.
+                if let last = parent.tabGroup?.windows.last {
+                    last.addTabbedWindow(window, ordered: .above)
+                } else {
+                    fallthrough
+                }
+            case "current": fallthrough
+            default:
+                parent.addTabbedWindow(window, ordered: .above)
+
             }
-        case "current": fallthrough
-        default:
-            parent.addTabbedWindow(window, ordered: .above)
         }
 
         window.makeKeyAndOrderFront(self)

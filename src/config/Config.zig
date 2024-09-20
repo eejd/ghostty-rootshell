@@ -1304,7 +1304,7 @@ keybind: Keybinds = .{},
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// The style of the macOS titlebar. Available values are: "native",
-/// "transparent", and "tabs".
+/// "transparent", "tabs", and "hidden".
 ///
 /// The "native" style uses the native macOS titlebar with zero customization.
 /// The titlebar will match your window theme (see `window-theme`).
@@ -1320,6 +1320,11 @@ keybind: Keybinds = .{},
 /// On macOS 13 and below, saved window state will not restore tabs correctly.
 /// macOS 14 does not have this issue and any other macOS version has not
 /// been tested.
+///
+/// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
+/// however, it does not remove the frame from the window or cause it to have
+/// squared corners. Changing to or from this option at run-time may affect
+/// existing windows in buggy ways.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
@@ -4269,6 +4274,7 @@ pub const MacTitlebarStyle = enum {
     native,
     transparent,
     tabs,
+    hidden,
 };
 
 /// See gtk-single-instance

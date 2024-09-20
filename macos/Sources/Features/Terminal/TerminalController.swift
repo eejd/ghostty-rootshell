@@ -328,11 +328,47 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
 
         // Initialize our content view to the SwiftUI root
-        window.contentView = NSHostingView(rootView: TerminalView(
+        window.contentView = EventSinkHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
             viewModel: self,
             delegate: self
         ))
+
+        // If our titlebar style is "hidden" we adjust the style appropriately
+        if (ghostty.config.macosTitlebarStyle == "hidden") {
+            window.styleMask = [
+                // We need `titled` in the mask to get the normal window frame
+                .titled,
+
+                // Full size content view so we can extend
+                // content in to the hidden titlebar's area
+                .fullSizeContentView,
+
+                .resizable,
+                .closable,
+                .miniaturizable,
+            ]
+
+            // Hide the title
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+
+            // Hide the traffic lights (window control buttons)
+            window.standardWindowButton(.closeButton)?.isHidden = true
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
+
+            // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
+            window.tabbingMode = .disallowed
+
+            // Nuke it from orbit -- hide the titlebar container entirely, just in case.
+            if let themeFrame = window.contentView?.superview {
+                // Hide the titlebar container
+                if let titleBarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView") {
+                    titleBarContainer.isHidden = true
+                }
+            }
+        }
 
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
@@ -634,7 +670,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
         // Custom toolbar-based title used when titlebar tabs are enabled.
         if let toolbar = window.toolbar as? TerminalToolbar {
-            if (window.titlebarTabs) {
+            if (window.titlebarTabs || ghostty.config.macosTitlebarStyle == "hidden") {
                 // Updating the title text as above automatically reveals the
                 // native title view in macOS 15.0 and above. Since we're using
                 // a custom view instead, we need to re-hide it.
