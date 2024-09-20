@@ -223,7 +223,7 @@ const c = @cImport({
 @"font-codepoint-map": RepeatableCodepointMap = .{},
 
 /// Draw fonts with a thicker stroke, if supported. This is only supported
-/// currently on MacOS.
+/// currently on macOS.
 @"font-thicken": bool = false,
 
 /// All of the configurations behavior adjust various metrics determined by the
@@ -845,13 +845,16 @@ keybind: Keybinds = .{},
 ///
 ///   * `true`
 ///   * `false` - windows won't have native decorations, i.e. titlebar and
-///      borders. On MacOS this also disables tabs and tab overview.
+///      borders. On macOS this also disables tabs and tab overview.
 ///
 /// The "toggle_window_decoration" keybind action can be used to create
 /// a keybinding to toggle this setting at runtime.
 ///
 /// Changing this configuration in your configuration and reloading will
 /// only affect new windows. Existing windows will not be affected.
+///
+/// macOS: To hide the titlebar without removing the native window borders
+///        or rounded corners, use `macos-titlebar-style = hidden` instead.
 @"window-decoration": bool = true,
 
 /// The font that will be used for the application's window and tab titles.
