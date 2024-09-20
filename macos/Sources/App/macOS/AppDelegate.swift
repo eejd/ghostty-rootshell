@@ -106,6 +106,11 @@ class AppDelegate: NSObject,
             "ApplePressAndHoldEnabled": false,
         ])
 
+        // Check if secure input was enabled when we last quit.
+        if (UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled) {
+            toggleSecureInput(self)
+        }
+
         // Hook up updater menu
         menuCheckForUpdates?.target = updaterController
         menuCheckForUpdates?.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
@@ -492,5 +497,6 @@ class AppDelegate: NSObject,
         let input = SecureInput.shared
         input.global.toggle()
         self.menuSecureInput?.state = if (input.global) { .on } else { .off }
+        UserDefaults.standard.set(input.global, forKey: "SecureInput")
     }
 }
