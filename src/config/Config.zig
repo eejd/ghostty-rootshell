@@ -1348,6 +1348,34 @@ keybind: Keybinds = .{},
 /// find false more visually appealing.
 @"macos-window-shadow": bool = true,
 
+/// If true, Ghostty on macOS will automatically enable the "Secure Input"
+/// feature when it detects that a password prompt is being displayed.
+///
+/// "Secure Input" is a macOS security feature that prevents applications from
+/// reading keyboard events. This can always be enabled manually using the
+/// `Ghostty > Secure Keyboard Entry` menu item.
+///
+/// Note that automatic password prompt detection is based on heuristics
+/// and may not always work as expected. Specifically, it does not work
+/// over SSH connections, but there may be other cases where it also
+/// doesn't work.
+///
+/// A reason to disable this feature is if you find that it is interfering
+/// with legitimate accessibility software (or software that uses the
+/// accessibility APIs), since secure input prevents any application from
+/// reading keyboard events.
+@"macos-auto-secure-input": bool = true,
+
+/// If true, Ghostty will show a graphical overlay when secure input is
+/// enabled. This overlay is generally recommended to know when secure input
+/// is enabled.
+///
+/// Normally, secure input is only active when a password prompt is displayed
+/// or it is manually (and typically temporarily) enabled. However, if you
+/// always have secure input enabled, this overlay can be distracting and
+/// you may want to disable it.
+@"macos-secure-input-overlay": bool = true,
+
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///
 /// This makes it so that resource management can be done on a per-surface

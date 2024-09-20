@@ -205,7 +205,8 @@ extension Ghostty {
                 #if canImport(AppKit)
                 // If we have secure input enabled and we're the focused surface and window
                 // then we want to show the secure input overlay.
-                if (secureInput.enabled &&
+                if (ghostty.config.secureInputOverlay &&
+                    secureInput.enabled &&
                     surfaceFocus &&
                     windowFocus) {
                     SecureInputOverlay()

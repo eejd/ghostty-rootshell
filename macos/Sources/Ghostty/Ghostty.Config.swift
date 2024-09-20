@@ -371,6 +371,22 @@ extension Ghostty {
             let str = String(cString: ptr)
             return AutoUpdate(rawValue: str) ?? defaultValue
         }
+
+        var autoSecureInput: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "macos-auto-secure-input"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
+        var secureInputOverlay: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "macos-secure-input-overlay"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
     }
 }
 

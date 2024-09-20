@@ -550,6 +550,8 @@ extension Ghostty {
 
         static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {
             let surfaceView = self.surfaceUserdata(from: userdata)
+            guard let appState = self.appState(fromView: surfaceView) else { return }
+            guard appState.config.autoSecureInput else { return }
             surfaceView.passwordInput = value
         }
 
