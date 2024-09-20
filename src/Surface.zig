@@ -837,6 +837,11 @@ fn passwordInput(self: *Surface, v: bool) !void {
         self.io.terminal.flags.password_input = v;
     }
 
+    // Notify our apprt so it can do whatever it wants.
+    if (@hasDecl(apprt.Surface, "setPasswordInput")) {
+        self.rt_surface.setPasswordInput(v);
+    }
+
     try self.queueRender();
 }
 
@@ -3715,6 +3720,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             if (@hasDecl(apprt.Surface, "toggleWindowDecorations")) {
                 self.rt_surface.toggleWindowDecorations();
             } else log.warn("runtime doesn't implement toggleWindowDecorations", .{});
+        },
+
+        .toggle_secure_input => {
+            if (@hasDecl(apprt.Surface, "toggleSecureInput")) {
+                self.rt_surface.toggleSecureInput();
+            } else log.warn("runtime doesn't implement toggleSecureInput", .{});
         },
 
         .select_all => {

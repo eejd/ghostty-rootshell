@@ -41,6 +41,7 @@
 		A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */; };
 		A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */; };
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
+		A57D79272C9C879B001D522E /* SecureInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D79262C9C8798001D522E /* SecureInput.swift */; };
 		A586167C2B7703CC009BDB1D /* fish in Resources */ = {isa = PBXBuildFile; fileRef = A586167B2B7703CC009BDB1D /* fish */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
 		A59630972AEE163600D64628 /* HostingWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59630962AEE163600D64628 /* HostingWindow.swift */; };
@@ -57,6 +58,8 @@
 		A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5D02AE0DEA7009128F3 /* MetalView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
+		A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */; };
+		A5CC36152C9CDA06004D6760 /* View+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36142C9CDA03004D6760 /* View+Extension.swift */; };
 		A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */; };
 		A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CDF1922AAF9E0800513312 /* ConfigurationErrorsController.swift */; };
 		A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CDF1942AAFA19600513312 /* ConfigurationErrorsView.swift */; };
@@ -105,6 +108,7 @@
 		A56D58852ACDDB4100508D2C /* Ghostty.Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Shell.swift; sourceTree = "<group>"; };
 		A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceProvider.swift; sourceTree = "<group>"; };
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
+		A57D79262C9C8798001D522E /* SecureInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInput.swift; sourceTree = "<group>"; };
 		A586167B2B7703CC009BDB1D /* fish */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fish; path = "../zig-out/share/fish"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A59630962AEE163600D64628 /* HostingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingWindow.swift; sourceTree = "<group>"; };
@@ -122,6 +126,8 @@
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
+		A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInputOverlay.swift; sourceTree = "<group>"; };
+		A5CC36142C9CDA03004D6760 /* View+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extension.swift"; sourceTree = "<group>"; };
 		A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ConfigurationErrors.xib; sourceTree = "<group>"; };
 		A5CDF1922AAF9E0800513312 /* ConfigurationErrorsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationErrorsController.swift; sourceTree = "<group>"; };
 		A5CDF1942AAFA19600513312 /* ConfigurationErrorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationErrorsView.swift; sourceTree = "<group>"; };
@@ -191,6 +197,7 @@
 				A56D58872ACDE6BE00508D2C /* Services */,
 				A59630982AEE1C4400D64628 /* Terminal */,
 				A5E112912AF73E4D00C6E0C2 /* ClipboardConfirmation */,
+				A57D79252C9C8782001D522E /* Secure Input */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 				A51BFC1C2B2FB5AB00E92F16 /* About */,
 				A51BFC292B30F69F00E92F16 /* Update */,
@@ -211,6 +218,7 @@
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
 				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
+				A5CC36142C9CDA03004D6760 /* View+Extension.swift */,
 				C1F26EE72B76CBFC00404083 /* VibrantLayer.h */,
 				C1F26EE82B76CBFC00404083 /* VibrantLayer.m */,
 				A5CEAFDA29B8005900646FDA /* SplitView */,
@@ -293,6 +301,15 @@
 				A56D58882ACDE6CA00508D2C /* ServiceProvider.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		A57D79252C9C8782001D522E /* Secure Input */ = {
+			isa = PBXGroup;
+			children = (
+				A57D79262C9C8798001D522E /* SecureInput.swift */,
+				A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */,
+			);
+			path = "Secure Input";
 			sourceTree = "<group>";
 		};
 		A59630982AEE1C4400D64628 /* Terminal */ = {
@@ -496,6 +513,7 @@
 				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,
 				C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */,
 				A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */,
+				A5CC36152C9CDA06004D6760 /* View+Extension.swift in Sources */,
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
 				A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */,
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
@@ -516,10 +534,12 @@
 				A5FEB3002ABB69450068369E /* main.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
 				A51B78472AF4B58B00F3EDB9 /* TerminalWindow.swift in Sources */,
+				A57D79272C9C879B001D522E /* SecureInput.swift in Sources */,
 				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
 				A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */,
 				A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
+				A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,

@@ -133,6 +133,14 @@ pub const App = struct {
         /// parameter. The link target will be null if the mouse is no longer
         /// over a link.
         mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
+
+        /// Notifies that a password input has been started for the given
+        /// surface. The apprt can use this to modify UI, enable features
+        /// such as macOS secure input, etc.
+        set_password_input: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
+
+        /// Toggle secure input for the application.
+        toggle_secure_input: ?*const fn () callconv(.C) void = null,
     };
 
     core_app: *CoreApp,
@@ -1003,6 +1011,24 @@ pub const Surface = struct {
         };
 
         func(self.userdata, nonNativeFullscreen);
+    }
+
+    pub fn toggleSecureInput(self: *Surface) void {
+        const func = self.app.opts.toggle_secure_input orelse {
+            log.info("runtime embedder does not toggle_secure_input", .{});
+            return;
+        };
+
+        func();
+    }
+
+    pub fn setPasswordInput(self: *Surface, v: bool) void {
+        const func = self.app.opts.set_password_input orelse {
+            log.info("runtime embedder does not set_password_input", .{});
+            return;
+        };
+
+        func(self.userdata, v);
     }
 
     pub fn newTab(self: *const Surface) !void {

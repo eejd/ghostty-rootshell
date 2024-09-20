@@ -464,6 +464,8 @@ typedef void (*ghostty_runtime_show_desktop_notification_cb)(void*,
 typedef void (
     *ghostty_runtime_update_renderer_health)(void*, ghostty_renderer_health_e);
 typedef void (*ghostty_runtime_mouse_over_link_cb)(void*, const char*, size_t);
+typedef void (*ghostty_runtime_set_password_input_cb)(void*, bool);
+typedef void (*ghostty_runtime_toggle_secure_input_cb)();
 
 typedef struct {
   void* userdata;
@@ -494,6 +496,8 @@ typedef struct {
   ghostty_runtime_show_desktop_notification_cb show_desktop_notification_cb;
   ghostty_runtime_update_renderer_health update_renderer_health_cb;
   ghostty_runtime_mouse_over_link_cb mouse_over_link_cb;
+  ghostty_runtime_set_password_input_cb set_password_input_cb;
+  ghostty_runtime_toggle_secure_input_cb toggle_secure_input_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------

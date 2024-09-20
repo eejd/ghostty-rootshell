@@ -52,6 +52,11 @@ extension Ghostty {
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
 
+        #if canImport(AppKit)
+        // Observe SecureInput to detect when its enabled
+        @ObservedObject private var secureInput = SecureInput.shared
+        #endif
+
         @EnvironmentObject private var ghostty: Ghostty.App
 
         var body: some View {
@@ -196,6 +201,17 @@ extension Ghostty {
                         }
                     }
                 }
+
+                #if canImport(AppKit)
+                // If we have secure input enabled and we're the focused surface and window
+                // then we want to show the secure input overlay.
+                if (ghostty.config.secureInputIndication &&
+                    secureInput.enabled &&
+                    surfaceFocus &&
+                    windowFocus) {
+                    SecureInputOverlay()
+                }
+                #endif
 
                 // If our surface is not healthy, then we render an error view over it.
                 if (!surfaceView.healthy) {
