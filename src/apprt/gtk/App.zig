@@ -92,7 +92,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     //
     // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
     _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
-    // From gtk 4.16, GDK_DEBUG is splitted into GDK_DEBUG and GDK_DISABLE
+    // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE
     _ = internal_os.setenv("GDK_DISABLE", "gles-api");
     // We need to export GSK_RENDERER to opengl because GTK uses ngl by default after 4.14
     _ = internal_os.setenv("GSK_RENDERER", "opengl");
