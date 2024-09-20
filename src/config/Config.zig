@@ -1366,15 +1366,15 @@ keybind: Keybinds = .{},
 /// reading keyboard events.
 @"macos-auto-secure-input": bool = true,
 
-/// If true, Ghostty will show a graphical overlay when secure input is
-/// enabled. This overlay is generally recommended to know when secure input
+/// If true, Ghostty will show a graphical indication when secure input is
+/// enabled. This indication is generally recommended to know when secure input
 /// is enabled.
 ///
 /// Normally, secure input is only active when a password prompt is displayed
 /// or it is manually (and typically temporarily) enabled. However, if you
-/// always have secure input enabled, this overlay can be distracting and
+/// always have secure input enabled, the indication can be distracting and
 /// you may want to disable it.
-@"macos-secure-input-overlay": bool = true,
+@"macos-secure-input-indication": bool = true,
 
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///

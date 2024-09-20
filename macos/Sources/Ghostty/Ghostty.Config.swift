@@ -380,10 +380,10 @@ extension Ghostty {
             return v
         }
 
-        var secureInputOverlay: Bool {
+        var secureInputIndication: Bool {
             guard let config = self.config else { return true }
             var v = false;
-            let key = "macos-secure-input-overlay"
+            let key = "macos-secure-input-indication"
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
