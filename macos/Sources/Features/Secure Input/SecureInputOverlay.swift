@@ -39,6 +39,7 @@ struct SecureInputOverlay: View {
                     .onTapGesture {
                         isPopover = true
                     }
+                    .backport.pointerStyle(.link)
                     .padding(.top, 10)
                     .padding(.trailing, 10)
                     .popover(isPresented: $isPopover, arrowEdge: .bottom) {

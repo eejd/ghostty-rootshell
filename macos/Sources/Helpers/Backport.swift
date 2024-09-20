@@ -23,3 +23,28 @@ extension Backport where Content: Scene {
         }
     }
 }
+
+extension Backport where Content: View {
+    func pointerStyle(_ style: BackportPointerStyle) -> some View {
+        if #available(macOS 15, *) {
+            return content.pointerStyle(style.official)
+        } else {
+            return content
+        }
+    }
+
+    enum BackportPointerStyle {
+        case grabIdle
+        case grabActive
+        case link
+
+        @available(macOS 15, *)
+        var official: PointerStyle {
+            switch self {
+            case .grabIdle: return .grabIdle
+            case .grabActive: return .grabActive
+            case .link: return .link
+            }
+        }
+    }
+}
