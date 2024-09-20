@@ -85,6 +85,16 @@ quit_timer: union(enum) {
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
+    // Log our GTK version
+    log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
+        c.GTK_MAJOR_VERSION,
+        c.GTK_MINOR_VERSION,
+        c.GTK_MICRO_VERSION,
+        c.gtk_get_major_version(),
+        c.gtk_get_minor_version(),
+        c.gtk_get_micro_version(),
+    });
+
     // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
     // Older versions of GTK do not support these values so it is safe
     // to always set this. Forwards versions are uncertain so we'll have to
