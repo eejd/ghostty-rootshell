@@ -154,7 +154,7 @@ pub fn threadEnter(
         processExit,
     );
 
-    // Start our termios timer. We only support this on Windows.
+    // Start our termios timer. We don't support this on Windows.
     // Fundamentally, we could support this on Windows so we're just
     // waiting for someone to implement it.
     if (comptime builtin.os.tag != .windows) {
