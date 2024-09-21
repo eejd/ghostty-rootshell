@@ -60,6 +60,7 @@
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */; };
 		A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0572C9F30860017A1AE /* Cursor.swift */; };
+		A5CBD0592C9F37B10017A1AE /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
 		A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */; };
 		A5CC36152C9CDA06004D6760 /* View+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36142C9CDA03004D6760 /* View+Extension.swift */; };
 		A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */; };
@@ -566,6 +567,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5CBD0592C9F37B10017A1AE /* Backport.swift in Sources */,
 				A53D0C942B53B43700305CE6 /* iOSApp.swift in Sources */,
 				A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */,

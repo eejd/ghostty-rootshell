@@ -26,19 +26,27 @@ extension Backport where Content: Scene {
 
 extension Backport where Content: View {
     func pointerVisibility(_ v: BackportVisibility) -> some View {
+        #if canImport(AppKit)
         if #available(macOS 15, *) {
             return content.pointerVisibility(v.official)
         } else {
             return content
         }
+        #else
+        return content
+        #endif
     }
 
     func pointerStyle(_ style: BackportPointerStyle?) -> some View {
+        #if canImport(AppKit)
         if #available(macOS 15, *) {
             return content.pointerStyle(style?.official)
         } else {
             return content
         }
+        #else
+        return content
+        #endif
     }
 }
 
@@ -71,6 +79,7 @@ enum BackportPointerStyle {
     case resizeUpDown
     case resizeLeftRight
 
+    #if canImport(AppKit)
     @available(macOS 15, *)
     var official: PointerStyle {
         switch self {
@@ -88,4 +97,5 @@ enum BackportPointerStyle {
         case .resizeLeftRight: return .frameResize(position: .trailing)
         }
     }
+    #endif
 }

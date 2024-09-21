@@ -59,6 +59,7 @@ extension Ghostty {
 
         @EnvironmentObject private var ghostty: Ghostty.App
 
+        #if canImport(AppKit)
         // The visibility state of the mouse pointer
         private var pointerVisibility: BackportVisibility {
             // If our window or surface loses focus we always bring it back
@@ -73,6 +74,7 @@ extension Ghostty {
                 return .hidden
             }
         }
+        #endif
 
         var body: some View {
             let center = NotificationCenter.default
