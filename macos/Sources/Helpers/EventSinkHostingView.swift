@@ -15,18 +15,6 @@ class EventSinkHostingView<Content: View>: NSHostingView<Content> {
         return true
     }
 
-    override func mouseDown(with event: NSEvent) {
-        // Do nothing
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        // Do nothing
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        // Do nothing
-    }
-
     override var mouseDownCanMoveWindow: Bool {
         return false
     }
