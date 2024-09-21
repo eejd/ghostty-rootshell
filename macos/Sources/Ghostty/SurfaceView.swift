@@ -83,6 +83,7 @@ extension Ghostty {
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                     #if canImport(AppKit)
                         .backport.pointerVisibility(surfaceView.pointerVisible ? .visible : .hidden)
+                        .backport.pointerStyle(surfaceView.pointerStyle)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
                             guard let surfaceWindow = surfaceView.window else { return }

@@ -39,7 +39,8 @@ extension Ghostty {
         @Published var surfaceSize: ghostty_surface_size_s? = nil
 
         // Whether the pointer should be visible or not
-        @Published var pointerVisible: Bool = true
+        @Published private(set) var pointerVisible: Bool = true
+        @Published private(set) var pointerStyle: BackportPointerStyle = .default
 
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
@@ -102,7 +103,6 @@ extension Ghostty {
         private var markedText: NSMutableAttributedString
         private(set) var focused: Bool = true
         private var prevPressureStage: Int = 0
-        private var cursor: NSCursor = .iBeam
         private var appearanceObserver: NSKeyValueObservation? = nil
 
         // This is set to non-null during keyDown to accumulate insertText contents
@@ -267,49 +267,49 @@ extension Ghostty {
         func setCursorShape(_ shape: ghostty_mouse_shape_e) {
             switch (shape) {
             case GHOSTTY_MOUSE_SHAPE_DEFAULT:
-                cursor = .arrow
-
-            case GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU:
-                cursor = .contextualMenu
+                pointerStyle = .default
 
             case GHOSTTY_MOUSE_SHAPE_TEXT:
-                cursor = .iBeam
-
-            case GHOSTTY_MOUSE_SHAPE_CROSSHAIR:
-                cursor = .crosshair
+                pointerStyle = .horizontalText
 
             case GHOSTTY_MOUSE_SHAPE_GRAB:
-                cursor = .openHand
+                pointerStyle = .grabIdle
 
             case GHOSTTY_MOUSE_SHAPE_GRABBING:
-                cursor = .closedHand
+                pointerStyle = .grabActive
 
             case GHOSTTY_MOUSE_SHAPE_POINTER:
-                cursor = .pointingHand
+                pointerStyle = .link
 
             case GHOSTTY_MOUSE_SHAPE_W_RESIZE:
-                cursor = .resizeLeft
+                pointerStyle = .resizeLeft
 
             case GHOSTTY_MOUSE_SHAPE_E_RESIZE:
-                cursor = .resizeRight
+                pointerStyle = .resizeRight
 
             case GHOSTTY_MOUSE_SHAPE_N_RESIZE:
-                cursor = .resizeUp
+                pointerStyle = .resizeUp
 
             case GHOSTTY_MOUSE_SHAPE_S_RESIZE:
-                cursor = .resizeDown
+                pointerStyle = .resizeDown
 
             case GHOSTTY_MOUSE_SHAPE_NS_RESIZE:
-                cursor = .resizeUpDown
+                pointerStyle = .resizeUpDown
 
             case GHOSTTY_MOUSE_SHAPE_EW_RESIZE:
-                cursor = .resizeLeftRight
+                pointerStyle = .resizeLeftRight
 
             case GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT:
-                cursor = .iBeamCursorForVerticalLayout
+                pointerStyle = .default
 
+            // These are not yet supported. We should support them by constructing a
+            // PointerStyle from an NSCursor.
+            case GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU:
+                fallthrough
+            case GHOSTTY_MOUSE_SHAPE_CROSSHAIR:
+                fallthrough
             case GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED:
-                cursor = .operationNotAllowed
+                pointerStyle = .default
 
             default:
                 // We ignore unknown shapes.
