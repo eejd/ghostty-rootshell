@@ -505,7 +505,8 @@ extension Ghostty {
 
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
-            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
 
             // If focus follows mouse is enabled then move focus to this surface.
             if let window = self.window as? TerminalWindow,

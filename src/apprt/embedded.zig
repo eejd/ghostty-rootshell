@@ -763,7 +763,12 @@ pub const Surface = struct {
         };
     }
 
-    pub fn cursorPosCallback(self: *Surface, x: f64, y: f64) void {
+    pub fn cursorPosCallback(
+        self: *Surface,
+        x: f64,
+        y: f64,
+        mods: input.Mods,
+    ) void {
         // Convert our unscaled x/y to scaled.
         self.cursor_pos = self.cursorPosToPixels(.{
             .x = @floatCast(x),
@@ -776,7 +781,7 @@ pub const Surface = struct {
             return;
         };
 
-        self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
+        self.core_surface.cursorPosCallback(self.cursor_pos, mods) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };
@@ -1716,8 +1721,20 @@ pub const CAPI = struct {
     }
 
     /// Update the mouse position within the view.
-    export fn ghostty_surface_mouse_pos(surface: *Surface, x: f64, y: f64) void {
-        surface.cursorPosCallback(x, y);
+    export fn ghostty_surface_mouse_pos(
+        surface: *Surface,
+        x: f64,
+        y: f64,
+        mods: c_int,
+    ) void {
+        surface.cursorPosCallback(
+            x,
+            y,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
+        );
     }
 
     export fn ghostty_surface_mouse_scroll(

@@ -1459,7 +1459,7 @@ pub fn keyCallback(
         // mod changes can affect link highlighting.
         self.mouse.link_point = null;
         const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
-        self.cursorPosCallback(pos) catch {};
+        self.cursorPosCallback(pos, null) catch {};
         if (rehide) self.mouse.hidden = true;
     }
 
@@ -2421,7 +2421,7 @@ pub fn mouseButtonCallback(
             // expensive because it could block all our threads.
             if (self.hasSelection()) {
                 const pos = try self.rt_surface.getCursorPos();
-                try self.cursorPosCallback(pos);
+                try self.cursorPosCallback(pos, null);
                 return true;
             }
         }
@@ -2887,9 +2887,18 @@ pub fn mousePressureCallback(
     }
 }
 
+/// Cursor position callback.
+///
+/// The mods parameter is optional because some apprts do not provide
+/// modifier information on cursor position events. If mods is null then
+/// we'll use the last known mods. This is usually accurate since mod events
+/// will trigger key press events but on some platforms we don't get them.
+/// For example, on macOS, unfocused surfaces don't receive key events but
+/// do receive mouse events so we have to rely on updated mods.
 pub fn cursorPosCallback(
     self: *Surface,
     pos: apprt.CursorPos,
+    mods: ?input.Mods,
 ) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
@@ -2897,6 +2906,9 @@ pub fn cursorPosCallback(
 
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
+
+    // Update our modifiers if they changed
+    if (mods) |v| self.modsChanged(v);
 
     // The mouse position in the viewport
     const pos_vp = self.posToViewport(pos.x, pos.y);
