@@ -60,7 +60,7 @@ extension Ghostty {
         @EnvironmentObject private var ghostty: Ghostty.App
 
         // The visibility state of the mouse pointer
-        private var pointerVisibililty: BackportVisibility {
+        private var pointerVisibility: BackportVisibility {
             // If our window or surface loses focus we always bring it back
             if (!windowFocus || !surfaceFocus) {
                 return .visible
@@ -97,7 +97,7 @@ extension Ghostty {
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                     #if canImport(AppKit)
-                        .backport.pointerVisibility(pointerVisibililty)
+                        .backport.pointerVisibility(pointerVisibility)
                         .backport.pointerStyle(surfaceView.pointerStyle)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
