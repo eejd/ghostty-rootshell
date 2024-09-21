@@ -1257,9 +1257,19 @@ const Subprocess = struct {
                     // descendents are well and truly dead. We will not rest
                     // until the entire family tree is obliterated.
                     while (true) {
-                        if (c.killpg(pgid, c.SIGHUP) < 0) {
-                            log.warn("error killing process group pgid={}", .{pgid});
-                            return error.KillFailed;
+                        switch (posix.errno(c.killpg(pgid, c.SIGHUP))) {
+                            .SUCCESS => log.debug("process group killed pgid={}", .{pgid}),
+                            else => |err| killpg: {
+                                if ((comptime builtin.target.isDarwin()) and
+                                    err == .PERM)
+                                {
+                                    log.debug("killpg failed with EPERM, expected on Darwin and ignoring", .{});
+                                    break :killpg;
+                                }
+
+                                log.warn("error killing process group pgid={} err={}", .{ pgid, err });
+                                return error.KillFailed;
+                            },
                         }
 
                         // See Command.zig wait for why we specify WNOHANG.
@@ -1267,6 +1277,7 @@ const Subprocess = struct {
                         // are still alive without blocking so that we can
                         // kill them again.
                         const res = posix.waitpid(pid, std.c.W.NOHANG);
+                        log.debug("waitpid result={}", .{res.pid});
                         if (res.pid != 0) break;
                         std.time.sleep(10 * std.time.ns_per_ms);
                     }
