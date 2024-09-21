@@ -33,9 +33,9 @@ extension Backport where Content: View {
         }
     }
 
-    func pointerStyle(_ style: BackportPointerStyle) -> some View {
+    func pointerStyle(_ style: BackportPointerStyle?) -> some View {
         if #available(macOS 15, *) {
-            return content.pointerStyle(style.official)
+            return content.pointerStyle(style?.official)
         } else {
             return content
         }
