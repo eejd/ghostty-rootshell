@@ -83,7 +83,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
                     DebugBuildWarningView()
                 }
-
+                
                 Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
                     .environmentObject(ghostty)
                     .focused($focused)
@@ -108,6 +108,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         self.delegate?.zoomStateDidChange(to: newValue ?? false)
                     }
             }
+            // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
+            .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
         }
     }
 }

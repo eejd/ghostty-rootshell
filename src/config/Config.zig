@@ -223,7 +223,7 @@ const c = @cImport({
 @"font-codepoint-map": RepeatableCodepointMap = .{},
 
 /// Draw fonts with a thicker stroke, if supported. This is only supported
-/// currently on MacOS.
+/// currently on macOS.
 @"font-thicken": bool = false,
 
 /// All of the configurations behavior adjust various metrics determined by the
@@ -845,13 +845,16 @@ keybind: Keybinds = .{},
 ///
 ///   * `true`
 ///   * `false` - windows won't have native decorations, i.e. titlebar and
-///      borders. On MacOS this also disables tabs and tab overview.
+///      borders. On macOS this also disables tabs and tab overview.
 ///
 /// The "toggle_window_decoration" keybind action can be used to create
 /// a keybinding to toggle this setting at runtime.
 ///
 /// Changing this configuration in your configuration and reloading will
 /// only affect new windows. Existing windows will not be affected.
+///
+/// macOS: To hide the titlebar without removing the native window borders
+///        or rounded corners, use `macos-titlebar-style = hidden` instead.
 @"window-decoration": bool = true,
 
 /// The font that will be used for the application's window and tab titles.
@@ -1304,7 +1307,7 @@ keybind: Keybinds = .{},
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// The style of the macOS titlebar. Available values are: "native",
-/// "transparent", and "tabs".
+/// "transparent", "tabs", and "hidden".
 ///
 /// The "native" style uses the native macOS titlebar with zero customization.
 /// The titlebar will match your window theme (see `window-theme`).
@@ -1320,6 +1323,11 @@ keybind: Keybinds = .{},
 /// On macOS 13 and below, saved window state will not restore tabs correctly.
 /// macOS 14 does not have this issue and any other macOS version has not
 /// been tested.
+///
+/// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
+/// however, it does not remove the frame from the window or cause it to have
+/// squared corners. Changing to or from this option at run-time may affect
+/// existing windows in buggy ways.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
@@ -4269,6 +4277,7 @@ pub const MacTitlebarStyle = enum {
     native,
     transparent,
     tabs,
+    hidden,
 };
 
 /// See gtk-single-instance
