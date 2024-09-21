@@ -58,6 +58,7 @@
 		A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5D02AE0DEA7009128F3 /* MetalView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
+		A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */; };
 		A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */; };
 		A5CC36152C9CDA06004D6760 /* View+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36142C9CDA03004D6760 /* View+Extension.swift */; };
 		A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */; };
@@ -127,6 +128,7 @@
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
+		A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraggableWindowView.swift; sourceTree = "<group>"; };
 		A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInputOverlay.swift; sourceTree = "<group>"; };
 		A5CC36142C9CDA03004D6760 /* View+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extension.swift"; sourceTree = "<group>"; };
 		A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ConfigurationErrors.xib; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				AEA6197F2C9E1DE5004B3751 /* EventSinkHostingView.swift */,
+				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
@@ -520,6 +523,7 @@
 				A56D58892ACDE6CA00508D2C /* ServiceProvider.swift in Sources */,
 				A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */,
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
+				A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */,
 				C1F26EE92B76CBFC00404083 /* VibrantLayer.m in Sources */,
 				A59630972AEE163600D64628 /* HostingWindow.swift in Sources */,
 				A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */,

@@ -83,7 +83,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
                     DebugBuildWarningView()
                 }
-
+                
                 Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
                     .environmentObject(ghostty)
                     .focused($focused)
