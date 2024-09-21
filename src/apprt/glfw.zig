@@ -1040,7 +1040,7 @@ pub const Surface = struct {
         core_win.cursorPosCallback(.{
             .x = @floatCast(pos.xpos),
             .y = @floatCast(pos.ypos),
-        }) catch |err| {
+        }, null) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };

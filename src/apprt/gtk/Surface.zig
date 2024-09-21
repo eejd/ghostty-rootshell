@@ -1386,7 +1386,7 @@ fn gtkMouseUp(
 }
 
 fn gtkMouseMotion(
-    _: *c.GtkEventControllerMotion,
+    ec: *c.GtkEventControllerMotion,
     x: c.gdouble,
     y: c.gdouble,
     ud: ?*anyopaque,
@@ -1415,7 +1415,12 @@ fn gtkMouseMotion(
         self.grabFocus();
     }
 
-    self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
+    // Get our modifiers
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
+    const gtk_mods = c.gdk_event_get_modifier_state(event);
+    const mods = translateMods(gtk_mods);
+
+    self.core_surface.cursorPosCallback(self.cursor_pos, mods) catch |err| {
         log.err("error in cursor pos callback err={}", .{err});
         return;
     };
