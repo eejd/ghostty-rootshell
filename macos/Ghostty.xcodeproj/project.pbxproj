@@ -73,7 +73,6 @@
 		A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */; };
 		A5E112972AF7401B00C6E0C2 /* ClipboardConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
-		AEA619802C9E1DF7004B3751 /* EventSinkHostingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA6197F2C9E1DE5004B3751 /* EventSinkHostingView.swift */; };
 		AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */; };
 		AEF9CE242B6AD07A0017E195 /* TerminalToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */; };
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
@@ -145,7 +144,6 @@
 		A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationController.swift; sourceTree = "<group>"; };
 		A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationView.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		AEA6197F2C9E1DE5004B3751 /* EventSinkHostingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventSinkHostingView.swift; sourceTree = "<group>"; };
 		AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard+Extension.swift"; sourceTree = "<group>"; };
 		AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalToolbar.swift; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
@@ -218,7 +216,6 @@
 				8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */,
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
-				AEA6197F2C9E1DE5004B3751 /* EventSinkHostingView.swift */,
 				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
@@ -548,7 +545,6 @@
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
-				AEA619802C9E1DF7004B3751 /* EventSinkHostingView.swift in Sources */,
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */,

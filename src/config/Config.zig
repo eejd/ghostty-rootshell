@@ -1327,7 +1327,9 @@ keybind: Keybinds = .{},
 /// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
 /// however, it does not remove the frame from the window or cause it to have
 /// squared corners. Changing to or from this option at run-time may affect
-/// existing windows in buggy ways.
+/// existing windows in buggy ways. The top titlebar area of the window will
+/// continue to drag the window around and you will not be able to use
+/// the mouse for terminal events in this space.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in

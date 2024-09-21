@@ -328,7 +328,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         }
 
         // Initialize our content view to the SwiftUI root
-        window.contentView = EventSinkHostingView(rootView: TerminalView(
+        window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
             viewModel: self,
             delegate: self
