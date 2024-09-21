@@ -1694,7 +1694,7 @@ pub fn grow(self: *PageList) !?*List.Node {
     // If allocation would exceed our max size, we prune the first page.
     // We don't need to reallocate because we can simply reuse that first
     // page.
-    if (self.page_size + PagePool.item_size > self.maxSize()) prune: {
+    if (self.pages.len > 1 and self.page_size + PagePool.item_size > self.maxSize()) prune: {
         // If we need to add more memory to ensure our active area is
         // satisfied then we do not prune.
         if (self.growRequiredForActive()) break :prune;
