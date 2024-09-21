@@ -38,6 +38,9 @@ extension Ghostty {
         // structure because I'm lazy.
         @Published var surfaceSize: ghostty_surface_size_s? = nil
 
+        // Whether the pointer should be visible or not
+        @Published var pointerVisible: Bool = true
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
@@ -97,11 +100,9 @@ extension Ghostty {
 
         private(set) var surface: ghostty_surface_t?
         private var markedText: NSMutableAttributedString
-        private var mouseEntered: Bool = false
         private(set) var focused: Bool = true
         private var prevPressureStage: Int = 0
         private var cursor: NSCursor = .iBeam
-        private var cursorVisible: CursorVisibility = .visible
         private var appearanceObserver: NSKeyValueObservation? = nil
 
         // This is set to non-null during keyDown to accumulate insertText contents
@@ -113,15 +114,6 @@ extension Ghostty {
         // I don't think we need this but this lets us know we should redraw our layer
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
-
-        // State machine for mouse cursor visibility because every call to
-        // NSCursor.hide/unhide must be balanced.
-        enum CursorVisibility {
-            case visible
-            case hidden
-            case pendingVisible
-            case pendingHidden
-        }
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
@@ -194,13 +186,6 @@ extension Ghostty {
 
             trackingAreas.forEach { removeTrackingArea($0) }
 
-            // mouseExited is not called by AppKit one last time when the view
-            // closes so we do it manually to ensure our NSCursor state remains
-            // accurate.
-            if (mouseEntered) {
-                mouseExited(with: NSEvent())
-            }
-
             // Remove ourselves from secure input if we have to
             SecureInput.shared.removeScoped(ObjectIdentifier(self))
 
@@ -242,8 +227,6 @@ extension Ghostty {
         }
 
         func sizeDidChange(_ size: CGSize) {
-            guard let surface = self.surface else { return }
-
             // Ghostty wants to know the actual framebuffer size... It is very important
             // here that we use "size" and NOT the view frame. If we're in the middle of
             // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
@@ -332,44 +315,10 @@ extension Ghostty {
                 // We ignore unknown shapes.
                 return
             }
-
-            // Set our cursor immediately if our mouse is over our window
-            if (mouseEntered) { cursorUpdate(with: NSEvent()) }
-            if let window = self.window {
-                window.invalidateCursorRects(for: self)
-            }
         }
 
         func setCursorVisibility(_ visible: Bool) {
-            switch (cursorVisible) {
-            case .visible:
-                // If we want to be visible, do nothing. If we want to be hidden
-                // enter the pending state.
-                if (visible) { return }
-                cursorVisible = .pendingHidden
-
-            case .hidden:
-                // If we want to be hidden, do nothing. If we want to be visible
-                // enter the pending state.
-                if (!visible) { return }
-                cursorVisible = .pendingVisible
-
-            case .pendingVisible:
-                // If we want to be visible, do nothing because we're already pending.
-                // If we want to be hidden, we're already hidden so reset state.
-                if (visible) { return }
-                cursorVisible = .hidden
-
-            case .pendingHidden:
-                // If we want to be hidden, do nothing because we're pending that switch.
-                // If we want to be visible, we're already visible so reset state.
-                if (!visible) { return }
-                cursorVisible = .visible
-            }
-
-            if (mouseEntered) {
-                cursorUpdate(with: NSEvent())
-            }
+            pointerVisible = visible
         }
 
         // MARK: - Notifications
@@ -419,7 +368,6 @@ extension Ghostty {
             addTrackingArea(NSTrackingArea(
                 rect: frame,
                 options: [
-                    .mouseEnteredAndExited,
                     .mouseMoved,
 
                     // Only send mouse events that happen in our visible (not obscured) rect
@@ -431,11 +379,6 @@ extension Ghostty {
                 ],
                 owner: self,
                 userInfo: nil))
-        }
-
-        override func resetCursorRects() {
-            discardCursorRects()
-            addCursorRect(frame, cursor: self.cursor)
         }
 
         override func viewDidChangeBackingProperties() {
@@ -578,40 +521,6 @@ extension Ghostty {
             self.mouseMoved(with: event)
         }
 
-        override func mouseEntered(with event: NSEvent) {
-            // For reasons unknown (Cocoaaaaaaaaa), mouseEntered is called
-            // multiple times in an unbalanced way with mouseExited when a new
-            // tab is created. In this scenario, we only want to process our
-            // callback once since this is stateful and we expect balancing.
-            if (mouseEntered) { return }
-
-            mouseEntered = true
-
-            // Update our cursor when we enter so we fully process our
-            // cursorVisible state.
-            cursorUpdate(with: NSEvent())
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            // See mouseEntered
-            if (!mouseEntered) { return }
-
-            mouseEntered = false
-
-            // If the mouse is currently hidden, we want to show it when we exit
-            // this view. We go through the cursorVisible dance so that only
-            // cursorUpdate manages cursor state.
-            if (cursorVisible == .hidden) {
-                cursorVisible = .pendingVisible
-                cursorUpdate(with: NSEvent())
-                assert(cursorVisible == .visible)
-
-                // We set the state to pending hidden again for the next time
-                // we enter.
-                cursorVisible = .pendingHidden
-            }
-        }
-
         override func scrollWheel(with event: NSEvent) {
             guard let surface = self.surface else { return }
 
@@ -673,24 +582,6 @@ extension Ghostty {
             // is no public API for this as far as I can tell.
             guard UserDefaults.standard.bool(forKey: "com.apple.trackpad.forceClick") else { return }
             quickLook(with: event)
-        }
-
-        override func cursorUpdate(with event: NSEvent) {
-            switch (cursorVisible) {
-            case .visible, .hidden:
-                // Do nothing, stable state
-                break
-
-            case .pendingHidden:
-                NSCursor.hide()
-                cursorVisible = .hidden
-
-            case .pendingVisible:
-                NSCursor.unhide()
-                cursorVisible = .visible
-            }
-
-            cursor.set()
         }
 
         override func keyDown(with event: NSEvent) {
