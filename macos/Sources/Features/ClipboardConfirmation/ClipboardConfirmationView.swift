@@ -34,6 +34,9 @@ struct ClipboardConfirmationView: View {
     /// Optional delegate to get results. If this is nil, then this view will never close on its own.
     weak var delegate: ClipboardConfirmationViewDelegate? = nil
 
+    /// Used to track if we should rehide on disappear
+    @State private var cursorHiddenCount: UInt = 0
+
     var body: some View {
         VStack {
             HStack {
@@ -64,6 +67,25 @@ struct ClipboardConfirmationView: View {
                 Spacer()
             }
             .padding(.bottom)
+        }
+        .onAppear {
+            // I can't find a better way to handle this. There is no API to detect
+            // if the cursor is hidden and OTHER THINGS do unhide the cursor. So we
+            // try to unhide it completely here and hope for the best. Issue #1516.
+            cursorHiddenCount = Cursor.unhideCompletely()
+
+            // If we didn't unhide anything, we just send an unhide to be safe.
+            // I don't think the count can go negative on NSCursor so this handles
+            // scenarios cursor is hidden outside of our own NSCursor usage.
+            if (cursorHiddenCount == 0) {
+                _ = Cursor.unhide()
+            }
+        }
+        .onDisappear {
+            // Rehide if we unhid
+            for _ in 0..<cursorHiddenCount {
+                Cursor.hide()
+            }
         }
     }
 

@@ -429,6 +429,8 @@ palette: Palette = .{},
 /// Hide the mouse immediately when typing. The mouse becomes visible again when
 /// the mouse is used. The mouse is only hidden if the mouse cursor is over the
 /// active terminal surface.
+///
+/// macOS: This feature requires macOS 15.0 (Sequoia) or later.
 @"mouse-hide-while-typing": bool = false,
 
 /// Determines whether running programs can detect the shift key pressed with a
