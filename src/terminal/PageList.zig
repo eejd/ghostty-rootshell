@@ -3772,6 +3772,51 @@ test "PageList grow allows exceeding max size for active area" {
     try testing.expectEqual(start_pages + 1, s.totalPages());
 }
 
+test "PageList grow prune required with a single page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, 0);
+    defer s.deinit();
+
+    // This block is all test setup. There is nothing required about this
+    // behavior during a refactor. This is setting up a scenario that is
+    // possible to trigger a bug (#2280).
+    {
+        // Adjust our capacity until our page is larger than the standard size.
+        // This is important because it triggers a scenario where our calculated
+        // minSize() which is supposed to accommodate 2 pages is no longer true.
+        var cap = std_capacity;
+        while (true) {
+            cap.grapheme_bytes *= 2;
+            const layout = Page.layout(cap);
+            if (layout.total_size > std_size) break;
+        }
+
+        // Adjust to that capacity. After we should still have one page.
+        _ = try s.adjustCapacity(
+            s.pages.first.?,
+            .{ .grapheme_bytes = cap.grapheme_bytes },
+        );
+        try testing.expect(s.pages.first != null);
+        try testing.expect(s.pages.first == s.pages.last);
+    }
+
+    // Figure out the remaining number of rows. This is the amount that
+    // can be added to the current page before we need to allocate a new
+    // page.
+    const rem = rem: {
+        const page = s.pages.first.?;
+        break :rem page.data.capacity.rows - page.data.size.rows;
+    };
+    for (0..rem) |_| try testing.expect(try s.grow() == null);
+
+    // The next one we add will trigger a new page.
+    const new = try s.grow();
+    try testing.expect(new != null);
+    try testing.expect(new != s.pages.first);
+}
+
 test "PageList scroll top" {
     const testing = std.testing;
     const alloc = testing.allocator;
