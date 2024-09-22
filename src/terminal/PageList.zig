@@ -1694,7 +1694,14 @@ pub fn grow(self: *PageList) !?*List.Node {
     // If allocation would exceed our max size, we prune the first page.
     // We don't need to reallocate because we can simply reuse that first
     // page.
-    if (self.page_size + PagePool.item_size > self.maxSize()) prune: {
+    //
+    // We only take this path if we have more than one page since pruning
+    // reuses the popped page. It is possible to have a single page and
+    // exceed the max size if that page was adjusted to be larger after
+    // initial allocation.
+    if (self.pages.len > 1 and
+        self.page_size + PagePool.item_size > self.maxSize())
+    prune: {
         // If we need to add more memory to ensure our active area is
         // satisfied then we do not prune.
         if (self.growRequiredForActive()) break :prune;
@@ -3770,6 +3777,51 @@ test "PageList grow allows exceeding max size for active area" {
     // enough for the active area.
     _ = try s.grow();
     try testing.expectEqual(start_pages + 1, s.totalPages());
+}
+
+test "PageList grow prune required with a single page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, 0);
+    defer s.deinit();
+
+    // This block is all test setup. There is nothing required about this
+    // behavior during a refactor. This is setting up a scenario that is
+    // possible to trigger a bug (#2280).
+    {
+        // Adjust our capacity until our page is larger than the standard size.
+        // This is important because it triggers a scenario where our calculated
+        // minSize() which is supposed to accommodate 2 pages is no longer true.
+        var cap = std_capacity;
+        while (true) {
+            cap.grapheme_bytes *= 2;
+            const layout = Page.layout(cap);
+            if (layout.total_size > std_size) break;
+        }
+
+        // Adjust to that capacity. After we should still have one page.
+        _ = try s.adjustCapacity(
+            s.pages.first.?,
+            .{ .grapheme_bytes = cap.grapheme_bytes },
+        );
+        try testing.expect(s.pages.first != null);
+        try testing.expect(s.pages.first == s.pages.last);
+    }
+
+    // Figure out the remaining number of rows. This is the amount that
+    // can be added to the current page before we need to allocate a new
+    // page.
+    const rem = rem: {
+        const page = s.pages.first.?;
+        break :rem page.data.capacity.rows - page.data.size.rows;
+    };
+    for (0..rem) |_| try testing.expect(try s.grow() == null);
+
+    // The next one we add will trigger a new page.
+    const new = try s.grow();
+    try testing.expect(new != null);
+    try testing.expect(new != s.pages.first);
 }
 
 test "PageList scroll top" {
