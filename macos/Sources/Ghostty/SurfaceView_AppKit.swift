@@ -233,25 +233,6 @@ extension Ghostty {
             // The size represents our final size we're going for.
             let scaledSize = self.convertToBacking(size)
             setSurfaceSize(width: UInt32(scaledSize.width), height: UInt32(scaledSize.height))
-
-            // Frame changes do not always call mouseEntered/mouseExited, so we do some
-            // calculations ourself to call those events.
-            if let window = self.window {
-                let mouseScreen = NSEvent.mouseLocation
-                let mouseWindow = window.convertPoint(fromScreen: mouseScreen)
-                let mouseView = self.convert(mouseWindow, from: nil)
-                let isEntered = self.isMousePoint(mouseView, in: bounds)
-                if (isEntered) {
-                    mouseEntered(with: NSEvent())
-                } else {
-                    mouseExited(with: NSEvent())
-                }
-            } else {
-                // If we don't have a window, then our mouse can NOT be in our view.
-                // When the window comes back, I believe this event fires again so
-                // we'll get a mouseEntered.
-                mouseExited(with: NSEvent())
-            }
         }
 
         private func setSurfaceSize(width: UInt32, height: UInt32) {
@@ -261,7 +242,13 @@ extension Ghostty {
             ghostty_surface_set_size(surface, width, height)
 
             // Update our cached size metrics
-            self.surfaceSize = ghostty_surface_size(surface)
+            let size = ghostty_surface_size(surface)
+            DispatchQueue.main.async {
+                // DispatchQueue required since this may be called by SwiftUI off
+                // the main thread and Published changes need to be on the main
+                // thread. This caused a crash on macOS <= 14.
+                self.surfaceSize = size
+            }
         }
 
         func setCursorShape(_ shape: ghostty_mouse_shape_e) {
