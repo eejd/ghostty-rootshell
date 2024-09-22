@@ -156,6 +156,8 @@ class AppDelegate: NSObject,
         center.delegate = self
     }
 
+    var foo: SlideTerminalController? = nil
+
     func applicationDidBecomeActive(_ notification: Notification) {
         guard !applicationHasBecomeActive else { return }
         applicationHasBecomeActive = true
@@ -165,8 +167,11 @@ class AppDelegate: NSObject,
         //   - if we're opening a URL since `application(_:openFile:)` is called before this.
         //   - if we're restoring from persisted state
         if terminalManager.windows.count == 0 {
-            terminalManager.newWindow()
+            //terminalManager.newWindow()
         }
+
+        foo = SlideTerminalController(window: nil)
+        foo?.showWindow(self)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
