@@ -23,9 +23,6 @@ class SlideTerminalWindow: NSWindow {
         // and lets us render off screen.
         self.level = .popUpMenu
 
-        self.isMovableByWindowBackground = true
-        self.isMovable = true
-
         self.collectionBehavior = [
             // We want this to be part of every space because it is a singleton.
             .canJoinAllSpaces,

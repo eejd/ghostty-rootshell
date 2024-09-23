@@ -18,6 +18,7 @@ protocol TerminalViewDelegate: AnyObject {
     /// not called initially.
     func surfaceTreeDidChange()
 
+    /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
 }
 

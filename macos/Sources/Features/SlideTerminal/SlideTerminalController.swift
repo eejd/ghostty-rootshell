@@ -4,39 +4,77 @@ import SwiftUI
 import GhosttyKit
 
 /// Controller for the slide-style terminal.
-class SlideTerminalController: NSWindowController {
+class SlideTerminalController: NSWindowController, TerminalViewDelegate, TerminalViewModel {
     override var windowNibName: NSNib.Name? { "SlideTerminal" }
+
+    /// The app instance that this terminal view will represent.
+    let ghostty: Ghostty.App
+
+    /// The position fo the slide terminal.
+    let position: SlideTerminalPosition
+
+    /// The surface tree for this window.
+    @Published var surfaceTree: Ghostty.SplitNode? = nil
+
+    init(_ ghostty: Ghostty.App,
+         position: SlideTerminalPosition = .top,
+         baseConfig base: Ghostty.SurfaceConfiguration? = nil,
+         surfaceTree tree: Ghostty.SplitNode? = nil
+    ) {
+        self.ghostty = ghostty
+        self.position = position
+
+        super.init(window: nil)
+
+        // Initialize our initial surface.
+        guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
+        self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported for this view")
+    }
+
+    // MARK: NSWindowController
 
     override func windowDidLoad() {
         guard let window = self.window else { return }
 
-        // Make the window full width
-        let screenFrame = NSScreen.main?.frame ?? .zero
-        window.setFrame(NSRect(
-            x: 0,
-            y: 0,
-            width: screenFrame.size.width,
-            height: window.frame.size.height
-        ), display: false)
+        // The slide window is not restorable (yet!). "Yet" because in theory we can
+        // make this restorable, but it isn't currently implemented.
+        window.isRestorable = false
 
-        slideWindowIn(window: window)
+        // Setup our content
+        window.contentView = NSHostingView(rootView: TerminalView(
+            ghostty: self.ghostty,
+            viewModel: self,
+            delegate: self
+        ))
+
+        // Animate the window in
+        slideWindowIn(window: window, from: position)
     }
 
-    private func slideWindowIn(window: NSWindow) {
+    //MARK: TerminalViewDelegate
+
+    func cellSizeDidChange(to: NSSize) {
+        guard ghostty.config.windowStepResize else { return }
+        self.window?.contentResizeIncrements = to
+    }
+
+    func surfaceTreeDidChange() {
+        if (surfaceTree == nil) {
+            self.window?.close()
+        }
+    }
+
+    // MARK: Slide Logic
+
+    private func slideWindowIn(window: NSWindow, from position: SlideTerminalPosition) {
         guard let screen = NSScreen.main else { return }
 
-        // Determine our final position. Our final position is exactly
-        // pinned against the top menu bar.
-        let windowFrame = window.frame
-        let finalY = screen.visibleFrame.maxY - windowFrame.height
-
         // Move our window off screen to the top
-        window.setFrameOrigin(.init(
-            x: windowFrame.origin.x,
-            y: screen.frame.maxY))
-
-        // Set the window invisible
-        window.alphaValue = 0
+        position.setInitial(in: window, on: screen)
 
         // Move it to the visible position since animation requires this
         window.makeKeyAndOrderFront(nil)
@@ -46,17 +84,7 @@ class SlideTerminalController: NSWindowController {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             context.timingFunction = .init(name: .easeIn)
-
-            let animator = window.animator()
-            animator.setFrame(.init(
-                origin: .init(x: windowFrame.origin.x, y: finalY),
-                size: windowFrame.size
-            ), display: true)
-            animator.alphaValue = 1
+            position.setFinal(in: window.animator(), on: screen)
         }
     }
-}
-
-enum SlideTerminalLocation {
-    case top
 }

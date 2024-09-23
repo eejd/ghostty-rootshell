@@ -170,7 +170,7 @@ class AppDelegate: NSObject,
             //terminalManager.newWindow()
         }
 
-        foo = SlideTerminalController(window: nil)
+        foo = SlideTerminalController(ghostty, baseConfig: nil)
         foo?.showWindow(self)
     }
 
