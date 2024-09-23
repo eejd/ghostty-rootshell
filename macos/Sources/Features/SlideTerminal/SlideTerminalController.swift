@@ -85,6 +85,15 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
 
     // MARK: Slide Methods
 
+    func slideToggle() {
+        guard let window = self.window else { return }
+        if (window.alphaValue > 0) {
+            slideOut()
+        } else {
+            slideIn()
+        }
+    }
+
     func slideIn() {
         guard let window = self.window else { return }
         slideWindowIn(window: window, from: position)

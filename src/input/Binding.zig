@@ -363,6 +363,17 @@ pub const Action = union(enum) {
     /// This only works on macOS, since this is a system API on macOS.
     toggle_secure_input: void,
 
+    /// Toggle the "slide" terminal. The slide terminal is a terminal that
+    /// slides in from some screen edge, usually the top. This is useful for
+    /// quick access to a terminal without having to open a new window or tab.
+    ///
+    /// The slide terminal is a singleton; only one instance can exist at a
+    /// time.
+    ///
+    /// See the various configurations for the slide terminal in the
+    /// configuration file to customize its behavior.
+    toggle_slide_terminal: void,
+
     /// Quit ghostty.
     quit: void,
 
@@ -381,6 +392,10 @@ pub const Action = union(enum) {
     ///   - "render" - crash on the render thread for the focused surface.
     ///
     crash: CrashThread,
+
+    pub const SlideTerminalPosition = enum {
+        top,
+    };
 
     pub const CrashThread = enum {
         main,
