@@ -692,6 +692,11 @@ extension Ghostty {
                 // sound and we don't like the beep sound.
                 equivalent = "_"
 
+            case "\r":
+                // Pass C-<return> through verbatim
+                // (prevent the default context menu equivalent)
+                equivalent = "\r"
+
             default:
                 // Ignore other events
                 return false
