@@ -124,10 +124,41 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
 
     private func slideWindowOut(window: NSWindow, to position: SlideTerminalPosition) {
         guard let screen = NSScreen.main else { return }
-        NSAnimationContext.runAnimationGroup { context in
+
+        // Keep track of if we were the key window. If we were the key window then we
+        // want to move focus to the next window so that focus is preserved somewhere
+        // in the app.
+        let wasKey = window.isKeyWindow
+
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.3
             context.timingFunction = .init(name: .easeIn)
             position.setInitial(in: window.animator(), on: screen)
+        }, completionHandler: {
+            guard wasKey else { return }
+            self.focusNextWindow()
+        })
+    }
+
+    private func focusNextWindow() {
+        // We only want to consider windows that are visible
+        let windows = NSApp.windows.filter { $0.isVisible }
+
+        // If we have no windows there is nothing to focus.
+        guard !windows.isEmpty else { return }
+
+        // Find the current key window (the window that is currently focused)
+        if let keyWindow = NSApp.keyWindow,
+           let currentIndex = windows.firstIndex(of: keyWindow) {
+            // Calculate the index of the next window (cycle through the list)
+            let nextIndex = (currentIndex + 1) % windows.count
+            let nextWindow = windows[nextIndex]
+
+            // Make the next window key and bring it to the front
+            nextWindow.makeKeyAndOrderFront(nil)
+        } else {
+            // If there's no key window, focus the first available window
+            windows.first?.makeKeyAndOrderFront(nil)
         }
     }
 }
