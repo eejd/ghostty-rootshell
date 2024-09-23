@@ -13,14 +13,8 @@ trigger: Trigger,
 /// The action to take if this binding matches
 action: Action,
 
-/// True if this binding should consume the input when the
-/// action is triggered.
-consumed: bool = true,
-
-/// True if this binding is global. Global bindings should work system-wide
-/// and not just while Ghostty is focused. This may not work on all platforms.
-/// See the keybind config documentation for more information.
-global: bool = false,
+/// Boolean flags that can be set per binding.
+flags: Flags = .{},
 
 pub const Error = error{
     InvalidFormat,
@@ -32,6 +26,10 @@ pub const Flags = packed struct {
     /// True if this binding should consume the input when the
     /// action is triggered.
     consumed: bool = true,
+
+    /// True if this binding should be forwarded to all active surfaces
+    /// in the application.
+    all: bool = false,
 
     /// True if this binding is global. Global bindings should work system-wide
     /// and not just while Ghostty is focused. This may not work on all platforms.
@@ -82,12 +80,15 @@ pub const Parser = struct {
             const prefix = input[0..idx];
 
             // If the prefix is one of our flags then set it.
-            if (std.mem.eql(u8, prefix, "unconsumed")) {
-                if (!flags.consumed) return Error.InvalidFormat;
-                flags.consumed = false;
+            if (std.mem.eql(u8, prefix, "all")) {
+                if (flags.all) return Error.InvalidFormat;
+                flags.all = true;
             } else if (std.mem.eql(u8, prefix, "global")) {
                 if (flags.global) return Error.InvalidFormat;
                 flags.global = true;
+            } else if (std.mem.eql(u8, prefix, "unconsumed")) {
+                if (!flags.consumed) return Error.InvalidFormat;
+                flags.consumed = false;
             } else {
                 // If we don't recognize the prefix then we're done.
                 // There are trigger-specific prefixes like "physical:" so
@@ -114,8 +115,7 @@ pub const Parser = struct {
         return .{ .binding = .{
             .trigger = trigger,
             .action = self.action,
-            .consumed = self.flags.consumed,
-            .global = self.flags.global,
+            .flags = self.flags,
         } };
     }
 
@@ -590,10 +590,15 @@ pub const Action = union(enum) {
     /// action.
     pub fn hash(self: Action) u64 {
         var hasher = std.hash.Wyhash.init(0);
+        self.hashIncremental(&hasher);
+        return hasher.final();
+    }
 
+    /// Hash the action into the given hasher.
+    fn hashIncremental(self: Action, hasher: anytype) void {
         // Always has the active tag.
         const Tag = @typeInfo(Action).Union.tag_type.?;
-        std.hash.autoHash(&hasher, @as(Tag, self));
+        std.hash.autoHash(hasher, @as(Tag, self));
 
         // Hash the value of the field.
         switch (self) {
@@ -608,25 +613,23 @@ pub const Action = union(enum) {
                     // signed zeros but these are not cases we expect for
                     // our bindings.
                     f32 => std.hash.autoHash(
-                        &hasher,
+                        hasher,
                         @as(u32, @bitCast(field)),
                     ),
                     f64 => std.hash.autoHash(
-                        &hasher,
+                        hasher,
                         @as(u64, @bitCast(field)),
                     ),
 
                     // Everything else automatically handle.
                     else => std.hash.autoHashStrat(
-                        &hasher,
+                        hasher,
                         field,
                         .DeepRecursive,
                     ),
                 }
             },
         }
-
-        return hasher.final();
     }
 };
 
@@ -783,9 +786,14 @@ pub const Trigger = struct {
     /// Returns a hash code that can be used to uniquely identify this trigger.
     pub fn hash(self: Trigger) u64 {
         var hasher = std.hash.Wyhash.init(0);
-        std.hash.autoHash(&hasher, self.key);
-        std.hash.autoHash(&hasher, self.mods.binding());
+        self.hashIncremental(&hasher);
         return hasher.final();
+    }
+
+    /// Hash the trigger into the given hasher.
+    fn hashIncremental(self: Trigger, hasher: anytype) void {
+        std.hash.autoHash(hasher, self.key);
+        std.hash.autoHash(hasher, self.mods.binding());
     }
 
     /// Convert the trigger to a C API compatible trigger.
@@ -864,10 +872,8 @@ pub const Set = struct {
         leader: *Set,
 
         /// This trigger completes a sequence and the value is the action
-        /// to take. The "_unconsumed" variant is used for triggers that
-        /// should not consume the input.
-        action: Action,
-        action_unconsumed: Action,
+        /// to take along with the flags that may define binding behavior.
+        leaf: Leaf,
 
         /// Implements the formatter for the fmt package. This encodes the
         /// action back into the format used by parse.
@@ -892,11 +898,25 @@ pub const Set = struct {
                     }
                 },
 
-                .action, .action_unconsumed => |action| {
+                .leaf => |leaf| {
                     // action implements the format
-                    try writer.print("={s}", .{action});
+                    try writer.print("={s}", .{leaf.action});
                 },
             }
+        }
+    };
+
+    /// Leaf node of a set is an action to trigger. This is a "leaf" compared
+    /// to the inner nodes which are "leaders" for sequences.
+    pub const Leaf = struct {
+        action: Action,
+        flags: Flags,
+
+        pub fn hash(self: Leaf) u64 {
+            var hasher = std.hash.Wyhash.init(0);
+            self.action.hash(&hasher);
+            std.hash.autoHash(&hasher, self.flags);
+            return hasher.final();
         }
     };
 
@@ -908,7 +928,7 @@ pub const Set = struct {
                 s.deinit(alloc);
                 alloc.destroy(s);
             },
-            .action, .action_unconsumed => {},
+            .leaf => {},
         };
 
         self.bindings.deinit(alloc);
@@ -980,7 +1000,7 @@ pub const Set = struct {
                         error.OutOfMemory => return error.OutOfMemory,
                     },
 
-                    .action, .action_unconsumed => {
+                    .leaf => {
                         // Remove the existing action. Fallthrough as if
                         // we don't have a leader.
                         set.remove(alloc, t);
@@ -1004,11 +1024,11 @@ pub const Set = struct {
                         set.remove(alloc, t);
                         if (old) |entry| switch (entry) {
                             .leader => unreachable, // Handled above
-                            inline .action, .action_unconsumed => |action, tag| set.put_(
+                            .leaf => |leaf| set.put_(
                                 alloc,
                                 t,
-                                action,
-                                tag == .action,
+                                leaf.action,
+                                leaf.flags,
                             ) catch {},
                         };
                     },
@@ -1023,7 +1043,7 @@ pub const Set = struct {
                     return error.SequenceUnbind;
                 },
 
-                else => if (b.consumed) {
+                else => if (b.flags.consumed) {
                     try set.put(alloc, b.trigger, b.action);
                 } else {
                     try set.putUnconsumed(alloc, b.trigger, b.action);
@@ -1040,7 +1060,7 @@ pub const Set = struct {
         t: Trigger,
         action: Action,
     ) Allocator.Error!void {
-        try self.put_(alloc, t, action, true);
+        try self.put_(alloc, t, action, .{});
     }
 
     /// Same as put but marks the trigger as unconsumed. An unconsumed
@@ -1054,7 +1074,7 @@ pub const Set = struct {
         t: Trigger,
         action: Action,
     ) Allocator.Error!void {
-        try self.put_(alloc, t, action, false);
+        try self.put_(alloc, t, action, .{ .consumed = false });
     }
 
     fn put_(
@@ -1062,7 +1082,7 @@ pub const Set = struct {
         alloc: Allocator,
         t: Trigger,
         action: Action,
-        consumed: bool,
+        flags: Flags,
     ) Allocator.Error!void {
         // unbind should never go into the set, it should be handled prior
         assert(action != .unbind);
@@ -1078,7 +1098,7 @@ pub const Set = struct {
 
             // If we have an existing binding for this trigger, we have to
             // update the reverse mapping to remove the old action.
-            .action, .action_unconsumed => {
+            .leaf => {
                 const t_hash = t.hash();
                 var it = self.reverse.iterator();
                 while (it.next()) |reverse_entry| it: {
@@ -1090,11 +1110,10 @@ pub const Set = struct {
             },
         };
 
-        gop.value_ptr.* = if (consumed) .{
+        gop.value_ptr.* = .{ .leaf = .{
             .action = action,
-        } else .{
-            .action_unconsumed = action,
-        };
+            .flags = flags,
+        } };
         errdefer _ = self.bindings.remove(t);
         try self.reverse.put(alloc, action, t);
         errdefer _ = self.reverse.remove(action);
@@ -1129,15 +1148,16 @@ pub const Set = struct {
             // Note: we'd LIKE to replace this with the most recent binding but
             // our hash map obviously has no concept of ordering so we have to
             // choose whatever. Maybe a switch to an array hash map here.
-            .action, .action_unconsumed => |action| {
-                const action_hash = action.hash();
+            .leaf => |leaf| {
+                const action_hash = leaf.action.hash();
+
                 var it = self.bindings.iterator();
                 while (it.next()) |it_entry| {
                     switch (it_entry.value_ptr.*) {
                         .leader => {},
-                        .action, .action_unconsumed => |action_search| {
-                            if (action_search.hash() == action_hash) {
-                                self.reverse.putAssumeCapacity(action, it_entry.key_ptr.*);
+                        .leaf => |leaf_search| {
+                            if (leaf_search.action.hash() == action_hash) {
+                                self.reverse.putAssumeCapacity(leaf.action, it_entry.key_ptr.*);
                                 break;
                             }
                         },
@@ -1145,7 +1165,7 @@ pub const Set = struct {
                 } else {
                     // No over trigger points to this action so we remove
                     // the reverse mapping completely.
-                    _ = self.reverse.remove(action);
+                    _ = self.reverse.remove(leaf.action);
                 }
             },
         }
@@ -1162,7 +1182,7 @@ pub const Set = struct {
         var it = result.bindings.iterator();
         while (it.next()) |entry| switch (entry.value_ptr.*) {
             // No data to clone
-            .action, .action_unconsumed => {},
+            .leaf => {},
 
             // Must be deep cloned.
             .leader => |*s| {
@@ -1264,7 +1284,7 @@ test "parse: triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-        .consumed = false,
+        .flags = .{ .consumed = false },
     }, try parseSingle("unconsumed:shift+a=ignore"));
 
     // unconsumed physical keys
@@ -1274,7 +1294,7 @@ test "parse: triggers" {
             .key = .{ .physical = .a },
         },
         .action = .{ .ignore = {} },
-        .consumed = false,
+        .flags = .{ .consumed = false },
     }, try parseSingle("unconsumed:physical:a+shift=ignore"));
 
     // invalid key
@@ -1297,7 +1317,7 @@ test "parse: global triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-        .global = true,
+        .flags = .{ .global = true },
     }, try parseSingle("global:shift+a=ignore"));
 
     // global physical keys
@@ -1307,7 +1327,7 @@ test "parse: global triggers" {
             .key = .{ .physical = .a },
         },
         .action = .{ .ignore = {} },
-        .global = true,
+        .flags = .{ .global = true },
     }, try parseSingle("global:physical:a+shift=ignore"));
 
     // global unconsumed keys
@@ -1317,8 +1337,10 @@ test "parse: global triggers" {
             .key = .{ .translated = .a },
         },
         .action = .{ .ignore = {} },
-        .consumed = false,
-        .global = true,
+        .flags = .{
+            .global = true,
+            .consumed = false,
+        },
     }, try parseSingle("unconsumed:global:a+shift=ignore"));
 }
 
@@ -1547,8 +1569,9 @@ test "set: parseAndPut typical binding" {
 
     // Creates forward mapping
     {
-        const action = s.get(.{ .key = .{ .translated = .a } }).?.action;
-        try testing.expect(action == .new_window);
+        const action = s.get(.{ .key = .{ .translated = .a } }).?.leaf;
+        try testing.expect(action.action == .new_window);
+        try testing.expectEqual(Flags{}, action.flags);
     }
 
     // Creates reverse mapping
@@ -1570,8 +1593,9 @@ test "set: parseAndPut unconsumed binding" {
     // Creates forward mapping
     {
         const trigger: Trigger = .{ .key = .{ .translated = .a } };
-        const action = s.get(trigger).?.action_unconsumed;
-        try testing.expect(action == .new_window);
+        const action = s.get(trigger).?.leaf;
+        try testing.expect(action.action == .new_window);
+        try testing.expectEqual(Flags{ .consumed = false }, action.flags);
     }
 
     // Creates reverse mapping
@@ -1617,8 +1641,9 @@ test "set: parseAndPut sequence" {
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
         const e = current.get(t).?;
-        try testing.expect(e == .action);
-        try testing.expect(e.action == .new_window);
+        try testing.expect(e == .leaf);
+        try testing.expect(e.leaf.action == .new_window);
+        try testing.expectEqual(Flags{}, e.leaf.flags);
     }
 }
 
@@ -1641,14 +1666,16 @@ test "set: parseAndPut sequence with two actions" {
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
         const e = current.get(t).?;
-        try testing.expect(e == .action);
-        try testing.expect(e.action == .new_window);
+        try testing.expect(e == .leaf);
+        try testing.expect(e.leaf.action == .new_window);
+        try testing.expectEqual(Flags{}, e.leaf.flags);
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .c } };
         const e = current.get(t).?;
-        try testing.expect(e == .action);
-        try testing.expect(e.action == .new_tab);
+        try testing.expect(e == .leaf);
+        try testing.expect(e.leaf.action == .new_tab);
+        try testing.expectEqual(Flags{}, e.leaf.flags);
     }
 }
 
@@ -1671,8 +1698,9 @@ test "set: parseAndPut overwrite sequence" {
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
         const e = current.get(t).?;
-        try testing.expect(e == .action);
-        try testing.expect(e.action == .new_window);
+        try testing.expect(e == .leaf);
+        try testing.expect(e.leaf.action == .new_window);
+        try testing.expectEqual(Flags{}, e.leaf.flags);
     }
 }
 
@@ -1695,8 +1723,9 @@ test "set: parseAndPut overwrite leader" {
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
         const e = current.get(t).?;
-        try testing.expect(e == .action);
-        try testing.expect(e.action == .new_window);
+        try testing.expect(e == .leaf);
+        try testing.expect(e.leaf.action == .new_window);
+        try testing.expectEqual(Flags{}, e.leaf.flags);
     }
 }
 
@@ -1825,11 +1854,14 @@ test "set: consumed state" {
     defer s.deinit(alloc);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
 
     try s.putUnconsumed(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action_unconsumed);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
+    try testing.expect(!s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .action);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
 }

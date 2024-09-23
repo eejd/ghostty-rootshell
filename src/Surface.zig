@@ -1605,8 +1605,7 @@ fn maybeHandleBinding(
             return .consumed;
         },
 
-        .action => |v| .{ v, true },
-        .action_unconsumed => |v| .{ v, false },
+        .leaf => |leaf| .{ leaf.action, leaf.flags.consumed },
     };
 
     // We have an action, so at this point we're handling SOMETHING so

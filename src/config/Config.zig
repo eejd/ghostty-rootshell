@@ -743,19 +743,26 @@ class: ?[:0]const u8 = null,
 /// The keybind trigger can be prefixed with some special values to change
 /// the behavior of the keybind. These are:
 ///
+///   * `all:` - Make the keybind apply to all terminal surfaces. By default,
+///     keybinds only apply to the focused terminal surface. If this is true,
+///     then the keybind will be sent to all terminal surfaces. This only
+///     applies to actions that are surface-specific. For actions that
+///     are already global (i.e. `quit`), this prefix has no effect.
+///
+///   * `global:` - Make the keybind global. By default, keybinds only work
+///     within Ghostty and under the right conditions (application focused,
+///     sometimes terminal focused, etc.). If you want a keybind to work
+///     globally across your system (i.e. even when Ghostty is not focused),
+///     specify this prefix. This prefix implies `all:`. Note: this does not
+///     work in all environments; see the additional notes below for more
+///     information.
+///
 ///   * `unconsumed:` - Do not consume the input. By default, a keybind
 ///     will consume the input, meaning that the associated encoding (if
 ///     any) will not be sent to the running program in the terminal. If
 ///     you wish to send the encoded value to the program, specify the
 ///     `unconsumed:` prefix before the entire keybind. For example:
 ///     `unconsumed:ctrl+a=reload_config`
-///
-///   * `global:` - Make the keybind global. By default, keybinds only work
-///     within Ghostty and under the right conditions (application focused,
-///     sometimes terminal focused, etc.). If you want a keybind to work
-///     globally across your system (i.e. even when Ghostty is not focused),
-///     specify this prefix. Note: this does not work in all environments;
-///     see the additional notes below for more information.
 ///
 /// Multiple prefixes can be specified. For example,
 /// `global:unconsumed:ctrl+a=reload_config` will make the keybind global
@@ -767,11 +774,6 @@ class: ?[:0]const u8 = null,
 /// Ghostty will attempt to request these permissions. If the permissions are
 /// not granted, the keybind will not work. On macOS, you can find these
 /// permissions in System Preferences -> Privacy & Security -> Accessibility.
-///
-/// Additionally, `global:` keybinds associated with actions that affect
-/// a specific terminal surface will target the last focused terminal surface
-/// within Ghostty. There is not a way to target a specific terminal surface
-/// with a `global:` keybind.
 keybind: Keybinds = .{},
 
 /// Horizontal window padding. This applies padding between the terminal cells
@@ -3735,11 +3737,16 @@ pub const Keybinds = struct {
                 )) return false,
 
                 // Actions are compared by field directly
-                inline .action, .action_unconsumed => |_, tag| if (!equalField(
-                    inputpkg.Binding.Action,
-                    @field(self_entry.value_ptr.*, @tagName(tag)),
-                    @field(other_entry.value_ptr.*, @tagName(tag)),
-                )) return false,
+                .leaf => {
+                    const self_leaf = self_entry.value_ptr.*.leaf;
+                    const other_leaf = other_entry.value_ptr.*.leaf;
+
+                    if (!equalField(
+                        inputpkg.Binding.Set.Leaf,
+                        self_leaf,
+                        other_leaf,
+                    )) return false;
+                },
             }
         }
 
