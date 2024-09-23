@@ -17,17 +17,34 @@ action: Action,
 /// action is triggered.
 consumed: bool = true,
 
+/// True if this binding is global. Global bindings should work system-wide
+/// and not just while Ghostty is focused. This may not work on all platforms.
+/// See the keybind config documentation for more information.
+global: bool = false,
+
 pub const Error = error{
     InvalidFormat,
     InvalidAction,
 };
 
+/// Flags the full binding-scoped flags that can be set per binding.
+pub const Flags = packed struct {
+    /// True if this binding should consume the input when the
+    /// action is triggered.
+    consumed: bool = true,
+
+    /// True if this binding is global. Global bindings should work system-wide
+    /// and not just while Ghostty is focused. This may not work on all platforms.
+    /// See the keybind config documentation for more information.
+    global: bool = false,
+};
+
 /// Full binding parser. The binding parser is implemented as an iterator
 /// which yields elements to support multi-key sequences without allocation.
 pub const Parser = struct {
-    unconsumed: bool = false,
     trigger_it: SequenceIterator,
     action: Action,
+    flags: Flags = .{},
 
     pub const Elem = union(enum) {
         /// A leader trigger in a sequence.
@@ -38,11 +55,7 @@ pub const Parser = struct {
     };
 
     pub fn init(raw_input: []const u8) Error!Parser {
-        // If our entire input is prefixed with "unconsumed:" then we are
-        // not consuming this keybind when the action is triggered.
-        const unconsumed_prefix = "unconsumed:";
-        const unconsumed = std.mem.startsWith(u8, raw_input, unconsumed_prefix);
-        const start_idx = if (unconsumed) unconsumed_prefix.len else 0;
+        const flags, const start_idx = try parseFlags(raw_input);
         const input = raw_input[start_idx..];
 
         // Find the first = which splits are mapping into the trigger
@@ -52,10 +65,42 @@ pub const Parser = struct {
         // Sequence iterator goes up to the equal, action is after. We can
         // parse the action now.
         return .{
-            .unconsumed = unconsumed,
             .trigger_it = .{ .input = input[0..eql_idx] },
             .action = try Action.parse(input[eql_idx + 1 ..]),
+            .flags = flags,
         };
+    }
+
+    fn parseFlags(raw_input: []const u8) Error!struct { Flags, usize } {
+        var flags: Flags = .{};
+
+        var start_idx: usize = 0;
+        var input: []const u8 = raw_input;
+        while (true) {
+            // Find the next prefix
+            const idx = std.mem.indexOf(u8, input, ":") orelse break;
+            const prefix = input[0..idx];
+
+            // If the prefix is one of our flags then set it.
+            if (std.mem.eql(u8, prefix, "unconsumed")) {
+                if (!flags.consumed) return Error.InvalidFormat;
+                flags.consumed = false;
+            } else if (std.mem.eql(u8, prefix, "global")) {
+                if (flags.global) return Error.InvalidFormat;
+                flags.global = true;
+            } else {
+                // If we don't recognize the prefix then we're done.
+                // There are trigger-specific prefixes like "physical:" so
+                // this lets us fall into that.
+                break;
+            }
+
+            // Move past the prefix
+            start_idx += idx + 1;
+            input = input[idx + 1 ..];
+        }
+
+        return .{ flags, start_idx };
     }
 
     pub fn next(self: *Parser) Error!?Elem {
@@ -69,7 +114,8 @@ pub const Parser = struct {
         return .{ .binding = .{
             .trigger = trigger,
             .action = self.action,
-            .consumed = !self.unconsumed,
+            .consumed = self.flags.consumed,
+            .global = self.flags.global,
         } };
     }
 
@@ -1239,6 +1285,41 @@ test "parse: triggers" {
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parseSingle("a+b=ignore"));
+}
+
+test "parse: global triggers" {
+    const testing = std.testing;
+
+    // global keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .global = true,
+    }, try parseSingle("global:shift+a=ignore"));
+
+    // global physical keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .physical = .a },
+        },
+        .action = .{ .ignore = {} },
+        .global = true,
+    }, try parseSingle("global:physical:a+shift=ignore"));
+
+    // global unconsumed keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .consumed = false,
+        .global = true,
+    }, try parseSingle("unconsumed:global:a+shift=ignore"));
 }
 
 test "parse: modifier aliases" {

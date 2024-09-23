@@ -651,7 +651,8 @@ class: ?[:0]const u8 = null,
 @"working-directory": ?[]const u8 = null,
 
 /// Key bindings. The format is `trigger=action`. Duplicate triggers will
-/// overwrite previously set values.
+/// overwrite previously set values. The list of actions is available in
+/// the documentation or using the `ghostty +list-actions` command.
 ///
 /// Trigger: `+`-separated list of keys and modifiers. Example: `ctrl+a`,
 /// `ctrl+shift+b`, `up`. Some notes:
@@ -722,6 +723,9 @@ class: ?[:0]const u8 = null,
 ///   * `text:text` - Send a string. Uses Zig string literal syntax.
 ///     i.e. `text:\x15` sends Ctrl-U.
 ///
+///   * All other actions can be found in the documentation or by using the
+///     `ghostty +list-actions` command.
+///
 /// Some notes for the action:
 ///
 ///   * The parameter is taken as-is after the `:`. Double quotes or
@@ -736,11 +740,38 @@ class: ?[:0]const u8 = null,
 ///     removes ALL keybindings up to this point, including the default
 ///     keybindings.
 ///
-/// A keybind by default causes the input to be consumed. This means that the
-/// associated encoding (if any) will not be sent to the running program
-/// in the terminal. If you wish to send the encoded value to the program,
-/// specify the "unconsumed:" prefix before the entire keybind. For example:
-/// "unconsumed:ctrl+a=reload_config"
+/// The keybind trigger can be prefixed with some special values to change
+/// the behavior of the keybind. These are:
+///
+///   * `unconsumed:` - Do not consume the input. By default, a keybind
+///     will consume the input, meaning that the associated encoding (if
+///     any) will not be sent to the running program in the terminal. If
+///     you wish to send the encoded value to the program, specify the
+///     `unconsumed:` prefix before the entire keybind. For example:
+///     `unconsumed:ctrl+a=reload_config`
+///
+///   * `global:` - Make the keybind global. By default, keybinds only work
+///     within Ghostty and under the right conditions (application focused,
+///     sometimes terminal focused, etc.). If you want a keybind to work
+///     globally across your system (i.e. even when Ghostty is not focused),
+///     specify this prefix. Note: this does not work in all environments;
+///     see the additional notes below for more information.
+///
+/// Multiple prefixes can be specified. For example,
+/// `global:unconsumed:ctrl+a=reload_config` will make the keybind global
+/// and not consume the input to reload the config.
+///
+/// A note on `global:`: this feature is only supported on macOS. On macOS,
+/// this feature requires accessibility permissions to be granted to Ghostty.
+/// When a `global:` keybind is specified and Ghostty is launched or reloaded,
+/// Ghostty will attempt to request these permissions. If the permissions are
+/// not granted, the keybind will not work. On macOS, you can find these
+/// permissions in System Preferences -> Privacy & Security -> Accessibility.
+///
+/// Additionally, `global:` keybinds associated with actions that affect
+/// a specific terminal surface will target the last focused terminal surface
+/// within Ghostty. There is not a way to target a specific terminal surface
+/// with a `global:` keybind.
 keybind: Keybinds = .{},
 
 /// Horizontal window padding. This applies padding between the terminal cells
