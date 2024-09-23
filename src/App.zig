@@ -262,6 +262,58 @@ pub fn setQuit(self: *App) !void {
     self.quit = true;
 }
 
+/// Perform a binding action. This only accepts actions that are scoped
+/// to the app. Callers can use performAllAction to perform any action
+/// and any non-app-scoped actions will be performed on all surfaces.
+pub fn performAction(
+    self: *App,
+    rt_app: *apprt.App,
+    action: input.Binding.Action.Scoped(.app),
+) !void {
+    switch (action) {
+        .unbind => unreachable,
+        .ignore => {},
+        .quit => try self.setQuit(),
+        .open_config => try self.openConfig(rt_app),
+        .reload_config => try self.reloadConfig(rt_app),
+        .close_all_windows => {
+            if (@hasDecl(apprt.App, "closeAllWindows")) {
+                rt_app.closeAllWindows();
+            } else log.warn("runtime doesn't implement closeAllWindows", .{});
+        },
+    }
+}
+
+/// Perform an app-wide binding action. If the action is surface-specific
+/// then it will be performed on all surfaces. To perform only app-scoped
+/// actions, use performAction.
+pub fn performAllAction(
+    self: *App,
+    rt_app: *apprt.App,
+    action: input.Binding.Action,
+) !void {
+    switch (action.scope()) {
+        // App-scoped actions are handled by the app so that they aren't
+        // repeated for each surface (since each surface forwards
+        // app-scoped actions back up).
+        .app => try self.performAction(
+            rt_app,
+            action.scoped(.app).?, // asserted through the scope match
+        ),
+
+        // Surface-scoped actions are performed on all surfaces. Errors
+        // are logged but processing continues.
+        .surface => for (self.surfaces.items) |surface| {
+            _ = surface.core_surface.performBindingAction(action) catch |err| {
+                log.warn("error performing binding action on surface ptr={X} err={}", .{
+                    @intFromPtr(surface),
+                    err,
+                });
+            };
+        },
+    }
+}
+
 /// Handle a window message
 fn surfaceMessage(self: *App, surface: *Surface, msg: apprt.surface.Message) !void {
     // We want to ensure our window is still active. Window messages

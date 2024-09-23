@@ -539,6 +539,138 @@ pub const Action = union(enum) {
         return Error.InvalidAction;
     }
 
+    /// The scope of an action. The scope is the context in which an action
+    /// must be executed.
+    pub const Scope = enum {
+        app,
+        surface,
+    };
+
+    /// Returns the scope of an action.
+    pub fn scope(self: Action) Scope {
+        return switch (self) {
+            // Doesn't really matter, so we'll see app.
+            .ignore,
+            .unbind,
+            => .app,
+
+            // Obviously app actions.
+            .open_config,
+            .reload_config,
+            .close_all_windows,
+            .quit,
+            => .app,
+
+            // Obviously surface actions.
+            .csi,
+            .esc,
+            .text,
+            .cursor_key,
+            .reset,
+            .copy_to_clipboard,
+            .paste_from_clipboard,
+            .paste_from_selection,
+            .increase_font_size,
+            .decrease_font_size,
+            .reset_font_size,
+            .clear_screen,
+            .select_all,
+            .scroll_to_top,
+            .scroll_to_bottom,
+            .scroll_page_up,
+            .scroll_page_down,
+            .scroll_page_fractional,
+            .scroll_page_lines,
+            .adjust_selection,
+            .jump_to_prompt,
+            .write_scrollback_file,
+            .write_screen_file,
+            .write_selection_file,
+            .close_surface,
+            .close_window,
+            .toggle_fullscreen,
+            .toggle_window_decorations,
+            .toggle_secure_input,
+            .crash,
+
+            // These are less obvious surface actions. They're surface
+            // actions because they are relevant to the surface they
+            // come from. For example `new_window` needs to be sourced to
+            // a surface so inheritance can be done correctly.
+            .new_window,
+            .new_tab,
+            .previous_tab,
+            .next_tab,
+            .last_tab,
+            .goto_tab,
+            .new_split,
+            .goto_split,
+            .toggle_split_zoom,
+            .resize_split,
+            .equalize_splits,
+            .inspector,
+            => .surface,
+        };
+    }
+
+    /// Returns a union type that only contains actions that are scoped to
+    /// the given scope.
+    pub fn Scoped(comptime s: Scope) type {
+        const all_fields = @typeInfo(Action).Union.fields;
+
+        // Find all fields that are app-scoped
+        var i: usize = 0;
+        var union_fields: [all_fields.len]std.builtin.Type.UnionField = undefined;
+        var enum_fields: [all_fields.len]std.builtin.Type.EnumField = undefined;
+        for (all_fields) |field| {
+            const action = @unionInit(Action, field.name, undefined);
+            if (action.scope() == s) {
+                union_fields[i] = field;
+                enum_fields[i] = .{ .name = field.name, .value = i };
+                i += 1;
+            }
+        }
+
+        // Build our union
+        return @Type(.{ .Union = .{
+            .layout = .auto,
+            .tag_type = @Type(.{ .Enum = .{
+                .tag_type = std.math.IntFittingRange(0, i),
+                .fields = enum_fields[0..i],
+                .decls = &.{},
+                .is_exhaustive = true,
+            } }),
+            .fields = union_fields[0..i],
+            .decls = &.{},
+        } });
+    }
+
+    /// Returns the scoped version of this action. If the action is not
+    /// scoped to the given scope then this returns null.
+    ///
+    /// The benefit of this function is that it allows us to use Zig's
+    /// exhaustive switch safety to ensure we always properly handle certain
+    /// scoped actions.
+    pub fn scoped(self: Action, comptime s: Scope) ?Scoped(s) {
+        switch (self) {
+            inline else => |v, tag| {
+                // Use comptime to prune out non-app actions
+                if (comptime @unionInit(
+                    Action,
+                    @tagName(tag),
+                    undefined,
+                ).scope() != s) return null;
+
+                // Initialize our app action
+                return @unionInit(
+                    Scoped(s),
+                    @tagName(tag),
+                    v,
+                );
+            },
+        }
+    }
+
     /// Implements the formatter for the fmt package. This encodes the
     /// action back into the format used by parse.
     pub fn format(

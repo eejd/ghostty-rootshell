@@ -3400,14 +3400,22 @@ fn showMouse(self: *Surface) void {
 /// will ever return false. We can expand this in the future if it becomes
 /// useful. We did previous/next tab so we could implement #498.
 pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool {
-    switch (action) {
-        .unbind => unreachable,
-        .ignore => {},
+    // Handle app-scoped bindings by sending it to the app.
+    switch (action.scope()) {
+        .app => {
+            try self.app.performAction(
+                self.rt_app,
+                action.scoped(.app).?,
+            );
 
-        .open_config => try self.app.openConfig(self.rt_app),
+            return true;
+        },
 
-        .reload_config => try self.app.reloadConfig(self.rt_app),
+        // Surface fallthrough and handle
+        .surface => {},
+    }
 
+    switch (action.scoped(.surface).?) {
         .csi, .esc => |data| {
             // We need to send the CSI/ESC sequence as a single write request.
             // If you split it across two then the shell can interpret it
@@ -3756,14 +3764,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         .close_surface => self.close(),
 
         .close_window => try self.app.closeSurface(self),
-
-        .close_all_windows => {
-            if (@hasDecl(apprt.Surface, "closeAllWindows")) {
-                self.rt_surface.closeAllWindows();
-            } else log.warn("runtime doesn't implement closeAllWindows", .{});
-        },
-
-        .quit => try self.app.setQuit(),
 
         .crash => |location| switch (location) {
             .main => @panic("crash binding action, crashing intentionally"),
