@@ -10,7 +10,7 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.App
 
-    /// The position fo the slide terminal.
+    /// The position for the slide terminal.
     let position: SlideTerminalPosition
 
     /// The surface tree for this window.
@@ -63,6 +63,11 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
 
     func windowDidResignKey(_ notification: Notification) {
         slideOut()
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard let screen = NSScreen.main else { return frameSize }
+        return position.restrictFrameSize(frameSize, on: screen)
     }
 
     //MARK: TerminalViewDelegate

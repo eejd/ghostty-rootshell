@@ -35,6 +35,17 @@ enum SlideTerminalPosition {
         }
     }
 
+    /// Restrict the frame size during resizing.
+    func restrictFrameSize(_ size: NSSize, on screen: NSScreen) -> NSSize {
+        var finalSize = size
+        switch (self) {
+        case .top:
+            finalSize.width = screen.frame.width
+        }
+
+        return finalSize
+    }
+
     /// The initial point origin for this position.
     func initialOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch (self) {
