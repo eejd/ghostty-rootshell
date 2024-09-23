@@ -704,6 +704,9 @@ class: ?[:0]const u8 = null,
 ///     `ctrl+a>t`, and then bind `ctrl+a` directly, both `ctrl+a>n` and
 ///     `ctrl+a>t` will become unbound.
 ///
+///   * Trigger sequences are not allowed for `global:` or `all:`-prefixed
+///     triggers. This is a limitation we could remove in the future.
+///
 /// Action is the action to take when the trigger is satisfied. It takes the
 /// format `action` or `action:param`. The latter form is only valid if the
 /// action requires a parameter.
@@ -762,7 +765,10 @@ class: ?[:0]const u8 = null,
 ///     any) will not be sent to the running program in the terminal. If
 ///     you wish to send the encoded value to the program, specify the
 ///     `unconsumed:` prefix before the entire keybind. For example:
-///     `unconsumed:ctrl+a=reload_config`
+///     `unconsumed:ctrl+a=reload_config`. `global:` and `all:`-prefixed
+///     keybinds will always consume the input regardless of this setting.
+///     Since they are not associated with a specific terminal surface,
+///     they're never encoded.
 ///
 /// Multiple prefixes can be specified. For example,
 /// `global:unconsumed:ctrl+a=reload_config` will make the keybind global

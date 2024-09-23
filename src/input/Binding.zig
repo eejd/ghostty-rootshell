@@ -109,7 +109,11 @@ pub const Parser = struct {
         const trigger = (try self.trigger_it.next()) orelse return null;
 
         // If this is our last trigger then it is our final binding.
-        if (!self.trigger_it.done()) return .{ .leader = trigger };
+        if (!self.trigger_it.done()) {
+            // Global/all bindings can't be sequences
+            if (self.flags.global or self.flags.all) return error.InvalidFormat;
+            return .{ .leader = trigger };
+        }
 
         // Out of triggers, yield the final action.
         return .{ .binding = .{
@@ -1342,6 +1346,12 @@ test "parse: global triggers" {
             .consumed = false,
         },
     }, try parseSingle("unconsumed:global:a+shift=ignore"));
+
+    // global sequences not allowed
+    {
+        var p = try Parser.init("global:a>b=ignore");
+        try testing.expectError(Error.InvalidFormat, p.next());
+    }
 }
 
 test "parse: modifier aliases" {
