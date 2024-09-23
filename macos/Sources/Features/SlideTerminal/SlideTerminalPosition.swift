@@ -12,9 +12,7 @@ enum SlideTerminalPosition {
         switch (self) {
         case .top:
             window.setFrame(.init(
-                origin: .init(
-                    x: 0,
-                    y: screen.frame.maxY),
+                origin: initialOrigin(for: window, on: screen),
                 size: .init(
                     width: screen.frame.width,
                     height: window.frame.height)
@@ -31,11 +29,25 @@ enum SlideTerminalPosition {
         switch (self) {
         case .top:
             window.setFrame(.init(
-                origin: .init(
-                    x: window.frame.origin.x,
-                    y: screen.visibleFrame.maxY - window.frame.height),
+                origin: finalOrigin(for: window, on: screen),
                 size: window.frame.size
             ), display: true)
+        }
+    }
+
+    /// The initial point origin for this position.
+    func initialOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
+        switch (self) {
+        case .top:
+            return .init(x: 0, y: screen.frame.maxY)
+        }
+    }
+
+    /// The final point origin for this position.
+    func finalOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
+        switch (self) {
+        case .top:
+            return .init(x: window.frame.origin.x, y: screen.visibleFrame.maxY - window.frame.height)
         }
     }
 }

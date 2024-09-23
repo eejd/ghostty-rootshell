@@ -4,7 +4,7 @@ import SwiftUI
 import GhosttyKit
 
 /// Controller for the slide-style terminal.
-class SlideTerminalController: NSWindowController, TerminalViewDelegate, TerminalViewModel {
+class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
     override var windowNibName: NSNib.Name? { "SlideTerminal" }
 
     /// The app instance that this terminal view will represent.
@@ -40,6 +40,10 @@ class SlideTerminalController: NSWindowController, TerminalViewDelegate, Termina
     override func windowDidLoad() {
         guard let window = self.window else { return }
 
+        // The controller is the window delegate so we can detect events such as
+        // window close so we can animate out.
+        window.delegate = self
+
         // The slide window is not restorable (yet!). "Yet" because in theory we can
         // make this restorable, but it isn't currently implemented.
         window.isRestorable = false
@@ -52,7 +56,13 @@ class SlideTerminalController: NSWindowController, TerminalViewDelegate, Termina
         ))
 
         // Animate the window in
-        slideWindowIn(window: window, from: position)
+        slideIn()
+    }
+
+    // MARK: NSWindowDelegate
+
+    func windowDidResignKey(_ notification: Notification) {
+        slideOut()
     }
 
     //MARK: TerminalViewDelegate
@@ -68,7 +78,17 @@ class SlideTerminalController: NSWindowController, TerminalViewDelegate, Termina
         }
     }
 
-    // MARK: Slide Logic
+    // MARK: Slide Methods
+
+    func slideIn() {
+        guard let window = self.window else { return }
+        slideWindowIn(window: window, from: position)
+    }
+
+    func slideOut() {
+        guard let window = self.window else { return }
+        slideWindowOut(window: window, to: position)
+    }
 
     private func slideWindowIn(window: NSWindow, from position: SlideTerminalPosition) {
         guard let screen = NSScreen.main else { return }
@@ -85,6 +105,15 @@ class SlideTerminalController: NSWindowController, TerminalViewDelegate, Termina
             context.duration = 0.3
             context.timingFunction = .init(name: .easeIn)
             position.setFinal(in: window.animator(), on: screen)
+        }
+    }
+
+    private func slideWindowOut(window: NSWindow, to position: SlideTerminalPosition) {
+        guard let screen = NSScreen.main else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            context.timingFunction = .init(name: .easeIn)
+            position.setInitial(in: window.animator(), on: screen)
         }
     }
 }
