@@ -261,6 +261,10 @@ pub const Notebook = union(enum) {
                 _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&Tab.gtkTabCloseClick), tab, null, c.G_CONNECT_DEFAULT);
                 _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&Tab.gtkTabClick), tab, null, c.G_CONNECT_DEFAULT);
 
+                // Tab settings
+                c.gtk_notebook_set_tab_reorderable(notebook, box_widget, 1);
+                c.gtk_notebook_set_tab_detachable(notebook, box_widget, 1);
+
                 if (self.nPages() > 1) {
                     c.gtk_notebook_set_show_tabs(notebook, 1);
                 }
