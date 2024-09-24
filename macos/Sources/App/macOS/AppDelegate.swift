@@ -418,6 +418,14 @@ class AppDelegate: NSObject,
                 c.showWindow(self)
             }
         }
+
+        // If our reload adds global keybinds and we don't have ax permissions then
+        // we need to request them.
+        global: if (ghostty_app_has_global_keybinds(ghostty.app!)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(1)) {
+                GlobalEventTap.shared.enable()
+            }
+        }
     }
 
     /// Sync the appearance of our app with the theme specified in the config.

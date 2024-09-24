@@ -1561,19 +1561,8 @@ fn maybeHandleBinding(
     const entry: input.Binding.Set.Entry = entry: {
         const set = self.keyboard.bindings orelse &self.config.keybind.set;
 
-        var trigger: input.Binding.Trigger = .{
-            .mods = event.mods.binding(),
-            .key = .{ .translated = event.key },
-        };
-        if (set.get(trigger)) |v| break :entry v;
-
-        trigger.key = .{ .physical = event.physical_key };
-        if (set.get(trigger)) |v| break :entry v;
-
-        if (event.unshifted_codepoint > 0) {
-            trigger.key = .{ .unicode = event.unshifted_codepoint };
-            if (set.get(trigger)) |v| break :entry v;
-        }
+        // Get our entry from the set for the given event.
+        if (set.getEvent(event)) |v| break :entry v;
 
         // No entry found. If we're not looking at the root set of the
         // bindings we need to encode everything up to this point and

@@ -262,6 +262,49 @@ pub fn setQuit(self: *App) !void {
     self.quit = true;
 }
 
+/// Handle a key event at the app-scope. If this key event is used,
+/// this will return true and the caller shouldn't continue processing
+/// the event. If the event is not used, this will return false.
+pub fn keyEvent(
+    self: *App,
+    rt_app: *apprt.App,
+    event: input.KeyEvent,
+) bool {
+    switch (event.action) {
+        // We don't care about key release events.
+        .release => return false,
+
+        // Continue processing key press events.
+        .press, .repeat => {},
+    }
+
+    // Get the keybind entry for this event. We don't support key sequences
+    // so we can look directly in the top-level set.
+    const entry = rt_app.config.keybind.set.getEvent(event) orelse return false;
+    const leaf: input.Binding.Set.Leaf = switch (entry) {
+        // Sequences aren't supported. Our configuration parser verifies
+        // this for global keybinds but we may still get an entry for
+        // a non-global keybind.
+        .leader => return false,
+
+        // Leaf entries are good
+        .leaf => |leaf| leaf,
+    };
+
+    // We only care about global keybinds
+    if (!leaf.flags.global) return false;
+
+    // Perform the action
+    self.performAllAction(rt_app, leaf.action) catch |err| {
+        log.warn("error performing global keybind action action={s} err={}", .{
+            @tagName(leaf.action),
+            err,
+        });
+    };
+
+    return true;
+}
+
 /// Perform a binding action. This only accepts actions that are scoped
 /// to the app. Callers can use performAllAction to perform any action
 /// and any non-app-scoped actions will be performed on all surfaces.

@@ -6,6 +6,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const key = @import("key.zig");
+const KeyEvent = key.KeyEvent;
 
 /// The trigger that needs to be performed to execute the action.
 trigger: Trigger,
@@ -1252,6 +1253,31 @@ pub const Set = struct {
     /// triggers so this will return the first one found.
     pub fn getTrigger(self: Set, a: Action) ?Trigger {
         return self.reverse.get(a);
+    }
+
+    /// Get an entry for the given key event. This will attempt to find
+    /// a binding using multiple parts of the event in the following order:
+    ///
+    ///   1. Translated key (event.key)
+    ///   2. Physical key (event.physical_key)
+    ///   3. Unshifted Unicode codepoint (event.unshifted_codepoint)
+    ///
+    pub fn getEvent(self: *const Set, event: KeyEvent) ?Entry {
+        var trigger: Trigger = .{
+            .mods = event.mods.binding(),
+            .key = .{ .translated = event.key },
+        };
+        if (self.get(trigger)) |v| return v;
+
+        trigger.key = .{ .physical = event.physical_key };
+        if (self.get(trigger)) |v| return v;
+
+        if (event.unshifted_codepoint > 0) {
+            trigger.key = .{ .unicode = event.unshifted_codepoint };
+            if (self.get(trigger)) |v| return v;
+        }
+
+        return null;
     }
 
     /// Remove a binding for a given trigger.
