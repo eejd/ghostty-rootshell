@@ -2030,7 +2030,12 @@ test "set: consumed state" {
     try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
     try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
 
-    try s.putUnconsumed(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
+    try s.putFlags(
+        alloc,
+        .{ .key = .{ .translated = .a } },
+        .{ .new_window = {} },
+        .{ .consumed = false },
+    );
     try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
     try testing.expect(!s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
 
