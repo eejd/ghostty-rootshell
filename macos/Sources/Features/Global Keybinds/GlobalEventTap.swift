@@ -49,7 +49,7 @@ class GlobalEventTap {
         }
 
         // Failed, probably due to permissions. The permissions dialog should've
-        // popped up. We retry on a timer since once the permisisons are granted
+        // popped up. We retry on a timer since once the permissions are granted
         // then they take affect immediately.
         enableTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             _ = self.tryEnable()
