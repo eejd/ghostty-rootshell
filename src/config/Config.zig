@@ -770,6 +770,11 @@ class: ?[:0]const u8 = null,
 ///     Since they are not associated with a specific terminal surface,
 ///     they're never encoded.
 ///
+/// Keybind trigger are not unique per prefix combination. For example,
+/// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
+/// set later will overwrite the keybind set earlier. In this case, the
+/// `global:` keybind will be used.
+///
 /// Multiple prefixes can be specified. For example,
 /// `global:unconsumed:ctrl+a=reload_config` will make the keybind global
 /// and not consume the input to reload the config.
