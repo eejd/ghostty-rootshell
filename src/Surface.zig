@@ -1590,7 +1590,7 @@ fn maybeHandleBinding(
     };
 
     // Determine if this entry has an action or if its a leader key.
-    const action: input.Binding.Action, const consumed: bool = switch (entry) {
+    const leaf: input.Binding.Set.Leaf = switch (entry) {
         .leader => |set| {
             // Setup the next set we'll look at.
             self.keyboard.bindings = set;
@@ -1605,7 +1605,20 @@ fn maybeHandleBinding(
             return .consumed;
         },
 
-        .leaf => |leaf| .{ leaf.action, leaf.flags.consumed },
+        .leaf => |leaf| leaf,
+    };
+    const action = leaf.action;
+
+    // consumed determines if the input is consumed or if we continue
+    // encoding the key (if we have a key to encode).
+    const consumed = consumed: {
+        // If the consumed flag is explicitly set, then we are consumed.
+        if (leaf.flags.consumed) break :consumed true;
+
+        // If the global or all flag is set, we always consume.
+        if (leaf.flags.global or leaf.flags.all) break :consumed true;
+
+        break :consumed false;
     };
 
     // We have an action, so at this point we're handling SOMETHING so
@@ -1617,8 +1630,22 @@ fn maybeHandleBinding(
     self.keyboard.bindings = null;
 
     // Attempt to perform the action
-    log.debug("key event binding consumed={} action={}", .{ consumed, action });
-    const performed = try self.performBindingAction(action);
+    log.debug("key event binding flags={} action={}", .{
+        leaf.flags,
+        action,
+    });
+    const performed = performed: {
+        // If this is a global or all action, then we perform it on
+        // the app and it applies to every surface.
+        if (leaf.flags.global or leaf.flags.all) {
+            try self.app.performAllAction(self.rt_app, action);
+
+            // "All" actions are always performed since they are global.
+            break :performed true;
+        }
+
+        break :performed try self.performBindingAction(action);
+    };
 
     // If we performed an action and it was a closing action,
     // our "self" pointer is not safe to use anymore so we need to

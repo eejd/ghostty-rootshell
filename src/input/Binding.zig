@@ -1160,7 +1160,7 @@ pub const Set = struct {
                         set.remove(alloc, t);
                         if (old) |entry| switch (entry) {
                             .leader => unreachable, // Handled above
-                            .leaf => |leaf| set.put_(
+                            .leaf => |leaf| set.putFlags(
                                 alloc,
                                 t,
                                 leaf.action,
@@ -1179,11 +1179,12 @@ pub const Set = struct {
                     return error.SequenceUnbind;
                 },
 
-                else => if (b.flags.consumed) {
-                    try set.put(alloc, b.trigger, b.action);
-                } else {
-                    try set.putUnconsumed(alloc, b.trigger, b.action);
-                },
+                else => try set.putFlags(
+                    alloc,
+                    b.trigger,
+                    b.action,
+                    b.flags,
+                ),
             },
         }
     }
@@ -1196,24 +1197,11 @@ pub const Set = struct {
         t: Trigger,
         action: Action,
     ) Allocator.Error!void {
-        try self.put_(alloc, t, action, .{});
+        try self.putFlags(alloc, t, action, .{});
     }
 
-    /// Same as put but marks the trigger as unconsumed. An unconsumed
-    /// trigger will evaluate the action and continue to encode for the
-    /// terminal.
-    ///
-    /// This is a separate function because this case is rare.
-    pub fn putUnconsumed(
-        self: *Set,
-        alloc: Allocator,
-        t: Trigger,
-        action: Action,
-    ) Allocator.Error!void {
-        try self.put_(alloc, t, action, .{ .consumed = false });
-    }
-
-    fn put_(
+    /// Add a binding to the set with explicit flags.
+    pub fn putFlags(
         self: *Set,
         alloc: Allocator,
         t: Trigger,
@@ -1482,6 +1470,49 @@ test "parse: global triggers" {
     // global sequences not allowed
     {
         var p = try Parser.init("global:a>b=ignore");
+        try testing.expectError(Error.InvalidFormat, p.next());
+    }
+}
+
+test "parse: all triggers" {
+    const testing = std.testing;
+
+    // all keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .flags = .{ .all = true },
+    }, try parseSingle("all:shift+a=ignore"));
+
+    // all physical keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .physical = .a },
+        },
+        .action = .{ .ignore = {} },
+        .flags = .{ .all = true },
+    }, try parseSingle("all:physical:a+shift=ignore"));
+
+    // all unconsumed keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .flags = .{
+            .all = true,
+            .consumed = false,
+        },
+    }, try parseSingle("unconsumed:all:a+shift=ignore"));
+
+    // all sequences not allowed
+    {
+        var p = try Parser.init("all:a>b=ignore");
         try testing.expectError(Error.InvalidFormat, p.next());
     }
 }
