@@ -1038,7 +1038,6 @@ fn addDeps(
         .optimize = optimize,
         .libxev = false,
         .images = false,
-        .text_input = false,
     });
     const wuffs_dep = b.dependency("wuffs", .{
         .target = target,
