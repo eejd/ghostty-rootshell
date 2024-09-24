@@ -152,14 +152,15 @@ pub fn init(self: *Window, app: *App) !void {
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
             c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
             c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
-            if (self.isAdwWindow())
-                c.adw_header_bar_pack_end(@ptrCast(header), btn)
-            else
-                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+            if (self.isAdwWindow()) {
+                if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
+                c.adw_header_bar_pack_end(@ptrCast(header), btn);
+            } else c.gtk_header_bar_pack_end(@ptrCast(header), btn);
         }
 
         // If we're using an AdwWindow then we can support the tab overview.
         if (tab_overview_) |tab_overview| {
+            if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
             assert(self.isAdwWindow());
 
             const btn = c.gtk_toggle_button_new();
@@ -236,6 +237,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we have a tab overview then we can set it on our notebook.
     if (tab_overview_) |tab_overview| {
+        if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
         assert(self.notebook == .adw_tab_view);
         c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.adw_tab_view);
     }
@@ -257,6 +259,7 @@ pub fn init(self: *Window, app: *App) !void {
     initActions(self);
 
     if (self.hasAdwToolbar()) {
+        if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
         const header_widget: *c.GtkWidget = @ptrCast(@alignCast(self.header.?));
