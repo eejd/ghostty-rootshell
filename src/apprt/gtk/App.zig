@@ -443,7 +443,9 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         \\ opacity: {d:.2};
         \\ background-color: rgb({d},{d},{d});
         \\}}
-        \\.top-bar {{
+        \\window.window-theme-ghostty .top-bar,
+        \\window.window-theme-ghostty .bottom-bar,
+        \\window.window-theme-ghostty box > tabbar {{
         \\ background-color: rgb({d},{d},{d});
         \\ color: rgb({d},{d},{d});
         \\}}
