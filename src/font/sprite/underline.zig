@@ -102,14 +102,15 @@ fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprit
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     const dot_width = @max(thickness, 3);
-    const dot_count = width / dot_width;
+    const dot_count = @max((width / dot_width) / 2, 1);
+    const gap_width = try std.math.divCeil(u32, width -| (dot_count * dot_width), dot_count);
     var i: u32 = 0;
-    while (i < dot_count) : (i += 2) {
+    while (i < dot_count) : (i += 1) {
         // Ensure we never go out of bounds for the rect
-        const x = @min(i * dot_width, width - 1);
+        const x = @min(i * (dot_width + gap_width), width - 1);
         const rect_width = @min(width - x, dot_width);
         canvas.rect(.{
-            .x = @intCast(i * dot_width),
+            .x = @intCast(x),
             .y = 0,
             .width = rect_width,
             .height = thickness,
