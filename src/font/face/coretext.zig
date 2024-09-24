@@ -596,15 +596,19 @@ pub const Face = struct {
         const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
         const strikethrough_position = strikethrough_position: {
-            // This is the height above baseline consumed by text. We must take
-            // into account that our cell height splits the leading between two
-            // rows so we subtract leading space (blank space).
-            const above_baseline = layout_metrics.ascent - (layout_metrics.leading / 2);
+            // This is the height of lower case letters in our font.
+            const ex_height = ct_font.getXHeight();
 
-            // We want to position the strikethrough at 65% of the height.
-            // This generally gives a nice visual appearance. The number 65%
-            // is somewhat arbitrary but is a common value across terminals.
-            const pos = above_baseline * 0.65;
+            // We want to position the strikethrough so that it's
+            // vertically centered on any lower case text. This is
+            // a fairly standard choice for strikethrough positioning.
+            //
+            // Because our `strikethrough_position` is relative to the
+            // top of the cell we start with the ascent metric, which
+            // is the distance from the top down to the baseline, then
+            // we subtract half of the ex height to go back up to the
+            // correct height that should evenly split lowercase text.
+            const pos = layout_metrics.ascent - ex_height * 0.5 + 1;
 
             break :strikethrough_position @ceil(pos);
         };
