@@ -668,13 +668,18 @@ pub const Face = struct {
         // The underline position. This is a value from the top where the
         // underline should go.
         const underline_position: f32 = underline_pos: {
+            // From the FreeType docs:
+            // > `underline_position`
+            // > The position, in font units, of the underline line for
+            // > this face. It is the center of the underlining stem.
+
             const declared_px = @as(f32, @floatFromInt(freetype.mulFix(
                 face.handle.*.underline_position,
                 @intCast(face.handle.*.size.*.metrics.y_scale),
             ))) / 64;
 
             // We use the declared underline position if its available
-            const declared = cell_height - cell_baseline - declared_px;
+            const declared = @ceil(cell_height - cell_baseline - declared_px - underline_thickness * 0.5 + 1);
             if (declared > 0)
                 break :underline_pos declared;
 
