@@ -594,7 +594,10 @@ pub const Face = struct {
         // All of these metrics are based on our layout above.
         const cell_height = @ceil(layout_metrics.height);
         const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
+
         const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
+        const strikethrough_thickness = underline_thickness;
+
         const strikethrough_position = strikethrough_position: {
             // This is the height of lower case letters in our font.
             const ex_height = ct_font.getXHeight();
@@ -608,20 +611,21 @@ pub const Face = struct {
             // is the distance from the top down to the baseline, then
             // we subtract half of the ex height to go back up to the
             // correct height that should evenly split lowercase text.
-            const pos = layout_metrics.ascent - ex_height * 0.5 + 1;
+            const pos = layout_metrics.ascent -
+                ex_height * 0.5 +
+                strikethrough_thickness * 0.5 +
+                1;
 
             break :strikethrough_position @ceil(pos);
         };
-        const strikethrough_thickness = underline_thickness;
 
         // Underline position reported is usually something like "-1" to
         // represent the amount under the baseline. We add this to our real
         // baseline to get the actual value from the bottom (+y is up).
         // The final underline position is +y from the TOP (confusing)
         // so we have to subtract from the cell height.
-        const underline_position = cell_height -
-            (cell_baseline + @ceil(@as(f32, @floatCast(ct_font.getUnderlinePosition())))) +
-            1;
+        const underline_position = @ceil(layout_metrics.ascent -
+            @as(f32, @floatCast(ct_font.getUnderlinePosition())) + 1);
 
         // Note: is this useful?
         // const units_per_em = ct_font.getUnitsPerEm();
