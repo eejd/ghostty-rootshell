@@ -63,6 +63,10 @@ class AppDelegate: NSObject,
     /// This is only true before application has become active.
     private var applicationHasBecomeActive: Bool = false
 
+    /// This is set in applicationDidFinishLaunching with the system uptime so we can determine the
+    /// seconds since the process was launched.
+    private var applicationLaunchTime: TimeInterval = 0
+
     /// The ghostty global state. Only one per process.
     let ghostty: Ghostty.App = Ghostty.App()
 
@@ -72,6 +76,11 @@ class AppDelegate: NSObject,
     /// Manages updates
     let updaterController: SPUStandardUpdaterController
     let updaterDelegate: UpdaterDelegate = UpdaterDelegate()
+
+    /// The elapsed time since the process was started
+    var timeSinceLaunch: TimeInterval {
+        return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
+    }
 
     override init() {
         terminalManager = TerminalManager(ghostty)
@@ -105,6 +114,9 @@ class AppDelegate: NSObject,
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
+
+        // Store our start time
+        applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
         // Check if secure input was enabled when we last quit.
         if (UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled) {
@@ -421,10 +433,21 @@ class AppDelegate: NSObject,
 
         // If our reload adds global keybinds and we don't have ax permissions then
         // we need to request them.
-        global: if (ghostty_app_has_global_keybinds(ghostty.app!)) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(1)) {
+        if (ghostty_app_has_global_keybinds(ghostty.app!)) {
+            if (timeSinceLaunch > 5) {
+                // If the process has been running for awhile we enable right away
+                // because no windows are likely to pop up.
                 GlobalEventTap.shared.enable()
+            } else {
+                // If the process just started, we wait a couple seconds to allow
+                // the initial windows and so on to load so our permissions dialog
+                // doesn't get buried.
+                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
+                    GlobalEventTap.shared.enable()
+                }
             }
+        } else {
+            GlobalEventTap.shared.disable()
         }
     }
 

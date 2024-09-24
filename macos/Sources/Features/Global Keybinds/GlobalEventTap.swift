@@ -22,6 +22,7 @@ class GlobalEventTap {
     // don't have permissions.
     private var enableTimer: Timer? = nil
 
+    // Private init so it can't be constructed outside of our singleton
     private init() {}
 
     deinit {
