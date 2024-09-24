@@ -114,13 +114,17 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
         var walker = dir.iterate();
 
         while (try walker.next()) |entry| {
-            if (entry.kind != .file) continue;
-            count += 1;
-            try themes.append(.{
-                .location = loc.location,
-                .path = try std.fs.path.join(alloc, &.{ loc.dir, entry.name }),
-                .theme = try alloc.dupe(u8, entry.name),
-            });
+            switch (entry.kind) {
+                .file, .sym_link => {
+                    count += 1;
+                    try themes.append(.{
+                        .location = loc.location,
+                        .path = try std.fs.path.join(alloc, &.{ loc.dir, entry.name }),
+                        .theme = try alloc.dupe(u8, entry.name),
+                    });
+                },
+                else => {},
+            }
         }
     }
 
