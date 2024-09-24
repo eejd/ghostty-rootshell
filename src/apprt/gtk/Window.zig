@@ -258,7 +258,7 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if (self.hasAdwToolbar()) {
+    if (self.isAdwWindow()) {
         if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
@@ -395,17 +395,8 @@ pub fn deinit(self: *Window) void {
 inline fn isAdwWindow(self: *Window) bool {
     return (comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&self.app.config) and
-        self.app.config.@"gtk-titlebar" and
-        adwaita.versionAtLeast(1, 4, 0);
-}
-
-/// This must be `inline` so that the comptime check noops conditional
-/// paths that are not enabled.
-inline fn hasAdwToolbar(self: *Window) bool {
-    return ((comptime adwaita.versionAtLeast(1, 4, 0)) and
-        adwaita.enabled(&self.app.config) and
         adwaita.versionAtLeast(1, 4, 0) and
-        self.app.config.@"gtk-titlebar");
+        self.app.config.@"gtk-titlebar";
 }
 
 /// Add a new tab to this window.
