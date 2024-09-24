@@ -161,6 +161,19 @@ pub const App = struct {
         self.keymap.deinit();
     }
 
+    /// Returns true if there are any global keybinds in the configuration.
+    pub fn hasGlobalKeybinds(self: *const App) bool {
+        var it = self.config.keybind.set.bindings.iterator();
+        while (it.next()) |entry| {
+            switch (entry.value_ptr.*) {
+                .leader => {},
+                .leaf => |leaf| if (leaf.flags.global) return true,
+            }
+        }
+
+        return false;
+    }
+
     /// This should be called whenever the keyboard layout was changed.
     pub fn reloadKeymap(self: *App) !void {
         // Reload the keymap
@@ -1512,6 +1525,11 @@ pub const CAPI = struct {
     /// Returns true if the app needs to confirm quitting.
     export fn ghostty_app_needs_confirm_quit(v: *App) bool {
         return v.core_app.needsConfirmQuit();
+    }
+
+    /// Returns true if the app has global keybinds.
+    export fn ghostty_app_has_global_keybinds(v: *App) bool {
+        return v.hasGlobalKeybinds();
     }
 
     /// Returns initial surface options.

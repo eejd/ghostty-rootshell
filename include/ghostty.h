@@ -531,6 +531,7 @@ void ghostty_app_keyboard_changed(ghostty_app_t);
 void ghostty_app_open_config(ghostty_app_t);
 void ghostty_app_reload_config(ghostty_app_t);
 bool ghostty_app_needs_confirm_quit(ghostty_app_t);
+bool ghostty_app_has_global_keybinds(ghostty_app_t);
 
 ghostty_surface_config_s ghostty_surface_config_new();
 
