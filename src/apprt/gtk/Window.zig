@@ -35,6 +35,10 @@ window: *c.GtkWindow,
 /// GtkHeaderBar depending on if adw is enabled and linked.
 header: ?*c.GtkWidget,
 
+/// The tab overview for the window. This is possibly null since there is no
+/// taboverview without a AdwApplicationWindow (libadwaita >= 1.4.0).
+tab_overview: ?*c.GtkWidget,
+
 /// The notebook (tab grouping) for this window.
 /// can be either c.GtkNotebook or c.AdwTabView.
 notebook: Notebook,
@@ -68,6 +72,7 @@ pub fn init(self: *Window, app: *App) !void {
         .app = app,
         .window = undefined,
         .header = null,
+        .tab_overview = null,
         .notebook = undefined,
         .context_menu = undefined,
         .toast_overlay = undefined,
@@ -114,7 +119,7 @@ pub fn init(self: *Window, app: *App) !void {
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
     // If we are using an AdwWindow then we can support the tab overview.
-    const tab_overview_: ?*c.GtkWidget = if (self.isAdwWindow()) overview: {
+    self.tab_overview = if (self.isAdwWindow()) overview: {
         const tab_overview = c.adw_tab_overview_new();
         c.adw_tab_overview_set_enable_new_tab(@ptrCast(tab_overview), 1);
         _ = c.g_signal_connect_data(
@@ -159,7 +164,7 @@ pub fn init(self: *Window, app: *App) !void {
         }
 
         // If we're using an AdwWindow then we can support the tab overview.
-        if (tab_overview_) |tab_overview| {
+        if (self.tab_overview) |tab_overview| {
             if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
             assert(self.isAdwWindow());
 
@@ -236,7 +241,7 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // If we have a tab overview then we can set it on our notebook.
-    if (tab_overview_) |tab_overview| {
+    if (self.tab_overview) |tab_overview| {
         if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
         assert(self.notebook == .adw_tab_view);
         c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.adw_tab_view);
@@ -292,7 +297,7 @@ pub fn init(self: *Window, app: *App) !void {
 
         // Set our application window content. The content depends on if
         // we're using an AdwTabOverview or not.
-        if (tab_overview_) |tab_overview| {
+        if (self.tab_overview) |tab_overview| {
             c.adw_tab_overview_set_child(
                 @ptrCast(tab_overview),
                 @ptrCast(@alignCast(toolbar_view)),
