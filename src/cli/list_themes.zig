@@ -54,6 +54,15 @@ const ThemeListElement = struct {
 /// The `list-themes` command is used to preview or list all the available
 /// themes for Ghostty.
 ///
+/// If this command is run from a TTY, a TUI preview of the themes will be
+/// shown. While in the preview, `F1` will bring up a help screen and `ESC` will
+/// exit the preview. Other keys that can be used to navigate the preview are
+/// listed in the help screen.
+///
+/// If this command is not run from a TTY, or the output is piped to another
+/// command, a plain list of theme names will be printed to the screen. A plain
+/// list can be forced using the `--plain` CLI flag.
+///
 /// Two different directories will be searched for themes.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
@@ -74,7 +83,7 @@ const ThemeListElement = struct {
 /// Flags:
 ///
 ///   * `--path`: Show the full path to the theme.
-///   * `--plain`: Show a short preview of the theme colors.
+///   * `--plain`: Force a plain listing of themes.
 pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
