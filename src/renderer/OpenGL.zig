@@ -1808,18 +1808,24 @@ fn updateCell(
         });
     }
 
-    // If the cell has a character, draw it
-    if (cell.hasText()) fg: {
+    // If the shaper cell has a glyph, draw it.
+    if (shaper_cell.glyph_index) |glyph_index| glyph: {
         // Render
         const render = try self.font_grid.renderGlyph(
             self.alloc,
             shaper_run.font_index,
-            shaper_cell.glyph_index orelse break :fg,
+            glyph_index,
             .{
                 .grid_metrics = self.grid_metrics,
                 .thicken = self.config.font_thicken,
             },
         );
+
+        // If the glyph is 0 width or height, it will be invisible
+        // when drawn, so don't bother adding it to the buffer.
+        if (render.glyph.width == 0 or render.glyph.height == 0) {
+            break :glyph;
+        }
 
         // If we're rendering a color font, we use the color atlas
         const mode: CellProgram.CellMode = switch (try fgMode(
