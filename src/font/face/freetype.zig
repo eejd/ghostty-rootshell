@@ -607,6 +607,20 @@ pub const Face = struct {
             break :cell_width f26dot6ToFloat(size_metrics.max_advance);
         };
 
+        // Ex height is calculated by measuring the height of the `x` glyph.
+        // If that fails then we just pretend it's 65% of the ascent height.
+        const ex_height: f32 = ex_height: {
+            if (face.getCharIndex('x')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    break :ex_height f26dot6ToFloat(face.handle.*.glyph.*.metrics.height);
+                } else |_| {
+                    // Ignore the error since we just fall back to 65% of the ascent below
+                }
+            }
+
+            break :ex_height f26dot6ToFloat(size_metrics.ascender) * 0.65;
+        };
+
         // Cell height is calculated as the maximum of multiple things in order
         // to handle edge cases in fonts: (1) the height as reported in metadata
         // by the font designer (2) the maximum glyph height as measured in the
@@ -689,7 +703,9 @@ pub const Face = struct {
             },
             .thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize)),
         } else .{
-            .pos = cell_baseline * 0.6,
+            // Exactly 50% of the ex height so that our strikethrough is
+            // centered through lowercase text. This is a common choice.
+            .pos = cell_baseline - ex_height * 0.5 + 1,
             .thickness = underline_thickness,
         };
 
