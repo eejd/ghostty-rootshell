@@ -1761,6 +1761,53 @@ fn updateCell(
         @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
     };
 
+    // If the cell has an underline, draw it before the character glyph,
+    // so that it layers underneath instead of overtop, since that can
+    // make text difficult to read.
+    if (underline != .none) {
+        const sprite: font.Sprite = switch (underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
+            .curly => .underline_curly,
+        };
+
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(sprite),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
+        const color = style.underlineColor(palette) orelse colors.fg;
+
+        try self.cells.append(self.alloc, .{
+            .mode = .fg,
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
+            .grid_width = cell.gridWidth(),
+            .glyph_x = render.glyph.atlas_x,
+            .glyph_y = render.glyph.atlas_y,
+            .glyph_width = render.glyph.width,
+            .glyph_height = render.glyph.height,
+            .glyph_offset_x = render.glyph.offset_x,
+            .glyph_offset_y = render.glyph.offset_y,
+            .r = color.r,
+            .g = color.g,
+            .b = color.b,
+            .a = alpha,
+            .bg_r = bg[0],
+            .bg_g = bg[1],
+            .bg_b = bg[2],
+            .bg_a = bg[3],
+        });
+    }
+
     // If the cell has a character, draw it
     if (cell.hasText()) fg: {
         // Render
@@ -1799,50 +1846,6 @@ fn updateCell(
             .r = colors.fg.r,
             .g = colors.fg.g,
             .b = colors.fg.b,
-            .a = alpha,
-            .bg_r = bg[0],
-            .bg_g = bg[1],
-            .bg_b = bg[2],
-            .bg_a = bg[3],
-        });
-    }
-
-    if (underline != .none) {
-        const sprite: font.Sprite = switch (underline) {
-            .none => unreachable,
-            .single => .underline,
-            .double => .underline_double,
-            .dotted => .underline_dotted,
-            .dashed => .underline_dashed,
-            .curly => .underline_curly,
-        };
-
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(sprite),
-            .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        const color = style.underlineColor(palette) orelse colors.fg;
-
-        try self.cells.append(self.alloc, .{
-            .mode = .fg,
-            .grid_col = @intCast(x),
-            .grid_row = @intCast(y),
-            .grid_width = cell.gridWidth(),
-            .glyph_x = render.glyph.atlas_x,
-            .glyph_y = render.glyph.atlas_y,
-            .glyph_width = render.glyph.width,
-            .glyph_height = render.glyph.height,
-            .glyph_offset_x = render.glyph.offset_x,
-            .glyph_offset_y = render.glyph.offset_y,
-            .r = color.r,
-            .g = color.g,
-            .b = color.b,
             .a = alpha,
             .bg_r = bg[0],
             .bg_g = bg[1],
