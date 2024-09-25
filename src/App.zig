@@ -138,7 +138,13 @@ pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
     // Since we have non-zero surfaces, we can cancel the quit timer.
     // It is up to the apprt if there is a quit timer at all and if it
     // should be canceled.
-    if (@hasDecl(apprt.App, "cancelQuitTimer")) rt_surface.app.cancelQuitTimer();
+    rt_surface.app.performAction(
+        .{ .surface = &rt_surface.core_surface },
+        .quit_timer,
+        .stop,
+    ) catch |err| {
+        log.warn("error stopping quit timer err={}", .{err});
+    };
 }
 
 /// Delete the surface from the known surface list. This will NOT call the
@@ -166,8 +172,13 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
 
     // If we have no surfaces, we can start the quit timer. It is up to the
     // apprt to determine if this is necessary.
-    if (@hasDecl(apprt.App, "startQuitTimer") and
-        self.surfaces.items.len == 0) rt_surface.app.startQuitTimer();
+    if (self.surfaces.items.len == 0) rt_surface.app.performAction(
+        .{ .surface = &rt_surface.core_surface },
+        .quit_timer,
+        .start,
+    ) catch |err| {
+        log.warn("error starting quit timer err={}", .{err});
+    };
 }
 
 /// The last focused surface. This is only valid while on the main thread
@@ -194,7 +205,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .reload_config => try self.reloadConfig(rt_app),
-            .open_config => try self.openConfig(rt_app),
+            .open_config => try self.performAction(rt_app, .open_config),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| try self.closeSurface(surface),
             .quit => try self.setQuit(),
@@ -203,12 +214,6 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .redraw_inspector => |surface| try self.redrawInspector(rt_app, surface),
         }
     }
-}
-
-pub fn openConfig(self: *App, rt_app: *apprt.App) !void {
-    _ = self;
-    log.debug("opening configuration", .{});
-    try rt_app.openConfig();
 }
 
 pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
@@ -316,13 +321,9 @@ pub fn performAction(
         .ignore => {},
         .quit => try self.setQuit(),
         .new_window => try self.newWindow(rt_app, .{ .parent = null }),
-        .open_config => try self.openConfig(rt_app),
+        .open_config => try rt_app.performAction(.app, .open_config, {}),
         .reload_config => try self.reloadConfig(rt_app),
-        .close_all_windows => {
-            if (@hasDecl(apprt.App, "closeAllWindows")) {
-                rt_app.closeAllWindows();
-            } else log.warn("runtime doesn't implement closeAllWindows", .{});
-        },
+        .close_all_windows => try rt_app.performAction(.app, .close_all_windows, {}),
     }
 }
 

@@ -141,12 +141,14 @@ pub const App = struct {
                 .app => null,
                 .surface => |v| v,
             }),
-        }
-    }
 
-    /// Open the configuration in the system editor.
-    pub fn openConfig(self: *App) !void {
-        try configpkg.edit.open(self.app.alloc);
+            .open_config => try configpkg.edit.open(self.app.alloc),
+
+            // Unimplemented
+            .close_all_windows,
+            .quit_timer,
+            => log.warn("unimplemented action={}", .{action}),
+        }
     }
 
     /// Reload the configuration. This should return the new configuration.
