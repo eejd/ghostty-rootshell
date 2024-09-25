@@ -578,6 +578,7 @@ pub const Action = union(enum) {
             .reload_config,
             .close_all_windows,
             .quit,
+            .toggle_slide_terminal,
             => .app,
 
             // These are app but can be special-cased in a surface context.

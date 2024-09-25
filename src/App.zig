@@ -324,6 +324,7 @@ pub fn performAction(
         .open_config => try rt_app.performAction(.app, .open_config, {}),
         .reload_config => try self.reloadConfig(rt_app),
         .close_all_windows => try rt_app.performAction(.app, .close_all_windows, {}),
+        .toggle_slide_terminal => try rt_app.performAction(.app, .toggle_slide_terminal, {}),
     }
 }
 

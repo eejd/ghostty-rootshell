@@ -379,6 +379,7 @@ pub fn performAction(
         // Unimplemented
         .close_all_windows,
         .toggle_split_zoom,
+        .toggle_slide_terminal,
         .size_limit,
         .cell_size,
         .secure_input,

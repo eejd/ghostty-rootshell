@@ -196,6 +196,7 @@ pub const App = struct {
             .close_all_windows,
             .toggle_tab_overview,
             .toggle_window_decorations,
+            .toggle_slide_terminal,
             .goto_tab,
             .inspector,
             .render_inspector,

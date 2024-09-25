@@ -3856,12 +3856,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .toggle,
         ),
 
-        .toggle_slide_terminal => {
-            if (@hasDecl(apprt.Surface, "toggleSlideTerminal")) {
-                self.rt_surface.toggleSlideTerminal();
-            } else log.warn("runtime doesn't implement toggleSlideTerminal", .{});
-        },
-
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {
