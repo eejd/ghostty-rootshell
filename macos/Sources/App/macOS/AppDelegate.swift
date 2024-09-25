@@ -431,8 +431,8 @@ class AppDelegate: NSObject,
             }
         }
 
-        // If our reload adds global keybinds and we don't have ax permissions then
-        // we need to request them.
+        // We need to handle our global event tap depending on if there are global
+        // events that we care about in Ghostty.
         if (ghostty_app_has_global_keybinds(ghostty.app!)) {
             if (timeSinceLaunch > 5) {
                 // If the process has been running for awhile we enable right away

@@ -208,9 +208,6 @@ pub const App = struct {
         target: KeyTarget,
         event: KeyEvent,
     ) !bool {
-        // NOTE: If this is updated, take a look at Surface.keyCallback as well.
-        // Their logic is very similar but not identical.
-
         const action = event.action;
         const keycode = event.keycode;
         const mods = event.mods;
