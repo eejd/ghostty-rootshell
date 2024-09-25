@@ -440,10 +440,6 @@ pub const App = struct {
         }
     }
 
-    pub fn openConfig(self: *App) !void {
-        try configpkg.edit.open(self.core_app.alloc);
-    }
-
     pub fn reloadConfig(self: *App) !?*const Config {
         // Reload
         if (self.opts.reload_config(self.opts.userdata)) |new| {
@@ -492,7 +488,7 @@ pub const App = struct {
         surface.queueInspectorRender();
     }
 
-    pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
+    fn newWindow(self: *App, parent: ?*CoreSurface) !void {
         // If we have a parent, the surface logic handles it.
         if (parent) |surface| {
             try surface.rt_surface.newWindow();
@@ -506,6 +502,30 @@ pub const App = struct {
         };
 
         func(null, .{});
+    }
+
+    /// Perform a given action.
+    pub fn performAction(
+        self: *App,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !void {
+        _ = value;
+
+        switch (action) {
+            .new_window => _ = try self.newWindow(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
+            .open_config => try configpkg.edit.open(self.core_app.alloc),
+
+            // Unimplemented
+            .close_all_windows,
+            .quit_timer,
+            => log.warn("unimplemented action={}", .{action}),
+        }
     }
 };
 
@@ -1111,7 +1131,7 @@ pub const Surface = struct {
         func(self.userdata, options);
     }
 
-    pub fn newWindow(self: *const Surface) !void {
+    fn newWindow(self: *const Surface) !void {
         const func = self.app.opts.new_window orelse {
             log.info("runtime embedder does not support new_window", .{});
             return;
@@ -1573,7 +1593,7 @@ pub const CAPI = struct {
 
     /// Open the configuration.
     export fn ghostty_app_open_config(v: *App) void {
-        _ = v.core_app.openConfig(v) catch |err| {
+        v.performAction(.app, .open_config, {}) catch |err| {
             log.err("error reloading config err={}", .{err});
             return;
         };
