@@ -1561,19 +1561,8 @@ fn maybeHandleBinding(
     const entry: input.Binding.Set.Entry = entry: {
         const set = self.keyboard.bindings orelse &self.config.keybind.set;
 
-        var trigger: input.Binding.Trigger = .{
-            .mods = event.mods.binding(),
-            .key = .{ .translated = event.key },
-        };
-        if (set.get(trigger)) |v| break :entry v;
-
-        trigger.key = .{ .physical = event.physical_key };
-        if (set.get(trigger)) |v| break :entry v;
-
-        if (event.unshifted_codepoint > 0) {
-            trigger.key = .{ .unicode = event.unshifted_codepoint };
-            if (set.get(trigger)) |v| break :entry v;
-        }
+        // Get our entry from the set for the given event.
+        if (set.getEvent(event)) |v| break :entry v;
 
         // No entry found. If we're not looking at the root set of the
         // bindings we need to encode everything up to this point and
@@ -1590,7 +1579,7 @@ fn maybeHandleBinding(
     };
 
     // Determine if this entry has an action or if its a leader key.
-    const action: input.Binding.Action, const consumed: bool = switch (entry) {
+    const leaf: input.Binding.Set.Leaf = switch (entry) {
         .leader => |set| {
             // Setup the next set we'll look at.
             self.keyboard.bindings = set;
@@ -1605,8 +1594,20 @@ fn maybeHandleBinding(
             return .consumed;
         },
 
-        .action => |v| .{ v, true },
-        .action_unconsumed => |v| .{ v, false },
+        .leaf => |leaf| leaf,
+    };
+    const action = leaf.action;
+
+    // consumed determines if the input is consumed or if we continue
+    // encoding the key (if we have a key to encode).
+    const consumed = consumed: {
+        // If the consumed flag is explicitly set, then we are consumed.
+        if (leaf.flags.consumed) break :consumed true;
+
+        // If the global or all flag is set, we always consume.
+        if (leaf.flags.global or leaf.flags.all) break :consumed true;
+
+        break :consumed false;
     };
 
     // We have an action, so at this point we're handling SOMETHING so
@@ -1618,8 +1619,22 @@ fn maybeHandleBinding(
     self.keyboard.bindings = null;
 
     // Attempt to perform the action
-    log.debug("key event binding consumed={} action={}", .{ consumed, action });
-    const performed = try self.performBindingAction(action);
+    log.debug("key event binding flags={} action={}", .{
+        leaf.flags,
+        action,
+    });
+    const performed = performed: {
+        // If this is a global or all action, then we perform it on
+        // the app and it applies to every surface.
+        if (leaf.flags.global or leaf.flags.all) {
+            try self.app.performAllAction(self.rt_app, action);
+
+            // "All" actions are always performed since they are global.
+            break :performed true;
+        }
+
+        break :performed try self.performBindingAction(action);
+    };
 
     // If we performed an action and it was a closing action,
     // our "self" pointer is not safe to use anymore so we need to
@@ -3401,14 +3416,25 @@ fn showMouse(self: *Surface) void {
 /// will ever return false. We can expand this in the future if it becomes
 /// useful. We did previous/next tab so we could implement #498.
 pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool {
-    switch (action) {
-        .unbind => unreachable,
-        .ignore => {},
+    // Forward app-scoped actions to the app. Some app-scoped actions are
+    // special-cased here because they do some special things when performed
+    // from the surface.
+    if (action.scoped(.app)) |app_action| {
+        switch (app_action) {
+            .new_window => try self.app.newWindow(
+                self.rt_app,
+                .{ .parent = self },
+            ),
 
-        .open_config => try self.app.openConfig(self.rt_app),
+            else => try self.app.performAction(
+                self.rt_app,
+                action.scoped(.app).?,
+            ),
+        }
+        return true;
+    }
 
-        .reload_config => try self.app.reloadConfig(self.rt_app),
-
+    switch (action.scoped(.surface).?) {
         .csi, .esc => |data| {
             // We need to send the CSI/ESC sequence as a single write request.
             // If you split it across two then the shell can interpret it
@@ -3630,8 +3656,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             v,
         ),
 
-        .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
-
         .new_tab => {
             if (@hasDecl(apprt.Surface, "newTab")) {
                 try self.rt_surface.newTab();
@@ -3757,14 +3781,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         .close_surface => self.close(),
 
         .close_window => try self.app.closeSurface(self),
-
-        .close_all_windows => {
-            if (@hasDecl(apprt.Surface, "closeAllWindows")) {
-                self.rt_surface.closeAllWindows();
-            } else log.warn("runtime doesn't implement closeAllWindows", .{});
-        },
-
-        .quit => try self.app.setQuit(),
 
         .crash => |location| switch (location) {
             .main => @panic("crash binding action, crashing intentionally"),
