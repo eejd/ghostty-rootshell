@@ -12,6 +12,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 
+const action = @import("apprt/action.zig");
 const structs = @import("apprt/structs.zig");
 
 pub const glfw = @import("apprt/glfw.zig");
@@ -20,6 +21,9 @@ pub const none = @import("apprt/none.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
 pub const surface = @import("apprt/surface.zig");
+
+pub const Action = action.Action;
+pub const Target = action.Target;
 
 pub const ContentScale = structs.ContentScale;
 pub const Clipboard = structs.Clipboard;
@@ -84,4 +88,6 @@ pub const Runtime = enum {
 test {
     _ = Runtime;
     _ = runtime;
+    _ = action;
+    _ = structs;
 }

@@ -241,19 +241,17 @@ fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !voi
 
 /// Create a new window
 pub fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
-    if (!@hasDecl(apprt.App, "newWindow")) {
-        log.warn("newWindow is not supported by this runtime", .{});
-        return;
-    }
+    const target: apprt.Target = target: {
+        const parent = msg.parent orelse break :target .app;
+        if (self.hasSurface(parent)) break :target .{ .surface = parent };
+        break :target .app;
+    };
 
-    const parent = if (msg.parent) |parent| parent: {
-        break :parent if (self.hasSurface(parent))
-            parent
-        else
-            null;
-    } else null;
-
-    try rt_app.newWindow(parent);
+    try rt_app.performAction(
+        target,
+        .new_window,
+        {},
+    );
 }
 
 /// Start quitting

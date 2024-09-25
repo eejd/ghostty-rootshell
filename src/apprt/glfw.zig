@@ -127,6 +127,23 @@ pub const App = struct {
         glfw.postEmptyEvent();
     }
 
+    /// Perform a given action.
+    pub fn performAction(
+        self: *App,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !void {
+        _ = value;
+
+        switch (action) {
+            .new_window => _ = try self.newSurface(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+        }
+    }
+
     /// Open the configuration in the system editor.
     pub fn openConfig(self: *App) !void {
         try configpkg.edit.open(self.app.alloc);
@@ -193,11 +210,6 @@ pub const App = struct {
         };
 
         win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
-    }
-
-    /// Create a new window for the app.
-    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
-        _ = try self.newSurface(parent_);
     }
 
     /// Create a new tab in the parent surface.
