@@ -631,7 +631,11 @@ extension Ghostty {
         }
 
         static func newWindow(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
-            let surface = self.surfaceUserdata(from: userdata)
+            let surface: SurfaceView? = if let userdata {
+                self.surfaceUserdata(from: userdata)
+            } else {
+                nil
+            }
 
             NotificationCenter.default.post(
                 name: Notification.ghosttyNewWindow,

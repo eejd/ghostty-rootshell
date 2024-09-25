@@ -3416,19 +3416,22 @@ fn showMouse(self: *Surface) void {
 /// will ever return false. We can expand this in the future if it becomes
 /// useful. We did previous/next tab so we could implement #498.
 pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool {
-    // Handle app-scoped bindings by sending it to the app.
-    switch (action.scope()) {
-        .app => {
-            try self.app.performAction(
+    // Forward app-scoped actions to the app. Some app-scoped actions are
+    // special-cased here because they do some special things when performed
+    // from the surface.
+    if (action.scoped(.app)) |app_action| {
+        switch (app_action) {
+            .new_window => try self.app.newWindow(
+                self.rt_app,
+                .{ .parent = self },
+            ),
+
+            else => try self.app.performAction(
                 self.rt_app,
                 action.scoped(.app).?,
-            );
-
-            return true;
-        },
-
-        // Surface fallthrough and handle
-        .surface => {},
+            ),
+        }
+        return true;
     }
 
     switch (action.scoped(.surface).?) {
@@ -3652,8 +3655,6 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .selection,
             v,
         ),
-
-        .new_window => try self.app.newWindow(self.rt_app, .{ .parent = self }),
 
         .new_tab => {
             if (@hasDecl(apprt.Surface, "newTab")) {

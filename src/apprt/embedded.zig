@@ -86,7 +86,8 @@ pub const App = struct {
         /// New tab with options.
         new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
-        /// New window with options.
+        /// New window with options. The surface may be null if there is no
+        /// target surface.
         new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
         /// Control the inspector visibility
@@ -495,14 +496,19 @@ pub const App = struct {
     }
 
     pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
-        _ = self;
-
-        // Right now we only support creating a new window with a parent
-        // through this code.
-        // The other case is handled by the embedding runtime.
+        // If we have a parent, the surface logic handles it.
         if (parent) |surface| {
             try surface.rt_surface.newWindow();
+            return;
         }
+
+        // No parent, call the new window callback.
+        const func = self.opts.new_window orelse {
+            log.info("runtime embedder does not support new_window", .{});
+            return;
+        };
+
+        func(null, .{});
     }
 };
 

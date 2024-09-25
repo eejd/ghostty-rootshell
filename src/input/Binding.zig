@@ -279,7 +279,8 @@ pub const Action = union(enum) {
     /// available values.
     write_selection_file: WriteScreenAction,
 
-    /// Open a new window.
+    /// Open a new window. If the application isn't currently focused,
+    /// this will bring it to the front.
     new_window: void,
 
     /// Open a new tab.
@@ -562,6 +563,10 @@ pub const Action = union(enum) {
             .quit,
             => .app,
 
+            // These are app but can be special-cased in a surface context.
+            .new_window,
+            => .app,
+
             // Obviously surface actions.
             .csi,
             .esc,
@@ -593,12 +598,12 @@ pub const Action = union(enum) {
             .toggle_window_decorations,
             .toggle_secure_input,
             .crash,
+            => .surface,
 
             // These are less obvious surface actions. They're surface
             // actions because they are relevant to the surface they
             // come from. For example `new_window` needs to be sourced to
             // a surface so inheritance can be done correctly.
-            .new_window,
             .new_tab,
             .previous_tab,
             .next_tab,

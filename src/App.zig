@@ -317,6 +317,7 @@ pub fn performAction(
         .unbind => unreachable,
         .ignore => {},
         .quit => try self.setQuit(),
+        .new_window => try self.newWindow(rt_app, .{ .parent = null }),
         .open_config => try self.openConfig(rt_app),
         .reload_config => try self.reloadConfig(rt_app),
         .close_all_windows => {
