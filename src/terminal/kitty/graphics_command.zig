@@ -23,10 +23,10 @@ pub const Parser = struct {
     /// This is the list of KV pairs that we're building up.
     kv: KV = .{},
 
-    /// This is used as a buffer to store the key/value of a KV pair.
-    /// The value of a KV pair is at most a 32-bit integer which at most
-    /// is 10 characters (4294967295).
-    kv_temp: [10]u8 = undefined,
+    /// This is used as a buffer to store the key/value of a KV pair. The value
+    /// of a KV pair is at most a 32-bit integer which at most is 10 characters
+    /// (4294967295), plus one character for the sign bit on signed ints.
+    kv_temp: [11]u8 = undefined,
     kv_temp_len: u4 = 0,
     kv_current: u8 = 0, // Current kv key
 
@@ -237,16 +237,14 @@ pub const Parser = struct {
             }
         }
 
-        // Only "z" is currently signed. This is a bit of a kloodge; if more
-        // fields become signed we can rethink this but for now we parse
-        // "z" as i32 then bitcast it to u32 then bitcast it back later.
-        if (self.kv_current == 'z') {
-            const v = try std.fmt.parseInt(i32, self.kv_temp[0..self.kv_temp_len], 10);
-            try self.kv.put(alloc, self.kv_current, @bitCast(v));
-        } else {
-            const v = try std.fmt.parseInt(u32, self.kv_temp[0..self.kv_temp_len], 10);
-            try self.kv.put(alloc, self.kv_current, v);
-        }
+        // Handle integer fields, parsing signed fields accordingly. We still
+        // store the fields as u32 as they can be bitcast back later during
+        // building of the higher-level command tree.
+        const v: u32 = switch (self.kv_current) {
+            'z', 'H', 'V' => @bitCast(try std.fmt.parseInt(i32, self.kv_temp[0..self.kv_temp_len], 10)),
+            else => try std.fmt.parseInt(u32, self.kv_temp[0..self.kv_temp_len], 10),
+        };
+        try self.kv.put(alloc, self.kv_current, v);
 
         // Clear our temp buffer
         self.kv_temp_len = 0;
@@ -505,8 +503,8 @@ pub const Display = struct {
     virtual_placement: bool = false, // U
     parent_id: u32 = 0, // P
     parent_placement_id: u32 = 0, // Q
-    horizontal_offset: u32 = 0, // H
-    vertical_offset: u32 = 0, // V
+    horizontal_offset: i32 = 0, // H
+    vertical_offset: i32 = 0, // V
     z: i32 = 0, // z
 
     pub const CursorMovement = enum {
@@ -591,11 +589,13 @@ pub const Display = struct {
         }
 
         if (kv.get('H')) |v| {
-            result.horizontal_offset = v;
+            // We can bitcast here because of how we parse it earlier.
+            result.horizontal_offset = @bitCast(v);
         }
 
         if (kv.get('V')) |v| {
-            result.vertical_offset = v;
+            // We can bitcast here because of how we parse it earlier.
+            result.vertical_offset = @bitCast(v);
         }
 
         return result;
@@ -1067,6 +1067,95 @@ test "ignore very long values" {
     try testing.expectEqual(Transmission.Format.rgb, v.format);
     try testing.expectEqual(@as(u32, 10), v.width);
     try testing.expectEqual(@as(u32, 0), v.height);
+}
+
+test "ensure very large negative values don't get skipped" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=p,i=1,z=-2000000000";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .display);
+    const v = command.control.display;
+    try testing.expectEqual(1, v.image_id);
+    try testing.expectEqual(-2000000000, v.z);
+}
+
+test "ensure proper overflow error for u32" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=p,i=10000000000";
+    for (input) |c| try p.feed(c);
+    try testing.expectError(error.Overflow, p.complete());
+}
+
+test "ensure proper overflow error for i32" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=p,i=1,z=-9999999999";
+    for (input) |c| try p.feed(c);
+    try testing.expectError(error.Overflow, p.complete());
+}
+
+test "all i32 values" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        // 'z' (usually z-axis values)
+        var p = Parser.init(alloc);
+        defer p.deinit();
+        const input = "a=p,i=1,z=-1";
+        for (input) |c| try p.feed(c);
+        const command = try p.complete();
+        defer command.deinit(alloc);
+
+        try testing.expect(command.control == .display);
+        const v = command.control.display;
+        try testing.expectEqual(1, v.image_id);
+        try testing.expectEqual(-1, v.z);
+    }
+
+    {
+        // 'H' (relative placement, horizontal offset)
+        var p = Parser.init(alloc);
+        defer p.deinit();
+        const input = "a=p,i=1,H=-1";
+        for (input) |c| try p.feed(c);
+        const command = try p.complete();
+        defer command.deinit(alloc);
+
+        try testing.expect(command.control == .display);
+        const v = command.control.display;
+        try testing.expectEqual(1, v.image_id);
+        try testing.expectEqual(-1, v.horizontal_offset);
+    }
+
+    {
+        // 'V' (relative placement, vertical offset)
+        var p = Parser.init(alloc);
+        defer p.deinit();
+        const input = "a=p,i=1,V=-1";
+        for (input) |c| try p.feed(c);
+        const command = try p.complete();
+        defer command.deinit(alloc);
+
+        try testing.expect(command.control == .display);
+        const v = command.control.display;
+        try testing.expectEqual(1, v.image_id);
+        try testing.expectEqual(-1, v.vertical_offset);
+    }
 }
 
 test "response: encode nothing without ID or image number" {
