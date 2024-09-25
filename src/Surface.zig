@@ -838,9 +838,16 @@ fn passwordInput(self: *Surface, v: bool) !void {
     }
 
     // Notify our apprt so it can do whatever it wants.
-    if (@hasDecl(apprt.Surface, "setPasswordInput")) {
-        self.rt_surface.setPasswordInput(v);
-    }
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .secure_input,
+        v,
+    ) catch |err| {
+        // We ignore this error because we don't want to fail this
+        // entire operation just because the apprt failed to set
+        // the secure input state.
+        log.warn("apprt failed to set secure input state err={}", .{err});
+    };
 
     try self.queueRender();
 }

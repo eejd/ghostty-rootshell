@@ -147,7 +147,8 @@ pub const App = struct {
             // Unimplemented
             .close_all_windows,
             .quit_timer,
-            => log.warn("unimplemented action={}", .{action}),
+            .secure_input,
+            => log.info("unimplemented action={}", .{action}),
         }
     }
 

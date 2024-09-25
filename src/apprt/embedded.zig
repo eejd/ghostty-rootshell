@@ -138,6 +138,8 @@ pub const App = struct {
         /// Notifies that a password input has been started for the given
         /// surface. The apprt can use this to modify UI, enable features
         /// such as macOS secure input, etc.
+        ///
+        /// The surface userdata will be null if a surface isn't focused.
         set_password_input: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
         /// Toggle secure input for the application.
@@ -504,6 +506,18 @@ pub const App = struct {
         func(null, .{});
     }
 
+    fn setPasswordInput(self: *App, target: apprt.Target, v: bool) void {
+        const func = self.opts.set_password_input orelse {
+            log.info("runtime embedder does not set_password_input", .{});
+            return;
+        };
+
+        func(switch (target) {
+            .app => null,
+            .surface => |surface| surface.rt_surface.userdata,
+        }, v);
+    }
+
     /// Perform a given action.
     pub fn performAction(
         self: *App,
@@ -511,8 +525,6 @@ pub const App = struct {
         comptime action: apprt.Action.Key,
         value: apprt.Action.Value(action),
     ) !void {
-        _ = value;
-
         switch (action) {
             .new_window => _ = try self.newWindow(switch (target) {
                 .app => null,
@@ -520,6 +532,8 @@ pub const App = struct {
             }),
 
             .open_config => try configpkg.edit.open(self.core_app.alloc),
+
+            .secure_input => self.setPasswordInput(target, value),
 
             // Unimplemented
             .close_all_windows,
@@ -1110,15 +1124,6 @@ pub const Surface = struct {
         };
 
         func();
-    }
-
-    pub fn setPasswordInput(self: *Surface, v: bool) void {
-        const func = self.app.opts.set_password_input orelse {
-            log.info("runtime embedder does not set_password_input", .{});
-            return;
-        };
-
-        func(self.userdata, v);
     }
 
     pub fn newTab(self: *const Surface) !void {

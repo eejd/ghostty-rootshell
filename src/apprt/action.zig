@@ -30,6 +30,13 @@ pub const Action = union(enum) {
     /// happen and can be ignored or cause a restart it isn't that important.
     quit_timer: enum { start, stop },
 
+    /// Set the secure input functionality on or off. "Secure input" means
+    /// that the user is currently at some sort of prompt where they may be
+    /// entering a password or other sensitive information. This can be used
+    /// by the app runtime to change the appearance of the cursor, setup
+    /// system APIs to not log the input, etc.
+    secure_input: bool,
+
     /// The enum of keys in the tagged union.
     pub const Key = @typeInfo(Action).Union.tag_type.?;
 
