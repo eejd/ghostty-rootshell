@@ -9,6 +9,7 @@ const internal_os = @import("../os/main.zig");
 const global_state = &@import("../global.zig").state;
 
 const vaxis = @import("vaxis");
+const zf = @import("zf");
 
 pub const Options = struct {
     /// If true, print the full path to the theme.
@@ -32,6 +33,7 @@ const ThemeListElement = struct {
     location: themepkg.Location,
     path: []const u8,
     theme: []const u8,
+    rank: ?f64 = null,
 
     fn lessThan(_: void, lhs: @This(), rhs: @This()) bool {
         // TODO: use Unicode-aware comparison
@@ -173,29 +175,51 @@ const Preview = struct {
     vx: vaxis.Vaxis,
     mouse: ?vaxis.Mouse,
     themes: []ThemeListElement,
+    filtered: std.ArrayList(usize),
     current: usize,
+    window: usize,
     hex: bool,
-    help_visible: bool,
+    mode: enum {
+        normal,
+        help,
+        search,
+    },
     color_scheme: vaxis.Color.Scheme,
+    text_input: vaxis.widgets.TextInput,
 
-    pub fn init(allocator: std.mem.Allocator, themes: []ThemeListElement) !Preview {
-        return .{
+    pub fn init(allocator: std.mem.Allocator, themes: []ThemeListElement) !*Preview {
+        const self = try allocator.create(Preview);
+
+        self.* = .{
             .allocator = allocator,
             .should_quit = false,
             .tty = try vaxis.Tty.init(),
             .vx = try vaxis.init(allocator, .{}),
             .mouse = null,
             .themes = themes,
+            .filtered = try std.ArrayList(usize).initCapacity(allocator, themes.len),
             .current = 0,
+            .window = 0,
             .hex = false,
-            .help_visible = false,
+            .mode = .normal,
             .color_scheme = .light,
+            .text_input = vaxis.widgets.TextInput.init(allocator, &self.vx.unicode),
         };
+
+        for (0..themes.len) |i| {
+            try self.filtered.append(i);
+        }
+
+        return self;
     }
 
     pub fn deinit(self: *Preview) void {
-        self.vx.deinit(self.allocator, self.tty.anyWriter());
+        const allocator = self.allocator;
+        self.filtered.deinit();
+        self.text_input.deinit();
+        self.vx.deinit(allocator, self.tty.anyWriter());
         self.tty.deinit();
+        allocator.destroy(self);
     }
 
     pub fn run(self: *Preview) !void {
@@ -230,12 +254,92 @@ const Preview = struct {
         }
     }
 
+    fn updateFiltered(self: *Preview) !void {
+        const relative = self.current -| self.window;
+        const selected = self.themes[self.filtered.items[self.current]].theme;
+
+        const hash_algorithm = std.hash.Wyhash;
+
+        const old_digest = d: {
+            var hash = hash_algorithm.init(0);
+            for (self.filtered.items) |item|
+                hash.update(std.mem.asBytes(&item));
+            break :d hash.final();
+        };
+
+        self.filtered.clearRetainingCapacity();
+
+        if (self.text_input.buf.realLength() > 0) {
+            const first_half = self.text_input.buf.firstHalf();
+            const second_half = self.text_input.buf.secondHalf();
+
+            const buffer = try self.allocator.alloc(u8, first_half.len + second_half.len);
+            defer self.allocator.free(buffer);
+
+            @memcpy(buffer[0..first_half.len], first_half);
+            @memcpy(buffer[first_half.len..], second_half);
+
+            const string = try std.ascii.allocLowerString(self.allocator, buffer);
+            defer self.allocator.free(string);
+
+            var tokens = std.ArrayList([]const u8).init(self.allocator);
+            defer tokens.deinit();
+
+            var it = std.mem.tokenizeScalar(u8, string, ' ');
+            while (it.next()) |token| try tokens.append(token);
+
+            for (self.themes, 0..) |*theme, i| {
+                theme.rank = zf.rank(theme.theme, tokens.items, false, true);
+                if (theme.rank) |_|
+                    try self.filtered.append(i);
+            }
+        } else {
+            for (self.themes, 0..) |*theme, i| {
+                try self.filtered.append(i);
+                theme.rank = null;
+            }
+        }
+
+        const new_digest = d: {
+            var hash = hash_algorithm.init(0);
+            for (self.filtered.items) |item|
+                hash.update(std.mem.asBytes(&item));
+            break :d hash.final();
+        };
+
+        if (old_digest == new_digest) return;
+
+        if (self.filtered.items.len == 0) {
+            self.current = 0;
+            self.window = 0;
+            return;
+        }
+
+        self.current, self.window = current: {
+            for (self.filtered.items, 0..) |index, i| {
+                if (std.mem.eql(u8, self.themes[index].theme, selected))
+                    break :current .{ i, i -| relative };
+            }
+            break :current .{ 0, 0 };
+        };
+    }
+
     fn up(self: *Preview, count: usize) void {
-        self.current = std.math.sub(usize, self.current, count) catch self.themes.len + self.current - count;
+        if (self.filtered.items.len == 0) {
+            self.current = 0;
+            return;
+        }
+        self.current -|= count;
     }
 
     fn down(self: *Preview, count: usize) void {
-        self.current = (self.current + count) % self.themes.len;
+        if (self.filtered.items.len == 0) {
+            self.current = 0;
+            return;
+        }
+        self.current += count;
+        if (self.current >= self.filtered.items.len)
+            self.current = self.filtered.items.len - 1;
     }
 
     pub fn update(self: *Preview, event: Event, alloc: std.mem.Allocator) !void {
@@ -243,77 +347,146 @@ const Preview = struct {
             .key_press => |key| {
                 if (key.matches('c', .{ .ctrl = true }))
                     self.should_quit = true;
-                if (key.matches('q', .{}))
-                    self.should_quit = true;
-                if (key.matches(vaxis.Key.escape, .{}))
-                    self.should_quit = true;
-                if (key.matches('?', .{}))
-                    self.help_visible = !self.help_visible;
-                if (key.matches('h', .{ .ctrl = true }))
-                    self.help_visible = !self.help_visible;
-                if (key.matches(vaxis.Key.f1, .{}))
-                    self.help_visible = !self.help_visible;
-                if (key.matches('0', .{}))
-                    self.current = 0;
-                if (key.matches(vaxis.Key.home, .{}))
-                    self.current = 0;
-                if (key.matches(vaxis.Key.kp_home, .{}))
-                    self.current = 0;
-                if (key.matches(vaxis.Key.end, .{}))
-                    self.current = self.themes.len - 1;
-                if (key.matches(vaxis.Key.kp_end, .{}))
-                    self.current = self.themes.len - 1;
-                if (key.matches('j', .{}))
-                    self.down(1);
-                if (key.matches('+', .{}))
-                    self.down(1);
-                if (key.matches(vaxis.Key.down, .{}))
-                    self.down(1);
-                if (key.matches(vaxis.Key.kp_down, .{}))
-                    self.down(1);
-                if (key.matches(vaxis.Key.kp_add, .{}))
-                    self.down(1);
-                if (key.matches(vaxis.Key.page_down, .{}))
-                    self.down(20);
-                if (key.matches(vaxis.Key.kp_page_down, .{}))
-                    self.down(20);
-                if (key.matches('k', .{}))
-                    self.up(1);
-                if (key.matches('-', .{}))
-                    self.up(1);
-                if (key.matches(vaxis.Key.up, .{}))
-                    self.up(1);
-                if (key.matches(vaxis.Key.kp_up, .{}))
-                    self.up(1);
-                if (key.matches(vaxis.Key.kp_subtract, .{}))
-                    self.up(1);
-                if (key.matches(vaxis.Key.page_up, .{}))
-                    self.up(20);
-                if (key.matches(vaxis.Key.kp_page_up, .{}))
-                    self.up(20);
-                if (key.matches('h', .{}))
-                    self.hex = true;
-                if (key.matches('x', .{}))
-                    self.hex = true;
-                if (key.matches('d', .{}))
-                    self.hex = false;
-                if (key.matches('c', .{}))
-                    try self.vx.copyToSystemClipboard(
-                        self.tty.anyWriter(),
-                        self.themes[self.current].theme,
-                        alloc,
-                    );
-                if (key.matches('c', .{ .shift = true }))
-                    try self.vx.copyToSystemClipboard(
-                        self.tty.anyWriter(),
-                        self.themes[self.current].path,
-                        alloc,
-                    );
+                switch (self.mode) {
+                    .normal => {
+                        if (key.matchesAny(&.{ 'q', vaxis.Key.escape }, .{}))
+                            self.should_quit = true;
+                        if (key.matchesAny(&.{ '?', vaxis.Key.f1 }, .{}))
+                            self.mode = .help;
+                        if (key.matches('h', .{ .ctrl = true }))
+                            self.mode = .help;
+                        if (key.matches('/', .{}))
+                            self.mode = .search;
+                        if (key.matchesAny(&.{ 'x', '/' }, .{ .ctrl = true })) {
+                            self.text_input.buf.clearRetainingCapacity();
+                            try self.updateFiltered();
+                        }
+                        if (key.matchesAny(&.{ vaxis.Key.home, vaxis.Key.kp_home }, .{}))
+                            self.current = 0;
+                        if (key.matchesAny(&.{ vaxis.Key.end, vaxis.Key.kp_end }, .{}))
+                            self.current = self.filtered.items.len - 1;
+                        if (key.matchesAny(&.{ 'j', '+', vaxis.Key.down, vaxis.Key.kp_down, vaxis.Key.kp_add }, .{}))
+                            self.down(1);
+                        if (key.matchesAny(&.{ vaxis.Key.page_down, vaxis.Key.kp_down }, .{}))
+                            self.down(20);
+                        if (key.matchesAny(&.{ 'k', '-', vaxis.Key.up, vaxis.Key.kp_up, vaxis.Key.kp_subtract }, .{}))
+                            self.up(1);
+                        if (key.matchesAny(&.{ vaxis.Key.page_up, vaxis.Key.kp_page_up }, .{}))
+                            self.up(20);
+                        if (key.matchesAny(&.{ 'h', 'x' }, .{}))
+                            self.hex = true;
+                        if (key.matches('d', .{}))
+                            self.hex = false;
+                        if (key.matches('c', .{}))
+                            try self.vx.copyToSystemClipboard(
+                                self.tty.anyWriter(),
+                                self.themes[self.filtered.items[self.current]].theme,
+                                alloc,
+                            );
+                        if (key.matches('c', .{ .shift = true }))
+                            try self.vx.copyToSystemClipboard(
+                                self.tty.anyWriter(),
+                                self.themes[self.filtered.items[self.current]].path,
+                                alloc,
+                            );
+                    },
+                    .help => {
+                        if (key.matches('q', .{}))
+                            self.should_quit = true;
+                        if (key.matchesAny(&.{ '?', vaxis.Key.escape, vaxis.Key.f1 }, .{}))
+                            self.mode = .normal;
+                        if (key.matches('h', .{ .ctrl = true }))
+                            self.mode = .normal;
+                    },
+                    .search => search: {
+                        if (key.matchesAny(&.{ vaxis.Key.escape, vaxis.Key.enter }, .{})) {
+                            self.mode = .normal;
+                            break :search;
+                        }
+                        if (key.matchesAny(&.{ 'x', '/' }, .{ .ctrl = true })) {
+                            self.text_input.clearRetainingCapacity();
+                            try self.updateFiltered();
+                            break :search;
+                        }
+                        try self.text_input.update(.{ .key_press = key });
+                        try self.updateFiltered();
+                    },
+                }
             },
             .color_scheme => |color_scheme| self.color_scheme = color_scheme,
             .mouse => |mouse| self.mouse = mouse,
             .winsize => |ws| try self.vx.resize(self.allocator, self.tty.anyWriter(), ws),
         }
+    }
+
+    pub fn ui_fg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0x00, 0x00, 0x00 } },
+            .dark => .{ .rgb = [_]u8{ 0xff, 0xff, 0xff } },
+        };
+    }
+
+    pub fn ui_bg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0xff, 0xff, 0xff } },
+            .dark => .{ .rgb = [_]u8{ 0x00, 0x00, 0x00 } },
+        };
+    }
+
+    pub fn ui_standard(self: *Preview) vaxis.Style {
+        return .{
+            .fg = self.ui_fg(),
+            .bg = self.ui_bg(),
+        };
+    }
+
+    pub fn ui_hover_bg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0xbb, 0xbb, 0xbb } },
+            .dark => .{ .rgb = [_]u8{ 0x22, 0x22, 0x22 } },
+        };
+    }
+
+    pub fn ui_highlighted(self: *Preview) vaxis.Style {
+        return .{
+            .fg = self.ui_fg(),
+            .bg = self.ui_hover_bg(),
+        };
+    }
+
+    pub fn ui_selected_fg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0x00, 0xaa, 0x00 } },
+            .dark => .{ .rgb = [_]u8{ 0x00, 0xaa, 0x00 } },
+        };
+    }
+
+    pub fn ui_selected_bg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0xaa, 0xaa, 0xaa } },
+            .dark => .{ .rgb = [_]u8{ 0x33, 0x33, 0x33 } },
+        };
+    }
+
+    pub fn ui_selected(self: *Preview) vaxis.Style {
+        return .{
+            .fg = self.ui_selected_fg(),
+            .bg = self.ui_selected_bg(),
+        };
+    }
+
+    pub fn ui_err_fg(self: *Preview) vaxis.Color {
+        return switch (self.color_scheme) {
+            .light => .{ .rgb = [_]u8{ 0xff, 0x00, 0x00 } },
+            .dark => .{ .rgb = [_]u8{ 0xff, 0x00, 0x00 } },
+        };
+    }
+
+    pub fn ui_err(self: *Preview) vaxis.Style {
+        return .{
+            .fg = self.ui_err_fg(),
+            .bg = self.ui_bg(),
+        };
     }
 
     pub fn draw(self: *Preview, alloc: std.mem.Allocator) !void {
@@ -322,37 +495,6 @@ const Preview = struct {
 
         self.vx.setMouseShape(.default);
 
-        const ui_fg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0x00, 0x00, 0x00 } },
-            .dark => .{ .rgb = [_]u8{ 0xff, 0xff, 0xff } },
-        };
-        const ui_bg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0xff, 0xff, 0xff } },
-            .dark => .{ .rgb = [_]u8{ 0x00, 0x00, 0x00 } },
-        };
-        const ui_standard: vaxis.Style = .{
-            .fg = ui_fg,
-            .bg = ui_bg,
-        };
-
-        const ui_hover_bg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0xbb, 0xbb, 0xbb } },
-            .dark => .{ .rgb = [_]u8{ 0x22, 0x22, 0x22 } },
-        };
-
-        const ui_selected_fg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0x00, 0xaa, 0x00 } },
-            .dark => .{ .rgb = [_]u8{ 0x00, 0xaa, 0x00 } },
-        };
-        const ui_selected_bg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0xaa, 0xaa, 0xaa } },
-            .dark => .{ .rgb = [_]u8{ 0x33, 0x33, 0x33 } },
-        };
-        const ui_selected: vaxis.Style = .{
-            .fg = ui_selected_fg,
-            .bg = ui_selected_bg,
-        };
-
         const theme_list = win.child(.{
             .x_off = 0,
             .y_off = 0,
@@ -360,43 +502,73 @@ const Preview = struct {
             .height = .{ .limit = win.height },
         });
 
-        const split = theme_list.height / 2;
+        if (self.filtered.items.len == 0) {
+            self.current = 0;
+            self.window = 0;
+        } else {
+            const start = self.window;
+            const end = self.window + theme_list.height - 1;
+            if (self.current > end)
+                self.window = self.current - theme_list.height + 1;
+            if (self.current < start)
+                self.window = self.current;
+            if (self.window >= self.filtered.items.len)
+                self.window = self.filtered.items.len - 1;
+        }
 
         var highlight: ?usize = null;
 
         if (self.mouse) |mouse| {
             self.mouse = null;
-            if (mouse.button == .wheel_up) {
-                self.up(1);
-            }
-            if (mouse.button == .wheel_down) {
-                self.down(1);
-            }
-            if (theme_list.hasMouse(mouse)) |_| {
-                if (mouse.button == .left and mouse.type == .release) {
-                    if (mouse.row < split) self.up(split - mouse.row);
-                    if (mouse.row > split) self.down(mouse.row - split);
+            if (self.mode == .normal) {
+                if (mouse.button == .wheel_up) {
+                    self.up(1);
                 }
-                highlight = mouse.row;
+                if (mouse.button == .wheel_down) {
+                    self.down(1);
+                }
+                if (theme_list.hasMouse(mouse)) |_| {
+                    if (mouse.button == .left and mouse.type == .release) {
+                        self.current = self.window + mouse.row;
+                    }
+                    highlight = mouse.row;
+                }
             }
         }
 
-        theme_list.fill(.{ .style = ui_standard });
+        theme_list.fill(.{ .style = self.ui_standard() });
 
-        for (0..split) |i| {
-            const j = std.math.sub(usize, self.current, i + 1) catch self.themes.len + self.current - i - 1;
-            const theme = self.themes[j];
-            const row = split - i - 1;
+        for (0..theme_list.height) |row| {
+            const index = self.window + row;
+            if (index >= self.filtered.items.len) break;
 
+            const theme = self.themes[self.filtered.items[index]];
+
+            const style: enum { normal, highlighted, selected } = style: {
+                if (index == self.current) break :style .selected;
+                if (highlight) |h| if (h == row) break :style .highlighted;
+                break :style .normal;
+            };
+
+            if (style == .selected) {
+                _ = try theme_list.printSegment(
+                    .{
+                        .text = "❯ ",
+                        .style = self.ui_selected(),
+                    },
+                    .{
+                        .row_offset = row,
+                        .col_offset = 0,
+                    },
+                );
+            }
             _ = try theme_list.printSegment(
                 .{
                     .text = theme.theme,
-                    .style = .{
-                        .fg = ui_fg,
-                        .bg = bg: {
-                            if (highlight) |h| if (h == row) break :bg ui_hover_bg;
-                            break :bg ui_bg;
-                        },
+                    .style = switch (style) {
+                        .normal => self.ui_standard(),
+                        .highlighted => self.ui_highlighted(),
+                        .selected => self.ui_selected(),
                     },
                     .link = .{
                         .uri = try theme.toUri(alloc),
@@ -407,163 +579,140 @@ const Preview = struct {
                     .col_offset = 2,
                 },
             );
-        }
-        {
-            const theme = self.themes[self.current];
-            _ = try theme_list.printSegment(
-                .{
-                    .text = "❯ ",
-                    .style = ui_selected,
-                },
-                .{
-                    .row_offset = split,
-                    .col_offset = 0,
-                },
-            );
-            _ = try theme_list.printSegment(
-                .{
-                    .text = theme.theme,
-                    .style = ui_selected,
-                    .link = .{
-                        .uri = try theme.toUri(alloc),
+            if (style == .selected) {
+                if (theme.theme.len < theme_list.width - 4) {
+                    for (2 + theme.theme.len..theme_list.width - 2) |i|
+                        _ = try theme_list.printSegment(
+                            .{
+                                .text = " ",
+                                .style = self.ui_selected(),
+                            },
+                            .{
+                                .row_offset = row,
+                                .col_offset = i,
+                            },
+                        );
+                }
+                _ = try theme_list.printSegment(
+                    .{
+                        .text = " ❮",
+                        .style = self.ui_selected(),
                     },
-                },
-                .{
-                    .row_offset = split,
-                    .col_offset = 2,
-                },
-            );
-            if (theme.theme.len < theme_list.width - 4) {
-                for (2 + theme.theme.len..theme_list.width - 2) |i|
-                    _ = try theme_list.printSegment(
+                    .{
+                        .row_offset = row,
+                        .col_offset = theme_list.width - 2,
+                    },
+                );
+            }
+        }
+
+        try self.drawPreview(alloc, win, theme_list.x_off + theme_list.width);
+
+        switch (self.mode) {
+            .normal => {
+                win.hideCursor();
+            },
+            .help => {
+                win.hideCursor();
+                const width = 60;
+                const height = 20;
+                const child = win.child(
+                    .{
+                        .x_off = win.width / 2 -| width / 2,
+                        .y_off = win.height / 2 -| height / 2,
+                        .width = .{
+                            .limit = width,
+                        },
+                        .height = .{
+                            .limit = height,
+                        },
+                        .border = .{
+                            .where = .all,
+                            .style = self.ui_standard(),
+                        },
+                    },
+                );
+
+                child.fill(.{ .style = self.ui_standard() });
+
+                const key_help = [_]struct { keys: []const u8, help: []const u8 }{
+                    .{ .keys = "^C, q, ESC", .help = "Quit." },
+                    .{ .keys = "F1, ?, ^H", .help = "Toggle help window." },
+                    .{ .keys = "k, ↑", .help = "Move up 1 theme." },
+                    .{ .keys = "ScrollUp", .help = "Move up 1 theme." },
+                    .{ .keys = "PgUp", .help = "Move up 20 themes." },
+                    .{ .keys = "j, ↓", .help = "Move down 1 theme." },
+                    .{ .keys = "ScrollDown", .help = "Move down 1 theme." },
+                    .{ .keys = "PgDown", .help = "Move down 20 themes." },
+                    .{ .keys = "h, x", .help = "Show palette numbers in hexadecimal." },
+                    .{ .keys = "d", .help = "Show palette numbers in decimal." },
+                    .{ .keys = "c", .help = "Copy theme name to the clipboard." },
+                    .{ .keys = "C", .help = "Copy theme path to the clipboard." },
+                    .{ .keys = "Home", .help = "Go to the start of the list." },
+                    .{ .keys = "End", .help = "Go to the end of the list." },
+                    .{ .keys = "/", .help = "Start search." },
+                    .{ .keys = "^X, ^/", .help = "Clear search." },
+                    .{ .keys = "⏎", .help = "Close search window." },
+                };
+
+                for (key_help, 0..) |help, i| {
+                    _ = try child.printSegment(
                         .{
-                            .text = " ",
-                            .style = ui_selected,
+                            .text = help.keys,
+                            .style = self.ui_standard(),
                         },
                         .{
-                            .row_offset = split,
-                            .col_offset = i,
+                            .row_offset = i + 1,
+                            .col_offset = 2,
                         },
                     );
-            }
-            _ = try theme_list.printSegment(
-                .{
-                    .text = " ❮",
-                    .style = ui_selected,
-                },
-                .{
-                    .row_offset = split,
-                    .col_offset = theme_list.width - 2,
-                },
-            );
-        }
-        for (split + 1..theme_list.height) |i| {
-            const j = (self.current + i - split) % self.themes.len;
-            const row = i;
-            const theme = self.themes[j];
-            _ = try theme_list.printSegment(.{
-                .text = theme.theme,
-                .style = .{
-                    .fg = ui_fg,
-                    .bg = bg: {
-                        if (highlight) |h| if (h == row) break :bg ui_hover_bg;
-                        break :bg ui_bg;
-                    },
-                },
-                .link = .{
-                    .uri = try theme.toUri(alloc),
-                },
-            }, .{
-                .row_offset = i,
-                .col_offset = 2,
-            });
-        }
-
-        try self.drawPreview(alloc, win, theme_list.x_off + theme_list.width, ui_fg, ui_bg);
-
-        if (self.help_visible) {
-            const width = 60;
-            const height = 20;
-            const child = win.child(
-                .{
-                    .x_off = win.width / 2 -| width / 2,
-                    .y_off = win.height / 2 -| height / 2,
+                    _ = try child.printSegment(
+                        .{
+                            .text = "—",
+                            .style = self.ui_standard(),
+                        },
+                        .{
+                            .row_offset = i + 1,
+                            .col_offset = 15,
+                        },
+                    );
+                    _ = try child.printSegment(
+                        .{
+                            .text = help.help,
+                            .style = self.ui_standard(),
+                        },
+                        .{
+                            .row_offset = i + 1,
+                            .col_offset = 17,
+                        },
+                    );
+                }
+            },
+            .search => {
+                const child = win.child(.{
+                    .x_off = 20,
+                    .y_off = win.height - 5,
                     .width = .{
-                        .limit = width,
+                        .limit = win.width - 40,
                     },
                     .height = .{
-                        .limit = height,
+                        .limit = 3,
                     },
                     .border = .{
                         .where = .all,
-                        .style = ui_standard,
+                        .style = self.ui_standard(),
                     },
-                },
-            );
-
-            child.fill(.{ .style = ui_standard });
-
-            const key_help = [_]struct { keys: []const u8, help: []const u8 }{
-                .{ .keys = "^C, q, ESC", .help = "Quit." },
-                .{ .keys = "F1, ?, ^H", .help = "Toggle help window." },
-                .{ .keys = "k, ↑", .help = "Move up 1 theme." },
-                .{ .keys = "ScrollUp", .help = "Move up 1 theme." },
-                .{ .keys = "PgUp", .help = "Move up 20 themes." },
-                .{ .keys = "j, ↓", .help = "Move down 1 theme." },
-                .{ .keys = "ScrollDown", .help = "Move down 1 theme." },
-                .{ .keys = "PgDown", .help = "Move down 20 themes." },
-                .{ .keys = "h, x", .help = "Show palette numbers in hexadecimal." },
-                .{ .keys = "d", .help = "Show palette numbers in decimal." },
-                .{ .keys = "c", .help = "Copy theme name to the clipboard." },
-                .{ .keys = "C", .help = "Copy theme path to the clipboard." },
-                .{ .keys = "0, Home", .help = "Go to the start of the list." },
-                .{ .keys = "End", .help = "Go to the end of the list." },
-            };
-
-            for (key_help, 0..) |help, i| {
-                _ = try child.printSegment(
-                    .{
-                        .text = help.keys,
-                        .style = ui_standard,
-                    },
-                    .{
-                        .row_offset = i + 1,
-                        .col_offset = 2,
-                    },
-                );
-                _ = try child.printSegment(
-                    .{
-                        .text = "—",
-                        .style = ui_standard,
-                    },
-                    .{
-                        .row_offset = i + 1,
-                        .col_offset = 15,
-                    },
-                );
-                _ = try child.printSegment(
-                    .{
-                        .text = help.help,
-                        .style = ui_standard,
-                    },
-                    .{
-                        .row_offset = i + 1,
-                        .col_offset = 17,
-                    },
-                );
-            }
+                });
+                child.fill(.{ .style = self.ui_standard() });
+                self.text_input.drawWithStyle(child, self.ui_standard());
+            },
         }
     }
 
-    pub fn drawPreview(self: *Preview, alloc: std.mem.Allocator, win: vaxis.Window, x_off: usize, ui_fg: vaxis.Color, ui_bg: vaxis.Color) !void {
+    pub fn drawPreview(self: *Preview, alloc: std.mem.Allocator, win: vaxis.Window, x_off: usize) !void {
         const width = win.width - x_off;
 
-        const ui_err_fg: vaxis.Color = switch (self.color_scheme) {
-            .light => .{ .rgb = [_]u8{ 0xff, 0x00, 0x00 } },
-            .dark => .{ .rgb = [_]u8{ 0xff, 0x00, 0x00 } },
-        };
-
-        const theme = self.themes[self.current];
+        const theme = self.themes[self.filtered.items[self.current]];
 
         var config = try Config.default(alloc);
         defer config.deinit();
@@ -581,17 +730,14 @@ const Preview = struct {
                     },
                 },
             );
-            child.fill(.{ .style = .{ .fg = ui_fg, .bg = ui_bg } });
+            child.fill(.{ .style = self.ui_standard() });
             const middle = child.height / 2;
             {
                 const text = try std.fmt.allocPrint(alloc, "Unable to open {s} from:", .{theme.theme});
                 _ = try child.printSegment(
                     .{
                         .text = text,
-                        .style = .{
-                            .fg = ui_err_fg,
-                            .bg = ui_bg,
-                        },
+                        .style = self.ui_err(),
                     },
                     .{
                         .row_offset = middle -| 1,
@@ -603,10 +749,7 @@ const Preview = struct {
                 _ = try child.printSegment(
                     .{
                         .text = theme.path,
-                        .style = .{
-                            .fg = ui_err_fg,
-                            .bg = ui_bg,
-                        },
+                        .style = self.ui_err(),
                         .link = .{
                             .uri = try theme.toUri(alloc),
                         },
@@ -622,10 +765,7 @@ const Preview = struct {
                 _ = try child.printSegment(
                     .{
                         .text = text,
-                        .style = .{
-                            .fg = ui_err_fg,
-                            .bg = ui_bg,
-                        },
+                        .style = self.ui_err(),
                     },
                     .{
                         .row_offset = middle + 1,
@@ -637,6 +777,7 @@ const Preview = struct {
         };
 
         var next_start: usize = 0;
+
         const fg: vaxis.Color = .{
             .rgb = [_]u8{
                 config.foreground.r,
@@ -759,10 +900,7 @@ const Preview = struct {
                 _ = try child.printSegment(
                     .{
                         .text = text,
-                        .style = .{
-                            .fg = ui_err_fg,
-                            .bg = ui_bg,
-                        },
+                        .style = self.ui_err(),
                     },
                     .{
                         .row_offset = 0,
@@ -774,10 +912,7 @@ const Preview = struct {
                 _ = try child.printSegment(
                     .{
                         .text = err.message,
-                        .style = .{
-                            .fg = ui_err_fg,
-                            .bg = ui_bg,
-                        },
+                        .style = self.ui_err(),
                     },
                     .{
                         .row_offset = 2 + i,

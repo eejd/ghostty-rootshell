@@ -1043,6 +1043,10 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const zf_dep = b.dependency("zf", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
@@ -1129,6 +1133,7 @@ fn addDeps(
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
     step.root_module.addImport("wuffs", wuffs_dep.module("wuffs"));
+    step.root_module.addImport("zf", zf_dep.module("zf"));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
