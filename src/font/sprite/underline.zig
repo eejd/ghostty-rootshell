@@ -27,9 +27,7 @@ pub fn renderGlyph(
     line_pos: u32,
     line_thickness: u32,
 ) !font.Glyph {
-    // _ = height;
-
-    // Draw the appropriate sprite
+   // Draw the appropriate sprite
     var canvas: font.sprite.Canvas, const offset_y: i32 = switch (sprite) {
         .underline => try drawSingle(alloc, width, line_thickness),
         .underline_double => try drawDouble(alloc, width, line_thickness),
@@ -48,15 +46,24 @@ pub fn renderGlyph(
         .width = width,
         .height = @intCast(region.height),
         .offset_x = 0,
-        .offset_y = @as(i32, @intCast(height + region.height)) - @as(i32, @intCast(line_pos)) + offset_y + 1,
+        // Glyph.offset_y is the distance between the top of the glyph and the
+        // bottom of the cell. We want the top of the glyph to be at line_pos
+        // from the TOP of the cell, and then offset by the offset_y from the
+        // draw function.
+        .offset_y = @as(i32, @intCast(height - line_pos)) - offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(width),
     };
 }
 
+/// A tuple with the canvas that the desired sprite was drawn on and
+/// a recommended offset (+Y = down) to shift its Y position by, to
+/// correct for underline styles with additional thickness.
+const CanvasAndOffset = struct { font.sprite.Canvas, i32 };
+
 /// Draw a single underline.
-fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprite.Canvas, i32 } {
+fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const height: u32 = thickness;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
@@ -73,7 +80,7 @@ fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprit
 }
 
 /// Draw a double underline.
-fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprite.Canvas, i32 } {
+fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const height: u32 = thickness * 3;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
@@ -97,7 +104,7 @@ fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprit
 }
 
 /// Draw a dotted underline.
-fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprite.Canvas, i32 } {
+fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const height: u32 = thickness;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
@@ -123,7 +130,7 @@ fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprit
 }
 
 /// Draw a dashed underline.
-fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprite.Canvas, i32 } {
+fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const height: u32 = thickness;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
@@ -150,7 +157,7 @@ fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprit
 /// Draw a curly underline. Thanks to Wez Furlong for providing
 /// the basic math structure for this since I was lazy with the
 /// geometry.
-fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !struct { font.sprite.Canvas, i32 } {
+fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const height: u32 = thickness * 4;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
