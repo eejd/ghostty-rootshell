@@ -678,8 +678,8 @@ pub const Face = struct {
                 @intCast(face.handle.*.size.*.metrics.y_scale),
             ))) / 64;
 
-            // We use the declared underline position if its available
-            const declared = @ceil(cell_height - cell_baseline - declared_px - underline_thickness * 0.5 + 1);
+            // We use the declared underline position if its available.
+            const declared = @ceil(cell_height - cell_baseline - declared_px - underline_thickness * 0.5);
             if (declared > 0)
                 break :underline_pos declared;
 
@@ -702,13 +702,13 @@ pub const Face = struct {
             ))) / 64;
 
             break :st .{
-                .pos = @ceil(cell_height - cell_baseline - pos + thickness + 1),
+                .pos = @ceil(cell_height - cell_baseline - pos),
                 .thickness = thickness,
             };
         } else .{
             // Exactly 50% of the ex height so that our strikethrough is
             // centered through lowercase text. This is a common choice.
-            .pos = @ceil(cell_height - cell_baseline - ex_height * 0.5 + underline_thickness),
+            .pos = @ceil(cell_height - cell_baseline - ex_height * 0.5 - underline_thickness * 0.5),
             .thickness = underline_thickness,
         };
 

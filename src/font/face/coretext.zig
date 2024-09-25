@@ -612,9 +612,8 @@ pub const Face = struct {
             // we subtract half of the ex height to go back up to the
             // correct height that should evenly split lowercase text.
             const pos = layout_metrics.ascent -
-                ex_height * 0.5 +
-                strikethrough_thickness * 0.5 +
-                1;
+                ex_height * 0.5 -
+                strikethrough_thickness * 0.5;
 
             break :strikethrough_position @ceil(pos);
         };
@@ -625,7 +624,7 @@ pub const Face = struct {
         // The final underline position is +y from the TOP (confusing)
         // so we have to subtract from the cell height.
         const underline_position = @ceil(layout_metrics.ascent -
-            @as(f32, @floatCast(ct_font.getUnderlinePosition())) + 1);
+            @as(f32, @floatCast(ct_font.getUnderlinePosition())));
 
         // Note: is this useful?
         // const units_per_em = ct_font.getUnitsPerEm();
