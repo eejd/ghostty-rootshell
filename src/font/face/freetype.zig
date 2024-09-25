@@ -851,7 +851,7 @@ test "metrics" {
         .cell_width = 16,
         .cell_height = 35,
         .cell_baseline = 7,
-        .underline_position = 36,
+        .underline_position = 35,
         .underline_thickness = 2,
         .strikethrough_position = 20,
         .strikethrough_thickness = 2,
