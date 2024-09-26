@@ -594,30 +594,37 @@ pub const Face = struct {
         // All of these metrics are based on our layout above.
         const cell_height = @ceil(layout_metrics.height);
         const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
-        const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
-        const strikethrough_position = strikethrough_position: {
-            // This is the height above baseline consumed by text. We must take
-            // into account that our cell height splits the leading between two
-            // rows so we subtract leading space (blank space).
-            const above_baseline = layout_metrics.ascent - (layout_metrics.leading / 2);
 
-            // We want to position the strikethrough at 65% of the height.
-            // This generally gives a nice visual appearance. The number 65%
-            // is somewhat arbitrary but is a common value across terminals.
-            const pos = above_baseline * 0.65;
+        const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
+        const strikethrough_thickness = underline_thickness;
+
+        const strikethrough_position = strikethrough_position: {
+            // This is the height of lower case letters in our font.
+            const ex_height = ct_font.getXHeight();
+
+            // We want to position the strikethrough so that it's
+            // vertically centered on any lower case text. This is
+            // a fairly standard choice for strikethrough positioning.
+            //
+            // Because our `strikethrough_position` is relative to the
+            // top of the cell we start with the ascent metric, which
+            // is the distance from the top down to the baseline, then
+            // we subtract half of the ex height to go back up to the
+            // correct height that should evenly split lowercase text.
+            const pos = layout_metrics.ascent -
+                ex_height * 0.5 -
+                strikethrough_thickness * 0.5;
 
             break :strikethrough_position @ceil(pos);
         };
-        const strikethrough_thickness = underline_thickness;
 
         // Underline position reported is usually something like "-1" to
         // represent the amount under the baseline. We add this to our real
         // baseline to get the actual value from the bottom (+y is up).
         // The final underline position is +y from the TOP (confusing)
         // so we have to subtract from the cell height.
-        const underline_position = cell_height -
-            (cell_baseline + @ceil(@as(f32, @floatCast(ct_font.getUnderlinePosition())))) +
-            1;
+        const underline_position = @ceil(layout_metrics.ascent -
+            @as(f32, @floatCast(ct_font.getUnderlinePosition())));
 
         // Note: is this useful?
         // const units_per_em = ct_font.getUnitsPerEm();

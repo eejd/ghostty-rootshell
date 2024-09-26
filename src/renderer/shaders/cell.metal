@@ -224,30 +224,30 @@ vertex CellTextVertexOut cell_text_vertex(
   out.color = float4(in.color) / 255.0f;
 
   //              === Grid Cell ===
-  //
-  //    offset.x = bearings.x
-  //                  .|.
-  //                  | |
-  //                  +-------+_.
-  //                ._|       | |
-  //                | | .###. | |
-  //                | | #...# | +- bearings.y
-  //  glyph_size.y -+ | ##### | |
-  //                | | #.... | |
-  //   ^            |_| .#### |_| _.
-  //   |              |       |    +- offset.y = cell_size.y - bearings.y
-  //   .  cell_pos -> +-------+   -'
-  // +Y.                |_._|
-  //   .                  |
-  //   |             glyph_size.x
-  // 0,0--...->
   //      +X
+  // 0,0--...->
+  //   |
+  //   . offset.x = bearings.x
+  // +Y.               .|.
+  //   .               | |
+  //   |   cell_pos -> +-------+   _.
+  //   v             ._|       |_. _|- offset.y = cell_size.y - bearings.y
+  //                 | | .###. | |
+  //                 | | #...# | |
+  //   glyph_size.y -+ | ##### | |
+  //                 | | #.... | +- bearings.y
+  //                 |_| .#### | |
+  //                   |       |_|
+  //                   +-------+
+  //                     |_._|
+  //                       |
+  //                  glyph_size.x
   //
-  // In order to get the bottom left of the glyph, we compute an offset based
-  // on the bearings. The Y bearing is the distance from the top of the cell
-  // to the bottom of the glyph, so we subtract it from the cell height to get
-  // the y offset. The X bearing is the distance from the left of the cell to
-  // the left of the glyph, so it works as the x offset directly.
+  // In order to get the top left of the glyph, we compute an offset based on
+  // the bearings. The Y bearing is the distance from the bottom of the cell
+  // to the top of the glyph, so we subtract it from the cell height to get
+  // the y offset. The X bearing is the distance from the left of the cell
+  // to the left of the glyph, so it works as the x offset directly.
 
   float2 size = float2(in.glyph_size);
   float2 offset = float2(in.bearings);

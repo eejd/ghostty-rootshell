@@ -27,189 +27,174 @@ pub fn renderGlyph(
     line_pos: u32,
     line_thickness: u32,
 ) !font.Glyph {
-    // Create the canvas we'll use to draw. We draw the underline in
-    // a full cell size and position it according to "pos".
-    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+   // Draw the appropriate sprite
+    var canvas: font.sprite.Canvas, const offset_y: i32 = switch (sprite) {
+        .underline => try drawSingle(alloc, width, line_thickness),
+        .underline_double => try drawDouble(alloc, width, line_thickness),
+        .underline_dotted => try drawDotted(alloc, width, line_thickness),
+        .underline_dashed => try drawDashed(alloc, width, line_thickness),
+        .underline_curly => try drawCurly(alloc, width, line_thickness),
+        .strikethrough => try drawSingle(alloc, width, line_thickness),
+        else => unreachable,
+    };
     defer canvas.deinit(alloc);
-
-    // Perform the actual drawing
-    (Draw{
-        .width = width,
-        .height = height,
-        .pos = line_pos,
-        .thickness = line_thickness,
-    }).draw(&canvas, sprite);
 
     // Write the drawing to the atlas
     const region = try canvas.writeAtlas(alloc, atlas);
 
-    // Our coordinates start at the BOTTOM for our renderers so we have to
-    // specify an offset of the full height because we rendered a full size
-    // cell.
-    const offset_y = @as(i32, @intCast(height));
-
     return font.Glyph{
         .width = width,
-        .height = height,
+        .height = @intCast(region.height),
         .offset_x = 0,
-        .offset_y = offset_y,
+        // Glyph.offset_y is the distance between the top of the glyph and the
+        // bottom of the cell. We want the top of the glyph to be at line_pos
+        // from the TOP of the cell, and then offset by the offset_y from the
+        // draw function.
+        .offset_y = @as(i32, @intCast(height - line_pos)) - offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(width),
     };
 }
 
-/// Stores drawing state.
-const Draw = struct {
-    width: u32,
-    height: u32,
-    pos: u32,
-    thickness: u32,
+/// A tuple with the canvas that the desired sprite was drawn on and
+/// a recommended offset (+Y = down) to shift its Y position by, to
+/// correct for underline styles with additional thickness.
+const CanvasAndOffset = struct { font.sprite.Canvas, i32 };
 
-    /// Draw a specific underline sprite to the canvas.
-    fn draw(self: Draw, canvas: *font.sprite.Canvas, sprite: Sprite) void {
-        switch (sprite) {
-            .underline => self.drawSingle(canvas),
-            .underline_double => self.drawDouble(canvas),
-            .underline_dotted => self.drawDotted(canvas),
-            .underline_dashed => self.drawDashed(canvas),
-            .underline_curly => self.drawCurly(canvas),
-            .strikethrough => self.drawSingle(canvas),
-            else => unreachable,
-        }
-    }
+/// Draw a single underline.
+fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
+    const height: u32 = thickness;
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
-    /// Draw a single underline.
-    fn drawSingle(self: Draw, canvas: *font.sprite.Canvas) void {
-        // Ensure we never overflow out of bounds on the canvas
-        const y_max = self.height -| 1;
-        const bottom = @min(self.pos + self.thickness, y_max);
-        const y = bottom -| self.thickness;
-        const max_height = self.height - y;
+    canvas.rect(.{
+        .x = 0,
+        .y = 0,
+        .width = width,
+        .height = thickness,
+    }, .on);
 
+    const offset_y: i32 = 0;
+
+    return .{ canvas, offset_y };
+}
+
+/// Draw a double underline.
+fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
+    const height: u32 = thickness * 3;
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+
+    canvas.rect(.{
+        .x = 0,
+        .y = 0,
+        .width = width,
+        .height = thickness,
+    }, .on);
+
+    canvas.rect(.{
+        .x = 0,
+        .y = @intCast(thickness * 2),
+        .width = width,
+        .height = thickness,
+    }, .on);
+
+    const offset_y: i32 = -@as(i32, @intCast(thickness));
+
+    return .{ canvas, offset_y };
+}
+
+/// Draw a dotted underline.
+fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
+    const height: u32 = thickness;
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+
+    const dot_width = @max(thickness, 3);
+    const dot_count = @max((width / dot_width) / 2, 1);
+    const gap_width = try std.math.divCeil(u32, width -| (dot_count * dot_width), dot_count);
+    var i: u32 = 0;
+    while (i < dot_count) : (i += 1) {
+        // Ensure we never go out of bounds for the rect
+        const x = @min(i * (dot_width + gap_width), width - 1);
+        const rect_width = @min(width - x, dot_width);
         canvas.rect(.{
-            .x = 0,
-            .y = @intCast(y),
-            .width = self.width,
-            .height = @min(self.thickness, max_height),
+            .x = @intCast(x),
+            .y = 0,
+            .width = rect_width,
+            .height = thickness,
         }, .on);
     }
 
-    /// Draw a double underline.
-    fn drawDouble(self: Draw, canvas: *font.sprite.Canvas) void {
-        // The maximum y value has to have space for the bottom underline.
-        // If we underflow (saturated) to 0, then we don't draw. This should
-        // never happen but we don't want to draw something undefined.
-        const y_max = self.height -| 1 -| self.thickness;
-        if (y_max == 0) return;
+    const offset_y: i32 = 0;
 
-        const space = self.thickness * 2;
-        const bottom = @min(self.pos + space, y_max);
-        const top = bottom - space;
+    return .{ canvas, offset_y };
+}
 
+/// Draw a dashed underline.
+fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
+    const height: u32 = thickness;
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+
+    const dash_width = width / 3 + 1;
+    const dash_count = (width / dash_width) + 1;
+    var i: u32 = 0;
+    while (i < dash_count) : (i += 2) {
+        // Ensure we never go out of bounds for the rect
+        const x = @min(i * dash_width, width - 1);
+        const rect_width = @min(width - x, dash_width);
         canvas.rect(.{
-            .x = 0,
-            .y = @intCast(top),
-            .width = self.width,
-            .height = self.thickness,
-        }, .on);
-
-        canvas.rect(.{
-            .x = 0,
-            .y = @intCast(bottom),
-            .width = self.width,
-            .height = self.thickness,
+            .x = @intCast(x),
+            .y = 0,
+            .width = rect_width,
+            .height = thickness,
         }, .on);
     }
 
-    /// Draw a dotted underline.
-    fn drawDotted(self: Draw, canvas: *font.sprite.Canvas) void {
-        const y_max = self.height -| 1 -| self.thickness;
-        if (y_max == 0) return;
-        const y = @min(self.pos, y_max);
-        const dot_width = @max(self.thickness, 3);
-        const dot_count = self.width / dot_width;
-        var i: u32 = 0;
-        while (i < dot_count) : (i += 2) {
-            // Ensure we never go out of bounds for the rect
-            const x = @min(i * dot_width, self.width - 1);
-            const width = @min(self.width - 1 - x, dot_width);
-            canvas.rect(.{
-                .x = @intCast(i * dot_width),
-                .y = @intCast(y),
-                .width = width,
-                .height = self.thickness,
-            }, .on);
+    const offset_y: i32 = 0;
+
+    return .{ canvas, offset_y };
+}
+
+/// Draw a curly underline. Thanks to Wez Furlong for providing
+/// the basic math structure for this since I was lazy with the
+/// geometry.
+fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
+    const height: u32 = thickness * 4;
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+
+    // Calculate the wave period for a single character
+    //   `2 * pi...` = 1 peak per character
+    //   `4 * pi...` = 2 peaks per character
+    const wave_period = 2 * std.math.pi / @as(f64, @floatFromInt(width - 1));
+
+    // The full amplitude of the wave can be from the bottom to the
+    // underline position. We also calculate our mid y point of the wave
+    const half_amplitude: f64 = @as(f64, @floatFromInt(thickness));
+    const y_mid: f64 = half_amplitude + 1;
+
+    // follow Xiaolin Wu's antialias algorithm to draw the curve
+    var x: u32 = 0;
+    while (x < width) : (x += 1) {
+        const cosx: f64 = @cos(@as(f64, @floatFromInt(x)) * wave_period);
+        const y: f64 = y_mid + half_amplitude * cosx;
+        const y_upper: u32 = @intFromFloat(@floor(y));
+        const y_lower: u32 = y_upper + thickness + (thickness >> 1);
+        const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
+
+        // upper and lower bounds
+        canvas.pixel(x, @min(y_upper, height), @enumFromInt(255 - alpha));
+        canvas.pixel(x, @min(y_lower, height), @enumFromInt(alpha));
+
+        // fill between upper and lower bound
+        var y_fill: u32 = y_upper + 1;
+        while (y_fill < y_lower) : (y_fill += 1) {
+            canvas.pixel(x, @min(y_fill, height), .on);
         }
     }
 
-    /// Draw a dashed underline.
-    fn drawDashed(self: Draw, canvas: *font.sprite.Canvas) void {
-        const y_max = self.height -| 1 -| self.thickness;
-        if (y_max == 0) return;
-        const y = @min(self.pos, y_max);
-        const dash_width = self.width / 3 + 1;
-        const dash_count = (self.width / dash_width) + 1;
-        var i: u32 = 0;
-        while (i < dash_count) : (i += 2) {
-            // Ensure we never go out of bounds for the rect
-            const x = @min(i * dash_width, self.width - 1);
-            const width = @min(self.width - 1 - x, dash_width);
-            canvas.rect(.{
-                .x = @intCast(x),
-                .y = @intCast(y),
-                .width = width,
-                .height = self.thickness,
-            }, .on);
-        }
-    }
+    const offset_y: i32 = -@as(i32, @intCast(thickness * 2));
 
-    /// Draw a curly underline. Thanks to Wez Furlong for providing
-    /// the basic math structure for this since I was lazy with the
-    /// geometry.
-    fn drawCurly(self: Draw, canvas: *font.sprite.Canvas) void {
-        // This is the lowest that the curl can go.
-        const y_max = self.height - 1;
-
-        // Calculate the wave period for a single character
-        //   `2 * pi...` = 1 peak per character
-        //   `4 * pi...` = 2 peaks per character
-        const wave_period = 2 * std.math.pi / @as(f64, @floatFromInt(self.width - 1));
-
-        // Some fonts put the underline too close to the bottom of the
-        // cell height and this doesn't allow us to make a high enough
-        // wave. This constant is arbitrary, change it for aesthetics.
-        const pos: u32 = pos: {
-            const MIN_AMPLITUDE: u32 = @max(self.height / 9, 2);
-            break :pos y_max - (MIN_AMPLITUDE * 2);
-        };
-
-        // The full amplitude of the wave can be from the bottom to the
-        // underline position. We also calculate our mid y point of the wave
-        const double_amplitude: f64 = @floatFromInt(y_max - pos);
-        const half_amplitude: f64 = @max(1, double_amplitude / 4);
-        const y_mid: u32 = pos + @as(u32, @intFromFloat(2 * half_amplitude));
-
-        // follow Xiaolin Wu's antialias algorithm to draw the curve
-        var x: u32 = 0;
-        while (x < self.width) : (x += 1) {
-            const y: f64 = @as(f64, @floatFromInt(y_mid)) + (half_amplitude * @cos(@as(f64, @floatFromInt(x)) * wave_period));
-            const y_upper: u32 = @intFromFloat(@floor(y));
-            const y_lower: u32 = y_upper + self.thickness;
-            const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
-
-            // upper and lower bounds
-            canvas.pixel(x, @min(y_upper, y_max), @enumFromInt(255 - alpha));
-            canvas.pixel(x, @min(y_lower, y_max), @enumFromInt(alpha));
-
-            // fill between upper and lower bound
-            var y_fill: u32 = y_upper + 1;
-            while (y_fill < y_lower) : (y_fill += 1) {
-                canvas.pixel(x, @min(y_fill, y_max), .on);
-            }
-        }
-    }
-};
+    return .{ canvas, offset_y };
+}
 
 test "single" {
     const testing = std.testing;

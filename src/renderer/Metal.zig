@@ -2523,6 +2523,45 @@ fn updateCell(
         }
     }
 
+    // If the cell has an underline, draw it before the character glyph,
+    // so that it layers underneath instead of overtop, since that can
+    // make text difficult to read.
+    if (underline != .none) {
+        const sprite: font.Sprite = switch (underline) {
+            .none => unreachable,
+            .single => .underline,
+            .double => .underline_double,
+            .dotted => .underline_dotted,
+            .dashed => .underline_dashed,
+            .curly => .underline_curly,
+        };
+
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            font.sprite_index,
+            @intFromEnum(sprite),
+            .{
+                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .grid_metrics = self.grid_metrics,
+            },
+        );
+
+        const color = style.underlineColor(palette) orelse colors.fg;
+
+        try self.cells.add(self.alloc, .underline, .{
+            .mode = .fg,
+            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+            .constraint_width = cell.gridWidth(),
+            .color = .{ color.r, color.g, color.b, alpha },
+            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+            .glyph_size = .{ render.glyph.width, render.glyph.height },
+            .bearings = .{
+                @intCast(render.glyph.offset_x),
+                @intCast(render.glyph.offset_y),
+            },
+        });
+    }
+
     // If the shaper cell has a glyph, draw it.
     if (shaper_cell.glyph_index) |glyph_index| glyph: {
         // Render
@@ -2562,42 +2601,6 @@ fn updateCell(
             .bearings = .{
                 @intCast(render.glyph.offset_x + shaper_cell.x_offset),
                 @intCast(render.glyph.offset_y + shaper_cell.y_offset),
-            },
-        });
-    }
-
-    if (underline != .none) {
-        const sprite: font.Sprite = switch (underline) {
-            .none => unreachable,
-            .single => .underline,
-            .double => .underline_double,
-            .dotted => .underline_dotted,
-            .dashed => .underline_dashed,
-            .curly => .underline_curly,
-        };
-
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(sprite),
-            .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        const color = style.underlineColor(palette) orelse colors.fg;
-
-        try self.cells.add(self.alloc, .underline, .{
-            .mode = .fg,
-            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = cell.gridWidth(),
-            .color = .{ color.r, color.g, color.b, alpha },
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .bearings = .{
-                @intCast(render.glyph.offset_x),
-                @intCast(render.glyph.offset_y),
             },
         });
     }
