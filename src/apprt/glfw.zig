@@ -127,9 +127,46 @@ pub const App = struct {
         glfw.postEmptyEvent();
     }
 
-    /// Open the configuration in the system editor.
-    pub fn openConfig(self: *App) !void {
-        try configpkg.edit.open(self.app.alloc);
+    /// Perform a given action.
+    pub fn performAction(
+        self: *App,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !void {
+        _ = value;
+
+        switch (action) {
+            .new_window => _ = try self.newSurface(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
+            .new_tab => try self.newTab(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
+            .toggle_fullscreen => self.toggleFullscreen(target),
+
+            .open_config => try configpkg.edit.open(self.app.alloc),
+
+            // Unimplemented
+            .new_split,
+            .goto_split,
+            .resize_split,
+            .equalize_splits,
+            .toggle_split_zoom,
+            .present_terminal,
+            .close_all_windows,
+            .toggle_window_decorations,
+            .goto_tab,
+            .inspector,
+            .quit_timer,
+            .secure_input,
+            .desktop_notification,
+            => log.info("unimplemented action={}", .{action}),
+        }
     }
 
     /// Reload the configuration. This should return the new configuration.
@@ -150,8 +187,12 @@ pub const App = struct {
     }
 
     /// Toggle the window to fullscreen mode.
-    pub fn toggleFullscreen(self: *App, surface: *Surface) void {
+    fn toggleFullscreen(self: *App, target: apprt.Target) void {
         _ = self;
+        const surface: *Surface = switch (target) {
+            .app => return,
+            .surface => |v| v.rt_surface,
+        };
         const win = surface.window;
 
         if (surface.isFullscreen()) {
@@ -195,17 +236,17 @@ pub const App = struct {
         win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
     }
 
-    /// Create a new window for the app.
-    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
-        _ = try self.newSurface(parent_);
-    }
-
     /// Create a new tab in the parent surface.
-    fn newTab(self: *App, parent: *CoreSurface) !void {
+    fn newTab(self: *App, parent_: ?*CoreSurface) !void {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
             return;
         }
+
+        const parent = parent_ orelse {
+            _ = try self.newSurface(null);
+            return;
+        };
 
         // Create the new window
         const window = try self.newSurface(parent);
@@ -370,7 +411,6 @@ pub const Surface = struct {
     /// Initialize the surface into the given self pointer. This gives a
     /// stable pointer to the destination that can be used for callbacks.
     pub fn init(self: *Surface, app: *App) !void {
-
         // Create our window
         const win = glfw.Window.create(
             640,
@@ -525,18 +565,9 @@ pub const Surface = struct {
         }
     }
 
-    /// Create a new tab in the window containing this surface.
-    pub fn newTab(self: *Surface) !void {
-        try self.app.newTab(&self.core_surface);
-    }
-
     /// Checks if the glfw window is in fullscreen.
     pub fn isFullscreen(self: *Surface) bool {
         return self.window.getMonitor() != null;
-    }
-
-    pub fn toggleFullscreen(self: *Surface, _: Config.NonNativeFullscreen) void {
-        self.app.toggleFullscreen(self);
     }
 
     /// Close this surface.
@@ -681,6 +712,23 @@ pub const Surface = struct {
     /// Set the visibility of the mouse cursor.
     pub fn setMouseVisibility(self: *Surface, visible: bool) void {
         self.window.setInputModeCursor(if (visible) .normal else .hidden);
+    }
+
+    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
+        // We don't support this in GLFW.
+        _ = self;
+        _ = health;
+    }
+
+    pub fn supportsClipboard(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) bool {
+        _ = self;
+        return switch (clipboard_type) {
+            .standard => true,
+            .selection, .primary => comptime builtin.os.tag == .linux,
+        };
     }
 
     /// Start an async clipboard request.

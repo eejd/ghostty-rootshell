@@ -549,6 +549,9 @@ extension Ghostty {
         }
 
         static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {
+            // We don't currently allow global password input being set from this.
+            guard let userdata else { return }
+            
             let surfaceView = self.surfaceUserdata(from: userdata)
             guard let appState = self.appState(fromView: surfaceView) else { return }
             guard appState.config.autoSecureInput else { return }

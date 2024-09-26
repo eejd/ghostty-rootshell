@@ -747,11 +747,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .report_title => |style| {
-            const title: ?[:0]const u8 = title: {
-                if (!@hasDecl(apprt.runtime.Surface, "getTitle")) break :title null;
-                break :title self.rt_surface.getTitle();
-            };
-
+            const title: ?[:0]const u8 = self.rt_surface.getTitle();
             const data = switch (style) {
                 .csi_21_t => try std.fmt.allocPrint(
                     self.alloc,
@@ -838,9 +834,16 @@ fn passwordInput(self: *Surface, v: bool) !void {
     }
 
     // Notify our apprt so it can do whatever it wants.
-    if (@hasDecl(apprt.Surface, "setPasswordInput")) {
-        self.rt_surface.setPasswordInput(v);
-    }
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .secure_input,
+        if (v) .on else .off,
+    ) catch |err| {
+        // We ignore this error because we don't want to fail this
+        // entire operation just because the apprt failed to set
+        // the secure input state.
+        log.warn("apprt failed to set secure input state err={}", .{err});
+    };
 
     try self.queueRender();
 }
@@ -894,7 +897,6 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
 /// Called when our renderer health state changes.
 fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     log.warn("renderer health status change status={}", .{health});
-    if (!@hasDecl(apprt.runtime.Surface, "updateRendererHealth")) return;
     self.rt_surface.updateRendererHealth(health);
 }
 
@@ -1151,10 +1153,8 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
 
     // Check if our runtime supports the selection clipboard at all.
     // We can save a lot of work if it doesn't.
-    if (@hasDecl(apprt.runtime.Surface, "supportsClipboard")) {
-        if (!self.rt_surface.supportsClipboard(clipboard)) {
-            return;
-        }
+    if (!self.rt_surface.supportsClipboard(clipboard)) {
+        return;
     }
 
     const buf = self.io.terminal.screen.selectionString(self.alloc, .{
@@ -3656,113 +3656,99 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             v,
         ),
 
-        .new_tab => {
-            if (@hasDecl(apprt.Surface, "newTab")) {
-                try self.rt_surface.newTab();
-            } else log.warn("runtime doesn't implement newTab", .{});
-        },
+        .new_tab => try self.rt_app.performAction(
+            .{ .surface = self },
+            .new_tab,
+            {},
+        ),
 
-        .previous_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring previous_tab binding", .{});
-                    return false;
-                }
-            }
+        inline .previous_tab,
+        .next_tab,
+        .last_tab,
+        .goto_tab,
+        => |v, tag| try self.rt_app.performAction(
+            .{ .surface = self },
+            .goto_tab,
+            switch (tag) {
+                .previous_tab => .previous,
+                .next_tab => .next,
+                .last_tab => .last,
+                .goto_tab => @enumFromInt(v),
+                else => comptime unreachable,
+            },
+        ),
 
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.previous);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
+        .new_split => |direction| try self.rt_app.performAction(
+            .{ .surface = self },
+            .new_split,
+            switch (direction) {
+                .right => .right,
+                .down => .down,
+                .auto => if (self.screen_size.width > self.screen_size.height)
+                    .right
+                else
+                    .down,
+            },
+        ),
 
-        .next_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring next_tab binding", .{});
-                    return false;
-                }
-            }
+        .goto_split => |direction| try self.rt_app.performAction(
+            .{ .surface = self },
+            .goto_split,
+            switch (direction) {
+                inline else => |tag| @field(
+                    apprt.action.GotoSplit,
+                    @tagName(tag),
+                ),
+            },
+        ),
 
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.next);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
+        .resize_split => |value| try self.rt_app.performAction(
+            .{ .surface = self },
+            .resize_split,
+            .{
+                .amount = value[1],
+                .direction = switch (value[0]) {
+                    inline else => |tag| @field(
+                        apprt.action.ResizeSplit.Direction,
+                        @tagName(tag),
+                    ),
+                },
+            },
+        ),
 
-        .last_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring last_tab binding", .{});
-                    return false;
-                }
-            }
+        .equalize_splits => try self.rt_app.performAction(
+            .{ .surface = self },
+            .equalize_splits,
+            {},
+        ),
 
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.last);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
+        .toggle_split_zoom => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_split_zoom,
+            {},
+        ),
 
-        .goto_tab => |n| {
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(@enumFromInt(n));
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
+        .toggle_fullscreen => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_fullscreen,
+            switch (self.config.macos_non_native_fullscreen) {
+                .false => .native,
+                .true => .macos_non_native,
+                .@"visible-menu" => .macos_non_native_visible_menu,
+            },
+        ),
 
-        .new_split => |direction| {
-            if (@hasDecl(apprt.Surface, "newSplit")) {
-                try self.rt_surface.newSplit(switch (direction) {
-                    .right => .right,
-                    .down => .down,
-                    .auto => if (self.screen_size.width > self.screen_size.height)
-                        .right
-                    else
-                        .down,
-                });
-            } else log.warn("runtime doesn't implement newSplit", .{});
-        },
+        .toggle_window_decorations => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_window_decorations,
+            {},
+        ),
 
-        .goto_split => |direction| {
-            if (@hasDecl(apprt.Surface, "gotoSplit")) {
-                self.rt_surface.gotoSplit(direction);
-            } else log.warn("runtime doesn't implement gotoSplit", .{});
-        },
-
-        .resize_split => |param| {
-            if (@hasDecl(apprt.Surface, "resizeSplit")) {
-                const direction = param[0];
-                const amount = param[1];
-                self.rt_surface.resizeSplit(direction, amount);
-            } else log.warn("runtime doesn't implement resizeSplit", .{});
-        },
-
-        .equalize_splits => {
-            if (@hasDecl(apprt.Surface, "equalizeSplits")) {
-                self.rt_surface.equalizeSplits();
-            } else log.warn("runtime doesn't implement equalizeSplits", .{});
-        },
-
-        .toggle_split_zoom => {
-            if (@hasDecl(apprt.Surface, "toggleSplitZoom")) {
-                self.rt_surface.toggleSplitZoom();
-            } else log.warn("runtime doesn't implement toggleSplitZoom", .{});
-        },
-
-        .toggle_fullscreen => {
-            if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
-                self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);
-            } else log.warn("runtime doesn't implement toggleFullscreen", .{});
-        },
-
-        .toggle_window_decorations => {
-            if (@hasDecl(apprt.Surface, "toggleWindowDecorations")) {
-                self.rt_surface.toggleWindowDecorations();
-            } else log.warn("runtime doesn't implement toggleWindowDecorations", .{});
-        },
-
-        .toggle_secure_input => {
-            if (@hasDecl(apprt.Surface, "toggleSecureInput")) {
-                self.rt_surface.toggleSecureInput();
-            } else log.warn("runtime doesn't implement toggleSecureInput", .{});
-        },
+        .toggle_secure_input => try self.rt_app.performAction(
+            .{ .surface = self },
+            .secure_input,
+            .toggle,
+        ),
 
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
@@ -3772,11 +3758,16 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             }
         },
 
-        .inspector => |mode| {
-            if (@hasDecl(apprt.Surface, "controlInspector")) {
-                self.rt_surface.controlInspector(mode);
-            } else log.warn("runtime doesn't implement controlInspector", .{});
-        },
+        .inspector => |mode| try self.rt_app.performAction(
+            .{ .surface = self },
+            .inspector,
+            switch (mode) {
+                inline else => |tag| @field(
+                    apprt.action.Inspector,
+                    @tagName(tag),
+                ),
+            },
+        ),
 
         .close_surface => self.close(),
 
@@ -4163,11 +4154,6 @@ fn completeClipboardReadOSC52(
 }
 
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
-    if (comptime !@hasDecl(apprt.Surface, "showDesktopNotification")) {
-        log.warn("runtime doesn't support desktop notifications", .{});
-        return;
-    }
-
     // Wyhash is used to hash the contents of the desktop notification to limit
     // how fast identical notifications can be sent sequentially.
     const hash_algorithm = std.hash.Wyhash;
@@ -4203,7 +4189,14 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
 
     self.app.last_notification_time = now;
     self.app.last_notification_digest = new_digest;
-    try self.rt_surface.showDesktopNotification(title, body);
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .desktop_notification,
+        .{
+            .title = title,
+            .body = body,
+        },
+    );
 }
 
 fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
@@ -4216,9 +4209,11 @@ fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
 /// Tell the surface to present itself to the user. This may involve raising the
 /// window and switching tabs.
 fn presentSurface(self: *Surface) !void {
-    if (@hasDecl(apprt.Surface, "presentSurface")) {
-        self.rt_surface.presentSurface();
-    } else log.warn("runtime doesn't support presentSurface", .{});
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .present_terminal,
+        {},
+    );
 }
 
 pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");

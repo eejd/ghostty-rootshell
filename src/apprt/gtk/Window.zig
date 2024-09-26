@@ -421,11 +421,6 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
     self.notebook.closeTab(tab);
 }
 
-/// Returns true if this window has any tabs.
-pub fn hasTabs(self: *const Window) bool {
-    return self.notebook.nPages() > 0;
-}
-
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
     const tab = surface.container.tab() orelse {
@@ -464,7 +459,7 @@ pub fn gotoTab(self: *Window, n: usize) void {
 }
 
 /// Toggle fullscreen for this window.
-pub fn toggleFullscreen(self: *Window, _: configpkg.NonNativeFullscreen) void {
+pub fn toggleFullscreen(self: *Window) void {
     const is_fullscreen = c.gtk_window_is_fullscreen(self.window);
     if (is_fullscreen == 0) {
         c.gtk_window_fullscreen(self.window);
