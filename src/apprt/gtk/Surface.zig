@@ -790,11 +790,6 @@ pub fn newTab(self: *Surface) !void {
     try window.newTab(&self.core_surface);
 }
 
-pub fn hasTabs(self: *const Surface) bool {
-    const window = self.container.window() orelse return false;
-    return window.hasTabs();
-}
-
 pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
     const window = self.container.window() orelse {
         log.info(

@@ -421,11 +421,6 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
     self.notebook.closeTab(tab);
 }
 
-/// Returns true if this window has any tabs.
-pub fn hasTabs(self: *const Window) bool {
-    return self.notebook.nPages() > 0;
-}
-
 /// Go to the previous tab for a surface.
 pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
     const tab = surface.container.tab() orelse {

@@ -3670,39 +3670,18 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .previous_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring previous_tab binding", .{});
-                    return false;
-                }
-            }
-
             if (@hasDecl(apprt.Surface, "gotoTab")) {
                 self.rt_surface.gotoTab(.previous);
             } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
         .next_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring next_tab binding", .{});
-                    return false;
-                }
-            }
-
             if (@hasDecl(apprt.Surface, "gotoTab")) {
                 self.rt_surface.gotoTab(.next);
             } else log.warn("runtime doesn't implement gotoTab", .{});
         },
 
         .last_tab => {
-            if (@hasDecl(apprt.Surface, "hasTabs")) {
-                if (!self.rt_surface.hasTabs()) {
-                    log.debug("surface has no tabs, ignoring last_tab binding", .{});
-                    return false;
-                }
-            }
-
             if (@hasDecl(apprt.Surface, "gotoTab")) {
                 self.rt_surface.gotoTab(.last);
             } else log.warn("runtime doesn't implement gotoTab", .{});
