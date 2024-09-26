@@ -411,7 +411,6 @@ pub const Surface = struct {
     /// Initialize the surface into the given self pointer. This gives a
     /// stable pointer to the destination that can be used for callbacks.
     pub fn init(self: *Surface, app: *App) !void {
-
         // Create our window
         const win = glfw.Window.create(
             640,
@@ -713,6 +712,23 @@ pub const Surface = struct {
     /// Set the visibility of the mouse cursor.
     pub fn setMouseVisibility(self: *Surface, visible: bool) void {
         self.window.setInputModeCursor(if (visible) .normal else .hidden);
+    }
+
+    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
+        // We don't support this in GLFW.
+        _ = self;
+        _ = health;
+    }
+
+    pub fn supportsClipboard(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) bool {
+        _ = self;
+        return switch (clipboard_type) {
+            .standard => true,
+            .selection, .primary => comptime builtin.os.tag == .linux,
+        };
     }
 
     /// Start an async clipboard request.

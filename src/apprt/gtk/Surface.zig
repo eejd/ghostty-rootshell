@@ -9,6 +9,7 @@ const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
 const input = @import("../../input.zig");
+const renderer = @import("../../renderer.zig");
 const terminal = @import("../../terminal/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 const internal_os = @import("../../os/main.zig");
@@ -940,6 +941,19 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
     }
 
     self.url_widget = URLWidget.init(self, uriZ);
+}
+
+pub fn supportsClipboard(
+    self: *const Surface,
+    clipboard_type: apprt.Clipboard,
+) bool {
+    _ = self;
+    return switch (clipboard_type) {
+        .standard,
+        .selection,
+        .primary,
+        => true,
+    };
 }
 
 pub fn clipboardRequest(
@@ -1906,4 +1920,10 @@ pub fn present(self: *Surface) void {
     }
 
     self.grabFocus();
+}
+
+pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
+    // We don't support this in GTK.
+    _ = self;
+    _ = health;
 }

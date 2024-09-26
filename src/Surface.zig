@@ -747,11 +747,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .report_title => |style| {
-            const title: ?[:0]const u8 = title: {
-                if (!@hasDecl(apprt.runtime.Surface, "getTitle")) break :title null;
-                break :title self.rt_surface.getTitle();
-            };
-
+            const title: ?[:0]const u8 = self.rt_surface.getTitle();
             const data = switch (style) {
                 .csi_21_t => try std.fmt.allocPrint(
                     self.alloc,
@@ -901,7 +897,6 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
 /// Called when our renderer health state changes.
 fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     log.warn("renderer health status change status={}", .{health});
-    if (!@hasDecl(apprt.runtime.Surface, "updateRendererHealth")) return;
     self.rt_surface.updateRendererHealth(health);
 }
 
@@ -1158,10 +1153,8 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
 
     // Check if our runtime supports the selection clipboard at all.
     // We can save a lot of work if it doesn't.
-    if (@hasDecl(apprt.runtime.Surface, "supportsClipboard")) {
-        if (!self.rt_surface.supportsClipboard(clipboard)) {
-            return;
-        }
+    if (!self.rt_surface.supportsClipboard(clipboard)) {
+        return;
     }
 
     const buf = self.io.terminal.screen.selectionString(self.alloc, .{
