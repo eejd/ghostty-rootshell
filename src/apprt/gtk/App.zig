@@ -1098,8 +1098,12 @@ fn gtkActionPresentSurface(
         return;
     }
 
-    // Convert that u64 to pointer to a core surface.
-    const surface: *CoreSurface = @ptrFromInt(c.g_variant_get_uint64(parameter));
+    // Convert that u64 to pointer to a core surface. A value of zero
+    // means that there was no target surface for the notification so
+    // we dont' focus any surface.
+    const ptr_int: u64 = c.g_variant_get_uint64(parameter);
+    if (ptr_int == 0) return;
+    const surface: *CoreSurface = @ptrFromInt(ptr_int);
 
     // Send a message through the core app mailbox rather than presenting the
     // surface directly so that it can validate that the surface pointer is
