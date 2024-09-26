@@ -81,7 +81,7 @@ pub const App = struct {
 
         /// Create a new split view. If the embedder doesn't support split
         /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, apprt.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
+        new_split: ?*const fn (SurfaceUD, apprt.action.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
 
         /// New tab with options. The surface may be null if there is no target
         /// surface in which case the apprt is expected to create a new window.
@@ -98,10 +98,10 @@ pub const App = struct {
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
 
         /// Focus the previous/next split (if any).
-        focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
+        focus_split: ?*const fn (SurfaceUD, apprt.action.GotoSplit) callconv(.C) void = null,
 
         /// Resize the current split.
-        resize_split: ?*const fn (SurfaceUD, input.SplitResizeDirection, u16) callconv(.C) void = null,
+        resize_split: ?*const fn (SurfaceUD, apprt.action.ResizeSplit.Direction, u16) callconv(.C) void = null,
 
         /// Equalize all splits in the current window
         equalize_splits: ?*const fn (SurfaceUD) callconv(.C) void = null,
@@ -534,16 +534,113 @@ pub const App = struct {
         }
     }
 
-    fn setPasswordInput(self: *App, target: apprt.Target, v: bool) void {
-        const func = self.opts.set_password_input orelse {
-            log.info("runtime embedder does not support set_password_input", .{});
+    fn newSplit(
+        self: *const App,
+        target: apprt.Target,
+        direction: apprt.action.SplitDirection,
+    ) void {
+        const func = self.opts.new_split orelse {
+            log.info("runtime embedder does not support splits", .{});
             return;
         };
 
-        func(switch (target) {
-            .app => null,
-            .surface => |surface| surface.rt_surface.userdata,
-        }, v);
+        switch (target) {
+            .app => func(null, direction, .{}),
+            .surface => |v| func(
+                v.rt_surface.userdata,
+                direction,
+                v.rt_surface.newSurfaceOptions(),
+            ),
+        }
+    }
+
+    fn gotoSplit(
+        self: *const App,
+        target: apprt.Target,
+        direction: apprt.action.GotoSplit,
+    ) void {
+        const func = self.opts.focus_split orelse {
+            log.info("runtime embedder does not support focus split", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => {},
+            .surface => |v| func(v.rt_surface.userdata, direction),
+        }
+    }
+
+    fn resizeSplit(
+        self: *const App,
+        target: apprt.Target,
+        resize: apprt.action.ResizeSplit,
+    ) void {
+        const func = self.opts.resize_split orelse {
+            log.info("runtime embedder does not support resize split", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => {},
+            .surface => |v| func(
+                v.rt_surface.userdata,
+                resize.direction,
+                resize.amount,
+            ),
+        }
+    }
+
+    pub fn equalizeSplits(self: *const App, target: apprt.Target) void {
+        const func = self.opts.equalize_splits orelse {
+            log.info("runtime embedder does not support equalize splits", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => func(null),
+            .surface => |v| func(v.rt_surface.userdata),
+        }
+    }
+
+    fn toggleSplitZoom(self: *const App, target: apprt.Target) void {
+        const func = self.opts.toggle_split_zoom orelse {
+            log.info("runtime embedder does not support split zoom", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => func(null),
+            .surface => |v| func(v.rt_surface.userdata),
+        }
+    }
+
+    fn setPasswordInput(self: *App, target: apprt.Target, v: apprt.action.SecureInput) void {
+        switch (v) {
+            inline .on, .off => |tag| {
+                const func = self.opts.set_password_input orelse {
+                    log.info("runtime embedder does not support set_password_input", .{});
+                    return;
+                };
+
+                func(switch (target) {
+                    .app => null,
+                    .surface => |surface| surface.rt_surface.userdata,
+                }, switch (tag) {
+                    .on => true,
+                    .off => false,
+                    else => comptime unreachable,
+                });
+            },
+
+            .toggle => {
+                const func = self.opts.toggle_secure_input orelse {
+                    log.info("runtime embedder does not support toggle_secure_input", .{});
+                    return;
+                };
+
+                func();
+            },
+        }
     }
 
     /// Perform a given action.
@@ -561,11 +658,17 @@ pub const App = struct {
 
             .new_tab => self.newTab(target),
             .goto_tab => self.gotoTab(target, value),
+            .new_split => self.newSplit(target, value),
+            .resize_split => self.resizeSplit(target, value),
+            .equalize_splits => self.equalizeSplits(target),
+            .toggle_split_zoom => self.toggleSplitZoom(target),
+            .goto_split => self.gotoSplit(target, value),
             .open_config => try configpkg.edit.open(self.core_app.alloc),
             .secure_input => self.setPasswordInput(target, value),
 
             // Unimplemented
             .close_all_windows,
+            .toggle_window_decorations,
             .quit_timer,
             => log.warn("unimplemented action={}", .{action}),
         }
@@ -795,16 +898,6 @@ pub const Surface = struct {
         func(self.userdata, mode);
     }
 
-    pub fn newSplit(self: *const Surface, direction: apprt.SplitDirection) !void {
-        const func = self.app.opts.new_split orelse {
-            log.info("runtime embedder does not support splits", .{});
-            return;
-        };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, direction, options);
-    }
-
     pub fn close(self: *const Surface, process_alive: bool) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});
@@ -812,42 +905,6 @@ pub const Surface = struct {
         };
 
         func(self.userdata, process_alive);
-    }
-
-    pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
-        const func = self.app.opts.focus_split orelse {
-            log.info("runtime embedder does not support focus split", .{});
-            return;
-        };
-
-        func(self.userdata, direction);
-    }
-
-    pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
-        const func = self.app.opts.resize_split orelse {
-            log.info("runtime embedder does not support resize split", .{});
-            return;
-        };
-
-        func(self.userdata, direction, amount);
-    }
-
-    pub fn equalizeSplits(self: *const Surface) void {
-        const func = self.app.opts.equalize_splits orelse {
-            log.info("runtime embedder does not support equalize splits", .{});
-            return;
-        };
-
-        func(self.userdata);
-    }
-
-    pub fn toggleSplitZoom(self: *const Surface) void {
-        const func = self.app.opts.toggle_split_zoom orelse {
-            log.info("runtime embedder does not support split zoom", .{});
-            return;
-        };
-
-        func(self.userdata);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
@@ -1135,15 +1192,6 @@ pub const Surface = struct {
         };
 
         func(self.userdata, nonNativeFullscreen);
-    }
-
-    pub fn toggleSecureInput(self: *Surface) void {
-        const func = self.app.opts.toggle_secure_input orelse {
-            log.info("runtime embedder does not toggle_secure_input", .{});
-            return;
-        };
-
-        func();
     }
 
     fn newWindow(self: *const Surface) !void {
@@ -1899,26 +1947,61 @@ pub const CAPI = struct {
     }
 
     /// Request that the surface split in the given direction.
-    export fn ghostty_surface_split(ptr: *Surface, direction: apprt.SplitDirection) void {
-        ptr.newSplit(direction) catch {};
+    export fn ghostty_surface_split(ptr: *Surface, direction: apprt.action.SplitDirection) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .new_split,
+            direction,
+        ) catch |err| {
+            log.err("error creating new split err={}", .{err});
+            return;
+        };
     }
 
     /// Focus on the next split (if any).
-    export fn ghostty_surface_split_focus(ptr: *Surface, direction: input.SplitFocusDirection) void {
-        ptr.gotoSplit(direction);
+    export fn ghostty_surface_split_focus(
+        ptr: *Surface,
+        direction: apprt.action.GotoSplit,
+    ) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .goto_split,
+            direction,
+        ) catch |err| {
+            log.err("error creating new split err={}", .{err});
+            return;
+        };
     }
 
     /// Resize the current split by moving the split divider in the given
     /// direction. `direction` specifies which direction the split divider will
     /// move relative to the focused split. `amount` is a fractional value
     /// between 0 and 1 that specifies by how much the divider will move.
-    export fn ghostty_surface_split_resize(ptr: *Surface, direction: input.SplitResizeDirection, amount: u16) void {
-        ptr.resizeSplit(direction, amount);
+    export fn ghostty_surface_split_resize(
+        ptr: *Surface,
+        direction: apprt.action.ResizeSplit.Direction,
+        amount: u16,
+    ) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .resize_split,
+            .{ .direction = direction, .amount = amount },
+        ) catch |err| {
+            log.err("error resizing split err={}", .{err});
+            return;
+        };
     }
 
     /// Equalize the size of all splits in the current window.
     export fn ghostty_surface_split_equalize(ptr: *Surface) void {
-        ptr.equalizeSplits();
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .equalize_splits,
+            {},
+        ) catch |err| {
+            log.err("error equalizing splits err={}", .{err});
+            return;
+        };
     }
 
     /// Invoke an action on the surface.

@@ -410,8 +410,7 @@ pub const Action = union(enum) {
         // Note: we don't support top or left yet
     };
 
-    // Extern because it is used in the embedded runtime ABI.
-    pub const SplitFocusDirection = enum(c_int) {
+    pub const SplitFocusDirection = enum {
         previous,
         next,
 
@@ -421,8 +420,7 @@ pub const Action = union(enum) {
         right,
     };
 
-    // Extern because it is used in the embedded runtime ABI.
-    pub const SplitResizeDirection = enum(c_int) {
+    pub const SplitResizeDirection = enum {
         up,
         down,
         left,

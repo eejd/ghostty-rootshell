@@ -21,12 +21,32 @@ pub const Action = union(enum) {
     /// the tab should be opened in a new window.
     new_tab,
 
+    /// Create a new split. The value determines the location of the split
+    /// relative to the target.
+    new_split: SplitDirection,
+
+    /// Close all open windows.
+    close_all_windows,
+
+    /// Toggle whether window directions are shown.
+    toggle_window_decorations,
+
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
     goto_tab: GotoTab,
 
-    /// Close all open windows.
-    close_all_windows,
+    /// Jump to a specific split.
+    goto_split: GotoSplit,
+
+    /// Resize the split in the given direction.
+    resize_split: ResizeSplit,
+
+    /// Equalize all the splits in the target window.
+    equalize_splits,
+
+    /// Toggle whether a split is zoomed or not. A zoomed split is resized
+    /// to take up the entire window.
+    toggle_split_zoom,
 
     /// Open the Ghostty configuration. This is platform-specific about
     /// what it means; it can mean opening a dedicated UI or just opening
@@ -44,7 +64,7 @@ pub const Action = union(enum) {
     /// entering a password or other sensitive information. This can be used
     /// by the app runtime to change the appearance of the cursor, setup
     /// system APIs to not log the input, etc.
-    secure_input: bool,
+    secure_input: SecureInput,
 
     /// The enum of keys in the tagged union.
     pub const Key = @typeInfo(Action).Union.tag_type.?;
@@ -68,6 +88,38 @@ pub const Target = union(enum) {
     surface: *CoreSurface,
 };
 
+// This is made extern (c_int) to make interop easier with our embedded
+// runtime. The small size cost doesn't make a difference in our union.
+pub const SplitDirection = enum(c_int) {
+    right,
+    down,
+};
+
+// This is made extern (c_int) to make interop easier with our embedded
+// runtime. The small size cost doesn't make a difference in our union.
+pub const GotoSplit = enum(c_int) {
+    previous,
+    next,
+
+    top,
+    left,
+    bottom,
+    right,
+};
+
+/// The amount to resize the split by and the direction to resize it in.
+pub const ResizeSplit = struct {
+    amount: u16,
+    direction: Direction,
+
+    pub const Direction = enum(c_int) {
+        up,
+        down,
+        left,
+        right,
+    };
+};
+
 /// The tab to jump to. This is non-exhaustive so that integer values represent
 /// the index (zero-based) of the tab to jump to. Negative values are special
 /// values.
@@ -76,4 +128,10 @@ pub const GotoTab = enum(c_int) {
     next = -2,
     last = -3,
     _,
+};
+
+pub const SecureInput = enum(c_int) {
+    on,
+    off,
+    toggle,
 };

@@ -841,7 +841,7 @@ fn passwordInput(self: *Surface, v: bool) !void {
     self.rt_app.performAction(
         .{ .surface = self },
         .secure_input,
-        v,
+        if (v) .on else .off,
     ) catch |err| {
         // We ignore this error because we don't want to fail this
         // entire operation just because the apprt failed to set
@@ -3685,44 +3685,55 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             },
         ),
 
-        .new_split => |direction| {
-            if (@hasDecl(apprt.Surface, "newSplit")) {
-                try self.rt_surface.newSplit(switch (direction) {
-                    .right => .right,
-                    .down => .down,
-                    .auto => if (self.screen_size.width > self.screen_size.height)
-                        .right
-                    else
-                        .down,
-                });
-            } else log.warn("runtime doesn't implement newSplit", .{});
-        },
+        .new_split => |direction| try self.rt_app.performAction(
+            .{ .surface = self },
+            .new_split,
+            switch (direction) {
+                .right => .right,
+                .down => .down,
+                .auto => if (self.screen_size.width > self.screen_size.height)
+                    .right
+                else
+                    .down,
+            },
+        ),
 
-        .goto_split => |direction| {
-            if (@hasDecl(apprt.Surface, "gotoSplit")) {
-                self.rt_surface.gotoSplit(direction);
-            } else log.warn("runtime doesn't implement gotoSplit", .{});
-        },
+        .goto_split => |direction| try self.rt_app.performAction(
+            .{ .surface = self },
+            .goto_split,
+            switch (direction) {
+                inline else => |tag| @field(
+                    apprt.action.GotoSplit,
+                    @tagName(tag),
+                ),
+            },
+        ),
 
-        .resize_split => |param| {
-            if (@hasDecl(apprt.Surface, "resizeSplit")) {
-                const direction = param[0];
-                const amount = param[1];
-                self.rt_surface.resizeSplit(direction, amount);
-            } else log.warn("runtime doesn't implement resizeSplit", .{});
-        },
+        .resize_split => |value| try self.rt_app.performAction(
+            .{ .surface = self },
+            .resize_split,
+            .{
+                .amount = value[1],
+                .direction = switch (value[0]) {
+                    inline else => |tag| @field(
+                        apprt.action.ResizeSplit.Direction,
+                        @tagName(tag),
+                    ),
+                },
+            },
+        ),
 
-        .equalize_splits => {
-            if (@hasDecl(apprt.Surface, "equalizeSplits")) {
-                self.rt_surface.equalizeSplits();
-            } else log.warn("runtime doesn't implement equalizeSplits", .{});
-        },
+        .equalize_splits => try self.rt_app.performAction(
+            .{ .surface = self },
+            .equalize_splits,
+            {},
+        ),
 
-        .toggle_split_zoom => {
-            if (@hasDecl(apprt.Surface, "toggleSplitZoom")) {
-                self.rt_surface.toggleSplitZoom();
-            } else log.warn("runtime doesn't implement toggleSplitZoom", .{});
-        },
+        .toggle_split_zoom => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_split_zoom,
+            {},
+        ),
 
         .toggle_fullscreen => {
             if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
@@ -3730,17 +3741,17 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             } else log.warn("runtime doesn't implement toggleFullscreen", .{});
         },
 
-        .toggle_window_decorations => {
-            if (@hasDecl(apprt.Surface, "toggleWindowDecorations")) {
-                self.rt_surface.toggleWindowDecorations();
-            } else log.warn("runtime doesn't implement toggleWindowDecorations", .{});
-        },
+        .toggle_window_decorations => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_window_decorations,
+            {},
+        ),
 
-        .toggle_secure_input => {
-            if (@hasDecl(apprt.Surface, "toggleSecureInput")) {
-                self.rt_surface.toggleSecureInput();
-            } else log.warn("runtime doesn't implement toggleSecureInput", .{});
-        },
+        .toggle_secure_input => try self.rt_app.performAction(
+            .{ .surface = self },
+            .secure_input,
+            .toggle,
+        ),
 
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();

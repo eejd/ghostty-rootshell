@@ -62,13 +62,6 @@ pub const DesktopNotification = struct {
     body: []const u8,
 };
 
-// This is made extern (c_int) to make interop easier with our embedded
-// runtime. The small size cost doesn't make a difference in our union.
-pub const SplitDirection = enum(c_int) {
-    right,
-    down,
-};
-
 /// The color scheme in use (light vs dark).
 pub const ColorScheme = enum(u2) {
     light = 0,

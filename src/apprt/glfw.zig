@@ -150,7 +150,13 @@ pub const App = struct {
             .open_config => try configpkg.edit.open(self.app.alloc),
 
             // Unimplemented
+            .new_split,
+            .goto_split,
+            .resize_split,
+            .equalize_splits,
+            .toggle_split_zoom,
             .close_all_windows,
+            .toggle_window_decorations,
             .goto_tab,
             .quit_timer,
             .secure_input,

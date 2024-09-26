@@ -32,10 +32,8 @@ pub const ClipboardRequestType = structs.ClipboardRequestType;
 pub const ColorScheme = structs.ColorScheme;
 pub const CursorPos = structs.CursorPos;
 pub const DesktopNotification = structs.DesktopNotification;
-pub const GotoTab = structs.GotoTab;
 pub const IMEPos = structs.IMEPos;
 pub const Selection = structs.Selection;
-pub const SplitDirection = structs.SplitDirection;
 pub const SurfaceSize = structs.SurfaceSize;
 
 /// The implementation to use for the app runtime. This is comptime chosen
