@@ -28,6 +28,9 @@ pub const Action = union(enum) {
     /// Close all open windows.
     close_all_windows,
 
+    /// Toggle fullscreen mode.
+    toggle_fullscreen: Fullscreen,
+
     /// Toggle whether window directions are shown.
     toggle_window_decorations,
 
@@ -47,6 +50,15 @@ pub const Action = union(enum) {
     /// Toggle whether a split is zoomed or not. A zoomed split is resized
     /// to take up the entire window.
     toggle_split_zoom,
+
+    /// Present the target terminal whether its a tab, split, or window.
+    present_terminal,
+
+    /// Control whether the inspector is shown or hidden.
+    inspector: Inspector,
+
+    /// Show a desktop notification.
+    desktop_notification: DesktopNotification,
 
     /// Open the Ghostty configuration. This is platform-specific about
     /// what it means; it can mean opening a dedicated UI or just opening
@@ -130,8 +142,31 @@ pub const GotoTab = enum(c_int) {
     _,
 };
 
+/// The fullscreen mode to toggle to if we're moving to fullscreen.
+pub const Fullscreen = enum(c_int) {
+    native,
+
+    /// macOS has a non-native fullscreen mode that is more like a maximized
+    /// window. This is much faster to enter and exit than the native mode.
+    macos_non_native,
+    macos_non_native_visible_menu,
+};
+
 pub const SecureInput = enum(c_int) {
     on,
     off,
     toggle,
+};
+
+/// The inspector mode to toggle to if we're toggling the inspector.
+pub const Inspector = enum(c_int) {
+    toggle,
+    show,
+    hide,
+};
+
+/// The desktop notification to show.
+pub const DesktopNotification = struct {
+    title: [:0]const u8,
+    body: [:0]const u8,
 };

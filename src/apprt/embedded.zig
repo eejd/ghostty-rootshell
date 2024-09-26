@@ -92,7 +92,7 @@ pub const App = struct {
         new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
         /// Control the inspector visibility
-        control_inspector: ?*const fn (SurfaceUD, input.InspectorMode) callconv(.C) void = null,
+        control_inspector: ?*const fn (SurfaceUD, apprt.action.Inspector) callconv(.C) void = null,
 
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
@@ -125,7 +125,8 @@ pub const App = struct {
         /// Called when the cell size changes.
         set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
 
-        /// Show a desktop notification to the user.
+        /// Show a desktop notification to the user. The surface may be null
+        /// if the notification is global.
         show_desktop_notification: ?*const fn (SurfaceUD, [*:0]const u8, [*:0]const u8) void = null,
 
         /// Called when the health of the renderer changes.
@@ -507,6 +508,29 @@ pub const App = struct {
         func(null, .{});
     }
 
+    fn toggleFullscreen(
+        self: *App,
+        target: apprt.Target,
+        fullscreen: apprt.action.Fullscreen,
+    ) void {
+        const func = self.opts.toggle_fullscreen orelse {
+            log.info("runtime embedder does not toggle_fullscreen", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => {},
+            .surface => |v| func(
+                v.rt_surface.userdata,
+                switch (fullscreen) {
+                    .native => .false,
+                    .macos_non_native => .true,
+                    .macos_non_native_visible_menu => .@"visible-menu",
+                },
+            ),
+        }
+    }
+
     fn newTab(self: *const App, target: apprt.Target) void {
         const func = self.opts.new_tab orelse {
             log.info("runtime embedder does not support new_tab", .{});
@@ -614,6 +638,38 @@ pub const App = struct {
         }
     }
 
+    fn controlInspector(
+        self: *const App,
+        target: apprt.Target,
+        value: apprt.action.Inspector,
+    ) void {
+        const func = self.opts.control_inspector orelse {
+            log.info("runtime embedder does not support the terminal inspector", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => {},
+            .surface => |v| func(v.rt_surface.userdata, value),
+        }
+    }
+
+    fn showDesktopNotification(
+        self: *const App,
+        target: apprt.Target,
+        notification: apprt.action.DesktopNotification,
+    ) void {
+        const func = self.opts.show_desktop_notification orelse {
+            log.info("runtime embedder does not support show_desktop_notification", .{});
+            return;
+        };
+
+        func(switch (target) {
+            .app => null,
+            .surface => |v| v.rt_surface.userdata,
+        }, notification.title, notification.body);
+    }
+
     fn setPasswordInput(self: *App, target: apprt.Target, v: apprt.action.SecureInput) void {
         switch (v) {
             inline .on, .off => |tag| {
@@ -655,6 +711,7 @@ pub const App = struct {
                 .app => null,
                 .surface => |v| v,
             }),
+            .toggle_fullscreen => self.toggleFullscreen(target, value),
 
             .new_tab => self.newTab(target),
             .goto_tab => self.gotoTab(target, value),
@@ -664,9 +721,12 @@ pub const App = struct {
             .toggle_split_zoom => self.toggleSplitZoom(target),
             .goto_split => self.gotoSplit(target, value),
             .open_config => try configpkg.edit.open(self.core_app.alloc),
+            .inspector => self.controlInspector(target, value),
+            .desktop_notification => self.showDesktopNotification(target, value),
             .secure_input => self.setPasswordInput(target, value),
 
             // Unimplemented
+            .present_terminal,
             .close_all_windows,
             .toggle_window_decorations,
             .quit_timer,
@@ -887,15 +947,6 @@ pub const Surface = struct {
             self.app.core_app.alloc.destroy(v);
             self.inspector = null;
         }
-    }
-
-    pub fn controlInspector(self: *const Surface, mode: input.InspectorMode) void {
-        const func = self.app.opts.control_inspector orelse {
-            log.info("runtime embedder does not support the terminal inspector", .{});
-            return;
-        };
-
-        func(self.userdata, mode);
     }
 
     pub fn close(self: *const Surface, process_alive: bool) void {
@@ -1185,15 +1236,6 @@ pub const Surface = struct {
         };
     }
 
-    pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
-        const func = self.app.opts.toggle_fullscreen orelse {
-            log.info("runtime embedder does not toggle_fullscreen", .{});
-            return;
-        };
-
-        func(self.userdata, nonNativeFullscreen);
-    }
-
     fn newWindow(self: *const Surface) !void {
         const func = self.app.opts.new_window orelse {
             log.info("runtime embedder does not support new_window", .{});
@@ -1247,20 +1289,6 @@ pub const Surface = struct {
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
-    }
-
-    /// Show a desktop notification.
-    pub fn showDesktopNotification(
-        self: *const Surface,
-        title: [:0]const u8,
-        body: [:0]const u8,
-    ) !void {
-        const func = self.app.opts.show_desktop_notification orelse {
-            log.info("runtime embedder does not support show_desktop_notification", .{});
-            return;
-        };
-
-        func(self.userdata, title, body);
     }
 
     /// Update the health of the renderer.

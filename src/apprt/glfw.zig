@@ -147,6 +147,8 @@ pub const App = struct {
                 .surface => |v| v,
             }),
 
+            .toggle_fullscreen => self.toggleFullscreen(target),
+
             .open_config => try configpkg.edit.open(self.app.alloc),
 
             // Unimplemented
@@ -155,11 +157,14 @@ pub const App = struct {
             .resize_split,
             .equalize_splits,
             .toggle_split_zoom,
+            .present_terminal,
             .close_all_windows,
             .toggle_window_decorations,
             .goto_tab,
+            .inspector,
             .quit_timer,
             .secure_input,
+            .desktop_notification,
             => log.info("unimplemented action={}", .{action}),
         }
     }
@@ -182,8 +187,12 @@ pub const App = struct {
     }
 
     /// Toggle the window to fullscreen mode.
-    pub fn toggleFullscreen(self: *App, surface: *Surface) void {
+    fn toggleFullscreen(self: *App, target: apprt.Target) void {
         _ = self;
+        const surface: *Surface = switch (target) {
+            .app => return,
+            .surface => |v| v.rt_surface,
+        };
         const win = surface.window;
 
         if (surface.isFullscreen()) {
@@ -560,10 +569,6 @@ pub const Surface = struct {
     /// Checks if the glfw window is in fullscreen.
     pub fn isFullscreen(self: *Surface) bool {
         return self.window.getMonitor() != null;
-    }
-
-    pub fn toggleFullscreen(self: *Surface, _: Config.NonNativeFullscreen) void {
-        self.app.toggleFullscreen(self);
     }
 
     /// Close this surface.

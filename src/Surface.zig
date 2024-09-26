@@ -3735,11 +3735,15 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
-        .toggle_fullscreen => {
-            if (@hasDecl(apprt.Surface, "toggleFullscreen")) {
-                self.rt_surface.toggleFullscreen(self.config.macos_non_native_fullscreen);
-            } else log.warn("runtime doesn't implement toggleFullscreen", .{});
-        },
+        .toggle_fullscreen => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_fullscreen,
+            switch (self.config.macos_non_native_fullscreen) {
+                .false => .native,
+                .true => .macos_non_native,
+                .@"visible-menu" => .macos_non_native_visible_menu,
+            },
+        ),
 
         .toggle_window_decorations => try self.rt_app.performAction(
             .{ .surface = self },
@@ -3761,11 +3765,16 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             }
         },
 
-        .inspector => |mode| {
-            if (@hasDecl(apprt.Surface, "controlInspector")) {
-                self.rt_surface.controlInspector(mode);
-            } else log.warn("runtime doesn't implement controlInspector", .{});
-        },
+        .inspector => |mode| try self.rt_app.performAction(
+            .{ .surface = self },
+            .inspector,
+            switch (mode) {
+                inline else => |tag| @field(
+                    apprt.action.Inspector,
+                    @tagName(tag),
+                ),
+            },
+        ),
 
         .close_surface => self.close(),
 
@@ -4152,11 +4161,6 @@ fn completeClipboardReadOSC52(
 }
 
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
-    if (comptime !@hasDecl(apprt.Surface, "showDesktopNotification")) {
-        log.warn("runtime doesn't support desktop notifications", .{});
-        return;
-    }
-
     // Wyhash is used to hash the contents of the desktop notification to limit
     // how fast identical notifications can be sent sequentially.
     const hash_algorithm = std.hash.Wyhash;
@@ -4192,7 +4196,14 @@ fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const 
 
     self.app.last_notification_time = now;
     self.app.last_notification_digest = new_digest;
-    try self.rt_surface.showDesktopNotification(title, body);
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .desktop_notification,
+        .{
+            .title = title,
+            .body = body,
+        },
+    );
 }
 
 fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
@@ -4205,9 +4216,11 @@ fn crashThreadState(self: *Surface) crash.sentry.ThreadState {
 /// Tell the surface to present itself to the user. This may involve raising the
 /// window and switching tabs.
 fn presentSurface(self: *Surface) !void {
-    if (@hasDecl(apprt.Surface, "presentSurface")) {
-        self.rt_surface.presentSurface();
-    } else log.warn("runtime doesn't support presentSurface", .{});
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .present_terminal,
+        {},
+    );
 }
 
 pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");

@@ -438,7 +438,7 @@ pub const Action = union(enum) {
     };
 
     // Extern because it is used in the embedded runtime ABI.
-    pub const InspectorMode = enum(c_int) {
+    pub const InspectorMode = enum {
         toggle,
         show,
         hide,
