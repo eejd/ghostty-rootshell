@@ -27,6 +27,7 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
+const Split = @import("Split.zig");
 const c = @import("c.zig").c;
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
@@ -341,9 +342,249 @@ pub fn terminate(self: *App) void {
     self.config.deinit();
 }
 
-/// Open the configuration in the system editor.
-pub fn openConfig(self: *App) !void {
-    try configpkg.edit.open(self.core_app.alloc);
+/// Perform a given action.
+pub fn performAction(
+    self: *App,
+    target: apprt.Target,
+    comptime action: apprt.Action.Key,
+    value: apprt.Action.Value(action),
+) !void {
+    switch (action) {
+        .new_window => _ = try self.newWindow(switch (target) {
+            .app => null,
+            .surface => |v| v,
+        }),
+        .toggle_fullscreen => self.toggleFullscreen(target, value),
+
+        .new_tab => try self.newTab(target),
+        .goto_tab => self.gotoTab(target, value),
+        .new_split => try self.newSplit(target, value),
+        .resize_split => self.resizeSplit(target, value),
+        .equalize_splits => self.equalizeSplits(target),
+        .goto_split => self.gotoSplit(target, value),
+        .open_config => try configpkg.edit.open(self.core_app.alloc),
+        .inspector => self.controlInspector(target, value),
+        .desktop_notification => self.showDesktopNotification(target, value),
+        .present_terminal => self.presentTerminal(target),
+        .toggle_window_decorations => self.toggleWindowDecorations(target),
+        .quit_timer => self.quitTimer(value),
+
+        // Unimplemented
+        .close_all_windows,
+        .toggle_split_zoom,
+        .secure_input,
+        => log.warn("unimplemented action={}", .{action}),
+    }
+}
+
+fn newTab(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse {
+                log.info(
+                    "new_tab invalid for container={s}",
+                    .{@tagName(v.rt_surface.container)},
+                );
+                return;
+            };
+
+            try window.newTab(v);
+        },
+    }
+}
+
+fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse {
+                log.info(
+                    "gotoTab invalid for container={s}",
+                    .{@tagName(v.rt_surface.container)},
+                );
+                return;
+            };
+
+            switch (tab) {
+                .previous => window.gotoPreviousTab(v.rt_surface),
+                .next => window.gotoNextTab(v.rt_surface),
+                .last => window.gotoLastTab(),
+                else => window.gotoTab(@intCast(@intFromEnum(tab))),
+            }
+        },
+    }
+}
+
+fn newSplit(
+    self: *App,
+    target: apprt.Target,
+    direction: apprt.action.SplitDirection,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const alloc = self.core_app.alloc;
+            _ = try Split.create(alloc, v.rt_surface, direction);
+        },
+    }
+}
+
+fn equalizeSplits(_: *App, target: apprt.Target) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const tab = v.rt_surface.container.tab() orelse return;
+            const top_split = switch (tab.elem) {
+                .split => |s| s,
+                else => return,
+            };
+            _ = top_split.equalize();
+        },
+    }
+}
+
+fn gotoSplit(
+    _: *const App,
+    target: apprt.Target,
+    direction: apprt.action.GotoSplit,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const s = v.rt_surface.container.split() orelse return;
+            const map = s.directionMap(switch (v.rt_surface.container) {
+                .split_tl => .top_left,
+                .split_br => .bottom_right,
+                .none, .tab_ => unreachable,
+            });
+            const surface_ = map.get(direction) orelse return;
+            if (surface_) |surface| surface.grabFocus();
+        },
+    }
+}
+
+fn resizeSplit(
+    _: *const App,
+    target: apprt.Target,
+    resize: apprt.action.ResizeSplit,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const s = v.rt_surface.container.firstSplitWithOrientation(
+                Split.Orientation.fromResizeDirection(resize.direction),
+            ) orelse return;
+            s.moveDivider(resize.direction, resize.amount);
+        },
+    }
+}
+
+fn presentTerminal(
+    _: *const App,
+    target: apprt.Target,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| v.rt_surface.present(),
+    }
+}
+
+fn controlInspector(
+    _: *const App,
+    target: apprt.Target,
+    mode: apprt.action.Inspector,
+) void {
+    const surface: *Surface = switch (target) {
+        .app => return,
+        .surface => |v| v.rt_surface,
+    };
+
+    surface.controlInspector(mode);
+}
+
+fn toggleFullscreen(
+    _: *App,
+    target: apprt.Target,
+    _: apprt.action.Fullscreen,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse {
+                log.info(
+                    "toggleFullscreen invalid for container={s}",
+                    .{@tagName(v.rt_surface.container)},
+                );
+                return;
+            };
+
+            window.toggleFullscreen();
+        },
+    }
+}
+
+fn toggleWindowDecorations(
+    _: *App,
+    target: apprt.Target,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse {
+                log.info(
+                    "toggleFullscreen invalid for container={s}",
+                    .{@tagName(v.rt_surface.container)},
+                );
+                return;
+            };
+
+            window.toggleWindowDecorations();
+        },
+    }
+}
+
+fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
+    switch (mode) {
+        .start => self.startQuitTimer(),
+        .stop => self.stopQuitTimer(),
+    }
+}
+
+fn showDesktopNotification(
+    self: *App,
+    target: apprt.Target,
+    n: apprt.action.DesktopNotification,
+) void {
+    // Set a default title if we don't already have one
+    const t = switch (n.title.len) {
+        0 => "Ghostty",
+        else => n.title,
+    };
+
+    const notification = c.g_notification_new(t.ptr);
+    defer c.g_object_unref(notification);
+    c.g_notification_set_body(notification, n.body.ptr);
+
+    const icon = c.g_themed_icon_new("com.mitchellh.ghostty");
+    defer c.g_object_unref(icon);
+    c.g_notification_set_icon(notification, icon);
+
+    const pointer = c.g_variant_new_uint64(switch (target) {
+        .app => 0,
+        .surface => |v| @intFromPtr(v),
+    });
+    c.g_notification_set_default_action_and_target_value(
+        notification,
+        "app.present-surface",
+        pointer,
+    );
+
+    const g_app: *c.GApplication = @ptrCast(self.app);
+
+    // We set the notification ID to the body content. If the content is the
+    // same, this notification may replace a previous notification
+    c.g_application_send_notification(g_app, n.body.ptr, notification);
 }
 
 /// Reload the configuration. This should return the new configuration.
@@ -565,9 +806,9 @@ pub fn gtkQuitTimerExpired(ud: ?*anyopaque) callconv(.C) c.gboolean {
 }
 
 /// This will get called when there are no more open surfaces.
-pub fn startQuitTimer(self: *App) void {
+fn startQuitTimer(self: *App) void {
     // Cancel any previous timer.
-    self.cancelQuitTimer();
+    self.stopQuitTimer();
 
     // This is a no-op unless we are configured to quit after last window is closed.
     if (!self.config.@"quit-after-last-window-closed") return;
@@ -582,7 +823,7 @@ pub fn startQuitTimer(self: *App) void {
 }
 
 /// This will get called when a new surface gets opened.
-pub fn cancelQuitTimer(self: *App) void {
+fn stopQuitTimer(self: *App) void {
     switch (self.quit_timer) {
         .off => {},
         .expired => self.quit_timer = .{ .off = {} },
@@ -608,7 +849,7 @@ pub fn redrawInspector(self: *App, surface: *Surface) void {
 }
 
 /// Called by CoreApp to create a new window with a new surface.
-pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
+fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
     const alloc = self.core_app.alloc;
 
     // Allocate a fixed pointer for our window. We try to minimize

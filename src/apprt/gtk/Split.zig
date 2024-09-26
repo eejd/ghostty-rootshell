@@ -7,7 +7,6 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
-const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
@@ -21,14 +20,14 @@ pub const Orientation = enum {
     horizontal,
     vertical,
 
-    pub fn fromDirection(direction: apprt.SplitDirection) Orientation {
+    pub fn fromDirection(direction: apprt.action.SplitDirection) Orientation {
         return switch (direction) {
             .right => .horizontal,
             .down => .vertical,
         };
     }
 
-    pub fn fromResizeDirection(direction: input.SplitResizeDirection) Orientation {
+    pub fn fromResizeDirection(direction: apprt.action.ResizeSplit.Direction) Orientation {
         return switch (direction) {
             .up, .down => .vertical,
             .left, .right => .horizontal,
@@ -58,7 +57,7 @@ bottom_right: Surface.Container.Elem,
 pub fn create(
     alloc: Allocator,
     sibling: *Surface,
-    direction: apprt.SplitDirection,
+    direction: apprt.action.SplitDirection,
 ) !*Split {
     var split = try alloc.create(Split);
     errdefer alloc.destroy(split);
@@ -69,7 +68,7 @@ pub fn create(
 pub fn init(
     self: *Split,
     sibling: *Surface,
-    direction: apprt.SplitDirection,
+    direction: apprt.action.SplitDirection,
 ) !void {
     // Create the new child surface for the other direction.
     const alloc = sibling.app.core_app.alloc;
@@ -164,7 +163,11 @@ fn removeChild(
 }
 
 /// Move the divider in the given direction by the given amount.
-pub fn moveDivider(self: *Split, direction: input.SplitResizeDirection, amount: u16) void {
+pub fn moveDivider(
+    self: *Split,
+    direction: apprt.action.ResizeSplit.Direction,
+    amount: u16,
+) void {
     const min_pos = 10;
 
     const pos = c.gtk_paned_get_position(self.paned);
@@ -263,7 +266,7 @@ fn updateChildren(self: *const Split) void {
 
 /// A mapping of direction to the element (if any) in that direction.
 pub const DirectionMap = std.EnumMap(
-    input.SplitFocusDirection,
+    apprt.action.GotoSplit,
     ?*Surface,
 );
 

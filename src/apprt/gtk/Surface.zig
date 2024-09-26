@@ -688,7 +688,10 @@ pub fn close(self: *Surface, processActive: bool) void {
     c.gtk_widget_show(alert);
 }
 
-pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
+pub fn controlInspector(
+    self: *Surface,
+    mode: apprt.action.Inspector,
+) void {
     const show = switch (mode) {
         .toggle => self.inspector == null,
         .show => true,
@@ -715,30 +718,6 @@ pub fn controlInspector(self: *Surface, mode: input.InspectorMode) void {
     };
 }
 
-pub fn toggleFullscreen(self: *Surface, mac_non_native: configpkg.NonNativeFullscreen) void {
-    const window = self.container.window() orelse {
-        log.info(
-            "toggleFullscreen invalid for container={s}",
-            .{@tagName(self.container)},
-        );
-        return;
-    };
-
-    window.toggleFullscreen(mac_non_native);
-}
-
-pub fn toggleWindowDecorations(self: *Surface) void {
-    const window = self.container.window() orelse {
-        log.info(
-            "toggleWindowDecorations invalid for container={s}",
-            .{@tagName(self.container)},
-        );
-        return;
-    };
-
-    window.toggleWindowDecorations();
-}
-
 pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
     switch (self.title) {
         .none => return null,
@@ -746,64 +725,6 @@ pub fn getTitleLabel(self: *Surface) ?*c.GtkWidget {
             const widget = @as(*c.GtkWidget, @ptrCast(@alignCast(label)));
             return widget;
         },
-    }
-}
-
-pub fn newSplit(self: *Surface, direction: apprt.SplitDirection) !void {
-    const alloc = self.app.core_app.alloc;
-    _ = try Split.create(alloc, self, direction);
-}
-
-pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
-    const s = self.container.split() orelse return;
-    const map = s.directionMap(switch (self.container) {
-        .split_tl => .top_left,
-        .split_br => .bottom_right,
-        .none, .tab_ => unreachable,
-    });
-    const surface_ = map.get(direction) orelse return;
-    if (surface_) |surface| surface.grabFocus();
-}
-
-pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
-    const s = self.container.firstSplitWithOrientation(
-        Split.Orientation.fromResizeDirection(direction),
-    ) orelse return;
-    s.moveDivider(direction, amount);
-}
-
-pub fn equalizeSplits(self: *const Surface) void {
-    const tab = self.container.tab() orelse return;
-    const top_split = switch (tab.elem) {
-        .split => |s| s,
-        else => return,
-    };
-    _ = top_split.equalize();
-}
-
-pub fn newTab(self: *Surface) !void {
-    const window = self.container.window() orelse {
-        log.info("surface cannot create new tab when not attached to a window", .{});
-        return;
-    };
-
-    try window.newTab(&self.core_surface);
-}
-
-pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
-    const window = self.container.window() orelse {
-        log.info(
-            "gotoTab invalid for container={s}",
-            .{@tagName(self.container)},
-        );
-        return;
-    };
-
-    switch (tab) {
-        .previous => window.gotoPreviousTab(self),
-        .next => window.gotoNextTab(self),
-        .last => window.gotoLastTab(),
-        else => window.gotoTab(@intCast(@intFromEnum(tab))),
     }
 }
 
@@ -1975,7 +1896,7 @@ fn translateMods(state: c.GdkModifierType) input.Mods {
     return mods;
 }
 
-pub fn presentSurface(self: *Surface) void {
+pub fn present(self: *Surface) void {
     if (self.container.window()) |window| {
         if (self.container.tab()) |tab| {
             if (window.notebook.getTabPosition(tab)) |position|
@@ -1983,5 +1904,6 @@ pub fn presentSurface(self: *Surface) void {
         }
         c.gtk_window_present(window.window);
     }
+
     self.grabFocus();
 }

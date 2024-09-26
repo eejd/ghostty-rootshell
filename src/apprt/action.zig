@@ -2,6 +2,14 @@ const std = @import("std");
 const assert = std.debug.assert;
 const CoreSurface = @import("../Surface.zig");
 
+/// The target for an action. This is generally the thing that had focus
+/// while the action was made but the concept of "focus" is not guaranteed
+/// since actions can also be triggered by timers, scripts, etc.
+pub const Target = union(enum) {
+    app,
+    surface: *CoreSurface,
+};
+
 /// The possible actions an apprt has to react to. Actions are one-way
 /// messages that are sent to the app runtime to trigger some behavior.
 ///
@@ -69,7 +77,7 @@ pub const Action = union(enum) {
     /// after the configured delay. This can be cancelled by sending
     /// another quit_timer action with "stop". Multiple "starts" shouldn't
     /// happen and can be ignored or cause a restart it isn't that important.
-    quit_timer: enum { start, stop },
+    quit_timer: QuitTimer,
 
     /// Set the secure input functionality on or off. "Secure input" means
     /// that the user is currently at some sort of prompt where they may be
@@ -90,14 +98,6 @@ pub const Action = union(enum) {
 
         unreachable;
     }
-};
-
-/// The target for an action. This is generally the thing that had focus
-/// while the action was made but the concept of "focus" is not guaranteed
-/// since actions can also be triggered by timers, scripts, etc.
-pub const Target = union(enum) {
-    app,
-    surface: *CoreSurface,
 };
 
 // This is made extern (c_int) to make interop easier with our embedded
@@ -163,6 +163,11 @@ pub const Inspector = enum(c_int) {
     toggle,
     show,
     hide,
+};
+
+pub const QuitTimer = enum(c_int) {
+    start,
+    stop,
 };
 
 /// The desktop notification to show.

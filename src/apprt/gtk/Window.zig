@@ -459,7 +459,7 @@ pub fn gotoTab(self: *Window, n: usize) void {
 }
 
 /// Toggle fullscreen for this window.
-pub fn toggleFullscreen(self: *Window, _: configpkg.NonNativeFullscreen) void {
+pub fn toggleFullscreen(self: *Window) void {
     const is_fullscreen = c.gtk_window_is_fullscreen(self.window);
     if (is_fullscreen == 0) {
         c.gtk_window_fullscreen(self.window);
