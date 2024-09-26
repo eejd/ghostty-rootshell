@@ -12,9 +12,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("build_config.zig");
 
-const action = @import("apprt/action.zig");
 const structs = @import("apprt/structs.zig");
 
+pub const action = @import("apprt/action.zig");
 pub const glfw = @import("apprt/glfw.zig");
 pub const gtk = @import("apprt/gtk.zig");
 pub const none = @import("apprt/none.zig");

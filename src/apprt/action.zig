@@ -16,6 +16,15 @@ pub const Action = union(enum) {
     /// as font size should be inherited.
     new_window,
 
+    /// Open a new tab. If the target is a surface it should be opened in
+    /// the same window as the surface. If the target is the app then
+    /// the tab should be opened in a new window.
+    new_tab,
+
+    /// Jump to a specific tab. Must handle the scenario that the tab
+    /// value is invalid.
+    goto_tab: GotoTab,
+
     /// Close all open windows.
     close_all_windows,
 
@@ -57,4 +66,14 @@ pub const Action = union(enum) {
 pub const Target = union(enum) {
     app,
     surface: *CoreSurface,
+};
+
+/// The tab to jump to. This is non-exhaustive so that integer values represent
+/// the index (zero-based) of the tab to jump to. Negative values are special
+/// values.
+pub const GotoTab = enum(c_int) {
+    previous = -1,
+    next = -2,
+    last = -3,
+    _,
 };

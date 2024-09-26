@@ -3663,35 +3663,27 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             v,
         ),
 
-        .new_tab => {
-            if (@hasDecl(apprt.Surface, "newTab")) {
-                try self.rt_surface.newTab();
-            } else log.warn("runtime doesn't implement newTab", .{});
-        },
+        .new_tab => try self.rt_app.performAction(
+            .{ .surface = self },
+            .new_tab,
+            {},
+        ),
 
-        .previous_tab => {
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.previous);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
-
-        .next_tab => {
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.next);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
-
-        .last_tab => {
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(.last);
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
-
-        .goto_tab => |n| {
-            if (@hasDecl(apprt.Surface, "gotoTab")) {
-                self.rt_surface.gotoTab(@enumFromInt(n));
-            } else log.warn("runtime doesn't implement gotoTab", .{});
-        },
+        inline .previous_tab,
+        .next_tab,
+        .last_tab,
+        .goto_tab,
+        => |v, tag| try self.rt_app.performAction(
+            .{ .surface = self },
+            .goto_tab,
+            switch (tag) {
+                .previous_tab => .previous,
+                .next_tab => .next,
+                .last_tab => .last,
+                .goto_tab => @enumFromInt(v),
+                else => comptime unreachable,
+            },
+        ),
 
         .new_split => |direction| {
             if (@hasDecl(apprt.Surface, "newSplit")) {

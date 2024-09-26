@@ -83,7 +83,8 @@ pub const App = struct {
         /// views then this can be null.
         new_split: ?*const fn (SurfaceUD, apprt.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
 
-        /// New tab with options.
+        /// New tab with options. The surface may be null if there is no target
+        /// surface in which case the apprt is expected to create a new window.
         new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
 
         /// New window with options. The surface may be null if there is no
@@ -109,7 +110,7 @@ pub const App = struct {
         toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
 
         /// Goto tab
-        goto_tab: ?*const fn (SurfaceUD, apprt.GotoTab) callconv(.C) void = null,
+        goto_tab: ?*const fn (SurfaceUD, apprt.action.GotoTab) callconv(.C) void = null,
 
         /// Toggle fullscreen for current window.
         toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
@@ -506,9 +507,36 @@ pub const App = struct {
         func(null, .{});
     }
 
+    fn newTab(self: *const App, target: apprt.Target) void {
+        const func = self.opts.new_tab orelse {
+            log.info("runtime embedder does not support new_tab", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => func(null, .{}),
+            .surface => |v| func(
+                v.rt_surface.userdata,
+                v.rt_surface.newSurfaceOptions(),
+            ),
+        }
+    }
+
+    fn gotoTab(self: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
+        const func = self.opts.goto_tab orelse {
+            log.info("runtime embedder does not support goto_tab", .{});
+            return;
+        };
+
+        switch (target) {
+            .app => {},
+            .surface => |v| func(v.rt_surface.userdata, tab),
+        }
+    }
+
     fn setPasswordInput(self: *App, target: apprt.Target, v: bool) void {
         const func = self.opts.set_password_input orelse {
-            log.info("runtime embedder does not set_password_input", .{});
+            log.info("runtime embedder does not support set_password_input", .{});
             return;
         };
 
@@ -531,8 +559,9 @@ pub const App = struct {
                 .surface => |v| v,
             }),
 
+            .new_tab => self.newTab(target),
+            .goto_tab => self.gotoTab(target, value),
             .open_config => try configpkg.edit.open(self.core_app.alloc),
-
             .secure_input => self.setPasswordInput(target, value),
 
             // Unimplemented
@@ -1099,15 +1128,6 @@ pub const Surface = struct {
         };
     }
 
-    pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
-        const func = self.app.opts.goto_tab orelse {
-            log.info("runtime embedder does not goto_tab", .{});
-            return;
-        };
-
-        func(self.userdata, tab);
-    }
-
     pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
         const func = self.app.opts.toggle_fullscreen orelse {
             log.info("runtime embedder does not toggle_fullscreen", .{});
@@ -1124,16 +1144,6 @@ pub const Surface = struct {
         };
 
         func();
-    }
-
-    pub fn newTab(self: *const Surface) !void {
-        const func = self.app.opts.new_tab orelse {
-            log.info("runtime embedder does not support new_tab", .{});
-            return;
-        };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, options);
     }
 
     fn newWindow(self: *const Surface) !void {

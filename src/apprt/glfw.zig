@@ -142,10 +142,16 @@ pub const App = struct {
                 .surface => |v| v,
             }),
 
+            .new_tab => try self.newTab(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
             .open_config => try configpkg.edit.open(self.app.alloc),
 
             // Unimplemented
             .close_all_windows,
+            .goto_tab,
             .quit_timer,
             .secure_input,
             => log.info("unimplemented action={}", .{action}),
@@ -216,11 +222,16 @@ pub const App = struct {
     }
 
     /// Create a new tab in the parent surface.
-    fn newTab(self: *App, parent: *CoreSurface) !void {
+    fn newTab(self: *App, parent_: ?*CoreSurface) !void {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
             return;
         }
+
+        const parent = parent_ orelse {
+            _ = try self.newSurface(null);
+            return;
+        };
 
         // Create the new window
         const window = try self.newSurface(parent);
@@ -538,11 +549,6 @@ pub const Surface = struct {
                 selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
             }
         }
-    }
-
-    /// Create a new tab in the window containing this surface.
-    pub fn newTab(self: *Surface) !void {
-        try self.app.newTab(&self.core_surface);
     }
 
     /// Checks if the glfw window is in fullscreen.
