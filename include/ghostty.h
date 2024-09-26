@@ -30,7 +30,9 @@ typedef void* ghostty_config_t;
 typedef void* ghostty_surface_t;
 typedef void* ghostty_inspector_t;
 
-// Enums are up top so we can reference them later.
+// All the types below are fully defined and must be kept in sync with
+// their Zig counterparts. Any changes to these types MUST have an associated
+// Zig change.
 typedef enum {
   GHOSTTY_PLATFORM_INVALID,
   GHOSTTY_PLATFORM_MACOS,
@@ -47,33 +49,6 @@ typedef enum {
   GHOSTTY_CLIPBOARD_REQUEST_OSC_52_READ,
   GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE,
 } ghostty_clipboard_request_e;
-
-typedef enum {
-  GHOSTTY_SPLIT_RIGHT,
-  GHOSTTY_SPLIT_DOWN
-} ghostty_split_direction_e;
-
-typedef enum {
-  GHOSTTY_SPLIT_FOCUS_PREVIOUS,
-  GHOSTTY_SPLIT_FOCUS_NEXT,
-  GHOSTTY_SPLIT_FOCUS_TOP,
-  GHOSTTY_SPLIT_FOCUS_LEFT,
-  GHOSTTY_SPLIT_FOCUS_BOTTOM,
-  GHOSTTY_SPLIT_FOCUS_RIGHT,
-} ghostty_split_focus_direction_e;
-
-typedef enum {
-  GHOSTTY_SPLIT_RESIZE_UP,
-  GHOSTTY_SPLIT_RESIZE_DOWN,
-  GHOSTTY_SPLIT_RESIZE_LEFT,
-  GHOSTTY_SPLIT_RESIZE_RIGHT,
-} ghostty_split_resize_direction_e;
-
-typedef enum {
-  GHOSTTY_INSPECTOR_TOGGLE,
-  GHOSTTY_INSPECTOR_SHOW,
-  GHOSTTY_INSPECTOR_HIDE,
-} ghostty_inspector_mode_e;
 
 typedef enum {
   GHOSTTY_MOUSE_RELEASE,
@@ -96,55 +71,6 @@ typedef enum {
   GHOSTTY_MOUSE_MOMENTUM_CANCELLED,
   GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN,
 } ghostty_input_mouse_momentum_e;
-
-typedef enum {
-  GHOSTTY_MOUSE_SHAPE_DEFAULT,
-  GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU,
-  GHOSTTY_MOUSE_SHAPE_HELP,
-  GHOSTTY_MOUSE_SHAPE_POINTER,
-  GHOSTTY_MOUSE_SHAPE_PROGRESS,
-  GHOSTTY_MOUSE_SHAPE_WAIT,
-  GHOSTTY_MOUSE_SHAPE_CELL,
-  GHOSTTY_MOUSE_SHAPE_CROSSHAIR,
-  GHOSTTY_MOUSE_SHAPE_TEXT,
-  GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT,
-  GHOSTTY_MOUSE_SHAPE_ALIAS,
-  GHOSTTY_MOUSE_SHAPE_COPY,
-  GHOSTTY_MOUSE_SHAPE_MOVE,
-  GHOSTTY_MOUSE_SHAPE_NO_DROP,
-  GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED,
-  GHOSTTY_MOUSE_SHAPE_GRAB,
-  GHOSTTY_MOUSE_SHAPE_GRABBING,
-  GHOSTTY_MOUSE_SHAPE_ALL_SCROLL,
-  GHOSTTY_MOUSE_SHAPE_COL_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_ROW_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_N_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_E_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_S_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_W_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_NE_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_NW_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_SE_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_SW_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_EW_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_NS_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_NESW_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_NWSE_RESIZE,
-  GHOSTTY_MOUSE_SHAPE_ZOOM_IN,
-  GHOSTTY_MOUSE_SHAPE_ZOOM_OUT,
-} ghostty_mouse_shape_e;
-
-typedef enum {
-  GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE,
-  GHOSTTY_NON_NATIVE_FULLSCREEN_TRUE,
-  GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU,
-} ghostty_non_native_fullscreen_e;
-
-typedef enum {
-  GHOSTTY_TAB_PREVIOUS = -1,
-  GHOSTTY_TAB_NEXT = -2,
-  GHOSTTY_TAB_LAST = -3,
-} ghostty_tab_e;
 
 typedef enum {
   GHOSTTY_COLOR_SCHEME_LIGHT = 0,
@@ -357,14 +283,6 @@ typedef enum {
   GHOSTTY_BUILD_MODE_RELEASE_SMALL,
 } ghostty_build_mode_e;
 
-typedef enum {
-  GHOSTTY_RENDERER_HEALTH_OK,
-  GHOSTTY_RENDERER_HEALTH_UNHEALTHY,
-} ghostty_renderer_health_e;
-
-// Fully defined types. This MUST be kept in sync with equivalent Zig
-// structs. To find the Zig struct, grep for this type name. The documentation
-// for all of these types is available in the Zig source.
 typedef struct {
   ghostty_build_mode_e build_mode;
   const char* version;
@@ -414,13 +332,229 @@ typedef struct {
   uint32_t cell_height_px;
 } ghostty_surface_size_s;
 
+// apprt.Target.Key
+typedef enum {
+  GHOSTTY_TARGET_APP,
+  GHOSTTY_TARGET_SURFACE,
+} ghostty_target_tag_e;
+
+typedef union {
+  ghostty_surface_t surface;
+} ghostty_target_u;
+
+typedef struct {
+  ghostty_target_tag_e tag;
+  ghostty_target_u target;
+} ghostty_target_s;
+
+// apprt.action.SplitDirection
+typedef enum {
+  GHOSTTY_SPLIT_DIRECTION_RIGHT,
+  GHOSTTY_SPLIT_DIRECTION_DOWN,
+} ghostty_action_split_direction_e;
+
+// apprt.action.GotoSplit
+typedef enum {
+  GHOSTTY_GOTO_SPLIT_PREVIOUS,
+  GHOSTTY_GOTO_SPLIT_NEXT,
+  GHOSTTY_GOTO_SPLIT_TOP,
+  GHOSTTY_GOTO_SPLIT_LEFT,
+  GHOSTTY_GOTO_SPLIT_BOTTOM,
+  GHOSTTY_GOTO_SPLIT_RIGHT,
+} ghostty_action_goto_split_e;
+
+// apprt.action.ResizeSplit.Direction
+typedef enum {
+  GHOSTTY_RESIZE_SPLIT_UP,
+  GHOSTTY_RESIZE_SPLIT_DOWN,
+  GHOSTTY_RESIZE_SPLIT_LEFT,
+  GHOSTTY_RESIZE_SPLIT_RIGHT,
+} ghostty_action_resize_split_direction_e;
+
+// apprt.action.ResizeSplit
+typedef struct {
+  uint16_t amount;
+  ghostty_action_resize_split_direction_e direction;
+} ghostty_action_resize_split_s;
+
+// apprt.action.GotoTab
+typedef enum {
+  GHOSTTY_GOTO_TAB_PREVIOUS,
+  GHOSTTY_GOTO_TAB_NEXT,
+  GHOSTTY_GOTO_TAB_LAST,
+} ghostty_action_goto_tab_e;
+
+// apprt.action.Fullscreen
+typedef enum {
+  GHOSTTY_FULLSCREEN_NATIVE,
+  GHOSTTY_FULLSCREEN_NON_NATIVE,
+  GHOSTTY_FULLSCREEN_NON_NATIVE_VISIBLE_MENU,
+} ghostty_action_fullscreen_e;
+
+// apprt.action.SecureInput
+typedef enum {
+  GHOSTTY_SECURE_INPUT_ON,
+  GHOSTTY_SECURE_INPUT_OFF,
+  GHOSTTY_SECURE_INPUT_TOGGLE,
+} ghostty_action_secure_input_e;
+
+// apprt.action.Inspector
+typedef enum {
+  GHOSTTY_INSPECTOR_TOGGLE,
+  GHOSTTY_INSPECTOR_SHOW,
+  GHOSTTY_INSPECTOR_HIDE,
+} ghostty_action_inspector_e;
+
+// apprt.action.QuitTimer
+typedef enum {
+  GHOSTTY_QUIT_TIMER_START,
+  GHOSTTY_QUIT_TIMER_STOP,
+} ghostty_action_quit_timer_e;
+
+// apprt.action.DesktopNotification.C
+typedef struct {
+  const char* title;
+  const char* body;
+} ghostty_action_desktop_notification_s;
+
+// apprt.action.SetTitle.C
+typedef struct {
+  const char* title;
+} ghostty_action_set_title_s;
+
+// terminal.MouseShape
+typedef enum {
+  GHOSTTY_MOUSE_SHAPE_DEFAULT,
+  GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU,
+  GHOSTTY_MOUSE_SHAPE_HELP,
+  GHOSTTY_MOUSE_SHAPE_POINTER,
+  GHOSTTY_MOUSE_SHAPE_PROGRESS,
+  GHOSTTY_MOUSE_SHAPE_WAIT,
+  GHOSTTY_MOUSE_SHAPE_CELL,
+  GHOSTTY_MOUSE_SHAPE_CROSSHAIR,
+  GHOSTTY_MOUSE_SHAPE_TEXT,
+  GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT,
+  GHOSTTY_MOUSE_SHAPE_ALIAS,
+  GHOSTTY_MOUSE_SHAPE_COPY,
+  GHOSTTY_MOUSE_SHAPE_MOVE,
+  GHOSTTY_MOUSE_SHAPE_NO_DROP,
+  GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED,
+  GHOSTTY_MOUSE_SHAPE_GRAB,
+  GHOSTTY_MOUSE_SHAPE_GRABBING,
+  GHOSTTY_MOUSE_SHAPE_ALL_SCROLL,
+  GHOSTTY_MOUSE_SHAPE_COL_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_ROW_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_N_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_E_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_S_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_W_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_NE_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_NW_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_SE_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_SW_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_EW_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_NS_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_NESW_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_NWSE_RESIZE,
+  GHOSTTY_MOUSE_SHAPE_ZOOM_IN,
+  GHOSTTY_MOUSE_SHAPE_ZOOM_OUT,
+} ghostty_action_mouse_shape_e;
+
+// apprt.action.MouseVisibility
+typedef enum {
+  GHOSTTY_MOUSE_VISIBLE,
+  GHOSTTY_MOUSE_HIDDEN,
+} ghostty_action_mouse_visibility_e;
+
+// apprt.action.MouseOverLink
+typedef struct {
+  const char* url;
+  size_t len;
+} ghostty_action_mouse_over_link_s;
+
+// apprt.action.SizeLimit
+typedef struct {
+  uint32_t min_width;
+  uint32_t min_height;
+  uint32_t max_width;
+  uint32_t max_height;
+} ghostty_action_size_limit_s;
+
+// apprt.action.InitialSize
+typedef struct {
+  uint32_t width;
+  uint32_t height;
+} ghostty_action_initial_size_s;
+
+// apprt.action.CellSize
+typedef struct {
+  uint32_t width;
+  uint32_t height;
+} ghostty_action_cell_size_s;
+
+// renderer.Health
+typedef enum {
+  GHOSTTY_RENDERER_HEALTH_OK,
+  GHOSTTY_RENDERER_HEALTH_UNHEALTHY,
+} ghostty_action_renderer_health_e;
+
+// apprt.Action.Key
+typedef enum {
+  GHOSTTY_ACTION_NEW_WINDOW,
+  GHOSTTY_ACTION_NEW_TAB,
+  GHOSTTY_ACTION_NEW_SPLIT,
+  GHOSTTY_ACTION_CLOSE_ALL_WINDOWS,
+  GHOSTTY_ACTION_TOGGLE_FULLSCREEN,
+  GHOSTTY_ACTION_TOGGLE_WINDOW_DECORATIONS,
+  GHOSTTY_ACTION_GOTO_TAB,
+  GHOSTTY_ACTION_GOTO_SPLIT,
+  GHOSTTY_ACTION_RESIZE_SPLIT,
+  GHOSTTY_ACTION_EQUALIZE_SPLITS,
+  GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM,
+  GHOSTTY_ACTION_PRESENT_TERMINAL,
+  GHOSTTY_ACTION_SIZE_LIMIT,
+  GHOSTTY_ACTION_INITIAL_SIZE,
+  GHOSTTY_ACTION_CELL_SIZE,
+  GHOSTTY_ACTION_INSPECTOR,
+  GHOSTTY_ACTION_RENDER_INSPECTOR,
+  GHOSTTY_ACTION_DESKTOP_NOTIFICATION,
+  GHOSTTY_ACTION_SET_TITLE,
+  GHOSTTY_ACTION_MOUSE_SHAPE,
+  GHOSTTY_ACTION_MOUSE_VISIBILITY,
+  GHOSTTY_ACTION_MOUSE_OVER_LINK,
+  GHOSTTY_ACTION_RENDERER_HEALTH,
+  GHOSTTY_ACTION_OPEN_CONFIG,
+  GHOSTTY_ACTION_QUIT_TIMER,
+  GHOSTTY_ACTION_SECURE_INPUT,
+} ghostty_action_tag_e;
+
+typedef union {
+  ghostty_action_split_direction_e new_split;
+  ghostty_action_fullscreen_e toggle_fullscreen;
+  ghostty_action_goto_tab_e goto_tab;
+  ghostty_action_goto_split_e goto_split;
+  ghostty_action_resize_split_s resize_split;
+  ghostty_action_size_limit_s size_limit;
+  ghostty_action_initial_size_s initial_size;
+  ghostty_action_cell_size_s cell_size;
+  ghostty_action_inspector_e inspector;
+  ghostty_action_desktop_notification_s desktop_notification;
+  ghostty_action_set_title_s set_title;
+  ghostty_action_mouse_shape_e mouse_shape;
+  ghostty_action_mouse_visibility_e mouse_visibility;
+  ghostty_action_mouse_over_link_s mouse_over_link;
+  ghostty_action_renderer_health_e renderer_health;
+  ghostty_action_quit_timer_e quit_timer;
+  ghostty_action_secure_input_e secure_input;
+} ghostty_action_u;
+
+typedef struct {
+  ghostty_action_tag_e tag;
+  ghostty_action_u action;
+} ghostty_action_s;
+
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
 typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void*);
-typedef void (*ghostty_runtime_open_config_cb)(void*);
-typedef void (*ghostty_runtime_set_title_cb)(void*, const char*);
-typedef void (*ghostty_runtime_set_mouse_shape_cb)(void*,
-                                                   ghostty_mouse_shape_e);
-typedef void (*ghostty_runtime_set_mouse_visibility_cb)(void*, bool);
 typedef void (*ghostty_runtime_read_clipboard_cb)(void*,
                                                   ghostty_clipboard_e,
                                                   void*);
@@ -433,71 +567,21 @@ typedef void (*ghostty_runtime_write_clipboard_cb)(void*,
                                                    const char*,
                                                    ghostty_clipboard_e,
                                                    bool);
-typedef void (*ghostty_runtime_new_split_cb)(void*,
-                                             ghostty_split_direction_e,
-                                             ghostty_surface_config_s);
-typedef void (*ghostty_runtime_new_tab_cb)(void*, ghostty_surface_config_s);
-typedef void (*ghostty_runtime_new_window_cb)(void*, ghostty_surface_config_s);
-typedef void (*ghostty_runtime_control_inspector_cb)(void*,
-                                                     ghostty_inspector_mode_e);
 typedef void (*ghostty_runtime_close_surface_cb)(void*, bool);
-typedef void (*ghostty_runtime_focus_split_cb)(void*,
-                                               ghostty_split_focus_direction_e);
-typedef void (*ghostty_runtime_resize_split_cb)(
-    void*,
-    ghostty_split_resize_direction_e,
-    uint16_t);
-typedef void (*ghostty_runtime_equalize_splits_cb)(void*);
-typedef void (*ghostty_runtime_toggle_split_zoom_cb)(void*);
-typedef void (*ghostty_runtime_goto_tab_cb)(void*, int32_t);
-typedef void (*ghostty_runtime_toggle_fullscreen_cb)(
-    void*,
-    ghostty_non_native_fullscreen_e);
-typedef void (*ghostty_runtime_set_initial_window_size_cb)(void*,
-                                                           uint32_t,
-                                                           uint32_t);
-typedef void (*ghostty_runtime_render_inspector_cb)(void*);
-typedef void (*ghostty_runtime_set_cell_size_cb)(void*, uint32_t, uint32_t);
-typedef void (*ghostty_runtime_show_desktop_notification_cb)(void*,
-                                                             const char*,
-                                                             const char*);
-typedef void (
-    *ghostty_runtime_update_renderer_health)(void*, ghostty_renderer_health_e);
-typedef void (*ghostty_runtime_mouse_over_link_cb)(void*, const char*, size_t);
-typedef void (*ghostty_runtime_set_password_input_cb)(void*, bool);
-typedef void (*ghostty_runtime_toggle_secure_input_cb)();
+typedef void (*ghostty_runtime_action_cb)(ghostty_app_t,
+                                          ghostty_target_s,
+                                          ghostty_action_s);
 
 typedef struct {
   void* userdata;
   bool supports_selection_clipboard;
   ghostty_runtime_wakeup_cb wakeup_cb;
+  ghostty_runtime_action_cb action_cb;
   ghostty_runtime_reload_config_cb reload_config_cb;
-  ghostty_runtime_open_config_cb open_config_cb;
-  ghostty_runtime_set_title_cb set_title_cb;
-  ghostty_runtime_set_mouse_shape_cb set_mouse_shape_cb;
-  ghostty_runtime_set_mouse_visibility_cb set_mouse_visibility_cb;
   ghostty_runtime_read_clipboard_cb read_clipboard_cb;
   ghostty_runtime_confirm_read_clipboard_cb confirm_read_clipboard_cb;
   ghostty_runtime_write_clipboard_cb write_clipboard_cb;
-  ghostty_runtime_new_split_cb new_split_cb;
-  ghostty_runtime_new_tab_cb new_tab_cb;
-  ghostty_runtime_new_window_cb new_window_cb;
-  ghostty_runtime_control_inspector_cb control_inspector_cb;
   ghostty_runtime_close_surface_cb close_surface_cb;
-  ghostty_runtime_focus_split_cb focus_split_cb;
-  ghostty_runtime_resize_split_cb resize_split_cb;
-  ghostty_runtime_equalize_splits_cb equalize_splits_cb;
-  ghostty_runtime_toggle_split_zoom_cb toggle_split_zoom_cb;
-  ghostty_runtime_goto_tab_cb goto_tab_cb;
-  ghostty_runtime_toggle_fullscreen_cb toggle_fullscreen_cb;
-  ghostty_runtime_set_initial_window_size_cb set_initial_window_size_cb;
-  ghostty_runtime_render_inspector_cb render_inspector_cb;
-  ghostty_runtime_set_cell_size_cb set_cell_size_cb;
-  ghostty_runtime_show_desktop_notification_cb show_desktop_notification_cb;
-  ghostty_runtime_update_renderer_health update_renderer_health_cb;
-  ghostty_runtime_mouse_over_link_cb mouse_over_link_cb;
-  ghostty_runtime_set_password_input_cb set_password_input_cb;
-  ghostty_runtime_toggle_secure_input_cb toggle_secure_input_cb;
 } ghostty_runtime_config_s;
 
 //-------------------------------------------------------------------
@@ -538,7 +622,9 @@ ghostty_surface_config_s ghostty_surface_config_new();
 
 ghostty_surface_t ghostty_surface_new(ghostty_app_t, ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
+void* ghostty_surface_userdata(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
+ghostty_surface_config_s ghostty_surface_inherited_config(ghostty_surface_t);
 bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_draw(ghostty_surface_t);
@@ -569,11 +655,11 @@ void ghostty_surface_mouse_scroll(ghostty_surface_t,
 void ghostty_surface_mouse_pressure(ghostty_surface_t, uint32_t, double);
 void ghostty_surface_ime_point(ghostty_surface_t, double*, double*);
 void ghostty_surface_request_close(ghostty_surface_t);
-void ghostty_surface_split(ghostty_surface_t, ghostty_split_direction_e);
+void ghostty_surface_split(ghostty_surface_t, ghostty_action_split_direction_e);
 void ghostty_surface_split_focus(ghostty_surface_t,
-                                 ghostty_split_focus_direction_e);
+                                 ghostty_action_goto_split_e);
 void ghostty_surface_split_resize(ghostty_surface_t,
-                                  ghostty_split_resize_direction_e,
+                                  ghostty_action_resize_split_direction_e,
                                   uint16_t);
 void ghostty_surface_split_equalize(ghostty_surface_t);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char*, uintptr_t);

@@ -251,7 +251,7 @@ extension Ghostty {
             }
         }
 
-        func setCursorShape(_ shape: ghostty_mouse_shape_e) {
+        func setCursorShape(_ shape: ghostty_action_mouse_shape_e) {
             switch (shape) {
             case GHOSTTY_MOUSE_SHAPE_DEFAULT:
                 pointerStyle = .default
@@ -312,7 +312,7 @@ extension Ghostty {
 
         @objc private func onUpdateRendererHealth(notification: SwiftUI.Notification) {
             guard let healthAny = notification.userInfo?["health"] else { return }
-            guard let health = healthAny as? ghostty_renderer_health_e else { return }
+            guard let health = healthAny as? ghostty_action_renderer_health_e else { return }
             healthy = health == GHOSTTY_RENDERER_HEALTH_OK
         }
 
@@ -926,12 +926,12 @@ extension Ghostty {
 
         @IBAction func splitRight(_ sender: Any) {
             guard let surface = self.surface else { return }
-            ghostty_surface_split(surface, GHOSTTY_SPLIT_RIGHT)
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_RIGHT)
         }
 
         @IBAction func splitDown(_ sender: Any) {
             guard let surface = self.surface else { return }
-            ghostty_surface_split(surface, GHOSTTY_SPLIT_DOWN)
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_DOWN)
         }
 
         @objc func resetTerminal(_ sender: Any) {

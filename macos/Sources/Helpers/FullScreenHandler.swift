@@ -13,8 +13,18 @@ class FullScreenHandler {
     var isInNonNativeFullscreen: Bool = false
     var isInFullscreen: Bool = false
 
-    func toggleFullscreen(window: NSWindow, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {
-        let useNonNativeFullscreen = nonNativeFullscreen != GHOSTTY_NON_NATIVE_FULLSCREEN_FALSE
+    func toggleFullscreen(window: NSWindow, mode: ghostty_action_fullscreen_e) {
+        let useNonNativeFullscreen = switch (mode) {
+        case GHOSTTY_FULLSCREEN_NATIVE:
+            false
+
+        case GHOSTTY_FULLSCREEN_NON_NATIVE, GHOSTTY_FULLSCREEN_NON_NATIVE_VISIBLE_MENU:
+            true
+
+        default:
+            false
+        }
+        
         if isInFullscreen {
             if useNonNativeFullscreen || isInNonNativeFullscreen {
                 leaveFullscreen(window: window)
@@ -27,7 +37,7 @@ class FullScreenHandler {
             isInFullscreen = false
         } else {
             if useNonNativeFullscreen {
-                let hideMenu = nonNativeFullscreen != GHOSTTY_NON_NATIVE_FULLSCREEN_VISIBLE_MENU
+                let hideMenu = mode != GHOSTTY_FULLSCREEN_NON_NATIVE_VISIBLE_MENU
                 enterFullscreen(window: window, hideMenu: hideMenu)
                 isInNonNativeFullscreen = true
             } else {

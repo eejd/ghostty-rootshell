@@ -39,32 +39,54 @@ extension Ghostty {
     }
 }
 
-// MARK: Surface Notifications
+// MARK: Swift Types for C Types
 
 extension Ghostty {
+    enum SetSecureInput {
+        case on
+        case off
+        case toggle
+
+        static func from(_ c: ghostty_action_secure_input_e) -> Self? {
+            switch (c) {
+            case GHOSTTY_SECURE_INPUT_ON:
+                return .on
+
+            case GHOSTTY_SECURE_INPUT_OFF:
+                return .off
+
+            case GHOSTTY_SECURE_INPUT_TOGGLE:
+                return .toggle
+
+            default:
+                return nil
+            }
+        }
+    }
+
     /// An enum that is used for the directions that a split focus event can change.
     enum SplitFocusDirection {
         case previous, next, top, bottom, left, right
 
         /// Initialize from a Ghostty API enum.
-        static func from(direction: ghostty_split_focus_direction_e) -> Self? {
+        static func from(direction: ghostty_action_goto_split_e) -> Self? {
             switch (direction) {
-            case GHOSTTY_SPLIT_FOCUS_PREVIOUS:
+            case GHOSTTY_GOTO_SPLIT_PREVIOUS:
                 return .previous
 
-            case GHOSTTY_SPLIT_FOCUS_NEXT:
+            case GHOSTTY_GOTO_SPLIT_NEXT:
                 return .next
 
-            case GHOSTTY_SPLIT_FOCUS_TOP:
+            case GHOSTTY_GOTO_SPLIT_TOP:
                 return .top
 
-            case GHOSTTY_SPLIT_FOCUS_BOTTOM:
+            case GHOSTTY_GOTO_SPLIT_BOTTOM:
                 return .bottom
 
-            case GHOSTTY_SPLIT_FOCUS_LEFT:
+            case GHOSTTY_GOTO_SPLIT_LEFT:
                 return .left
 
-            case GHOSTTY_SPLIT_FOCUS_RIGHT:
+            case GHOSTTY_GOTO_SPLIT_RIGHT:
                 return .right
 
             default:
@@ -72,25 +94,25 @@ extension Ghostty {
             }
         }
 
-        func toNative() -> ghostty_split_focus_direction_e {
+        func toNative() -> ghostty_action_goto_split_e {
             switch (self) {
             case .previous:
-                return GHOSTTY_SPLIT_FOCUS_PREVIOUS
+                return GHOSTTY_GOTO_SPLIT_PREVIOUS
 
             case .next:
-                return GHOSTTY_SPLIT_FOCUS_NEXT
+                return GHOSTTY_GOTO_SPLIT_NEXT
 
             case .top:
-                return GHOSTTY_SPLIT_FOCUS_TOP
+                return GHOSTTY_GOTO_SPLIT_TOP
 
             case .bottom:
-                return GHOSTTY_SPLIT_FOCUS_BOTTOM
+                return GHOSTTY_GOTO_SPLIT_BOTTOM
 
             case .left:
-                return GHOSTTY_SPLIT_FOCUS_LEFT
+                return GHOSTTY_GOTO_SPLIT_LEFT
 
             case .right:
-                return GHOSTTY_SPLIT_FOCUS_RIGHT
+                return GHOSTTY_GOTO_SPLIT_RIGHT
             }
         }
     }
@@ -99,31 +121,31 @@ extension Ghostty {
     enum SplitResizeDirection {
         case up, down, left, right
 
-        static func from(direction: ghostty_split_resize_direction_e) -> Self? {
+        static func from(direction: ghostty_action_resize_split_direction_e) -> Self? {
             switch (direction) {
-            case GHOSTTY_SPLIT_RESIZE_UP:
+            case GHOSTTY_RESIZE_SPLIT_UP:
                 return .up;
-            case GHOSTTY_SPLIT_RESIZE_DOWN:
+            case GHOSTTY_RESIZE_SPLIT_DOWN:
                 return .down;
-            case GHOSTTY_SPLIT_RESIZE_LEFT:
+            case GHOSTTY_RESIZE_SPLIT_LEFT:
                 return .left;
-            case GHOSTTY_SPLIT_RESIZE_RIGHT:
+            case GHOSTTY_RESIZE_SPLIT_RIGHT:
                 return .right;
             default:
                 return nil
             }
         }
 
-        func toNative() -> ghostty_split_resize_direction_e {
+        func toNative() -> ghostty_action_resize_split_direction_e {
             switch (self) {
             case .up:
-                return GHOSTTY_SPLIT_RESIZE_UP;
+                return GHOSTTY_RESIZE_SPLIT_UP;
             case .down:
-                return GHOSTTY_SPLIT_RESIZE_DOWN;
+                return GHOSTTY_RESIZE_SPLIT_DOWN;
             case .left:
-                return GHOSTTY_SPLIT_RESIZE_LEFT;
+                return GHOSTTY_RESIZE_SPLIT_LEFT;
             case .right:
-                return GHOSTTY_SPLIT_RESIZE_RIGHT;
+                return GHOSTTY_RESIZE_SPLIT_RIGHT;
             }
         }
     }
@@ -174,6 +196,8 @@ extension Ghostty {
     }
 }
 
+// MARK: Surface Notifications
+
 extension Ghostty.Notification {
     /// Used to pass a configuration along when creating a new tab/window/split.
     static let NewSurfaceConfigKey = "com.mitchellh.ghostty.newSurfaceConfig"
@@ -201,7 +225,7 @@ extension Ghostty.Notification {
 
     /// Toggle fullscreen of current window
     static let ghosttyToggleFullscreen = Notification.Name("com.mitchellh.ghostty.toggleFullscreen")
-    static let NonNativeFullscreenKey = ghosttyToggleFullscreen.rawValue
+    static let FullscreenModeKey = ghosttyToggleFullscreen.rawValue
 
     /// Notification that a surface is becoming focused. This is only sent on macOS 12 to
     /// work around bugs. macOS 13+ should use the ".focused()" attribute.

@@ -52,16 +52,6 @@ pub const ClipboardRequest = union(ClipboardRequestType) {
     osc_52_write: Clipboard,
 };
 
-/// A desktop notification.
-pub const DesktopNotification = struct {
-    /// The title of the notification. May be an empty string to not show a
-    /// title.
-    title: []const u8,
-
-    /// The body of a notification. This will always be shown.
-    body: []const u8,
-};
-
 /// The color scheme in use (light vs dark).
 pub const ColorScheme = enum(u2) {
     light = 0,

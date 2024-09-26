@@ -31,7 +31,6 @@ pub const ClipboardRequest = structs.ClipboardRequest;
 pub const ClipboardRequestType = structs.ClipboardRequestType;
 pub const ColorScheme = structs.ColorScheme;
 pub const CursorPos = structs.CursorPos;
-pub const DesktopNotification = structs.DesktopNotification;
 pub const IMEPos = structs.IMEPos;
 pub const Selection = structs.Selection;
 pub const SurfaceSize = structs.SurfaceSize;

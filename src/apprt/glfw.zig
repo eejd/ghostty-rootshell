@@ -134,8 +134,6 @@ pub const App = struct {
         comptime action: apprt.Action.Key,
         value: apprt.Action.Value(action),
     ) !void {
-        _ = value;
-
         switch (action) {
             .new_window => _ = try self.newSurface(switch (target) {
                 .app => null,
@@ -147,9 +145,46 @@ pub const App = struct {
                 .surface => |v| v,
             }),
 
+            .size_limit => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setSizeLimits(.{
+                    .width = value.min_width,
+                    .height = value.min_height,
+                }, if (value.max_width > 0) .{
+                    .width = value.max_width,
+                    .height = value.max_height,
+                } else null),
+            },
+
+            .initial_size => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setInitialWindowSize(
+                    value.width,
+                    value.height,
+                ),
+            },
+
             .toggle_fullscreen => self.toggleFullscreen(target),
 
             .open_config => try configpkg.edit.open(self.app.alloc),
+
+            .set_title => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setTitle(value.title),
+            },
+
+            .mouse_shape => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setMouseShape(value),
+            },
+
+            .mouse_visibility => switch (target) {
+                .app => {},
+                .surface => |surface| surface.rt_surface.setMouseVisibility(switch (value) {
+                    .visible => true,
+                    .hidden => false,
+                }),
+            },
 
             // Unimplemented
             .new_split,
@@ -162,9 +197,13 @@ pub const App = struct {
             .toggle_window_decorations,
             .goto_tab,
             .inspector,
+            .render_inspector,
             .quit_timer,
             .secure_input,
             .desktop_notification,
+            .mouse_over_link,
+            .cell_size,
+            .renderer_health,
             => log.info("unimplemented action={}", .{action}),
         }
     }
@@ -581,7 +620,7 @@ pub const Surface = struct {
     /// Set the initial window size. This is called exactly once at
     /// surface initialization time. This may be called before "self"
     /// is fully initialized.
-    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
         const monitor = self.window.getMonitor() orelse glfw.Monitor.getPrimary() orelse {
             log.warn("window is not on a monitor, not setting initial size", .{});
             return;
@@ -594,18 +633,11 @@ pub const Surface = struct {
         });
     }
 
-    /// Set the cell size. Unused by GLFW.
-    pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
-        _ = self;
-        _ = width;
-        _ = height;
-    }
-
     /// Set the size limits of the window.
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,
     /// or no mins.
-    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
+    fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         self.window.setSizeLimits(.{
             .width = min.width,
             .height = min.height,
@@ -655,7 +687,7 @@ pub const Surface = struct {
     }
 
     /// Set the title of the window.
-    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+    fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         if (self.title_text) |t| self.core_surface.alloc.free(t);
         self.title_text = try self.core_surface.alloc.dupeZ(u8, slice);
         self.window.setTitle(self.title_text.?.ptr);
@@ -667,7 +699,7 @@ pub const Surface = struct {
     }
 
     /// Set the shape of the cursor.
-    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
+    fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
         if ((comptime builtin.target.isDarwin()) and
             !internal_os.macosVersionAtLeast(13, 0, 0))
         {
@@ -703,21 +735,9 @@ pub const Surface = struct {
         self.cursor = new;
     }
 
-    pub fn mouseOverLink(self: *Surface, uri: ?[]const u8) void {
-        // We don't do anything in GLFW.
-        _ = self;
-        _ = uri;
-    }
-
     /// Set the visibility of the mouse cursor.
-    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
+    fn setMouseVisibility(self: *Surface, visible: bool) void {
         self.window.setInputModeCursor(if (visible) .normal else .hidden);
-    }
-
-    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
-        // We don't support this in GLFW.
-        _ = self;
-        _ = health;
     }
 
     pub fn supportsClipboard(

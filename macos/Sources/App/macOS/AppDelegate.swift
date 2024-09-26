@@ -484,6 +484,24 @@ class AppDelegate: NSObject,
         dockMenu.addItem(newTab)
     }
 
+    //MARK: - Global State
+
+    func setSecureInput(_ mode: Ghostty.SetSecureInput) {
+        let input = SecureInput.shared
+        switch (mode) {
+        case .on:
+            input.global = true
+
+        case .off:
+            input.global = false
+
+        case .toggle:
+            input.global.toggle()
+        }
+        self.menuSecureInput?.state = if (input.global) { .on } else { .off }
+        UserDefaults.standard.set(input.global, forKey: "SecureInput")
+    }
+
     //MARK: - IB Actions
 
     @IBAction func openConfig(_ sender: Any?) {
@@ -525,9 +543,6 @@ class AppDelegate: NSObject,
     }
 
     @IBAction func toggleSecureInput(_ sender: Any) {
-        let input = SecureInput.shared
-        input.global.toggle()
-        self.menuSecureInput?.state = if (input.global) { .on } else { .off }
-        UserDefaults.standard.set(input.global, forKey: "SecureInput")
+        setSecureInput(.toggle)
     }
 }
