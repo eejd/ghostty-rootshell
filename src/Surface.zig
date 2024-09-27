@@ -2476,15 +2476,33 @@ pub fn mouseButtonCallback(
         if (mods.shift and
             self.mouse.left_click_count > 0 and
             !shift_capture)
-        {
+        extend_selection: {
             // We split this conditional out on its own because this is the
             // only one that requires a renderer mutex grab which is VERY
             // expensive because it could block all our threads.
-            if (self.hasSelection()) {
-                const pos = try self.rt_surface.getCursorPos();
-                try self.cursorPosCallback(pos, null);
-                return true;
+            if (!self.hasSelection()) break :extend_selection;
+
+            // If we are within the interval that the click would register
+            // an increment then we do not extend the selection.
+            if (std.time.Instant.now()) |now| {
+                const since = now.since(self.mouse.left_click_time);
+                if (since <= self.config.mouse_interval) {
+                    // Click interval very short, we may be increasing
+                    // click counts so we don't extend the selection.
+                    break :extend_selection;
+                }
+            } else |err| {
+                // This is a weird behavior, I think either behavior is actually
+                // fine. This failure should be exceptionally rare anyways.
+                // My thinking here is that we can't be sure if we should extend
+                // the selection or not so we just don't.
+                log.warn("failed to get time, not extending selection err={}", .{err});
+                break :extend_selection;
             }
+
+            const pos = try self.rt_surface.getCursorPos();
+            try self.cursorPosCallback(pos, null);
+            return true;
         }
     }
 
