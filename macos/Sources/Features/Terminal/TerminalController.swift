@@ -734,7 +734,7 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         // Get the tab index from the notification
         guard let tabEnumAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
         guard let tabEnum = tabEnumAny as? ghostty_action_goto_tab_e else { return }
-        let tabIndex: Int32 = .init(bitPattern: tabEnum.rawValue)
+        let tabIndex: Int32 = tabEnum.rawValue
 
         guard let windowController = window.windowController else { return }
         guard let tabGroup = windowController.window?.tabGroup else { return }
