@@ -298,6 +298,10 @@ pub const Action = union(enum) {
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 
+    /// Toggle the tab overview.
+    /// This only works with libadwaita enabled currently.
+    toggle_tab_overview: void,
+
     /// Create a new split in the given direction. The new split will appear in
     /// the direction given.
     new_split: SplitDirection,
@@ -607,6 +611,7 @@ pub const Action = union(enum) {
             .next_tab,
             .last_tab,
             .goto_tab,
+            .toggle_tab_overview,
             .new_split,
             .goto_split,
             .toggle_split_zoom,

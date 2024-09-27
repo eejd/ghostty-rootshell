@@ -87,6 +87,9 @@ pub const Action = union(Key) {
     /// Toggle fullscreen mode.
     toggle_fullscreen: Fullscreen,
 
+    /// Toggle tab overview.
+    toggle_tab_overview,
+
     /// Toggle whether window directions are shown.
     toggle_window_decorations,
 
@@ -171,6 +174,7 @@ pub const Action = union(Key) {
         new_split,
         close_all_windows,
         toggle_fullscreen,
+        toggle_tab_overview,
         toggle_window_decorations,
         goto_tab,
         goto_split,
