@@ -17,6 +17,7 @@ const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
 const input = @import("../../input.zig");
 const internal_os = @import("../../os/main.zig");
+const terminal = @import("../../terminal/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
@@ -365,14 +366,23 @@ pub fn performAction(
         .open_config => try configpkg.edit.open(self.core_app.alloc),
         .inspector => self.controlInspector(target, value),
         .desktop_notification => self.showDesktopNotification(target, value),
+        .set_title => try self.setTitle(target, value),
         .present_terminal => self.presentTerminal(target),
+        .initial_size => try self.setInitialSize(target, value),
+        .mouse_visibility => self.setMouseVisibility(target, value),
+        .mouse_shape => try self.setMouseShape(target, value),
+        .mouse_over_link => self.setMouseOverLink(target, value),
         .toggle_window_decorations => self.toggleWindowDecorations(target),
         .quit_timer => self.quitTimer(value),
 
         // Unimplemented
         .close_all_windows,
         .toggle_split_zoom,
+        .size_limit,
+        .cell_size,
         .secure_input,
+        .render_inspector,
+        .renderer_health,
         => log.warn("unimplemented action={}", .{action}),
     }
 }
@@ -551,6 +561,66 @@ fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
     }
 }
 
+fn setTitle(
+    _: *App,
+    target: apprt.Target,
+    title: apprt.action.SetTitle,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| try v.rt_surface.setTitle(title.title),
+    }
+}
+
+fn setMouseVisibility(
+    _: *App,
+    target: apprt.Target,
+    visibility: apprt.action.MouseVisibility,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| v.rt_surface.setMouseVisibility(switch (visibility) {
+            .visible => true,
+            .hidden => false,
+        }),
+    }
+}
+
+fn setMouseShape(
+    _: *App,
+    target: apprt.Target,
+    shape: terminal.MouseShape,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| try v.rt_surface.setMouseShape(shape),
+    }
+}
+
+fn setMouseOverLink(
+    _: *App,
+    target: apprt.Target,
+    value: apprt.action.MouseOverLink,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| v.rt_surface.mouseOverLink(value.url),
+    }
+}
+
+fn setInitialSize(
+    _: *App,
+    target: apprt.Target,
+    value: apprt.action.InitialSize,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| try v.rt_surface.setInitialWindowSize(
+            value.width,
+            value.height,
+        ),
+    }
+}
 fn showDesktopNotification(
     self: *App,
     target: apprt.Target,

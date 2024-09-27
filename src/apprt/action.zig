@@ -1,13 +1,45 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const apprt = @import("../apprt.zig");
+const renderer = @import("../renderer.zig");
+const terminal = @import("../terminal/main.zig");
 const CoreSurface = @import("../Surface.zig");
 
 /// The target for an action. This is generally the thing that had focus
 /// while the action was made but the concept of "focus" is not guaranteed
 /// since actions can also be triggered by timers, scripts, etc.
-pub const Target = union(enum) {
+pub const Target = union(Key) {
     app,
     surface: *CoreSurface,
+
+    // Sync with: ghostty_target_tag_e
+    pub const Key = enum(c_int) {
+        app,
+        surface,
+    };
+
+    // Sync with: ghostty_target_u
+    pub const CValue = extern union {
+        app: void,
+        surface: *apprt.Surface,
+    };
+
+    // Sync with: ghostty_target_s
+    pub const C = extern struct {
+        key: Key,
+        value: CValue,
+    };
+
+    /// Convert to ghostty_target_s.
+    pub fn cval(self: Target) C {
+        return .{
+            .key = @as(Key, self),
+            .value = switch (self) {
+                .app => .{ .app = {} },
+                .surface => |v| .{ .surface = v.rt_surface },
+            },
+        };
+    }
 };
 
 /// The possible actions an apprt has to react to. Actions are one-way
@@ -19,7 +51,23 @@ pub const Target = union(enum) {
 /// Importantly, actions are generally OPTIONAL to implement by an apprt.
 /// Required functionality is called directly on the runtime structure so
 /// there is a compiler error if an action is not implemented.
-pub const Action = union(enum) {
+pub const Action = union(Key) {
+    // A GUIDE TO ADDING NEW ACTIONS:
+    //
+    // 1. Add the action to the `Key` enum. The order of the enum matters
+    //    because it maps directly to the libghostty C enum. For ABI
+    //    compatibility, new actions should be added to the end of the enum.
+    //
+    // 2. Add the action and optional value to the Action union.
+    //
+    // 3. If the value type is not void, ensure the value is C ABI
+    //    compatible (extern). If it is not, add a `C` decl to the value
+    //    and a `cval` function to convert to the C ABI compatible value.
+    //
+    // 4. Update `include/ghostty.h`: add the new key, value, and union
+    //    entry. If the value type is void then only the key needs to be
+    //    added. Ensure the order matches exactly with the Zig code.
+
     /// Open a new window. The target determines whether properties such
     /// as font size should be inherited.
     new_window,
@@ -62,11 +110,41 @@ pub const Action = union(enum) {
     /// Present the target terminal whether its a tab, split, or window.
     present_terminal,
 
+    /// Sets a size limit (in pixels) for the target terminal.
+    size_limit: SizeLimit,
+
+    /// Specifies the initial size of the target terminal. This will be
+    /// sent only during the initialization of a surface. If it is received
+    /// after the surface is initialized it should be ignored.
+    initial_size: InitialSize,
+
+    /// The cell size has changed to the given dimensions in pixels.
+    cell_size: CellSize,
+
     /// Control whether the inspector is shown or hidden.
     inspector: Inspector,
 
+    /// The inspector for the given target has changes and should be
+    /// rendered at the next opportunity.
+    render_inspector,
+
     /// Show a desktop notification.
     desktop_notification: DesktopNotification,
+
+    /// Set the title of the target.
+    set_title: SetTitle,
+
+    /// Set the mouse cursor shape.
+    mouse_shape: terminal.MouseShape,
+
+    /// Set whether the mouse cursor is visible or not.
+    mouse_visibility: MouseVisibility,
+
+    /// Called when the mouse is over or recently left a link.
+    mouse_over_link: MouseOverLink,
+
+    /// The health of the renderer has changed.
+    renderer_health: renderer.Health,
 
     /// Open the Ghostty configuration. This is platform-specific about
     /// what it means; it can mean opening a dedicated UI or just opening
@@ -86,8 +164,69 @@ pub const Action = union(enum) {
     /// system APIs to not log the input, etc.
     secure_input: SecureInput,
 
-    /// The enum of keys in the tagged union.
-    pub const Key = @typeInfo(Action).Union.tag_type.?;
+    /// Sync with: ghostty_action_tag_e
+    pub const Key = enum(c_int) {
+        new_window,
+        new_tab,
+        new_split,
+        close_all_windows,
+        toggle_fullscreen,
+        toggle_window_decorations,
+        goto_tab,
+        goto_split,
+        resize_split,
+        equalize_splits,
+        toggle_split_zoom,
+        present_terminal,
+        size_limit,
+        initial_size,
+        cell_size,
+        inspector,
+        render_inspector,
+        desktop_notification,
+        set_title,
+        mouse_shape,
+        mouse_visibility,
+        mouse_over_link,
+        renderer_health,
+        open_config,
+        quit_timer,
+        secure_input,
+    };
+
+    /// Sync with: ghostty_action_u
+    pub const CValue = cvalue: {
+        const key_fields = @typeInfo(Key).Enum.fields;
+        var union_fields: [key_fields.len]std.builtin.Type.UnionField = undefined;
+        for (key_fields, 0..) |field, i| {
+            const action = @unionInit(Action, field.name, undefined);
+            const Type = t: {
+                const Type = @TypeOf(@field(action, field.name));
+                // Types can provide custom types for their CValue.
+                if (Type != void and @hasDecl(Type, "C")) break :t Type.C;
+                break :t Type;
+            };
+
+            union_fields[i] = .{
+                .name = field.name,
+                .type = Type,
+                .alignment = @alignOf(Type),
+            };
+        }
+
+        break :cvalue @Type(.{ .Union = .{
+            .layout = .@"extern",
+            .tag_type = Key,
+            .fields = &union_fields,
+            .decls = &.{},
+        } });
+    };
+
+    /// Sync with: ghostty_action_s
+    pub const C = extern struct {
+        key: Key,
+        value: CValue,
+    };
 
     /// Returns the value type for the given key.
     pub fn Value(comptime key: Key) type {
@@ -97,6 +236,22 @@ pub const Action = union(enum) {
         }
 
         unreachable;
+    }
+
+    /// Convert to ghostty_action_s.
+    pub fn cval(self: Action) C {
+        const value: CValue = switch (self) {
+            inline else => |v, tag| @unionInit(
+                CValue,
+                @tagName(tag),
+                if (@TypeOf(v) != void and @hasDecl(@TypeOf(v), "cval")) v.cval() else v,
+            ),
+        };
+
+        return .{
+            .key = @as(Key, self),
+            .value = value,
+        };
     }
 };
 
@@ -120,7 +275,7 @@ pub const GotoSplit = enum(c_int) {
 };
 
 /// The amount to resize the split by and the direction to resize it in.
-pub const ResizeSplit = struct {
+pub const ResizeSplit = extern struct {
     amount: u16,
     direction: Direction,
 
@@ -170,8 +325,75 @@ pub const QuitTimer = enum(c_int) {
     stop,
 };
 
+pub const MouseVisibility = enum(c_int) {
+    visible,
+    hidden,
+};
+
+pub const MouseOverLink = struct {
+    url: []const u8,
+
+    // Sync with: ghostty_action_mouse_over_link_s
+    pub const C = extern struct {
+        url: [*]const u8,
+        len: usize,
+    };
+
+    pub fn cval(self: MouseOverLink) C {
+        return .{
+            .url = self.url.ptr,
+            .len = self.url.len,
+        };
+    }
+};
+
+pub const SizeLimit = extern struct {
+    min_width: u32,
+    min_height: u32,
+    max_width: u32,
+    max_height: u32,
+};
+
+pub const InitialSize = extern struct {
+    width: u32,
+    height: u32,
+};
+
+pub const CellSize = extern struct {
+    width: u32,
+    height: u32,
+};
+
+pub const SetTitle = struct {
+    title: [:0]const u8,
+
+    // Sync with: ghostty_action_set_title_s
+    pub const C = extern struct {
+        title: [*:0]const u8,
+    };
+
+    pub fn cval(self: SetTitle) C {
+        return .{
+            .title = self.title.ptr,
+        };
+    }
+};
+
 /// The desktop notification to show.
 pub const DesktopNotification = struct {
     title: [:0]const u8,
     body: [:0]const u8,
+
+    // Sync with: ghostty_action_desktop_notification_s
+    pub const C = extern struct {
+        title: [*:0]const u8,
+        body: [*:0]const u8,
+    };
+
+    pub fn cval(self: DesktopNotification) C {
+        return .{
+            .title = self.title.ptr,
+            .body = self.body.ptr,
+        };
+    }
 };

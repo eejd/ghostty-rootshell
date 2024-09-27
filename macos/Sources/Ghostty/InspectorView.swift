@@ -55,7 +55,7 @@ extension Ghostty {
         private func onControlInspector(_ notification: SwiftUI.Notification) {
             // Determine our mode
             guard let modeAny = notification.userInfo?["mode"] else { return }
-            guard let mode = modeAny as? ghostty_inspector_mode_e else { return }
+            guard let mode = modeAny as? ghostty_action_inspector_e else { return }
 
             switch (mode) {
             case GHOSTTY_INSPECTOR_TOGGLE:

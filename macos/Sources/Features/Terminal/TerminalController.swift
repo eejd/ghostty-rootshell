@@ -551,12 +551,12 @@ class TerminalController: NSWindowController, NSWindowDelegate,
 
     @IBAction func splitRight(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_RIGHT)
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DIRECTION_RIGHT)
     }
 
     @IBAction func splitDown(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
-        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DOWN)
+        ghostty.split(surface: surface, direction: GHOSTTY_SPLIT_DIRECTION_DOWN)
     }
 
     @IBAction func splitZoom(_ sender: Any) {
@@ -732,8 +732,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let window = self.window else { return }
 
         // Get the tab index from the notification
-        guard let tabIndexAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
-        guard let tabIndex = tabIndexAny as? Int32 else { return }
+        guard let tabEnumAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
+        guard let tabEnum = tabEnumAny as? ghostty_action_goto_tab_e else { return }
+        let tabIndex: Int32 = .init(bitPattern: tabEnum.rawValue)
 
         guard let windowController = window.windowController else { return }
         guard let tabGroup = windowController.window?.tabGroup else { return }
@@ -747,19 +748,19 @@ class TerminalController: NSWindowController, NSWindowDelegate,
             guard let selectedWindow = tabGroup.selectedWindow else { return }
             guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
 
-            if (tabIndex == GHOSTTY_TAB_PREVIOUS.rawValue) {
+            if (tabIndex == GHOSTTY_GOTO_TAB_PREVIOUS.rawValue) {
                 if (selectedIndex == 0) {
                     finalIndex = tabbedWindows.count - 1
                 } else {
                     finalIndex = selectedIndex - 1
                 }
-            } else if (tabIndex == GHOSTTY_TAB_NEXT.rawValue) {
+            } else if (tabIndex == GHOSTTY_GOTO_TAB_NEXT.rawValue) {
                 if (selectedIndex == tabbedWindows.count - 1) {
                     finalIndex = 0
                 } else {
                     finalIndex = selectedIndex + 1
                 }
-            } else if (tabIndex == GHOSTTY_TAB_LAST.rawValue) {
+            } else if (tabIndex == GHOSTTY_GOTO_TAB_LAST.rawValue) {
                 finalIndex = tabbedWindows.count - 1
             } else {
                 return
@@ -783,9 +784,9 @@ class TerminalController: NSWindowController, NSWindowDelegate,
         guard let window = self.window else { return }
 
         // Check whether we use non-native fullscreen
-        guard let useNonNativeFullscreenAny = notification.userInfo?[Ghostty.Notification.NonNativeFullscreenKey] else { return }
-        guard let useNonNativeFullscreen = useNonNativeFullscreenAny as? ghostty_non_native_fullscreen_e else { return }
-        self.fullscreenHandler.toggleFullscreen(window: window, nonNativeFullscreen: useNonNativeFullscreen)
+        guard let fullscreenModeAny = notification.userInfo?[Ghostty.Notification.FullscreenModeKey] else { return }
+        guard let fullscreenMode = fullscreenModeAny as? ghostty_action_fullscreen_e else { return }
+        self.fullscreenHandler.toggleFullscreen(window: window, mode: fullscreenMode)
 
         // For some reason focus always gets lost when we toggle fullscreen, so we set it back.
         if let focusedSurface {

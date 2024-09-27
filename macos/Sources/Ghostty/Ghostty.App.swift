@@ -67,36 +67,12 @@ extension Ghostty {
                 userdata: Unmanaged.passUnretained(self).toOpaque(),
                 supports_selection_clipboard: false,
                 wakeup_cb: { userdata in App.wakeup(userdata) },
+                action_cb: { app, target, action in App.action(app!, target: target, action: action) },
                 reload_config_cb: { userdata in App.reloadConfig(userdata) },
-                open_config_cb: { userdata in App.openConfig(userdata) },
-                set_title_cb: { userdata, title in App.setTitle(userdata, title: title) },
-                set_mouse_shape_cb: { userdata, shape in App.setMouseShape(userdata, shape: shape) },
-                set_mouse_visibility_cb: { userdata, visible in App.setMouseVisibility(userdata, visible: visible) },
                 read_clipboard_cb: { userdata, loc, state in App.readClipboard(userdata, location: loc, state: state) },
                 confirm_read_clipboard_cb: { userdata, str, state, request in App.confirmReadClipboard(userdata, string: str, state: state, request: request ) },
                 write_clipboard_cb: { userdata, str, loc, confirm in App.writeClipboard(userdata, string: str, location: loc, confirm: confirm) },
-                new_split_cb: { userdata, direction, surfaceConfig in App.newSplit(userdata, direction: direction, config: surfaceConfig) },
-                new_tab_cb: { userdata, surfaceConfig in App.newTab(userdata, config: surfaceConfig) },
-                new_window_cb: { userdata, surfaceConfig in App.newWindow(userdata, config: surfaceConfig) },
-                control_inspector_cb: { userdata, mode in App.controlInspector(userdata, mode: mode) },
-                close_surface_cb: { userdata, processAlive in App.closeSurface(userdata, processAlive: processAlive) },
-                focus_split_cb: { userdata, direction in App.focusSplit(userdata, direction: direction) },
-                resize_split_cb: { userdata, direction, amount in
-                    App.resizeSplit(userdata, direction: direction, amount: amount) },
-                equalize_splits_cb: { userdata in
-                    App.equalizeSplits(userdata) },
-                toggle_split_zoom_cb: { userdata in App.toggleSplitZoom(userdata) },
-                goto_tab_cb: { userdata, n in App.gotoTab(userdata, n: n) },
-                toggle_fullscreen_cb: { userdata, nonNativeFullscreen in App.toggleFullscreen(userdata, nonNativeFullscreen: nonNativeFullscreen) },
-                set_initial_window_size_cb: { userdata, width, height in App.setInitialWindowSize(userdata, width: width, height: height) },
-                render_inspector_cb: { userdata in App.renderInspector(userdata) },
-                set_cell_size_cb: { userdata, width, height in App.setCellSize(userdata, width: width, height: height) },
-                show_desktop_notification_cb: { userdata, title, body in
-                    App.showUserNotification(userdata, title: title, body: body) },
-                update_renderer_health_cb: { userdata, health in App.updateRendererHealth(userdata, health: health) },
-                mouse_over_link_cb: { userdata, ptr, len in App.mouseOverLink(userdata, uri: ptr, len: len) },
-                set_password_input_cb: { userdata, value in App.setPasswordInput(userdata, value: value) },
-                toggle_secure_input_cb: { App.toggleSecureInput() }
+                close_surface_cb: { userdata, processAlive in App.closeSurface(userdata, processAlive: processAlive) }
             )
 
             // Create the ghostty app.
@@ -185,7 +161,7 @@ extension Ghostty {
             }
         }
 
-        func split(surface: ghostty_surface_t, direction: ghostty_split_direction_e) {
+        func split(surface: ghostty_surface_t, direction: ghostty_action_split_direction_e) {
             ghostty_surface_split(surface, direction)
         }
 
@@ -254,11 +230,8 @@ extension Ghostty {
         // MARK: Ghostty Callbacks (iOS)
 
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {}
+        static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) {}
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? { return nil }
-        static func openConfig(_ userdata: UnsafeMutableRawPointer?) {}
-        static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {}
-        static func setMouseShape(_ userdata: UnsafeMutableRawPointer?, shape: ghostty_mouse_shape_e) {}
-        static func setMouseVisibility(_ userdata: UnsafeMutableRawPointer?, visible: Bool) {}
         static func readClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             location: ghostty_clipboard_e,
@@ -279,30 +252,7 @@ extension Ghostty {
             confirm: Bool
         ) {}
 
-        static func newSplit(
-            _ userdata: UnsafeMutableRawPointer?,
-            direction: ghostty_split_direction_e,
-            config: ghostty_surface_config_s
-        ) {}
-
-        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {}
-        static func newWindow(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {}
-        static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {}
         static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {}
-        static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_focus_direction_e) {}
-        static func resizeSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_resize_direction_e, amount: UInt16) {}
-        static func equalizeSplits(_ userdata: UnsafeMutableRawPointer?) {}
-        static func toggleSplitZoom(_ userdata: UnsafeMutableRawPointer?) {}
-        static func gotoTab(_ userdata: UnsafeMutableRawPointer?, n: Int32) {}
-        static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {}
-        static func setInitialWindowSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {}
-        static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {}
-        static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {}
-        static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {}
-        static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {}
-        static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {}
-        static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {}
-        static func toggleSecureInput() {}
         #endif
 
         #if os(macOS)
@@ -318,69 +268,11 @@ extension Ghostty {
 
         // MARK: Ghostty Callbacks (macOS)
 
-        static func newSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_direction_e, config: ghostty_surface_config_s) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(name: Notification.ghosttyNewSplit, object: surface, userInfo: [
-                "direction": direction,
-                Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
-            ])
-        }
-
         static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
             let surface = self.surfaceUserdata(from: userdata)
             NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
                 "process_alive": processAlive,
             ])
-        }
-
-        static func focusSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_focus_direction_e) {
-            let surface = self.surfaceUserdata(from: userdata)
-            guard let splitDirection = SplitFocusDirection.from(direction: direction) else { return }
-            NotificationCenter.default.post(
-                name: Notification.ghosttyFocusSplit,
-                object: surface,
-                userInfo: [
-                    Notification.SplitDirectionKey: splitDirection,
-                ]
-            )
-        }
-
-        static func resizeSplit(_ userdata: UnsafeMutableRawPointer?, direction: ghostty_split_resize_direction_e, amount: UInt16) {
-            let surface = self.surfaceUserdata(from: userdata)
-            guard let resizeDirection = SplitResizeDirection.from(direction: direction) else { return }
-            NotificationCenter.default.post(
-                name: Notification.didResizeSplit,
-                object: surface,
-                userInfo: [
-                    Notification.ResizeSplitDirectionKey: resizeDirection,
-                    Notification.ResizeSplitAmountKey: amount,
-                ]
-            )
-        }
-
-        static func equalizeSplits(_ userdata: UnsafeMutableRawPointer?) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(name: Notification.didEqualizeSplits, object: surface)
-        }
-
-        static func toggleSplitZoom(_ userdata: UnsafeMutableRawPointer?) {
-            let surface = self.surfaceUserdata(from: userdata)
-
-            NotificationCenter.default.post(
-                name: Notification.didToggleSplitZoom,
-                object: surface
-            )
-        }
-
-        static func gotoTab(_ userdata: UnsafeMutableRawPointer?, n: Int32) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(
-                name: Notification.ghosttyGotoTab,
-                object: surface,
-                userInfo: [
-                    Notification.GotoTabKey: n,
-                ]
-            )
         }
 
         static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) {
@@ -454,10 +346,6 @@ extension Ghostty {
             )
         }
 
-        static func openConfig(_ userdata: UnsafeMutableRawPointer?) {
-            ghostty_config_open();
-        }
-
         static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
             let newConfig = Config()
             guard newConfig.loaded else {
@@ -488,98 +376,647 @@ extension Ghostty {
             DispatchQueue.main.async { state.appTick() }
         }
 
-        static func renderInspector(_ userdata: UnsafeMutableRawPointer?) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(
-                name: Notification.inspectorNeedsDisplay,
-                object: surface
-            )
+        /// Determine if a given notification should be presented to the user when Ghostty is running in the foreground.
+        func shouldPresentNotification(notification: UNNotification) -> Bool {
+            let userInfo = notification.request.content.userInfo
+            guard let uuidString = userInfo["surface"] as? String,
+                  let uuid = UUID(uuidString: uuidString),
+                  let surface = delegate?.findSurface(forUUID: uuid),
+                  let window = surface.window else { return false }
+            return !window.isKeyWindow || !surface.focused
         }
 
-        static func setTitle(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            guard let titleStr = String(cString: title!, encoding: .utf8) else { return }
-            DispatchQueue.main.async {
-                surfaceView.title = titleStr
-            }
+        /// Returns the GhosttyState from the given userdata value.
+        static private func appState(fromView view: SurfaceView) -> App? {
+            guard let surface = view.surface else { return nil }
+            guard let app = ghostty_surface_app(surface) else { return nil }
+            guard let app_ud = ghostty_app_userdata(app) else { return nil }
+            return Unmanaged<App>.fromOpaque(app_ud).takeUnretainedValue()
         }
 
-        static func setMouseShape(_ userdata: UnsafeMutableRawPointer?, shape: ghostty_mouse_shape_e) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            surfaceView.setCursorShape(shape)
+        /// Returns the surface view from the userdata.
+        static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView {
+            return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
 
-        static func setMouseVisibility(_ userdata: UnsafeMutableRawPointer?, visible: Bool) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            surfaceView.setCursorVisibility(visible)
+        static private func surfaceView(from surface: ghostty_surface_t) -> SurfaceView? {
+            guard let surface_ud = ghostty_surface_userdata(surface) else { return nil }
+            return Unmanaged<SurfaceView>.fromOpaque(surface_ud).takeUnretainedValue()
         }
 
-        static func toggleFullscreen(_ userdata: UnsafeMutableRawPointer?, nonNativeFullscreen: ghostty_non_native_fullscreen_e) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(
-                name: Notification.ghosttyToggleFullscreen,
-                object: surface,
-                userInfo: [
-                    Notification.NonNativeFullscreenKey: nonNativeFullscreen,
-                ]
-            )
-        }
+        // MARK: Actions (macOS)
 
-        static func setInitialWindowSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
-            // We need a window to set the frame
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            surfaceView.initialSize = NSMakeSize(Double(width), Double(height))
-        }
+        static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) {
+            // Make sure it a target we understand so all our action handlers can assert
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP, GHOSTTY_TARGET_SURFACE:
+                break
 
-        static func setCellSize(_ userdata: UnsafeMutableRawPointer?, width: UInt32, height: UInt32) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            let backingSize = NSSize(width: Double(width), height: Double(height))
-            surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
-        }
-
-        static func mouseOverLink(_ userdata: UnsafeMutableRawPointer?, uri: UnsafePointer<CChar>?, len: Int) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            guard len > 0 else {
-                surfaceView.hoverUrl = nil
+            default:
+                Ghostty.logger.warning("unknown action target=\(target.tag.rawValue)")
                 return
             }
 
-            let buffer = Data(bytes: uri!, count: len)
-            surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
+            // Action dispatch
+            switch (action.tag) {
+            case GHOSTTY_ACTION_NEW_WINDOW:
+                newWindow(app, target: target)
+
+            case GHOSTTY_ACTION_NEW_TAB:
+                newTab(app, target: target)
+
+            case GHOSTTY_ACTION_NEW_SPLIT:
+                newSplit(app, target: target, direction: action.action.new_split)
+
+            case GHOSTTY_ACTION_TOGGLE_FULLSCREEN:
+                toggleFullscreen(app, target: target, mode: action.action.toggle_fullscreen)
+
+            case GHOSTTY_ACTION_GOTO_TAB:
+                gotoTab(app, target: target, tab: action.action.goto_tab)
+
+            case GHOSTTY_ACTION_GOTO_SPLIT:
+                gotoSplit(app, target: target, direction: action.action.goto_split)
+
+            case GHOSTTY_ACTION_RESIZE_SPLIT:
+                resizeSplit(app, target: target, resize: action.action.resize_split)
+
+            case GHOSTTY_ACTION_EQUALIZE_SPLITS:
+                equalizeSplits(app, target: target)
+
+            case GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM:
+                toggleSplitZoom(app, target: target)
+
+            case GHOSTTY_ACTION_INSPECTOR:
+                controlInspector(app, target: target, mode: action.action.inspector)
+
+            case GHOSTTY_ACTION_RENDER_INSPECTOR:
+                renderInspector(app, target: target)
+
+            case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+                showDesktopNotification(app, target: target, n: action.action.desktop_notification)
+
+            case GHOSTTY_ACTION_SET_TITLE:
+                setTitle(app, target: target, v: action.action.set_title)
+
+            case GHOSTTY_ACTION_OPEN_CONFIG:
+                ghostty_config_open()
+
+            case GHOSTTY_ACTION_SECURE_INPUT:
+                toggleSecureInput(app, target: target, mode: action.action.secure_input)
+
+            case GHOSTTY_ACTION_MOUSE_SHAPE:
+                setMouseShape(app, target: target, shape: action.action.mouse_shape)
+
+            case GHOSTTY_ACTION_MOUSE_VISIBILITY:
+                setMouseVisibility(app, target: target, v: action.action.mouse_visibility)
+
+            case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+                setMouseOverLink(app, target: target, v: action.action.mouse_over_link)
+
+            case GHOSTTY_ACTION_INITIAL_SIZE:
+                setInitialSize(app, target: target, v: action.action.initial_size)
+
+            case GHOSTTY_ACTION_CELL_SIZE:
+                setCellSize(app, target: target, v: action.action.cell_size)
+
+            case GHOSTTY_ACTION_RENDERER_HEALTH:
+                rendererHealth(app, target: target, v: action.action.renderer_health)
+
+            case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
+                fallthrough
+            case GHOSTTY_ACTION_TOGGLE_WINDOW_DECORATIONS:
+                fallthrough
+            case GHOSTTY_ACTION_PRESENT_TERMINAL:
+                fallthrough
+            case GHOSTTY_ACTION_SIZE_LIMIT:
+                fallthrough
+            case GHOSTTY_ACTION_QUIT_TIMER:
+                Ghostty.logger.info("known but unimplemented action action=\(action.tag.rawValue)")
+
+            default:
+                Ghostty.logger.warning("unknown action action=\(action.tag.rawValue)")
+            }
         }
 
-        static func setPasswordInput(_ userdata: UnsafeMutableRawPointer?, value: Bool) {
-            // We don't currently allow global password input being set from this.
-            guard let userdata else { return }
-            
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            guard let appState = self.appState(fromView: surfaceView) else { return }
-            guard appState.config.autoSecureInput else { return }
-            surfaceView.passwordInput = value
+        private static func newWindow(_ app: ghostty_app_t, target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyNewWindow,
+                    object: nil,
+                    userInfo: [:]
+                )
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyNewWindow,
+                    object: surfaceView,
+                    userInfo: [
+                        Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: ghostty_surface_inherited_config(surface)),
+                    ]
+                )
+
+
+            default:
+                assertionFailure()
+            }
         }
 
-        static func toggleSecureInput() {
-            guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
-            appDelegate.toggleSecureInput(self)
-        }
+        private static func newTab(_ app: ghostty_app_t, target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyNewTab,
+                    object: nil,
+                    userInfo: [:]
+                )
 
-        static func showUserNotification(_ userdata: UnsafeMutableRawPointer?, title: UnsafePointer<CChar>?, body: UnsafePointer<CChar>?) {
-            let surfaceView = self.surfaceUserdata(from: userdata)
-            guard let title = String(cString: title!, encoding: .utf8) else { return }
-            guard let body = String(cString: body!, encoding: .utf8) else { return }
-
-            let center = UNUserNotificationCenter.current()
-            center.requestAuthorization(options: [.alert, .sound]) { _, error in
-                if let error = error {
-                    AppDelegate.logger.error("Error while requesting notification authorization: \(error)")
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let appState = self.appState(fromView: surfaceView) else { return }
+                guard appState.config.windowDecorations else {
+                    let alert = NSAlert()
+                    alert.messageText = "Tabs are disabled"
+                    alert.informativeText = "Enable window decorations to use tabs"
+                    alert.addButton(withTitle: "OK")
+                    alert.alertStyle = .warning
+                    _ = alert.runModal()
+                    return
                 }
-            }
 
-            center.getNotificationSettings() { settings in
-                guard settings.authorizationStatus == .authorized else { return }
-                surfaceView.showUserNotification(title: title, body: body)
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyNewTab,
+                    object: surfaceView,
+                    userInfo: [
+                        Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: ghostty_surface_inherited_config(surface)),
+                    ]
+                )
+
+
+            default:
+                assertionFailure()
             }
         }
+
+        private static func newSplit(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            direction: ghostty_action_split_direction_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                // New split does nothing with an app target
+                Ghostty.logger.warning("new split does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyNewSplit,
+                    object: surfaceView,
+                    userInfo: [
+                        "direction": direction,
+                        Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: ghostty_surface_inherited_config(surface)),
+                    ]
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func toggleFullscreen(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            mode: ghostty_action_fullscreen_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle fullscreen does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.ghosttyToggleFullscreen,
+                    object: surfaceView,
+                    userInfo: [
+                        Notification.FullscreenModeKey: mode,
+                    ]
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func gotoTab(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            tab: ghostty_action_goto_tab_e) {
+                switch (target.tag) {
+                case GHOSTTY_TARGET_APP:
+                    Ghostty.logger.warning("goto tab does nothing with an app target")
+                    return
+
+                case GHOSTTY_TARGET_SURFACE:
+                    guard let surface = target.target.surface else { return }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    NotificationCenter.default.post(
+                        name: Notification.ghosttyGotoTab,
+                        object: surfaceView,
+                        userInfo: [
+                            Notification.GotoTabKey: tab,
+                        ]
+                    )
+
+                default:
+                    assertionFailure()
+                }
+        }
+
+        private static func gotoSplit(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            direction: ghostty_action_goto_split_e) {
+                switch (target.tag) {
+                case GHOSTTY_TARGET_APP:
+                    Ghostty.logger.warning("goto split does nothing with an app target")
+                    return
+
+                case GHOSTTY_TARGET_SURFACE:
+                    guard let surface = target.target.surface else { return }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    NotificationCenter.default.post(
+                        name: Notification.ghosttyFocusSplit,
+                        object: surfaceView,
+                        userInfo: [
+                            Notification.SplitDirectionKey: SplitFocusDirection.from(direction: direction) as Any,
+                        ]
+                    )
+
+                default:
+                    assertionFailure()
+                }
+        }
+
+        private static func resizeSplit(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            resize: ghostty_action_resize_split_s) {
+                switch (target.tag) {
+                case GHOSTTY_TARGET_APP:
+                    Ghostty.logger.warning("resize split does nothing with an app target")
+                    return
+
+                case GHOSTTY_TARGET_SURFACE:
+                    guard let surface = target.target.surface else { return }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    guard let resizeDirection = SplitResizeDirection.from(direction: resize.direction) else { return }
+                    NotificationCenter.default.post(
+                        name: Notification.didResizeSplit,
+                        object: surfaceView,
+                        userInfo: [
+                            Notification.ResizeSplitDirectionKey: resizeDirection,
+                            Notification.ResizeSplitAmountKey: resize.amount,
+                        ]
+                    )
+
+                default:
+                    assertionFailure()
+                }
+        }
+
+        private static func equalizeSplits(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("equalize splits does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.didEqualizeSplits,
+                    object: surfaceView
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func toggleSplitZoom(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle split zoom does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.didToggleSplitZoom,
+                    object: surfaceView
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func controlInspector(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            mode: ghostty_action_inspector_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle split zoom does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.didControlInspector,
+                    object: surfaceView,
+                    userInfo: ["mode": mode]
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func showDesktopNotification(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            n: ghostty_action_desktop_notification_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle split zoom does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let title = String(cString: n.title!, encoding: .utf8) else { return }
+                guard let body = String(cString: n.body!, encoding: .utf8) else { return }
+
+                let center = UNUserNotificationCenter.current()
+                center.requestAuthorization(options: [.alert, .sound]) { _, error in
+                    if let error = error {
+                        Ghostty.logger.error("Error while requesting notification authorization: \(error)")
+                    }
+                }
+
+                center.getNotificationSettings() { settings in
+                    guard settings.authorizationStatus == .authorized else { return }
+                    surfaceView.showUserNotification(title: title, body: body)
+                }
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func toggleSecureInput(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            mode mode_raw: ghostty_action_secure_input_e
+        ) {
+            guard let mode = SetSecureInput.from(mode_raw) else { return }
+
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+                appDelegate.setSecureInput(mode)
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let appState = self.appState(fromView: surfaceView) else { return }
+                guard appState.config.autoSecureInput else { return }
+
+                switch (mode) {
+                case .on:
+                    surfaceView.passwordInput = true
+
+                case .off:
+                    surfaceView.passwordInput = false
+
+                case .toggle:
+                    surfaceView.passwordInput = !surfaceView.passwordInput
+                }
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setTitle(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_set_title_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("set title does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let title = String(cString: v.title!, encoding: .utf8) else { return }
+
+                // We must set this in a dispatchqueue to avoid a deadlock on startup on some
+                // versions of macOS. I unfortunately didn't document the exact versions so
+                // I don't know when its safe to remove this.
+                DispatchQueue.main.async {
+                    surfaceView.title = title
+                }
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setMouseShape(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            shape: ghostty_action_mouse_shape_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("set mouse shapes nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                surfaceView.setCursorShape(shape)
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setMouseVisibility(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_mouse_visibility_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("set mouse shapes nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                switch (v) {
+                case GHOSTTY_MOUSE_VISIBLE:
+                    surfaceView.setCursorVisibility(true)
+
+                case GHOSTTY_MOUSE_HIDDEN:
+                    surfaceView.setCursorVisibility(false)
+
+                default:
+                    return
+                }
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setMouseOverLink(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_mouse_over_link_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("mouse over link does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard v.len > 0 else {
+                    surfaceView.hoverUrl = nil
+                    return
+                }
+
+                let buffer = Data(bytes: v.url!, count: v.len)
+                surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setInitialSize(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_initial_size_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("mouse over link does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                surfaceView.initialSize = NSMakeSize(Double(v.width), Double(v.height))
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func setCellSize(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_cell_size_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("mouse over link does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                let backingSize = NSSize(width: Double(v.width), height: Double(v.height))
+                surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func renderInspector(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("mouse over link does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.inspectorNeedsDisplay,
+                    object: surfaceView
+                )
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func rendererHealth(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_renderer_health_e) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("mouse over link does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: Notification.didUpdateRendererHealth,
+                    object: surfaceView,
+                    userInfo: [
+                        "health": v,
+                    ]
+                )
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        // MARK: User Notifications
 
         /// Handle a received user notification. This is called when a user notification is clicked or dismissed by the user
         func handleUserNotification(response: UNNotificationResponse) {
@@ -598,86 +1035,6 @@ extension Ghostty {
             default:
                 break
             }
-        }
-
-        /// Determine if a given notification should be presented to the user when Ghostty is running in the foreground.
-        func shouldPresentNotification(notification: UNNotification) -> Bool {
-            let userInfo = notification.request.content.userInfo
-            guard let uuidString = userInfo["surface"] as? String,
-                  let uuid = UUID(uuidString: uuidString),
-                  let surface = delegate?.findSurface(forUUID: uuid),
-                  let window = surface.window else { return false }
-            return !window.isKeyWindow || !surface.focused
-        }
-
-        static func newTab(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
-            let surface = self.surfaceUserdata(from: userdata)
-
-            guard let appState = self.appState(fromView: surface) else { return }
-            guard appState.config.windowDecorations else {
-                let alert = NSAlert()
-                alert.messageText = "Tabs are disabled"
-                alert.informativeText = "Enable window decorations to use tabs"
-                alert.addButton(withTitle: "OK")
-                alert.alertStyle = .warning
-                _ = alert.runModal()
-                return
-            }
-
-            NotificationCenter.default.post(
-                name: Notification.ghosttyNewTab,
-                object: surface,
-                userInfo: [
-                    Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
-                ]
-            )
-        }
-
-        static func newWindow(_ userdata: UnsafeMutableRawPointer?, config: ghostty_surface_config_s) {
-            let surface: SurfaceView? = if let userdata {
-                self.surfaceUserdata(from: userdata)
-            } else {
-                nil
-            }
-
-            NotificationCenter.default.post(
-                name: Notification.ghosttyNewWindow,
-                object: surface,
-                userInfo: [
-                    Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: config),
-                ]
-            )
-        }
-
-        static func controlInspector(_ userdata: UnsafeMutableRawPointer?, mode: ghostty_inspector_mode_e) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(name: Notification.didControlInspector, object: surface, userInfo: [
-                "mode": mode,
-            ])
-        }
-
-        static func updateRendererHealth(_ userdata: UnsafeMutableRawPointer?, health: ghostty_renderer_health_e) {
-            let surface = self.surfaceUserdata(from: userdata)
-            NotificationCenter.default.post(
-                name: Notification.didUpdateRendererHealth,
-                object: surface,
-                userInfo: [
-                    "health": health,
-                ]
-            )
-        }
-
-        /// Returns the GhosttyState from the given userdata value.
-        static private func appState(fromView view: SurfaceView) -> App? {
-            guard let surface = view.surface else { return nil }
-            guard let app = ghostty_surface_app(surface) else { return nil }
-            guard let app_ud = ghostty_app_userdata(app) else { return nil }
-            return Unmanaged<App>.fromOpaque(app_ud).takeUnretainedValue()
-        }
-
-        /// Returns the surface view from the userdata.
-        static private func surfaceUserdata(from userdata: UnsafeMutableRawPointer?) -> SurfaceView {
-            return Unmanaged<SurfaceView>.fromOpaque(userdata!).takeUnretainedValue()
         }
 
         #endif

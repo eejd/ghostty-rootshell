@@ -784,18 +784,6 @@ pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void
     );
 }
 
-pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
-    _ = self;
-    _ = width;
-    _ = height;
-}
-
-pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
-    _ = self;
-    _ = min;
-    _ = max_;
-}
-
 pub fn grabFocus(self: *Surface) void {
     if (self.container.tab()) |tab| tab.focus_child = self;
 
@@ -1920,10 +1908,4 @@ pub fn present(self: *Surface) void {
     }
 
     self.grabFocus();
-}
-
-pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
-    // We don't support this in GTK.
-    _ = self;
-    _ = health;
 }

@@ -515,14 +515,25 @@ pub fn init(
     errdefer self.io.deinit();
 
     // Report initial cell size on surface creation
-    try rt_surface.setCellSize(cell_size.width, cell_size.height);
+    try rt_app.performAction(
+        .{ .surface = self },
+        .cell_size,
+        .{ .width = cell_size.width, .height = cell_size.height },
+    );
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
-    try rt_surface.setSizeLimits(.{
-        .width = cell_size.width * 10,
-        .height = cell_size.height * 4,
-    }, null);
+    try rt_app.performAction(
+        .{ .surface = self },
+        .size_limit,
+        .{
+            .min_width = cell_size.width * 10,
+            .min_height = cell_size.height * 4,
+            // No max:
+            .max_width = 0,
+            .max_height = 0,
+        },
+    );
 
     // Call our size callback which handles all our retina setup
     // Note: this shouldn't be necessary and when we clean up the surface
@@ -576,13 +587,23 @@ pub fn init(
             padding.top +
             padding.bottom;
 
-        rt_surface.setInitialWindowSize(final_width, final_height) catch |err| {
+        rt_app.performAction(
+            .{ .surface = self },
+            .initial_size,
+            .{ .width = final_width, .height = final_height },
+        ) catch |err| {
+            // We don't treat this as a fatal error because not setting
+            // an initial size shouldn't stop our terminal from working.
             log.warn("unable to set initial window size: {s}", .{err});
         };
     }
 
     if (config.title) |title| {
-        try rt_surface.setTitle(title);
+        try rt_app.performAction(
+            .{ .surface = self },
+            .set_title,
+            .{ .title = title },
+        );
     } else if ((comptime builtin.os.tag == .linux) and
         config.@"_xdg-terminal-exec")
     xdg: {
@@ -599,7 +620,11 @@ pub fn init(
                 break :xdg;
             };
             defer alloc.free(title);
-            try rt_surface.setTitle(title);
+            try rt_app.performAction(
+                .{ .surface = self },
+                .set_title,
+                .{ .title = title },
+            );
         }
     }
 }
@@ -743,7 +768,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             // We know that our title should end in 0.
             const slice = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(v)), 0);
             log.debug("changing title \"{s}\"", .{slice});
-            try self.rt_surface.setTitle(slice);
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_title,
+                .{ .title = slice },
+            );
         },
 
         .report_title => |style| {
@@ -769,7 +798,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .set_mouse_shape => |shape| {
             log.debug("changing mouse shape: {}", .{shape});
-            try self.rt_surface.setMouseShape(shape);
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_shape,
+                shape,
+            );
         },
 
         .clipboard_read => |clipboard| {
@@ -897,7 +930,13 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
 /// Called when our renderer health state changes.
 fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     log.warn("renderer health status change status={}", .{health});
-    self.rt_surface.updateRendererHealth(health);
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .renderer_health,
+        health,
+    ) catch |err| {
+        log.warn("failed to notify app of renderer health change err={}", .{err});
+    };
 }
 
 /// Update our configuration at runtime.
@@ -1194,7 +1233,11 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     }, .unlocked);
 
     // Notify the window
-    try self.rt_surface.setCellSize(size.width, size.height);
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .cell_size,
+        .{ .width = size.width, .height = size.height },
+    );
 }
 
 /// Change the font size.
@@ -1214,10 +1257,14 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
     errdefer self.app.font_grid_set.deref(font_grid_key);
 
     // Set our cell size
-    try self.setCellSize(.{
-        .width = font_grid.metrics.cell_width,
-        .height = font_grid.metrics.cell_height,
-    });
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .cell_size,
+        .{
+            .width = font_grid.metrics.cell_width,
+            .height = font_grid.metrics.cell_height,
+        },
+    );
 
     // Notify our render thread of the new font stack. The renderer
     // MUST accept the new font grid and deref the old.
@@ -1472,8 +1519,11 @@ pub fn keyCallback(
         .mods = self.mouse.mods,
         .over_link = self.mouse.over_link,
         .hidden = self.mouse.hidden,
-    }).keyToMouseShape()) |shape|
-        try self.rt_surface.setMouseShape(shape);
+    }).keyToMouseShape()) |shape| try self.rt_app.performAction(
+        .{ .surface = self },
+        .mouse_shape,
+        shape,
+    );
 
     // We've processed a key event that produced some data so we want to
     // track the last pressed key.
@@ -2975,7 +3025,11 @@ pub fn cursorPosCallback(
         // We also queue a render so the renderer can undo the rendered link
         // state.
         if (over_link) {
-            self.rt_surface.mouseOverLink(null);
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_over_link,
+                .{ .url = "" },
+            );
             try self.queueRender();
         }
 
@@ -3061,7 +3115,11 @@ pub fn cursorPosCallback(
         self.renderer_state.mouse.point = pos_vp;
         self.mouse.over_link = true;
         self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
-        try self.rt_surface.setMouseShape(.pointer);
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_shape,
+            .pointer,
+        );
 
         switch (link[0]) {
             .open => {
@@ -3070,7 +3128,11 @@ pub fn cursorPosCallback(
                     .trim = false,
                 });
                 defer self.alloc.free(str);
-                self.rt_surface.mouseOverLink(str);
+                try self.rt_app.performAction(
+                    .{ .surface = self },
+                    .mouse_over_link,
+                    .{ .url = str },
+                );
             },
 
             ._open_osc8 => link: {
@@ -3080,14 +3142,26 @@ pub fn cursorPosCallback(
                     log.warn("failed to get URI for OSC8 hyperlink", .{});
                     break :link;
                 };
-                self.rt_surface.mouseOverLink(uri);
+                try self.rt_app.performAction(
+                    .{ .surface = self },
+                    .mouse_over_link,
+                    .{ .url = uri },
+                );
             },
         }
 
         try self.queueRender();
     } else if (over_link) {
-        try self.rt_surface.setMouseShape(self.io.terminal.mouse_shape);
-        self.rt_surface.mouseOverLink(null);
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_shape,
+            self.io.terminal.mouse_shape,
+        );
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_over_link,
+            .{ .url = "" },
+        );
         try self.queueRender();
     }
 }
@@ -3396,13 +3470,25 @@ fn scrollToBottom(self: *Surface) !void {
 fn hideMouse(self: *Surface) void {
     if (self.mouse.hidden) return;
     self.mouse.hidden = true;
-    self.rt_surface.setMouseVisibility(false);
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .mouse_visibility,
+        .hidden,
+    ) catch |err| {
+        log.warn("apprt failed to set mouse visibility err={}", .{err});
+    };
 }
 
 fn showMouse(self: *Surface) void {
     if (!self.mouse.hidden) return;
     self.mouse.hidden = false;
-    self.rt_surface.setMouseVisibility(true);
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .mouse_visibility,
+        .visible,
+    ) catch |err| {
+        log.warn("apprt failed to set mouse visibility err={}", .{err});
+    };
 }
 
 /// Perform a binding action. A binding is a keybinding. This function

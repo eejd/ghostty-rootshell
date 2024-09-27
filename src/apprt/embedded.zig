@@ -44,22 +44,13 @@ pub const App = struct {
         /// a full tick of the app loop.
         wakeup: *const fn (AppUD) callconv(.C) void,
 
+        /// Callback called to handle an action.
+        action: *const fn (*App, apprt.Target.C, apprt.Action.C) callconv(.C) void,
+
         /// Reload the configuration and return the new configuration.
         /// The old configuration can be freed immediately when this is
         /// called.
         reload_config: *const fn (AppUD) callconv(.C) ?*const Config,
-
-        /// Open the configuration file.
-        open_config: *const fn (AppUD) callconv(.C) void,
-
-        /// Called to set the title of the window.
-        set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
-
-        /// Called to set the cursor shape.
-        set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
-
-        /// Called to set the mouse visibility.
-        set_mouse_visibility: *const fn (SurfaceUD, bool) callconv(.C) void,
 
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
@@ -79,73 +70,8 @@ pub const App = struct {
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int, bool) callconv(.C) void,
 
-        /// Create a new split view. If the embedder doesn't support split
-        /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, apprt.action.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// New tab with options. The surface may be null if there is no target
-        /// surface in which case the apprt is expected to create a new window.
-        new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// New window with options. The surface may be null if there is no
-        /// target surface.
-        new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// Control the inspector visibility
-        control_inspector: ?*const fn (SurfaceUD, apprt.action.Inspector) callconv(.C) void = null,
-
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
-
-        /// Focus the previous/next split (if any).
-        focus_split: ?*const fn (SurfaceUD, apprt.action.GotoSplit) callconv(.C) void = null,
-
-        /// Resize the current split.
-        resize_split: ?*const fn (SurfaceUD, apprt.action.ResizeSplit.Direction, u16) callconv(.C) void = null,
-
-        /// Equalize all splits in the current window
-        equalize_splits: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Zoom the current split.
-        toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Goto tab
-        goto_tab: ?*const fn (SurfaceUD, apprt.action.GotoTab) callconv(.C) void = null,
-
-        /// Toggle fullscreen for current window.
-        toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
-
-        /// Set the initial window size. It is up to the user of libghostty to
-        /// determine if it is the initial window and set this appropriately.
-        set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
-
-        /// Render the inspector for the given surface.
-        render_inspector: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Called when the cell size changes.
-        set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
-
-        /// Show a desktop notification to the user. The surface may be null
-        /// if the notification is global.
-        show_desktop_notification: ?*const fn (SurfaceUD, [*:0]const u8, [*:0]const u8) void = null,
-
-        /// Called when the health of the renderer changes.
-        update_renderer_health: ?*const fn (SurfaceUD, renderer.Health) void = null,
-
-        /// Called when the mouse goes over a link. The link target is the
-        /// parameter. The link target will be null if the mouse is no longer
-        /// over a link.
-        mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
-
-        /// Notifies that a password input has been started for the given
-        /// surface. The apprt can use this to modify UI, enable features
-        /// such as macOS secure input, etc.
-        ///
-        /// The surface userdata will be null if a surface isn't focused.
-        set_password_input: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
-
-        /// Toggle secure input for the application.
-        toggle_secure_input: ?*const fn () callconv(.C) void = null,
     };
 
     /// This is the key event sent for ghostty_surface_key and
@@ -492,213 +418,6 @@ pub const App = struct {
         surface.queueInspectorRender();
     }
 
-    fn newWindow(self: *App, parent: ?*CoreSurface) !void {
-        // If we have a parent, the surface logic handles it.
-        if (parent) |surface| {
-            try surface.rt_surface.newWindow();
-            return;
-        }
-
-        // No parent, call the new window callback.
-        const func = self.opts.new_window orelse {
-            log.info("runtime embedder does not support new_window", .{});
-            return;
-        };
-
-        func(null, .{});
-    }
-
-    fn toggleFullscreen(
-        self: *App,
-        target: apprt.Target,
-        fullscreen: apprt.action.Fullscreen,
-    ) void {
-        const func = self.opts.toggle_fullscreen orelse {
-            log.info("runtime embedder does not toggle_fullscreen", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => {},
-            .surface => |v| func(
-                v.rt_surface.userdata,
-                switch (fullscreen) {
-                    .native => .false,
-                    .macos_non_native => .true,
-                    .macos_non_native_visible_menu => .@"visible-menu",
-                },
-            ),
-        }
-    }
-
-    fn newTab(self: *const App, target: apprt.Target) void {
-        const func = self.opts.new_tab orelse {
-            log.info("runtime embedder does not support new_tab", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => func(null, .{}),
-            .surface => |v| func(
-                v.rt_surface.userdata,
-                v.rt_surface.newSurfaceOptions(),
-            ),
-        }
-    }
-
-    fn gotoTab(self: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
-        const func = self.opts.goto_tab orelse {
-            log.info("runtime embedder does not support goto_tab", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => {},
-            .surface => |v| func(v.rt_surface.userdata, tab),
-        }
-    }
-
-    fn newSplit(
-        self: *const App,
-        target: apprt.Target,
-        direction: apprt.action.SplitDirection,
-    ) void {
-        const func = self.opts.new_split orelse {
-            log.info("runtime embedder does not support splits", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => func(null, direction, .{}),
-            .surface => |v| func(
-                v.rt_surface.userdata,
-                direction,
-                v.rt_surface.newSurfaceOptions(),
-            ),
-        }
-    }
-
-    fn gotoSplit(
-        self: *const App,
-        target: apprt.Target,
-        direction: apprt.action.GotoSplit,
-    ) void {
-        const func = self.opts.focus_split orelse {
-            log.info("runtime embedder does not support focus split", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => {},
-            .surface => |v| func(v.rt_surface.userdata, direction),
-        }
-    }
-
-    fn resizeSplit(
-        self: *const App,
-        target: apprt.Target,
-        resize: apprt.action.ResizeSplit,
-    ) void {
-        const func = self.opts.resize_split orelse {
-            log.info("runtime embedder does not support resize split", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => {},
-            .surface => |v| func(
-                v.rt_surface.userdata,
-                resize.direction,
-                resize.amount,
-            ),
-        }
-    }
-
-    pub fn equalizeSplits(self: *const App, target: apprt.Target) void {
-        const func = self.opts.equalize_splits orelse {
-            log.info("runtime embedder does not support equalize splits", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => func(null),
-            .surface => |v| func(v.rt_surface.userdata),
-        }
-    }
-
-    fn toggleSplitZoom(self: *const App, target: apprt.Target) void {
-        const func = self.opts.toggle_split_zoom orelse {
-            log.info("runtime embedder does not support split zoom", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => func(null),
-            .surface => |v| func(v.rt_surface.userdata),
-        }
-    }
-
-    fn controlInspector(
-        self: *const App,
-        target: apprt.Target,
-        value: apprt.action.Inspector,
-    ) void {
-        const func = self.opts.control_inspector orelse {
-            log.info("runtime embedder does not support the terminal inspector", .{});
-            return;
-        };
-
-        switch (target) {
-            .app => {},
-            .surface => |v| func(v.rt_surface.userdata, value),
-        }
-    }
-
-    fn showDesktopNotification(
-        self: *const App,
-        target: apprt.Target,
-        notification: apprt.action.DesktopNotification,
-    ) void {
-        const func = self.opts.show_desktop_notification orelse {
-            log.info("runtime embedder does not support show_desktop_notification", .{});
-            return;
-        };
-
-        func(switch (target) {
-            .app => null,
-            .surface => |v| v.rt_surface.userdata,
-        }, notification.title, notification.body);
-    }
-
-    fn setPasswordInput(self: *App, target: apprt.Target, v: apprt.action.SecureInput) void {
-        switch (v) {
-            inline .on, .off => |tag| {
-                const func = self.opts.set_password_input orelse {
-                    log.info("runtime embedder does not support set_password_input", .{});
-                    return;
-                };
-
-                func(switch (target) {
-                    .app => null,
-                    .surface => |surface| surface.rt_surface.userdata,
-                }, switch (tag) {
-                    .on => true,
-                    .off => false,
-                    else => comptime unreachable,
-                });
-            },
-
-            .toggle => {
-                const func = self.opts.toggle_secure_input orelse {
-                    log.info("runtime embedder does not support toggle_secure_input", .{});
-                    return;
-                };
-
-                func();
-            },
-        }
-    }
-
     /// Perform a given action.
     pub fn performAction(
         self: *App,
@@ -706,32 +425,27 @@ pub const App = struct {
         comptime action: apprt.Action.Key,
         value: apprt.Action.Value(action),
     ) !void {
+        // Special case certain actions before they are sent to the embedder
         switch (action) {
-            .new_window => _ = try self.newWindow(switch (target) {
-                .app => null,
-                .surface => |v| v,
-            }),
-            .toggle_fullscreen => self.toggleFullscreen(target, value),
+            .set_title => switch (target) {
+                .app => {},
+                .surface => |surface| {
+                    // Dupe the title so that we can store it. If we get an allocation
+                    // error we just ignore it, since this only breaks a few minor things.
+                    const alloc = self.core_app.alloc;
+                    if (surface.rt_surface.title) |v| alloc.free(v);
+                    surface.rt_surface.title = alloc.dupeZ(u8, value.title) catch null;
+                },
+            },
 
-            .new_tab => self.newTab(target),
-            .goto_tab => self.gotoTab(target, value),
-            .new_split => self.newSplit(target, value),
-            .resize_split => self.resizeSplit(target, value),
-            .equalize_splits => self.equalizeSplits(target),
-            .toggle_split_zoom => self.toggleSplitZoom(target),
-            .goto_split => self.gotoSplit(target, value),
-            .open_config => try configpkg.edit.open(self.core_app.alloc),
-            .inspector => self.controlInspector(target, value),
-            .desktop_notification => self.showDesktopNotification(target, value),
-            .secure_input => self.setPasswordInput(target, value),
-
-            // Unimplemented
-            .present_terminal,
-            .close_all_windows,
-            .toggle_window_decorations,
-            .quit_timer,
-            => log.warn("unimplemented action={}", .{action}),
+            else => {},
         }
+
+        self.opts.action(
+            self,
+            target.cval(),
+            @unionInit(apprt.Action, @tagName(action), value).cval(),
+        );
     }
 };
 
@@ -966,42 +680,8 @@ pub const Surface = struct {
         return self.size;
     }
 
-    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
-        _ = self;
-        _ = min;
-        _ = max_;
-    }
-
-    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        // Dupe the title so that we can store it. If we get an allocation
-        // error we just ignore it, since this only breaks a few minor things.
-        const alloc = self.app.core_app.alloc;
-        if (self.title) |v| alloc.free(v);
-        self.title = alloc.dupeZ(u8, slice) catch null;
-
-        self.app.opts.set_title(
-            self.userdata,
-            slice.ptr,
-        );
-    }
-
     pub fn getTitle(self: *Surface) ?[:0]const u8 {
         return self.title;
-    }
-
-    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
-        self.app.opts.set_mouse_shape(
-            self.userdata,
-            shape,
-        );
-    }
-
-    /// Set the visibility of the mouse cursor.
-    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
-        self.app.opts.set_mouse_visibility(
-            self.userdata,
-            visible,
-        );
     }
 
     pub fn supportsClipboard(
@@ -1236,44 +916,18 @@ pub const Surface = struct {
         };
     }
 
-    fn newWindow(self: *const Surface) !void {
-        const func = self.app.opts.new_window orelse {
-            log.info("runtime embedder does not support new_window", .{});
+    fn queueInspectorRender(self: *Surface) void {
+        self.app.performAction(
+            .{ .surface = &self.core_surface },
+            .render_inspector,
+            {},
+        ) catch |err| {
+            log.err("error rendering the inspector err={}", .{err});
             return;
         };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, options);
     }
 
-    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
-        const func = self.app.opts.set_initial_window_size orelse {
-            log.info("runtime embedder does not set_initial_window_size", .{});
-            return;
-        };
-
-        func(self.userdata, width, height);
-    }
-
-    fn queueInspectorRender(self: *const Surface) void {
-        const func = self.app.opts.render_inspector orelse {
-            log.info("runtime embedder does not render_inspector", .{});
-            return;
-        };
-
-        func(self.userdata);
-    }
-
-    pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
-        const func = self.app.opts.set_cell_size orelse {
-            log.info("runtime embedder does not support set_cell_size", .{});
-            return;
-        };
-
-        func(self.userdata, width, height);
-    }
-
-    fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
+    pub fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: f32 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size self.core_surface.font_size.points;
@@ -1289,29 +943,6 @@ pub const Surface = struct {
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
-    }
-
-    /// Update the health of the renderer.
-    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
-        const func = self.app.opts.update_renderer_health orelse {
-            log.info("runtime embedder does not support update_renderer_health", .{});
-            return;
-        };
-
-        func(self.userdata, health);
-    }
-
-    pub fn mouseOverLink(self: *const Surface, uri: ?[]const u8) void {
-        const func = self.app.opts.mouse_over_link orelse {
-            log.info("runtime embedder does not support over_link", .{});
-            return;
-        };
-
-        if (uri) |v| {
-            func(self.userdata, v.ptr, v.len);
-        } else {
-            func(self.userdata, null, 0);
-        }
     }
 };
 
@@ -1735,9 +1366,19 @@ pub const CAPI = struct {
         ptr.app.closeSurface(ptr);
     }
 
+    /// Returns the userdata associated with the surface.
+    export fn ghostty_surface_userdata(surface: *Surface) ?*anyopaque {
+        return surface.userdata;
+    }
+
     /// Returns the app associated with a surface.
     export fn ghostty_surface_app(surface: *Surface) *App {
         return surface.app;
+    }
+
+    /// Returns the config to use for surfaces that inherit from this one.
+    export fn ghostty_surface_inherited_config(surface: *Surface) Surface.Options {
+        return surface.newSurfaceOptions();
     }
 
     /// Returns true if the surface needs to confirm quitting.
