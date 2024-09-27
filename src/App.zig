@@ -139,7 +139,7 @@ pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
     // It is up to the apprt if there is a quit timer at all and if it
     // should be canceled.
     rt_surface.app.performAction(
-        .{ .surface = &rt_surface.core_surface },
+        .app,
         .quit_timer,
         .stop,
     ) catch |err| {
@@ -173,7 +173,7 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
     // If we have no surfaces, we can start the quit timer. It is up to the
     // apprt to determine if this is necessary.
     if (self.surfaces.items.len == 0) rt_surface.app.performAction(
-        .{ .surface = &rt_surface.core_surface },
+        .app,
         .quit_timer,
         .start,
     ) catch |err| {

@@ -441,6 +441,11 @@ pub const App = struct {
             else => {},
         }
 
+        log.debug("dispatching action target={s} action={} value={}", .{
+            @tagName(target),
+            action,
+            value,
+        });
         self.opts.action(
             self,
             target.cval(),
