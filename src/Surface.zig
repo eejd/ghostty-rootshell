@@ -1257,14 +1257,10 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
     errdefer self.app.font_grid_set.deref(font_grid_key);
 
     // Set our cell size
-    try self.rt_app.performAction(
-        .{ .surface = self },
-        .cell_size,
-        .{
-            .width = font_grid.metrics.cell_width,
-            .height = font_grid.metrics.cell_height,
-        },
-    );
+    try self.setCellSize(.{
+        .width = font_grid.metrics.cell_width,
+        .height = font_grid.metrics.cell_height,
+    });
 
     // Notify our render thread of the new font stack. The renderer
     // MUST accept the new font grid and deref the old.
