@@ -457,6 +457,15 @@ pub fn gotoTab(self: *Window, n: usize) void {
     }
 }
 
+/// Toggle tab overview (if present)
+pub fn toggleTabOverview(self: *Window) void {
+    if (self.tab_overview) |tab_overview_widget| {
+        if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
+        const tab_overview: *c.AdwTabOverview = @ptrCast(@alignCast(tab_overview_widget));
+        c.adw_tab_overview_set_open(tab_overview, 1 - c.adw_tab_overview_get_open(tab_overview));
+    }
+}
+
 /// Toggle fullscreen for this window.
 pub fn toggleFullscreen(self: *Window) void {
     const is_fullscreen = c.gtk_window_is_fullscreen(self.window);

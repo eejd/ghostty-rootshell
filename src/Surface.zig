@@ -3830,6 +3830,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .toggle_tab_overview => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_tab_overview,
+            {},
+        ),
+
         .toggle_secure_input => try self.rt_app.performAction(
             .{ .surface = self },
             .secure_input,
