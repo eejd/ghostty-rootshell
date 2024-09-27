@@ -484,6 +484,8 @@ extension Ghostty {
 
             case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
                 fallthrough
+            case GHOSTTY_ACTION_TOGGLE_TAB_OVERVIEW:
+                fallthrough
             case GHOSTTY_ACTION_TOGGLE_WINDOW_DECORATIONS:
                 fallthrough
             case GHOSTTY_ACTION_PRESENT_TERMINAL:
