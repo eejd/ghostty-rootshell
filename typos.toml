@@ -1,9 +1,9 @@
 [files]
 extend-exclude = [
+  # vendored code
   "vendor/*",
   "pkg/*",
   "src/stb/*",
-  "*.xib",
   # "grey" color names are valid
   "src/terminal/res/rgb.txt",
   # Do not self-check
@@ -17,7 +17,9 @@ extend-exclude = [
   "*.icns",
   # Other
   "*.pdf",
-  "*.data"
+  "*.data",
+  "*.xib",
+  "src/cli/lorem_ipsum.txt"
 ]
 
 [default]
