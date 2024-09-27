@@ -174,6 +174,7 @@ pub const Action = union(Key) {
         new_split,
         close_all_windows,
         toggle_fullscreen,
+        toggle_tab_overview,
         toggle_window_decorations,
         goto_tab,
         goto_split,
