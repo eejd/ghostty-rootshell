@@ -26,9 +26,7 @@ elif [ "$1" != "--update" ]; then
 fi
 
 ZIG_GLOBAL_CACHE_DIR="$(mktemp --directory --suffix nix-zig-cache)"
-ZIG_LOCAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR}" 
 export ZIG_GLOBAL_CACHE_DIR
-export ZIG_LOCAL_CACHE_DIR
 
 # This is not 100% necessary in CI but is helpful when running locally to keep
 # a local workstation clean.
