@@ -22,14 +22,6 @@ protocol TerminalViewDelegate: AnyObject {
     func zoomStateDidChange(to: Bool)
 }
 
-// Default all the functions so they're optional
-extension TerminalViewDelegate {
-    func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
-    func titleDidChange(to: String) {}
-    func cellSizeDidChange(to: NSSize) {}
-    func zoomStateDidChange(to: Bool) {}
-}
-
 /// The view model is a required implementation for TerminalView callers. This contains
 /// the main state between the TerminalView caller and SwiftUI. This abstraction is what
 /// allows AppKit to own most of the data in SwiftUI.

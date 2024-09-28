@@ -34,6 +34,7 @@
 		A53D0C952B53B4D800305CE6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
 		A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
+		A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */; };
 		A55685E029A03A9F004303CE /* AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55685DF29A03A9F004303CE /* AppError.swift */; };
 		A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
 		A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */; };
@@ -61,11 +62,11 @@
 		A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */; };
 		A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0572C9F30860017A1AE /* Cursor.swift */; };
 		A5CBD0592C9F37B10017A1AE /* Backport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CEAFFE29C2410700646FDA /* Backport.swift */; };
-		A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */; };
 		A5CBD05C2CA0C5C70017A1AE /* SlideTerminal.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CBD05B2CA0C5C70017A1AE /* SlideTerminal.xib */; };
 		A5CBD05E2CA0C5EC0017A1AE /* SlideTerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD05D2CA0C5E70017A1AE /* SlideTerminalController.swift */; };
 		A5CBD0602CA0C90A0017A1AE /* SlideTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD05F2CA0C9080017A1AE /* SlideTerminalWindow.swift */; };
 		A5CBD0642CA122E70017A1AE /* SlideTerminalPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0632CA122E70017A1AE /* SlideTerminalPosition.swift */; };
+		A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */; };
 		A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */; };
 		A5CC36152C9CDA06004D6760 /* View+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CC36142C9CDA03004D6760 /* View+Extension.swift */; };
 		A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */; };
@@ -109,6 +110,7 @@
 		A535B9D9299C569B0017E2E4 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
 		A53D0C932B53B43700305CE6 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
 		A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.App.swift; sourceTree = "<group>"; };
+		A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseTerminalController.swift; sourceTree = "<group>"; };
 		A55685DF29A03A9F004303CE /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
 		A55B7BB729B6F53A0055DE60 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView.swift; sourceTree = "<group>"; };
@@ -136,11 +138,11 @@
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
 		A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraggableWindowView.swift; sourceTree = "<group>"; };
 		A5CBD0572C9F30860017A1AE /* Cursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cursor.swift; sourceTree = "<group>"; };
-		A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalEventTap.swift; sourceTree = "<group>"; };
 		A5CBD05B2CA0C5C70017A1AE /* SlideTerminal.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = SlideTerminal.xib; sourceTree = "<group>"; };
 		A5CBD05D2CA0C5E70017A1AE /* SlideTerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideTerminalController.swift; sourceTree = "<group>"; };
 		A5CBD05F2CA0C9080017A1AE /* SlideTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideTerminalWindow.swift; sourceTree = "<group>"; };
 		A5CBD0632CA122E70017A1AE /* SlideTerminalPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideTerminalPosition.swift; sourceTree = "<group>"; };
+		A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalEventTap.swift; sourceTree = "<group>"; };
 		A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInputOverlay.swift; sourceTree = "<group>"; };
 		A5CC36142C9CDA03004D6760 /* View+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extension.swift"; sourceTree = "<group>"; };
 		A5CDF1902AAF9A5800513312 /* ConfigurationErrors.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ConfigurationErrors.xib; sourceTree = "<group>"; };
@@ -342,6 +344,7 @@
 				A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */,
 				AEF9CE232B6AD07A0017E195 /* TerminalToolbar.swift */,
 				A535B9D9299C569B0017E2E4 /* ErrorView.swift */,
+				A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -382,14 +385,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A5CBD0672CA2704E0017A1AE /* Global Keybinds */ = {
-			isa = PBXGroup;
-			children = (
-				A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */,
-			);
-			path = "Global Keybinds";
-			sourceTree = "<group>";
-		};
 		A5CBD05A2CA0C5910017A1AE /* SlideTerminal */ = {
 			isa = PBXGroup;
 			children = (
@@ -399,6 +394,14 @@
 				A5CBD05F2CA0C9080017A1AE /* SlideTerminalWindow.swift */,
 			);
 			path = SlideTerminal;
+			sourceTree = "<group>";
+		};
+		A5CBD0672CA2704E0017A1AE /* Global Keybinds */ = {
+			isa = PBXGroup;
+			children = (
+				A5CBD06A2CA322320017A1AE /* GlobalEventTap.swift */,
+			);
+			path = "Global Keybinds";
 			sourceTree = "<group>";
 		};
 		A5CEAFDA29B8005900646FDA /* SplitView */ = {
@@ -547,6 +550,7 @@
 			files = (
 				A59630A42AF059BB00D64628 /* Ghostty.SplitNode.swift in Sources */,
 				A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */,
+				A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */,
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
 				A5D0AF3D2B37804400D21823 /* CodableBridge.swift in Sources */,
 				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,

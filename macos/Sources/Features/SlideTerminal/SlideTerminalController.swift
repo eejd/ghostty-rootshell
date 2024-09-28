@@ -4,31 +4,19 @@ import SwiftUI
 import GhosttyKit
 
 /// Controller for the slide-style terminal.
-class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalViewDelegate, TerminalViewModel {
+class SlideTerminalController: BaseTerminalController {
     override var windowNibName: NSNib.Name? { "SlideTerminal" }
-
-    /// The app instance that this terminal view will represent.
-    let ghostty: Ghostty.App
 
     /// The position for the slide terminal.
     let position: SlideTerminalPosition
-
-    /// The surface tree for this window.
-    @Published var surfaceTree: Ghostty.SplitNode? = nil
 
     init(_ ghostty: Ghostty.App,
          position: SlideTerminalPosition = .top,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
          surfaceTree tree: Ghostty.SplitNode? = nil
     ) {
-        self.ghostty = ghostty
         self.position = position
-
-        super.init(window: nil)
-
-        // Initialize our initial surface.
-        guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
-        self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
+        super.init(ghostty, baseConfig: base, surfaceTree: tree)
     }
 
     required init?(coder: NSCoder) {
@@ -61,7 +49,8 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
 
     // MARK: NSWindowDelegate
 
-    func windowDidResignKey(_ notification: Notification) {
+    override func windowDidResignKey(_ notification: Notification) {
+        super.windowDidResignKey(notification)
         slideOut()
     }
 
@@ -70,15 +59,13 @@ class SlideTerminalController: NSWindowController, NSWindowDelegate, TerminalVie
         return position.restrictFrameSize(frameSize, on: screen)
     }
 
-    //MARK: TerminalViewDelegate
+    // MARK: Base Controller Overrides
 
-    func cellSizeDidChange(to: NSSize) {
-        guard ghostty.config.windowStepResize else { return }
-        self.window?.contentResizeIncrements = to
-    }
+    override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+        super.surfaceTreeDidChange(from: from, to: to)
 
-    func surfaceTreeDidChange() {
-        if (surfaceTree == nil) {
+        // If our surface tree is now nil then we close our window.
+        if (to == nil) {
             self.window?.close()
         }
     }
