@@ -165,6 +165,8 @@ pub const Parser = struct {
 
             9 => return Attribute{ .strikethrough = {} },
 
+            21 => return Attribute{ .underline = .double },
+
             22 => return Attribute{ .reset_bold = {} },
 
             23 => return Attribute{ .reset_italic = {} },
