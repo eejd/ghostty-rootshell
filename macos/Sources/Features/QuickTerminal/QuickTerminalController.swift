@@ -3,15 +3,15 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
-/// Controller for the slide-style terminal.
-class SlideTerminalController: BaseTerminalController {
-    override var windowNibName: NSNib.Name? { "SlideTerminal" }
+/// Controller for the "quick" terminal.
+class QuickTerminalController: BaseTerminalController {
+    override var windowNibName: NSNib.Name? { "QuickTerminal" }
 
-    /// The position for the slide terminal.
-    let position: SlideTerminalPosition
+    /// The position for the quick terminal.
+    let position: QuickTerminalPosition
 
     init(_ ghostty: Ghostty.App,
-         position: SlideTerminalPosition = .top,
+         position: QuickTerminalPosition = .top,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
          surfaceTree tree: Ghostty.SplitNode? = nil
     ) {
@@ -32,7 +32,7 @@ class SlideTerminalController: BaseTerminalController {
         // window close so we can animate out.
         window.delegate = self
 
-        // The slide window is not restorable (yet!). "Yet" because in theory we can
+        // The quick window is not restorable (yet!). "Yet" because in theory we can
         // make this restorable, but it isn't currently implemented.
         window.isRestorable = false
 
@@ -47,14 +47,14 @@ class SlideTerminalController: BaseTerminalController {
         ))
 
         // Animate the window in
-        slideIn()
+        animateIn()
     }
 
     // MARK: NSWindowDelegate
 
     override func windowDidResignKey(_ notification: Notification) {
         super.windowDidResignKey(notification)
-        slideOut()
+        animateOut()
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -67,43 +67,43 @@ class SlideTerminalController: BaseTerminalController {
     override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
         super.surfaceTreeDidChange(from: from, to: to)
 
-        // If our surface tree is nil then we slide the window out.
+        // If our surface tree is nil then we animate the window out.
         if (to == nil) {
-            slideOut()
+            animateOut()
         }
     }
 
-    // MARK: Slide Methods
+    // MARK: Methods
 
-    func slideToggle() {
+    func toggle() {
         guard let window = self.window else { return }
         if (window.alphaValue > 0) {
-            slideOut()
+            animateOut()
         } else {
-            slideIn()
+            animateIn()
         }
     }
 
-    func slideIn() {
+    func animateIn() {
         guard let window = self.window else { return }
 
         // Animate the window in
-        slideWindowIn(window: window, from: position)
+        animateWindowIn(window: window, from: position)
 
         // If our surface tree is nil then we initialize a new terminal. The surface
-        // tree can be nil if for example we run "eixt" in the terminal and force a
-        // slide out.
+        // tree can be nil if for example we run "eixt" in the terminal and force
+        // animate out.
         if (surfaceTree == nil) {
             surfaceTree = .leaf(.init(ghostty.app!, baseConfig: nil))
         }
     }
 
-    func slideOut() {
+    func animateOut() {
         guard let window = self.window else { return }
-        slideWindowOut(window: window, to: position)
+        animateWindowOut(window: window, to: position)
     }
 
-    private func slideWindowIn(window: NSWindow, from position: SlideTerminalPosition) {
+    private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = NSScreen.main else { return }
 
         // Move our window off screen to the top
@@ -121,7 +121,7 @@ class SlideTerminalController: BaseTerminalController {
         }
     }
 
-    private func slideWindowOut(window: NSWindow, to position: SlideTerminalPosition) {
+    private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
         guard let screen = NSScreen.main else { return }
 
         // Keep track of if we were the key window. If we were the key window then we
@@ -164,7 +164,7 @@ class SlideTerminalController: BaseTerminalController {
     // MARK: First Responder
 
     @IBAction override func closeWindow(_ sender: Any) {
-        // Instead of closing the window, we slide it out.
-        slideOut()
+        // Instead of closing the window, we animate it out.
+        animateOut()
     }
 }

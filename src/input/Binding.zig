@@ -363,16 +363,25 @@ pub const Action = union(enum) {
     /// This only works on macOS, since this is a system API on macOS.
     toggle_secure_input: void,
 
-    /// Toggle the "slide" terminal. The slide terminal is a terminal that
-    /// slides in from some screen edge, usually the top. This is useful for
-    /// quick access to a terminal without having to open a new window or tab.
+    /// Toggle the "quick" terminal. The quick terminal is a terminal that
+    /// appears on demand from a keybinding, often sliding in from a screen
+    /// edge such as the top. This is useful for quick access to a terminal
+    /// without having to open a new window or tab.
     ///
-    /// The slide terminal is a singleton; only one instance can exist at a
-    /// time.
+    /// When the quick terminal loses focus, it disappears. The terminal state
+    /// is preserved between appearances, so you can always press the keybinding
+    /// to bring it back up.
     ///
-    /// See the various configurations for the slide terminal in the
+    /// Ths quick terminal has some limitations:
+    ///
+    ///   - It is a singleton; only one instance can exist at a time.
+    ///   - It does not support tabs.
+    ///   - It will not be restored when the application is restarted
+    ///     (for systems that support window restoration).
+    ///
+    /// See the various configurations for the quick terminal in the
     /// configuration file to customize its behavior.
-    toggle_slide_terminal: void,
+    toggle_quick_terminal: void,
 
     /// Quit ghostty.
     quit: void,
@@ -393,7 +402,7 @@ pub const Action = union(enum) {
     ///
     crash: CrashThread,
 
-    pub const SlideTerminalPosition = enum {
+    pub const QuickTerminalPosition = enum {
         top,
     };
 
@@ -578,7 +587,7 @@ pub const Action = union(enum) {
             .reload_config,
             .close_all_windows,
             .quit,
-            .toggle_slide_terminal,
+            .toggle_quick_terminal,
             => .app,
 
             // These are app but can be special-cased in a surface context.

@@ -482,8 +482,8 @@ extension Ghostty {
             case GHOSTTY_ACTION_RENDERER_HEALTH:
                 rendererHealth(app, target: target, v: action.action.renderer_health)
 
-            case GHOSTTY_ACTION_TOGGLE_SLIDE_TERMINAL:
-                toggleSlideTerminal(app, target: target)
+            case GHOSTTY_ACTION_TOGGLE_QUICK_TERMINAL:
+                toggleQuickTerminal(app, target: target)
 
             case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
                 fallthrough
@@ -833,12 +833,12 @@ extension Ghostty {
             }
         }
 
-        private static func toggleSlideTerminal(
+        private static func toggleQuickTerminal(
             _ app: ghostty_app_t,
             target: ghostty_target_s
         ) {
             guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
-            appDelegate.toggleSlideTerminal(self)
+            appDelegate.toggleQuickTerminal(self)
         }
 
         private static func setTitle(

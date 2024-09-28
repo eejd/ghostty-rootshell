@@ -93,8 +93,8 @@ pub const Action = union(Key) {
     /// Toggle whether window directions are shown.
     toggle_window_decorations,
 
-    /// Toggle the slide terminal in or out.
-    toggle_slide_terminal,
+    /// Toggle the quick terminal in or out.
+    toggle_quick_terminal,
 
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
@@ -179,7 +179,7 @@ pub const Action = union(Key) {
         toggle_fullscreen,
         toggle_tab_overview,
         toggle_window_decorations,
-        toggle_slide_terminal,
+        toggle_quick_terminal,
         goto_tab,
         goto_split,
         resize_split,

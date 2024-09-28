@@ -1,6 +1,6 @@
 import Cocoa
 
-enum SlideTerminalPosition {
+enum QuickTerminalPosition {
     case top
 
     /// Set the loaded state for a window.
