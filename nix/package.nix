@@ -56,7 +56,7 @@
         ../vendor
         ../build.zig
         ../build.zig.zon
-        ../fetch-zig-cache.sh
+        ./build-support/fetch-zig-cache.sh
       ]
     );
   };
@@ -91,7 +91,7 @@
     buildPhase = ''
       runHook preBuild
 
-      sh ./fetch-zig-cache.sh
+      sh ./nix/build-support/fetch-zig-cache.sh
 
       runHook postBuild
     '';

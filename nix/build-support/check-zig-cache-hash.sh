@@ -34,7 +34,7 @@ trap 'rm -rf "${ZIG_GLOBAL_CACHE_DIR}"' EXIT
 
 # Run Zig and download the cache to the temporary directory.
 
-sh ./fetch-zig-cache.sh
+sh ./nix/build-support/fetch-zig-cache.sh
 
 # Now, calculate the hash.
 ZIG_CACHE_HASH="sha256-$(nix-hash --type sha256 --to-base64 "$(nix-hash --type sha256 "${ZIG_GLOBAL_CACHE_DIR}")")"
