@@ -229,10 +229,12 @@ class BaseTerminalController: NSWindowController,
     }
 
     func windowWillClose(_ notification: Notification) {
+        guard let window else { return }
+
         // I don't know if this is required anymore. We previously had a ref cycle between
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
-        self.window?.contentView = nil
+        window.contentView = nil
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

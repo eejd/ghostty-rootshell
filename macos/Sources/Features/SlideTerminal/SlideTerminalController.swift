@@ -64,9 +64,9 @@ class SlideTerminalController: BaseTerminalController {
     override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
         super.surfaceTreeDidChange(from: from, to: to)
 
-        // If our surface tree is now nil then we close our window.
+        // If our surface tree is nil then we slide the window out.
         if (to == nil) {
-            self.window?.close()
+            slideOut()
         }
     }
 
@@ -83,7 +83,16 @@ class SlideTerminalController: BaseTerminalController {
 
     func slideIn() {
         guard let window = self.window else { return }
+
+        // Animate the window in
         slideWindowIn(window: window, from: position)
+
+        // If our surface tree is nil then we initialize a new terminal. The surface
+        // tree can be nil if for example we run "eixt" in the terminal and force a
+        // slide out.
+        if (surfaceTree == nil) {
+            surfaceTree = .leaf(.init(ghostty.app!, baseConfig: nil))
+        }
     }
 
     func slideOut() {
@@ -147,5 +156,12 @@ class SlideTerminalController: BaseTerminalController {
             // If there's no key window, focus the first available window
             windows.first?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    // MARK: First Responder
+
+    @IBAction override func closeWindow(_ sender: Any) {
+        // Instead of closing the window, we slide it out.
+        slideOut()
     }
 }
