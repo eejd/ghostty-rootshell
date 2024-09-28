@@ -1068,19 +1068,21 @@ const Preview = struct {
                         .col_offset = 2,
                     },
                 );
-                for (10..child.width) |col| {
-                    _ = try child.print(
-                        &.{
-                            .{
-                                .text = "─",
-                                .style = color238,
+                if (child.width > 10) {
+                    for (10..child.width) |col| {
+                        _ = try child.print(
+                            &.{
+                                .{
+                                    .text = "─",
+                                    .style = color238,
+                                },
                             },
-                        },
-                        .{
-                            .row_offset = 1,
-                            .col_offset = col,
-                        },
-                    );
+                            .{
+                                .row_offset = 1,
+                                .col_offset = col,
+                            },
+                        );
+                    }
                 }
             }
             _ = try child.print(
@@ -1118,19 +1120,21 @@ const Preview = struct {
                         .col_offset = 2,
                     },
                 );
-                for (10..child.width) |col| {
-                    _ = try child.print(
-                        &.{
-                            .{
-                                .text = "─",
-                                .style = color238,
+                if (child.width > 10) {
+                    for (10..child.width) |col| {
+                        _ = try child.print(
+                            &.{
+                                .{
+                                    .text = "─",
+                                    .style = color238,
+                                },
                             },
-                        },
-                        .{
-                            .row_offset = 3,
-                            .col_offset = col,
-                        },
-                    );
+                            .{
+                                .row_offset = 3,
+                                .col_offset = col,
+                            },
+                        );
+                    }
                 }
             }
             _ = try child.print(
@@ -1383,19 +1387,21 @@ const Preview = struct {
                         .col_offset = 2,
                     },
                 );
-                for (10..child.width) |col| {
-                    _ = try child.print(
-                        &.{
-                            .{
-                                .text = "─",
-                                .style = color238,
+                if (child.width > 10) {
+                    for (10..child.width) |col| {
+                        _ = try child.print(
+                            &.{
+                                .{
+                                    .text = "─",
+                                    .style = color238,
+                                },
                             },
-                        },
-                        .{
-                            .row_offset = 21,
-                            .col_offset = col,
-                        },
-                    );
+                            .{
+                                .row_offset = 21,
+                                .col_offset = col,
+                            },
+                        );
+                    }
                 }
             }
             _ = try child.print(
