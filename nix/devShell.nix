@@ -14,7 +14,6 @@
   python3,
   qemu,
   scdoc,
-  tracy,
   valgrind,
   #, vulkan-loader # unused
   vttest,
@@ -100,7 +99,6 @@ in
         # Testing
         parallel
         python3
-        tracy
         vttest
         hyperfine
 
