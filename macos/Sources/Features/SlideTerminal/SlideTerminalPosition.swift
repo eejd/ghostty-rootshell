@@ -3,6 +3,20 @@ import Cocoa
 enum SlideTerminalPosition {
     case top
 
+    /// Set the loaded state for a window.
+    func setLoaded(_ window: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        switch (self) {
+        case .top:
+            window.setFrame(.init(
+                origin: window.frame.origin,
+                size: .init(
+                    width: screen.frame.width,
+                    height: screen.frame.height / 4)
+            ), display: false)
+        }
+    }
+
     /// Set the initial state for a window for animating out of this position.
     func setInitial(in window: NSWindow, on screen: NSScreen) {
         // We always start invisible

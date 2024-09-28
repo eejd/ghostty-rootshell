@@ -36,6 +36,9 @@ class SlideTerminalController: BaseTerminalController {
         // make this restorable, but it isn't currently implemented.
         window.isRestorable = false
 
+        // Setup our initial size based on our configured position
+        position.setLoaded(window)
+
         // Setup our content
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,

@@ -23,6 +23,9 @@ class SlideTerminalWindow: NSWindow {
         // and lets us render off screen.
         self.level = .popUpMenu
 
+        // This plus the level above was what was needed for the animation to work,
+        // because it gets the window off screen properly. Plus we add some fields
+        // we just want the behavior of.
         self.collectionBehavior = [
             // We want this to be part of every space because it is a singleton.
             .canJoinAllSpaces,
