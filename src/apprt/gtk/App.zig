@@ -622,7 +622,10 @@ fn setMouseOverLink(
 ) void {
     switch (target) {
         .app => {},
-        .surface => |v| v.rt_surface.mouseOverLink(value.url),
+        .surface => |v| v.rt_surface.mouseOverLink(if (value.url.len > 0)
+            value.url
+        else
+            null),
     }
 }
 
