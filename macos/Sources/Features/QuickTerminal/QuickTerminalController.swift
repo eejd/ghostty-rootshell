@@ -10,6 +10,9 @@ class QuickTerminalController: BaseTerminalController {
     /// The position for the quick terminal.
     let position: QuickTerminalPosition
 
+    /// The current state of the quick terminal
+    private(set) var visible: Bool = false
+
     init(_ ghostty: Ghostty.App,
          position: QuickTerminalPosition = .top,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -76,8 +79,7 @@ class QuickTerminalController: BaseTerminalController {
     // MARK: Methods
 
     func toggle() {
-        guard let window = self.window else { return }
-        if (window.alphaValue > 0) {
+        if (visible) {
             animateOut()
         } else {
             animateIn()
@@ -86,6 +88,10 @@ class QuickTerminalController: BaseTerminalController {
 
     func animateIn() {
         guard let window = self.window else { return }
+
+        // Set our visibility state
+        guard !visible else { return }
+        visible = true
 
         // Animate the window in
         animateWindowIn(window: window, from: position)
@@ -100,6 +106,11 @@ class QuickTerminalController: BaseTerminalController {
 
     func animateOut() {
         guard let window = self.window else { return }
+
+        // Set our visibility state
+        guard visible else { return }
+        visible = false
+
         animateWindowOut(window: window, to: position)
     }
 

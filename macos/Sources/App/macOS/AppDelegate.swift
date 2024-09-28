@@ -558,5 +558,7 @@ class AppDelegate: NSObject,
 
         guard let quickController = self.quickController else { return }
         quickController.toggle()
+
+        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
     }
 }
