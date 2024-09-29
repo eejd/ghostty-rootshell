@@ -143,7 +143,7 @@ class QuickTerminalController: BaseTerminalController {
         // Run the animation that moves our window into the proper place and makes
         // it visible.
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
+            context.duration = 0.2
             context.timingFunction = .init(name: .easeIn)
             position.setFinal(in: window.animator(), on: screen)
         }
@@ -158,7 +158,7 @@ class QuickTerminalController: BaseTerminalController {
         let wasKey = window.isKeyWindow
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.3
+            context.duration = 0.2
             context.timingFunction = .init(name: .easeIn)
             position.setInitial(in: window.animator(), on: screen)
         }, completionHandler: {
