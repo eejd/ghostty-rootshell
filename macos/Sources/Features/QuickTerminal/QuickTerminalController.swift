@@ -177,13 +177,24 @@ class QuickTerminalController: BaseTerminalController {
             position.setInitial(in: window.animator(), on: screen)
         }, completionHandler: {
             guard wasKey else { return }
-            self.focusNextWindow()
+            self.focusNextWindow(on: screen)
         })
     }
 
-    private func focusNextWindow() {
-        // We only want to consider windows that are visible
-        let windows = NSApp.windows.filter { $0.isVisible }
+    private func focusNextWindow(on screen: NSScreen) {
+        let windows = NSApp.windows.filter {
+            // Visible, otherwise we'll make an invisible window visible.
+            guard $0.isVisible else { return false }
+
+            // Same screen, just a preference...
+            guard $0.screen == screen else { return false }
+
+            // Same space (virtual screen). Otherwise we'll force an animation to
+            // another space which is very jarring.
+            guard $0.isOnActiveSpace else { return false }
+
+            return true
+        }
 
         // If we have no windows there is nothing to focus.
         guard !windows.isEmpty else { return }
