@@ -1220,6 +1220,13 @@ keybind: Keybinds = .{},
 /// window is ever created. Only implemented on Linux.
 @"initial-window": bool = true,
 
+/// The position of the "quick" terminal window. To learn more about the
+/// quick terminal, see the documentation for the `toggle_quick_terminal`
+/// binding action.
+///
+/// Changing this configuration requires restarting Ghostty completely.
+@"quick-terminal-position": QuickTerminalPosition = .top,
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
@@ -4399,6 +4406,14 @@ pub const ResizeOverlayPosition = enum {
     @"bottom-left",
     @"bottom-center",
     @"bottom-right",
+};
+
+/// See quick-terminal-position
+pub const QuickTerminalPosition = enum {
+    top,
+    bottom,
+    left,
+    right,
 };
 
 /// See grapheme-width-method

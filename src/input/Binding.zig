@@ -402,10 +402,6 @@ pub const Action = union(enum) {
     ///
     crash: CrashThread,
 
-    pub const QuickTerminalPosition = enum {
-        top,
-    };
-
     pub const CrashThread = enum {
         main,
         io,

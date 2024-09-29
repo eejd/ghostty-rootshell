@@ -553,7 +553,10 @@ class AppDelegate: NSObject,
 
     @IBAction func toggleQuickTerminal(_ sender: Any) {
         if quickController == nil {
-            quickController = QuickTerminalController(ghostty, baseConfig: nil)
+            quickController = QuickTerminalController(
+                ghostty,
+                position: ghostty.config.quickTerminalPosition
+            )
         }
 
         guard let quickController = self.quickController else { return }
