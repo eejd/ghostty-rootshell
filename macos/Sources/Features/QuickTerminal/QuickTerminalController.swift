@@ -105,7 +105,19 @@ class QuickTerminalController: BaseTerminalController {
         // tree can be nil if for example we run "eixt" in the terminal and force
         // animate out.
         if (surfaceTree == nil) {
-            surfaceTree = .leaf(.init(ghostty.app!, baseConfig: nil))
+            let leaf: Ghostty.SplitNode.Leaf = .init(ghostty.app!, baseConfig: nil)
+            surfaceTree = .leaf(leaf)
+            focusedSurface = leaf.surface
+
+            // We need to grab first responder but it takes a few loop cycles
+            // before the view is attached to the window so we do it async.
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+                // We should probably retry here but I was never able to trigger this.
+                // If this happens though its a crash so let's avoid it.
+                guard let leafWindow = leaf.surface.window,
+                      leafWindow == window else { return }
+                window.makeFirstResponder(leaf.surface)
+            }
         }
     }
 
