@@ -21,6 +21,7 @@
 		A51BFC272B30F1B800E92F16 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A51BFC262B30F1B800E92F16 /* Sparkle */; };
 		A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */; };
 		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
+		A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */; };
 		A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */; };
@@ -103,6 +104,7 @@
 		A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyDebug.entitlements; sourceTree = "<group>"; };
 		A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateDelegate.swift; sourceTree = "<group>"; };
 		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
+		A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTerminalScreen.swift; sourceTree = "<group>"; };
 		A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_UIKit.swift; sourceTree = "<group>"; };
 		A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossKit.swift; sourceTree = "<group>"; };
 		A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_AppKit.swift; sourceTree = "<group>"; };
@@ -391,6 +393,7 @@
 				A5CBD05B2CA0C5C70017A1AE /* QuickTerminal.xib */,
 				A5CBD05D2CA0C5E70017A1AE /* QuickTerminalController.swift */,
 				A5CBD0632CA122E70017A1AE /* QuickTerminalPosition.swift */,
+				A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */,
 				A5CBD05F2CA0C9080017A1AE /* QuickTerminalWindow.swift */,
 			);
 			path = QuickTerminal;
@@ -588,6 +591,7 @@
 				A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */,
 				A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
+				A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */,
 				A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,

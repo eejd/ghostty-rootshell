@@ -36,7 +36,7 @@ enum QuickTerminalPosition : String {
         // Position depends
         window.setFrame(.init(
             origin: initialOrigin(for: window, on: screen),
-            size: window.frame.size
+            size: restrictFrameSize(window.frame.size, on: screen)
         ), display: false)
     }
 
@@ -48,7 +48,7 @@ enum QuickTerminalPosition : String {
         // Position depends
         window.setFrame(.init(
             origin: finalOrigin(for: window, on: screen),
-            size: window.frame.size
+            size: restrictFrameSize(window.frame.size, on: screen)
         ), display: true)
     }
 
@@ -70,10 +70,10 @@ enum QuickTerminalPosition : String {
     func initialOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch (self) {
         case .top:
-            return .init(x: 0, y: screen.frame.maxY)
+            return .init(x: screen.frame.minX, y: screen.frame.maxY)
 
         case .bottom:
-            return .init(x: 0, y: -window.frame.height)
+            return .init(x: screen.frame.minX, y: -window.frame.height)
 
         case .left:
             return .init(x: -window.frame.width, y: 0)
@@ -87,13 +87,13 @@ enum QuickTerminalPosition : String {
     func finalOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch (self) {
         case .top:
-            return .init(x: window.frame.origin.x, y: screen.visibleFrame.maxY - window.frame.height)
+            return .init(x: screen.frame.minX, y: screen.visibleFrame.maxY - window.frame.height)
 
         case .bottom:
-            return .init(x: window.frame.origin.x, y: 0)
+            return .init(x: screen.frame.minX, y: screen.frame.minY)
 
         case .left:
-            return .init(x: 0, y: window.frame.origin.y)
+            return .init(x: screen.frame.minX, y: window.frame.origin.y)
 
         case .right:
             return .init(x: screen.visibleFrame.maxX - window.frame.width, y: window.frame.origin.y)

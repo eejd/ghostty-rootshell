@@ -66,7 +66,9 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        guard let screen = NSScreen.main else { return frameSize }
+        // We use the actual screen the window is on for this, since it should
+        // be on the proper screen.
+        guard let screen = window?.screen ?? NSScreen.main else { return frameSize }
         return position.restrictFrameSize(frameSize, on: screen)
     }
 
@@ -132,7 +134,7 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = ghostty.config.quickTerminalScreen.screen else { return }
 
         // Move our window off screen to the top
         position.setInitial(in: window, on: screen)
@@ -150,7 +152,8 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
-        guard let screen = NSScreen.main else { return }
+        // We always animate out to whatever screen the window is actually on.
+        guard let screen = window.screen ?? NSScreen.main else { return }
 
         // Keep track of if we were the key window. If we were the key window then we
         // want to move focus to the next window so that focus is preserved somewhere
