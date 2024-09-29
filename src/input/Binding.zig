@@ -363,6 +363,27 @@ pub const Action = union(enum) {
     /// This only works on macOS, since this is a system API on macOS.
     toggle_secure_input: void,
 
+    /// Toggle the "quick" terminal. The quick terminal is a terminal that
+    /// appears on demand from a keybinding, often sliding in from a screen
+    /// edge such as the top. This is useful for quick access to a terminal
+    /// without having to open a new window or tab.
+    ///
+    /// When the quick terminal loses focus, it disappears. The terminal state
+    /// is preserved between appearances, so you can always press the keybinding
+    /// to bring it back up.
+    ///
+    /// The quick terminal has some limitations:
+    ///
+    ///   - It is a singleton; only one instance can exist at a time.
+    ///   - It does not support tabs.
+    ///   - It does not support fullscreen.
+    ///   - It will not be restored when the application is restarted
+    ///     (for systems that support window restoration).
+    ///
+    /// See the various configurations for the quick terminal in the
+    /// configuration file to customize its behavior.
+    toggle_quick_terminal: void,
+
     /// Quit ghostty.
     quit: void,
 
@@ -563,6 +584,7 @@ pub const Action = union(enum) {
             .reload_config,
             .close_all_windows,
             .quit,
+            .toggle_quick_terminal,
             => .app,
 
             // These are app but can be special-cased in a surface context.

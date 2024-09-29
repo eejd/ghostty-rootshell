@@ -1220,6 +1220,40 @@ keybind: Keybinds = .{},
 /// window is ever created. Only implemented on Linux.
 @"initial-window": bool = true,
 
+/// The position of the "quick" terminal window. To learn more about the
+/// quick terminal, see the documentation for the `toggle_quick_terminal`
+/// binding action.
+///
+/// Valid values are:
+///
+///   * `top` - Terminal appears at the top of the screen.
+///   * `bottom` - Terminal appears at the bottom of the screen.
+///   * `left` - Terminal appears at the left of the screen.
+///   * `right` - Terminal appears at the right of the screen.
+///
+/// Changing this configuration requires restarting Ghostty completely.
+@"quick-terminal-position": QuickTerminalPosition = .top,
+
+/// The screen where the quick terminal should show up.
+///
+/// Valid values are:
+///
+///  * `main` - The screen that the operating system recommends as the main
+///    screen. On macOS, this is the screen that is currently receiving
+///    keyboard input. This screen is defined by the operating system and
+///    not chosen by Ghostty.
+///
+///  * `mouse` - The screen that the mouse is currently hovered over.
+///
+///  * `macos-menu-bar` - The screen that contains the macOS menu bar as
+///    set in the display settings on macOS. This is a bit confusing because
+///    every screen on macOS has a menu bar, but this is the screen that
+///    contains the primary menu bar.
+///
+/// The default value is `main` because this is the recommended screen
+/// by the operating system.
+@"quick-terminal-screen": QuickTerminalScreen = .main,
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
@@ -4399,6 +4433,21 @@ pub const ResizeOverlayPosition = enum {
     @"bottom-left",
     @"bottom-center",
     @"bottom-right",
+};
+
+/// See quick-terminal-position
+pub const QuickTerminalPosition = enum {
+    top,
+    bottom,
+    left,
+    right,
+};
+
+/// See quick-terminal-screen
+pub const QuickTerminalScreen = enum {
+    main,
+    mouse,
+    @"macos-menu-bar",
 };
 
 /// See grapheme-width-method

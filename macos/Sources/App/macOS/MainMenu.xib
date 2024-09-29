@@ -32,6 +32,7 @@
                 <outlet property="menuOpenConfig" destination="BOF-NM-1cW" id="Nze-Go-glw"/>
                 <outlet property="menuPaste" destination="i27-pK-umN" id="ICc-X2-gV3"/>
                 <outlet property="menuPreviousSplit" destination="Lic-px-1wg" id="Rto-CG-yRe"/>
+                <outlet property="menuQuickTerminal" destination="kvF-d2-JsP" id="a0u-tf-IEc"/>
                 <outlet property="menuQuit" destination="4sb-4s-VLi" id="qYN-S1-6UW"/>
                 <outlet property="menuReloadConfig" destination="KKH-XX-5py" id="Wvp-7J-wqX"/>
                 <outlet property="menuResetFontSize" destination="Jah-MY-aLX" id="ger-qM-wrm"/>
@@ -216,6 +217,13 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="L3L-I8-sqk"/>
+                            <menuItem title="Quick Terminal" id="kvF-d2-JsP">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="toggleQuickTerminal:" target="bbz-4X-AYv" id="gm3-mk-l8N"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="bC9-n9-RbJ"/>
                             <menuItem title="Terminal Inspector" id="QwP-M5-fvh">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>

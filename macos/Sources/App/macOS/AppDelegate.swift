@@ -49,6 +49,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuIncreaseFontSize: NSMenuItem?
     @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
     @IBOutlet private var menuResetFontSize: NSMenuItem?
+    @IBOutlet private var menuQuickTerminal: NSMenuItem?
     @IBOutlet private var menuTerminalInspector: NSMenuItem?
 
     @IBOutlet private var menuEqualizeSplits: NSMenuItem?
@@ -72,6 +73,9 @@ class AppDelegate: NSObject,
 
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
+
+    /// Our quick terminal. This starts out uninitialized and only initializes if used.
+    private var quickController: QuickTerminalController? = nil
 
     /// Manages updates
     let updaterController: SPUStandardUpdaterController
@@ -310,6 +314,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
+        syncMenuShortcut(action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
         syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
@@ -544,5 +549,19 @@ class AppDelegate: NSObject,
 
     @IBAction func toggleSecureInput(_ sender: Any) {
         setSecureInput(.toggle)
+    }
+
+    @IBAction func toggleQuickTerminal(_ sender: Any) {
+        if quickController == nil {
+            quickController = QuickTerminalController(
+                ghostty,
+                position: ghostty.config.quickTerminalPosition
+            )
+        }
+
+        guard let quickController = self.quickController else { return }
+        quickController.toggle()
+
+        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
     }
 }

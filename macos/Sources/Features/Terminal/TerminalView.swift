@@ -18,15 +18,8 @@ protocol TerminalViewDelegate: AnyObject {
     /// not called initially.
     func surfaceTreeDidChange()
 
+    /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
-}
-
-// Default all the functions so they're optional
-extension TerminalViewDelegate {
-    func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
-    func titleDidChange(to: String) {}
-    func cellSizeDidChange(to: NSSize) {}
-    func zoomStateDidChange(to: Bool) {}
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
