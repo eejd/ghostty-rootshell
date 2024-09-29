@@ -704,8 +704,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -858,8 +871,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -867,7 +893,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[arch=*]" = "-lstdc++";
-				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/ghostty-bridging-header.h";
@@ -898,8 +924,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
