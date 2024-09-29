@@ -136,6 +136,12 @@ class QuickTerminalController: BaseTerminalController {
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = ghostty.config.quickTerminalScreen.screen else { return }
 
+        // If our application is not active, then we grab focus. The quick terminal
+        // always grabs focus.
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
         // Move our window off screen to the top
         position.setInitial(in: window, on: screen)
 
