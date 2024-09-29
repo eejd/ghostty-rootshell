@@ -27,7 +27,7 @@ pub fn renderGlyph(
     line_pos: u32,
     line_thickness: u32,
 ) !font.Glyph {
-   // Draw the appropriate sprite
+    // Draw the appropriate sprite
     var canvas: font.sprite.Canvas, const offset_y: i32 = switch (sprite) {
         .underline => try drawSingle(alloc, width, line_thickness),
         .underline_double => try drawDouble(alloc, width, line_thickness),

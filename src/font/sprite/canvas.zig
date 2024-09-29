@@ -409,6 +409,11 @@ const PixmanImpl = struct {
 
     /// Draw and fill a single pixel
     pub fn pixel(self: *Canvas, x: u32, y: u32, color: Color) void {
+        if (comptime std.debug.runtime_safety) {
+            assert(x < self.image.getWidth());
+            assert(y < self.image.getHeight());
+        }
+
         const boxes = &[_]pixman.Box32{
             .{
                 .x1 = @intCast(x),
@@ -433,10 +438,13 @@ const PixmanImpl = struct {
             },
         };
 
-        assert(boxes[0].x1 >= 0);
-        assert(boxes[0].y1 >= 0);
-        assert(boxes[0].x2 <= @as(i32, @intCast(self.image.getWidth())));
-        assert(boxes[0].y2 <= @as(i32, @intCast(self.image.getHeight())));
+        if (comptime std.debug.runtime_safety) {
+            assert(boxes[0].x1 >= 0);
+            assert(boxes[0].y1 >= 0);
+            assert(boxes[0].x2 <= @as(i32, @intCast(self.image.getWidth())));
+            assert(boxes[0].y2 <= @as(i32, @intCast(self.image.getHeight())));
+        }
+
         self.image.fillBoxes(.src, color.pixmanColor(), boxes) catch {};
     }
 
