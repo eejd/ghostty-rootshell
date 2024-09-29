@@ -181,13 +181,13 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
 
         // upper and lower bounds
-        canvas.pixel(x, @min(y_upper, height), @enumFromInt(255 - alpha));
-        canvas.pixel(x, @min(y_lower, height), @enumFromInt(alpha));
+        canvas.pixel(x, @min(y_upper, height - 1), @enumFromInt(255 - alpha));
+        canvas.pixel(x, @min(y_lower, height - 1), @enumFromInt(alpha));
 
         // fill between upper and lower bound
         var y_fill: u32 = y_upper + 1;
         while (y_fill < y_lower) : (y_fill += 1) {
-            canvas.pixel(x, @min(y_fill, height), .on);
+            canvas.pixel(x, @min(y_fill, height - 1), .on);
         }
     }
 
