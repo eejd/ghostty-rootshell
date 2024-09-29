@@ -30,6 +30,7 @@ const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const Split = @import("Split.zig");
 const c = @import("c.zig").c;
+const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const x11 = @import("x11.zig");
@@ -96,17 +97,25 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_minor_version(),
         c.gtk_get_micro_version(),
     });
+    
+    if (version.atLeast(4, 16, 0)) {
+        // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE
+        _ = internal_os.setenv("GDK_DISABLE", "gles-api");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl");
+    } else if (version.atLeast(4, 14, 0)) {
+        // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
+        // Older versions of GTK do not support these values so it is safe
+        // to always set this. Forwards versions are uncertain so we'll have to
+        // reassess...
+        //
+        // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
+    }
 
-    // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
-    // Older versions of GTK do not support these values so it is safe
-    // to always set this. Forwards versions are uncertain so we'll have to
-    // reassess...
-    //
-    // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
-    _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
-
-    // We need to export GSK_RENDERER to opengl because GTK uses ngl by default after 4.14
-    _ = internal_os.setenv("GSK_RENDERER", "opengl");
+    if (version.atLeast(4, 14, 0)) {
+        // We need to export GSK_RENDERER to opengl because GTK uses ngl by default after 4.14
+        _ = internal_os.setenv("GSK_RENDERER", "opengl");
+    }
 
     // Load our configuration
     var config = try Config.load(core_app.alloc);
