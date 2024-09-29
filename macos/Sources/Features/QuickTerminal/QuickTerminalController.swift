@@ -100,6 +100,12 @@ class QuickTerminalController: BaseTerminalController {
         guard !visible else { return }
         visible = true
 
+        // If our application is not active, then we grab focus. The quick terminal
+        // always grabs focus on animation in.
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
         // Animate the window in
         animateWindowIn(window: window, from: position)
 
@@ -110,16 +116,6 @@ class QuickTerminalController: BaseTerminalController {
             let leaf: Ghostty.SplitNode.Leaf = .init(ghostty.app!, baseConfig: nil)
             surfaceTree = .leaf(leaf)
             focusedSurface = leaf.surface
-
-            // We need to grab first responder but it takes a few loop cycles
-            // before the view is attached to the window so we do it async.
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
-                // We should probably retry here but I was never able to trigger this.
-                // If this happens though its a crash so let's avoid it.
-                guard let leafWindow = leaf.surface.window,
-                      leafWindow == window else { return }
-                window.makeFirstResponder(leaf.surface)
-            }
         }
     }
 
@@ -136,12 +132,6 @@ class QuickTerminalController: BaseTerminalController {
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = ghostty.config.quickTerminalScreen.screen else { return }
 
-        // If our application is not active, then we grab focus. The quick terminal
-        // always grabs focus.
-        if !NSApp.isActive {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-
         // Move our window off screen to the top
         position.setInitial(in: window, on: screen)
 
@@ -150,11 +140,26 @@ class QuickTerminalController: BaseTerminalController {
 
         // Run the animation that moves our window into the proper place and makes
         // it visible.
-        NSAnimationContext.runAnimationGroup { context in
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = .init(name: .easeIn)
             position.setFinal(in: window.animator(), on: screen)
-        }
+        }, completionHandler: {
+            // If we canceled our animation in we do nothing
+            guard self.visible else { return }
+
+            // If our focused view is somehow not connected to this window then the
+            // function calls below do nothing. I don't think this is possible but
+            // we should guard against it because it is a Cocoa assertion.
+            guard let focusedView = self.focusedSurface,
+                  focusedView.window == window else { return }
+
+            // The window must become top-level
+            window.makeKeyAndOrderFront(self)
+
+            // The view must gain our keyboard focus
+            window.makeFirstResponder(focusedView)
+        })
     }
 
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
