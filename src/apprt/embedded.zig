@@ -44,22 +44,13 @@ pub const App = struct {
         /// a full tick of the app loop.
         wakeup: *const fn (AppUD) callconv(.C) void,
 
+        /// Callback called to handle an action.
+        action: *const fn (*App, apprt.Target.C, apprt.Action.C) callconv(.C) void,
+
         /// Reload the configuration and return the new configuration.
         /// The old configuration can be freed immediately when this is
         /// called.
         reload_config: *const fn (AppUD) callconv(.C) ?*const Config,
-
-        /// Open the configuration file.
-        open_config: *const fn (AppUD) callconv(.C) void,
-
-        /// Called to set the title of the window.
-        set_title: *const fn (SurfaceUD, [*]const u8) callconv(.C) void,
-
-        /// Called to set the cursor shape.
-        set_mouse_shape: *const fn (SurfaceUD, terminal.MouseShape) callconv(.C) void,
-
-        /// Called to set the mouse visibility.
-        set_mouse_visibility: *const fn (SurfaceUD, bool) callconv(.C) void,
 
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
@@ -79,60 +70,23 @@ pub const App = struct {
         /// Write the clipboard value.
         write_clipboard: *const fn (SurfaceUD, [*:0]const u8, c_int, bool) callconv(.C) void,
 
-        /// Create a new split view. If the embedder doesn't support split
-        /// views then this can be null.
-        new_split: ?*const fn (SurfaceUD, apprt.SplitDirection, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// New tab with options.
-        new_tab: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// New window with options.
-        new_window: ?*const fn (SurfaceUD, apprt.Surface.Options) callconv(.C) void = null,
-
-        /// Control the inspector visibility
-        control_inspector: ?*const fn (SurfaceUD, input.InspectorMode) callconv(.C) void = null,
-
         /// Close the current surface given by this function.
         close_surface: ?*const fn (SurfaceUD, bool) callconv(.C) void = null,
+    };
 
-        /// Focus the previous/next split (if any).
-        focus_split: ?*const fn (SurfaceUD, input.SplitFocusDirection) callconv(.C) void = null,
+    /// This is the key event sent for ghostty_surface_key and
+    /// ghostty_app_key.
+    pub const KeyEvent = struct {
+        /// The three below are absolutely required.
+        action: input.Action,
+        mods: input.Mods,
+        keycode: u32,
 
-        /// Resize the current split.
-        resize_split: ?*const fn (SurfaceUD, input.SplitResizeDirection, u16) callconv(.C) void = null,
-
-        /// Equalize all splits in the current window
-        equalize_splits: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Zoom the current split.
-        toggle_split_zoom: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Goto tab
-        goto_tab: ?*const fn (SurfaceUD, apprt.GotoTab) callconv(.C) void = null,
-
-        /// Toggle fullscreen for current window.
-        toggle_fullscreen: ?*const fn (SurfaceUD, configpkg.NonNativeFullscreen) callconv(.C) void = null,
-
-        /// Set the initial window size. It is up to the user of libghostty to
-        /// determine if it is the initial window and set this appropriately.
-        set_initial_window_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
-
-        /// Render the inspector for the given surface.
-        render_inspector: ?*const fn (SurfaceUD) callconv(.C) void = null,
-
-        /// Called when the cell size changes.
-        set_cell_size: ?*const fn (SurfaceUD, u32, u32) callconv(.C) void = null,
-
-        /// Show a desktop notification to the user.
-        show_desktop_notification: ?*const fn (SurfaceUD, [*:0]const u8, [*:0]const u8) void = null,
-
-        /// Called when the health of the renderer changes.
-        update_renderer_health: ?*const fn (SurfaceUD, renderer.Health) void = null,
-
-        /// Called when the mouse goes over a link. The link target is the
-        /// parameter. The link target will be null if the mouse is no longer
-        /// over a link.
-        mouse_over_link: ?*const fn (SurfaceUD, ?[*]const u8, usize) void = null,
+        /// Optionally, the embedder can handle text translation and send
+        /// the text value here. If text is non-nil, it is assumed that the
+        /// embedder also handles dead key states and sets composing as necessary.
+        text: ?[:0]const u8,
+        composing: bool,
     };
 
     core_app: *CoreApp,
@@ -140,17 +94,267 @@ pub const App = struct {
     opts: Options,
     keymap: input.Keymap,
 
+    /// The keymap state is used for global keybinds only. Each surface
+    /// also has its own keymap state for focused keybinds.
+    keymap_state: input.Keymap.State,
+
     pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
         return .{
             .core_app = core_app,
             .config = config,
             .opts = opts,
             .keymap = try input.Keymap.init(),
+            .keymap_state = .{},
         };
     }
 
     pub fn terminate(self: App) void {
         self.keymap.deinit();
+    }
+
+    /// Returns true if there are any global keybinds in the configuration.
+    pub fn hasGlobalKeybinds(self: *const App) bool {
+        var it = self.config.keybind.set.bindings.iterator();
+        while (it.next()) |entry| {
+            switch (entry.value_ptr.*) {
+                .leader => {},
+                .leaf => |leaf| if (leaf.flags.global) return true,
+            }
+        }
+
+        return false;
+    }
+
+    /// The target of a key event. This is used to determine some subtly
+    /// different behavior between app and surface key events.
+    pub const KeyTarget = union(enum) {
+        app,
+        surface: *Surface,
+    };
+
+    /// See CoreApp.keyEvent.
+    pub fn keyEvent(
+        self: *App,
+        target: KeyTarget,
+        event: KeyEvent,
+    ) !bool {
+        const action = event.action;
+        const keycode = event.keycode;
+        const mods = event.mods;
+
+        // True if this is a key down event
+        const is_down = action == .press or action == .repeat;
+
+        // If we're on macOS and we have macos-option-as-alt enabled,
+        // then we strip the alt modifier from the mods for translation.
+        const translate_mods = translate_mods: {
+            var translate_mods = mods;
+            if (comptime builtin.target.isDarwin()) {
+                const strip = switch (self.config.@"macos-option-as-alt") {
+                    .false => false,
+                    .true => mods.alt,
+                    .left => mods.sides.alt == .left,
+                    .right => mods.sides.alt == .right,
+                };
+                if (strip) translate_mods.alt = false;
+            }
+
+            // On macOS we strip ctrl because UCKeyTranslate
+            // converts to the masked values (i.e. ctrl+c becomes 3)
+            // and we don't want that behavior.
+            //
+            // We also strip super because its not used for translation
+            // on macos and it results in a bad translation.
+            if (comptime builtin.target.isDarwin()) {
+                translate_mods.ctrl = false;
+                translate_mods.super = false;
+            }
+
+            break :translate_mods translate_mods;
+        };
+
+        const event_text: ?[]const u8 = event_text: {
+            // This logic only applies to macOS.
+            if (comptime builtin.os.tag != .macos) break :event_text event.text;
+
+            // If the modifiers are ONLY "control" then we never process
+            // the event text because we want to do our own translation so
+            // we can handle ctrl+c, ctrl+z, etc.
+            //
+            // This is specifically because on macOS using the
+            // "Dvorak - QWERTY ⌘" keyboard layout, ctrl+z is translated as
+            // "/" (the physical key that is z on a qwerty keyboard). But on
+            // other layouts, ctrl+<char> is not translated by AppKit. So,
+            // we just avoid this by never allowing AppKit to translate
+            // ctrl+<char> and instead do it ourselves.
+            const ctrl_only = comptime (input.Mods{ .ctrl = true }).int();
+            break :event_text if (mods.binding().int() == ctrl_only) null else event.text;
+        };
+
+        // Translate our key using the keymap for our localized keyboard layout.
+        // We only translate for keydown events. Otherwise, we only care about
+        // the raw keycode.
+        var buf: [128]u8 = undefined;
+        const result: input.Keymap.Translation = if (is_down) translate: {
+            // If the event provided us with text, then we use this as a result
+            // and do not do manual translation.
+            const result: input.Keymap.Translation = if (event_text) |text| .{
+                .text = text,
+                .composing = event.composing,
+            } else try self.keymap.translate(
+                &buf,
+                switch (target) {
+                    .app => &self.keymap_state,
+                    .surface => |surface| &surface.keymap_state,
+                },
+                @intCast(keycode),
+                translate_mods,
+            );
+
+            // If this is a dead key, then we're composing a character and
+            // we need to set our proper preedit state if we're targeting a
+            // surface.
+            if (result.composing) {
+                switch (target) {
+                    .app => {},
+                    .surface => |surface| surface.core_surface.preeditCallback(
+                        result.text,
+                    ) catch |err| {
+                        log.err("error in preedit callback err={}", .{err});
+                        return false;
+                    },
+                }
+            } else {
+                switch (target) {
+                    .app => {},
+                    .surface => |surface| surface.core_surface.preeditCallback(null) catch |err| {
+                        log.err("error in preedit callback err={}", .{err});
+                        return false;
+                    },
+                }
+
+                // If the text is just a single non-printable ASCII character
+                // then we clear the text. We handle non-printables in the
+                // key encoder manual (such as tab, ctrl+c, etc.)
+                if (result.text.len == 1 and result.text[0] < 0x20) {
+                    break :translate .{ .composing = false, .text = "" };
+                }
+            }
+
+            break :translate result;
+        } else .{ .composing = false, .text = "" };
+
+        // UCKeyTranslate always consumes all mods, so if we have any output
+        // then we've consumed our translate mods.
+        const consumed_mods: input.Mods = if (result.text.len > 0) translate_mods else .{};
+
+        // We need to always do a translation with no modifiers at all in
+        // order to get the "unshifted_codepoint" for the key event.
+        const unshifted_codepoint: u21 = unshifted: {
+            var nomod_buf: [128]u8 = undefined;
+            var nomod_state: input.Keymap.State = .{};
+            const nomod = try self.keymap.translate(
+                &nomod_buf,
+                &nomod_state,
+                @intCast(keycode),
+                .{},
+            );
+
+            const view = std.unicode.Utf8View.init(nomod.text) catch |err| {
+                log.warn("cannot build utf8 view over text: {}", .{err});
+                break :unshifted 0;
+            };
+            var it = view.iterator();
+            break :unshifted it.nextCodepoint() orelse 0;
+        };
+
+        // log.warn("TRANSLATE: action={} keycode={x} dead={} key_len={} key={any} key_str={s} mods={}", .{
+        //     action,
+        //     keycode,
+        //     result.composing,
+        //     result.text.len,
+        //     result.text,
+        //     result.text,
+        //     mods,
+        // });
+
+        // We want to get the physical unmapped key to process keybinds.
+        const physical_key = keycode: for (input.keycodes.entries) |entry| {
+            if (entry.native == keycode) break :keycode entry.key;
+        } else .invalid;
+
+        // If the resulting text has length 1 then we can take its key
+        // and attempt to translate it to a key enum and call the key callback.
+        // If the length is greater than 1 then we're going to call the
+        // charCallback.
+        //
+        // We also only do key translation if this is not a dead key.
+        const key = if (!result.composing) key: {
+            // If our physical key is a keypad key, we use that.
+            if (physical_key.keypad()) break :key physical_key;
+
+            // A completed key. If the length of the key is one then we can
+            // attempt to translate it to a key enum and call the key
+            // callback. First try plain ASCII.
+            if (result.text.len > 0) {
+                if (input.Key.fromASCII(result.text[0])) |key| {
+                    break :key key;
+                }
+            }
+
+            // If the above doesn't work, we use the unmodified value.
+            if (std.math.cast(u8, unshifted_codepoint)) |ascii| {
+                if (input.Key.fromASCII(ascii)) |key| {
+                    break :key key;
+                }
+            }
+
+            break :key physical_key;
+        } else .invalid;
+
+        // Build our final key event
+        const input_event: input.KeyEvent = .{
+            .action = action,
+            .key = key,
+            .physical_key = physical_key,
+            .mods = mods,
+            .consumed_mods = consumed_mods,
+            .composing = result.composing,
+            .utf8 = result.text,
+            .unshifted_codepoint = unshifted_codepoint,
+        };
+
+        // Invoke the core Ghostty logic to handle this input.
+        const effect: CoreSurface.InputEffect = switch (target) {
+            .app => if (self.core_app.keyEvent(
+                self,
+                input_event,
+            ))
+                .consumed
+            else
+                .ignored,
+
+            .surface => |surface| try surface.core_surface.keyCallback(input_event),
+        };
+
+        return switch (effect) {
+            .closed => true,
+            .ignored => false,
+            .consumed => consumed: {
+                if (is_down) {
+                    // If we consume the key then we want to reset the dead
+                    // key state.
+                    self.keymap_state = .{};
+
+                    switch (target) {
+                        .app => {},
+                        .surface => |surface| surface.core_surface.preeditCallback(null) catch {},
+                    }
+                }
+
+                break :consumed true;
+            },
+        };
     }
 
     /// This should be called whenever the keyboard layout was changed.
@@ -164,10 +368,6 @@ pub const App = struct {
         for (self.core_app.surfaces.items) |surface| {
             surface.keymap_state = .{};
         }
-    }
-
-    pub fn openConfig(self: *App) !void {
-        try configpkg.edit.open(self.core_app.alloc);
     }
 
     pub fn reloadConfig(self: *App) !?*const Config {
@@ -218,15 +418,39 @@ pub const App = struct {
         surface.queueInspectorRender();
     }
 
-    pub fn newWindow(self: *App, parent: ?*CoreSurface) !void {
-        _ = self;
+    /// Perform a given action.
+    pub fn performAction(
+        self: *App,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !void {
+        // Special case certain actions before they are sent to the embedder
+        switch (action) {
+            .set_title => switch (target) {
+                .app => {},
+                .surface => |surface| {
+                    // Dupe the title so that we can store it. If we get an allocation
+                    // error we just ignore it, since this only breaks a few minor things.
+                    const alloc = self.core_app.alloc;
+                    if (surface.rt_surface.title) |v| alloc.free(v);
+                    surface.rt_surface.title = alloc.dupeZ(u8, value.title) catch null;
+                },
+            },
 
-        // Right now we only support creating a new window with a parent
-        // through this code.
-        // The other case is handled by the embedding runtime.
-        if (parent) |surface| {
-            try surface.rt_surface.newWindow();
+            else => {},
         }
+
+        log.debug("dispatching action target={s} action={} value={}", .{
+            @tagName(target),
+            action,
+            value,
+        });
+        self.opts.action(
+            self,
+            target.cval(),
+            @unionInit(apprt.Action, @tagName(action), value).cval(),
+        );
     }
 };
 
@@ -326,20 +550,6 @@ pub const Surface = struct {
         /// the "wait-after-command" option is also automatically set to true,
         /// since this is used for scripting.
         command: [*:0]const u8 = "",
-    };
-
-    /// This is the key event sent for ghostty_surface_key.
-    pub const KeyEvent = struct {
-        /// The three below are absolutely required.
-        action: input.Action,
-        mods: input.Mods,
-        keycode: u32,
-
-        /// Optionally, the embedder can handle text translation and send
-        /// the text value here. If text is non-nil, it is assumed that the
-        /// embedder also handles dead key states and sets composing as necessary.
-        text: ?[:0]const u8,
-        composing: bool,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -458,25 +668,6 @@ pub const Surface = struct {
         }
     }
 
-    pub fn controlInspector(self: *const Surface, mode: input.InspectorMode) void {
-        const func = self.app.opts.control_inspector orelse {
-            log.info("runtime embedder does not support the terminal inspector", .{});
-            return;
-        };
-
-        func(self.userdata, mode);
-    }
-
-    pub fn newSplit(self: *const Surface, direction: apprt.SplitDirection) !void {
-        const func = self.app.opts.new_split orelse {
-            log.info("runtime embedder does not support splits", .{});
-            return;
-        };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, direction, options);
-    }
-
     pub fn close(self: *const Surface, process_alive: bool) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});
@@ -484,42 +675,6 @@ pub const Surface = struct {
         };
 
         func(self.userdata, process_alive);
-    }
-
-    pub fn gotoSplit(self: *const Surface, direction: input.SplitFocusDirection) void {
-        const func = self.app.opts.focus_split orelse {
-            log.info("runtime embedder does not support focus split", .{});
-            return;
-        };
-
-        func(self.userdata, direction);
-    }
-
-    pub fn resizeSplit(self: *const Surface, direction: input.SplitResizeDirection, amount: u16) void {
-        const func = self.app.opts.resize_split orelse {
-            log.info("runtime embedder does not support resize split", .{});
-            return;
-        };
-
-        func(self.userdata, direction, amount);
-    }
-
-    pub fn equalizeSplits(self: *const Surface) void {
-        const func = self.app.opts.equalize_splits orelse {
-            log.info("runtime embedder does not support equalize splits", .{});
-            return;
-        };
-
-        func(self.userdata);
-    }
-
-    pub fn toggleSplitZoom(self: *const Surface) void {
-        const func = self.app.opts.toggle_split_zoom orelse {
-            log.info("runtime embedder does not support split zoom", .{});
-            return;
-        };
-
-        func(self.userdata);
     }
 
     pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
@@ -530,42 +685,8 @@ pub const Surface = struct {
         return self.size;
     }
 
-    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
-        _ = self;
-        _ = min;
-        _ = max_;
-    }
-
-    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
-        // Dupe the title so that we can store it. If we get an allocation
-        // error we just ignore it, since this only breaks a few minor things.
-        const alloc = self.app.core_app.alloc;
-        if (self.title) |v| alloc.free(v);
-        self.title = alloc.dupeZ(u8, slice) catch null;
-
-        self.app.opts.set_title(
-            self.userdata,
-            slice.ptr,
-        );
-    }
-
     pub fn getTitle(self: *Surface) ?[:0]const u8 {
         return self.title;
-    }
-
-    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
-        self.app.opts.set_mouse_shape(
-            self.userdata,
-            shape,
-        );
-    }
-
-    /// Set the visibility of the mouse cursor.
-    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
-        self.app.opts.set_mouse_visibility(
-            self.userdata,
-            visible,
-        );
     }
 
     pub fn supportsClipboard(
@@ -755,7 +876,12 @@ pub const Surface = struct {
         };
     }
 
-    pub fn cursorPosCallback(self: *Surface, x: f64, y: f64) void {
+    pub fn cursorPosCallback(
+        self: *Surface,
+        x: f64,
+        y: f64,
+        mods: input.Mods,
+    ) void {
         // Convert our unscaled x/y to scaled.
         self.cursor_pos = self.cursorPosToPixels(.{
             .x = @floatCast(x),
@@ -768,202 +894,10 @@ pub const Surface = struct {
             return;
         };
 
-        self.core_surface.cursorPosCallback(self.cursor_pos) catch |err| {
+        self.core_surface.cursorPosCallback(self.cursor_pos, mods) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };
-    }
-
-    pub fn keyCallback(
-        self: *Surface,
-        event: KeyEvent,
-    ) !void {
-        const action = event.action;
-        const keycode = event.keycode;
-        const mods = event.mods;
-
-        // True if this is a key down event
-        const is_down = action == .press or action == .repeat;
-
-        // If we're on macOS and we have macos-option-as-alt enabled,
-        // then we strip the alt modifier from the mods for translation.
-        const translate_mods = translate_mods: {
-            var translate_mods = mods;
-            if (comptime builtin.target.isDarwin()) {
-                const strip = switch (self.app.config.@"macos-option-as-alt") {
-                    .false => false,
-                    .true => mods.alt,
-                    .left => mods.sides.alt == .left,
-                    .right => mods.sides.alt == .right,
-                };
-                if (strip) translate_mods.alt = false;
-            }
-
-            // On macOS we strip ctrl because UCKeyTranslate
-            // converts to the masked values (i.e. ctrl+c becomes 3)
-            // and we don't want that behavior.
-            //
-            // We also strip super because its not used for translation
-            // on macos and it results in a bad translation.
-            if (comptime builtin.target.isDarwin()) {
-                translate_mods.ctrl = false;
-                translate_mods.super = false;
-            }
-
-            break :translate_mods translate_mods;
-        };
-
-        const event_text: ?[]const u8 = event_text: {
-            // This logic only applies to macOS.
-            if (comptime builtin.os.tag != .macos) break :event_text event.text;
-
-            // If the modifiers are ONLY "control" then we never process
-            // the event text because we want to do our own translation so
-            // we can handle ctrl+c, ctrl+z, etc.
-            //
-            // This is specifically because on macOS using the
-            // "Dvorak - QWERTY ⌘" keyboard layout, ctrl+z is translated as
-            // "/" (the physical key that is z on a qwerty keyboard). But on
-            // other layouts, ctrl+<char> is not translated by AppKit. So,
-            // we just avoid this by never allowing AppKit to translate
-            // ctrl+<char> and instead do it ourselves.
-            const ctrl_only = comptime (input.Mods{ .ctrl = true }).int();
-            break :event_text if (mods.binding().int() == ctrl_only) null else event.text;
-        };
-
-        // Translate our key using the keymap for our localized keyboard layout.
-        // We only translate for keydown events. Otherwise, we only care about
-        // the raw keycode.
-        var buf: [128]u8 = undefined;
-        const result: input.Keymap.Translation = if (is_down) translate: {
-            // If the event provided us with text, then we use this as a result
-            // and do not do manual translation.
-            const result: input.Keymap.Translation = if (event_text) |text| .{
-                .text = text,
-                .composing = event.composing,
-            } else try self.app.keymap.translate(
-                &buf,
-                &self.keymap_state,
-                @intCast(keycode),
-                translate_mods,
-            );
-
-            // If this is a dead key, then we're composing a character and
-            // we need to set our proper preedit state.
-            if (result.composing) {
-                self.core_surface.preeditCallback(result.text) catch |err| {
-                    log.err("error in preedit callback err={}", .{err});
-                    return;
-                };
-            } else {
-                // If we aren't composing, then we set our preedit to
-                // empty no matter what.
-                self.core_surface.preeditCallback(null) catch {};
-
-                // If the text is just a single non-printable ASCII character
-                // then we clear the text. We handle non-printables in the
-                // key encoder manual (such as tab, ctrl+c, etc.)
-                if (result.text.len == 1 and result.text[0] < 0x20) {
-                    break :translate .{ .composing = false, .text = "" };
-                }
-            }
-
-            break :translate result;
-        } else .{ .composing = false, .text = "" };
-
-        // UCKeyTranslate always consumes all mods, so if we have any output
-        // then we've consumed our translate mods.
-        const consumed_mods: input.Mods = if (result.text.len > 0) translate_mods else .{};
-
-        // We need to always do a translation with no modifiers at all in
-        // order to get the "unshifted_codepoint" for the key event.
-        const unshifted_codepoint: u21 = unshifted: {
-            var nomod_buf: [128]u8 = undefined;
-            var nomod_state: input.Keymap.State = .{};
-            const nomod = try self.app.keymap.translate(
-                &nomod_buf,
-                &nomod_state,
-                @intCast(keycode),
-                .{},
-            );
-
-            const view = std.unicode.Utf8View.init(nomod.text) catch |err| {
-                log.warn("cannot build utf8 view over text: {}", .{err});
-                break :unshifted 0;
-            };
-            var it = view.iterator();
-            break :unshifted it.nextCodepoint() orelse 0;
-        };
-
-        // log.warn("TRANSLATE: action={} keycode={x} dead={} key_len={} key={any} key_str={s} mods={}", .{
-        //     action,
-        //     keycode,
-        //     result.composing,
-        //     result.text.len,
-        //     result.text,
-        //     result.text,
-        //     mods,
-        // });
-
-        // We want to get the physical unmapped key to process keybinds.
-        const physical_key = keycode: for (input.keycodes.entries) |entry| {
-            if (entry.native == keycode) break :keycode entry.key;
-        } else .invalid;
-
-        // If the resulting text has length 1 then we can take its key
-        // and attempt to translate it to a key enum and call the key callback.
-        // If the length is greater than 1 then we're going to call the
-        // charCallback.
-        //
-        // We also only do key translation if this is not a dead key.
-        const key = if (!result.composing) key: {
-            // If our physical key is a keypad key, we use that.
-            if (physical_key.keypad()) break :key physical_key;
-
-            // A completed key. If the length of the key is one then we can
-            // attempt to translate it to a key enum and call the key
-            // callback. First try plain ASCII.
-            if (result.text.len > 0) {
-                if (input.Key.fromASCII(result.text[0])) |key| {
-                    break :key key;
-                }
-            }
-
-            // If the above doesn't work, we use the unmodified value.
-            if (std.math.cast(u8, unshifted_codepoint)) |ascii| {
-                if (input.Key.fromASCII(ascii)) |key| {
-                    break :key key;
-                }
-            }
-
-            break :key physical_key;
-        } else .invalid;
-
-        // Invoke the core Ghostty logic to handle this input.
-        const effect = self.core_surface.keyCallback(.{
-            .action = action,
-            .key = key,
-            .physical_key = physical_key,
-            .mods = mods,
-            .consumed_mods = consumed_mods,
-            .composing = result.composing,
-            .utf8 = result.text,
-            .unshifted_codepoint = unshifted_codepoint,
-        }) catch |err| {
-            log.err("error in key callback err={}", .{err});
-            return;
-        };
-
-        switch (effect) {
-            .closed => return,
-            .ignored => {},
-            .consumed => if (is_down) {
-                // If we consume the key then we want to reset the dead
-                // key state.
-                self.keymap_state = .{};
-                self.core_surface.preeditCallback(null) catch {};
-            },
-        }
     }
 
     pub fn textCallback(self: *Surface, text: []const u8) void {
@@ -987,72 +921,18 @@ pub const Surface = struct {
         };
     }
 
-    pub fn gotoTab(self: *Surface, tab: apprt.GotoTab) void {
-        const func = self.app.opts.goto_tab orelse {
-            log.info("runtime embedder does not goto_tab", .{});
+    fn queueInspectorRender(self: *Surface) void {
+        self.app.performAction(
+            .{ .surface = &self.core_surface },
+            .render_inspector,
+            {},
+        ) catch |err| {
+            log.err("error rendering the inspector err={}", .{err});
             return;
         };
-
-        func(self.userdata, tab);
     }
 
-    pub fn toggleFullscreen(self: *Surface, nonNativeFullscreen: configpkg.NonNativeFullscreen) void {
-        const func = self.app.opts.toggle_fullscreen orelse {
-            log.info("runtime embedder does not toggle_fullscreen", .{});
-            return;
-        };
-
-        func(self.userdata, nonNativeFullscreen);
-    }
-
-    pub fn newTab(self: *const Surface) !void {
-        const func = self.app.opts.new_tab orelse {
-            log.info("runtime embedder does not support new_tab", .{});
-            return;
-        };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, options);
-    }
-
-    pub fn newWindow(self: *const Surface) !void {
-        const func = self.app.opts.new_window orelse {
-            log.info("runtime embedder does not support new_window", .{});
-            return;
-        };
-
-        const options = self.newSurfaceOptions();
-        func(self.userdata, options);
-    }
-
-    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
-        const func = self.app.opts.set_initial_window_size orelse {
-            log.info("runtime embedder does not set_initial_window_size", .{});
-            return;
-        };
-
-        func(self.userdata, width, height);
-    }
-
-    fn queueInspectorRender(self: *const Surface) void {
-        const func = self.app.opts.render_inspector orelse {
-            log.info("runtime embedder does not render_inspector", .{});
-            return;
-        };
-
-        func(self.userdata);
-    }
-
-    pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
-        const func = self.app.opts.set_cell_size orelse {
-            log.info("runtime embedder does not support set_cell_size", .{});
-            return;
-        };
-
-        func(self.userdata, width, height);
-    }
-
-    fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
+    pub fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
         const font_size: f32 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size self.core_surface.font_size.points;
@@ -1068,43 +948,6 @@ pub const Surface = struct {
     fn cursorPosToPixels(self: *const Surface, pos: apprt.CursorPos) !apprt.CursorPos {
         const scale = try self.getContentScale();
         return .{ .x = pos.x * scale.x, .y = pos.y * scale.y };
-    }
-
-    /// Show a desktop notification.
-    pub fn showDesktopNotification(
-        self: *const Surface,
-        title: [:0]const u8,
-        body: [:0]const u8,
-    ) !void {
-        const func = self.app.opts.show_desktop_notification orelse {
-            log.info("runtime embedder does not support show_desktop_notification", .{});
-            return;
-        };
-
-        func(self.userdata, title, body);
-    }
-
-    /// Update the health of the renderer.
-    pub fn updateRendererHealth(self: *const Surface, health: renderer.Health) void {
-        const func = self.app.opts.update_renderer_health orelse {
-            log.info("runtime embedder does not support update_renderer_health", .{});
-            return;
-        };
-
-        func(self.userdata, health);
-    }
-
-    pub fn mouseOverLink(self: *const Surface, uri: ?[]const u8) void {
-        const func = self.app.opts.mouse_over_link orelse {
-            log.info("runtime embedder does not support over_link", .{});
-            return;
-        };
-
-        if (uri) |v| {
-            func(self.userdata, v.ptr, v.len);
-        } else {
-            func(self.userdata, null, 0);
-        }
     }
 };
 
@@ -1367,7 +1210,7 @@ pub const CAPI = struct {
         composing: bool,
 
         /// Convert to surface key event.
-        fn keyEvent(self: KeyEvent) Surface.KeyEvent {
+        fn keyEvent(self: KeyEvent) App.KeyEvent {
             return .{
                 .action = self.action,
                 .mods = @bitCast(@as(
@@ -1453,6 +1296,19 @@ pub const CAPI = struct {
         core_app.destroy();
     }
 
+    /// Notify the app of a global keypress capture. This will return
+    /// true if the key was captured by the app, in which case the caller
+    /// should not process the key.
+    export fn ghostty_app_key(
+        app: *App,
+        event: KeyEvent,
+    ) bool {
+        return app.keyEvent(.app, event.keyEvent()) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        };
+    }
+
     /// Notify the app that the keyboard was changed. This causes the
     /// keyboard layout to be reloaded from the OS.
     export fn ghostty_app_keyboard_changed(v: *App) void {
@@ -1464,7 +1320,7 @@ pub const CAPI = struct {
 
     /// Open the configuration.
     export fn ghostty_app_open_config(v: *App) void {
-        _ = v.core_app.openConfig(v) catch |err| {
+        v.performAction(.app, .open_config, {}) catch |err| {
             log.err("error reloading config err={}", .{err});
             return;
         };
@@ -1481,6 +1337,11 @@ pub const CAPI = struct {
     /// Returns true if the app needs to confirm quitting.
     export fn ghostty_app_needs_confirm_quit(v: *App) bool {
         return v.core_app.needsConfirmQuit();
+    }
+
+    /// Returns true if the app has global keybinds.
+    export fn ghostty_app_has_global_keybinds(v: *App) bool {
+        return v.hasGlobalKeybinds();
     }
 
     /// Returns initial surface options.
@@ -1510,9 +1371,19 @@ pub const CAPI = struct {
         ptr.app.closeSurface(ptr);
     }
 
+    /// Returns the userdata associated with the surface.
+    export fn ghostty_surface_userdata(surface: *Surface) ?*anyopaque {
+        return surface.userdata;
+    }
+
     /// Returns the app associated with a surface.
     export fn ghostty_surface_app(surface: *Surface) *App {
         return surface.app;
+    }
+
+    /// Returns the config to use for surfaces that inherit from this one.
+    export fn ghostty_surface_inherited_config(surface: *Surface) Surface.Options {
+        return surface.newSurfaceOptions();
     }
 
     /// Returns true if the surface needs to confirm quitting.
@@ -1641,16 +1512,15 @@ pub const CAPI = struct {
     /// Send this for raw keypresses (i.e. the keyDown event on macOS).
     /// This will handle the keymap translation and send the appropriate
     /// key and char events.
-    ///
-    /// You do NOT need to also send "ghostty_surface_char" unless
-    /// you want to send a unicode character that is not associated
-    /// with a keypress, i.e. IME keyboard.
     export fn ghostty_surface_key(
         surface: *Surface,
         event: KeyEvent,
     ) void {
-        surface.keyCallback(event.keyEvent()) catch |err| {
-            log.err("error processing key event err={}", .{err});
+        _ = surface.app.keyEvent(
+            .{ .surface = surface },
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
             return;
         };
     }
@@ -1690,8 +1560,20 @@ pub const CAPI = struct {
     }
 
     /// Update the mouse position within the view.
-    export fn ghostty_surface_mouse_pos(surface: *Surface, x: f64, y: f64) void {
-        surface.cursorPosCallback(x, y);
+    export fn ghostty_surface_mouse_pos(
+        surface: *Surface,
+        x: f64,
+        y: f64,
+        mods: c_int,
+    ) void {
+        surface.cursorPosCallback(
+            x,
+            y,
+            @bitCast(@as(
+                input.Mods.Backing,
+                @truncate(@as(c_uint, @bitCast(mods))),
+            )),
+        );
     }
 
     export fn ghostty_surface_mouse_scroll(
@@ -1739,26 +1621,61 @@ pub const CAPI = struct {
     }
 
     /// Request that the surface split in the given direction.
-    export fn ghostty_surface_split(ptr: *Surface, direction: apprt.SplitDirection) void {
-        ptr.newSplit(direction) catch {};
+    export fn ghostty_surface_split(ptr: *Surface, direction: apprt.action.SplitDirection) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .new_split,
+            direction,
+        ) catch |err| {
+            log.err("error creating new split err={}", .{err});
+            return;
+        };
     }
 
     /// Focus on the next split (if any).
-    export fn ghostty_surface_split_focus(ptr: *Surface, direction: input.SplitFocusDirection) void {
-        ptr.gotoSplit(direction);
+    export fn ghostty_surface_split_focus(
+        ptr: *Surface,
+        direction: apprt.action.GotoSplit,
+    ) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .goto_split,
+            direction,
+        ) catch |err| {
+            log.err("error creating new split err={}", .{err});
+            return;
+        };
     }
 
     /// Resize the current split by moving the split divider in the given
     /// direction. `direction` specifies which direction the split divider will
     /// move relative to the focused split. `amount` is a fractional value
     /// between 0 and 1 that specifies by how much the divider will move.
-    export fn ghostty_surface_split_resize(ptr: *Surface, direction: input.SplitResizeDirection, amount: u16) void {
-        ptr.resizeSplit(direction, amount);
+    export fn ghostty_surface_split_resize(
+        ptr: *Surface,
+        direction: apprt.action.ResizeSplit.Direction,
+        amount: u16,
+    ) void {
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .resize_split,
+            .{ .direction = direction, .amount = amount },
+        ) catch |err| {
+            log.err("error resizing split err={}", .{err});
+            return;
+        };
     }
 
     /// Equalize the size of all splits in the current window.
     export fn ghostty_surface_split_equalize(ptr: *Surface) void {
-        ptr.equalizeSplits();
+        ptr.app.performAction(
+            .{ .surface = &ptr.core_surface },
+            .equalize_splits,
+            {},
+        ) catch |err| {
+            log.err("error equalizing splits err={}", .{err});
+            return;
+        };
     }
 
     /// Invoke an action on the surface.

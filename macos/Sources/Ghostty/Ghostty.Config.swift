@@ -332,6 +332,28 @@ extension Ghostty {
             return Color(newColor)
         }
 
+        #if canImport(AppKit)
+        var quickTerminalPosition: QuickTerminalPosition {
+            guard let config = self.config else { return .top }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "quick-terminal-position"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return .top }
+            guard let ptr = v else { return .top }
+            let str = String(cString: ptr)
+            return QuickTerminalPosition(rawValue: str) ?? .top
+        }
+
+        var quickTerminalScreen: QuickTerminalScreen {
+            guard let config = self.config else { return .main }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "quick-terminal-screen"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return .main }
+            guard let ptr = v else { return .main }
+            let str = String(cString: ptr)
+            return QuickTerminalScreen(fromGhosttyConfig: str) ?? .main
+        }
+        #endif
+
         var resizeOverlay: ResizeOverlay {
             guard let config = self.config else { return .after_first }
             var v: UnsafePointer<Int8>? = nil
@@ -370,6 +392,22 @@ extension Ghostty {
             guard let ptr = v else { return defaultValue }
             let str = String(cString: ptr)
             return AutoUpdate(rawValue: str) ?? defaultValue
+        }
+
+        var autoSecureInput: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "macos-auto-secure-input"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
+        var secureInputIndication: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "macos-secure-input-indication"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
         }
     }
 }

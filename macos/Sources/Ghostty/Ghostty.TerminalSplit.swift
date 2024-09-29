@@ -219,13 +219,13 @@ extension Ghostty {
 
             // Determine our desired direction
             guard let directionAny = notification.userInfo?["direction"] else { return }
-            guard let direction = directionAny as? ghostty_split_direction_e else { return }
+            guard let direction = directionAny as? ghostty_action_split_direction_e else { return }
             var splitDirection: SplitViewDirection
             switch (direction) {
-            case GHOSTTY_SPLIT_RIGHT:
+            case GHOSTTY_SPLIT_DIRECTION_RIGHT:
                 splitDirection = .horizontal
 
-            case GHOSTTY_SPLIT_DOWN:
+            case GHOSTTY_SPLIT_DIRECTION_DOWN:
                 splitDirection = .vertical
 
             default:

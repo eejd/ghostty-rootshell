@@ -1761,52 +1761,9 @@ fn updateCell(
         @intFromFloat(@max(0, @min(255, @round(self.config.background_opacity * 255)))),
     };
 
-    // If the cell has a character, draw it
-    if (cell.hasText()) fg: {
-        // Render
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            shaper_run.font_index,
-            shaper_cell.glyph_index orelse break :fg,
-            .{
-                .grid_metrics = self.grid_metrics,
-                .thicken = self.config.font_thicken,
-            },
-        );
-
-        // If we're rendering a color font, we use the color atlas
-        const mode: CellProgram.CellMode = switch (try fgMode(
-            render.presentation,
-            cell_pin,
-        )) {
-            .normal => .fg,
-            .color => .fg_color,
-            .constrained => .fg_constrained,
-            .powerline => .fg_powerline,
-        };
-
-        try self.cells.append(self.alloc, .{
-            .mode = mode,
-            .grid_col = @intCast(x),
-            .grid_row = @intCast(y),
-            .grid_width = cell.gridWidth(),
-            .glyph_x = render.glyph.atlas_x,
-            .glyph_y = render.glyph.atlas_y,
-            .glyph_width = render.glyph.width,
-            .glyph_height = render.glyph.height,
-            .glyph_offset_x = render.glyph.offset_x + shaper_cell.x_offset,
-            .glyph_offset_y = render.glyph.offset_y + shaper_cell.y_offset,
-            .r = colors.fg.r,
-            .g = colors.fg.g,
-            .b = colors.fg.b,
-            .a = alpha,
-            .bg_r = bg[0],
-            .bg_g = bg[1],
-            .bg_b = bg[2],
-            .bg_a = bg[3],
-        });
-    }
-
+    // If the cell has an underline, draw it before the character glyph,
+    // so that it layers underneath instead of overtop, since that can
+    // make text difficult to read.
     if (underline != .none) {
         const sprite: font.Sprite = switch (underline) {
             .none => unreachable,
@@ -1843,6 +1800,58 @@ fn updateCell(
             .r = color.r,
             .g = color.g,
             .b = color.b,
+            .a = alpha,
+            .bg_r = bg[0],
+            .bg_g = bg[1],
+            .bg_b = bg[2],
+            .bg_a = bg[3],
+        });
+    }
+
+    // If the shaper cell has a glyph, draw it.
+    if (shaper_cell.glyph_index) |glyph_index| glyph: {
+        // Render
+        const render = try self.font_grid.renderGlyph(
+            self.alloc,
+            shaper_run.font_index,
+            glyph_index,
+            .{
+                .grid_metrics = self.grid_metrics,
+                .thicken = self.config.font_thicken,
+            },
+        );
+
+        // If the glyph is 0 width or height, it will be invisible
+        // when drawn, so don't bother adding it to the buffer.
+        if (render.glyph.width == 0 or render.glyph.height == 0) {
+            break :glyph;
+        }
+
+        // If we're rendering a color font, we use the color atlas
+        const mode: CellProgram.CellMode = switch (try fgMode(
+            render.presentation,
+            cell_pin,
+        )) {
+            .normal => .fg,
+            .color => .fg_color,
+            .constrained => .fg_constrained,
+            .powerline => .fg_powerline,
+        };
+
+        try self.cells.append(self.alloc, .{
+            .mode = mode,
+            .grid_col = @intCast(x),
+            .grid_row = @intCast(y),
+            .grid_width = cell.gridWidth(),
+            .glyph_x = render.glyph.atlas_x,
+            .glyph_y = render.glyph.atlas_y,
+            .glyph_width = render.glyph.width,
+            .glyph_height = render.glyph.height,
+            .glyph_offset_x = render.glyph.offset_x + shaper_cell.x_offset,
+            .glyph_offset_y = render.glyph.offset_y + shaper_cell.y_offset,
+            .r = colors.fg.r,
+            .g = colors.fg.g,
+            .b = colors.fg.b,
             .a = alpha,
             .bg_r = bg[0],
             .bg_g = bg[1],

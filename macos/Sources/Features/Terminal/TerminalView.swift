@@ -18,15 +18,8 @@ protocol TerminalViewDelegate: AnyObject {
     /// not called initially.
     func surfaceTreeDidChange()
 
+    /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
-}
-
-// Default all the functions so they're optional
-extension TerminalViewDelegate {
-    func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {}
-    func titleDidChange(to: String) {}
-    func cellSizeDidChange(to: NSSize) {}
-    func zoomStateDidChange(to: Bool) {}
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -83,7 +76,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
                     DebugBuildWarningView()
                 }
-
+                
                 Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
                     .environmentObject(ghostty)
                     .focused($focused)
@@ -108,6 +101,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         self.delegate?.zoomStateDidChange(to: newValue ?? false)
                     }
             }
+            // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
+            .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
         }
     }
 }

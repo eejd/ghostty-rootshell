@@ -1038,9 +1038,12 @@ fn addDeps(
         .optimize = optimize,
         .libxev = false,
         .images = false,
-        .text_input = false,
     });
     const wuffs_dep = b.dependency("wuffs", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zf_dep = b.dependency("zf", .{
         .target = target,
         .optimize = optimize,
     });
@@ -1130,6 +1133,7 @@ fn addDeps(
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
     step.root_module.addImport("wuffs", wuffs_dep.module("wuffs"));
+    step.root_module.addImport("zf", zf_dep.module("zf"));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {

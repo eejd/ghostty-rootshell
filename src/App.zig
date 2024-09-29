@@ -138,7 +138,13 @@ pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
     // Since we have non-zero surfaces, we can cancel the quit timer.
     // It is up to the apprt if there is a quit timer at all and if it
     // should be canceled.
-    if (@hasDecl(apprt.App, "cancelQuitTimer")) rt_surface.app.cancelQuitTimer();
+    rt_surface.app.performAction(
+        .app,
+        .quit_timer,
+        .stop,
+    ) catch |err| {
+        log.warn("error stopping quit timer err={}", .{err});
+    };
 }
 
 /// Delete the surface from the known surface list. This will NOT call the
@@ -166,8 +172,13 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
 
     // If we have no surfaces, we can start the quit timer. It is up to the
     // apprt to determine if this is necessary.
-    if (@hasDecl(apprt.App, "startQuitTimer") and
-        self.surfaces.items.len == 0) rt_surface.app.startQuitTimer();
+    if (self.surfaces.items.len == 0) rt_surface.app.performAction(
+        .app,
+        .quit_timer,
+        .start,
+    ) catch |err| {
+        log.warn("error starting quit timer err={}", .{err});
+    };
 }
 
 /// The last focused surface. This is only valid while on the main thread
@@ -194,7 +205,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .reload_config => try self.reloadConfig(rt_app),
-            .open_config => try self.openConfig(rt_app),
+            .open_config => try self.performAction(rt_app, .open_config),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| try self.closeSurface(surface),
             .quit => try self.setQuit(),
@@ -203,12 +214,6 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .redraw_inspector => |surface| try self.redrawInspector(rt_app, surface),
         }
     }
-}
-
-pub fn openConfig(self: *App, rt_app: *apprt.App) !void {
-    _ = self;
-    log.debug("opening configuration", .{});
-    try rt_app.openConfig();
 }
 
 pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
@@ -241,25 +246,116 @@ fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !voi
 
 /// Create a new window
 pub fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
-    if (!@hasDecl(apprt.App, "newWindow")) {
-        log.warn("newWindow is not supported by this runtime", .{});
-        return;
-    }
+    const target: apprt.Target = target: {
+        const parent = msg.parent orelse break :target .app;
+        if (self.hasSurface(parent)) break :target .{ .surface = parent };
+        break :target .app;
+    };
 
-    const parent = if (msg.parent) |parent| parent: {
-        break :parent if (self.hasSurface(parent))
-            parent
-        else
-            null;
-    } else null;
-
-    try rt_app.newWindow(parent);
+    try rt_app.performAction(
+        target,
+        .new_window,
+        {},
+    );
 }
 
 /// Start quitting
 pub fn setQuit(self: *App) !void {
     if (self.quit) return;
     self.quit = true;
+}
+
+/// Handle a key event at the app-scope. If this key event is used,
+/// this will return true and the caller shouldn't continue processing
+/// the event. If the event is not used, this will return false.
+pub fn keyEvent(
+    self: *App,
+    rt_app: *apprt.App,
+    event: input.KeyEvent,
+) bool {
+    switch (event.action) {
+        // We don't care about key release events.
+        .release => return false,
+
+        // Continue processing key press events.
+        .press, .repeat => {},
+    }
+
+    // Get the keybind entry for this event. We don't support key sequences
+    // so we can look directly in the top-level set.
+    const entry = rt_app.config.keybind.set.getEvent(event) orelse return false;
+    const leaf: input.Binding.Set.Leaf = switch (entry) {
+        // Sequences aren't supported. Our configuration parser verifies
+        // this for global keybinds but we may still get an entry for
+        // a non-global keybind.
+        .leader => return false,
+
+        // Leaf entries are good
+        .leaf => |leaf| leaf,
+    };
+
+    // We only care about global keybinds
+    if (!leaf.flags.global) return false;
+
+    // Perform the action
+    self.performAllAction(rt_app, leaf.action) catch |err| {
+        log.warn("error performing global keybind action action={s} err={}", .{
+            @tagName(leaf.action),
+            err,
+        });
+    };
+
+    return true;
+}
+
+/// Perform a binding action. This only accepts actions that are scoped
+/// to the app. Callers can use performAllAction to perform any action
+/// and any non-app-scoped actions will be performed on all surfaces.
+pub fn performAction(
+    self: *App,
+    rt_app: *apprt.App,
+    action: input.Binding.Action.Scoped(.app),
+) !void {
+    switch (action) {
+        .unbind => unreachable,
+        .ignore => {},
+        .quit => try self.setQuit(),
+        .new_window => try self.newWindow(rt_app, .{ .parent = null }),
+        .open_config => try rt_app.performAction(.app, .open_config, {}),
+        .reload_config => try self.reloadConfig(rt_app),
+        .close_all_windows => try rt_app.performAction(.app, .close_all_windows, {}),
+        .toggle_quick_terminal => try rt_app.performAction(.app, .toggle_quick_terminal, {}),
+    }
+}
+
+/// Perform an app-wide binding action. If the action is surface-specific
+/// then it will be performed on all surfaces. To perform only app-scoped
+/// actions, use performAction.
+pub fn performAllAction(
+    self: *App,
+    rt_app: *apprt.App,
+    action: input.Binding.Action,
+) !void {
+    switch (action.scope()) {
+        // App-scoped actions are handled by the app so that they aren't
+        // repeated for each surface (since each surface forwards
+        // app-scoped actions back up).
+        .app => try self.performAction(
+            rt_app,
+            action.scoped(.app).?, // asserted through the scope match
+        ),
+
+        // Surface-scoped actions are performed on all surfaces. Errors
+        // are logged but processing continues.
+        .surface => for (self.surfaces.items) |surface| {
+            _ = surface.core_surface.performBindingAction(action) catch |err| {
+                log.warn("error performing binding action on surface ptr={X} err={}", .{
+                    @intFromPtr(surface),
+                    err,
+                });
+            };
+        },
+    }
 }
 
 /// Handle a window message

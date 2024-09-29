@@ -607,6 +607,20 @@ pub const Face = struct {
             break :cell_width f26dot6ToFloat(size_metrics.max_advance);
         };
 
+        // Ex height is calculated by measuring the height of the `x` glyph.
+        // If that fails then we just pretend it's 65% of the ascent height.
+        const ex_height: f32 = ex_height: {
+            if (face.getCharIndex('x')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    break :ex_height f26dot6ToFloat(face.handle.*.glyph.*.metrics.height);
+                } else |_| {
+                    // Ignore the error since we just fall back to 65% of the ascent below
+                }
+            }
+
+            break :ex_height f26dot6ToFloat(size_metrics.ascender) * 0.65;
+        };
+
         // Cell height is calculated as the maximum of multiple things in order
         // to handle edge cases in fonts: (1) the height as reported in metadata
         // by the font designer (2) the maximum glyph height as measured in the
@@ -646,50 +660,55 @@ pub const Face = struct {
         // is reversed.
         const cell_baseline = -1 * f26dot6ToFloat(size_metrics.descender);
 
+        const underline_thickness = @max(@as(f32, 1), fontUnitsToPxY(
+            face,
+            face.handle.*.underline_thickness,
+        ));
+
         // The underline position. This is a value from the top where the
         // underline should go.
         const underline_position: f32 = underline_pos: {
-            // The ascender is already scaled for scalable fonts, but the
-            // underline position is not.
-            const ascender_px = @as(i32, @intCast(size_metrics.ascender)) >> 6;
-            const declared_px = freetype.mulFix(
+            // From the FreeType docs:
+            // > `underline_position`
+            // > The position, in font units, of the underline line for
+            // > this face. It is the center of the underlining stem.
+
+            const declared_px = @as(f32, @floatFromInt(freetype.mulFix(
                 face.handle.*.underline_position,
                 @intCast(face.handle.*.size.*.metrics.y_scale),
-            ) >> 6;
+            ))) / 64;
 
-            // We use the declared underline position if its available
-            const declared = ascender_px - declared_px;
+            // We use the declared underline position if its available.
+            const declared = @ceil(cell_height - cell_baseline - declared_px - underline_thickness * 0.5);
             if (declared > 0)
-                break :underline_pos @floatFromInt(declared);
+                break :underline_pos declared;
 
             // If we have no declared underline position, we go slightly under the
             // cell height (mainly: non-scalable fonts, i.e. emoji)
             break :underline_pos cell_height - 1;
         };
-        const underline_thickness = @max(@as(f32, 1), fontUnitsToPxY(
-            face,
-            face.handle.*.underline_thickness,
-        ));
 
         // The strikethrough position. We use the position provided by the
         // font if it exists otherwise we calculate a best guess.
         const strikethrough: struct {
             pos: f32,
             thickness: f32,
-        } = if (face.getSfntTable(.os2)) |os2| .{
-            .pos = pos: {
-                // Ascender is scaled, strikeout pos is not
-                const ascender_px = @as(i32, @intCast(size_metrics.ascender)) >> 6;
-                const declared_px = freetype.mulFix(
-                    os2.yStrikeoutPosition,
-                    @as(i32, @intCast(face.handle.*.size.*.metrics.y_scale)),
-                ) >> 6;
+        } = if (face.getSfntTable(.os2)) |os2| st: {
+            const thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize));
 
-                break :pos @floatFromInt(ascender_px - declared_px);
-            },
-            .thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize)),
+            const pos = @as(f32, @floatFromInt(freetype.mulFix(
+                os2.yStrikeoutPosition,
+                @as(i32, @intCast(face.handle.*.size.*.metrics.y_scale)),
+            ))) / 64;
+
+            break :st .{
+                .pos = @ceil(cell_height - cell_baseline - pos),
+                .thickness = thickness,
+            };
         } else .{
-            .pos = cell_baseline * 0.6,
+            // Exactly 50% of the ex height so that our strikethrough is
+            // centered through lowercase text. This is a common choice.
+            .pos = @ceil(cell_height - cell_baseline - ex_height * 0.5 - underline_thickness * 0.5),
             .thickness = underline_thickness,
         };
 
@@ -832,7 +851,7 @@ test "metrics" {
         .cell_width = 16,
         .cell_height = 35,
         .cell_baseline = 7,
-        .underline_position = 36,
+        .underline_position = 35,
         .underline_thickness = 2,
         .strikethrough_position = 20,
         .strikethrough_thickness = 2,

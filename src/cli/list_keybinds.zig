@@ -116,7 +116,7 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     while (iter.next()) |bind| {
         const action = switch (bind.value_ptr.*) {
             .leader => continue, // TODO: support this
-            .action, .action_unconsumed => |action| action,
+            .leaf => |leaf| leaf.action,
         };
         const key = switch (bind.key_ptr.key) {
             .translated => |k| try std.fmt.bufPrint(&buf, "{s}", .{@tagName(k)}),

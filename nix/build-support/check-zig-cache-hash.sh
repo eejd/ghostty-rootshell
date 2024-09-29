@@ -25,16 +25,19 @@ elif [ "$1" != "--update" ]; then
   exit 1
 fi
 
-TMP_CACHE_DIR="$(mktemp --directory --suffix nix-zig-cache)"
+ZIG_GLOBAL_CACHE_DIR="$(mktemp --directory --suffix nix-zig-cache)"
+export ZIG_GLOBAL_CACHE_DIR
+
 # This is not 100% necessary in CI but is helpful when running locally to keep
 # a local workstation clean.
-trap 'rm -rf "${TMP_CACHE_DIR}"' EXIT
+trap 'rm -rf "${ZIG_GLOBAL_CACHE_DIR}"' EXIT
 
 # Run Zig and download the cache to the temporary directory.
-zig build --fetch --global-cache-dir "${TMP_CACHE_DIR}"
+
+sh ./nix/build-support/fetch-zig-cache.sh
 
 # Now, calculate the hash.
-ZIG_CACHE_HASH="sha256-$(nix-hash --type sha256 --to-base64 "$(nix-hash --type sha256 "${TMP_CACHE_DIR}")")"
+ZIG_CACHE_HASH="sha256-$(nix-hash --type sha256 --to-base64 "$(nix-hash --type sha256 "${ZIG_GLOBAL_CACHE_DIR}")")"
 
 if [ "${OLD_CACHE_HASH}" == "${ZIG_CACHE_HASH}" ]; then
   echo -e "\nOK: Zig cache store hash unchanged."

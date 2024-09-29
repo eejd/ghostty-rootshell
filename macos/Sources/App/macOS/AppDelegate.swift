@@ -22,6 +22,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCheckForUpdates: NSMenuItem?
     @IBOutlet private var menuOpenConfig: NSMenuItem?
     @IBOutlet private var menuReloadConfig: NSMenuItem?
+    @IBOutlet private var menuSecureInput: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
 
     @IBOutlet private var menuNewWindow: NSMenuItem?
@@ -48,6 +49,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuIncreaseFontSize: NSMenuItem?
     @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
     @IBOutlet private var menuResetFontSize: NSMenuItem?
+    @IBOutlet private var menuQuickTerminal: NSMenuItem?
     @IBOutlet private var menuTerminalInspector: NSMenuItem?
 
     @IBOutlet private var menuEqualizeSplits: NSMenuItem?
@@ -62,15 +64,27 @@ class AppDelegate: NSObject,
     /// This is only true before application has become active.
     private var applicationHasBecomeActive: Bool = false
 
+    /// This is set in applicationDidFinishLaunching with the system uptime so we can determine the
+    /// seconds since the process was launched.
+    private var applicationLaunchTime: TimeInterval = 0
+
     /// The ghostty global state. Only one per process.
     let ghostty: Ghostty.App = Ghostty.App()
 
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
 
+    /// Our quick terminal. This starts out uninitialized and only initializes if used.
+    private var quickController: QuickTerminalController? = nil
+
     /// Manages updates
     let updaterController: SPUStandardUpdaterController
     let updaterDelegate: UpdaterDelegate = UpdaterDelegate()
+
+    /// The elapsed time since the process was started
+    var timeSinceLaunch: TimeInterval {
+        return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
+    }
 
     override init() {
         terminalManager = TerminalManager(ghostty)
@@ -104,6 +118,14 @@ class AppDelegate: NSObject,
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
+
+        // Store our start time
+        applicationLaunchTime = ProcessInfo.processInfo.systemUptime
+
+        // Check if secure input was enabled when we last quit.
+        if (UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled) {
+            toggleSecureInput(self)
+        }
 
         // Hook up updater menu
         menuCheckForUpdates?.target = updaterController
@@ -292,7 +314,10 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "increase_font_size:1", menuItem: self.menuIncreaseFontSize)
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
+        syncMenuShortcut(action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
+
+        syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
 
         // This menu item is NOT synced with the configuration because it disables macOS
         // global fullscreen keyboard shortcut. The shortcut in the Ghostty config will continue
@@ -410,6 +435,25 @@ class AppDelegate: NSObject,
                 c.showWindow(self)
             }
         }
+
+        // We need to handle our global event tap depending on if there are global
+        // events that we care about in Ghostty.
+        if (ghostty_app_has_global_keybinds(ghostty.app!)) {
+            if (timeSinceLaunch > 5) {
+                // If the process has been running for awhile we enable right away
+                // because no windows are likely to pop up.
+                GlobalEventTap.shared.enable()
+            } else {
+                // If the process just started, we wait a couple seconds to allow
+                // the initial windows and so on to load so our permissions dialog
+                // doesn't get buried.
+                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
+                    GlobalEventTap.shared.enable()
+                }
+            }
+        } else {
+            GlobalEventTap.shared.disable()
+        }
     }
 
     /// Sync the appearance of our app with the theme specified in the config.
@@ -443,6 +487,24 @@ class AppDelegate: NSObject,
         dockMenu.removeAllItems()
         dockMenu.addItem(newWindow)
         dockMenu.addItem(newTab)
+    }
+
+    //MARK: - Global State
+
+    func setSecureInput(_ mode: Ghostty.SetSecureInput) {
+        let input = SecureInput.shared
+        switch (mode) {
+        case .on:
+            input.global = true
+
+        case .off:
+            input.global = false
+
+        case .toggle:
+            input.global.toggle()
+        }
+        self.menuSecureInput?.state = if (input.global) { .on } else { .off }
+        UserDefaults.standard.set(input.global, forKey: "SecureInput")
     }
 
     //MARK: - IB Actions
@@ -483,5 +545,23 @@ class AppDelegate: NSObject,
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://github.com/ghostty-org/ghostty") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @IBAction func toggleSecureInput(_ sender: Any) {
+        setSecureInput(.toggle)
+    }
+
+    @IBAction func toggleQuickTerminal(_ sender: Any) {
+        if quickController == nil {
+            quickController = QuickTerminalController(
+                ghostty,
+                position: ghostty.config.quickTerminalPosition
+            )
+        }
+
+        guard let quickController = self.quickController else { return }
+        quickController.toggle()
+
+        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
     }
 }

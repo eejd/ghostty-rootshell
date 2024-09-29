@@ -30,15 +30,13 @@
       pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
     in {
       devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
-        inherit (pkgs-unstable) tracy;
-
         zig = zig.packages.${system}."0.13.0";
         wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
       };
 
       packages.${system} = let
         mkArgs = optimize: {
-          inherit (pkgs-unstable) zig_0_13;
+          inherit (pkgs-unstable) zig_0_13 stdenv;
           inherit optimize;
 
           revision = self.shortRev or self.dirtyShortRev or "dirty";

@@ -38,9 +38,28 @@ extension Ghostty {
         // structure because I'm lazy.
         @Published var surfaceSize: ghostty_surface_size_s? = nil
 
+        // Whether the pointer should be visible or not
+        @Published private(set) var pointerVisible: Bool = true
+        @Published private(set) var pointerStyle: BackportPointerStyle = .default
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
+
+        // Set whether the surface is currently on a password input or not. This is
+        // detected with the set_password_input_cb on the Ghostty state.
+        var passwordInput: Bool = false {
+            didSet {
+                // We need to update our state within the SecureInput manager.
+                let input = SecureInput.shared
+                let id = ObjectIdentifier(self)
+                if (passwordInput) {
+                    input.setScoped(id, focused: focused)
+                } else {
+                    input.removeScoped(id)
+                }
+            }
+        }
 
         // Returns true if quit confirmation is required for this surface to
         // exit safely.
@@ -59,6 +78,7 @@ extension Ghostty {
             if (v.count == 0) { return nil }
             return v
         }
+
         // Returns the inspector instance for this surface, or nil if the
         // surface has been closed.
         var inspector: ghostty_inspector_t? {
@@ -81,11 +101,8 @@ extension Ghostty {
 
         private(set) var surface: ghostty_surface_t?
         private var markedText: NSMutableAttributedString
-        private var mouseEntered: Bool = false
         private(set) var focused: Bool = true
         private var prevPressureStage: Int = 0
-        private var cursor: NSCursor = .iBeam
-        private var cursorVisible: CursorVisibility = .visible
         private var appearanceObserver: NSKeyValueObservation? = nil
 
         // This is set to non-null during keyDown to accumulate insertText contents
@@ -97,15 +114,6 @@ extension Ghostty {
         // I don't think we need this but this lets us know we should redraw our layer
         // so we'll use that to tell ghostty to refresh.
         override var wantsUpdateLayer: Bool { return true }
-
-        // State machine for mouse cursor visibility because every call to
-        // NSCursor.hide/unhide must be balanced.
-        enum CursorVisibility {
-            case visible
-            case hidden
-            case pendingVisible
-            case pendingHidden
-        }
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
@@ -178,12 +186,8 @@ extension Ghostty {
 
             trackingAreas.forEach { removeTrackingArea($0) }
 
-            // mouseExited is not called by AppKit one last time when the view
-            // closes so we do it manually to ensure our NSCursor state remains
-            // accurate.
-            if (mouseEntered) {
-                mouseExited(with: NSEvent())
-            }
+            // Remove ourselves from secure input if we have to
+            SecureInput.shared.removeScoped(ObjectIdentifier(self))
 
             guard let surface = self.surface else { return }
             ghostty_surface_free(surface)
@@ -209,6 +213,11 @@ extension Ghostty {
             self.focused = focused
             ghostty_surface_set_focus(surface, focused)
 
+            // Update our secure input state if we are a password input
+            if (passwordInput) {
+                SecureInput.shared.setScoped(ObjectIdentifier(self), focused: focused)
+            }
+
             // On macOS 13+ we can store our continuous clock...
             if #available(macOS 13, iOS 16, *) {
                 if (focused) {
@@ -218,33 +227,12 @@ extension Ghostty {
         }
 
         func sizeDidChange(_ size: CGSize) {
-            guard let surface = self.surface else { return }
-
             // Ghostty wants to know the actual framebuffer size... It is very important
             // here that we use "size" and NOT the view frame. If we're in the middle of
             // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
             // The size represents our final size we're going for.
             let scaledSize = self.convertToBacking(size)
             setSurfaceSize(width: UInt32(scaledSize.width), height: UInt32(scaledSize.height))
-
-            // Frame changes do not always call mouseEntered/mouseExited, so we do some
-            // calculations ourself to call those events.
-            if let window = self.window {
-                let mouseScreen = NSEvent.mouseLocation
-                let mouseWindow = window.convertPoint(fromScreen: mouseScreen)
-                let mouseView = self.convert(mouseWindow, from: nil)
-                let isEntered = self.isMousePoint(mouseView, in: bounds)
-                if (isEntered) {
-                    mouseEntered(with: NSEvent())
-                } else {
-                    mouseExited(with: NSEvent())
-                }
-            } else {
-                // If we don't have a window, then our mouse can NOT be in our view.
-                // When the window comes back, I believe this event fires again so
-                // we'll get a mouseEntered.
-                mouseExited(with: NSEvent())
-            }
         }
 
         private func setSurfaceSize(width: UInt32, height: UInt32) {
@@ -254,105 +242,77 @@ extension Ghostty {
             ghostty_surface_set_size(surface, width, height)
 
             // Update our cached size metrics
-            self.surfaceSize = ghostty_surface_size(surface)
+            let size = ghostty_surface_size(surface)
+            DispatchQueue.main.async {
+                // DispatchQueue required since this may be called by SwiftUI off
+                // the main thread and Published changes need to be on the main
+                // thread. This caused a crash on macOS <= 14.
+                self.surfaceSize = size
+            }
         }
 
-        func setCursorShape(_ shape: ghostty_mouse_shape_e) {
+        func setCursorShape(_ shape: ghostty_action_mouse_shape_e) {
             switch (shape) {
             case GHOSTTY_MOUSE_SHAPE_DEFAULT:
-                cursor = .arrow
-
-            case GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU:
-                cursor = .contextualMenu
+                pointerStyle = .default
 
             case GHOSTTY_MOUSE_SHAPE_TEXT:
-                cursor = .iBeam
-
-            case GHOSTTY_MOUSE_SHAPE_CROSSHAIR:
-                cursor = .crosshair
+                pointerStyle = .horizontalText
 
             case GHOSTTY_MOUSE_SHAPE_GRAB:
-                cursor = .openHand
+                pointerStyle = .grabIdle
 
             case GHOSTTY_MOUSE_SHAPE_GRABBING:
-                cursor = .closedHand
+                pointerStyle = .grabActive
 
             case GHOSTTY_MOUSE_SHAPE_POINTER:
-                cursor = .pointingHand
+                pointerStyle = .link
 
             case GHOSTTY_MOUSE_SHAPE_W_RESIZE:
-                cursor = .resizeLeft
+                pointerStyle = .resizeLeft
 
             case GHOSTTY_MOUSE_SHAPE_E_RESIZE:
-                cursor = .resizeRight
+                pointerStyle = .resizeRight
 
             case GHOSTTY_MOUSE_SHAPE_N_RESIZE:
-                cursor = .resizeUp
+                pointerStyle = .resizeUp
 
             case GHOSTTY_MOUSE_SHAPE_S_RESIZE:
-                cursor = .resizeDown
+                pointerStyle = .resizeDown
 
             case GHOSTTY_MOUSE_SHAPE_NS_RESIZE:
-                cursor = .resizeUpDown
+                pointerStyle = .resizeUpDown
 
             case GHOSTTY_MOUSE_SHAPE_EW_RESIZE:
-                cursor = .resizeLeftRight
+                pointerStyle = .resizeLeftRight
 
             case GHOSTTY_MOUSE_SHAPE_VERTICAL_TEXT:
-                cursor = .iBeamCursorForVerticalLayout
+                pointerStyle = .default
 
+            // These are not yet supported. We should support them by constructing a
+            // PointerStyle from an NSCursor.
+            case GHOSTTY_MOUSE_SHAPE_CONTEXT_MENU:
+                fallthrough
+            case GHOSTTY_MOUSE_SHAPE_CROSSHAIR:
+                fallthrough
             case GHOSTTY_MOUSE_SHAPE_NOT_ALLOWED:
-                cursor = .operationNotAllowed
+                pointerStyle = .default
 
             default:
                 // We ignore unknown shapes.
                 return
             }
-
-            // Set our cursor immediately if our mouse is over our window
-            if (mouseEntered) { cursorUpdate(with: NSEvent()) }
-            if let window = self.window {
-                window.invalidateCursorRects(for: self)
-            }
         }
 
         func setCursorVisibility(_ visible: Bool) {
-            switch (cursorVisible) {
-            case .visible:
-                // If we want to be visible, do nothing. If we want to be hidden
-                // enter the pending state.
-                if (visible) { return }
-                cursorVisible = .pendingHidden
-
-            case .hidden:
-                // If we want to be hidden, do nothing. If we want to be visible
-                // enter the pending state.
-                if (!visible) { return }
-                cursorVisible = .pendingVisible
-
-            case .pendingVisible:
-                // If we want to be visible, do nothing because we're already pending.
-                // If we want to be hidden, we're already hidden so reset state.
-                if (visible) { return }
-                cursorVisible = .hidden
-
-            case .pendingHidden:
-                // If we want to be hidden, do nothing because we're pending that switch.
-                // If we want to be visible, we're already visible so reset state.
-                if (!visible) { return }
-                cursorVisible = .visible
-            }
-
-            if (mouseEntered) {
-                cursorUpdate(with: NSEvent())
-            }
+            pointerVisible = visible
         }
 
         // MARK: - Notifications
 
         @objc private func onUpdateRendererHealth(notification: SwiftUI.Notification) {
             guard let healthAny = notification.userInfo?["health"] else { return }
-            guard let health = healthAny as? ghostty_renderer_health_e else { return }
+            guard let health = healthAny as? ghostty_action_renderer_health_e else { return }
             healthy = health == GHOSTTY_RENDERER_HEALTH_OK
         }
 
@@ -395,7 +355,6 @@ extension Ghostty {
             addTrackingArea(NSTrackingArea(
                 rect: frame,
                 options: [
-                    .mouseEnteredAndExited,
                     .mouseMoved,
 
                     // Only send mouse events that happen in our visible (not obscured) rect
@@ -407,11 +366,6 @@ extension Ghostty {
                 ],
                 owner: self,
                 userInfo: nil))
-        }
-
-        override func resetCursorRects() {
-            discardCursorRects()
-            addCursorRect(frame, cursor: self.cursor)
         }
 
         override func viewDidChangeBackingProperties() {
@@ -538,7 +492,8 @@ extension Ghostty {
 
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
-            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
 
             // If focus follows mouse is enabled then move focus to this surface.
             if let window = self.window as? TerminalWindow,
@@ -552,40 +507,6 @@ extension Ghostty {
 
         override func mouseDragged(with event: NSEvent) {
             self.mouseMoved(with: event)
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            // For reasons unknown (Cocoaaaaaaaaa), mouseEntered is called
-            // multiple times in an unbalanced way with mouseExited when a new
-            // tab is created. In this scenario, we only want to process our
-            // callback once since this is stateful and we expect balancing.
-            if (mouseEntered) { return }
-
-            mouseEntered = true
-
-            // Update our cursor when we enter so we fully process our
-            // cursorVisible state.
-            cursorUpdate(with: NSEvent())
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            // See mouseEntered
-            if (!mouseEntered) { return }
-
-            mouseEntered = false
-
-            // If the mouse is currently hidden, we want to show it when we exit
-            // this view. We go through the cursorVisible dance so that only
-            // cursorUpdate manages cursor state.
-            if (cursorVisible == .hidden) {
-                cursorVisible = .pendingVisible
-                cursorUpdate(with: NSEvent())
-                assert(cursorVisible == .visible)
-
-                // We set the state to pending hidden again for the next time
-                // we enter.
-                cursorVisible = .pendingHidden
-            }
         }
 
         override func scrollWheel(with event: NSEvent) {
@@ -649,24 +570,6 @@ extension Ghostty {
             // is no public API for this as far as I can tell.
             guard UserDefaults.standard.bool(forKey: "com.apple.trackpad.forceClick") else { return }
             quickLook(with: event)
-        }
-
-        override func cursorUpdate(with event: NSEvent) {
-            switch (cursorVisible) {
-            case .visible, .hidden:
-                // Do nothing, stable state
-                break
-
-            case .pendingHidden:
-                NSCursor.hide()
-                cursorVisible = .hidden
-
-            case .pendingVisible:
-                NSCursor.unhide()
-                cursorVisible = .visible
-            }
-
-            cursor.set()
         }
 
         override func keyDown(with event: NSEvent) {
@@ -788,6 +691,11 @@ extension Ghostty {
                 // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
                 // sound and we don't like the beep sound.
                 equivalent = "_"
+
+            case "\r":
+                // Pass C-<return> through verbatim
+                // (prevent the default context menu equivalent)
+                equivalent = "\r"
 
             default:
                 // Ignore other events
@@ -1018,12 +926,12 @@ extension Ghostty {
 
         @IBAction func splitRight(_ sender: Any) {
             guard let surface = self.surface else { return }
-            ghostty_surface_split(surface, GHOSTTY_SPLIT_RIGHT)
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_RIGHT)
         }
 
         @IBAction func splitDown(_ sender: Any) {
             guard let surface = self.surface else { return }
-            ghostty_surface_split(surface, GHOSTTY_SPLIT_DOWN)
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_DOWN)
         }
 
         @objc func resetTerminal(_ sender: Any) {

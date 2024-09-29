@@ -52,33 +52,6 @@ pub const ClipboardRequest = union(ClipboardRequestType) {
     osc_52_write: Clipboard,
 };
 
-/// A desktop notification.
-pub const DesktopNotification = struct {
-    /// The title of the notification. May be an empty string to not show a
-    /// title.
-    title: []const u8,
-
-    /// The body of a notification. This will always be shown.
-    body: []const u8,
-};
-
-/// The tab to jump to. This is non-exhaustive so that integer values represent
-/// the index (zero-based) of the tab to jump to. Negative values are special
-/// values.
-pub const GotoTab = enum(c_int) {
-    previous = -1,
-    next = -2,
-    last = -3,
-    _,
-};
-
-// This is made extern (c_int) to make interop easier with our embedded
-// runtime. The small size cost doesn't make a difference in our union.
-pub const SplitDirection = enum(c_int) {
-    right,
-    down,
-};
-
 /// The color scheme in use (light vs dark).
 pub const ColorScheme = enum(u2) {
     light = 0,

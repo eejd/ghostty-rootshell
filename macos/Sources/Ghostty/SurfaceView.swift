@@ -52,7 +52,29 @@ extension Ghostty {
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
 
+        #if canImport(AppKit)
+        // Observe SecureInput to detect when its enabled
+        @ObservedObject private var secureInput = SecureInput.shared
+        #endif
+
         @EnvironmentObject private var ghostty: Ghostty.App
+
+        #if canImport(AppKit)
+        // The visibility state of the mouse pointer
+        private var pointerVisibility: BackportVisibility {
+            // If our window or surface loses focus we always bring it back
+            if (!windowFocus || !surfaceFocus) {
+                return .visible
+            }
+
+            // If we have window focus then it depends on surface state
+            if (surfaceView.pointerVisible) {
+                return .visible
+            } else {
+                return .hidden
+            }
+        }
+        #endif
 
         var body: some View {
             let center = NotificationCenter.default
@@ -77,6 +99,8 @@ extension Ghostty {
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                     #if canImport(AppKit)
+                        .backport.pointerVisibility(pointerVisibility)
+                        .backport.pointerStyle(surfaceView.pointerStyle)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
                             guard let surfaceWindow = surfaceView.window else { return }
@@ -196,6 +220,17 @@ extension Ghostty {
                         }
                     }
                 }
+
+                #if canImport(AppKit)
+                // If we have secure input enabled and we're the focused surface and window
+                // then we want to show the secure input overlay.
+                if (ghostty.config.secureInputIndication &&
+                    secureInput.enabled &&
+                    surfaceFocus &&
+                    windowFocus) {
+                    SecureInputOverlay()
+                }
+                #endif
 
                 // If our surface is not healthy, then we render an error view over it.
                 if (!surfaceView.healthy) {

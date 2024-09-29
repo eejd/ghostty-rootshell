@@ -122,6 +122,26 @@ test "garbage Kitty command" {
     try testing.expect(h.end() == null);
 }
 
+test "Kitty command with overflow u32" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    h.start();
+    for ("Ga=p,i=10000000000") |c| h.feed(alloc, c);
+    try testing.expect(h.end() == null);
+}
+
+test "Kitty command with overflow i32" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    h.start();
+    for ("Ga=p,i=1,z=-9999999999") |c| h.feed(alloc, c);
+    try testing.expect(h.end() == null);
+}
+
 test "valid Kitty command" {
     const testing = std.testing;
     const alloc = testing.allocator;

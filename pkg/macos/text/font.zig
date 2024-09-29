@@ -188,6 +188,14 @@ pub const Font = opaque {
         return c.CTFontGetUnderlineThickness(@ptrCast(self));
     }
 
+    pub fn getCapHeight(self: *Font) f64 {
+        return c.CTFontGetCapHeight(@ptrCast(self));
+    }
+
+    pub fn getXHeight(self: *Font) f64 {
+        return c.CTFontGetXHeight(@ptrCast(self));
+    }
+
     pub fn getUnitsPerEm(self: *Font) u32 {
         return c.CTFontGetUnitsPerEm(@ptrCast(self));
     }

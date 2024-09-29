@@ -495,3 +495,37 @@ test "kittygfx default format is rgba" {
     const img = storage.imageById(1).?;
     try testing.expectEqual(command.Transmission.Format.rgba, img.format);
 }
+
+test "kittygfx test valid u32 (expect invalid image ID)" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    const cmd = try command.Parser.parseString(
+        alloc,
+        "a=p,i=4294967295",
+    );
+    defer cmd.deinit(alloc);
+    const resp = execute(alloc, &t, &cmd).?;
+    try testing.expect(!resp.ok());
+    try testing.expectEqual(resp.message, "ENOENT: image not found");
+}
+
+test "kittygfx test valid i32 (expect invalid image ID)" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    const cmd = try command.Parser.parseString(
+        alloc,
+        "a=p,i=1,z=-2147483648",
+    );
+    defer cmd.deinit(alloc);
+    const resp = execute(alloc, &t, &cmd).?;
+    try testing.expect(!resp.ok());
+    try testing.expectEqual(resp.message, "ENOENT: image not found");
+}

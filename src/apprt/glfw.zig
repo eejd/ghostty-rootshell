@@ -127,9 +127,87 @@ pub const App = struct {
         glfw.postEmptyEvent();
     }
 
-    /// Open the configuration in the system editor.
-    pub fn openConfig(self: *App) !void {
-        try configpkg.edit.open(self.app.alloc);
+    /// Perform a given action.
+    pub fn performAction(
+        self: *App,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !void {
+        switch (action) {
+            .new_window => _ = try self.newSurface(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
+            .new_tab => try self.newTab(switch (target) {
+                .app => null,
+                .surface => |v| v,
+            }),
+
+            .size_limit => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setSizeLimits(.{
+                    .width = value.min_width,
+                    .height = value.min_height,
+                }, if (value.max_width > 0) .{
+                    .width = value.max_width,
+                    .height = value.max_height,
+                } else null),
+            },
+
+            .initial_size => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setInitialWindowSize(
+                    value.width,
+                    value.height,
+                ),
+            },
+
+            .toggle_fullscreen => self.toggleFullscreen(target),
+
+            .open_config => try configpkg.edit.open(self.app.alloc),
+
+            .set_title => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setTitle(value.title),
+            },
+
+            .mouse_shape => switch (target) {
+                .app => {},
+                .surface => |surface| try surface.rt_surface.setMouseShape(value),
+            },
+
+            .mouse_visibility => switch (target) {
+                .app => {},
+                .surface => |surface| surface.rt_surface.setMouseVisibility(switch (value) {
+                    .visible => true,
+                    .hidden => false,
+                }),
+            },
+
+            // Unimplemented
+            .new_split,
+            .goto_split,
+            .resize_split,
+            .equalize_splits,
+            .toggle_split_zoom,
+            .present_terminal,
+            .close_all_windows,
+            .toggle_tab_overview,
+            .toggle_window_decorations,
+            .toggle_quick_terminal,
+            .goto_tab,
+            .inspector,
+            .render_inspector,
+            .quit_timer,
+            .secure_input,
+            .desktop_notification,
+            .mouse_over_link,
+            .cell_size,
+            .renderer_health,
+            => log.info("unimplemented action={}", .{action}),
+        }
     }
 
     /// Reload the configuration. This should return the new configuration.
@@ -150,8 +228,12 @@ pub const App = struct {
     }
 
     /// Toggle the window to fullscreen mode.
-    pub fn toggleFullscreen(self: *App, surface: *Surface) void {
+    fn toggleFullscreen(self: *App, target: apprt.Target) void {
         _ = self;
+        const surface: *Surface = switch (target) {
+            .app => return,
+            .surface => |v| v.rt_surface,
+        };
         const win = surface.window;
 
         if (surface.isFullscreen()) {
@@ -195,17 +277,17 @@ pub const App = struct {
         win.setMonitor(monitor, 0, 0, video_mode.getWidth(), video_mode.getHeight(), 0);
     }
 
-    /// Create a new window for the app.
-    pub fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
-        _ = try self.newSurface(parent_);
-    }
-
     /// Create a new tab in the parent surface.
-    fn newTab(self: *App, parent: *CoreSurface) !void {
+    fn newTab(self: *App, parent_: ?*CoreSurface) !void {
         if (!Darwin.enabled) {
             log.warn("tabbing is not supported on this platform", .{});
             return;
         }
+
+        const parent = parent_ orelse {
+            _ = try self.newSurface(null);
+            return;
+        };
 
         // Create the new window
         const window = try self.newSurface(parent);
@@ -370,7 +452,6 @@ pub const Surface = struct {
     /// Initialize the surface into the given self pointer. This gives a
     /// stable pointer to the destination that can be used for callbacks.
     pub fn init(self: *Surface, app: *App) !void {
-
         // Create our window
         const win = glfw.Window.create(
             640,
@@ -525,18 +606,9 @@ pub const Surface = struct {
         }
     }
 
-    /// Create a new tab in the window containing this surface.
-    pub fn newTab(self: *Surface) !void {
-        try self.app.newTab(&self.core_surface);
-    }
-
     /// Checks if the glfw window is in fullscreen.
     pub fn isFullscreen(self: *Surface) bool {
         return self.window.getMonitor() != null;
-    }
-
-    pub fn toggleFullscreen(self: *Surface, _: Config.NonNativeFullscreen) void {
-        self.app.toggleFullscreen(self);
     }
 
     /// Close this surface.
@@ -550,7 +622,7 @@ pub const Surface = struct {
     /// Set the initial window size. This is called exactly once at
     /// surface initialization time. This may be called before "self"
     /// is fully initialized.
-    pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
         const monitor = self.window.getMonitor() orelse glfw.Monitor.getPrimary() orelse {
             log.warn("window is not on a monitor, not setting initial size", .{});
             return;
@@ -563,18 +635,11 @@ pub const Surface = struct {
         });
     }
 
-    /// Set the cell size. Unused by GLFW.
-    pub fn setCellSize(self: *const Surface, width: u32, height: u32) !void {
-        _ = self;
-        _ = width;
-        _ = height;
-    }
-
     /// Set the size limits of the window.
     /// Note: this interface is not good, we should redo it if we plan
     /// to use this more. i.e. you can't set max width but no max height,
     /// or no mins.
-    pub fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
+    fn setSizeLimits(self: *Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
         self.window.setSizeLimits(.{
             .width = min.width,
             .height = min.height,
@@ -624,7 +689,7 @@ pub const Surface = struct {
     }
 
     /// Set the title of the window.
-    pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+    fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         if (self.title_text) |t| self.core_surface.alloc.free(t);
         self.title_text = try self.core_surface.alloc.dupeZ(u8, slice);
         self.window.setTitle(self.title_text.?.ptr);
@@ -636,7 +701,7 @@ pub const Surface = struct {
     }
 
     /// Set the shape of the cursor.
-    pub fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
+    fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
         if ((comptime builtin.target.isDarwin()) and
             !internal_os.macosVersionAtLeast(13, 0, 0))
         {
@@ -672,15 +737,20 @@ pub const Surface = struct {
         self.cursor = new;
     }
 
-    pub fn mouseOverLink(self: *Surface, uri: ?[]const u8) void {
-        // We don't do anything in GLFW.
-        _ = self;
-        _ = uri;
+    /// Set the visibility of the mouse cursor.
+    fn setMouseVisibility(self: *Surface, visible: bool) void {
+        self.window.setInputModeCursor(if (visible) .normal else .hidden);
     }
 
-    /// Set the visibility of the mouse cursor.
-    pub fn setMouseVisibility(self: *Surface, visible: bool) void {
-        self.window.setInputModeCursor(if (visible) .normal else .hidden);
+    pub fn supportsClipboard(
+        self: *const Surface,
+        clipboard_type: apprt.Clipboard,
+    ) bool {
+        _ = self;
+        return switch (clipboard_type) {
+            .standard => true,
+            .selection, .primary => comptime builtin.os.tag == .linux,
+        };
     }
 
     /// Start an async clipboard request.
@@ -1040,7 +1110,7 @@ pub const Surface = struct {
         core_win.cursorPosCallback(.{
             .x = @floatCast(pos.xpos),
             .y = @floatCast(pos.ypos),
-        }) catch |err| {
+        }, null) catch |err| {
             log.err("error in cursor pos callback err={}", .{err});
             return;
         };

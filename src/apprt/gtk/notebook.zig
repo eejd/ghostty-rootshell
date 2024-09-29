@@ -66,9 +66,11 @@ pub const Notebook = union(enum) {
 
         const tab_view: *c.AdwTabView = c.adw_tab_view_new().?;
 
-        // Adwaita enables all of the shortcuts by default.
-        // We want to manage keybindings ourselves.
-        c.adw_tab_view_remove_shortcuts(tab_view, c.ADW_TAB_VIEW_SHORTCUT_ALL_SHORTCUTS);
+        if (comptime adwaita.versionAtLeast(1, 2, 0) and adwaita.versionAtLeast(1, 2, 0)) {
+            // Adwaita enables all of the shortcuts by default.
+            // We want to manage keybindings ourselves.
+            c.adw_tab_view_remove_shortcuts(tab_view, c.ADW_TAB_VIEW_SHORTCUT_ALL_SHORTCUTS);
+        }
 
         _ = c.g_signal_connect_data(tab_view, "page-attached", c.G_CALLBACK(&adwPageAttached), window, null, c.G_CONNECT_DEFAULT);
         _ = c.g_signal_connect_data(tab_view, "create-window", c.G_CALLBACK(&adwTabViewCreateWindow), window, null, c.G_CONNECT_DEFAULT);
@@ -260,6 +262,10 @@ pub const Notebook = union(enum) {
 
                 _ = c.g_signal_connect_data(label_close, "clicked", c.G_CALLBACK(&Tab.gtkTabCloseClick), tab, null, c.G_CONNECT_DEFAULT);
                 _ = c.g_signal_connect_data(gesture_tab_click, "pressed", c.G_CALLBACK(&Tab.gtkTabClick), tab, null, c.G_CONNECT_DEFAULT);
+
+                // Tab settings
+                c.gtk_notebook_set_tab_reorderable(notebook, box_widget, 1);
+                c.gtk_notebook_set_tab_detachable(notebook, box_widget, 1);
 
                 if (self.nPages() > 1) {
                     c.gtk_notebook_set_show_tabs(notebook, 1);
