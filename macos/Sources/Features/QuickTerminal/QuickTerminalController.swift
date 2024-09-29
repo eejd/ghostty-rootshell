@@ -57,6 +57,11 @@ class QuickTerminalController: BaseTerminalController {
 
     override func windowDidResignKey(_ notification: Notification) {
         super.windowDidResignKey(notification)
+
+        // We don't animate out if there is a modal sheet being shown currently.
+        // This lets us show alerts without causing the window to disappear.
+        guard window?.attachedSheet == nil else { return }
+
         animateOut()
     }
 
@@ -177,5 +182,15 @@ class QuickTerminalController: BaseTerminalController {
     @IBAction override func closeWindow(_ sender: Any) {
         // Instead of closing the window, we animate it out.
         animateOut()
+    }
+
+    @IBAction func newTab(_ sender: Any?) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Cannot Create New Tab"
+        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
+        alert.addButton(withTitle: "OK")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window)
     }
 }
