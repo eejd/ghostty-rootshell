@@ -332,6 +332,7 @@ extension Ghostty {
             return Color(newColor)
         }
 
+        #if canImport(AppKit)
         var quickTerminalPosition: QuickTerminalPosition {
             guard let config = self.config else { return .top }
             var v: UnsafePointer<Int8>? = nil
@@ -341,6 +342,7 @@ extension Ghostty {
             let str = String(cString: ptr)
             return QuickTerminalPosition(rawValue: str) ?? .top
         }
+        #endif
 
         var resizeOverlay: ResizeOverlay {
             guard let config = self.config else { return .after_first }
