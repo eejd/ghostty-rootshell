@@ -372,10 +372,11 @@ pub const Action = union(enum) {
     /// is preserved between appearances, so you can always press the keybinding
     /// to bring it back up.
     ///
-    /// Ths quick terminal has some limitations:
+    /// The quick terminal has some limitations:
     ///
     ///   - It is a singleton; only one instance can exist at a time.
     ///   - It does not support tabs.
+    ///   - It does not support fullscreen.
     ///   - It will not be restored when the application is restarted
     ///     (for systems that support window restoration).
     ///
