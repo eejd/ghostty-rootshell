@@ -136,7 +136,7 @@ class QuickTerminalController: BaseTerminalController {
         position.setInitial(in: window, on: screen)
 
         // Move it to the visible position since animation requires this
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(self)
 
         // Run the animation that moves our window into the proper place and makes
         // it visible.
@@ -145,20 +145,24 @@ class QuickTerminalController: BaseTerminalController {
             context.timingFunction = .init(name: .easeIn)
             position.setFinal(in: window.animator(), on: screen)
         }, completionHandler: {
-            // If we canceled our animation in we do nothing
-            guard self.visible else { return }
+            // There is a very minor delay here so waiting at least an event loop tick
+            // keeps us safe from the view not being on the window.
+            DispatchQueue.main.async {
+                // If we canceled our animation in we do nothing
+                guard self.visible else { return }
 
-            // If our focused view is somehow not connected to this window then the
-            // function calls below do nothing. I don't think this is possible but
-            // we should guard against it because it is a Cocoa assertion.
-            guard let focusedView = self.focusedSurface,
-                  focusedView.window == window else { return }
+                // If our focused view is somehow not connected to this window then the
+                // function calls below do nothing. I don't think this is possible but
+                // we should guard against it because it is a Cocoa assertion.
+                guard let focusedView = self.focusedSurface,
+                      focusedView.window == window else { return }
 
-            // The window must become top-level
-            window.makeKeyAndOrderFront(self)
+                // The window must become top-level
+                window.makeKeyAndOrderFront(self)
 
-            // The view must gain our keyboard focus
-            window.makeFirstResponder(focusedView)
+                // The view must gain our keyboard focus
+                window.makeFirstResponder(focusedView)
+            }
         })
     }
 
@@ -166,52 +170,15 @@ class QuickTerminalController: BaseTerminalController {
         // We always animate out to whatever screen the window is actually on.
         guard let screen = window.screen ?? NSScreen.main else { return }
 
-        // Keep track of if we were the key window. If we were the key window then we
-        // want to move focus to the next window so that focus is preserved somewhere
-        // in the app.
-        let wasKey = window.isKeyWindow
-
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = .init(name: .easeIn)
             position.setInitial(in: window.animator(), on: screen)
         }, completionHandler: {
-            guard wasKey else { return }
-            self.focusNextWindow(on: screen)
+            // This causes the window to be removed from the screen list and macOS
+            // handles what should be focused next.
+            window.orderOut(self)
         })
-    }
-
-    private func focusNextWindow(on screen: NSScreen) {
-        let windows = NSApp.windows.filter {
-            // Visible, otherwise we'll make an invisible window visible.
-            guard $0.isVisible else { return false }
-
-            // Same screen, just a preference...
-            guard $0.screen == screen else { return false }
-
-            // Same space (virtual screen). Otherwise we'll force an animation to
-            // another space which is very jarring.
-            guard $0.isOnActiveSpace else { return false }
-
-            return true
-        }
-
-        // If we have no windows there is nothing to focus.
-        guard !windows.isEmpty else { return }
-
-        // Find the current key window (the window that is currently focused)
-        if let keyWindow = NSApp.keyWindow,
-           let currentIndex = windows.firstIndex(of: keyWindow) {
-            // Calculate the index of the next window (cycle through the list)
-            let nextIndex = (currentIndex + 1) % windows.count
-            let nextWindow = windows[nextIndex]
-
-            // Make the next window key and bring it to the front
-            nextWindow.makeKeyAndOrderFront(nil)
-        } else {
-            // If there's no key window, focus the first available window
-            windows.first?.makeKeyAndOrderFront(nil)
-        }
     }
 
     // MARK: First Responder
