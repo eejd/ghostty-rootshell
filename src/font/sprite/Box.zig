@@ -2739,3 +2739,74 @@ test "all" {
         try testing.expectEqual(@as(u32, face.height), glyph.height);
     }
 }
+
+test "render all sprites" {
+    // Renders all sprites to an atlas and compares
+    // it to a ground truth for regression testing.
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_grayscale = try font.Atlas.init(alloc, 1024, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
+
+    const face: Box = .{ .width = 18, .height = 36, .thickness = 2 };
+
+    // Box Drawing and Block Elements.
+    var cp: u32 = 0x2500;
+    while (cp <= 0x259f) : (cp += 1) {
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas_grayscale,
+            cp,
+        );
+    }
+
+    // Braille
+    cp = 0x2800;
+    while (cp <= 0x28ff) : (cp += 1) {
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas_grayscale,
+            cp,
+        );
+    }
+
+    // Symbols for Legacy Computing.
+    cp = 0x1fb00;
+    while (cp <= 0x1fb9b) : (cp += 1) {
+        switch (cp) {
+            0x1FB00...0x1FB3B,
+            0x1FB3C...0x1FB40,
+            0x1FB47...0x1FB4B,
+            0x1FB57...0x1FB5B,
+            0x1FB62...0x1FB66,
+            0x1FB6C...0x1FB6F,
+            0x1FB41...0x1FB45,
+            0x1FB4C...0x1FB50,
+            0x1FB52...0x1FB56,
+            0x1FB5D...0x1FB61,
+            0x1FB68...0x1FB6B,
+            0x1FB70...0x1FB8B,
+            0x1FB46,
+            0x1FB51,
+            0x1FB5C,
+            0x1FB67,
+            0x1FB9A,
+            0x1FB9B,
+            => _ = try face.renderGlyph(
+                alloc,
+                &atlas_grayscale,
+                cp,
+            ),
+            else => {},
+        }
+    }
+
+    // Dump to PPM file for visual examination
+    // Uncomment whenever a new ground truth needs to be created.
+    const ppm = try std.fs.cwd().createFile("Box.ppm", .{});
+    defer ppm.close();
+
+    try atlas_grayscale.dump(ppm.writer());
+}
