@@ -86,6 +86,9 @@ class AppDelegate: NSObject,
         return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
     }
 
+    /// Tracks whether the application is currently visible
+    private var isVisible: Bool = true
+
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
@@ -251,6 +254,7 @@ class AppDelegate: NSObject,
         // Ghostty will validate as well but we can avoid creating an entirely new
         // surface by doing our own validation here. We can also show a useful error
         // this way.
+
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
 
@@ -315,6 +319,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
+        syncMenuShortcut(action: "toggle_visibility", menuItem: self.menuQuickTerminal)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
         syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
@@ -563,5 +568,28 @@ class AppDelegate: NSObject,
         quickController.toggle()
 
         self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
+    }
+
+    /// Toggles the visibility of all Ghostty windows
+    @IBAction func toggleVisibility(_ sender: Any) {
+        let configurationErrorsWindow = ConfigurationErrorsController.sharedInstance.window
+
+        if isVisible {
+            // Hide all windows
+            for window in NSApp.windows {
+                if window !== configurationErrorsWindow {
+                    window.orderOut(nil)
+                }
+            }
+        } else {
+            // Show all windows
+            for window in NSApp.windows {
+                if window !== configurationErrorsWindow {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        isVisible.toggle()
     }
 }

@@ -490,6 +490,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_TOGGLE_QUICK_TERMINAL:
                 toggleQuickTerminal(app, target: target)
 
+            case GHOSTTY_ACTION_TOGGLE_VISIBILITY:
+                toggleVisibility(app, target: target)
+
             case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
                 fallthrough
             case GHOSTTY_ACTION_TOGGLE_TAB_OVERVIEW:
@@ -629,6 +632,13 @@ extension Ghostty {
                 assertionFailure()
             }
         }
+
+        private static func toggleVisibility(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) {
+                guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+                appDelegate.toggleVisibility(self)
+            }
 
         private static func gotoTab(
             _ app: ghostty_app_t,

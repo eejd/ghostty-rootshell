@@ -217,10 +217,16 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="L3L-I8-sqk"/>
-                            <menuItem title="Quick Terminal" id="kvF-d2-JsP">
+                            <menuItem title="Toggle Visibility" id="kvF-d2-JsP">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="toggleQuickTerminal:" target="bbz-4X-AYv" id="gm3-mk-l8N"/>
+                                    <action selector="toggleVisibility" target="bbz-4X-AYv" id="RhV-3i-Xjz"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Quick Terminal" id="1pv-LF-NBJ">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="toggleQuickTerminal:" target="bbz-4X-AYv" id="qDV-sz-Agc"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="bC9-n9-RbJ"/>
