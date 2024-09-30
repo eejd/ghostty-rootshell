@@ -160,11 +160,16 @@ class NonNativeFullscreen: FullscreenStyle {
         // Being untitled let's our content take up the full frame.
         window.styleMask.remove(.titled)
 
-        // Set frame to screen size, accounting for the menu bar if needed
-        window.setFrame(fullscreenFrame(screen), display: true)
-
         // Focus window
         window.makeKeyAndOrderFront(nil)
+
+        // Set frame to screen size, accounting for any elements such as the menu bar.
+        // We do this async so that all the style edits above (title removal, dock
+        // hide, menu hide, etc.) take effect. This fixes:
+        // https://github.com/ghostty-org/ghostty/issues/1996
+        DispatchQueue.main.async {
+            self.window.setFrame(self.fullscreenFrame(screen), display: true)
+        }
     }
 
     func exit() {
