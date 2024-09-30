@@ -23,6 +23,7 @@
 		A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */; };
 		A52FFF592CAA4FF3000C6A5B /* Fullscreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */; };
 		A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF5A2CAA54A8000C6A5B /* FullscreenMode+Extension.swift */; };
+		A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */; };
 		A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */; };
@@ -107,6 +108,7 @@
 		A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTerminalScreen.swift; sourceTree = "<group>"; };
 		A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fullscreen.swift; sourceTree = "<group>"; };
 		A52FFF5A2CAA54A8000C6A5B /* FullscreenMode+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FullscreenMode+Extension.swift"; sourceTree = "<group>"; };
+		A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSScreen+Extension.swift"; sourceTree = "<group>"; };
 		A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_UIKit.swift; sourceTree = "<group>"; };
 		A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossKit.swift; sourceTree = "<group>"; };
 		A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_AppKit.swift; sourceTree = "<group>"; };
@@ -240,6 +242,7 @@
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
+				A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
 				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
@@ -576,6 +579,7 @@
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */,
 				AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */,
+				A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */,
 				A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */,

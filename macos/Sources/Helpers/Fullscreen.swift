@@ -129,33 +129,24 @@ class NonNativeFullscreen: FullscreenStyle {
         guard let savedState = SavedState(window) else { return }
         self.savedState = savedState
 
-        // Change presentation style to hide menu bar and dock if needed
-        // It's important to do this in two calls, because setting them in a single call guarantees
-        // that the menu bar will also be hidden on any additional displays (why? nobody knows!)
-        // When these options are set separately, the menu bar hiding problem will only occur in
-        // specific scenarios. More investigation is needed to pin these scenarios down precisely,
-        // but it seems to have something to do with which app had focus last.
-        // Furthermore, it's much easier to figure out which screen the dock is on if the menubar
-        // has not yet been hidden, so the order matters here!
+        // We hide the dock if the window is on a screen with the dock.
+        if (savedState.dock) {
+            hideDock()
 
-        // We always hide the dock. There are many scenarios where we don't
-        // need to (dock is not on this screen, dock is already hidden, etc.)
-        // but I don't think there's a downside to just unconditionally doing this.
-        hideDock()
+            // Hide the dock whenever this window becomes focused.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(hideDock),
+                name: NSWindow.didBecomeMainNotification,
+                object: window)
 
-        // Hide the dock whenever this window becomes focused.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(hideDock),
-            name: NSWindow.didBecomeMainNotification,
-            object: window)
-
-        // Unhide the dock whenever this window becomes unfocused.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(unhideDock),
-            name: NSWindow.didResignMainNotification,
-            object: window)
+            // Unhide the dock whenever this window becomes unfocused.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(unhideDock),
+                name: NSWindow.didResignMainNotification,
+                object: window)
+        }
 
         // Hide the menu if requested
         if (properties.hideMenu) {
@@ -209,7 +200,9 @@ class NonNativeFullscreen: FullscreenStyle {
         NotificationCenter.default.removeObserver(self)
 
         // Unhide our elements
-        unhideDock()
+        if savedState.dock {
+            unhideDock()
+        }
         unhideMenu()
 
         // Restore our saved state
@@ -317,6 +310,7 @@ class NonNativeFullscreen: FullscreenStyle {
         let tabGroupIndex: Int?
         let contentFrame: NSRect
         let styleMask: NSWindow.StyleMask
+        let dock: Bool
 
         init?(_ window: NSWindow) {
             guard let contentView = window.contentView else { return nil }
@@ -325,6 +319,7 @@ class NonNativeFullscreen: FullscreenStyle {
             self.tabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
             self.contentFrame = window.convertToScreen(contentView.frame)
             self.styleMask = window.styleMask
+            self.dock = window.screen?.hasDock ?? false
         }
     }
 }
