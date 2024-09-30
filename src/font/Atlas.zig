@@ -297,6 +297,29 @@ pub fn clear(self: *Atlas) void {
     self.nodes.appendAssumeCapacity(.{ .x = 1, .y = 1, .width = self.size - 2 });
 }
 
+/// Dump the atlas as a PPM to a writer, for debug purposes.
+/// Only supports grayscale and rgb atlases.
+pub fn dump(self: Atlas, writer: anytype) !void {
+    try writer.print(
+        \\P{c}
+        \\{d} {d}
+        \\255
+        \\
+    , .{
+        @as(u8, switch (self.format) {
+            .grayscale => '5',
+            .rgb => '6',
+            else => {
+                log.err("Unsupported format for dump: {}", .{ self.format });
+                @panic("Cannot dump this atlas format.");
+            }
+        }),
+        self.size,
+        self.size,
+    });
+    try writer.writeAll(self.data);
+}
+
 /// The wasm-compatible API. This lacks documentation unless the API differs
 /// from the standard Zig API. To learn what a function does, just look one
 /// level deeper to what Zig function is called and read the documentation there.
