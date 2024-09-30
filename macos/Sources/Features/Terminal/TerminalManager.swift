@@ -115,7 +115,7 @@ class TerminalManager {
         // See: https://github.com/mitchellh/ghostty/issues/392
         if let controller = parent.windowController as? TerminalController,
            let fullscreenStyle = controller.fullscreenStyle,
-           !fullscreenStyle.supportsTabs {
+           fullscreenStyle.isFullscreen && !fullscreenStyle.supportsTabs {
             let alert = NSAlert()
             alert.messageText = "Cannot Create New Tab"
             alert.informativeText = "New tabs are unsupported while in non-native fullscreen. Exit fullscreen and try again."
