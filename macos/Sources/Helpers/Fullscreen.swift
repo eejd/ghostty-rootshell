@@ -26,6 +26,7 @@ enum FullscreenMode {
 
 /// Protocol that must be implemented by all fullscreen styles.
 protocol FullscreenStyle {
+    var delegate: FullscreenDelegate? { get set }
     var isFullscreen: Bool { get }
     var supportsTabs: Bool { get }
     init?(_ window: NSWindow)
@@ -33,11 +34,23 @@ protocol FullscreenStyle {
     func exit()
 }
 
+/// Delegate that can be implemented for fullscreen implementations.
+protocol FullscreenDelegate: AnyObject {
+    /// Called whenever the fullscreen state changed. You can call isFullscreen to see
+    /// the current state.
+    func fullscreenDidChange()
+}
+
+extension FullscreenDelegate {
+    func fullscreenDidChange() {}
+}
+
 /// macOS native fullscreen. This is the typical behavior you get by pressing the green fullscreen
 /// button on regular titlebars.
 class NativeFullscreen: FullscreenStyle {
     private let window: NSWindow
 
+    weak var delegate: FullscreenDelegate?
     var isFullscreen: Bool { window.styleMask.contains(.fullScreen) }
     var supportsTabs: Bool { true }
 
@@ -58,6 +71,9 @@ class NativeFullscreen: FullscreenStyle {
 
         // Enter fullscreen
         window.toggleFullScreen(self)
+
+        // Notify the delegate
+        delegate?.fullscreenDidChange()
     }
 
     func exit() {
@@ -67,10 +83,15 @@ class NativeFullscreen: FullscreenStyle {
         window.titlebarSeparatorStyle = .automatic
 
         window.toggleFullScreen(nil)
+
+        // Notify the delegate
+        delegate?.fullscreenDidChange()
     }
 }
 
 class NonNativeFullscreen: FullscreenStyle {
+    weak var delegate: FullscreenDelegate?
+
     // Non-native fullscreen never supports tabs because tabs require
     // the "titled" style and we don't have it for non-native fullscreen.
     var supportsTabs: Bool { false }
@@ -157,6 +178,13 @@ class NonNativeFullscreen: FullscreenStyle {
                 object: window)
         }
 
+        // When we change screens we need to redo everything.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChangeScreen),
+            name: NSWindow.didChangeScreenNotification,
+            object: window)
+
         // Being untitled let's our content take up the full frame.
         window.styleMask.remove(.titled)
 
@@ -169,6 +197,7 @@ class NonNativeFullscreen: FullscreenStyle {
         // https://github.com/ghostty-org/ghostty/issues/1996
         DispatchQueue.main.async {
             self.window.setFrame(self.fullscreenFrame(screen), display: true)
+            self.delegate?.fullscreenDidChange()
         }
     }
 
@@ -176,11 +205,10 @@ class NonNativeFullscreen: FullscreenStyle {
         guard isFullscreen else { return }
         guard let savedState else { return }
 
-        // Reset all of our dock and menu logic
-        NotificationCenter.default.removeObserver(
-            self, name: NSWindow.didBecomeMainNotification, object: window)
-        NotificationCenter.default.removeObserver(
-            self, name: NSWindow.didResignMainNotification, object: window)
+        // Remove all our notifications
+        NotificationCenter.default.removeObserver(self)
+
+        // Unhide our elements
         unhideDock()
         unhideMenu()
 
@@ -219,6 +247,9 @@ class NonNativeFullscreen: FullscreenStyle {
 
         // Focus window
         window.makeKeyAndOrderFront(nil)
+
+        // Notify the delegate
+        self.delegate?.fullscreenDidChange()
     }
 
     private func fullscreenFrame(_ screen: NSScreen) -> NSRect {
@@ -241,6 +272,19 @@ class NonNativeFullscreen: FullscreenStyle {
         }
 
         return frame
+    }
+
+    // MARK: Window Events
+
+    @objc func windowDidChangeScreen(_ notification: Notification) {
+        guard isFullscreen else { return }
+
+        // When we change screens, we simply exit fullscreen. Changing
+        // screens shouldn't naturally be possible, it can only happen
+        // through external window managers. There's a lot of accounting
+        // to do to get the screen change right so instead of breaking
+        // we just exit out. The user can re-enter fullscreen thereafter.
+        exit()
     }
 
     // MARK: Dock

@@ -4,7 +4,8 @@ import SwiftUI
 import GhosttyKit
 
 /// A classic, tabbed terminal experience.
-class TerminalController: BaseTerminalController
+class TerminalController: BaseTerminalController,
+                          FullscreenDelegate
 {
     override var windowNibName: NSNib.Name? { "Terminal" }
 
@@ -199,6 +200,8 @@ class TerminalController: BaseTerminalController
         }
     }
 
+    // MARK: Fullscreen
+
     /// Toggle fullscreen for the given mode.
     func toggleFullscreen(mode: FullscreenMode) {
         // We need a window to fullscreen
@@ -208,11 +211,12 @@ class TerminalController: BaseTerminalController
         // our mode changed. If it changed and we're in fullscreen, we exit so we can
         // toggle it next time. If it changed and we're not in fullscreen we can just
         // switch the handler.
-        let newStyle = mode.style(for: window)
+        var newStyle = mode.style(for: window)
+        newStyle?.delegate = self
         old: if let oldStyle = self.fullscreenStyle {
             // If we're not fullscreen, we can nil it out so we get the new style
             if !oldStyle.isFullscreen {
-                self.fullscreenStyle = nil
+                self.fullscreenStyle = newStyle
                 break old
             }
 
@@ -227,28 +231,25 @@ class TerminalController: BaseTerminalController
                 oldStyle.exit()
                 self.fullscreenStyle = nil
 
-                // Fix our focus
-                if let focusedSurface {
-                    Ghostty.moveFocus(to: focusedSurface)
-                }
-
                 // We're done
                 return
             }
 
             // Style is the same.
         } else {
-            // No old style, so set to our new style.
+            // We have no previous style
             self.fullscreenStyle = newStyle
         }
-
         guard let fullscreenStyle else { return }
+
         if fullscreenStyle.isFullscreen {
             fullscreenStyle.exit()
         } else {
             fullscreenStyle.enter()
         }
+    }
 
+    func fullscreenDidChange() {
         // For some reason focus can get lost when we change fullscreen. Regardless of
         // mode above we just move it back.
         if let focusedSurface {
