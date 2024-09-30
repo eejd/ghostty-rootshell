@@ -68,6 +68,15 @@ const Lines = struct {
     };
 };
 
+/// Specification of a quadrants char, which has each of the
+/// 4 quadrants of the character cell either filled or empty.
+const Quads = struct {
+    tl: bool = false,
+    tr: bool = false,
+    bl: bool = false,
+    br: bool = false,
+};
+
 /// Alignment of a figure within a cell
 const Alignment = struct {
     horizontal: enum {
@@ -454,9 +463,26 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x2594 => self.draw_block(canvas, Alignment.upper, 1, one_eighth),
         // '▕' RIGHT ONE EIGHTH BLOCK
         0x2595 => self.draw_block(canvas, Alignment.right, one_eighth, 1),
-
-        // ▖ ▗ ▘ ▙ ▚ ▛ ▜ ▝ ▞ ▟
-        0x2596...0x259f => self.draw_quadrant(canvas, cp),
+        // '▖'
+        0x2596 => self.draw_quadrant(canvas, .{ .bl = true }),
+        // '▗'
+        0x2597 => self.draw_quadrant(canvas, .{ .br = true }),
+        // '▘'
+        0x2598 => self.draw_quadrant(canvas, .{ .tl = true }),
+        // '▙'
+        0x2599 => self.draw_quadrant(canvas, .{ .tl = true, .bl = true, .br = true }),
+        // '▚'
+        0x259a => self.draw_quadrant(canvas, .{ .tl = true, .br = true }),
+        // '▛'
+        0x259b => self.draw_quadrant(canvas, .{ .tl = true, .tr = true, .bl = true }),
+        // '▜'
+        0x259c => self.draw_quadrant(canvas, .{ .tl = true, .tr = true, .br = true }),
+        // '▝'
+        0x259d => self.draw_quadrant(canvas, .{ .tr = true }),
+        // '▞'
+        0x259e => self.draw_quadrant(canvas, .{ .tr = true, .bl = true }),
+        // '▟'
+        0x259f => self.draw_quadrant(canvas, .{ .tr = true, .bl = true, .br = true }),
 
         0x2800...0x28ff => self.draw_braille(canvas, cp),
 
@@ -975,32 +1001,14 @@ fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas)
     self.draw_horizontal_one_eighth_block_n(canvas, 7);
 }
 
-fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
-    const UPPER_LEFT: u8 = 1 << 0;
-    const UPPER_RIGHT: u8 = 1 << 1;
-    const LOWER_LEFT: u8 = 1 << 2;
-    const LOWER_RIGHT: u8 = 1 << 3;
-    const matrix: [10]u8 = .{
-        LOWER_LEFT,
-        LOWER_RIGHT,
-        UPPER_LEFT,
-        UPPER_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | LOWER_RIGHT,
-        UPPER_RIGHT,
-        UPPER_RIGHT | LOWER_LEFT,
-        UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-    };
+fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, comptime quads: Quads) void {
+    const center_x = self.width / 2 + self.width % 2;
+    const center_y = self.height / 2 + self.height % 2;
 
-    assert(cp >= 0x2596 and cp <= 0x259f);
-    const idx = cp - 0x2596;
-    const encoded = matrix[idx];
-
-    if (encoded & UPPER_LEFT == UPPER_LEFT) self.draw_block(canvas, .{ .horizontal = .left, .vertical = .top }, 0.5, 0.5);
-    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.draw_block(canvas, .{ .horizontal = .right, .vertical = .top }, 0.5, 0.5);
-    if (encoded & LOWER_LEFT == LOWER_LEFT) self.draw_block(canvas, .{ .horizontal = .left, .vertical = .bottom }, 0.5, 0.5);
-    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.draw_block(canvas, .{ .horizontal = .right, .vertical = .bottom }, 0.5, 0.5);
+    if (quads.tl) self.rect(canvas, 0, 0, center_x, center_y);
+    if (quads.tr) self.rect(canvas, center_x, 0, self.width, center_y);
+    if (quads.bl) self.rect(canvas, 0, center_y, center_x, self.height);
+    if (quads.br) self.rect(canvas, center_x, center_y, self.width, self.height);
 }
 
 fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
@@ -1099,96 +1107,30 @@ fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
 }
 
 fn draw_sextant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
-    const UPPER_LEFT: u8 = 1 << 0;
-    const MIDDLE_LEFT: u8 = 1 << 1;
-    const LOWER_LEFT: u8 = 1 << 2;
-    const UPPER_RIGHT: u8 = 1 << 3;
-    const MIDDLE_RIGHT: u8 = 1 << 4;
-    const LOWER_RIGHT: u8 = 1 << 5;
-
-    const matrix: [60]u8 = .{
-        // U+1fb00 - U+1fb0f
-        UPPER_LEFT,
-        UPPER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT,
-        MIDDLE_LEFT,
-        UPPER_LEFT | MIDDLE_LEFT,
-        UPPER_RIGHT | MIDDLE_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT,
-        MIDDLE_RIGHT,
-        UPPER_LEFT | MIDDLE_RIGHT,
-        UPPER_RIGHT | MIDDLE_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT,
-        MIDDLE_LEFT | MIDDLE_RIGHT,
-        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT,
-        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT,
-        LOWER_LEFT,
-
-        // U+1fb10 - U+1fb1f
-        UPPER_LEFT | LOWER_LEFT,
-        UPPER_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT,
-        MIDDLE_LEFT | LOWER_LEFT,
-        UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT,
-        MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT,
-        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT,
-        LOWER_RIGHT,
-        UPPER_LEFT | LOWER_RIGHT,
-
-        // U+1fb20 - U+1fb2f
-        UPPER_RIGHT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | LOWER_RIGHT,
-        MIDDLE_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_LEFT | LOWER_RIGHT,
-        UPPER_RIGHT | MIDDLE_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_RIGHT,
-        MIDDLE_RIGHT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_RIGHT,
-        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
-        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_RIGHT,
-        LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-
-        // U+1fb30 - U+1fb3b
-        UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_LEFT | LOWER_LEFT | LOWER_RIGHT,
-        MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | UPPER_RIGHT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_LEFT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
-        UPPER_RIGHT | MIDDLE_LEFT | MIDDLE_RIGHT | LOWER_LEFT | LOWER_RIGHT,
+    const Sextants = packed struct(u6) {
+        tl: bool,
+        tr: bool,
+        ml: bool,
+        mr: bool,
+        bl: bool,
+        br: bool,
     };
 
     assert(cp >= 0x1fb00 and cp <= 0x1fb3b);
     const idx = cp - 0x1fb00;
-    const encoded = matrix[idx];
+    const sex: Sextants = @bitCast(@as(u6, @intCast(
+        idx + (idx / 0x14) + 1,
+    )));
 
     const x_halfs = self.xHalfs();
     const y_thirds = self.yThirds();
 
-    if (encoded & UPPER_LEFT > 0) self.rect(canvas, 0, 0, x_halfs[0], y_thirds[0]);
-    if (encoded & MIDDLE_LEFT > 0) self.rect(canvas, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
-    if (encoded & LOWER_LEFT > 0) self.rect(canvas, 0, y_thirds[1], x_halfs[0], self.height);
-    if (encoded & UPPER_RIGHT > 0) self.rect(canvas, x_halfs[1], 0, self.width, y_thirds[0]);
-    if (encoded & MIDDLE_RIGHT > 0) self.rect(canvas, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
-    if (encoded & LOWER_RIGHT > 0) self.rect(canvas, x_halfs[1], y_thirds[1], self.width, self.height);
+    if (sex.tl) self.rect(canvas, 0, 0, x_halfs[0], y_thirds[0]);
+    if (sex.tr) self.rect(canvas, x_halfs[1], 0, self.width, y_thirds[0]);
+    if (sex.ml) self.rect(canvas, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
+    if (sex.mr) self.rect(canvas, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
+    if (sex.bl) self.rect(canvas, 0, y_thirds[1], x_halfs[0], self.height);
+    if (sex.br) self.rect(canvas, x_halfs[1], y_thirds[1], self.width, self.height);
 }
 
 fn xHalfs(self: Box) [2]u32 {
