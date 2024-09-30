@@ -3,12 +3,17 @@
 //! characters that are provided by the terminal.
 //!
 //! The box drawing logic is based off similar logic in Kitty and Foot.
-//! The primary drawing code was ported directly and slightly modified from Foot
-//! (https://codeberg.org/dnkl/foot/). Foot is licensed under the MIT
-//! license and is copyright 2019 Daniel Eklöf.
+//! The primary drawing code was originally ported directly and slightly
+//! modified from Foot (https://codeberg.org/dnkl/foot/). Foot is licensed
+//! under the MIT license and is copyright 2019 Daniel Eklöf.
 //!
-//! The modifications made are primarily around spacing, DPI calculations,
-//! and adapting the code to our atlas model.
+//! The modifications made were primarily around spacing, DPI calculations,
+//! and adapting the code to our atlas model. Further, more extensive changes
+//! were made, refactoring the line characters to all share a single unified
+//! function (draw_lines), as well as many of the fractional block characters
+//! which now use draw_block instead of dedicated separate functions.
+//!
+//! Additional characters from Unicode 16.0 and beyond are original work.
 const Box = @This();
 
 const std = @import("std");
@@ -46,6 +51,59 @@ const Thickness = enum {
         };
     }
 };
+
+/// Specification of a traditional intersection-style line/box-drawing char,
+/// which can have a different style of line from each edge to the center.
+const Lines = struct {
+    up: Style = .none,
+    right: Style = .none,
+    down: Style = .none,
+    left: Style = .none,
+
+    const Style = enum {
+        none,
+        light,
+        heavy,
+        double,
+    };
+};
+
+/// Alignment of a figure within a cell
+const Alignment = struct {
+    horizontal: enum {
+        left,
+        right,
+        center,
+    } = .center,
+
+    vertical: enum {
+        top,
+        bottom,
+        middle,
+    } = .middle,
+
+    const upper: Alignment = .{ .vertical = .top };
+    const lower: Alignment = .{ .vertical = .bottom };
+    const left: Alignment = .{ .horizontal = .left };
+    const right: Alignment = .{ .horizontal = .right };
+
+    const upper_left: Alignment = .{ .vertical = .top, .horizontal = .left };
+    const upper_right: Alignment = .{ .vertical = .top, .horizontal = .right };
+    const lower_left: Alignment = .{ .vertical = .bottom, .horizontal = .left };
+    const lower_right: Alignment = .{ .vertical = .bottom, .horizontal = .right };
+
+    const top = upper;
+    const bottom = lower;
+};
+
+// Utility names for common fractions
+const one_eighth: f64 = 0.125;
+const one_quarter: f64 = 0.25;
+const three_eighths: f64 = 0.375;
+const half: f64 = 0.5;
+const five_eighths: f64 = 0.625;
+const three_quarters: f64 = 0.75;
+const seven_eighths: f64 = 0.875;
 
 pub fn renderGlyph(
     self: Box,
@@ -94,230 +152,427 @@ pub fn unadjustedCodepoint(cp: u32) bool {
 
 fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void {
     switch (cp) {
-        0x2500 => self.draw_light_horizontal(canvas),
-        0x2501 => self.draw_heavy_horizontal(canvas),
-        0x2502 => self.draw_light_vertical(canvas),
-        0x2503 => self.draw_heavy_vertical(canvas),
+        // '─'
+        0x2500 => self.draw_lines(canvas, .{ .left = .light, .right = .light }),
+        // '━'
+        0x2501 => self.draw_lines(canvas, .{ .left = .heavy, .right = .heavy }),
+        // '│'
+        0x2502 => self.draw_lines(canvas, .{ .up = .light, .down = .light }),
+        // '┃'
+        0x2503 => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy }),
+        // '┄'
         0x2504 => self.draw_light_triple_dash_horizontal(canvas),
+        // '┅'
         0x2505 => self.draw_heavy_triple_dash_horizontal(canvas),
+        // '┆'
         0x2506 => self.draw_light_triple_dash_vertical(canvas),
+        // '┇'
         0x2507 => self.draw_heavy_triple_dash_vertical(canvas),
+        // '┈'
         0x2508 => self.draw_light_quadruple_dash_horizontal(canvas),
+        // '┉'
         0x2509 => self.draw_heavy_quadruple_dash_horizontal(canvas),
+        // '┊'
         0x250a => self.draw_light_quadruple_dash_vertical(canvas),
+        // '┋'
         0x250b => self.draw_heavy_quadruple_dash_vertical(canvas),
-        0x250c => self.draw_light_down_and_right(canvas),
-        0x250d => self.draw_down_light_and_right_heavy(canvas),
-        0x250e => self.draw_down_heavy_and_right_light(canvas),
-        0x250f => self.draw_heavy_down_and_right(canvas),
+        // '┌'
+        0x250c => self.draw_lines(canvas, .{ .down = .light, .right = .light }),
+        // '┍'
+        0x250d => self.draw_lines(canvas, .{ .down = .light, .right = .heavy }),
+        // '┎'
+        0x250e => self.draw_lines(canvas, .{ .down = .heavy, .right = .light }),
+        // '┏'
+        0x250f => self.draw_lines(canvas, .{ .down = .heavy, .right = .heavy }),
 
-        0x2510 => self.draw_light_down_and_left(canvas),
-        0x2511 => self.draw_down_light_and_left_heavy(canvas),
-        0x2512 => self.draw_down_heavy_and_left_light(canvas),
-        0x2513 => self.draw_heavy_down_and_left(canvas),
-        0x2514 => self.draw_light_up_and_right(canvas),
-        0x2515 => self.draw_up_light_and_right_heavy(canvas),
-        0x2516 => self.draw_up_heavy_and_right_light(canvas),
-        0x2517 => self.draw_heavy_up_and_right(canvas),
-        0x2518 => self.draw_light_up_and_left(canvas),
-        0x2519 => self.draw_up_light_and_left_heavy(canvas),
-        0x251a => self.draw_up_heavy_and_left_light(canvas),
-        0x251b => self.draw_heavy_up_and_left(canvas),
-        0x251c => self.draw_light_vertical_and_right(canvas),
-        0x251d => self.draw_vertical_light_and_right_heavy(canvas),
-        0x251e => self.draw_up_heavy_and_right_down_light(canvas),
-        0x251f => self.draw_down_heavy_and_right_up_light(canvas),
+        // '┐'
+        0x2510 => self.draw_lines(canvas, .{ .down = .light, .left = .light }),
+        // '┑'
+        0x2511 => self.draw_lines(canvas, .{ .down = .light, .left = .heavy }),
+        // '┒'
+        0x2512 => self.draw_lines(canvas, .{ .down = .heavy, .left = .light }),
+        // '┓'
+        0x2513 => self.draw_lines(canvas, .{ .down = .heavy, .left = .heavy }),
+        // '└'
+        0x2514 => self.draw_lines(canvas, .{ .up = .light, .right = .light }),
+        // '┕'
+        0x2515 => self.draw_lines(canvas, .{ .up = .light, .right = .heavy }),
+        // '┖'
+        0x2516 => self.draw_lines(canvas, .{ .up = .heavy, .right = .light }),
+        // '┗'
+        0x2517 => self.draw_lines(canvas, .{ .up = .heavy, .right = .heavy }),
+        // '┘'
+        0x2518 => self.draw_lines(canvas, .{ .up = .light, .left = .light }),
+        // '┙'
+        0x2519 => self.draw_lines(canvas, .{ .up = .light, .left = .heavy }),
+        // '┚'
+        0x251a => self.draw_lines(canvas, .{ .up = .heavy, .left = .light }),
+        // '┛'
+        0x251b => self.draw_lines(canvas, .{ .up = .heavy, .left = .heavy }),
+        // '├'
+        0x251c => self.draw_lines(canvas, .{ .up = .light, .down = .light, .right = .light }),
+        // '┝'
+        0x251d => self.draw_lines(canvas, .{ .up = .light, .down = .light, .right = .heavy }),
+        // '┞'
+        0x251e => self.draw_lines(canvas, .{ .up = .heavy, .right = .light, .down = .light }),
+        // '┟'
+        0x251f => self.draw_lines(canvas, .{ .down = .heavy, .right = .light, .up = .light }),
 
-        0x2520 => self.draw_vertical_heavy_and_right_light(canvas),
-        0x2521 => self.draw_down_light_and_right_up_heavy(canvas),
-        0x2522 => self.draw_up_light_and_right_down_heavy(canvas),
-        0x2523 => self.draw_heavy_vertical_and_right(canvas),
-        0x2524 => self.draw_light_vertical_and_left(canvas),
-        0x2525 => self.draw_vertical_light_and_left_heavy(canvas),
-        0x2526 => self.draw_up_heavy_and_left_down_light(canvas),
-        0x2527 => self.draw_down_heavy_and_left_up_light(canvas),
-        0x2528 => self.draw_vertical_heavy_and_left_light(canvas),
-        0x2529 => self.draw_down_light_and_left_up_heavy(canvas),
-        0x252a => self.draw_up_light_and_left_down_heavy(canvas),
-        0x252b => self.draw_heavy_vertical_and_left(canvas),
-        0x252c => self.draw_light_down_and_horizontal(canvas),
-        0x252d => self.draw_left_heavy_and_right_down_light(canvas),
-        0x252e => self.draw_right_heavy_and_left_down_light(canvas),
-        0x252f => self.draw_down_light_and_horizontal_heavy(canvas),
+        // '┠'
+        0x2520 => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .right = .light }),
+        // '┡'
+        0x2521 => self.draw_lines(canvas, .{ .down = .light, .right = .heavy, .up = .heavy }),
+        // '┢'
+        0x2522 => self.draw_lines(canvas, .{ .up = .light, .right = .heavy, .down = .heavy }),
+        // '┣'
+        0x2523 => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .right = .heavy }),
+        // '┤'
+        0x2524 => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .light }),
+        // '┥'
+        0x2525 => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .heavy }),
+        // '┦'
+        0x2526 => self.draw_lines(canvas, .{ .up = .heavy, .left = .light, .down = .light }),
+        // '┧'
+        0x2527 => self.draw_lines(canvas, .{ .down = .heavy, .left = .light, .up = .light }),
+        // '┨'
+        0x2528 => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .left = .light }),
+        // '┩'
+        0x2529 => self.draw_lines(canvas, .{ .down = .light, .left = .heavy, .up = .heavy }),
+        // '┪'
+        0x252a => self.draw_lines(canvas, .{ .up = .light, .left = .heavy, .down = .heavy }),
+        // '┫'
+        0x252b => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .left = .heavy }),
+        // '┬'
+        0x252c => self.draw_lines(canvas, .{ .down = .light, .left = .light, .right = .light }),
+        // '┭'
+        0x252d => self.draw_lines(canvas, .{ .left = .heavy, .right = .light, .down = .light }),
+        // '┮'
+        0x252e => self.draw_lines(canvas, .{ .right = .heavy, .left = .light, .down = .light }),
+        // '┯'
+        0x252f => self.draw_lines(canvas, .{ .down = .light, .left = .heavy, .right = .heavy }),
 
-        0x2530 => self.draw_down_heavy_and_horizontal_light(canvas),
-        0x2531 => self.draw_right_light_and_left_down_heavy(canvas),
-        0x2532 => self.draw_left_light_and_right_down_heavy(canvas),
-        0x2533 => self.draw_heavy_down_and_horizontal(canvas),
-        0x2534 => self.draw_light_up_and_horizontal(canvas),
-        0x2535 => self.draw_left_heavy_and_right_up_light(canvas),
-        0x2536 => self.draw_right_heavy_and_left_up_light(canvas),
-        0x2537 => self.draw_up_light_and_horizontal_heavy(canvas),
-        0x2538 => self.draw_up_heavy_and_horizontal_light(canvas),
-        0x2539 => self.draw_right_light_and_left_up_heavy(canvas),
-        0x253a => self.draw_left_light_and_right_up_heavy(canvas),
-        0x253b => self.draw_heavy_up_and_horizontal(canvas),
-        0x253c => self.draw_light_vertical_and_horizontal(canvas),
-        0x253d => self.draw_left_heavy_and_right_vertical_light(canvas),
-        0x253e => self.draw_right_heavy_and_left_vertical_light(canvas),
-        0x253f => self.draw_vertical_light_and_horizontal_heavy(canvas),
+        // '┰'
+        0x2530 => self.draw_lines(canvas, .{ .down = .heavy, .left = .light, .right = .light }),
+        // '┱'
+        0x2531 => self.draw_lines(canvas, .{ .right = .light, .left = .heavy, .down = .heavy }),
+        // '┲'
+        0x2532 => self.draw_lines(canvas, .{ .left = .light, .right = .heavy, .down = .heavy }),
+        // '┳'
+        0x2533 => self.draw_lines(canvas, .{ .down = .heavy, .left = .heavy, .right = .heavy }),
+        // '┴'
+        0x2534 => self.draw_lines(canvas, .{ .up = .light, .left = .light, .right = .light }),
+        // '┵'
+        0x2535 => self.draw_lines(canvas, .{ .left = .heavy, .right = .light, .up = .light }),
+        // '┶'
+        0x2536 => self.draw_lines(canvas, .{ .right = .heavy, .left = .light, .up = .light }),
+        // '┷'
+        0x2537 => self.draw_lines(canvas, .{ .up = .light, .left = .heavy, .right = .heavy }),
+        // '┸'
+        0x2538 => self.draw_lines(canvas, .{ .up = .heavy, .left = .light, .right = .light }),
+        // '┹'
+        0x2539 => self.draw_lines(canvas, .{ .right = .light, .left = .heavy, .up = .heavy }),
+        // '┺'
+        0x253a => self.draw_lines(canvas, .{ .left = .light, .right = .heavy, .up = .heavy }),
+        // '┻'
+        0x253b => self.draw_lines(canvas, .{ .up = .heavy, .left = .heavy, .right = .heavy }),
+        // '┼'
+        0x253c => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .light, .right = .light }),
+        // '┽'
+        0x253d => self.draw_lines(canvas, .{ .left = .heavy, .right = .light, .up = .light, .down = .light }),
+        // '┾'
+        0x253e => self.draw_lines(canvas, .{ .right = .heavy, .left = .light, .up = .light, .down = .light }),
+        // '┿'
+        0x253f => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .heavy, .right = .heavy }),
 
-        0x2540 => self.draw_up_heavy_and_down_horizontal_light(canvas),
-        0x2541 => self.draw_down_heavy_and_up_horizontal_light(canvas),
-        0x2542 => self.draw_vertical_heavy_and_horizontal_light(canvas),
-        0x2543 => self.draw_left_up_heavy_and_right_down_light(canvas),
-        0x2544 => self.draw_right_up_heavy_and_left_down_light(canvas),
-        0x2545 => self.draw_left_down_heavy_and_right_up_light(canvas),
-        0x2546 => self.draw_right_down_heavy_and_left_up_light(canvas),
-        0x2547 => self.draw_down_light_and_up_horizontal_heavy(canvas),
-        0x2548 => self.draw_up_light_and_down_horizontal_heavy(canvas),
-        0x2549 => self.draw_right_light_and_left_vertical_heavy(canvas),
-        0x254a => self.draw_left_light_and_right_vertical_heavy(canvas),
-        0x254b => self.draw_heavy_vertical_and_horizontal(canvas),
+        // '╀'
+        0x2540 => self.draw_lines(canvas, .{ .up = .heavy, .down = .light, .left = .light, .right = .light }),
+        // '╁'
+        0x2541 => self.draw_lines(canvas, .{ .down = .heavy, .up = .light, .left = .light, .right = .light }),
+        // '╂'
+        0x2542 => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .left = .light, .right = .light }),
+        // '╃'
+        0x2543 => self.draw_lines(canvas, .{ .left = .heavy, .up = .heavy, .right = .light, .down = .light }),
+        // '╄'
+        0x2544 => self.draw_lines(canvas, .{ .right = .heavy, .up = .heavy, .left = .light, .down = .light }),
+        // '╅'
+        0x2545 => self.draw_lines(canvas, .{ .left = .heavy, .down = .heavy, .right = .light, .up = .light }),
+        // '╆'
+        0x2546 => self.draw_lines(canvas, .{ .right = .heavy, .down = .heavy, .left = .light, .up = .light }),
+        // '╇'
+        0x2547 => self.draw_lines(canvas, .{ .down = .light, .up = .heavy, .left = .heavy, .right = .heavy }),
+        // '╈'
+        0x2548 => self.draw_lines(canvas, .{ .up = .light, .down = .heavy, .left = .heavy, .right = .heavy }),
+        // '╉'
+        0x2549 => self.draw_lines(canvas, .{ .right = .light, .left = .heavy, .up = .heavy, .down = .heavy }),
+        // '╊'
+        0x254a => self.draw_lines(canvas, .{ .left = .light, .right = .heavy, .up = .heavy, .down = .heavy }),
+        // '╋'
+        0x254b => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .left = .heavy, .right = .heavy }),
+        // '╌'
         0x254c => self.draw_light_double_dash_horizontal(canvas),
+        // '╍'
         0x254d => self.draw_heavy_double_dash_horizontal(canvas),
+        // '╎'
         0x254e => self.draw_light_double_dash_vertical(canvas),
+        // '╏'
         0x254f => self.draw_heavy_double_dash_vertical(canvas),
 
-        0x2550 => self.draw_double_horizontal(canvas),
-        0x2551 => self.draw_double_vertical(canvas),
-        0x2552 => self.draw_down_single_and_right_double(canvas),
-        0x2553 => self.draw_down_double_and_right_single(canvas),
-        0x2554 => self.draw_double_down_and_right(canvas),
-        0x2555 => self.draw_down_single_and_left_double(canvas),
-        0x2556 => self.draw_down_double_and_left_single(canvas),
-        0x2557 => self.draw_double_down_and_left(canvas),
-        0x2558 => self.draw_up_single_and_right_double(canvas),
-        0x2559 => self.draw_up_double_and_right_single(canvas),
-        0x255a => self.draw_double_up_and_right(canvas),
-        0x255b => self.draw_up_single_and_left_double(canvas),
-        0x255c => self.draw_up_double_and_left_single(canvas),
-        0x255d => self.draw_double_up_and_left(canvas),
-        0x255e => self.draw_vertical_single_and_right_double(canvas),
-        0x255f => self.draw_vertical_double_and_right_single(canvas),
+        // '═'
+        0x2550 => self.draw_lines(canvas, .{ .left = .double, .right = .double }),
+        // '║'
+        0x2551 => self.draw_lines(canvas, .{ .up = .double, .down = .double }),
+        // '╒'
+        0x2552 => self.draw_lines(canvas, .{ .down = .light, .right = .double }),
+        // '╓'
+        0x2553 => self.draw_lines(canvas, .{ .down = .double, .right = .light }),
+        // '╔'
+        0x2554 => self.draw_lines(canvas, .{ .down = .double, .right = .double }),
+        // '╕'
+        0x2555 => self.draw_lines(canvas, .{ .down = .light, .left = .double }),
+        // '╖'
+        0x2556 => self.draw_lines(canvas, .{ .down = .double, .left = .light }),
+        // '╗'
+        0x2557 => self.draw_lines(canvas, .{ .down = .double, .left = .double }),
+        // '╘'
+        0x2558 => self.draw_lines(canvas, .{ .up = .light, .right = .double }),
+        // '╙'
+        0x2559 => self.draw_lines(canvas, .{ .up = .double, .right = .light }),
+        // '╚'
+        0x255a => self.draw_lines(canvas, .{ .up = .double, .right = .double }),
+        // '╛'
+        0x255b => self.draw_lines(canvas, .{ .up = .light, .left = .double }),
+        // '╜'
+        0x255c => self.draw_lines(canvas, .{ .up = .double, .left = .light }),
+        // '╝'
+        0x255d => self.draw_lines(canvas, .{ .up = .double, .left = .double }),
+        // '╞'
+        0x255e => self.draw_lines(canvas, .{ .up = .light, .down = .light, .right = .double }),
+        // '╟'
+        0x255f => self.draw_lines(canvas, .{ .up = .double, .down = .double, .right = .light }),
 
-        0x2560 => self.draw_double_vertical_and_right(canvas),
-        0x2561 => self.draw_vertical_single_and_left_double(canvas),
-        0x2562 => self.draw_vertical_double_and_left_single(canvas),
-        0x2563 => self.draw_double_vertical_and_left(canvas),
-        0x2564 => self.draw_down_single_and_horizontal_double(canvas),
-        0x2565 => self.draw_down_double_and_horizontal_single(canvas),
-        0x2566 => self.draw_double_down_and_horizontal(canvas),
-        0x2567 => self.draw_up_single_and_horizontal_double(canvas),
-        0x2568 => self.draw_up_double_and_horizontal_single(canvas),
-        0x2569 => self.draw_double_up_and_horizontal(canvas),
-        0x256a => self.draw_vertical_single_and_horizontal_double(canvas),
-        0x256b => self.draw_vertical_double_and_horizontal_single(canvas),
-        0x256c => self.draw_double_vertical_and_horizontal(canvas),
+        // '╠'
+        0x2560 => self.draw_lines(canvas, .{ .up = .double, .down = .double, .right = .double }),
+        // '╡'
+        0x2561 => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .double }),
+        // '╢'
+        0x2562 => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .light }),
+        // '╣'
+        0x2563 => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .double }),
+        // '╤'
+        0x2564 => self.draw_lines(canvas, .{ .down = .light, .left = .double, .right = .double }),
+        // '╥'
+        0x2565 => self.draw_lines(canvas, .{ .down = .double, .left = .light, .right = .light }),
+        // '╦'
+        0x2566 => self.draw_lines(canvas, .{ .down = .double, .left = .double, .right = .double }),
+        // '╧'
+        0x2567 => self.draw_lines(canvas, .{ .up = .light, .left = .double, .right = .double }),
+        // '╨'
+        0x2568 => self.draw_lines(canvas, .{ .up = .double, .left = .light, .right = .light }),
+        // '╩'
+        0x2569 => self.draw_lines(canvas, .{ .up = .double, .left = .double, .right = .double }),
+        // '╪'
+        0x256a => self.draw_lines(canvas, .{ .up = .light, .down = .light, .left = .double, .right = .double }),
+        // '╫'
+        0x256b => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .light, .right = .light }),
+        // '╬'
+        0x256c => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .double, .right = .double }),
         0x256d...0x2570 => try self.draw_light_arc(alloc, canvas, cp),
 
+        // '╱'
         0x2571 => self.draw_light_diagonal_upper_right_to_lower_left(canvas),
+        // '╲'
         0x2572 => self.draw_light_diagonal_upper_left_to_lower_right(canvas),
+        // '╳'
         0x2573 => self.draw_light_diagonal_cross(canvas),
-        0x2574 => self.draw_light_left(canvas),
-        0x2575 => self.draw_light_up(canvas),
-        0x2576 => self.draw_light_right(canvas),
-        0x2577 => self.draw_light_down(canvas),
-        0x2578 => self.draw_heavy_left(canvas),
-        0x2579 => self.draw_heavy_up(canvas),
-        0x257a => self.draw_heavy_right(canvas),
-        0x257b => self.draw_heavy_down(canvas),
-        0x257c => self.draw_light_left_and_heavy_right(canvas),
-        0x257d => self.draw_light_up_and_heavy_down(canvas),
-        0x257e => self.draw_heavy_left_and_light_right(canvas),
-        0x257f => self.draw_heavy_up_and_light_down(canvas),
+        // '╴'
+        0x2574 => self.draw_lines(canvas, .{ .left = .light }),
+        // '╵'
+        0x2575 => self.draw_lines(canvas, .{ .up = .light }),
+        // '╶'
+        0x2576 => self.draw_lines(canvas, .{ .right = .light }),
+        // '╷'
+        0x2577 => self.draw_lines(canvas, .{ .down = .light }),
+        // '╸'
+        0x2578 => self.draw_lines(canvas, .{ .left = .heavy }),
+        // '╹'
+        0x2579 => self.draw_lines(canvas, .{ .up = .heavy }),
+        // '╺'
+        0x257a => self.draw_lines(canvas, .{ .right = .heavy }),
+        // '╻'
+        0x257b => self.draw_lines(canvas, .{ .down = .heavy }),
+        // '╼'
+        0x257c => self.draw_lines(canvas, .{ .left = .light, .right = .heavy }),
+        // '╽'
+        0x257d => self.draw_lines(canvas, .{ .up = .light, .down = .heavy }),
+        // '╾'
+        0x257e => self.draw_lines(canvas, .{ .left = .heavy, .right = .light }),
+        // '╿'
+        0x257f => self.draw_lines(canvas, .{ .up = .heavy, .down = .light }),
 
-        0x2580 => self.draw_upper_half_block(canvas),
-        0x2581 => self.draw_lower_one_eighth_block(canvas),
-        0x2582 => self.draw_lower_one_quarter_block(canvas),
-        0x2583 => self.draw_lower_three_eighths_block(canvas),
-        0x2584 => self.draw_lower_half_block(canvas),
-        0x2585 => self.draw_lower_five_eighths_block(canvas),
-        0x2586 => self.draw_lower_three_quarters_block(canvas),
-        0x2587 => self.draw_lower_seven_eighths_block(canvas),
+        // '▀' UPPER HALF BLOCK
+        0x2580 => self.draw_block(canvas, Alignment.upper, 1, half),
+        // '▁' LOWER ONE EIGHTH BLOCK
+        0x2581 => self.draw_block(canvas, Alignment.lower, 1, one_eighth),
+        // '▂' LOWER ONE QUARTER BLOCK
+        0x2582 => self.draw_block(canvas, Alignment.lower, 1, one_quarter),
+        // '▃' LOWER THREE EIGHTHS BLOCK
+        0x2583 => self.draw_block(canvas, Alignment.lower, 1, three_eighths),
+        // '▄' LOWER HALF BLOCK
+        0x2584 => self.draw_block(canvas, Alignment.lower, 1, half),
+        // '▅' LOWER FIVE EIGHTHS BLOCK
+        0x2585 => self.draw_block(canvas, Alignment.lower, 1, five_eighths),
+        // '▆' LOWER THREE QUARTERS BLOCK
+        0x2586 => self.draw_block(canvas, Alignment.lower, 1, three_quarters),
+        // '▇' LOWER SEVEN EIGHTHS BLOCK
+        0x2587 => self.draw_block(canvas, Alignment.lower, 1, seven_eighths),
+        // '█' FULL BLOCK
         0x2588 => self.draw_full_block(canvas),
-        0x2589 => self.draw_left_seven_eighths_block(canvas),
-        0x258a => self.draw_left_three_quarters_block(canvas),
-        0x258b => self.draw_left_five_eighths_block(canvas),
-        0x258c => self.draw_left_half_block(canvas),
-        0x258d => self.draw_left_three_eighths_block(canvas),
-        0x258e => self.draw_left_one_quarter_block(canvas),
-        0x258f => self.draw_left_one_eighth_block(canvas),
+        // '▉' LEFT SEVEN EIGHTHS BLOCK
+        0x2589 => self.draw_block(canvas, Alignment.left, seven_eighths, 1),
+        // '▊' LEFT THREE QUARTERS BLOCK
+        0x258a => self.draw_block(canvas, Alignment.left, three_quarters, 1),
+        // '▋' LEFT FIVE EIGHTHS BLOCK
+        0x258b => self.draw_block(canvas, Alignment.left, five_eighths, 1),
+        // '▌' LEFT HALF BLOCK
+        0x258c => self.draw_block(canvas, Alignment.left, half, 1),
+        // '▍' LEFT THREE EIGHTHS BLOCK
+        0x258d => self.draw_block(canvas, Alignment.left, three_eighths, 1),
+        // '▎' LEFT ONE QUARTER BLOCK
+        0x258e => self.draw_block(canvas, Alignment.left, one_quarter, 1),
+        // '▏' LEFT ONE EIGHTH BLOCK
+        0x258f => self.draw_block(canvas, Alignment.left, one_eighth, 1),
 
-        0x2590 => self.draw_right_half_block(canvas),
+        // '▐' RIGHT HALF BLOCK
+        0x2590 => self.draw_block(canvas, Alignment.right, half, 1),
+        // '░'
         0x2591 => self.draw_light_shade(canvas),
+        // '▒'
         0x2592 => self.draw_medium_shade(canvas),
+        // '▓'
         0x2593 => self.draw_dark_shade(canvas),
-        0x2594 => self.draw_upper_one_eighth_block(canvas),
-        0x2595 => self.draw_right_one_eighth_block(canvas),
+        // '▔' UPPER ONE EIGHTH BLOCK
+        0x2594 => self.draw_block(canvas, Alignment.upper, 1, one_eighth),
+        // '▕' RIGHT ONE EIGHTH BLOCK
+        0x2595 => self.draw_block(canvas, Alignment.right, one_eighth, 1),
+
+        // ▖ ▗ ▘ ▙ ▚ ▛ ▜ ▝ ▞ ▟
         0x2596...0x259f => self.draw_quadrant(canvas, cp),
 
-        0x2800...0x28FF => self.draw_braille(canvas, cp),
+        0x2800...0x28ff => self.draw_braille(canvas, cp),
 
-        0x1FB00...0x1FB3B => self.draw_sextant(canvas, cp),
+        0x1fb00...0x1fb3b => self.draw_sextant(canvas, cp),
 
-        0x1FB3C...0x1FB40,
-        0x1FB47...0x1FB4B,
-        0x1FB57...0x1FB5B,
-        0x1FB62...0x1FB66,
-        0x1FB6C...0x1FB6F,
+        0x1fb3c...0x1fb40,
+        0x1fb47...0x1fb4b,
+        0x1fb57...0x1fb5b,
+        0x1fb62...0x1fb66,
+        0x1fb6c...0x1fb6f,
         => try self.draw_wedge_triangle(canvas, cp),
 
-        0x1FB41...0x1FB45,
-        0x1FB4C...0x1FB50,
-        0x1FB52...0x1FB56,
-        0x1FB5D...0x1FB61,
-        0x1FB68...0x1FB6B,
+        0x1fb41...0x1fb45,
+        0x1fb4c...0x1fb50,
+        0x1fb52...0x1fb56,
+        0x1fb5d...0x1fb61,
+        0x1fb68...0x1fb6b,
         => try self.draw_wedge_triangle_inverted(alloc, canvas, cp),
 
-        0x1FB46,
-        0x1FB51,
-        0x1FB5C,
-        0x1FB67,
+        // '🭆'
+        0x1fb46,
+        // '🭑'
+        0x1fb51,
+        // '🭜'
+        0x1fb5c,
+        // '🭧'
+        0x1fb67,
         => try self.draw_wedge_triangle_and_box(canvas, cp),
 
-        0x1FB9A => {
+        // '🮚'
+        0x1fb9a => {
             try self.draw_wedge_triangle(canvas, 0x1fb6d);
             try self.draw_wedge_triangle(canvas, 0x1fb6f);
         },
 
-        0x1FB9B => {
+        // '🮛'
+        0x1fb9b => {
             try self.draw_wedge_triangle(canvas, 0x1fb6c);
             try self.draw_wedge_triangle(canvas, 0x1fb6e);
         },
 
-        0x1FB70 => self.draw_vertical_one_eighth_block_n(canvas, 1),
-        0x1FB71 => self.draw_vertical_one_eighth_block_n(canvas, 2),
-        0x1FB72 => self.draw_vertical_one_eighth_block_n(canvas, 3),
-        0x1FB73 => self.draw_vertical_one_eighth_block_n(canvas, 4),
-        0x1FB74 => self.draw_vertical_one_eighth_block_n(canvas, 5),
-        0x1FB75 => self.draw_vertical_one_eighth_block_n(canvas, 6),
+        // '🭰'
+        0x1fb70 => self.draw_vertical_one_eighth_block_n(canvas, 1),
+        // '🭱'
+        0x1fb71 => self.draw_vertical_one_eighth_block_n(canvas, 2),
+        // '🭲'
+        0x1fb72 => self.draw_vertical_one_eighth_block_n(canvas, 3),
+        // '🭳'
+        0x1fb73 => self.draw_vertical_one_eighth_block_n(canvas, 4),
+        // '🭴'
+        0x1fb74 => self.draw_vertical_one_eighth_block_n(canvas, 5),
+        // '🭵'
+        0x1fb75 => self.draw_vertical_one_eighth_block_n(canvas, 6),
 
-        0x1FB76 => self.draw_horizontal_one_eighth_block_n(canvas, 1),
-        0x1FB77 => self.draw_horizontal_one_eighth_block_n(canvas, 2),
-        0x1FB78 => self.draw_horizontal_one_eighth_block_n(canvas, 3),
-        0x1FB79 => self.draw_horizontal_one_eighth_block_n(canvas, 4),
-        0x1FB7A => self.draw_horizontal_one_eighth_block_n(canvas, 5),
-        0x1FB7B => self.draw_horizontal_one_eighth_block_n(canvas, 6),
+        // '🭶'
+        0x1fb76 => self.draw_horizontal_one_eighth_block_n(canvas, 1),
+        // '🭷'
+        0x1fb77 => self.draw_horizontal_one_eighth_block_n(canvas, 2),
+        // '🭸'
+        0x1fb78 => self.draw_horizontal_one_eighth_block_n(canvas, 3),
+        // '🭹'
+        0x1fb79 => self.draw_horizontal_one_eighth_block_n(canvas, 4),
+        // '🭺'
+        0x1fb7a => self.draw_horizontal_one_eighth_block_n(canvas, 5),
+        // '🭻'
+        0x1fb7b => self.draw_horizontal_one_eighth_block_n(canvas, 6),
 
-        0x1fb82 => self.draw_upper_one_quarter_block(canvas),
-        0x1fb83 => self.draw_upper_three_eighths_block(canvas),
-        0x1fb84 => self.draw_upper_five_eighths_block(canvas),
-        0x1fb85 => self.draw_upper_three_quarters_block(canvas),
-        0x1fb86 => self.draw_upper_seven_eighths_block(canvas),
+        // '🮂' UPPER ONE QUARTER BLOCK
+        0x1fb82 => self.draw_block(canvas, Alignment.upper, 1, one_quarter),
+        // '🮃' UPPER THREE EIGHTHS BLOCK
+        0x1fb83 => self.draw_block(canvas, Alignment.upper, 1, three_eighths),
+        // '🮄' UPPER FIVE EIGHTHS BLOCK
+        0x1fb84 => self.draw_block(canvas, Alignment.upper, 1, five_eighths),
+        // '🮅' UPPER THREE QUARTERS BLOCK
+        0x1fb85 => self.draw_block(canvas, Alignment.upper, 1, three_quarters),
+        // '🮆' UPPER SEVEN EIGHTHS BLOCK
+        0x1fb86 => self.draw_block(canvas, Alignment.upper, 1, seven_eighths),
 
-        0x1fb7c => self.draw_left_and_lower_one_eighth_block(canvas),
-        0x1fb7d => self.draw_left_and_upper_one_eighth_block(canvas),
-        0x1fb7e => self.draw_right_and_upper_one_eighth_block(canvas),
-        0x1fb7f => self.draw_right_and_lower_one_eighth_block(canvas),
-        0x1fb80 => self.draw_upper_and_lower_one_eighth_block(canvas),
+        // '🭼' LEFT AND LOWER ONE EIGHTH BLOCK
+        0x1fb7c => {
+            self.draw_block(canvas, Alignment.left, one_eighth, 1);
+            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+        },
+        // '🭽' LEFT AND UPPER ONE EIGHTH BLOCK
+        0x1fb7d => {
+            self.draw_block(canvas, Alignment.left, one_eighth, 1);
+            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
+        },
+        // '🭾' RIGHT AND UPPER ONE EIGHTH BLOCK
+        0x1fb7e => {
+            self.draw_block(canvas, Alignment.right, one_eighth, 1);
+            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
+        },
+        // '🭿' RIGHT AND LOWER ONE EIGHTH BLOCK
+        0x1fb7f => {
+            self.draw_block(canvas, Alignment.right, one_eighth, 1);
+            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+        },
+        // '🮀' UPPER AND LOWER ONE EIGHTH BLOCK
+        0x1fb80 => {
+            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
+            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+        },
+        // '🮁'
         0x1fb81 => self.draw_horizontal_one_eighth_1358_block(canvas),
 
-        0x1fb87 => self.draw_right_one_quarter_block(canvas),
-        0x1fb88 => self.draw_right_three_eighths_block(canvas),
-        0x1fb89 => self.draw_right_five_eighths_block(canvas),
-        0x1fb8a => self.draw_right_three_quarters_block(canvas),
-        0x1fb8b => self.draw_right_seven_eighths_block(canvas),
+        // '🮇' RIGHT ONE QUARTER BLOCK
+        0x1fb87 => self.draw_block(canvas, Alignment.right, one_quarter, 1),
+        // '🮈' RIGHT THREE EIGHTHS BLOCK
+        0x1fb88 => self.draw_block(canvas, Alignment.right, three_eighths, 1),
+        // '🮉' RIGHT FIVE EIGHTHS BLOCK
+        0x1fb89 => self.draw_block(canvas, Alignment.right, five_eighths, 1),
+        // '🮊' RIGHT THREE QUARTERS BLOCK
+        0x1fb8a => self.draw_block(canvas, Alignment.right, three_quarters, 1),
+        // '🮋' RIGHT SEVEN EIGHTHS BLOCK
+        0x1fb8b => self.draw_block(canvas, Alignment.right, seven_eighths, 1),
 
         // Not official box characters but special characters we hide
         // in the high bits of a unicode codepoint.
@@ -329,20 +584,143 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
     }
 }
 
-fn draw_light_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-}
+fn draw_lines(self: Box, canvas: *font.sprite.Canvas, comptime lines: Lines) void {
+    const light_px = Thickness.light.height(self.thickness);
+    const heavy_px = Thickness.heavy.height(self.thickness);
 
-fn draw_heavy_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-}
+    // Top of light horizontal strokes
+    const h_light_top = (self.height -| light_px) / 2;
+    // Bottom of light horizontal strokes
+    const h_light_bottom = h_light_top +| light_px;
 
-fn draw_light_vertical(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle(canvas, .light);
-}
+    // Top of heavy horizontal strokes
+    const h_heavy_top = (self.height -| heavy_px) / 2;
+    // Bottom of heavy horizontal strokes
+    const h_heavy_bottom = h_heavy_top +| heavy_px;
 
-fn draw_heavy_vertical(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle(canvas, .heavy);
+    // Top of the top doubled horizontal stroke (bottom is `h_light_top`)
+    const h_double_top = h_light_top -| light_px;
+    // Bottom of the bottom doubled horizontal stroke (top is `h_light_bottom`)
+    const h_double_bottom = h_light_bottom +| light_px;
+
+    // Left of light vertical strokes
+    const v_light_left = (self.width -| light_px) / 2;
+    // Right of light vertical strokes
+    const v_light_right = v_light_left +| light_px;
+
+    // Left of heavy vertical strokes
+    const v_heavy_left = (self.width -| heavy_px) / 2;
+    // Right of heavy vertical strokes
+    const v_heavy_right = v_heavy_left +| heavy_px;
+
+    // Left of the left doubled vertical stroke (right is `v_light_left`)
+    const v_double_left = v_light_left -| light_px;
+    // Right of the right doubled vertical stroke (left is `v_light_right`)
+    const v_double_right = v_light_right +| light_px;
+
+    // The bottom of the up line
+    const up_bottom = if (lines.left == .heavy or lines.right == .heavy)
+        h_heavy_bottom
+    else if (lines.left != lines.right or lines.down == lines.up)
+        if (lines.left == .double or lines.right == .double)
+            h_double_bottom
+        else
+            h_light_bottom
+    else if (lines.left == .none and lines.right == .none)
+        h_light_bottom
+    else
+        h_light_top;
+
+    // The top of the down line
+    const down_top = if (lines.left == .heavy or lines.right == .heavy)
+        h_heavy_top
+    else if (lines.left != lines.right or lines.up == lines.down)
+        if (lines.left == .double or lines.right == .double)
+            h_double_top
+        else
+            h_light_top
+    else if (lines.left == .none and lines.right == .none)
+        h_light_top
+    else
+        h_light_bottom;
+
+    // The right of the left line
+    const left_right = if (lines.up == .heavy or lines.down == .heavy)
+        v_heavy_right
+    else if (lines.up != lines.down or lines.left == lines.right)
+        if (lines.up == .double or lines.down == .double)
+            v_double_right
+        else
+            v_light_right
+    else if (lines.up == .none and lines.down == .none)
+        v_light_right
+    else
+        v_light_left;
+
+    // The left of the right line
+    const right_left = if (lines.up == .heavy or lines.down == .heavy)
+        v_heavy_left
+    else if (lines.up != lines.down or lines.right == lines.left)
+        if (lines.up == .double or lines.down == .double)
+            v_double_left
+        else
+            v_light_left
+    else if (lines.up == .none and lines.down == .none)
+        v_light_left
+    else
+        v_light_right;
+
+    switch (lines.up) {
+        .none => {},
+        .light => self.rect(canvas, v_light_left, 0, v_light_right, up_bottom),
+        .heavy => self.rect(canvas, v_heavy_left, 0, v_heavy_right, up_bottom),
+        .double => {
+            const left_bottom = if (lines.left == .double) h_light_top else up_bottom;
+            const right_bottom = if (lines.right == .double) h_light_top else up_bottom;
+
+            self.rect(canvas, v_double_left, 0, v_light_left, left_bottom);
+            self.rect(canvas, v_light_right, 0, v_double_right, right_bottom);
+        },
+    }
+
+    switch (lines.right) {
+        .none => {},
+        .light => self.rect(canvas, right_left, h_light_top, self.width, h_light_bottom),
+        .heavy => self.rect(canvas, right_left, h_heavy_top, self.width, h_heavy_bottom),
+        .double => {
+            const top_left = if (lines.up == .double) v_light_right else right_left;
+            const bottom_left = if (lines.down == .double) v_light_right else right_left;
+
+            self.rect(canvas, top_left, h_double_top, self.width, h_light_top);
+            self.rect(canvas, bottom_left, h_light_bottom, self.width, h_double_bottom);
+        },
+    }
+
+    switch (lines.down) {
+        .none => {},
+        .light => self.rect(canvas, v_light_left, down_top, v_light_right, self.height),
+        .heavy => self.rect(canvas, v_heavy_left, down_top, v_heavy_right, self.height),
+        .double => {
+            const left_top = if (lines.left == .double) h_light_bottom else down_top;
+            const right_top = if (lines.right == .double) h_light_bottom else down_top;
+
+            self.rect(canvas, v_double_left, left_top, v_light_left, self.height);
+            self.rect(canvas, v_light_right, right_top, v_double_right, self.height);
+        },
+    }
+
+    switch (lines.left) {
+        .none => {},
+        .light => self.rect(canvas, 0, h_light_top, left_right, h_light_bottom),
+        .heavy => self.rect(canvas, 0, h_heavy_top, left_right, h_heavy_bottom),
+        .double => {
+            const top_right = if (lines.up == .double) v_light_left else left_right;
+            const bottom_right = if (lines.down == .double) v_light_left else left_right;
+
+            self.rect(canvas, 0, h_double_top, top_right, h_light_top);
+            self.rect(canvas, 0, h_light_bottom, bottom_right, h_double_bottom);
+        },
+    }
 }
 
 fn draw_light_triple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
@@ -417,358 +795,6 @@ fn draw_heavy_quadruple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) vo
     );
 }
 
-fn draw_light_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_heavy_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_light_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_heavy_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_light_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .light);
-}
-
-fn draw_heavy_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_light_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .light);
-}
-
-fn draw_heavy_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_light_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_vertical_light_and_right_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_up_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_vertical_heavy_and_right_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_down_light_and_right_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_up_light_and_right_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_light_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_vertical_light_and_left_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_up_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_vertical_heavy_and_left_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_down_light_and_left_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_up_light_and_left_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_light_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_left_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_right_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_right_light_and_left_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_left_light_and_right_down_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_light_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_left_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_right_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_up(canvas, .light, .light);
-}
-
-fn draw_up_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_up(canvas, .heavy, .light);
-}
-
-fn draw_right_light_and_left_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_left_light_and_right_up_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_light_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_left_heavy_and_right_vertical_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_right_heavy_and_left_vertical_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .light, .heavy);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_vertical_light_and_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle(canvas, .light);
-}
-
-fn draw_up_heavy_and_down_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_down_heavy_and_up_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .light);
-}
-
-fn draw_vertical_heavy_and_horizontal_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .light);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_left_up_heavy_and_right_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_right_up_heavy_and_left_down_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_left_down_heavy_and_right_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_right_down_heavy_and_left_up_light(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_down_light_and_up_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_up_light_and_down_horizontal_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_right_light_and_left_vertical_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_left_light_and_right_vertical_heavy(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-    self.vline_middle(canvas, .heavy);
-}
-
-fn draw_heavy_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle(canvas, .heavy);
-    self.vline_middle(canvas, .heavy);
-}
-
 fn draw_light_double_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_dash_horizontal(
         canvas,
@@ -803,275 +829,6 @@ fn draw_heavy_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
         Thickness.heavy.height(self.thickness),
         Thickness.heavy.height(self.thickness),
     );
-}
-
-fn draw_double_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const mid = (self.height -| thick_px * 3) / 2;
-    self.hline(canvas, 0, self.width, mid, thick_px);
-    self.hline(canvas, 0, self.width, mid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_vertical(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const mid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, self.height, mid, thick_px);
-    self.vline(canvas, 0, self.height, mid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px) / 2;
-    self.vline_middle_down(canvas, .light, .light);
-    self.hline(canvas, vmid, self.width, hmid, thick_px);
-    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline(canvas, hmid, self.height, vmid, thick_px);
-    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_down_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, hmid, self.height, vmid, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, vmid, self.width, hmid, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width + thick_px) / 2;
-    self.vline_middle_down(canvas, .light, .light);
-    self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline(canvas, hmid, self.height, vmid, thick_px);
-    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_down_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, 0, vmid + 2 * thick_px, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px) / 2;
-    self.vline_middle_up(canvas, .light, .light);
-    self.hline(canvas, vmid, self.width, hmid, thick_px);
-    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height + thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle_right(canvas, .light, .light);
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_up_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, hmid + 2 * thick_px, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width + thick_px) / 2;
-    self.vline_middle_up(canvas, .light, .light);
-    self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height + thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle_left(canvas, .light, .light);
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_up_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, hmid + 0 * thick_px + thick_px, vmid, thick_px);
-    self.vline(canvas, 0, hmid + 2 * thick_px + thick_px, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, 0, vmid + 2 * thick_px, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_single_and_right_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px) / 2;
-    self.vline_middle(canvas, .light);
-    self.hline(canvas, vmid, self.width, hmid, thick_px);
-    self.hline(canvas, vmid, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_double_and_right_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline(canvas, vmid + 2 * thick_px, self.width, (self.height -| thick_px) / 2, thick_px);
-    self.vline(canvas, 0, self.height, vmid, thick_px);
-    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_vertical_and_right(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, self.height, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_single_and_left_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width + thick_px) / 2;
-    self.vline_middle(canvas, .light);
-    self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_double_and_left_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline(canvas, 0, vmid, (self.height -| thick_px) / 2, thick_px);
-    self.vline(canvas, 0, self.height, vmid, thick_px);
-    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_vertical_and_left(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.hline(canvas, 0, vmid + thick_px, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    self.vline(canvas, hmid + 2 * thick_px, self.height, (self.width -| thick_px) / 2, thick_px);
-    self.hline(canvas, 0, self.width, hmid, thick_px);
-    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_down_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle(canvas, .light);
-    self.vline(canvas, hmid, self.height, vmid, thick_px);
-    self.vline(canvas, hmid, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_down_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline(canvas, 0, self.width, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px) / 2;
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.hline(canvas, 0, self.width, hmid, thick_px);
-    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_up_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle(canvas, .light);
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_up_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.vline(canvas, 0, hmid, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.hline(canvas, 0, vmid + thick_px, hmid, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_single_and_horizontal_double(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    self.vline_middle(canvas, .light);
-    self.hline(canvas, 0, self.width, hmid, thick_px);
-    self.hline(canvas, 0, self.width, hmid + 2 * thick_px, thick_px);
-}
-
-fn draw_vertical_double_and_horizontal_single(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline_middle(canvas, .light);
-    self.vline(canvas, 0, self.height, vmid, thick_px);
-    self.vline(canvas, 0, self.height, vmid + 2 * thick_px, thick_px);
-}
-
-fn draw_double_vertical_and_horizontal(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const hmid = (self.height -| thick_px * 3) / 2;
-    const vmid = (self.width -| thick_px * 3) / 2;
-    self.hline(canvas, 0, vmid, hmid, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid, thick_px);
-    self.hline(canvas, 0, vmid, hmid + 2 * thick_px, thick_px);
-    self.hline(canvas, vmid + 2 * thick_px, self.width, hmid + 2 * thick_px, thick_px);
-    self.vline(canvas, 0, hmid + thick_px, vmid, thick_px);
-    self.vline(canvas, 0, hmid, vmid + 2 * thick_px, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid, thick_px);
-    self.vline(canvas, hmid + 2 * thick_px, self.height, vmid + 2 * thick_px, thick_px);
 }
 
 fn draw_light_diagonal_upper_right_to_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
@@ -1139,252 +896,46 @@ fn draw_light_diagonal_cross(self: Box, canvas: *font.sprite.Canvas) void {
     self.draw_light_diagonal_upper_left_to_lower_right(canvas);
 }
 
-fn draw_light_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-}
+fn draw_block(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    alignment: Alignment,
+    width: f64,
+    height: f64,
+) void {
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
 
-fn draw_light_up(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_up(canvas, .light, .light);
-}
+    const w: u32 = @intFromFloat(@round(float_width * width));
+    const h: u32 = @intFromFloat(@round(float_height * height));
 
-fn draw_light_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .light, .light);
-}
+    const x = switch (alignment.horizontal) {
+        .left => 0,
+        .right => self.width - w,
+        .center => (self.width - w) / 2,
+    };
+    const y = switch (alignment.vertical) {
+        .top => 0,
+        .bottom => self.height - h,
+        .middle => (self.height - h) / 2,
+    };
 
-fn draw_light_down(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_heavy_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_up(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_up(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_right(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_down(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_light_left_and_heavy_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .light, .light);
-    self.hline_middle_right(canvas, .heavy, .heavy);
-}
-
-fn draw_light_up_and_heavy_down(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_up(canvas, .light, .light);
-    self.vline_middle_down(canvas, .heavy, .heavy);
-}
-
-fn draw_heavy_left_and_light_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.hline_middle_left(canvas, .heavy, .heavy);
-    self.hline_middle_right(canvas, .light, .light);
-}
-
-fn draw_heavy_up_and_light_down(self: Box, canvas: *font.sprite.Canvas) void {
-    self.vline_middle_up(canvas, .heavy, .heavy);
-    self.vline_middle_down(canvas, .light, .light);
-}
-
-fn draw_upper_half_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, 0, self.width, self.height / 2);
-}
-
-fn draw_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, self.height -| (self.height / 8), self.width, self.height);
-}
-
-fn draw_lower_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, self.height -| (self.height / 4), self.width, self.height);
-}
-
-fn draw_lower_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        self.height -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 8))),
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_lower_half_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        self.height -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 2))),
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_lower_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        self.height -| @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.height)) / 8))),
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_lower_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        self.height -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 4))),
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_lower_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        self.height -| @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.height)) / 8))),
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_upper_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 4))),
-    );
-}
-
-fn draw_upper_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 8))),
-    );
-}
-
-fn draw_upper_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.height)) / 8))),
-    );
-}
-
-fn draw_upper_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.height)) / 4))),
-    );
-}
-
-fn draw_upper_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.height)) / 8))),
-    );
+    canvas.rect(.{
+        .x = @intCast(x),
+        .y = @intCast(y),
+        .width = w,
+        .height = h,
+    }, .on);
 }
 
 fn draw_full_block(self: Box, canvas: *font.sprite.Canvas) void {
     self.rect(canvas, 0, 0, self.width, self.height);
 }
 
-fn draw_left_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.width)) / 8))),
-        self.height,
-    );
-}
-
-fn draw_left_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 4))),
-        self.height,
-    );
-}
-
-fn draw_left_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.width)) / 8))),
-        self.height,
-    );
-}
-
-fn draw_left_half_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 2))),
-        self.height,
-    );
-}
-
-fn draw_left_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 8))),
-        self.height,
-    );
-}
-
-fn draw_left_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 4))),
-        self.height,
-    );
-}
-
 fn draw_vertical_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
     const x = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.width)) / 8)));
     const w = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 8)));
     self.rect(canvas, x, 0, x + w, self.height);
-}
-
-fn draw_left_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_vertical_one_eighth_block_n(canvas, 0);
-}
-
-fn draw_right_half_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 2))),
-        0,
-        self.width,
-        self.height,
-    );
 }
 
 fn draw_pixman_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
@@ -1409,145 +960,19 @@ fn draw_dark_shade(self: Box, canvas: *font.sprite.Canvas) void {
 }
 
 fn draw_horizontal_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
-    const y = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.height)) / 8)));
     const h = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 8)));
+    const y = @min(
+        self.height -| h,
+        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.height)) / 8))),
+    );
     self.rect(canvas, 0, y, self.width, y + h);
 }
 
-fn draw_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_horizontal_one_eighth_block_n(canvas, 0);
-}
-
-fn draw_right_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 8))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_left_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_left_one_eighth_block(canvas);
-    self.draw_lower_one_eighth_block(canvas);
-}
-
-fn draw_left_and_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_left_one_eighth_block(canvas);
-    self.draw_upper_one_eighth_block(canvas);
-}
-
-fn draw_right_and_upper_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_right_one_eighth_block(canvas);
-    self.draw_upper_one_eighth_block(canvas);
-}
-
-fn draw_right_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_right_one_eighth_block(canvas);
-    self.draw_lower_one_eighth_block(canvas);
-}
-
-fn draw_upper_and_lower_one_eighth_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_upper_one_eighth_block(canvas);
-    self.draw_lower_one_eighth_block(canvas);
-}
-
 fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_upper_one_eighth_block(canvas);
+    self.draw_horizontal_one_eighth_block_n(canvas, 0);
     self.draw_horizontal_one_eighth_block_n(canvas, 2);
     self.draw_horizontal_one_eighth_block_n(canvas, 4);
-    self.draw_lower_one_eighth_block(canvas);
-}
-
-fn draw_right_one_quarter_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 4))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_right_three_quarters_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 4))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_right_three_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(3 * @as(f64, @floatFromInt(self.width)) / 8))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_right_five_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(5 * @as(f64, @floatFromInt(self.width)) / 8))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn draw_right_seven_eighths_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        self.width -| @as(u32, @intFromFloat(@round(7 * @as(f64, @floatFromInt(self.width)) / 8))),
-        0,
-        self.width,
-        self.height,
-    );
-}
-
-fn quad_upper_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        0,
-        @as(u32, @intFromFloat(@ceil(@as(f64, @floatFromInt(self.width)) / 2))),
-        @as(u32, @intFromFloat(@ceil(@as(f64, @floatFromInt(self.height)) / 2))),
-    );
-}
-
-fn quad_upper_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        @as(u32, @intFromFloat(@floor(@as(f64, @floatFromInt(self.width)) / 2))),
-        0,
-        self.width,
-        @as(u32, @intFromFloat(@ceil(@as(f64, @floatFromInt(self.height)) / 2))),
-    );
-}
-
-fn quad_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        0,
-        @as(u32, @intFromFloat(@floor(@as(f64, @floatFromInt(self.height)) / 2))),
-        @as(u32, @intFromFloat(@ceil(@as(f64, @floatFromInt(self.width)) / 2))),
-        self.height,
-    );
-}
-
-fn quad_lower_right(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(
-        canvas,
-        @as(u32, @intFromFloat(@floor(@as(f64, @floatFromInt(self.width)) / 2))),
-        @as(u32, @intFromFloat(@floor(@as(f64, @floatFromInt(self.height)) / 2))),
-        self.width,
-        self.height,
-    );
+    self.draw_horizontal_one_eighth_block_n(canvas, 7);
 }
 
 fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
@@ -1572,10 +997,10 @@ fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const idx = cp - 0x2596;
     const encoded = matrix[idx];
 
-    if (encoded & UPPER_LEFT == UPPER_LEFT) self.quad_upper_left(canvas);
-    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.quad_upper_right(canvas);
-    if (encoded & LOWER_LEFT == LOWER_LEFT) self.quad_lower_left(canvas);
-    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.quad_lower_right(canvas);
+    if (encoded & UPPER_LEFT == UPPER_LEFT) self.draw_block(canvas, .{ .horizontal = .left, .vertical = .top }, 0.5, 0.5);
+    if (encoded & UPPER_RIGHT == UPPER_RIGHT) self.draw_block(canvas, .{ .horizontal = .right, .vertical = .top }, 0.5, 0.5);
+    if (encoded & LOWER_LEFT == LOWER_LEFT) self.draw_block(canvas, .{ .horizontal = .left, .vertical = .bottom }, 0.5, 0.5);
+    if (encoded & LOWER_RIGHT == LOWER_RIGHT) self.draw_block(canvas, .{ .horizontal = .right, .vertical = .bottom }, 0.5, 0.5);
 }
 
 fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
@@ -2598,77 +2023,9 @@ fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) vo
     self.vline(canvas, 0, self.height, (self.width -| thick_px) / 2, thick_px);
 }
 
-fn vline_middle_up(
-    self: Box,
-    canvas: *font.sprite.Canvas,
-    vthickness: Thickness,
-    hthickness: Thickness,
-) void {
-    const hthick_px = hthickness.height(self.thickness);
-    const vthick_px = vthickness.height(self.thickness);
-    self.vline(
-        canvas,
-        0,
-        (self.height + hthick_px) / 2,
-        (self.width -| vthick_px) / 2,
-        vthick_px,
-    );
-}
-
-fn vline_middle_down(
-    self: Box,
-    canvas: *font.sprite.Canvas,
-    vthickness: Thickness,
-    hthickness: Thickness,
-) void {
-    const hthick_px = hthickness.height(self.thickness);
-    const vthick_px = vthickness.height(self.thickness);
-    self.vline(
-        canvas,
-        (self.height -| hthick_px) / 2,
-        self.height,
-        (self.width -| vthick_px) / 2,
-        vthick_px,
-    );
-}
-
 fn hline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
     const thick_px = thickness.height(self.thickness);
     self.hline(canvas, 0, self.width, (self.height -| thick_px) / 2, thick_px);
-}
-
-fn hline_middle_left(
-    self: Box,
-    canvas: *font.sprite.Canvas,
-    vthickness: Thickness,
-    hthickness: Thickness,
-) void {
-    const hthick_px = hthickness.height(self.thickness);
-    const vthick_px = vthickness.height(self.thickness);
-    self.hline(
-        canvas,
-        0,
-        (self.width + vthick_px) / 2,
-        (self.height -| hthick_px) / 2,
-        hthick_px,
-    );
-}
-
-fn hline_middle_right(
-    self: Box,
-    canvas: *font.sprite.Canvas,
-    vthickness: Thickness,
-    hthickness: Thickness,
-) void {
-    const hthick_px = hthickness.height(self.thickness);
-    const vthick_px = vthickness.height(self.thickness);
-    self.hline(
-        canvas,
-        (self.width -| vthick_px) / 2,
-        self.width,
-        (self.height -| hthick_px) / 2,
-        hthick_px,
-    );
 }
 
 fn vline(
@@ -2724,7 +2081,7 @@ test "all" {
     const alloc = testing.allocator;
 
     var cp: u32 = 0x2500;
-    const end = 0x2570;
+    const end = 0x259f;
     while (cp <= end) : (cp += 1) {
         var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
         defer atlas_grayscale.deinit(alloc);
@@ -2803,10 +2160,20 @@ test "render all sprites" {
         }
     }
 
-    // Dump to PPM file for visual examination
-    // Uncomment whenever a new ground truth needs to be created.
-    const ppm = try std.fs.cwd().createFile("Box.ppm", .{});
-    defer ppm.close();
+    const ground_truth = @embedFile("./testdata/Box.ppm");
 
-    try atlas_grayscale.dump(ppm.writer());
+    var stream = std.io.changeDetectionStream(ground_truth, std.io.null_writer);
+    try atlas_grayscale.dump(stream.writer());
+
+    if (stream.changeDetected()) {
+        log.err(
+            "Change detected from ground truth, dumping to ./Box_test.ppm for comparison.",
+            .{},
+        );
+
+        const ppm = try std.fs.cwd().createFile("Box_test.ppm", .{});
+        defer ppm.close();
+
+        try atlas_grayscale.dump(ppm.writer());
+    }
 }
