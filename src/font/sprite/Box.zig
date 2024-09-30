@@ -2167,13 +2167,35 @@ test "render all sprites" {
 
     if (stream.changeDetected()) {
         log.err(
-            "Change detected from ground truth, dumping to ./Box_test.ppm for comparison.",
+            \\
+            \\!! [Box.zig] Change detected from ground truth!
+            \\!! Dumping ./Box_test.ppm and ./Box_test_diff.ppm
+            \\!! Please check changes and update Box.ppm in testdata if intended.
+        ,
             .{},
         );
 
         const ppm = try std.fs.cwd().createFile("Box_test.ppm", .{});
         defer ppm.close();
-
         try atlas_grayscale.dump(ppm.writer());
+
+        const diff = try std.fs.cwd().createFile("Box_test_diff.ppm", .{});
+        defer diff.close();
+        var writer = diff.writer();
+        try writer.print(
+            \\P6
+            \\{d} {d}
+            \\255
+            \\
+        , .{ atlas_grayscale.size, atlas_grayscale.size });
+        for (ground_truth[try diff.getPos()..], atlas_grayscale.data) |a, b| {
+            if (a == b) {
+                try writer.writeByteNTimes(a / 3, 3);
+            } else {
+                try writer.writeByte(a);
+                try writer.writeByte(b);
+                try writer.writeByte(0);
+            }
+        }
     }
 }
