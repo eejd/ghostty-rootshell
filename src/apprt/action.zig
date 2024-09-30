@@ -96,7 +96,7 @@ pub const Action = union(Key) {
     /// Toggle the quick terminal in or out.
     toggle_quick_terminal,
 
-    /// Toggle the quick terminal in or out.
+    /// Toggle the visiblity of all windows
     toggle_visibility,
 
     /// Jump to a specific tab. Must handle the scenario that the tab
