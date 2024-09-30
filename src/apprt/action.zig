@@ -96,6 +96,9 @@ pub const Action = union(Key) {
     /// Toggle the quick terminal in or out.
     toggle_quick_terminal,
 
+    /// Toggle the quick terminal in or out.
+    toggle_visibility,
+
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
     goto_tab: GotoTab,
@@ -180,6 +183,7 @@ pub const Action = union(Key) {
         toggle_tab_overview,
         toggle_window_decorations,
         toggle_quick_terminal,
+        toggle_visibility,
         goto_tab,
         goto_split,
         resize_split,

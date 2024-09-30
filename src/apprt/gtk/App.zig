@@ -389,6 +389,7 @@ pub fn performAction(
         .close_all_windows,
         .toggle_split_zoom,
         .toggle_quick_terminal,
+        .toggle_visibility,
         .size_limit,
         .cell_size,
         .secure_input,

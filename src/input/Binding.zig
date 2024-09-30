@@ -387,6 +387,9 @@ pub const Action = union(enum) {
     /// configuration file to customize its behavior.
     toggle_quick_terminal: void,
 
+    /// Toggle visibility of all windows
+    toggle_visibility: void,
+
     /// Quit ghostty.
     quit: void,
 
@@ -588,6 +591,7 @@ pub const Action = union(enum) {
             .close_all_windows,
             .quit,
             .toggle_quick_terminal,
+            .toggle_visibility,
             => .app,
 
             // These are app but can be special-cased in a surface context.
