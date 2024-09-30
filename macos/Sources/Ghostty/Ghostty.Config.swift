@@ -219,6 +219,7 @@ extension Ghostty {
             return v
         }
 
+        #if canImport(AppKit)
         var windowFullscreenMode: FullscreenMode {
             let defaultValue: FullscreenMode = .native
             guard let config = self.config else { return defaultValue }
@@ -238,6 +239,7 @@ extension Ghostty {
                 defaultValue
             }
         }
+        #endif
 
         var windowTitleFontFamily: String? {
             guard let config = self.config else { return nil }
