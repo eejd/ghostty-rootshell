@@ -199,6 +199,34 @@ class TerminalController: BaseTerminalController
         }
     }
 
+    /// Toggle fullscreen for the given mode.
+    func toggleFullscreen(mode: FullscreenMode) {
+        // We need a window to fullscreen
+        guard let window = self.window else { return }
+
+        // TODO: handle changing fullscreen modes at runtime
+        // This is where we'd handle this.
+
+        // Initialize our style for the window. This may fail for various reasons so
+        // we also guard below.
+        if self.fullscreenStyle == nil {
+            self.fullscreenStyle = mode.style(for: window)
+        }
+        guard let fullscreenStyle else { return }
+
+        if fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        } else {
+            fullscreenStyle.enter()
+        }
+
+        // For some reason focus can get lost when we change fullscreen. Regardless of
+        // mode above we just move it back.
+        if let focusedSurface {
+            Ghostty.moveFocus(to: focusedSurface)
+        }
+    }
+
     //MARK: - NSWindowController
 
     override func windowWillLoad() {
@@ -531,9 +559,6 @@ class TerminalController: BaseTerminalController
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
 
-        // We need a window to fullscreen
-        guard let window = self.window else { return }
-
         // Get the fullscreen mode we want to toggle
         let fullscreenMode: FullscreenMode
         if let any = notification.userInfo?[Ghostty.Notification.FullscreenModeKey],
@@ -544,26 +569,6 @@ class TerminalController: BaseTerminalController
             return
         }
 
-        // TODO: handle changing fullscreen modes at runtime
-        // This is where we'd handle this.
-
-        // Initialize our style for the window. This may fail for various reasons so
-        // we also guard below.
-        if self.fullscreenStyle == nil {
-            self.fullscreenStyle = fullscreenMode.style(for: window)
-        }
-        guard let fullscreenStyle else { return }
-
-        if fullscreenStyle.isFullscreen {
-            fullscreenStyle.exit()
-        } else {
-            fullscreenStyle.enter()
-        }
-
-        // For some reason focus can get lost when we change fullscreen. Regardless of
-        // mode above we just move it back.
-        if let focusedSurface {
-            Ghostty.moveFocus(to: focusedSurface)
-        }
+        toggleFullscreen(mode: fullscreenMode)
     }
 }
