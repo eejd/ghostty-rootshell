@@ -598,7 +598,7 @@ extension Ghostty {
         private static func toggleFullscreen(
             _ app: ghostty_app_t,
             target: ghostty_target_s,
-            mode: ghostty_action_fullscreen_e) {
+            mode raw: ghostty_action_fullscreen_e) {
             switch (target.tag) {
             case GHOSTTY_TARGET_APP:
                 Ghostty.logger.warning("toggle fullscreen does nothing with an app target")
@@ -607,6 +607,10 @@ extension Ghostty {
             case GHOSTTY_TARGET_SURFACE:
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let mode = FullscreenMode.from(ghostty: raw) else {
+                    Ghostty.logger.warning("unknow fullscreen mode raw=\(raw.rawValue)")
+                    return
+                }
                 NotificationCenter.default.post(
                     name: Notification.ghosttyToggleFullscreen,
                     object: surfaceView,

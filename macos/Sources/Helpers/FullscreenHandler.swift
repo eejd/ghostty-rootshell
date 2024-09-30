@@ -1,7 +1,7 @@
 import SwiftUI
 import GhosttyKit
 
-class FullScreenHandler {
+class FullscreenHandler {
     var previousTabGroup: NSWindowTabGroup?
     var previousTabGroupIndex: Int?
     var previousContentFrame: NSRect?
@@ -24,7 +24,7 @@ class FullScreenHandler {
         default:
             false
         }
-        
+
         if isInFullscreen {
             if useNonNativeFullscreen || isInNonNativeFullscreen {
                 leaveFullscreen(window: window)
@@ -75,12 +75,12 @@ class FullScreenHandler {
             // Ensure that we always hide the dock bar for this window, but not for non fullscreen ones
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(FullScreenHandler.hideDock),
+                selector: #selector(hideDock),
                 name: NSWindow.didBecomeMainNotification,
                 object: window)
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(FullScreenHandler.unHideDock),
+                selector: #selector(unHideDock),
                 name: NSWindow.didResignMainNotification,
                 object: window)
         }
@@ -94,12 +94,12 @@ class FullScreenHandler {
             // handling this there.
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(FullScreenHandler.hideMenu),
+                selector: #selector(Self.hideMenu),
                 name: NSWindow.didBecomeMainNotification,
                 object: window)
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(FullScreenHandler.onDidResignMain),
+                selector: #selector(onDidResignMain),
                 name: NSWindow.didResignMainNotification,
                 object: window)
         }

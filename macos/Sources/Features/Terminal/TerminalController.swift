@@ -9,7 +9,7 @@ class TerminalController: BaseTerminalController
     override var windowNibName: NSNib.Name? { "Terminal" }
 
     /// Fullscreen state management.
-    let fullscreenHandler = FullScreenHandler()
+    private(set) var fullscreenStyle: FullscreenStyle?
 
     /// This is set to true when we care about frame changes. This is a small optimization since
     /// this controller registers a listener for ALL frame change notifications and this lets us bail
@@ -534,12 +534,34 @@ class TerminalController: BaseTerminalController
         // We need a window to fullscreen
         guard let window = self.window else { return }
 
-        // Check whether we use non-native fullscreen
-        guard let fullscreenModeAny = notification.userInfo?[Ghostty.Notification.FullscreenModeKey] else { return }
-        guard let fullscreenMode = fullscreenModeAny as? ghostty_action_fullscreen_e else { return }
-        self.fullscreenHandler.toggleFullscreen(window: window, mode: fullscreenMode)
+        // Get the fullscreen mode we want to toggle
+        let fullscreenMode: FullscreenMode
+        if let any = notification.userInfo?[Ghostty.Notification.FullscreenModeKey],
+           let mode = any as? FullscreenMode {
+            fullscreenMode = mode
+        } else {
+            Ghostty.logger.warning("no fullscreen mode specified or invalid mode, doing nothing")
+            return
+        }
 
-        // For some reason focus always gets lost when we toggle fullscreen, so we set it back.
+        // TODO: handle changing fullscreen modes at runtime
+        // This is where we'd handle this.
+
+        // Initialize our style for the window. This may fail for various reasons so
+        // we also guard below.
+        if self.fullscreenStyle == nil {
+            self.fullscreenStyle = fullscreenMode.style(for: window)
+        }
+        guard let fullscreenStyle else { return }
+
+        if fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        } else {
+            fullscreenStyle.enter()
+        }
+
+        // For some reason focus can get lost when we change fullscreen. Regardless of
+        // mode above we just move it back.
         if let focusedSurface {
             Ghostty.moveFocus(to: focusedSurface)
         }
