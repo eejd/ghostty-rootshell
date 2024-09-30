@@ -121,6 +121,15 @@ class NonNativeFullscreen: FullscreenStyle {
         // If we are in fullscreen we don't do it again.
         guard !isFullscreen else { return }
 
+        // If we are in native fullscreen, exit native fullscreen. This is counter
+        // intuitive but if we entered native fullscreen (through the green max button
+        // or an external event) and we press the fullscreen keybind, we probably
+        // want to EXIT fullscreen.
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+            return
+        }
+
         // This is the screen that we're going to go fullscreen on. We use the
         // screen the window is currently on.
         guard let screen = window.screen else { return }
