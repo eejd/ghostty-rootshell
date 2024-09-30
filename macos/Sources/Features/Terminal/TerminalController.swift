@@ -204,16 +204,45 @@ class TerminalController: BaseTerminalController
         // We need a window to fullscreen
         guard let window = self.window else { return }
 
-        // TODO: handle changing fullscreen modes at runtime
-        // This is where we'd handle this.
+        // If we have a previous fullscreen style initialized, we want to check if
+        // our mode changed. If it changed and we're in fullscreen, we exit so we can
+        // toggle it next time. If it changed and we're not in fullscreen we can just
+        // switch the handler.
+        let newStyle = mode.style(for: window)
+        old: if let oldStyle = self.fullscreenStyle {
+            // If we're not fullscreen, we can nil it out so we get the new style
+            if !oldStyle.isFullscreen {
+                self.fullscreenStyle = nil
+                break old
+            }
 
-        // Initialize our style for the window. This may fail for various reasons so
-        // we also guard below.
-        if self.fullscreenStyle == nil {
-            self.fullscreenStyle = mode.style(for: window)
+            assert(oldStyle.isFullscreen)
+
+            // We consider our mode changed if the types change (obvious) but
+            // also if its nil (not obvious) because nil means that the style has
+            // likely changed but we don't support it.
+            if newStyle == nil || type(of: newStyle) != type(of: oldStyle) {
+                // Our mode changed. Exit fullscreen (since we're toggling anyways)
+                // and then unset the style so that we replace it next time.
+                oldStyle.exit()
+                self.fullscreenStyle = nil
+
+                // Fix our focus
+                if let focusedSurface {
+                    Ghostty.moveFocus(to: focusedSurface)
+                }
+
+                // We're done
+                return
+            }
+
+            // Style is the same.
+        } else {
+            // No old style, so set to our new style.
+            self.fullscreenStyle = newStyle
         }
-        guard let fullscreenStyle else { return }
 
+        guard let fullscreenStyle else { return }
         if fullscreenStyle.isFullscreen {
             fullscreenStyle.exit()
         } else {

@@ -1384,6 +1384,9 @@ keybind: Keybinds = .{},
 ///   * `true` - Use non-native macOS fullscreen, hide the menu bar
 ///   * `false` - Use native macOS fullscreen
 ///
+/// Changing this option at runtime works, but will only apply to the next
+/// time the window is made fullscreen. If a window is already fullscreen,
+/// it will retain the previous setting until fullscreen is exited.
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// The style of the macOS titlebar. Available values are: "native",
