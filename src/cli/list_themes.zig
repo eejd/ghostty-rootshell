@@ -502,20 +502,6 @@ const Preview = struct {
             .height = .{ .limit = win.height },
         });
 
-        if (self.filtered.items.len == 0) {
-            self.current = 0;
-            self.window = 0;
-        } else {
-            const start = self.window;
-            const end = self.window + theme_list.height - 1;
-            if (self.current > end)
-                self.window = self.current - theme_list.height + 1;
-            if (self.current < start)
-                self.window = self.current;
-            if (self.window >= self.filtered.items.len)
-                self.window = self.filtered.items.len - 1;
-        }
-
         var highlight: ?usize = null;
 
         if (self.mouse) |mouse| {
@@ -534,6 +520,20 @@ const Preview = struct {
                     highlight = mouse.row;
                 }
             }
+        }
+
+        if (self.filtered.items.len == 0) {
+            self.current = 0;
+            self.window = 0;
+        } else {
+            const start = self.window;
+            const end = self.window + theme_list.height - 1;
+            if (self.current > end)
+                self.window = self.current - theme_list.height + 1;
+            if (self.current < start)
+                self.window = self.current;
+            if (self.window >= self.filtered.items.len)
+                self.window = self.filtered.items.len - 1;
         }
 
         theme_list.fill(.{ .style = self.ui_standard() });
