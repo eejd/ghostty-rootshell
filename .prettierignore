@@ -5,6 +5,9 @@ vendor/
 zig-cache/
 zig-out/
 
+# jujutsu
+.jj/
+
 # macos is managed by XCode GUI
 macos/
 
