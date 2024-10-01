@@ -4,12 +4,13 @@ import SwiftUI
 import GhosttyKit
 
 /// A classic, tabbed terminal experience.
-class TerminalController: BaseTerminalController
+class TerminalController: BaseTerminalController,
+                          FullscreenDelegate
 {
     override var windowNibName: NSNib.Name? { "Terminal" }
 
     /// Fullscreen state management.
-    let fullscreenHandler = FullScreenHandler()
+    private(set) var fullscreenStyle: FullscreenStyle?
 
     /// This is set to true when we care about frame changes. This is a small optimization since
     /// this controller registers a listener for ALL frame change notifications and this lets us bail
@@ -196,6 +197,63 @@ class TerminalController: BaseTerminalController
             // If there is transparency, calling this will make the titlebar opaque
             // so we only call this if we are opaque.
             window.updateTabBar()
+        }
+    }
+
+    // MARK: Fullscreen
+
+    /// Toggle fullscreen for the given mode.
+    func toggleFullscreen(mode: FullscreenMode) {
+        // We need a window to fullscreen
+        guard let window = self.window else { return }
+
+        // If we have a previous fullscreen style initialized, we want to check if
+        // our mode changed. If it changed and we're in fullscreen, we exit so we can
+        // toggle it next time. If it changed and we're not in fullscreen we can just
+        // switch the handler.
+        var newStyle = mode.style(for: window)
+        newStyle?.delegate = self
+        old: if let oldStyle = self.fullscreenStyle {
+            // If we're not fullscreen, we can nil it out so we get the new style
+            if !oldStyle.isFullscreen {
+                self.fullscreenStyle = newStyle
+                break old
+            }
+
+            assert(oldStyle.isFullscreen)
+
+            // We consider our mode changed if the types change (obvious) but
+            // also if its nil (not obvious) because nil means that the style has
+            // likely changed but we don't support it.
+            if newStyle == nil || type(of: newStyle) != type(of: oldStyle) {
+                // Our mode changed. Exit fullscreen (since we're toggling anyways)
+                // and then unset the style so that we replace it next time.
+                oldStyle.exit()
+                self.fullscreenStyle = nil
+
+                // We're done
+                return
+            }
+
+            // Style is the same.
+        } else {
+            // We have no previous style
+            self.fullscreenStyle = newStyle
+        }
+        guard let fullscreenStyle else { return }
+
+        if fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        } else {
+            fullscreenStyle.enter()
+        }
+    }
+
+    func fullscreenDidChange() {
+        // For some reason focus can get lost when we change fullscreen. Regardless of
+        // mode above we just move it back.
+        if let focusedSurface {
+            Ghostty.moveFocus(to: focusedSurface)
         }
     }
 
@@ -531,17 +589,16 @@ class TerminalController: BaseTerminalController
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
 
-        // We need a window to fullscreen
-        guard let window = self.window else { return }
-
-        // Check whether we use non-native fullscreen
-        guard let fullscreenModeAny = notification.userInfo?[Ghostty.Notification.FullscreenModeKey] else { return }
-        guard let fullscreenMode = fullscreenModeAny as? ghostty_action_fullscreen_e else { return }
-        self.fullscreenHandler.toggleFullscreen(window: window, mode: fullscreenMode)
-
-        // For some reason focus always gets lost when we toggle fullscreen, so we set it back.
-        if let focusedSurface {
-            Ghostty.moveFocus(to: focusedSurface)
+        // Get the fullscreen mode we want to toggle
+        let fullscreenMode: FullscreenMode
+        if let any = notification.userInfo?[Ghostty.Notification.FullscreenModeKey],
+           let mode = any as? FullscreenMode {
+            fullscreenMode = mode
+        } else {
+            Ghostty.logger.warning("no fullscreen mode specified or invalid mode, doing nothing")
+            return
         }
+
+        toggleFullscreen(mode: fullscreenMode)
     }
 }

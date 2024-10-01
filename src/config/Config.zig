@@ -1375,8 +1375,15 @@ keybind: Keybinds = .{},
 /// using a new space. It's faster than the native fullscreen mode since it
 /// doesn't use animations.
 ///
-/// Warning: tabs do not work with a non-native fullscreen window. This
-/// can be fixed but is looking for contributors to help. See issue #392.
+/// Important: tabs DO NOT WORK in this mode. Non-native fullscreen removes
+/// the titlebar and macOS native tabs require the titlebar. If you use tabs,
+/// you should not use this mode.
+///
+/// If you fullscreen a window with tabs, the currently focused tab will
+/// become fullscreen while the others will remain in a separate window in
+/// the background. You can switch to that window using normal window-switching
+/// keybindings such as command+tilde. When you exit fullscreen, the window
+/// will return to the tabbed state it was in before.
 ///
 /// Allowable values are:
 ///
@@ -1384,6 +1391,9 @@ keybind: Keybinds = .{},
 ///   * `true` - Use non-native macOS fullscreen, hide the menu bar
 ///   * `false` - Use native macOS fullscreen
 ///
+/// Changing this option at runtime works, but will only apply to the next
+/// time the window is made fullscreen. If a window is already fullscreen,
+/// it will retain the previous setting until fullscreen is exited.
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// The style of the macOS titlebar. Available values are: "native",

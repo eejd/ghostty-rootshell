@@ -219,6 +219,28 @@ extension Ghostty {
             return v
         }
 
+        #if canImport(AppKit)
+        var windowFullscreenMode: FullscreenMode {
+            let defaultValue: FullscreenMode = .native
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-non-native-fullscreen"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return switch str {
+            case "false":
+                    .native
+            case "true":
+                    .nonNative
+            case "visible-menu":
+                    .nonNativeVisibleMenu
+            default:
+                defaultValue
+            }
+        }
+        #endif
+
         var windowTitleFontFamily: String? {
             guard let config = self.config else { return nil }
             var v: UnsafePointer<Int8>? = nil

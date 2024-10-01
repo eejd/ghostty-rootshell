@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		55154BE02B33911F001622DC /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = 55154BDF2B33911F001622DC /* ghostty */; };
 		552964E62B34A9B400030505 /* vim in Resources */ = {isa = PBXBuildFile; fileRef = 552964E52B34A9B400030505 /* vim */; };
-		8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */; };
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
@@ -22,6 +21,9 @@
 		A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */; };
 		A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */; };
 		A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */; };
+		A52FFF592CAA4FF3000C6A5B /* Fullscreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */; };
+		A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF5A2CAA54A8000C6A5B /* FullscreenMode+Extension.swift */; };
+		A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */; };
 		A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */; };
 		A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */; };
@@ -94,7 +96,6 @@
 		3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyReleaseLocal.entitlements; sourceTree = "<group>"; };
 		55154BDF2B33911F001622DC /* ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ghostty; path = "../zig-out/share/ghostty"; sourceTree = "<group>"; };
 		552964E52B34A9B400030505 /* vim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vim; path = "../zig-out/share/vim"; sourceTree = "<group>"; };
-		8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenHandler.swift; sourceTree = "<group>"; };
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
 		A51B78462AF4B58B00F3EDB9 /* TerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWindow.swift; sourceTree = "<group>"; };
@@ -105,6 +106,9 @@
 		A51BFC2A2B30F6BE00E92F16 /* UpdateDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateDelegate.swift; sourceTree = "<group>"; };
 		A5278A9A2AA05B2600CD3039 /* Ghostty.Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Input.swift; sourceTree = "<group>"; };
 		A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTerminalScreen.swift; sourceTree = "<group>"; };
+		A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fullscreen.swift; sourceTree = "<group>"; };
+		A52FFF5A2CAA54A8000C6A5B /* FullscreenMode+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FullscreenMode+Extension.swift"; sourceTree = "<group>"; };
+		A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSScreen+Extension.swift"; sourceTree = "<group>"; };
 		A5333E152B59DE8E008AEFF7 /* SurfaceView_UIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_UIKit.swift; sourceTree = "<group>"; };
 		A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossKit.swift; sourceTree = "<group>"; };
 		A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceView_AppKit.swift; sourceTree = "<group>"; };
@@ -233,11 +237,12 @@
 				A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */,
 				A5CBD0572C9F30860017A1AE /* Cursor.swift */,
 				A5D0AF3C2B37804400D21823 /* CodableBridge.swift */,
-				8503D7C62A549C66006CFF3D /* FullScreenHandler.swift */,
+				A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */,
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
 				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
+				A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
 				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
@@ -314,6 +319,7 @@
 				A59630A32AF059BB00D64628 /* Ghostty.SplitNode.swift */,
 				A59630A12AF0415000D64628 /* Ghostty.TerminalSplit.swift */,
 				A55685DF29A03A9F004303CE /* AppError.swift */,
+				A52FFF5A2CAA54A8000C6A5B /* FullscreenMode+Extension.swift */,
 			);
 			path = Ghostty;
 			sourceTree = "<group>";
@@ -573,8 +579,10 @@
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */,
 				AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */,
+				A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */,
+				A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */,
 				A5333E222B5A2128008AEFF7 /* SurfaceView_AppKit.swift in Sources */,
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
@@ -597,8 +605,8 @@
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */,
-				8503D7C72A549C66006CFF3D /* FullScreenHandler.swift in Sources */,
 				A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */,
+				A52FFF592CAA4FF3000C6A5B /* Fullscreen.swift in Sources */,
 				AEF9CE242B6AD07A0017E195 /* TerminalToolbar.swift in Sources */,
 				C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */,
 				A5CEAFDE29B8058B00646FDA /* SplitView.Divider.swift in Sources */,
@@ -704,8 +712,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -858,8 +879,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -867,7 +901,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[arch=*]" = "-lstdc++";
-				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellh.ghostty.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Sources/App/macOS/ghostty-bridging-header.h";
@@ -898,8 +932,21 @@
 				INFOPLIST_FILE = "Ghostty-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Ghostty;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "A program in Ghostty wants to use AppleScript.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "A program in Ghostty wants to use your calendar.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "A program in Ghostty wants to use the camera.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "A program in Ghostty wants to use your contacts.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "A program in Ghostty wants to access the local network.";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "A program in Ghostty wants to use your location temporarily.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "A program in Ghostty wants to use your location information.";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A program in Ghostty wants to use your microphone.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "A program in Ghostty wants to access motion data.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "A program in Ghostty wants to use your photo library.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "A program in Ghostty wants to access your reminders.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "A program in Ghostty wants to use speech recognition.";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "A program in Ghostty requires elevated privileges.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
