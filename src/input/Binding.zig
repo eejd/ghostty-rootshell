@@ -376,9 +376,12 @@ pub const Action = union(enum) {
     ///
     ///   - It is a singleton; only one instance can exist at a time.
     ///   - It does not support tabs.
-    ///   - It does not support fullscreen.
     ///   - It will not be restored when the application is restarted
     ///     (for systems that support window restoration).
+    ///   - It supports fullscreen, but fullscreen will always be a non-native
+    ///     fullscreen (macos-non-native-fullscreen = true). This only applies
+    ///     to the quick terminal window. This is a requirement due to how
+    ///     the quick terminal is rendered.
     ///
     /// See the various configurations for the quick terminal in the
     /// configuration file to customize its behavior.

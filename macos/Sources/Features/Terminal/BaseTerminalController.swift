@@ -11,11 +11,15 @@ import GhosttyKit
 /// view the TerminalView SwiftUI view must be used and this class is the view model and
 /// delegate.
 ///
+/// Special considerations to implement:
+///
+///   - Fullscreen: you must manually listen for the right notification and implement the
+///   callback that calls toggleFullscreen on this base class.
+///
 /// Notably, things this class does NOT implement (not exhaustive):
 ///
 ///   - Tabbing, because there are many ways to get tabbed behavior in macOS and we
 ///   don't want to be opinionated about it.
-///   - Fullscreen
 ///   - Window restoration or save state
 ///   - Window visual styles (such as titlebar colors)
 ///
@@ -25,7 +29,8 @@ class BaseTerminalController: NSWindowController,
                               NSWindowDelegate,
                               TerminalViewDelegate,
                               TerminalViewModel,
-                              ClipboardConfirmationViewDelegate
+                              ClipboardConfirmationViewDelegate,
+                              FullscreenDelegate
 {
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.App
@@ -45,6 +50,9 @@ class BaseTerminalController: NSWindowController,
 
     /// The clipboard confirmation window, if shown.
     private var clipboardConfirmation: ClipboardConfirmationController? = nil
+
+    /// Fullscreen state management.
+    private(set) var fullscreenStyle: FullscreenStyle?
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
@@ -122,6 +130,63 @@ class BaseTerminalController: NSWindowController,
     }
 
     func zoomStateDidChange(to: Bool) {}
+
+    // MARK: Fullscreen
+
+    /// Toggle fullscreen for the given mode.
+    func toggleFullscreen(mode: FullscreenMode) {
+        // We need a window to fullscreen
+        guard let window = self.window else { return }
+
+        // If we have a previous fullscreen style initialized, we want to check if
+        // our mode changed. If it changed and we're in fullscreen, we exit so we can
+        // toggle it next time. If it changed and we're not in fullscreen we can just
+        // switch the handler.
+        var newStyle = mode.style(for: window)
+        newStyle?.delegate = self
+        old: if let oldStyle = self.fullscreenStyle {
+            // If we're not fullscreen, we can nil it out so we get the new style
+            if !oldStyle.isFullscreen {
+                self.fullscreenStyle = newStyle
+                break old
+            }
+
+            assert(oldStyle.isFullscreen)
+
+            // We consider our mode changed if the types change (obvious) but
+            // also if its nil (not obvious) because nil means that the style has
+            // likely changed but we don't support it.
+            if newStyle == nil || type(of: newStyle) != type(of: oldStyle) {
+                // Our mode changed. Exit fullscreen (since we're toggling anyways)
+                // and then unset the style so that we replace it next time.
+                oldStyle.exit()
+                self.fullscreenStyle = nil
+
+                // We're done
+                return
+            }
+
+            // Style is the same.
+        } else {
+            // We have no previous style
+            self.fullscreenStyle = newStyle
+        }
+        guard let fullscreenStyle else { return }
+
+        if fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        } else {
+            fullscreenStyle.enter()
+        }
+    }
+
+    func fullscreenDidChange() {
+        // For some reason focus can get lost when we change fullscreen. Regardless of
+        // mode above we just move it back.
+        if let focusedSurface {
+            Ghostty.moveFocus(to: focusedSurface)
+        }
+    }
 
     // MARK: Clipboard Confirmation
 

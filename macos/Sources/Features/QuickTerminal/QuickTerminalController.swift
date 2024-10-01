@@ -25,10 +25,24 @@ class QuickTerminalController: BaseTerminalController {
     ) {
         self.position = position
         super.init(ghostty, baseConfig: base, surfaceTree: tree)
+
+        // Setup our notifications for behaviors
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(onToggleFullscreen),
+            name: Ghostty.Notification.ghosttyToggleFullscreen,
+            object: nil)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
+    }
+
+    deinit {
+        // Remove all of our notificationcenter subscriptions
+        let center = NotificationCenter.default
+        center.removeObserver(self)
     }
 
     // MARK: NSWindowController
@@ -199,6 +213,11 @@ class QuickTerminalController: BaseTerminalController {
         // We always animate out to whatever screen the window is actually on.
         guard let screen = window.screen ?? NSScreen.main else { return }
 
+        // If we are in fullscreen, then we exit fullscreen.
+        if let fullscreenStyle, fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        }
+
         // If we have a previously active application, restore focus to it. We
         // do this BEFORE the animation below because when the animation completes
         // macOS will bring forward another window.
@@ -238,5 +257,20 @@ class QuickTerminalController: BaseTerminalController {
         alert.addButton(withTitle: "OK")
         alert.alertStyle = .warning
         alert.beginSheetModal(for: window)
+    }
+
+    @IBAction func toggleGhosttyFullScreen(_ sender: Any) {
+        guard let surface = focusedSurface?.surface else { return }
+        ghostty.toggleFullscreen(surface: surface)
+    }
+
+    // MARK: Notifications
+
+    @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard target == self.focusedSurface else { return }
+
+        // We ignore the requested mode and always use non-native for the quick terminal
+        toggleFullscreen(mode: .nonNative)
     }
 }
