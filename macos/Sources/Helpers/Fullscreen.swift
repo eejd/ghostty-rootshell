@@ -141,42 +141,24 @@ class NonNativeFullscreen: FullscreenStyle {
         // We hide the dock if the window is on a screen with the dock.
         if (savedState.dock) {
             hideDock()
-
-            // Hide the dock whenever this window becomes focused.
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(hideDock),
-                name: NSWindow.didBecomeMainNotification,
-                object: window)
-
-            // Unhide the dock whenever this window becomes unfocused.
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(unhideDock),
-                name: NSWindow.didResignMainNotification,
-                object: window)
         }
 
         // Hide the menu if requested
         if (properties.hideMenu) {
-            self.hideMenu()
-
-            // Ensure that we always hide the menu bar for this window, but not for non fullscreen ones
-            // This is not the best way to do this, not least because it causes the menu to stay visible
-            // for a brief moment before being hidden in some cases (e.g. when switching spaces).
-            // If we end up adding a NSWindowDelegate to PrimaryWindow, then we may be better off
-            // handling this there.
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(Self.hideMenu),
-                name: NSWindow.didBecomeMainNotification,
-                object: window)
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(windowDidResignMain),
-                name: NSWindow.didResignMainNotification,
-                object: window)
+            hideMenu()
         }
+
+        // When this window becomes or resigns main we need to run some logic.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeMain),
+            name: NSWindow.didBecomeMainNotification,
+            object: window)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidResignMain),
+            name: NSWindow.didResignMainNotification,
+            object: window)
 
         // When we change screens we need to redo everything.
         NotificationCenter.default.addObserver(
@@ -297,28 +279,60 @@ class NonNativeFullscreen: FullscreenStyle {
         exit()
     }
 
+    @objc func windowDidBecomeMain(_ notification: Notification) {
+        guard let savedState else { return }
+
+        // This should always be true due to how we register but just be sure
+        guard let object = notification.object as? NSWindow,
+              object == window else { return }
+
+        // This is crazy but at least on macOS 15.0, you must hide the dock
+        // FIRST then hide the menu. If you do the opposite, it does not
+        // work.
+
+        if savedState.dock {
+            hideDock()
+        }
+
+        if (properties.hideMenu) {
+            hideMenu()
+        }
+    }
+
+    @objc func windowDidResignMain(_ notification: Notification) {
+        guard let savedState else { return }
+
+        // This should always be true due to how we register but just be sure
+        guard let object = notification.object as? NSWindow,
+              object == window else { return }
+
+        if (properties.hideMenu) {
+            unhideMenu()
+        }
+
+        if savedState.dock {
+            unhideDock()
+        }
+    }
+
     // MARK: Dock
 
-    @objc private func hideDock() {
+    private func hideDock() {
         NSApp.presentationOptions.insert(.autoHideDock)
     }
 
-    @objc private func unhideDock() {
+    private func unhideDock() {
         NSApp.presentationOptions.remove(.autoHideDock)
     }
 
     // MARK: Menu
 
-    @objc func hideMenu() {
+    func hideMenu() {
         NSApp.presentationOptions.insert(.autoHideMenuBar)
     }
 
     func unhideMenu() {
         NSApp.presentationOptions.remove(.autoHideMenuBar)
-    }
-
-    @objc func windowDidResignMain(_ notification: Notification) {
-        unhideMenu()
     }
 
     /// The state that must be saved for non-native fullscreen to exit fullscreen.
