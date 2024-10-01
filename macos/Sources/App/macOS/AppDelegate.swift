@@ -570,26 +570,20 @@ class AppDelegate: NSObject,
         self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
     }
 
-    /// Toggles the visibility of all Ghostty windows
+    /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
-        let configurationErrorsWindow = ConfigurationErrorsController.sharedInstance.window
-
-        if isVisible {
-            // Hide all windows
-            for window in NSApp.windows {
-                if window !== configurationErrorsWindow {
-                    window.orderOut(nil)
-                }
+        for controller in NSApp.windows.compactMap({ $0.windowController as? BaseTerminalController }) {
+            if isVisible {
+                controller.window?.orderOut(nil)
+            } else {
+                controller.window?.makeKeyAndOrderFront(nil)
             }
-        } else {
-            // Show all windows
-            for window in NSApp.windows {
-                if window !== configurationErrorsWindow {
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
+        }
+       
+        if !isVisible {
             NSApp.activate(ignoringOtherApps: true)
         }
+        
         isVisible.toggle()
     }
 }
