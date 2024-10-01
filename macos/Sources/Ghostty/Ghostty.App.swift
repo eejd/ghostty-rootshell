@@ -635,10 +635,11 @@ extension Ghostty {
 
         private static func toggleVisibility(
             _ app: ghostty_app_t,
-            target: ghostty_target_s) {
-                guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
-                appDelegate.toggleVisibility(self)
-            }
+            target: ghostty_target_s
+        ) {
+            guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+            appDelegate.toggleVisibility(self)
+        }
 
         private static func gotoTab(
             _ app: ghostty_app_t,
