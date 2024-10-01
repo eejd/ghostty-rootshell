@@ -33,6 +33,11 @@ class QuickTerminalController: BaseTerminalController {
             selector: #selector(onToggleFullscreen),
             name: Ghostty.Notification.ghosttyToggleFullscreen,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidReloadConfig),
+            name: Ghostty.Notification.ghosttyDidReloadConfig,
+            object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -57,6 +62,9 @@ class QuickTerminalController: BaseTerminalController {
         // The quick window is not restorable (yet!). "Yet" because in theory we can
         // make this restorable, but it isn't currently implemented.
         window.isRestorable = false
+
+        // Setup our configured appearance that we support.
+        syncAppearance()
 
         // Setup our initial size based on our configured position
         position.setLoaded(window)
@@ -242,6 +250,25 @@ class QuickTerminalController: BaseTerminalController {
         })
     }
 
+    private func syncAppearance() {
+        guard let window else { return }
+
+        // If we have window transparency then set it transparent. Otherwise set it opaque.
+        if (ghostty.config.backgroundOpacity < 1) {
+            window.isOpaque = false
+
+            // This is weird, but we don't use ".clear" because this creates a look that
+            // matches Terminal.app much more closer. This lets users transition from
+            // Terminal.app more easily.
+            window.backgroundColor = .white.withAlphaComponent(0.001)
+
+            ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+        }
+    }
+
     // MARK: First Responder
 
     @IBAction override func closeWindow(_ sender: Any) {
@@ -272,5 +299,9 @@ class QuickTerminalController: BaseTerminalController {
 
         // We ignore the requested mode and always use non-native for the quick terminal
         toggleFullscreen(mode: .nonNative)
+    }
+
+    @objc private func ghosttyDidReloadConfig(notification: SwiftUI.Notification) {
+        syncAppearance()
     }
 }

@@ -363,6 +363,11 @@ extension Ghostty {
                 delegate.configDidReload(state)
             }
 
+            // Send an event out
+            NotificationCenter.default.post(
+                name: Ghostty.Notification.ghosttyDidReloadConfig,
+                object: nil)
+
             return newConfig.config
         }
 
