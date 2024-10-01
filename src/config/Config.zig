@@ -1114,15 +1114,27 @@ keybind: Keybinds = .{},
 /// limit per surface is double.
 @"image-storage-limit": u32 = 320 * 1000 * 1000,
 
-/// Whether to automatically copy selected text to the clipboard. `true` will
-/// only copy on systems that support a selection clipboard.
+/// Whether to automatically copy selected text to the clipboard. `true`
+/// will prefer to copy to the selection clipboard if supported by the
+/// OS, otherwise it will copy to the system clipboard.
 ///
-/// The value `clipboard` will copy to the system clipboard, making this work on
-/// macOS. Note that middle-click will also paste from the system clipboard in
-/// this case.
+/// The value `clipboard` will always copy text to the selection clipboard
+/// (for supported systems) as well as the system clipboard. This is sometimes
+/// a preferred behavior on Linux.
 ///
-/// Note that if this is disabled, middle-click paste will also be disabled.
-@"copy-on-select": CopyOnSelect = .true,
+/// Middle-click paste will always use the selection clipboard on Linux
+/// and the system clipboard on macOS. Middle-click paste is always enabled
+/// even if this is `false`.
+///
+/// The default value is true on Linux and false on macOS. macOS copy on
+/// select behavior is not typical for applications so it is disabled by
+/// default. On Linux, this is a standard behavior so it is enabled by
+/// default.
+@"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
+    .linux => .true,
+    .macos => .false,
+    else => .false,
+},
 
 /// The time in milliseconds between clicks to consider a click a repeat
 /// (double, triple, etc.) or an entirely new single click. A value of zero will
@@ -4326,7 +4338,8 @@ pub const CopyOnSelect = enum {
     /// This is not supported on platforms such as macOS. This is the default.
     true,
 
-    /// Copy on select is enabled and goes to the system clipboard.
+    /// Copy on select is enabled and goes to both the system clipboard
+    /// and the selection clipboard (for Linux).
     clipboard,
 };
 
