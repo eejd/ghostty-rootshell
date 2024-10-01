@@ -118,18 +118,14 @@ class QuickTerminalController: BaseTerminalController {
         guard !visible else { return }
         visible = true
 
-        // If our application is not active, then we grab focus. The quick terminal
-        // always grabs focus on animation in.
+        // If we have a previously focused application and it isn't us, then
+        // we want to store it so we can restore state later.
         if !NSApp.isActive {
-            // If we have a previously focused application and it isn't us, then
-            // we want to store it so we can restore state later.
             if let previousApp = NSWorkspace.shared.frontmostApplication,
                previousApp.bundleIdentifier != Bundle.main.bundleIdentifier
             {
                 self.previousApp = previousApp
             }
-
-            NSApp.activate(ignoringOtherApps: true)
         }
 
         // Animate the window in
@@ -162,7 +158,7 @@ class QuickTerminalController: BaseTerminalController {
         position.setInitial(in: window, on: screen)
 
         // Move it to the visible position since animation requires this
-        window.makeKeyAndOrderFront(self)
+        window.makeKeyAndOrderFront(nil)
 
         // Run the animation that moves our window into the proper place and makes
         // it visible.
@@ -184,10 +180,17 @@ class QuickTerminalController: BaseTerminalController {
                       focusedView.window == window else { return }
 
                 // The window must become top-level
-                window.makeKeyAndOrderFront(self)
+                window.makeKeyAndOrderFront(nil)
 
                 // The view must gain our keyboard focus
                 window.makeFirstResponder(focusedView)
+
+                // If our application is not active, then we grab focus. Its important
+                // we do this AFTER our window is animated in and focused because
+                // otherwise macOS will bring forward another window.
+                if !NSApp.isActive {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
         })
     }
@@ -195,6 +198,19 @@ class QuickTerminalController: BaseTerminalController {
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
         // We always animate out to whatever screen the window is actually on.
         guard let screen = window.screen ?? NSScreen.main else { return }
+
+        // If we have a previously active application, restore focus to it. We
+        // do this BEFORE the animation below because when the animation completes
+        // macOS will bring forward another window.
+        if let previousApp = self.previousApp {
+            // Make sure we unset the state no matter what
+            self.previousApp = nil
+
+            if !previousApp.isTerminated {
+                // Ignore the result, it doesn't change our behavior.
+                _ = previousApp.activate(options: [])
+            }
+        }
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
@@ -204,18 +220,6 @@ class QuickTerminalController: BaseTerminalController {
             // This causes the window to be removed from the screen list and macOS
             // handles what should be focused next.
             window.orderOut(self)
-
-            // If we have a previously active application, restore focus to it.
-            if let previousApp = self.previousApp {
-                // Make sure we unset the state no matter what
-                self.previousApp = nil
-
-                // If the app is terminated to nothing
-                guard !previousApp.isTerminated else { return }
-
-                // Ignore the result, it doesn't change our behavior.
-                _ = previousApp.activate(options: [])
-            }
         })
     }
 
