@@ -2274,6 +2274,10 @@ fn rebuildCells(
             };
 
             for (shaper_cells) |shaper_cell| {
+                // The shaper can emit null glyphs representing the right half
+                // of wide characters, we don't need to do anything with them.
+                if (shaper_cell.glyph_index == null) continue;
+
                 const coord: terminal.Coordinate = .{
                     .x = shaper_cell.x,
                     .y = y,
@@ -2541,7 +2545,7 @@ fn updateCell(
             font.sprite_index,
             @intFromEnum(sprite),
             .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .cell_width = 1,
                 .grid_metrics = self.grid_metrics,
             },
         );
@@ -2551,7 +2555,7 @@ fn updateCell(
         try self.cells.add(self.alloc, .underline, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = cell.gridWidth(),
+            .constraint_width = 1,
             .color = .{ color.r, color.g, color.b, alpha },
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -2560,6 +2564,21 @@ fn updateCell(
                 @intCast(render.glyph.offset_y),
             },
         });
+        // If it's a wide cell we need to underline the right half as well.
+        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
+            try self.cells.add(self.alloc, .underline, .{
+                .mode = .fg,
+                .grid_pos = .{ @intCast(coord.x + 1), @intCast(coord.y) },
+                .constraint_width = 1,
+                .color = .{ color.r, color.g, color.b, alpha },
+                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+                .glyph_size = .{ render.glyph.width, render.glyph.height },
+                .bearings = .{
+                    @intCast(render.glyph.offset_x),
+                    @intCast(render.glyph.offset_y),
+                },
+            });
+        }
     }
 
     // If the shaper cell has a glyph, draw it.
@@ -2611,7 +2630,7 @@ fn updateCell(
             font.sprite_index,
             @intFromEnum(font.Sprite.strikethrough),
             .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .cell_width = 1,
                 .grid_metrics = self.grid_metrics,
             },
         );
@@ -2619,7 +2638,7 @@ fn updateCell(
         try self.cells.add(self.alloc, .strikethrough, .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = cell.gridWidth(),
+            .constraint_width = 1,
             .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
             .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
             .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -2628,6 +2647,21 @@ fn updateCell(
                 @intCast(render.glyph.offset_y),
             },
         });
+        // If it's a wide cell we need to strike through the right half as well.
+        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
+            try self.cells.add(self.alloc, .strikethrough, .{
+                .mode = .fg,
+                .grid_pos = .{ @intCast(coord.x + 1), @intCast(coord.y) },
+                .constraint_width = 1,
+                .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
+                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+                .glyph_size = .{ render.glyph.width, render.glyph.height },
+                .bearings = .{
+                    @intCast(render.glyph.offset_x),
+                    @intCast(render.glyph.offset_y),
+                },
+            });
+        }
     }
 
     return true;
