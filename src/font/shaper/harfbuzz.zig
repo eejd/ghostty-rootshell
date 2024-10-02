@@ -1197,11 +1197,11 @@ fn testShaper(alloc: Allocator) !TestShaper {
 }
 
 fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
-    const testEmoji = @import("../test.zig").fontEmoji;
-    const testEmojiText = @import("../test.zig").fontEmojiText;
+    const testEmoji = font.embedded.emoji;
+    const testEmojiText = font.embedded.emoji_text;
     const testFont = switch (font_req) {
-        .inconsolata => @import("../test.zig").fontRegular,
-        .monaspace_neon => @import("../test.zig").fontMonaspaceNeon,
+        .inconsolata => font.embedded.inconsolata,
+        .monaspace_neon => font.embedded.monaspace_neon,
     };
 
     var lib = try Library.init();

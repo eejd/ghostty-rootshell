@@ -245,13 +245,46 @@ fn collection(
         }
     }
 
+    // Complete our styles to ensure we have something to satisfy every
+    // possible style request. We do this before adding our built-in font
+    // because we want to ensure our built-in styles are fallbacks to
+    // the configured styles.
+    try c.completeStyles(self.alloc, config.@"font-synthetic-style");
+
     // Our built-in font will be used as a backup
     _ = try c.add(
         self.alloc,
         .regular,
         .{ .fallback_loaded = try Face.init(
             self.font_lib,
-            face_ttf,
+            font.embedded.regular,
+            load_options.faceOptions(),
+        ) },
+    );
+    _ = try c.add(
+        self.alloc,
+        .bold,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            font.embedded.bold,
+            load_options.faceOptions(),
+        ) },
+    );
+    _ = try c.add(
+        self.alloc,
+        .italic,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            font.embedded.italic,
+            load_options.faceOptions(),
+        ) },
+    );
+    _ = try c.add(
+        self.alloc,
+        .bold_italic,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            font.embedded.bold_italic,
             load_options.faceOptions(),
         ) },
     );
@@ -284,7 +317,7 @@ fn collection(
             .regular,
             .{ .fallback_loaded = try Face.init(
                 self.font_lib,
-                face_emoji_ttf,
+                font.embedded.emoji,
                 load_options.faceOptions(),
             ) },
         );
@@ -293,15 +326,11 @@ fn collection(
             .regular,
             .{ .fallback_loaded = try Face.init(
                 self.font_lib,
-                face_emoji_text_ttf,
+                font.embedded.emoji_text,
                 load_options.faceOptions(),
             ) },
         );
     }
-
-    // Complete our styles to ensure we have something to satisfy every
-    // possible style request.
-    try c.completeStyles(self.alloc, config.@"font-synthetic-style");
 
     return c;
 }
@@ -632,11 +661,6 @@ pub const Key = struct {
         return hasher.final();
     }
 };
-
-const face_ttf = @embedFile("res/JetBrainsMono-Regular.ttf");
-const face_bold_ttf = @embedFile("res/JetBrainsMono-Bold.ttf");
-const face_emoji_ttf = @embedFile("res/NotoColorEmoji.ttf");
-const face_emoji_text_ttf = @embedFile("res/NotoEmoji-Regular.ttf");
 
 test "Key" {
     const testing = std.testing;

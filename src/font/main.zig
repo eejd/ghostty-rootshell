@@ -6,6 +6,7 @@ const library = @import("library.zig");
 
 pub const Atlas = @import("Atlas.zig");
 pub const discovery = @import("discovery.zig");
+pub const embedded = @import("embedded.zig");
 pub const face = @import("face.zig");
 pub const CodepointMap = @import("CodepointMap.zig");
 pub const CodepointResolver = @import("CodepointResolver.zig");
