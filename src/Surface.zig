@@ -4338,8 +4338,3 @@ fn presentSurface(self: *Surface) !void {
         {},
     );
 }
-
-pub const face_ttf = @embedFile("font/res/JetBrainsMono-Regular.ttf");
-pub const face_bold_ttf = @embedFile("font/res/JetBrainsMono-Bold.ttf");
-pub const face_emoji_ttf = @embedFile("font/res/NotoColorEmoji.ttf");
-pub const face_emoji_text_ttf = @embedFile("font/res/NotoEmoji-Regular.ttf");

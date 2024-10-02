@@ -1732,15 +1732,15 @@ fn testShaper(alloc: Allocator) !TestShaper {
 }
 
 fn testShaperWithFont(alloc: Allocator, font_req: TestFont) !TestShaper {
-    const testEmoji = @import("../test.zig").fontEmoji;
-    const testEmojiText = @import("../test.zig").fontEmojiText;
+    const testEmoji = font.embedded.emoji;
+    const testEmojiText = font.embedded.emoji_text;
     const testFont = switch (font_req) {
-        .code_new_roman => @import("../test.zig").fontCodeNewRoman,
-        .inconsolata => @import("../test.zig").fontRegular,
-        .geist_mono => @import("../test.zig").fontGeistMono,
-        .jetbrains_mono => @import("../test.zig").fontJetBrainsMono,
-        .monaspace_neon => @import("../test.zig").fontMonaspaceNeon,
-        .nerd_font => @import("../test.zig").fontNerdFont,
+        .code_new_roman => font.embedded.code_new_roman,
+        .inconsolata => font.embedded.inconsolata,
+        .geist_mono => font.embedded.geist_mono,
+        .jetbrains_mono => font.embedded.jetbrains_mono,
+        .monaspace_neon => font.embedded.monaspace_neon,
+        .nerd_font => font.embedded.nerd_font,
     };
 
     var lib = try Library.init();

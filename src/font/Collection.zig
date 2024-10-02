@@ -203,11 +203,11 @@ pub const CompleteError = Allocator.Error || error{
 };
 
 /// Ensure we have an option for all styles in the collection, such
-/// as italic and bold.
+/// as italic and bold by synthesizing them if necessary from the
+/// first regular face that has text glyphs.
 ///
-/// This requires that a regular font face is already loaded.
-/// This is asserted. If a font style is missing, we will synthesize
-/// it if possible. Otherwise, we will use the regular font style.
+/// If there is no regular face that has text glyphs, then this
+/// does nothing.
 pub fn completeStyles(
     self: *Collection,
     alloc: Allocator,
@@ -229,7 +229,7 @@ pub fn completeStyles(
     // if a user configures something like an Emoji font first.
     const regular_entry: *Entry = entry: {
         const list = self.faces.getPtr(.regular);
-        assert(list.count() > 0);
+        if (list.count() == 0) return;
 
         // Find our first regular face that has text glyphs.
         var it = list.iterator(0);
@@ -663,7 +663,7 @@ test init {
 test "add full" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -709,7 +709,7 @@ test "add deferred without loading options" {
 test getFace {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -733,7 +733,7 @@ test getFace {
 test getIndex {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -764,7 +764,7 @@ test getIndex {
 test completeStyles {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -791,7 +791,7 @@ test completeStyles {
 test setSize {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -814,7 +814,7 @@ test setSize {
 test hasCodepoint {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -838,7 +838,7 @@ test "hasCodepoint emoji default graphical" {
 
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testEmoji = @import("test.zig").fontEmoji;
+    const testEmoji = font.embedded.emoji;
 
     var lib = try Library.init();
     defer lib.deinit();

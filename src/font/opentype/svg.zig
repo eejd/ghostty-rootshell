@@ -95,7 +95,7 @@ pub const SVG = struct {
 test "SVG" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontJuliaMono;
+    const testFont = font.embedded.julia_mono;
 
     var lib = try font.Library.init();
     defer lib.deinit();

@@ -323,7 +323,7 @@ const GlyphKey = struct {
 const TestMode = enum { normal };
 
 fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var c = Collection.init();
     c.load_options = .{ .library = lib };

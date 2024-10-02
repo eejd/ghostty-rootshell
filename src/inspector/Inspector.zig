@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const cimgui = @import("cimgui");
 const Surface = @import("../Surface.zig");
+const font = @import("../font/main.zig");
 const input = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
 const inspector = @import("main.zig");
@@ -130,8 +131,8 @@ pub fn setup() void {
         font_config.FontDataOwnedByAtlas = false;
         _ = cimgui.c.ImFontAtlas_AddFontFromMemoryTTF(
             io.Fonts,
-            @constCast(@ptrCast(Surface.face_ttf)),
-            Surface.face_ttf.len,
+            @constCast(@ptrCast(font.embedded.regular)),
+            font.embedded.regular.len,
             font_size,
             font_config,
             null,

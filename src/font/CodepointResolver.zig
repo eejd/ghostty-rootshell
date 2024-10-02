@@ -376,9 +376,9 @@ const DescriptorCache = std.HashMapUnmanaged(
 test getIndex {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
-    const testEmoji = @import("test.zig").fontEmoji;
-    const testEmojiText = @import("test.zig").fontEmojiText;
+    const testFont = font.embedded.regular;
+    const testEmoji = font.embedded.emoji;
+    const testEmojiText = font.embedded.emoji_text;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -456,7 +456,7 @@ test getIndex {
 test "getIndex disabled font style" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas_grayscale.deinit(alloc);

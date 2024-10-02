@@ -798,7 +798,7 @@ test "emoji" {
 test "in-memory" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontRegular;
+    const testFont = font.embedded.regular;
 
     var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
@@ -820,7 +820,7 @@ test "in-memory" {
 test "variable" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontVariable;
+    const testFont = font.embedded.variable;
 
     var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
@@ -842,7 +842,7 @@ test "variable" {
 test "variable set variation" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontVariable;
+    const testFont = font.embedded.variable;
 
     var atlas = try font.Atlas.init(alloc, 512, .grayscale);
     defer atlas.deinit(alloc);
@@ -868,7 +868,7 @@ test "variable set variation" {
 test "svg font table" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontJuliaMono;
+    const testFont = font.embedded.julia_mono;
 
     var lib = try font.Library.init();
     defer lib.deinit();
@@ -884,7 +884,7 @@ test "svg font table" {
 
 test "glyphIndex colored vs text" {
     const testing = std.testing;
-    const testFont = @import("../test.zig").fontJuliaMono;
+    const testFont = font.embedded.julia_mono;
 
     var lib = try font.Library.init();
     defer lib.deinit();

@@ -742,7 +742,7 @@ pub const Face = struct {
 };
 
 test {
-    const testFont = @import("../test.zig").fontRegular;
+    const testFont = font.embedded.inconsolata;
     const alloc = testing.allocator;
 
     var lib = try Library.init();
@@ -771,13 +771,13 @@ test {
 
         try ft_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
         const g2 = try ft_font.renderGlyph(alloc, &atlas, ft_font.glyphIndex('A').?, .{});
-        try testing.expectEqual(@as(u32, 21), g2.height);
+        try testing.expectEqual(@as(u32, 20), g2.height);
     }
 }
 
 test "color emoji" {
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontEmoji;
+    const testFont = font.embedded.emoji;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -819,7 +819,7 @@ test "color emoji" {
 }
 
 test "metrics" {
-    const testFont = @import("../test.zig").fontRegular;
+    const testFont = font.embedded.inconsolata;
     const alloc = testing.allocator;
 
     var lib = try Library.init();
@@ -860,7 +860,7 @@ test "metrics" {
 
 test "mono to rgba" {
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontEmoji;
+    const testFont = font.embedded.emoji;
 
     var lib = try Library.init();
     defer lib.deinit();
@@ -877,7 +877,7 @@ test "mono to rgba" {
 
 test "svg font table" {
     const alloc = testing.allocator;
-    const testFont = @import("../test.zig").fontJuliaMono;
+    const testFont = font.embedded.julia_mono;
 
     var lib = try font.Library.init();
     defer lib.deinit();
