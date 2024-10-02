@@ -14,7 +14,7 @@ pub const Key = enum {
     strikethrough,
 
     /// Returns the GPU vertex type for this key.
-    fn CellType(self: Key) type {
+    pub fn CellType(self: Key) type {
         return switch (self) {
             .bg => mtl_shaders.CellBg,
 
@@ -125,7 +125,7 @@ pub const Contents = struct {
         const bg_cells = try alloc.alloc(mtl_shaders.CellBg, cell_count);
         errdefer alloc.free(bg_cells);
 
-        @memset(bg_cells, .{0, 0, 0, 0});
+        @memset(bg_cells, .{ 0, 0, 0, 0 });
 
         // The foreground lists can hold 3 types of items:
         // - Glyphs
@@ -231,7 +231,7 @@ test Contents {
     for (0..rows) |y| {
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+            try testing.expectEqual(.{ 0, 0, 0, 0 }, c.bgCell(y, x).*);
         }
     }
     // And the cursor row should have a capacity of 1 and also be empty.
@@ -256,7 +256,7 @@ test Contents {
     for (0..rows) |y| {
         try testing.expect(c.fg_rows.lists[y + 1].items.len == 0);
         for (0..cols) |x| {
-            try testing.expectEqual(.{0, 0, 0, 0}, c.bgCell(y, x).*);
+            try testing.expectEqual(.{ 0, 0, 0, 0 }, c.bgCell(y, x).*);
         }
     }
 

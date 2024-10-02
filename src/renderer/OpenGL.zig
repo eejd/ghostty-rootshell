@@ -1227,10 +1227,15 @@ pub fn rebuildCells(
         };
     } else null;
 
-    // This is the cell that has [mode == .fg] and is underneath our cursor.
-    // We keep track of it so that we can invert the colors so the character
-    // remains visible.
-    var cursor_cell: ?CellProgram.Cell = null;
+    // These are all the foreground cells underneath the cursor.
+    //
+    // We keep track of these so that we can invert the colors and move them
+    // in front of the block cursor so that the character remains visible.
+    //
+    // We init with a capacity of 4 to account for decorations such
+    // as underline and strikethrough, as well as combining chars.
+    var cursor_cells = try std.ArrayListUnmanaged(CellProgram.Cell).initCapacity(arena_alloc, 4);
+    defer cursor_cells.deinit(arena_alloc);
 
     if (rebuild) {
         switch (self.config.padding_color) {
@@ -1277,14 +1282,24 @@ pub fn rebuildCells(
         // the cell with the cursor.
         const start_i: usize = self.cells.items.len;
         defer if (cursor_row) {
-            // If we're on a wide spacer tail, then we want to look for
-            // the previous cell.
-            const screen_cell = row.cells(.all)[screen.cursor.x];
-            const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
+            const x = screen.cursor.x;
+            const wide = row.cells(.all)[x].wide;
+            const min_x = switch (wide) {
+                .narrow, .spacer_head, .wide => x,
+                .spacer_tail => x -| 1,
+            };
+            const max_x = switch (wide) {
+                .narrow, .spacer_head, .spacer_tail => x,
+                .wide => x +| 1,
+            };
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_col == x and cell.mode.isFg()) {
-                    cursor_cell = cell;
-                    break;
+                if (cell.grid_col < min_x or cell.grid_col > max_x) continue;
+                if (cell.mode.isFg()) {
+                    cursor_cells.append(arena_alloc, cell) catch {
+                        // We silently ignore if this fails because
+                        // worst case scenario some combining glyphs
+                        // aren't visible under the cursor '\_('-')_/'
+                    };
                 }
             }
         };
@@ -1338,6 +1353,10 @@ pub fn rebuildCells(
             };
 
             for (shaper_cells) |shaper_cell| {
+                // The shaper can emit null glyphs representing the right half
+                // of wide characters, we don't need to do anything with them.
+                if (shaper_cell.glyph_index == null) continue;
+
                 // If this cell falls within our preedit range then we skip it.
                 // We do this so we don't have conflicting data on the same
                 // cell.
@@ -1418,7 +1437,7 @@ pub fn rebuildCells(
         };
 
         _ = try self.addCursor(screen, cursor_style, cursor_color);
-        if (cursor_cell) |*cell| {
+        for (cursor_cells.items) |*cell| {
             if (cell.mode.isFg() and cell.mode != .fg_color) {
                 const cell_color = if (self.cursor_invert) blk: {
                     const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
@@ -1779,7 +1798,7 @@ fn updateCell(
             font.sprite_index,
             @intFromEnum(sprite),
             .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .cell_width = 1,
                 .grid_metrics = self.grid_metrics,
             },
         );
@@ -1790,7 +1809,7 @@ fn updateCell(
             .mode = .fg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
-            .grid_width = cell.gridWidth(),
+            .grid_width = 1,
             .glyph_x = render.glyph.atlas_x,
             .glyph_y = render.glyph.atlas_y,
             .glyph_width = render.glyph.width,
@@ -1806,6 +1825,29 @@ fn updateCell(
             .bg_b = bg[2],
             .bg_a = bg[3],
         });
+        // If it's a wide cell we need to underline the right half as well.
+        if (cell.gridWidth() > 1 and x < self.grid_size.columns - 1) {
+            try self.cells.append(self.alloc, .{
+                .mode = .fg,
+                .grid_col = @intCast(x + 1),
+                .grid_row = @intCast(y),
+                .grid_width = 1,
+                .glyph_x = render.glyph.atlas_x,
+                .glyph_y = render.glyph.atlas_y,
+                .glyph_width = render.glyph.width,
+                .glyph_height = render.glyph.height,
+                .glyph_offset_x = render.glyph.offset_x,
+                .glyph_offset_y = render.glyph.offset_y,
+                .r = color.r,
+                .g = color.g,
+                .b = color.b,
+                .a = alpha,
+                .bg_r = bg[0],
+                .bg_g = bg[1],
+                .bg_b = bg[2],
+                .bg_a = bg[3],
+            });
+        }
     }
 
     // If the shaper cell has a glyph, draw it.
@@ -1866,7 +1908,7 @@ fn updateCell(
             font.sprite_index,
             @intFromEnum(font.Sprite.strikethrough),
             .{
-                .cell_width = if (cell.wide == .wide) 2 else 1,
+                .cell_width = 1,
                 .grid_metrics = self.grid_metrics,
             },
         );
@@ -1875,7 +1917,7 @@ fn updateCell(
             .mode = .fg,
             .grid_col = @intCast(x),
             .grid_row = @intCast(y),
-            .grid_width = cell.gridWidth(),
+            .grid_width = 1,
             .glyph_x = render.glyph.atlas_x,
             .glyph_y = render.glyph.atlas_y,
             .glyph_width = render.glyph.width,
@@ -1891,6 +1933,29 @@ fn updateCell(
             .bg_b = bg[2],
             .bg_a = bg[3],
         });
+        // If it's a wide cell we need to strike through the right half as well.
+        if (cell.gridWidth() > 1 and x < self.grid_size.columns - 1) {
+            try self.cells.append(self.alloc, .{
+                .mode = .fg,
+                .grid_col = @intCast(x + 1),
+                .grid_row = @intCast(y),
+                .grid_width = 1,
+                .glyph_x = render.glyph.atlas_x,
+                .glyph_y = render.glyph.atlas_y,
+                .glyph_width = render.glyph.width,
+                .glyph_height = render.glyph.height,
+                .glyph_offset_x = render.glyph.offset_x,
+                .glyph_offset_y = render.glyph.offset_y,
+                .r = colors.fg.r,
+                .g = colors.fg.g,
+                .b = colors.fg.b,
+                .a = alpha,
+                .bg_r = bg[0],
+                .bg_g = bg[1],
+                .bg_b = bg[2],
+                .bg_a = bg[3],
+            });
+        }
     }
 
     return true;

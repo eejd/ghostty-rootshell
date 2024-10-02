@@ -18,6 +18,7 @@ struct Uniforms {
   float min_contrast;
   ushort2 cursor_pos;
   uchar4 cursor_color;
+  bool cursor_wide;
 };
 
 //-------------------------------------------------------------------
@@ -293,7 +294,11 @@ vertex CellTextVertexOut cell_text_vertex(
   // If this cell is the cursor cell, then we need to change the color.
   if (
     in.mode != MODE_TEXT_CURSOR &&
-    in.grid_pos.x == uniforms.cursor_pos.x &&
+    (
+      in.grid_pos.x == uniforms.cursor_pos.x ||
+      uniforms.cursor_wide &&
+        in.grid_pos.x == uniforms.cursor_pos.x + 1
+    ) &&
     in.grid_pos.y == uniforms.cursor_pos.y
   ) {
     out.color = float4(uniforms.cursor_color) / 255.0f;
