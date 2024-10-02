@@ -631,6 +631,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
+            .wide_cursor = false,
         },
 
         // Fonts
@@ -2034,6 +2035,7 @@ pub fn setScreenSize(
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
         .cursor_color = old.cursor_color,
+        .wide_cursor = old.wide_cursor,
     };
 
     // Reset our cell contents if our grid size has changed.
@@ -2353,9 +2355,18 @@ fn rebuildCells(
 
         // If the cursor is visible then we set our uniforms.
         if (style == .block and screen.viewportIsBottom()) {
+            const wide = screen.cursor.page_cell.wide;
+
             self.uniforms.cursor_pos = .{
-                screen.cursor.x,
+                switch (wide) {
+                    .narrow, .spacer_head, .wide => screen.cursor.x,
+                    .spacer_tail => screen.cursor.x -| 1,
+                },
                 screen.cursor.y,
+            };
+            self.uniforms.wide_cursor = switch (wide) {
+                .narrow, .spacer_head => false,
+                .wide, .spacer_tail => true,
             };
 
             const uniform_color = if (self.cursor_invert) blk: {

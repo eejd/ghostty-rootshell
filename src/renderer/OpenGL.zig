@@ -1227,10 +1227,15 @@ pub fn rebuildCells(
         };
     } else null;
 
-    // This is the cell that has [mode == .fg] and is underneath our cursor.
-    // We keep track of it so that we can invert the colors so the character
-    // remains visible.
-    var cursor_cell: ?CellProgram.Cell = null;
+    // These are all the foreground cells underneath the cursor.
+    //
+    // We keep track of these so that we can invert the colors and move them
+    // in front of the block cursor so that the character remains visible.
+    //
+    // We init with a capacity of 4 to account for decorations such
+    // as underline and strikethrough, as well as combining chars.
+    var cursor_cells = try std.ArrayListUnmanaged(CellProgram.Cell).initCapacity(arena_alloc, 4);
+    defer cursor_cells.deinit(arena_alloc);
 
     if (rebuild) {
         switch (self.config.padding_color) {
@@ -1277,14 +1282,24 @@ pub fn rebuildCells(
         // the cell with the cursor.
         const start_i: usize = self.cells.items.len;
         defer if (cursor_row) {
-            // If we're on a wide spacer tail, then we want to look for
-            // the previous cell.
-            const screen_cell = row.cells(.all)[screen.cursor.x];
-            const x = screen.cursor.x - @intFromBool(screen_cell.wide == .spacer_tail);
+            const x = screen.cursor.x;
+            const wide = row.cells(.all)[x].wide;
+            const min_x = switch (wide) {
+                .narrow, .spacer_head, .wide => x,
+                .spacer_tail => x -| 1,
+            };
+            const max_x = switch (wide) {
+                .narrow, .spacer_head, .spacer_tail => x,
+                .wide => x +| 1,
+            };
             for (self.cells.items[start_i..]) |cell| {
-                if (cell.grid_col == x and cell.mode.isFg()) {
-                    cursor_cell = cell;
-                    break;
+                if (cell.grid_col < min_x or cell.grid_col > max_x) continue;
+                if (cell.mode.isFg()) {
+                    cursor_cells.append(arena_alloc, cell) catch {
+                        // We silently ignore if this fails because
+                        // worst case scenario some combining glyphs
+                        // aren't visible under the cursor '\_('-')_/'
+                    };
                 }
             }
         };
@@ -1422,7 +1437,7 @@ pub fn rebuildCells(
         };
 
         _ = try self.addCursor(screen, cursor_style, cursor_color);
-        if (cursor_cell) |*cell| {
+        for (cursor_cells.items) |*cell| {
             if (cell.mode.isFg() and cell.mode != .fg_color) {
                 const cell_color = if (self.cursor_invert) blk: {
                     const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
