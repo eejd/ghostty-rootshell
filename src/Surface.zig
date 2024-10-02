@@ -1176,12 +1176,8 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     const prev_ = self.io.terminal.screen.selection;
     try self.io.terminal.screen.select(sel_);
 
-    // Determine the clipboard we want to copy selection to, if it is enabled.
-    const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
-        .false => return,
-        .true => .selection,
-        .clipboard => .standard,
-    };
+    // If copy on select is false then exit early.
+    if (self.config.copy_on_select == .false) return;
 
     // Set our selection clipboard. If the selection is cleared we do not
     // clear the clipboard. If the selection is set, we only set the clipboard
@@ -1189,12 +1185,6 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     // operation.
     const sel = sel_ orelse return;
     if (prev_) |prev| if (sel.eql(prev)) return;
-
-    // Check if our runtime supports the selection clipboard at all.
-    // We can save a lot of work if it doesn't.
-    if (!self.rt_surface.supportsClipboard(clipboard)) {
-        return;
-    }
 
     const buf = self.io.terminal.screen.selectionString(self.alloc, .{
         .sel = sel,
@@ -1205,10 +1195,45 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     };
     defer self.alloc.free(buf);
 
-    self.rt_surface.setClipboardString(buf, clipboard, false) catch |err| {
-        log.err("error setting clipboard string err={}", .{err});
-        return;
-    };
+    // Set the clipboard. This is not super DRY but it is clear what
+    // we're doing for each setting without being clever.
+    switch (self.config.copy_on_select) {
+        .false => unreachable, // handled above with an early exit
+
+        // Both standard and selection clipboards are set.
+        .clipboard => {
+            const clipboards: []const apprt.Clipboard = &.{ .standard, .selection };
+            for (clipboards) |clipboard| self.rt_surface.setClipboardString(
+                buf,
+                clipboard,
+                false,
+            ) catch |err| {
+                log.err(
+                    "error setting clipboard string clipboard={} err={}",
+                    .{ clipboard, err },
+                );
+            };
+        },
+
+        // The selection clipboard is set if supported, otherwise the standard.
+        .true => {
+            const clipboard: apprt.Clipboard = if (self.rt_surface.supportsClipboard(.selection))
+                .selection
+            else
+                .standard;
+
+            self.rt_surface.setClipboardString(
+                buf,
+                clipboard,
+                false,
+            ) catch |err| {
+                log.err(
+                    "error setting clipboard string clipboard={} err={}",
+                    .{ clipboard, err },
+                );
+            };
+        },
+    }
 }
 
 /// Change the cell size for the terminal grid. This can happen as
@@ -2680,19 +2705,11 @@ pub fn mouseButtonCallback(
 
     // Middle-click pastes from our selection clipboard
     if (button == .middle and action == .press) {
-        if (comptime builtin.target.isDarwin()) {
-            // Fast-path for MacOS - always paste from clipboard on
-            // middle-click.
-            try self.startClipboardRequest(.standard, .{ .paste = {} });
-        } else if (self.config.copy_on_select != .false) {
-            const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
-                .true => .selection,
-                .clipboard => .standard,
-                .false => unreachable,
-            };
-
-            try self.startClipboardRequest(clipboard, .{ .paste = {} });
-        }
+        const clipboard: apprt.Clipboard = if (self.rt_surface.supportsClipboard(.selection))
+            .selection
+        else
+            .standard;
+        try self.startClipboardRequest(clipboard, .{ .paste = {} });
     }
 
     // Right-click down selects word for context menus. If the apprt
