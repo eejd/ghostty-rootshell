@@ -86,6 +86,11 @@ class AppDelegate: NSObject,
         return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
     }
 
+    /// Tracks whether the application is currently visible. This can be gamed, i.e. if a user manually
+    /// brings each window one by one to the front. But at worst its off by one set of toggles and this
+    /// makes our logic very easy.
+    private var isVisible: Bool = true
+
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
@@ -251,6 +256,7 @@ class AppDelegate: NSObject,
         // Ghostty will validate as well but we can avoid creating an entirely new
         // surface by doing our own validation here. We can also show a useful error
         // this way.
+
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
 
@@ -315,6 +321,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
+        syncMenuShortcut(action: "toggle_visibility", menuItem: self.menuQuickTerminal)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
         syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
@@ -563,5 +570,24 @@ class AppDelegate: NSObject,
         quickController.toggle()
 
         self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
+    }
+
+    /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
+    @IBAction func toggleVisibility(_ sender: Any) {
+        // We only care about terminal windows.
+        for window in NSApp.windows.filter({ $0.windowController is BaseTerminalController }) {
+            if isVisible {
+                window.orderOut(nil)
+            } else {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+
+        // After bringing them all to front we make sure our app is active too.
+        if !isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        
+        isVisible.toggle()
     }
 }
