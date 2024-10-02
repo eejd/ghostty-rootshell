@@ -138,7 +138,7 @@ pub const Uniforms = extern struct {
     cursor_color: [4]u8 align(4),
 
     // Whether the cursor is 2 cells wide.
-    wide_cursor: bool align(1),
+    cursor_wide: bool align(1),
 
     const PaddingExtend = packed struct(u8) {
         left: bool = false,

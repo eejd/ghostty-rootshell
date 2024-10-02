@@ -18,7 +18,7 @@ struct Uniforms {
   float min_contrast;
   ushort2 cursor_pos;
   uchar4 cursor_color;
-  bool wide_cursor;
+  bool cursor_wide;
 };
 
 //-------------------------------------------------------------------
@@ -296,7 +296,7 @@ vertex CellTextVertexOut cell_text_vertex(
     in.mode != MODE_TEXT_CURSOR &&
     (
       in.grid_pos.x == uniforms.cursor_pos.x ||
-      uniforms.wide_cursor &&
+      uniforms.cursor_wide &&
         in.grid_pos.x == uniforms.cursor_pos.x + 1
     ) &&
     in.grid_pos.y == uniforms.cursor_pos.y

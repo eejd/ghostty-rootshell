@@ -631,7 +631,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .min_contrast = options.config.min_contrast,
             .cursor_pos = .{ std.math.maxInt(u16), std.math.maxInt(u16) },
             .cursor_color = undefined,
-            .wide_cursor = false,
+            .cursor_wide = false,
         },
 
         // Fonts
@@ -2035,7 +2035,7 @@ pub fn setScreenSize(
         .min_contrast = old.min_contrast,
         .cursor_pos = old.cursor_pos,
         .cursor_color = old.cursor_color,
-        .wide_cursor = old.wide_cursor,
+        .cursor_wide = old.cursor_wide,
     };
 
     // Reset our cell contents if our grid size has changed.
@@ -2358,13 +2358,17 @@ fn rebuildCells(
             const wide = screen.cursor.page_cell.wide;
 
             self.uniforms.cursor_pos = .{
+                // If we are a spacer tail of a wide cell, our cursor needs
+                // to move back one cell. The saturate is to ensure we don't
+                // overflow but this shouldn't happen with well-formed input.
                 switch (wide) {
                     .narrow, .spacer_head, .wide => screen.cursor.x,
                     .spacer_tail => screen.cursor.x -| 1,
                 },
                 screen.cursor.y,
             };
-            self.uniforms.wide_cursor = switch (wide) {
+
+            self.uniforms.cursor_wide = switch (wide) {
                 .narrow, .spacer_head => false,
                 .wide, .spacer_tail => true,
             };
@@ -2563,7 +2567,7 @@ fn updateCell(
 
         const color = style.underlineColor(palette) orelse colors.fg;
 
-        try self.cells.add(self.alloc, .underline, .{
+        var gpu_cell: mtl_cell.Key.underline.CellType() = .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .constraint_width = 1,
@@ -2574,21 +2578,12 @@ fn updateCell(
                 @intCast(render.glyph.offset_x),
                 @intCast(render.glyph.offset_y),
             },
-        });
+        };
+        try self.cells.add(self.alloc, .underline, gpu_cell);
         // If it's a wide cell we need to underline the right half as well.
         if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            try self.cells.add(self.alloc, .underline, .{
-                .mode = .fg,
-                .grid_pos = .{ @intCast(coord.x + 1), @intCast(coord.y) },
-                .constraint_width = 1,
-                .color = .{ color.r, color.g, color.b, alpha },
-                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-                .glyph_size = .{ render.glyph.width, render.glyph.height },
-                .bearings = .{
-                    @intCast(render.glyph.offset_x),
-                    @intCast(render.glyph.offset_y),
-                },
-            });
+            gpu_cell.grid_pos[0] = @intCast(coord.x + 1);
+            try self.cells.add(self.alloc, .underline, gpu_cell);
         }
     }
 
@@ -2646,7 +2641,7 @@ fn updateCell(
             },
         );
 
-        try self.cells.add(self.alloc, .strikethrough, .{
+        var gpu_cell: mtl_cell.Key.strikethrough.CellType() = .{
             .mode = .fg,
             .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
             .constraint_width = 1,
@@ -2657,21 +2652,12 @@ fn updateCell(
                 @intCast(render.glyph.offset_x),
                 @intCast(render.glyph.offset_y),
             },
-        });
+        };
+        try self.cells.add(self.alloc, .strikethrough, gpu_cell);
         // If it's a wide cell we need to strike through the right half as well.
         if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            try self.cells.add(self.alloc, .strikethrough, .{
-                .mode = .fg,
-                .grid_pos = .{ @intCast(coord.x + 1), @intCast(coord.y) },
-                .constraint_width = 1,
-                .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-                .glyph_size = .{ render.glyph.width, render.glyph.height },
-                .bearings = .{
-                    @intCast(render.glyph.offset_x),
-                    @intCast(render.glyph.offset_y),
-                },
-            });
+            gpu_cell.grid_pos[0] = @intCast(coord.x + 1);
+            try self.cells.add(self.alloc, .strikethrough, gpu_cell);
         }
     }
 
