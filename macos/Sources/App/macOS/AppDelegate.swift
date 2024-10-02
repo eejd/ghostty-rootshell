@@ -86,7 +86,9 @@ class AppDelegate: NSObject,
         return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
     }
 
-    /// Tracks whether the application is currently visible
+    /// Tracks whether the application is currently visible. This can be gamed, i.e. if a user manually
+    /// brings each window one by one to the front. But at worst its off by one set of toggles and this
+    /// makes our logic very easy.
     private var isVisible: Bool = true
 
     override init() {
@@ -572,14 +574,16 @@ class AppDelegate: NSObject,
 
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
-        for controller in NSApp.windows.compactMap({ $0.windowController as? BaseTerminalController }) {
+        // We only care about terminal windows.
+        for window in NSApp.windows.filter({ $0.windowController is BaseTerminalController }) {
             if isVisible {
-                controller.window?.orderOut(nil)
+                window.orderOut(nil)
             } else {
-                controller.window?.makeKeyAndOrderFront(nil)
+                window.makeKeyAndOrderFront(nil)
             }
         }
-       
+
+        // After bringing them all to front we make sure our app is active too.
         if !isVisible {
             NSApp.activate(ignoringOtherApps: true)
         }

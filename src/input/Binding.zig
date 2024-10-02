@@ -387,7 +387,11 @@ pub const Action = union(enum) {
     /// configuration file to customize its behavior.
     toggle_quick_terminal: void,
 
-    /// Toggle visibility of all windows
+    /// Show/hide all windows. If all windows become shown, we also ensure
+    /// Ghostty is focused.
+    ///
+    /// This currently only works on macOS. When hiding all windows, we do
+    /// not yield focus to the previous application.
     toggle_visibility: void,
 
     /// Quit ghostty.
