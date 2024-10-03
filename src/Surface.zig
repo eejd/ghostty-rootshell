@@ -3040,8 +3040,13 @@ pub fn cursorPosCallback(
     // Do a mouse report
     if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
-        if (self.mouse.mods.shift and
-            !self.mouseShiftCapture(false)) break :report;
+        // This only applies if there is a mouse button pressed so that
+        // movement reports are not affected.
+        if (self.mouse.mods.shift and !self.mouseShiftCapture(false)) {
+            for (self.mouse.click_state) |state| {
+                if (state != .release) break :report;
+            }
+        }
 
         // We use the first mouse button we find pressed in order to report
         // since the spec (afaict) does not say...
