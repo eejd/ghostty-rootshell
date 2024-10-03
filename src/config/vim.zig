@@ -7,7 +7,7 @@ pub const ftdetect = "au BufRead,BufNewFile */ghostty/config set ft=ghostty\n";
 pub const ftplugin =
     \\" Vim filetype plugin file
     \\" Language: Ghostty config file
-    \\" Maintainer: Ghostty <https://github.com/mitchellh/ghostty>
+    \\" Maintainer: Ghostty <https://github.com/ghostty-org/ghostty>
     \\"
     \\" THIS FILE IS AUTO-GENERATED
     \\
@@ -45,7 +45,7 @@ fn writeSyntax(writer: anytype) !void {
     try writer.writeAll(
         \\" Vim syntax file
         \\" Language: Ghostty config file
-        \\" Maintainer: Ghostty <https://github.com/mitchellh/ghostty>
+        \\" Maintainer: Ghostty <https://github.com/ghostty-org/ghostty>
         \\"
         \\" THIS FILE IS AUTO-GENERATED
         \\
