@@ -3745,7 +3745,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
         .scroll_page_fractional => |fraction| {
             const rows: f32 = @floatFromInt(self.grid_size.rows);
-            const delta: isize = @intFromFloat(@floor(fraction * rows));
+            const delta: isize = @intFromFloat(@trunc(fraction * rows));
             self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = delta },
             }, .unlocked);
