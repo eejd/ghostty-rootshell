@@ -173,7 +173,7 @@ class AppDelegate: NSObject,
         // is possible to have other windows in a few scenarios:
         //   - if we're opening a URL since `application(_:openFile:)` is called before this.
         //   - if we're restoring from persisted state
-        if terminalManager.windows.count == 0 {
+        if terminalManager.windows.count == 0 && ghostty.config.initialWindow {
             terminalManager.newWindow()
         }
     }
@@ -587,7 +587,7 @@ class AppDelegate: NSObject,
         if !isVisible {
             NSApp.activate(ignoringOtherApps: true)
         }
-        
+
         isVisible.toggle()
     }
 }

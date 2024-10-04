@@ -1229,7 +1229,7 @@ keybind: Keybinds = .{},
 /// is run. Note that if `quit-after-last-window-closed` is `true` and
 /// `quit-after-last-window-closed-delay` is set, setting `initial-window` to
 /// `false` will mean that Ghostty will quit after the configured delay if no
-/// window is ever created. Only implemented on Linux.
+/// window is ever created. Only implemented on Linux and macOS.
 @"initial-window": bool = true,
 
 /// The position of the "quick" terminal window. To learn more about the

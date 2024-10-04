@@ -151,6 +151,14 @@ extension Ghostty {
         /// details on what each means. We only add documentation if there is a strange conversion
         /// due to the embedded library and Swift.
 
+        var initialWindow: Bool {
+            guard let config = self.config else { return true }
+            var v = true;
+            let key = "initial-window"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
         var shouldQuitAfterLastWindowClosed: Bool {
             guard let config = self.config else { return true }
             var v = false;
