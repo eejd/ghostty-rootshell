@@ -745,6 +745,12 @@ fn displayLinkCallback(
     };
 }
 
+/// Mark the full screen as dirty so that we redraw everything.
+pub fn markDirty(self: *Metal) void {
+    // This is how we force a full rebuild with metal.
+    self.cells_viewport = null;
+}
+
 /// Called when we get an updated display ID for our display link.
 pub fn setMacOSDisplayID(self: *Metal, id: u32) !void {
     if (comptime DisplayLink == void) return;

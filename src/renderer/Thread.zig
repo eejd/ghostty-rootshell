@@ -358,14 +358,17 @@ fn drainMailbox(self: *Thread) !void {
 
             .foreground_color => |color| {
                 self.renderer.foreground_color = color;
+                self.renderer.markDirty();
             },
 
             .background_color => |color| {
                 self.renderer.background_color = color;
+                self.renderer.markDirty();
             },
 
             .cursor_color => |color| {
                 self.renderer.cursor_color = color;
+                self.renderer.markDirty();
             },
 
             .resize => |v| {

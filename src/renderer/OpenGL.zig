@@ -645,6 +645,12 @@ pub fn hasVsync(self: *const OpenGL) bool {
     return false;
 }
 
+/// See Metal.
+pub fn markDirty(self: *OpenGL) void {
+    // Do nothing, we don't have dirty tracking yet.
+    _ = self;
+}
+
 /// Callback when the focus changes for the terminal this is rendering.
 ///
 /// Must be called on the render thread.
