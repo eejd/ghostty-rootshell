@@ -1822,6 +1822,18 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         .{ .adjust_selection = .end },
     );
 
+    // Tabs common to all platforms
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .tab }, .mods = .{ .ctrl = true, .shift = true } },
+        .{ .previous_tab = {} },
+    );
+    try result.keybind.set.put(
+        alloc,
+        .{ .key = .{ .translated = .tab }, .mods = .{ .ctrl = true } },
+        .{ .next_tab = {} },
+    );
+
     // Windowing
     if (comptime !builtin.target.isDarwin()) {
         try result.keybind.set.put(
@@ -1848,11 +1860,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .{ .translated = .t }, .mods = .{ .ctrl = true, .shift = true } },
             .{ .new_tab = {} },
-        );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .{ .translated = .left }, .mods = .{ .ctrl = true, .shift = true } },
-            .{ .previous_tab = {} },
         );
         try result.keybind.set.put(
             alloc,
