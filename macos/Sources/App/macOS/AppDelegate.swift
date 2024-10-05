@@ -37,6 +37,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuPaste: NSMenuItem?
     @IBOutlet private var menuSelectAll: NSMenuItem?
 
+    @IBOutlet private var menuToggleVisibility: NSMenuItem?
     @IBOutlet private var menuToggleFullScreen: NSMenuItem?
     @IBOutlet private var menuZoomSplit: NSMenuItem?
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
@@ -321,7 +322,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(action: "decrease_font_size:1", menuItem: self.menuDecreaseFontSize)
         syncMenuShortcut(action: "reset_font_size", menuItem: self.menuResetFontSize)
         syncMenuShortcut(action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
-        syncMenuShortcut(action: "toggle_visibility", menuItem: self.menuQuickTerminal)
+        syncMenuShortcut(action: "toggle_visibility", menuItem: self.menuToggleVisibility)
         syncMenuShortcut(action: "inspector:toggle", menuItem: self.menuTerminalInspector)
 
         syncMenuShortcut(action: "toggle_secure_input", menuItem: self.menuSecureInput)
