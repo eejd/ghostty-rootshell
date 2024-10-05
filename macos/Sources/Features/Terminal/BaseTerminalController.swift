@@ -54,6 +54,9 @@ class BaseTerminalController: NSWindowController,
     /// Fullscreen state management.
     private(set) var fullscreenStyle: FullscreenStyle?
 
+    /// Event monitor (see individual events for why)
+    private var eventMonitor: Any? = nil
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
     }
@@ -77,6 +80,18 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(onConfirmClipboardRequest),
             name: Ghostty.Notification.confirmClipboard,
             object: nil)
+
+        // Listen for local events that we need to know of outside of
+        // single surface handlers.
+        self.eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.flagsChanged],
+            handler: localEventHandler)
+    }
+
+    deinit {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
     }
 
     /// Called when the surfaceTree variable changed.
@@ -104,6 +119,37 @@ class BaseTerminalController: NSWindowController,
                 leaf.surface == focusedSurface!
             leaf.surface.focusDidChange(focused)
         }
+    }
+
+    // MARK: Local Events
+
+    private func localEventHandler(_ event: NSEvent) -> NSEvent? {
+        return switch event.type {
+        case .flagsChanged:
+            localEventFlagsChanged(event)
+
+        default:
+            event
+        }
+    }
+
+    private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
+        // Go through all our surfaces and notify it that the flags changed.
+        if let surfaceTree {
+            let surfaces: [Ghostty.SurfaceView] = surfaceTree.map { $0.surface }
+            for surface in surfaces {
+                surface.flagsChanged(with: event)
+            }
+
+            // This will double call flagsChanged on our focused surface so
+            // if we are the main window and have a focused surface then we
+            // do not forward it.
+            if NSApp.mainWindow == window && focusedSurface != nil {
+                return nil
+            }
+        }
+
+        return event
     }
 
     // MARK: TerminalViewDelegate
