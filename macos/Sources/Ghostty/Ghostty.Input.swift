@@ -14,6 +14,7 @@ extension Ghostty {
         if (mods.rawValue & GHOSTTY_MODS_CTRL.rawValue != 0) { flags.insert(.control) }
         if (mods.rawValue & GHOSTTY_MODS_ALT.rawValue != 0) { flags.insert(.option) }
         if (mods.rawValue & GHOSTTY_MODS_SUPER.rawValue != 0) { flags.insert(.command) }
+        if (mods.rawValue & GHOSTTY_MODS_FN.rawValue != 0) { flags.insert(.function) }
         return flags
     }
 
@@ -25,6 +26,7 @@ extension Ghostty {
         if (flags.contains(.control)) { mods |= GHOSTTY_MODS_CTRL.rawValue }
         if (flags.contains(.option)) { mods |= GHOSTTY_MODS_ALT.rawValue }
         if (flags.contains(.command)) { mods |= GHOSTTY_MODS_SUPER.rawValue }
+        if (flags.contains(.function)) { mods |= GHOSTTY_MODS_FN.rawValue }
         if (flags.contains(.capsLock)) { mods |= GHOSTTY_MODS_CAPS.rawValue }
 
         // Handle sided input. We can't tell that both are pressed in the

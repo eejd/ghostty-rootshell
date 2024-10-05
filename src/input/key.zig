@@ -89,10 +89,11 @@ pub const Mods = packed struct(Mods.Backing) {
     ctrl: bool = false,
     alt: bool = false,
     super: bool = false,
+    function: bool = false,
     caps_lock: bool = false,
     num_lock: bool = false,
     sides: side = .{},
-    _padding: u6 = 0,
+    _padding: u5 = 0,
 
     /// Tracks the side that is active for any given modifier. Note
     /// that this doesn't confirm a modifier is pressed; you must check

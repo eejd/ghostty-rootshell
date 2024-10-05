@@ -896,9 +896,13 @@ pub const Trigger = struct {
 
             // Alias modifiers
             const alias_mods = .{
-                .{ "cmd", "super" },    .{ "command", "super" },
-                .{ "opt", "alt" },      .{ "option", "alt" },
+                .{ "cmd", "super" },
+                .{ "command", "super" },
+                .{ "opt", "alt" },
+                .{ "option", "alt" },
                 .{ "control", "ctrl" },
+                .{ "fn", "function" },
+                .{ "globe", "function" },
             };
             inline for (alias_mods) |pair| {
                 if (std.mem.eql(u8, part, pair[0])) {

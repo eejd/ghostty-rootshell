@@ -670,9 +670,19 @@ class: ?[:0]const u8 = null,
 ///     translated by any system keyboard layouts. Example: "ctrl+physical:a"
 ///
 /// Valid modifiers are `shift`, `ctrl` (alias: `control`), `alt` (alias: `opt`,
-/// `option`), and `super` (alias: `cmd`, `command`). You may use the modifier
-/// or the alias. When debugging keybinds, the non-aliased modifier will always
-/// be used in output.
+/// `option`), `super` (alias: `cmd`, `command`), and `function` (alias: `fn`,
+/// `globe`). You may use the modifier or the alias. When debugging keybinds,
+/// the non-aliased modifier will always be used in output.
+///
+/// Some notes about the `function` modifier:
+///
+///   * It is only available on macOS.
+///   * It is used by many system shortcuts and Ghostty is not able to
+///     override these shortcuts. If a system shortcut is triggered, the
+///     system shortcut will take precedence.
+///   * Menu items on macOS cannot be bound to the `function` modifier,
+///     so this modifier will work with Ghostty but will not be visible
+///     in the menu.
 ///
 /// You may also specify multiple triggers separated by `>` to require a
 /// sequence of triggers to activate the action. For example,

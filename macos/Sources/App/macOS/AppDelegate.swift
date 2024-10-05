@@ -348,6 +348,11 @@ class AppDelegate: NSObject,
             return
         }
 
+        if (equiv.modifiers.contains(.function)) {
+            // NSMenuItem key equivalent cannot contain function modifiers.
+            return
+        }
+
         menu.keyEquivalent = equiv.key
         menu.keyEquivalentModifierMask = equiv.modifiers
     }
