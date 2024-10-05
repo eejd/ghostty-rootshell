@@ -680,6 +680,9 @@ class: ?[:0]const u8 = null,
 ///   * It is used by many system shortcuts and Ghostty is not able to
 ///     override these shortcuts. If a system shortcut is triggered, the
 ///     system shortcut will take precedence.
+///   * If you have multiple keyboard layouts active and don't press the
+///     combination fast enough, macOS will switch to the next keyboard
+///     layout.
 ///   * Menu items on macOS cannot be bound to the `function` modifier,
 ///     so this modifier will work with Ghostty but will not be visible
 ///     in the menu.
