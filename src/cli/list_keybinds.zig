@@ -133,6 +133,7 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
     const ctrl_style: vaxis.Style = .{ .fg = .{ .index = 2 } };
     const alt_style: vaxis.Style = .{ .fg = .{ .index = 3 } };
     const shift_style: vaxis.Style = .{ .fg = .{ .index = 4 } };
+    const fn_style: vaxis.Style = .{ .fg = .{ .index = 5 } };
 
     var longest_col: usize = 0;
 
@@ -142,6 +143,10 @@ fn prettyPrint(alloc: Allocator, keybinds: Config.Keybinds) !u8 {
 
         var result: vaxis.Window.PrintResult = .{ .col = 0, .row = 0, .overflow = false };
         const trigger = bind.trigger;
+        if (trigger.mods.function) {
+            result = try win.printSegment(.{ .text = "fn   ", .style = fn_style }, .{ .col_offset = result.col });
+            result = try win.printSegment(.{ .text = " + " }, .{ .col_offset = result.col });
+        }
         if (trigger.mods.super) {
             result = try win.printSegment(.{ .text = "super", .style = super_style }, .{ .col_offset = result.col });
             result = try win.printSegment(.{ .text = " + " }, .{ .col_offset = result.col });
