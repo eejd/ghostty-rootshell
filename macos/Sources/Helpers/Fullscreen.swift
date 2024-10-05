@@ -269,7 +269,7 @@ class NonNativeFullscreen: FullscreenStyle {
               object == window else { return }
 
         // Our screens must have changed
-        guard savedState.screen != window.screen else { return }
+        guard savedState.screenID != window.screen?.displayID else { return }
 
         // When we change screens, we simply exit fullscreen. Changing
         // screens shouldn't naturally be possible, it can only happen
@@ -337,7 +337,7 @@ class NonNativeFullscreen: FullscreenStyle {
 
     /// The state that must be saved for non-native fullscreen to exit fullscreen.
     class SavedState {
-        weak var screen: NSScreen?
+        let screenID: UInt32?
         let tabGroup: NSWindowTabGroup?
         let tabGroupIndex: Int?
         let contentFrame: NSRect
@@ -347,7 +347,7 @@ class NonNativeFullscreen: FullscreenStyle {
         init?(_ window: NSWindow) {
             guard let contentView = window.contentView else { return nil }
 
-            self.screen = window.screen
+            self.screenID = window.screen?.displayID
             self.tabGroup = window.tabGroup
             self.tabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
             self.contentFrame = window.convertToScreen(contentView.frame)

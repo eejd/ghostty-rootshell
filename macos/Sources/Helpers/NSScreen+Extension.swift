@@ -1,6 +1,11 @@
 import Cocoa
 
 extension NSScreen {
+    /// The unique CoreGraphics display ID for this screen.
+    var displayID: UInt32? {
+        deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+    }
+
     // Returns true if the given screen has a visible dock. This isn't
     // point-in-time visible, this is true if the dock is always visible
     // AND present on this screen.

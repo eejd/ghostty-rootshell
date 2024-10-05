@@ -325,8 +325,7 @@ extension Ghostty {
             // When the window changes screens, we need to update libghostty with the screen
             // ID. If vsync is enabled, this will be used with the CVDisplayLink to ensure
             // the proper refresh rate is going.
-            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
-            ghostty_surface_set_display_id(surface, id)
+            ghostty_surface_set_display_id(surface, screen.displayID ?? 0)
         }
 
         // MARK: - NSView
