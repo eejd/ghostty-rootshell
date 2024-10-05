@@ -149,6 +149,12 @@ class AppDelegate: NSObject,
         // This registers the Ghostty => Services menu to exist.
         NSApp.servicesMenu = menuServices
 
+        // Setup a local event monitor for app-level keyboard shortcuts. See
+        // localEventHandler for more info why.
+        _ = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown],
+            handler: localEventHandler)
+
         // Configure user notifications
         let actions = [
             UNNotificationAction(identifier: Ghostty.userNotificationActionShow, title: "Show")
@@ -359,6 +365,53 @@ class AppDelegate: NSObject,
 
     private func focusedSurface() -> ghostty_surface_t? {
         return terminalManager.focusedSurface?.surface
+    }
+
+    // MARK: Notifications and Events
+
+    /// This handles events from the NSEvent.addLocalEventMonitor. We use this so we can get
+    /// events without any terminal windows open.
+    private func localEventHandler(_ event: NSEvent) -> NSEvent? {
+        return switch event.type {
+        case .keyDown:
+            localEventKeyDown(event)
+
+        default:
+            event
+        }
+    }
+
+    private func localEventKeyDown(_ event: NSEvent) -> NSEvent? {
+        // If we have a main window then we don't process any of the keys
+        // because we let it capture and propagate.
+        guard NSApp.mainWindow == nil else { return event }
+
+        // If this event would be handled by our menu then we do nothing.
+        if let mainMenu = NSApp.mainMenu,
+           mainMenu.performKeyEquivalent(with: event) {
+            return nil
+        }
+
+        // If we reach this point then we try to process the key event
+        // through the Ghostty key mechanism.
+
+        // Ghostty must be loaded
+        guard let ghostty = self.ghostty.app else { return event }
+
+        // Build our event input and call ghostty
+        var key_ev = ghostty_input_key_s()
+        key_ev.action = GHOSTTY_ACTION_PRESS
+        key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
+        key_ev.keycode = UInt32(event.keyCode)
+        key_ev.text = nil
+        key_ev.composing = false
+        if (ghostty_app_key(ghostty, key_ev)) {
+            // The key was used so we want to stop it from going to our Mac app
+            Ghostty.logger.debug("local key event handled event=\(event)")
+            return nil
+        }
+
+        return event
     }
 
     //MARK: - Restorable State
