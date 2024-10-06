@@ -172,25 +172,49 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
     // The full amplitude of the wave can be from the bottom to the
     // underline position. We also calculate our mid y point of the wave
-    const half_amplitude = @min(float_width / 6, float_thick * 2);
-    const y_mid: f64 = half_amplitude + 1;
+    const half_amplitude = 1.0 / wave_period;
+    const y_mid: f64 = half_amplitude + float_thick * 0.5 + 1;
 
-    const height: u32 = @intFromFloat(@ceil(half_amplitude * 4 + 2));
+    // This is used in calculating the offset curve estimate below.
+    const offset_factor = @min(1.0, float_thick * 0.5 * wave_period) * @min(1.0, half_amplitude * wave_period);
+
+    const height: u32 = @intFromFloat(@ceil(half_amplitude + float_thick + 1) * 2);
 
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     // follow Xiaolin Wu's antialias algorithm to draw the curve
     var x: u32 = 0;
     while (x < width) : (x += 1) {
-        const cosx: f64 = @cos(@as(f64, @floatFromInt(x)) * wave_period);
+        const t: f64 = @as(f64, @floatFromInt(x)) * wave_period;
+        // Use the slope at this location to add thickness to
+        // the line on this column, counteracting the thinning
+        // caused by the slope.
+        //
+        // This is not the exact offset curve for a sine wave,
+        // but it's a decent enough approximation.
+        //
+        // How did I derive this? I stared at Desmos and fiddled
+        // with numbers for an hour until it was good enough.
+        const t_u: f64 = t + std.math.pi;
+        const slope_factor_u: f64 = (@sin(t_u) * @sin(t_u) * offset_factor) / ((1.0 + @cos(t_u / 2) * @cos(t_u / 2) * 2) * wave_period);
+        const slope_factor_l: f64 = (@sin(t) * @sin(t) * offset_factor) / ((1.0 + @cos(t / 2) * @cos(t / 2) * 2) * wave_period);
+
+        const cosx: f64 = @cos(t);
+        // This will be the center of our stroke.
         const y: f64 = y_mid + half_amplitude * cosx;
-        const y_upper: u32 = @intFromFloat(@floor(y));
-        const y_lower: u32 = y_upper + thickness + 1;
-        const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
+
+        // The upper pixel and lower pixel are
+        // calculated relative to the center.
+        const y_u: f64 = y - float_thick * 0.5 - slope_factor_u;
+        const y_l: f64 = y + float_thick * 0.5 + slope_factor_l;
+        const y_upper: u32 = @intFromFloat(@floor(y_u));
+        const y_lower: u32 = @intFromFloat(@ceil(y_l));
+        const alpha_u: u8 = @intFromFloat(@round(255 * (1.0 - @abs(y_u - @floor(y_u)))));
+        const alpha_l: u8 = @intFromFloat(@round(255 * (1.0 - @abs(y_l - @ceil(y_l)))));
 
         // upper and lower bounds
-        canvas.pixel(x, @min(y_upper, height - 1), @enumFromInt(255 - alpha));
-        canvas.pixel(x, @min(y_lower, height - 1), @enumFromInt(alpha));
+        canvas.pixel(x, @min(y_upper, height - 1), @enumFromInt(alpha_u));
+        canvas.pixel(x, @min(y_lower, height - 1), @enumFromInt(alpha_l));
 
         // fill between upper and lower bound
         var y_fill: u32 = y_upper + 1;
