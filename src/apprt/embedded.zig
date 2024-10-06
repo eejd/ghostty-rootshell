@@ -132,6 +132,11 @@ pub const App = struct {
         surface: *Surface,
     };
 
+    /// See CoreApp.focusEvent
+    pub fn focusEvent(self: *App, focused: bool) void {
+        self.core_app.focusEvent(focused);
+    }
+
     /// See CoreApp.keyEvent.
     pub fn keyEvent(
         self: *App,
@@ -1294,6 +1299,14 @@ pub const CAPI = struct {
         v.terminate();
         global.alloc.destroy(v);
         core_app.destroy();
+    }
+
+    /// Update the focused state of the app.
+    export fn ghostty_app_set_focus(
+        app: *App,
+        focused: bool,
+    ) void {
+        app.focusEvent(focused);
     }
 
     /// Notify the app of a global keypress capture. This will return
