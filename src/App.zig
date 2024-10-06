@@ -294,9 +294,6 @@ pub fn keyEvent(
         .leaf => |leaf| leaf,
     };
 
-    // We only care about global keybinds
-    if (!leaf.flags.global) return false;
-
     // Perform the action
     self.performAllAction(rt_app, leaf.action) catch |err| {
         log.warn("error performing global keybind action action={s} err={}", .{

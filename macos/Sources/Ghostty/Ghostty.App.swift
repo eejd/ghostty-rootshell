@@ -87,7 +87,7 @@ extension Ghostty {
             // Subscribe to notifications for keyboard layout change so that we can update Ghostty.
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(self.keyboardSelectionDidChange(notification:)),
+                selector: #selector(keyboardSelectionDidChange(notification:)),
                 name: NSTextInputContext.keyboardSelectionDidChangeNotification,
                 object: nil)
             #endif
