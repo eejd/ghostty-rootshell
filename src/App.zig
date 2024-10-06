@@ -288,6 +288,9 @@ pub fn setQuit(self: *App) !void {
 /// This is separate from surface focus events. See the `focused`
 /// field for more information.
 pub fn focusEvent(self: *App, focused: bool) void {
+    // Prevent redundant focus events
+    if (self.focused == focused) return;
+
     log.debug("focus event focused={}", .{focused});
     self.focused = focused;
 }
