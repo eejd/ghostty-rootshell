@@ -50,7 +50,7 @@ pub fn renderGlyph(
         // bottom of the cell. We want the top of the glyph to be at line_pos
         // from the TOP of the cell, and then offset by the offset_y from the
         // draw function.
-        .offset_y = @as(i32, @intCast(height - line_pos)) - offset_y,
+        .offset_y = @as(i32, @intCast(height -| line_pos)) - offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(width),
