@@ -81,7 +81,11 @@ fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
 /// Draw a double underline.
 fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
-    const height: u32 = thickness * 3;
+    // Our gap between lines will be at least 2px.
+    // (i.e. if our thickness is 1, we still have a gap of 2)
+    const gap = @max(2, thickness);
+
+    const height: u32 = thickness * 2 * gap;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     canvas.rect(.{
@@ -93,7 +97,7 @@ fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
     canvas.rect(.{
         .x = 0,
-        .y = @intCast(thickness * 2),
+        .y = @intCast(thickness + gap),
         .width = width,
         .height = thickness,
     }, .on);
