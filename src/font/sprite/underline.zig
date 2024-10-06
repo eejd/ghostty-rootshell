@@ -158,18 +158,22 @@ fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 /// the basic math structure for this since I was lazy with the
 /// geometry.
 fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
-    const height: u32 = thickness * 4;
-    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+    const float_width: f64 = @floatFromInt(width);
+    const float_thick: f64 = @floatFromInt(thickness);
 
     // Calculate the wave period for a single character
     //   `2 * pi...` = 1 peak per character
     //   `4 * pi...` = 2 peaks per character
-    const wave_period = 2 * std.math.pi / @as(f64, @floatFromInt(width - 1));
+    const wave_period = 2 * std.math.pi / float_width;
 
     // The full amplitude of the wave can be from the bottom to the
     // underline position. We also calculate our mid y point of the wave
-    const half_amplitude: f64 = @as(f64, @floatFromInt(thickness));
+    const half_amplitude = @min(float_width / 6, float_thick * 2);
     const y_mid: f64 = half_amplitude + 1;
+
+    const height: u32 = @intFromFloat(@ceil(half_amplitude * 4 + 2));
+
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     // follow Xiaolin Wu's antialias algorithm to draw the curve
     var x: u32 = 0;
@@ -177,7 +181,7 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         const cosx: f64 = @cos(@as(f64, @floatFromInt(x)) * wave_period);
         const y: f64 = y_mid + half_amplitude * cosx;
         const y_upper: u32 = @intFromFloat(@floor(y));
-        const y_lower: u32 = y_upper + thickness + (thickness >> 1);
+        const y_lower: u32 = y_upper + thickness + 1;
         const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
 
         // upper and lower bounds
@@ -191,7 +195,7 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         }
     }
 
-    const offset_y: i32 = -@as(i32, @intCast(thickness * 2));
+    const offset_y: i32 = @intFromFloat(-@round(half_amplitude));
 
     return .{ canvas, offset_y };
 }
