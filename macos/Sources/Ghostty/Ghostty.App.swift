@@ -83,14 +83,27 @@ extension Ghostty {
             }
             self.app = app
 
-            #if os(macOS)
-            // Subscribe to notifications for keyboard layout change so that we can update Ghostty.
-            NotificationCenter.default.addObserver(
+#if os(macOS)
+            // Set our initial focus state
+            ghostty_app_set_focus(app, NSApp.isActive)
+
+            let center = NotificationCenter.default
+            center.addObserver(
                 self,
                 selector: #selector(keyboardSelectionDidChange(notification:)),
                 name: NSTextInputContext.keyboardSelectionDidChangeNotification,
                 object: nil)
-            #endif
+            center.addObserver(
+                self,
+                selector: #selector(applicationDidBecomeActive(notification:)),
+                name: NSApplication.didBecomeActiveNotification,
+                object: nil)
+            center.addObserver(
+                self,
+                selector: #selector(applicationDidResignActive(notification:)),
+                name: NSApplication.didResignActiveNotification,
+                object: nil)
+#endif
 
             self.readiness = .ready
         }
@@ -98,14 +111,10 @@ extension Ghostty {
         deinit {
             // This will force the didSet callbacks to run which free.
             self.app = nil
-
-            #if os(macOS)
-            // Remove our observer
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSTextInputContext.keyboardSelectionDidChangeNotification,
-                object: nil)
-            #endif
+            
+#if os(macOS)
+            NotificationCenter.default.removeObserver(self)
+#endif
         }
 
         // MARK: App Operations
@@ -265,6 +274,19 @@ extension Ghostty {
             guard let app = self.app else { return }
             ghostty_app_keyboard_changed(app)
         }
+
+        // Called when the app becomes active.
+        @objc private func applicationDidBecomeActive(notification: NSNotification) {
+            guard let app = self.app else { return }
+            ghostty_app_set_focus(app, true)
+        }
+
+        // Called when the app becomes inactive.
+        @objc private func applicationDidResignActive(notification: NSNotification) {
+            guard let app = self.app else { return }
+            ghostty_app_set_focus(app, false)
+        }
+
 
         // MARK: Ghostty Callbacks (macOS)
 
