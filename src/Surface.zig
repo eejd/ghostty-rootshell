@@ -927,6 +927,73 @@ fn modsChanged(self: *Surface, mods: input.Mods) void {
     }
 }
 
+/// Call this whenever the mouse moves or mods changed. The time
+/// at which this is called may matter for the correctness of other
+/// mouse events (see cursorPosCallback) but this is shared logic
+/// for multiple events.
+fn mouseRefreshLinks(
+    self: *Surface,
+    pos: apprt.CursorPos,
+    pos_vp: terminal.point.Coordinate,
+    over_link: bool,
+) !void {
+    self.mouse.link_point = pos_vp;
+
+    if (try self.linkAtPos(pos)) |link| {
+        self.renderer_state.mouse.point = pos_vp;
+        self.mouse.over_link = true;
+        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_shape,
+            .pointer,
+        );
+
+        switch (link[0]) {
+            .open => {
+                const str = try self.io.terminal.screen.selectionString(self.alloc, .{
+                    .sel = link[1],
+                    .trim = false,
+                });
+                defer self.alloc.free(str);
+                try self.rt_app.performAction(
+                    .{ .surface = self },
+                    .mouse_over_link,
+                    .{ .url = str },
+                );
+            },
+
+            ._open_osc8 => link: {
+                // Show the URL in the status bar
+                const pin = link[1].start();
+                const uri = self.osc8URI(pin) orelse {
+                    log.warn("failed to get URI for OSC8 hyperlink", .{});
+                    break :link;
+                };
+                try self.rt_app.performAction(
+                    .{ .surface = self },
+                    .mouse_over_link,
+                    .{ .url = uri },
+                );
+            },
+        }
+
+        try self.queueRender();
+    } else if (over_link) {
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_shape,
+            self.io.terminal.mouse_shape,
+        );
+        try self.rt_app.performAction(
+            .{ .surface = self },
+            .mouse_over_link,
+            .{ .url = "" },
+        );
+        try self.queueRender();
+    }
+}
+
 /// Called when our renderer health state changes.
 fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     log.warn("renderer health status change status={}", .{health});
@@ -1493,42 +1560,22 @@ pub fn keyCallback(
         self.hideMouse();
     }
 
-    // If our mouse modifiers change, we run a cursor position event.
-    // This handles the scenario where URL highlighting should be
-    // toggled for example.
+    // If our mouse modifiers change we may need to change our
+    // link highlight state.
     if (!self.mouse.mods.equal(event.mods)) mouse_mods: {
-        // This is a hacky way to prevent cursorPosCallback from
-        // showing our hidden mouse: we just pretend the mouse isn't hidden.
-        // We used to re-call `self.hideMouse()` but this causes flickering
-        // in some cases in GTK.
-        const rehide = self.mouse.hidden;
-        self.mouse.hidden = false;
-
         // Update our modifiers, this will update mouse mods too
         self.modsChanged(event.mods);
 
-        // We need to avoid mouse position updates due to cursor
-        // changes because the mouse event should only report if the
-        // mouse moved or button pressed (see:
-        // https://github.com/ghostty-org/ghostty/issues/2018)
-        //
-        // This is hacky but its a way we can avoid grabbing the
-        // renderer lock in order to avoid the mouse report.
-        const old_mods = self.mouse.mods;
-        const old_config = self.config.mouse_shift_capture;
-        self.mouse.mods.shift = true;
-        self.config.mouse_shift_capture = .never;
-        defer {
-            self.mouse.mods = old_mods;
-            self.config.mouse_shift_capture = old_config;
-        }
-
-        // We set this to null to force link reprocessing since
-        // mod changes can affect link highlighting.
-        self.mouse.link_point = null;
+        // Refresh our link state
         const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
-        self.cursorPosCallback(pos, null) catch {};
-        if (rehide) self.mouse.hidden = true;
+        self.mouseRefreshLinks(
+            pos,
+            self.posToViewport(pos.x, pos.y),
+            self.mouse.over_link,
+        ) catch |err| {
+            log.warn("failed to refresh links err={}", .{err});
+            break :mouse_mods;
+        };
     }
 
     // Process the cursor state logic. This will update the cursor shape if
@@ -3145,61 +3192,9 @@ pub fn cursorPosCallback(
             return;
         }
     }
-    self.mouse.link_point = pos_vp;
 
-    if (try self.linkAtPos(pos)) |link| {
-        self.renderer_state.mouse.point = pos_vp;
-        self.mouse.over_link = true;
-        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
-        try self.rt_app.performAction(
-            .{ .surface = self },
-            .mouse_shape,
-            .pointer,
-        );
-
-        switch (link[0]) {
-            .open => {
-                const str = try self.io.terminal.screen.selectionString(self.alloc, .{
-                    .sel = link[1],
-                    .trim = false,
-                });
-                defer self.alloc.free(str);
-                try self.rt_app.performAction(
-                    .{ .surface = self },
-                    .mouse_over_link,
-                    .{ .url = str },
-                );
-            },
-
-            ._open_osc8 => link: {
-                // Show the URL in the status bar
-                const pin = link[1].start();
-                const uri = self.osc8URI(pin) orelse {
-                    log.warn("failed to get URI for OSC8 hyperlink", .{});
-                    break :link;
-                };
-                try self.rt_app.performAction(
-                    .{ .surface = self },
-                    .mouse_over_link,
-                    .{ .url = uri },
-                );
-            },
-        }
-
-        try self.queueRender();
-    } else if (over_link) {
-        try self.rt_app.performAction(
-            .{ .surface = self },
-            .mouse_shape,
-            self.io.terminal.mouse_shape,
-        );
-        try self.rt_app.performAction(
-            .{ .surface = self },
-            .mouse_over_link,
-            .{ .url = "" },
-        );
-        try self.queueRender();
-    }
+    // We can process new links.
+    try self.mouseRefreshLinks(pos, pos_vp, over_link);
 }
 
 /// Double-click dragging moves the selection one "word" at a time.
