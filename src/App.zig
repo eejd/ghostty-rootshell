@@ -30,6 +30,21 @@ alloc: Allocator,
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
 
+/// This is true if the app that Ghostty is in is focused. This may
+/// mean that no surfaces (terminals) are focused but the app is still
+/// focused, i.e. may an about window. On macOS, this concept is known
+/// as the "active" app while focused windows are known as the
+/// "main" window.
+///
+/// This is used to determine if keyboard shortcuts that are non-global
+/// should be processed. If the app is not focused, then we don't want
+/// to process keyboard shortcuts that are not global.
+///
+/// This defaults to true since we assume that the app is focused when
+/// Ghostty is initialized but a well behaved apprt should call
+/// focusEvent to set this to the correct value right away.
+focused: bool = true,
+
 /// The last focused surface. This surface may not be valid;
 /// you must always call hasSurface to validate it.
 focused_surface: ?*Surface = null,
@@ -54,6 +69,9 @@ last_notification_digest: u64 = 0,
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
+///
+/// After calling this function, well behaved apprts should then call
+/// `focusEvent` to set the initial focus state of the app.
 pub fn create(
     alloc: Allocator,
 ) !*App {
@@ -265,9 +283,25 @@ pub fn setQuit(self: *App) !void {
     self.quit = true;
 }
 
+/// Handle an app-level focus event. This should be called whenever
+/// the focus state of the entire app containing Ghostty changes.
+/// This is separate from surface focus events. See the `focused`
+/// field for more information.
+pub fn focusEvent(self: *App, focused: bool) void {
+    // Prevent redundant focus events
+    if (self.focused == focused) return;
+
+    log.debug("focus event focused={}", .{focused});
+    self.focused = focused;
+}
+
 /// Handle a key event at the app-scope. If this key event is used,
 /// this will return true and the caller shouldn't continue processing
 /// the event. If the event is not used, this will return false.
+///
+/// If the app currently has focus then all key events are processed.
+/// If the app does not have focus then only global key events are
+/// processed.
 pub fn keyEvent(
     self: *App,
     rt_app: *apprt.App,
@@ -294,13 +328,33 @@ pub fn keyEvent(
         .leaf => |leaf| leaf,
     };
 
-    // We only care about global keybinds
-    if (!leaf.flags.global) return false;
+    // If we aren't focused, then we only process global keybinds.
+    if (!self.focused and !leaf.flags.global) return false;
 
-    // Perform the action
-    self.performAllAction(rt_app, leaf.action) catch |err| {
-        log.warn("error performing global keybind action action={s} err={}", .{
-            @tagName(leaf.action),
+    // Global keybinds are done using performAll so that they
+    // can target all surfaces too.
+    if (leaf.flags.global) {
+        self.performAllAction(rt_app, leaf.action) catch |err| {
+            log.warn("error performing global keybind action action={s} err={}", .{
+                @tagName(leaf.action),
+                err,
+            });
+        };
+
+        return true;
+    }
+
+    // Must be focused to process non-global keybinds
+    assert(self.focused);
+    assert(!leaf.flags.global);
+
+    // If we are focused, then we process keybinds only if they are
+    // app-scoped. Otherwise, we do nothing. Surface-scoped should
+    // be processed by Surface.keyEvent.
+    const app_action = leaf.action.scoped(.app) orelse return false;
+    self.performAction(rt_app, app_action) catch |err| {
+        log.warn("error performing app keybind action action={s} err={}", .{
+            @tagName(app_action),
             err,
         });
     };

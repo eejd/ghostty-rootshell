@@ -97,7 +97,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_minor_version(),
         c.gtk_get_micro_version(),
     });
-    
+
     if (version.atLeast(4, 16, 0)) {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE
         _ = internal_os.setenv("GDK_DISABLE", "gles-api");
@@ -230,6 +230,24 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         app,
         "activate",
         c.G_CALLBACK(&gtkActivate),
+        core_app,
+        null,
+        c.G_CONNECT_DEFAULT,
+    );
+
+    // Other signals
+    _ = c.g_signal_connect_data(
+        app,
+        "window-added",
+        c.G_CALLBACK(&gtkWindowAdded),
+        core_app,
+        null,
+        c.G_CONNECT_DEFAULT,
+    );
+    _ = c.g_signal_connect_data(
+        app,
+        "window-removed",
+        c.G_CALLBACK(&gtkWindowRemoved),
         core_app,
         null,
         c.G_CONNECT_DEFAULT,
@@ -1063,6 +1081,72 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
     _ = core_app.mailbox.push(.{
         .new_window = .{},
     }, .{ .forever = {} });
+}
+
+fn gtkWindowAdded(
+    _: *c.GtkApplication,
+    window: *c.GtkWindow,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
+
+    // Request the is-active property change so we can detect
+    // when our app loses focus.
+    _ = c.g_signal_connect_data(
+        window,
+        "notify::is-active",
+        c.G_CALLBACK(&gtkWindowIsActive),
+        core_app,
+        null,
+        c.G_CONNECT_DEFAULT,
+    );
+}
+
+fn gtkWindowRemoved(
+    _: *c.GtkApplication,
+    _: *c.GtkWindow,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
+
+    // Recheck if we are focused
+    gtkWindowIsActive(null, undefined, core_app);
+}
+
+fn gtkWindowIsActive(
+    window: ?*c.GtkWindow,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
+
+    // If our window is active, then we can tell the app
+    // that we are focused.
+    if (window) |w| {
+        if (c.gtk_window_is_active(w) == 1) {
+            core_app.focusEvent(true);
+            return;
+        }
+    }
+
+    // If the window becomes inactive, we need to check if any
+    // other windows are active. If not, then we are no longer
+    // focused.
+    if (c.gtk_window_list_toplevels()) |list| {
+        defer c.g_list_free(list);
+        var current: ?*c.GList = list;
+        while (current) |elem| : (current = elem.next) {
+            // If the window is active then we are still focused.
+            // This is another window since we did our check above.
+            // That window should trigger its own is-active
+            // callback so we don't need to call it here.
+            const w: *c.GtkWindow = @alignCast(@ptrCast(elem.data));
+            if (c.gtk_window_is_active(w) == 1) return;
+        }
+    }
+
+    // We are not focused
+    core_app.focusEvent(false);
 }
 
 /// Call a D-Bus method to determine the current color scheme. If there
