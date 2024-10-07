@@ -1395,7 +1395,14 @@ fn gtkKeyPressed(
     gtk_mods: c.GdkModifierType,
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
-    return if (keyEvent(.press, ec_key, keyval, keycode, gtk_mods, ud)) 1 else 0;
+    const self = userdataSelf(ud.?);
+    return if (self.keyEvent(
+        .press,
+        ec_key,
+        keyval,
+        keycode,
+        gtk_mods,
+    )) 1 else 0;
 }
 
 fn gtkKeyReleased(
@@ -1405,7 +1412,14 @@ fn gtkKeyReleased(
     state: c.GdkModifierType,
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
-    return if (keyEvent(.release, ec_key, keyval, keycode, state, ud)) 1 else 0;
+    const self = userdataSelf(ud.?);
+    return if (self.keyEvent(
+        .release,
+        ec_key,
+        keyval,
+        keycode,
+        state,
+    )) 1 else 0;
 }
 
 /// Key press event. This is where we do ALL of our key handling,
@@ -1432,15 +1446,14 @@ fn gtkKeyReleased(
 /// Note we ALSO have an IMContext attached directly to the widget
 /// which can emit preedit and commit callbacks. But, if we're not
 /// in a keypress, we let those automatically work.
-fn keyEvent(
+pub fn keyEvent(
+    self: *Surface,
     action: input.Action,
     ec_key: *c.GtkEventControllerKey,
     keyval: c.guint,
     keycode: c.guint,
     gtk_mods: c.GdkModifierType,
-    ud: ?*anyopaque,
 ) bool {
-    const self = userdataSelf(ud.?);
     const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
     const event = c.gtk_event_controller_get_current_event(
         @ptrCast(ec_key),

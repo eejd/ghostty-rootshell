@@ -679,90 +679,14 @@ fn gtkKeyPressed(
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
     const self = userdataSelf(ud.?);
-    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key)) orelse return 0;
-
-    // We want to get the physical unmapped key to process physical keybinds.
-    // (These are keybinds explicitly marked as requesting physical mapping).
-    const physical_key = keycode: for (input.keycodes.entries) |entry| {
-        if (entry.native == keycode) break :keycode entry.key;
-    } else .invalid;
-
-    // Get our modifier for the event
-    const mods: input.Mods = gtk_key.eventMods(
-        @ptrCast(self.window),
-        event,
-        physical_key,
-        gtk_mods,
-        if (self.app.x11_xkb) |*xkb| xkb else null,
-    );
-
-    // Get our consumed modifiers
-    const consumed_mods: input.Mods = consumed: {
-        const raw = c.gdk_key_event_get_consumed_modifiers(event);
-        const masked = raw & c.GDK_MODIFIER_MASK;
-        break :consumed gtk_key.translateMods(masked);
-    };
-
-    // Get the unshifted unicode value of the keyval.
-    const keyval_unicode_unshifted: u21 = gtk_key.keyvalUnicodeUnshifted(
-        @ptrCast(self.window),
-        event,
+    const surface = self.app.core_app.focusedSurface() orelse return 0;
+    return if (surface.rt_surface.keyEvent(
+        .press,
+        ec_key,
+        keyval,
         keycode,
-    );
-
-    // If we're not in a dead key state, we want to translate our text
-    // to some input.Key.
-    const key: input.Key = key: {
-        // First, try to convert the keyval directly to a key. This allows the
-        // use of key remapping and identification of keypad numerics (as
-        // opposed to their ASCII counterparts)
-        if (gtk_key.keyFromKeyval(keyval)) |key| {
-            break :key key;
-        }
-
-        // If that doesn't work then we try to translate the kevval..
-        if (keyval_unicode != 0) {
-            if (std.math.cast(u8, keyval_unicode)) |byte| {
-                if (input.Key.fromASCII(byte)) |key| {
-                    break :key key;
-                }
-            }
-        }
-
-        // If that doesn't work we use the unshifted value...
-        if (std.math.cast(u8, keyval_unicode_unshifted)) |ascii| {
-            if (input.Key.fromASCII(ascii)) |key| {
-                break :key key;
-            }
-        }
-
-        if (keyval_unicode_unshifted != 0) break :key .invalid;
-        break :key physical_key;
-    };
-
-    // Build our final key event
-    const core_event: input.KeyEvent = .{
-        .action = .press,
-        .key = key,
-        .physical_key = physical_key,
-        .mods = mods,
-        .consumed_mods = consumed_mods,
-        .composing = false,
-        .utf8 = "",
-        .unshifted_codepoint = keyval_unicode_unshifted,
-    };
-
-    // log.debug("attempting app-scoped key event={}", .{core_event});
-
-    // Invoke the core Ghostty logic to handle this input.
-    const consumed = self.app.core_app.keyEvent(self.app, core_event);
-    if (consumed) {
-        log.info("app-scoped key consumed event={}", .{core_event});
-        return 1;
-    }
-
-    return 0;
+        gtk_mods,
+    )) 1 else 0;
 }
 
 fn gtkActionAbout(
