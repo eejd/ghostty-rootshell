@@ -679,6 +679,22 @@ fn gtkKeyPressed(
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
     const self = userdataSelf(ud.?);
+
+    // We only process window-level events currently for the tab
+    // overview. This is primarily defensive programming because
+    // I'm not 100% certain how our logic below will interact with
+    // other parts of the application but I know for sure we must
+    // handle this during the tab overview.
+    //
+    // If someone can confidently show or explain that this is not
+    // necessary, please remove this check.
+    if (comptime adwaita.versionAtLeast(1, 4, 0)) {
+        if (self.tab_overview) |tab_overview_widget| {
+            const tab_overview: *c.AdwTabOverview = @ptrCast(@alignCast(tab_overview_widget));
+            if (c.adw_tab_overview_get_open(tab_overview) == 0) return 0;
+        }
+    }
+
     const surface = self.app.core_app.focusedSurface() orelse return 0;
     return if (surface.rt_surface.keyEvent(
         .press,
