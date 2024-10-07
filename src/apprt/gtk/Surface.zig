@@ -1268,7 +1268,7 @@ fn gtkMouseDown(
     const gtk_mods = c.gdk_event_get_modifier_state(event);
 
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
-    const mods = translateMods(gtk_mods);
+    const mods = gtk_key.translateMods(gtk_mods);
 
     // If we don't have focus, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
@@ -1300,7 +1300,7 @@ fn gtkMouseUp(
     const gtk_mods = c.gdk_event_get_modifier_state(event);
 
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
-    const mods = translateMods(gtk_mods);
+    const mods = gtk_key.translateMods(gtk_mods);
 
     const self = userdataSelf(ud.?);
     _ = self.core_surface.mouseButtonCallback(.release, button, mods) catch |err| {
@@ -1342,7 +1342,7 @@ fn gtkMouseMotion(
     // Get our modifiers
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
     const gtk_mods = c.gdk_event_get_modifier_state(event);
-    const mods = translateMods(gtk_mods);
+    const mods = gtk_key.translateMods(gtk_mods);
 
     self.core_surface.cursorPosCallback(self.cursor_pos, mods) catch |err| {
         log.err("error in cursor pos callback err={}", .{err});
@@ -1359,7 +1359,7 @@ fn gtkMouseLeave(
     // Get our modifiers
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
     const gtk_mods = c.gdk_event_get_modifier_state(event);
-    const mods = translateMods(gtk_mods);
+    const mods = gtk_key.translateMods(gtk_mods);
     self.core_surface.cursorPosCallback(.{ .x = -1, .y = -1 }, mods) catch |err| {
         log.err("error in cursor pos callback err={}", .{err});
         return;
@@ -1395,7 +1395,14 @@ fn gtkKeyPressed(
     gtk_mods: c.GdkModifierType,
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
-    return if (keyEvent(.press, ec_key, keyval, keycode, gtk_mods, ud)) 1 else 0;
+    const self = userdataSelf(ud.?);
+    return if (self.keyEvent(
+        .press,
+        ec_key,
+        keyval,
+        keycode,
+        gtk_mods,
+    )) 1 else 0;
 }
 
 fn gtkKeyReleased(
@@ -1405,7 +1412,14 @@ fn gtkKeyReleased(
     state: c.GdkModifierType,
     ud: ?*anyopaque,
 ) callconv(.C) c.gboolean {
-    return if (keyEvent(.release, ec_key, keyval, keycode, state, ud)) 1 else 0;
+    const self = userdataSelf(ud.?);
+    return if (self.keyEvent(
+        .release,
+        ec_key,
+        keyval,
+        keycode,
+        state,
+    )) 1 else 0;
 }
 
 /// Key press event. This is where we do ALL of our key handling,
@@ -1432,64 +1446,26 @@ fn gtkKeyReleased(
 /// Note we ALSO have an IMContext attached directly to the widget
 /// which can emit preedit and commit callbacks. But, if we're not
 /// in a keypress, we let those automatically work.
-fn keyEvent(
+pub fn keyEvent(
+    self: *Surface,
     action: input.Action,
     ec_key: *c.GtkEventControllerKey,
     keyval: c.guint,
     keycode: c.guint,
     gtk_mods: c.GdkModifierType,
-    ud: ?*anyopaque,
 ) bool {
-    const self = userdataSelf(ud.?);
     const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
-    const display = c.gtk_widget_get_display(@ptrCast(self.gl_area));
+    const event = c.gtk_event_controller_get_current_event(
+        @ptrCast(ec_key),
+    ) orelse return false;
 
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
-    const keyval_unicode_unshifted: u21 = unshifted: {
-        // We need to get the currently active keyboard layout so we know
-        // what group to look at.
-        const layout = c.gdk_key_event_get_layout(@ptrCast(event));
-
-        // Get all the possible keyboard mappings for this keycode. A keycode
-        // is the physical key pressed.
-        var keys: [*]c.GdkKeymapKey = undefined;
-        var keyvals: [*]c.guint = undefined;
-        var n_keys: c_int = 0;
-        if (c.gdk_display_map_keycode(
-            display,
-            keycode,
-            @ptrCast(&keys),
-            @ptrCast(&keyvals),
-            &n_keys,
-        ) == 0) break :unshifted 0;
-
-        defer c.g_free(keys);
-        defer c.g_free(keyvals);
-
-        // debugging:
-        // log.debug("layout={}", .{layout});
-        // for (0..@intCast(n_keys)) |i| {
-        //     log.debug("keymap key={} codepoint={x}", .{
-        //         keys[i],
-        //         c.gdk_keyval_to_unicode(keyvals[i]),
-        //     });
-        // }
-
-        for (0..@intCast(n_keys)) |i| {
-            if (keys[i].group == layout and
-                keys[i].level == 0)
-            {
-                break :unshifted std.math.cast(
-                    u21,
-                    c.gdk_keyval_to_unicode(keyvals[i]),
-                ) orelse 0;
-            }
-        }
-
-        break :unshifted 0;
-    };
+    const keyval_unicode_unshifted: u21 = gtk_key.keyvalUnicodeUnshifted(
+        @ptrCast(self.gl_area),
+        event,
+        keycode,
+    );
 
     // We always reset our committed text when ending a keypress so that
     // future keypresses don't think we have a commit event.
@@ -1549,44 +1525,20 @@ fn keyEvent(
         if (entry.native == keycode) break :keycode entry.key;
     } else .invalid;
 
-    const mods = mods: {
-        const device = c.gdk_event_get_device(event);
-
-        var mods = if (self.app.x11_xkb) |xkb|
-            // Add any modifier state events from Xkb if we have them (X11
-            // only). Null back from the Xkb call means there was no modifier
-            // event to read. This likely means that the key event did not
-            // result in a modifier change and we can safely rely on the GDK
-            // state.
-            xkb.modifier_state_from_notify(display) orelse translateMods(gtk_mods)
-        else
-            // On Wayland, we have to use the GDK device because the mods sent
-            // to this event do not have the modifier key applied if it was
-            // presssed (i.e. left control).
-            translateMods(c.gdk_device_get_modifier_state(device));
-
-        mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
-
-        switch (physical_key) {
-            .left_shift => mods.sides.shift = .left,
-            .right_shift => mods.sides.shift = .right,
-            .left_control => mods.sides.ctrl = .left,
-            .right_control => mods.sides.ctrl = .right,
-            .left_alt => mods.sides.alt = .left,
-            .right_alt => mods.sides.alt = .right,
-            .left_super => mods.sides.super = .left,
-            .right_super => mods.sides.super = .right,
-            else => {},
-        }
-
-        break :mods mods;
-    };
+    // Get our modifier for the event
+    const mods: input.Mods = gtk_key.eventMods(
+        @ptrCast(self.gl_area),
+        event,
+        physical_key,
+        gtk_mods,
+        if (self.app.x11_xkb) |*xkb| xkb else null,
+    );
 
     // Get our consumed modifiers
     const consumed_mods: input.Mods = consumed: {
         const raw = c.gdk_key_event_get_consumed_modifiers(event);
         const masked = raw & c.GDK_MODIFIER_MASK;
-        break :consumed translateMods(masked);
+        break :consumed gtk_key.translateMods(masked);
     };
 
     // If we're not in a dead key state, we want to translate our text
@@ -1906,18 +1858,6 @@ fn translateMouseButton(button: c.guint) input.MouseButton {
         11 => .eleven,
         else => .unknown,
     };
-}
-
-fn translateMods(state: c.GdkModifierType) input.Mods {
-    var mods: input.Mods = .{};
-    if (state & c.GDK_SHIFT_MASK != 0) mods.shift = true;
-    if (state & c.GDK_CONTROL_MASK != 0) mods.ctrl = true;
-    if (state & c.GDK_ALT_MASK != 0) mods.alt = true;
-    if (state & c.GDK_SUPER_MASK != 0) mods.super = true;
-
-    // Lock is dependent on the X settings but we just assume caps lock.
-    if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;
-    return mods;
 }
 
 pub fn present(self: *Surface) void {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const input = @import("../../input.zig");
 const c = @import("c.zig").c;
+const x11 = @import("x11.zig");
 
 /// Returns a GTK accelerator string from a trigger.
 pub fn accelFromTrigger(buf: []u8, trigger: input.Binding.Trigger) !?[:0]const u8 {
@@ -44,6 +45,102 @@ pub fn translateMods(state: c.GdkModifierType) input.Mods {
 
     // Lock is dependent on the X settings but we just assume caps lock.
     if (state & c.GDK_LOCK_MASK != 0) mods.caps_lock = true;
+    return mods;
+}
+
+// Get the unshifted unicode value of the keyval. This is used
+// by the Kitty keyboard protocol.
+pub fn keyvalUnicodeUnshifted(
+    widget: *c.GtkWidget,
+    event: *c.GdkEvent,
+    keycode: c.guint,
+) u21 {
+    const display = c.gtk_widget_get_display(widget);
+
+    // We need to get the currently active keyboard layout so we know
+    // what group to look at.
+    const layout = c.gdk_key_event_get_layout(@ptrCast(event));
+
+    // Get all the possible keyboard mappings for this keycode. A keycode
+    // is the physical key pressed.
+    var keys: [*]c.GdkKeymapKey = undefined;
+    var keyvals: [*]c.guint = undefined;
+    var n_keys: c_int = 0;
+    if (c.gdk_display_map_keycode(
+        display,
+        keycode,
+        @ptrCast(&keys),
+        @ptrCast(&keyvals),
+        &n_keys,
+    ) == 0) return 0;
+
+    defer c.g_free(keys);
+    defer c.g_free(keyvals);
+
+    // debugging:
+    // log.debug("layout={}", .{layout});
+    // for (0..@intCast(n_keys)) |i| {
+    //     log.debug("keymap key={} codepoint={x}", .{
+    //         keys[i],
+    //         c.gdk_keyval_to_unicode(keyvals[i]),
+    //     });
+    // }
+
+    for (0..@intCast(n_keys)) |i| {
+        if (keys[i].group == layout and
+            keys[i].level == 0)
+        {
+            return std.math.cast(
+                u21,
+                c.gdk_keyval_to_unicode(keyvals[i]),
+            ) orelse 0;
+        }
+    }
+
+    return 0;
+}
+
+/// Returns the mods to use a key event from a GTK event.
+/// This requires a lot of context because the GdkEvent
+/// doesn't contain enough on its own.
+pub fn eventMods(
+    widget: *c.GtkWidget,
+    event: *c.GdkEvent,
+    physical_key: input.Key,
+    gtk_mods: c.GdkModifierType,
+    x11_xkb: ?*x11.Xkb,
+) input.Mods {
+    const device = c.gdk_event_get_device(event);
+    const display = c.gtk_widget_get_display(widget);
+
+    var mods = if (x11_xkb) |xkb|
+        // Add any modifier state events from Xkb if we have them (X11
+        // only). Null back from the Xkb call means there was no modifier
+        // event to read. This likely means that the key event did not
+        // result in a modifier change and we can safely rely on the GDK
+        // state.
+        xkb.modifier_state_from_notify(display) orelse
+            translateMods(gtk_mods)
+    else
+        // On Wayland, we have to use the GDK device because the mods sent
+        // to this event do not have the modifier key applied if it was
+        // presssed (i.e. left control).
+        translateMods(c.gdk_device_get_modifier_state(device));
+
+    mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
+
+    switch (physical_key) {
+        .left_shift => mods.sides.shift = .left,
+        .right_shift => mods.sides.shift = .right,
+        .left_control => mods.sides.ctrl = .left,
+        .right_control => mods.sides.ctrl = .right,
+        .left_alt => mods.sides.alt = .left,
+        .right_alt => mods.sides.alt = .right,
+        .left_super => mods.sides.super = .left,
+        .right_super => mods.sides.super = .right,
+        else => {},
+    }
+
     return mods;
 }
 

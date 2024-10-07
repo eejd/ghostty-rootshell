@@ -21,6 +21,7 @@ const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
+const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
 
 const log = std.log.scoped(.gtk);
@@ -255,10 +256,18 @@ pub fn init(self: *Window, app: *App) !void {
     // If we are in fullscreen mode, new windows start fullscreen.
     if (app.config.fullscreen) c.gtk_window_fullscreen(self.window);
 
+    // We register a key event controller with the window so
+    // we can catch key events when our surface may not be
+    // focused (i.e. when the libadw tab overview is shown).
+    const ec_key_press = c.gtk_event_controller_key_new();
+    errdefer c.g_object_unref(ec_key_press);
+    c.gtk_widget_add_controller(window, ec_key_press);
+
     // All of our events
     _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
 
     // Our actions for the menu
     initActions(self);
@@ -660,6 +669,40 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     const alloc = self.app.core_app.alloc;
     self.deinit();
     alloc.destroy(self);
+}
+
+fn gtkKeyPressed(
+    ec_key: *c.GtkEventControllerKey,
+    keyval: c.guint,
+    keycode: c.guint,
+    gtk_mods: c.GdkModifierType,
+    ud: ?*anyopaque,
+) callconv(.C) c.gboolean {
+    const self = userdataSelf(ud.?);
+
+    // We only process window-level events currently for the tab
+    // overview. This is primarily defensive programming because
+    // I'm not 100% certain how our logic below will interact with
+    // other parts of the application but I know for sure we must
+    // handle this during the tab overview.
+    //
+    // If someone can confidently show or explain that this is not
+    // necessary, please remove this check.
+    if (comptime adwaita.versionAtLeast(1, 4, 0)) {
+        if (self.tab_overview) |tab_overview_widget| {
+            const tab_overview: *c.AdwTabOverview = @ptrCast(@alignCast(tab_overview_widget));
+            if (c.adw_tab_overview_get_open(tab_overview) == 0) return 0;
+        }
+    }
+
+    const surface = self.app.core_app.focusedSurface() orelse return 0;
+    return if (surface.rt_surface.keyEvent(
+        .press,
+        ec_key,
+        keyval,
+        keycode,
+        gtk_mods,
+    )) 1 else 0;
 }
 
 fn gtkActionAbout(
