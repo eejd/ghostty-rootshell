@@ -3032,6 +3032,11 @@ pub fn mousePressureCallback(
 
 /// Cursor position callback.
 ///
+/// Send negative x or y values to indicate the cursor is outside the
+/// viewport. The magnitude of the negative values are meaningless;
+/// they are only used to indicate the cursor is outside the viewport.
+/// It's important to do this to ensure hover states are cleared.
+///
 /// The mods parameter is optional because some apprts do not provide
 /// modifier information on cursor position events. If mods is null then
 /// we'll use the last known mods. This is usually accurate since mod events
@@ -3046,6 +3051,36 @@ pub fn cursorPosCallback(
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
+
+    // If the position is negative, it is outside our viewport and
+    // we need to clear any hover states.
+    if (pos.x < 0 or pos.y < 0) {
+        // Reset our hyperlink state
+        self.mouse.link_point = null;
+        if (self.mouse.over_link) {
+            self.mouse.over_link = false;
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_shape,
+                self.io.terminal.mouse_shape,
+            );
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_over_link,
+                .{ .url = "" },
+            );
+            try self.queueRender();
+        }
+
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // No mouse point so we don't highlight links
+        self.renderer_state.mouse.point = null;
+        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
+
+        return;
+    }
 
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
