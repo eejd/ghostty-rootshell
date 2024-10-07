@@ -517,6 +517,14 @@ extension Ghostty {
             self.mouseMoved(with: event)
         }
 
+        override func rightMouseDragged(with event: NSEvent) {
+            self.mouseMoved(with: event)
+        }
+
+        override func otherMouseDragged(with event: NSEvent) {
+            self.mouseMoved(with: event)
+        }
+
         override func scrollWheel(with event: NSEvent) {
             guard let surface = self.surface else { return }
 
