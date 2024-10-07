@@ -50,7 +50,7 @@ pub fn renderGlyph(
         // bottom of the cell. We want the top of the glyph to be at line_pos
         // from the TOP of the cell, and then offset by the offset_y from the
         // draw function.
-        .offset_y = @as(i32, @intCast(height - line_pos)) - offset_y,
+        .offset_y = @as(i32, @intCast(height -| line_pos)) - offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(width),
@@ -81,7 +81,11 @@ fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
 /// Draw a double underline.
 fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
-    const height: u32 = thickness * 3;
+    // Our gap between lines will be at least 2px.
+    // (i.e. if our thickness is 1, we still have a gap of 2)
+    const gap = @max(2, thickness);
+
+    const height: u32 = thickness * 2 * gap;
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     canvas.rect(.{
@@ -93,7 +97,7 @@ fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
     canvas.rect(.{
         .x = 0,
-        .y = @intCast(thickness * 2),
+        .y = @intCast(thickness + gap),
         .width = width,
         .height = thickness,
     }, .on);
@@ -158,31 +162,59 @@ fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 /// the basic math structure for this since I was lazy with the
 /// geometry.
 fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
-    const height: u32 = thickness * 4;
-    var canvas = try font.sprite.Canvas.init(alloc, width, height);
+    const float_width: f64 = @floatFromInt(width);
+    const float_thick: f64 = @floatFromInt(thickness);
 
     // Calculate the wave period for a single character
     //   `2 * pi...` = 1 peak per character
     //   `4 * pi...` = 2 peaks per character
-    const wave_period = 2 * std.math.pi / @as(f64, @floatFromInt(width - 1));
+    const wave_period = 2 * std.math.pi / float_width;
 
     // The full amplitude of the wave can be from the bottom to the
     // underline position. We also calculate our mid y point of the wave
-    const half_amplitude: f64 = @as(f64, @floatFromInt(thickness));
-    const y_mid: f64 = half_amplitude + 1;
+    const half_amplitude = 1.0 / wave_period;
+    const y_mid: f64 = half_amplitude + float_thick * 0.5 + 1;
+
+    // This is used in calculating the offset curve estimate below.
+    const offset_factor = @min(1.0, float_thick * 0.5 * wave_period) * @min(1.0, half_amplitude * wave_period);
+
+    const height: u32 = @intFromFloat(@ceil(half_amplitude + float_thick + 1) * 2);
+
+    var canvas = try font.sprite.Canvas.init(alloc, width, height);
 
     // follow Xiaolin Wu's antialias algorithm to draw the curve
     var x: u32 = 0;
     while (x < width) : (x += 1) {
-        const cosx: f64 = @cos(@as(f64, @floatFromInt(x)) * wave_period);
+        const t: f64 = @as(f64, @floatFromInt(x)) * wave_period;
+        // Use the slope at this location to add thickness to
+        // the line on this column, counteracting the thinning
+        // caused by the slope.
+        //
+        // This is not the exact offset curve for a sine wave,
+        // but it's a decent enough approximation.
+        //
+        // How did I derive this? I stared at Desmos and fiddled
+        // with numbers for an hour until it was good enough.
+        const t_u: f64 = t + std.math.pi;
+        const slope_factor_u: f64 = (@sin(t_u) * @sin(t_u) * offset_factor) / ((1.0 + @cos(t_u / 2) * @cos(t_u / 2) * 2) * wave_period);
+        const slope_factor_l: f64 = (@sin(t) * @sin(t) * offset_factor) / ((1.0 + @cos(t / 2) * @cos(t / 2) * 2) * wave_period);
+
+        const cosx: f64 = @cos(t);
+        // This will be the center of our stroke.
         const y: f64 = y_mid + half_amplitude * cosx;
-        const y_upper: u32 = @intFromFloat(@floor(y));
-        const y_lower: u32 = y_upper + thickness + (thickness >> 1);
-        const alpha: u8 = @intFromFloat(255 * @abs(y - @floor(y)));
+
+        // The upper pixel and lower pixel are
+        // calculated relative to the center.
+        const y_u: f64 = y - float_thick * 0.5 - slope_factor_u;
+        const y_l: f64 = y + float_thick * 0.5 + slope_factor_l;
+        const y_upper: u32 = @intFromFloat(@floor(y_u));
+        const y_lower: u32 = @intFromFloat(@ceil(y_l));
+        const alpha_u: u8 = @intFromFloat(@round(255 * (1.0 - @abs(y_u - @floor(y_u)))));
+        const alpha_l: u8 = @intFromFloat(@round(255 * (1.0 - @abs(y_l - @ceil(y_l)))));
 
         // upper and lower bounds
-        canvas.pixel(x, @min(y_upper, height - 1), @enumFromInt(255 - alpha));
-        canvas.pixel(x, @min(y_lower, height - 1), @enumFromInt(alpha));
+        canvas.pixel(x, @min(y_upper, height - 1), @enumFromInt(alpha_u));
+        canvas.pixel(x, @min(y_lower, height - 1), @enumFromInt(alpha_l));
 
         // fill between upper and lower bound
         var y_fill: u32 = y_upper + 1;
@@ -191,7 +223,7 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         }
     }
 
-    const offset_y: i32 = -@as(i32, @intCast(thickness * 2));
+    const offset_y: i32 = @intFromFloat(-@round(half_amplitude));
 
     return .{ canvas, offset_y };
 }
