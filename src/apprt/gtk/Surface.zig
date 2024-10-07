@@ -773,8 +773,13 @@ pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
 }
 
 pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
-    // This operation only makes sense if we're within a window view hierarchy.
+    // If we are within a split, do not set the size.
+    if (self.container.split() != null) return;
+
+    // This operation only makes sense if we're within a window view
+    // hierarchy and we're the first tab in the window.
     const window = self.container.window() orelse return;
+    if (window.notebook.nPages() > 1) return;
 
     // Note: this doesn't properly take into account the window decorations.
     // I'm not currently sure how to do that.
