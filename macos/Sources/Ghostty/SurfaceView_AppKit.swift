@@ -354,6 +354,7 @@ extension Ghostty {
             addTrackingArea(NSTrackingArea(
                 rect: frame,
                 options: [
+                    .mouseEnteredAndExited,
                     .mouseMoved,
 
                     // Only send mouse events that happen in our visible (not obscured) rect
@@ -484,6 +485,14 @@ extension Ghostty {
 
             // Mouse event not consumed
             super.rightMouseUp(with: event)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            guard let surface = self.surface else { return }
+
+            // Negative values indicate cursor has left the viewport
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_pos(surface, -1, -1, mods)
         }
 
         override func mouseMoved(with event: NSEvent) {
