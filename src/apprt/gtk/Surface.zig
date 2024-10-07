@@ -526,6 +526,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(gesture_click, "released", c.G_CALLBACK(&gtkMouseUp), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(ec_motion, "leave", c.G_CALLBACK(&gtkMouseLeave), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(im_context, "preedit-start", c.G_CALLBACK(&gtkInputPreeditStart), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(im_context, "preedit-changed", c.G_CALLBACK(&gtkInputPreeditChanged), self, null, c.G_CONNECT_DEFAULT);
@@ -1339,6 +1340,22 @@ fn gtkMouseMotion(
     const mods = translateMods(gtk_mods);
 
     self.core_surface.cursorPosCallback(self.cursor_pos, mods) catch |err| {
+        log.err("error in cursor pos callback err={}", .{err});
+        return;
+    };
+}
+
+fn gtkMouseLeave(
+    ec: *c.GtkEventControllerMotion,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud.?);
+
+    // Get our modifiers
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
+    const gtk_mods = c.gdk_event_get_modifier_state(event);
+    const mods = translateMods(gtk_mods);
+    self.core_surface.cursorPosCallback(.{ .x = -1, .y = -1 }, mods) catch |err| {
         log.err("error in cursor pos callback err={}", .{err});
         return;
     };
