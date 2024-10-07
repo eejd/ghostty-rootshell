@@ -131,6 +131,7 @@ pub const Mods = packed struct(Mods.Backing) {
             .ctrl = self.ctrl,
             .alt = self.alt,
             .super = self.super,
+            .function = self.function,
         };
     }
 
