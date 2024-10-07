@@ -21,6 +21,7 @@ const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
+const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
 
 const log = std.log.scoped(.gtk);
@@ -255,10 +256,18 @@ pub fn init(self: *Window, app: *App) !void {
     // If we are in fullscreen mode, new windows start fullscreen.
     if (app.config.fullscreen) c.gtk_window_fullscreen(self.window);
 
+    // We register a key event controller with the window so
+    // we can catch key events when our surface may not be
+    // focused (i.e. when the libadw tab overview is shown).
+    const ec_key_press = c.gtk_event_controller_key_new();
+    errdefer c.g_object_unref(ec_key_press);
+    c.gtk_widget_add_controller(window, ec_key_press);
+
     // All of our events
     _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
 
     // Our actions for the menu
     initActions(self);
@@ -660,6 +669,100 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     const alloc = self.app.core_app.alloc;
     self.deinit();
     alloc.destroy(self);
+}
+
+fn gtkKeyPressed(
+    ec_key: *c.GtkEventControllerKey,
+    keyval: c.guint,
+    keycode: c.guint,
+    gtk_mods: c.GdkModifierType,
+    ud: ?*anyopaque,
+) callconv(.C) c.gboolean {
+    const self = userdataSelf(ud.?);
+    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key)) orelse return 0;
+
+    // We want to get the physical unmapped key to process physical keybinds.
+    // (These are keybinds explicitly marked as requesting physical mapping).
+    const physical_key = keycode: for (input.keycodes.entries) |entry| {
+        if (entry.native == keycode) break :keycode entry.key;
+    } else .invalid;
+
+    // Get our modifier for the event
+    const mods: input.Mods = gtk_key.eventMods(
+        @ptrCast(self.window),
+        event,
+        physical_key,
+        gtk_mods,
+        if (self.app.x11_xkb) |*xkb| xkb else null,
+    );
+
+    // Get our consumed modifiers
+    const consumed_mods: input.Mods = consumed: {
+        const raw = c.gdk_key_event_get_consumed_modifiers(event);
+        const masked = raw & c.GDK_MODIFIER_MASK;
+        break :consumed gtk_key.translateMods(masked);
+    };
+
+    // Get the unshifted unicode value of the keyval.
+    const keyval_unicode_unshifted: u21 = gtk_key.keyvalUnicodeUnshifted(
+        @ptrCast(self.window),
+        event,
+        keycode,
+    );
+
+    // If we're not in a dead key state, we want to translate our text
+    // to some input.Key.
+    const key: input.Key = key: {
+        // First, try to convert the keyval directly to a key. This allows the
+        // use of key remapping and identification of keypad numerics (as
+        // opposed to their ASCII counterparts)
+        if (gtk_key.keyFromKeyval(keyval)) |key| {
+            break :key key;
+        }
+
+        // If that doesn't work then we try to translate the kevval..
+        if (keyval_unicode != 0) {
+            if (std.math.cast(u8, keyval_unicode)) |byte| {
+                if (input.Key.fromASCII(byte)) |key| {
+                    break :key key;
+                }
+            }
+        }
+
+        // If that doesn't work we use the unshifted value...
+        if (std.math.cast(u8, keyval_unicode_unshifted)) |ascii| {
+            if (input.Key.fromASCII(ascii)) |key| {
+                break :key key;
+            }
+        }
+
+        if (keyval_unicode_unshifted != 0) break :key .invalid;
+        break :key physical_key;
+    };
+
+    // Build our final key event
+    const core_event: input.KeyEvent = .{
+        .action = .press,
+        .key = key,
+        .physical_key = physical_key,
+        .mods = mods,
+        .consumed_mods = consumed_mods,
+        .composing = false,
+        .utf8 = "",
+        .unshifted_codepoint = keyval_unicode_unshifted,
+    };
+
+    // log.debug("attempting app-scoped key event={}", .{core_event});
+
+    // Invoke the core Ghostty logic to handle this input.
+    const consumed = self.app.core_app.keyEvent(self.app, core_event);
+    if (consumed) {
+        log.info("app-scoped key consumed event={}", .{core_event});
+        return 1;
+    }
+
+    return 0;
 }
 
 fn gtkActionAbout(
