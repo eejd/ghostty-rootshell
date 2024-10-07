@@ -128,6 +128,11 @@ fileprivate func cgEventFlagsChangedHandler(
     // We only care about keydown events
     guard type == .keyDown else { return result }
 
+    // If our app is currently active then we don't process the key event.
+    // This is because we already have a local event handler in AppDelegate
+    // that processes all local events.
+    guard !NSApp.isActive else { return result }
+
     // We need an app delegate to get the Ghostty app instance
     guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return result }
     guard let ghostty = appDelegate.ghostty.app else { return result }
