@@ -220,13 +220,21 @@ extension Ghostty {
             // Determine our desired direction
             guard let directionAny = notification.userInfo?["direction"] else { return }
             guard let direction = directionAny as? ghostty_action_split_direction_e else { return }
-            var splitDirection: SplitViewDirection
+            let splitDirection: SplitViewDirection
+            let swap: Bool
             switch (direction) {
             case GHOSTTY_SPLIT_DIRECTION_RIGHT:
                 splitDirection = .horizontal
-
+                swap = false
+            case GHOSTTY_SPLIT_DIRECTION_LEFT:
+                splitDirection = .horizontal
+                swap = true
             case GHOSTTY_SPLIT_DIRECTION_DOWN:
                 splitDirection = .vertical
+                swap = false
+            case GHOSTTY_SPLIT_DIRECTION_UP:
+                splitDirection = .vertical
+                swap = true
 
             default:
                 return
@@ -240,6 +248,12 @@ extension Ghostty {
 
             // See moveFocus comment, we have to run this whenever split changes.
             Ghostty.moveFocus(to: container.bottomRight.preferredFocus(), from: node!.preferredFocus())
+
+            // If we are swapping, swap now. We do this after our focus event
+            // so that focus is in the right place.
+            if swap {
+                container.swap()
+            }
         }
 
         /// This handles the event to move the split focus (i.e. previous/next) from a keyboard event.

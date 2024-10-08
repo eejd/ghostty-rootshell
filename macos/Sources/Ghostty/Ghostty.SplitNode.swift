@@ -253,6 +253,15 @@ extension Ghostty {
                 bottomRight.parent = self
             }
 
+            // Move the top left node to the bottom right and vice versa,
+            // preserving the size.
+            func swap() {
+                let topLeft: SplitNode = self.topLeft
+                self.topLeft = bottomRight
+                self.bottomRight = topLeft
+                self.split = 1 - self.split
+            }
+
             /// Resize the split by moving the split divider in the given
             /// direction by the given amount. If this container is not split
             /// in the given direction, navigate up the tree until we find a

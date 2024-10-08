@@ -351,6 +351,8 @@ typedef struct {
 typedef enum {
   GHOSTTY_SPLIT_DIRECTION_RIGHT,
   GHOSTTY_SPLIT_DIRECTION_DOWN,
+  GHOSTTY_SPLIT_DIRECTION_LEFT,
+  GHOSTTY_SPLIT_DIRECTION_UP,
 } ghostty_action_split_direction_e;
 
 // apprt.action.GotoSplit
