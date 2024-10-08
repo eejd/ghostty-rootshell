@@ -515,6 +515,8 @@ extension Ghostty {
             case GHOSTTY_ACTION_TOGGLE_VISIBILITY:
                 toggleVisibility(app, target: target)
 
+            case GHOSTTY_ACTION_KEY_SEQUENCE:
+                fallthrough
             case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
                 fallthrough
             case GHOSTTY_ACTION_TOGGLE_TAB_OVERVIEW:

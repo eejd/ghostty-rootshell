@@ -1709,6 +1709,18 @@ fn maybeHandleBinding(
                 try self.keyboard.queued.append(self.alloc, req);
             }
 
+            // Start or continue our key sequence
+            self.rt_app.performAction(
+                .{ .surface = self },
+                .key_sequence,
+                .{ .trigger = entry.key_ptr.* },
+            ) catch |err| {
+                log.warn(
+                    "failed to notify app of key sequence err={}",
+                    .{err},
+                );
+            };
+
             return .consumed;
         },
 
@@ -1795,6 +1807,18 @@ fn endKeySequence(
     action: KeySequenceQueued,
     mem: KeySequenceMemory,
 ) void {
+    // Notify apprt key sequence ended
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .key_sequence,
+        .end,
+    ) catch |err| {
+        log.warn(
+            "failed to notify app of key sequence end err={}",
+            .{err},
+        );
+    };
+
     if (self.keyboard.queued.items.len > 0) {
         switch (action) {
             .flush => for (self.keyboard.queued.items) |write_req| {
