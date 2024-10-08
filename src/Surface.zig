@@ -3835,7 +3835,9 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .new_split,
             switch (direction) {
                 .right => .right,
+                .left => .left,
                 .down => .down,
+                .up => .up,
                 .auto => if (self.screen_size.width > self.screen_size.height)
                     .right
                 else

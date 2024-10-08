@@ -373,6 +373,8 @@ fn initActions(self: *Window) void {
         .{ "new_tab", &gtkActionNewTab },
         .{ "split_right", &gtkActionSplitRight },
         .{ "split_down", &gtkActionSplitDown },
+        .{ "split_left", &gtkActionSplitLeft },
+        .{ "split_up", &gtkActionSplitUp },
         .{ "toggle_inspector", &gtkActionToggleInspector },
         .{ "copy", &gtkActionCopy },
         .{ "paste", &gtkActionPaste },
@@ -807,6 +809,32 @@ fn gtkActionSplitDown(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_split = .down }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionSplitLeft(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .new_split = .left }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionSplitUp(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .new_split = .up }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
