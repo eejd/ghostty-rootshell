@@ -1697,7 +1697,7 @@ fn maybeHandleBinding(
     };
 
     // Determine if this entry has an action or if its a leader key.
-    const leaf: input.Binding.Set.Leaf = switch (entry) {
+    const leaf: input.Binding.Set.Leaf = switch (entry.value_ptr.*) {
         .leader => |set| {
             // Setup the next set we'll look at.
             self.keyboard.bindings = set;

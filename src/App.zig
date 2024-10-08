@@ -318,7 +318,7 @@ pub fn keyEvent(
     // Get the keybind entry for this event. We don't support key sequences
     // so we can look directly in the top-level set.
     const entry = rt_app.config.keybind.set.getEvent(event) orelse return false;
-    const leaf: input.Binding.Set.Leaf = switch (entry) {
+    const leaf: input.Binding.Set.Leaf = switch (entry.value_ptr.*) {
         // Sequences aren't supported. Our configuration parser verifies
         // this for global keybinds but we may still get an entry for
         // a non-global keybind.

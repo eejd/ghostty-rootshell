@@ -1020,7 +1020,7 @@ pub const Trigger = struct {
 pub const Set = struct {
     const HashMap = std.HashMapUnmanaged(
         Trigger,
-        Entry,
+        Value,
         Context(Trigger),
         std.hash_map.default_max_load_percentage,
     );
@@ -1046,7 +1046,7 @@ pub const Set = struct {
     reverse: ReverseMap = .{},
 
     /// The entry type for the forward mapping of trigger to action.
-    pub const Entry = union(enum) {
+    pub const Value = union(enum) {
         /// This key is a leader key in a sequence. You must follow the given
         /// set to find the next key in the sequence.
         leader: *Set,
@@ -1058,7 +1058,7 @@ pub const Set = struct {
         /// Implements the formatter for the fmt package. This encodes the
         /// action back into the format used by parse.
         pub fn format(
-            self: Entry,
+            self: Value,
             comptime layout: []const u8,
             opts: std.fmt.FormatOptions,
             writer: anytype,
@@ -1099,6 +1099,9 @@ pub const Set = struct {
             return hasher.final();
         }
     };
+
+    /// A full key-value entry for the set.
+    pub const Entry = HashMap.Entry;
 
     pub fn deinit(self: *Set, alloc: Allocator) void {
         // Clear any leaders if we have them
@@ -1160,7 +1163,11 @@ pub const Set = struct {
         switch (elem) {
             .leader => |t| {
                 // If we have a leader, we need to upsert a set for it.
-                const old = set.get(t);
+                // Since we remove the value, we need to copy it.
+                const old: ?Value = if (set.get(t)) |entry|
+                    entry.value_ptr.*
+                else
+                    null;
                 if (old) |entry| switch (entry) {
                     // We have an existing leader for this key already
                     // so recurse into this set.
@@ -1289,7 +1296,7 @@ pub const Set = struct {
 
     /// Get a binding for a given trigger.
     pub fn get(self: Set, t: Trigger) ?Entry {
-        return self.bindings.get(t);
+        return self.bindings.getEntry(t);
     }
 
     /// Get a trigger for the given action. An action can have multiple
@@ -1811,7 +1818,7 @@ test "set: parseAndPut typical binding" {
 
     // Creates forward mapping
     {
-        const action = s.get(.{ .key = .{ .translated = .a } }).?.leaf;
+        const action = s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf;
         try testing.expect(action.action == .new_window);
         try testing.expectEqual(Flags{}, action.flags);
     }
@@ -1835,7 +1842,7 @@ test "set: parseAndPut unconsumed binding" {
     // Creates forward mapping
     {
         const trigger: Trigger = .{ .key = .{ .translated = .a } };
-        const action = s.get(trigger).?.leaf;
+        const action = s.get(trigger).?.value_ptr.*.leaf;
         try testing.expect(action.action == .new_window);
         try testing.expectEqual(Flags{ .consumed = false }, action.flags);
     }
@@ -1876,13 +1883,13 @@ test "set: parseAndPut sequence" {
     var current: *Set = &s;
     {
         const t: Trigger = .{ .key = .{ .translated = .a } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
         try testing.expectEqual(Flags{}, e.leaf.flags);
@@ -1901,20 +1908,20 @@ test "set: parseAndPut sequence with two actions" {
     var current: *Set = &s;
     {
         const t: Trigger = .{ .key = .{ .translated = .a } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
         try testing.expectEqual(Flags{}, e.leaf.flags);
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .c } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_tab);
         try testing.expectEqual(Flags{}, e.leaf.flags);
@@ -1933,13 +1940,13 @@ test "set: parseAndPut overwrite sequence" {
     var current: *Set = &s;
     {
         const t: Trigger = .{ .key = .{ .translated = .a } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
         try testing.expectEqual(Flags{}, e.leaf.flags);
@@ -1958,13 +1965,13 @@ test "set: parseAndPut overwrite leader" {
     var current: *Set = &s;
     {
         const t: Trigger = .{ .key = .{ .translated = .a } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
         const t: Trigger = .{ .key = .{ .translated = .b } };
-        const e = current.get(t).?;
+        const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
         try testing.expectEqual(Flags{}, e.leaf.flags);
@@ -2096,8 +2103,8 @@ test "set: consumed state" {
     defer s.deinit(alloc);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
 
     try s.putFlags(
         alloc,
@@ -2105,10 +2112,10 @@ test "set: consumed state" {
         .{ .new_window = {} },
         .{ .consumed = false },
     );
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
-    try testing.expect(!s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
+    try testing.expect(!s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
 
     try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).? == .leaf);
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.leaf.flags.consumed);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
 }
