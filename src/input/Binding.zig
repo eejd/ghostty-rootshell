@@ -901,8 +901,6 @@ pub const Trigger = struct {
                 .{ "opt", "alt" },
                 .{ "option", "alt" },
                 .{ "control", "ctrl" },
-                .{ "fn", "function" },
-                .{ "globe", "function" },
             };
             inline for (alias_mods) |pair| {
                 if (std.mem.eql(u8, part, pair[0])) {
