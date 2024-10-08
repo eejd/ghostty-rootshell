@@ -253,6 +253,16 @@ class QuickTerminalController: BaseTerminalController {
     private func syncAppearance() {
         guard let window else { return }
 
+        // If our window is not visible, then delay this. This is possible specifically
+        // during state restoration but probably in other scenarios as well. To delay,
+        // we just loop directly on the dispatch queue. We have to delay because some
+        // APIs such as window blur have no effect unless the window is visible.
+        guard window.isVisible else {
+            // Weak window so that if the window changes or is destroyed we aren't holding a ref
+            DispatchQueue.main.async { [weak self] in self?.syncAppearance() }
+            return
+        }
+
         // If we have window transparency then set it transparent. Otherwise set it opaque.
         if (ghostty.config.backgroundOpacity < 1) {
             window.isOpaque = false
