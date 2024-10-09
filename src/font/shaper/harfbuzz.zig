@@ -386,10 +386,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -411,11 +411,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -445,11 +444,10 @@ test "shape monaspace ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -479,8 +477,10 @@ test "shape emoji width" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -522,8 +522,7 @@ test "shape emoji width long" {
 
         const cells = try shaper.shape(run);
 
-        // screen.testWriteString isn't grapheme aware, otherwise this is two
-        try testing.expectEqual(@as(usize, 5), cells.len);
+        try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -709,9 +708,9 @@ test "shape box glyphs" {
         try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 2), cells.len);
-        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
-        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index);
         try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
