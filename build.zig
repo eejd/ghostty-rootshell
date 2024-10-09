@@ -759,12 +759,10 @@ pub fn build(b: *std.Build) !void {
 /// be used generally, it should only be used for Darwin-based OS currently.
 fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
     return switch (tag) {
-        // The lowest supported version of macOS is 12.x because
-        // this is the first version to support Apple Silicon so it is
-        // the earliest version we can virtualize to test (I only have
-        // an Apple Silicon machine for macOS).
+        // We support back to the earliest officially supported version
+        // of macOS by Apple. EOL versions are not supported.
         .macos => .{ .semver = .{
-            .major = 12,
+            .major = 13,
             .minor = 0,
             .patch = 0,
         } },

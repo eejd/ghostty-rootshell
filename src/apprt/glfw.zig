@@ -559,25 +559,15 @@ pub const Surface = struct {
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
 
-        var tabgroup_opt: if (App.Darwin.enabled) ?objc.Object else void = undefined;
         if (App.Darwin.enabled) {
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
             const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
-
-            // On macOS versions prior to Ventura, we lose window focus on tab close
-            // for some reason. We manually fix this by keeping track of the tab
-            // group and just selecting the next window.
-            if (internal_os.macosVersionAtLeast(13, 0, 0))
-                tabgroup_opt = null
-            else
-                tabgroup_opt = tabgroup;
-
             const windows = tabgroup.getProperty(objc.Object, "windows");
             switch (windows.getProperty(usize, "count")) {
                 // If we're going down to one window our tab bar is going to be
                 // destroyed so unset it so that the later logic doesn't try to
                 // use it.
-                1 => tabgroup_opt = null,
+                1 => {},
 
                 // If our tab bar is visible and we are going down to 1 window,
                 // hide the tab bar. The check is "2" because our current window
@@ -596,15 +586,6 @@ pub const Surface = struct {
         if (self.cursor) |c| {
             c.destroy();
             self.cursor = null;
-        }
-
-        // If we have a tabgroup set, we want to manually focus the next window.
-        // We should NOT have to do this usually, see the comments above.
-        if (App.Darwin.enabled) {
-            if (tabgroup_opt) |tabgroup| {
-                const selected = tabgroup.getProperty(objc.Object, "selectedWindow");
-                selected.msgSend(void, objc.sel("makeKeyWindow"), .{});
-            }
         }
     }
 

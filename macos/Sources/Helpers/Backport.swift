@@ -15,13 +15,7 @@ extension Scene {
 }
 
 extension Backport where Content: Scene {
-    func defaultSize(width: CGFloat, height: CGFloat) -> some Scene {
-        if #available(macOS 13, *) {
-            return content.defaultSize(width: width, height: height)
-        } else {
-            return content
-        }
-    }
+    // None currently
 }
 
 extension Backport where Content: View {
