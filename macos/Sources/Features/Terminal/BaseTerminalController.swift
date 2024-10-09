@@ -136,16 +136,17 @@ class BaseTerminalController: NSWindowController,
     private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
         // Go through all our surfaces and notify it that the flags changed.
         if let surfaceTree {
-            let surfaces: [Ghostty.SurfaceView] = surfaceTree.map { $0.surface }
-            for surface in surfaces {
-                surface.flagsChanged(with: event)
+            var surfaces: [Ghostty.SurfaceView] = surfaceTree.map { $0.surface }
+
+            // If we're the main window receiving key input, then we want to avoid
+            // calling this on our focused surface because that'll trigger a double
+            // flagsChanged call.
+            if NSApp.mainWindow == window {
+                surfaces = surfaces.filter { $0 != focusedSurface }
             }
 
-            // This will double call flagsChanged on our focused surface so
-            // if we are the main window and have a focused surface then we
-            // do not forward it.
-            if NSApp.mainWindow == window && focusedSurface != nil {
-                return nil
+            for surface in surfaces {
+                surface.flagsChanged(with: event)
             }
         }
 
