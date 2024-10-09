@@ -1322,7 +1322,7 @@ pub fn rebuildCells(
             },
         }
 
-        // Iterator of of runs for shaping.
+        // Iterator of runs for shaping.
         var run_iter = self.font_shaper.runIterator(
             self.font_grid,
             screen,
@@ -1339,55 +1339,62 @@ pub fn rebuildCells(
         for (row_cells, 0..) |*cell, x| {
             // If this cell falls within our preedit range then we
             // skip this because preedits are setup separately.
-            if (preedit_range) |range| {
-                if (range.y == y) {
-                    if (x >= range.x[0] and
-                        x <= range.x[1])
-                    {
-                        continue;
-                    }
+            if (preedit_range) |range| preedit: {
+                // We're not on the preedit line, no actions necessary.
+                if (range.y != y) break :preedit;
+                // We're before the preedit range, no actions necessary.
+                if (x < range.x[0]) break :preedit;
+                // We're in the preedit range, skip this cell.
+                if (x <= range.x[1]) continue;
+                // After exiting the preedit range we need to catch
+                // the run position up because of the missed cells.
+                // In all other cases, no action is necessary.
+                if (x != range.x[1] + 1) break :preedit;
 
-                    // After exiting the preedit range we need to catch
-                    // the run position up because of the missed cells.
-                    if (x == range.x[1] + 1) {
-                        while (shaper_run) |run| {
-                            if (run.offset + run.cells > x) break;
-                            shaper_run = try run_iter.next(self.alloc);
-                            shaper_cells = null;
-                            shaper_cells_i = 0;
-                        }
-                        if (shaper_run) |run| {
-                            // Try to read the cells from the shaping cache if we can.
-                            shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
-                                // Otherwise we have to shape them.
-                                const cells = try self.font_shaper.shape(run);
+                // Step the run iterator until we find a run that ends
+                // after the current cell, which will be the soonest run
+                // that might contain glyphs for our cell.
+                while (shaper_run) |run| {
+                    if (run.offset + run.cells > x) break;
+                    shaper_run = try run_iter.next(self.alloc);
+                    shaper_cells = null;
+                    shaper_cells_i = 0;
+                }
 
-                                // Try to cache them. If caching fails for any reason we
-                                // continue because it is just a performance optimization,
-                                // not a correctness issue.
-                                self.font_shaper_cache.put(
-                                    self.alloc,
-                                    run,
-                                    cells,
-                                ) catch |err| {
-                                    log.warn(
-                                        "error caching font shaping results err={}",
-                                        .{err},
-                                    );
-                                };
+                const run = shaper_run orelse break :preedit;
 
-                                // The cells we get from direct shaping are always owned
-                                // by the shaper and valid until the next shaping call so
-                                // we can safely use them.
-                                break :cache cells;
-                            };
-                        }
-                        if (shaper_cells) |cells| {
-                            while (cells[shaper_cells_i].x < x) {
-                                shaper_cells_i += 1;
-                            }
-                        }
-                    }
+                // If we haven't shaped this run, do so now.
+                shaper_cells = shaper_cells orelse
+                    // Try to read the cells from the shaping cache if we can.
+                    self.font_shaper_cache.get(run) orelse
+                    cache: {
+                    // Otherwise we have to shape them.
+                    const cells = try self.font_shaper.shape(run);
+
+                    // Try to cache them. If caching fails for any reason we
+                    // continue because it is just a performance optimization,
+                    // not a correctness issue.
+                    self.font_shaper_cache.put(
+                        self.alloc,
+                        run,
+                        cells,
+                    ) catch |err| {
+                        log.warn(
+                            "error caching font shaping results err={}",
+                            .{err},
+                        );
+                    };
+
+                    // The cells we get from direct shaping are always owned
+                    // by the shaper and valid until the next shaping call so
+                    // we can safely use them.
+                    break :cache cells;
+                };
+
+                // Advance our index until we reach or pass
+                // our current x position in the shaper cells.
+                while (shaper_cells.?[shaper_cells_i].x < x) {
+                    shaper_cells_i += 1;
                 }
             }
 
@@ -1587,10 +1594,12 @@ pub fn rebuildCells(
                 shaper_cells_i = 0;
             }
 
-            // If we haven't shaped this run yet, do so.
-            if (shaper_cells == null) if (shaper_run) |run| {
-                // Try to read the cells from the shaping cache if we can.
-                shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
+            if (shaper_run) |run| glyphs: {
+                // If we haven't shaped this run yet, do so.
+                shaper_cells = shaper_cells orelse
+                    // Try to read the cells from the shaping cache if we can.
+                    self.font_shaper_cache.get(run) orelse
+                    cache: {
                     // Otherwise we have to shape them.
                     const cells = try self.font_shaper.shape(run);
 
@@ -1613,12 +1622,9 @@ pub fn rebuildCells(
                     // we can safely use them.
                     break :cache cells;
                 };
-            };
 
-            // NOTE: An assumption is made here that a single cell will never
-            // be present in more than one shaper run. If that assumption is
-            // violated, this logic breaks.
-            if (shaper_cells) |cells| glyphs: {
+                const cells = shaper_cells orelse break :glyphs;
+
                 // If there are no shaper cells for this run, ignore it.
                 // This can occur for runs of empty cells, and is fine.
                 if (cells.len == 0) break :glyphs;
@@ -1627,6 +1633,10 @@ pub fn rebuildCells(
                 // cell then we have some problems. This logic relies on x
                 // position monotonically increasing.
                 assert(cells[shaper_cells_i].x >= x);
+
+                // NOTE: An assumption is made here that a single cell will never
+                // be present in more than one shaper run. If that assumption is
+                // violated, this logic breaks.
 
                 while (shaper_cells_i < cells.len and cells[shaper_cells_i].x == x) : ({
                     shaper_cells_i += 1;
