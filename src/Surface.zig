@@ -1685,7 +1685,12 @@ fn maybeHandleBinding(
         // No entry found. If we're not looking at the root set of the
         // bindings we need to encode everything up to this point and
         // send to the pty.
-        if (self.keyboard.bindings != null) {
+        //
+        // We also ignore modifiers so that nested sequences such as
+        // ctrl+a>ctrl+b>c work.
+        if (self.keyboard.bindings != null and
+            !event.key.modifier())
+        {
             // Reset to the root set
             self.keyboard.bindings = null;
 
