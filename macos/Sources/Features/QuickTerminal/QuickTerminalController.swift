@@ -195,26 +195,61 @@ class QuickTerminalController: BaseTerminalController {
                 // If we canceled our animation in we do nothing
                 guard self.visible else { return }
 
-                // If our focused view is somehow not connected to this window then the
-                // function calls below do nothing. I don't think this is possible but
-                // we should guard against it because it is a Cocoa assertion.
-                guard let focusedView = self.focusedSurface,
-                      focusedView.window == window else { return }
-
-                // The window must become top-level
-                window.makeKeyAndOrderFront(nil)
-
-                // The view must gain our keyboard focus
-                window.makeFirstResponder(focusedView)
+                // Once our animation is done, we must grab focus since we can't grab
+                // focus of a non-visible window.
+                self.makeWindowKey(window)
 
                 // If our application is not active, then we grab focus. Its important
                 // we do this AFTER our window is animated in and focused because
                 // otherwise macOS will bring forward another window.
                 if !NSApp.isActive {
                     NSApp.activate(ignoringOtherApps: true)
+
+                    // This works around a really funky bug where if the terminal is
+                    // shown on a screen that has no other Ghostty windows, it takes
+                    // a few (variable) event loop ticks until we can actually focus it.
+                    // https://github.com/ghostty-org/ghostty/issues/2409
+                    //
+                    // We wait one event loop tick to try it because under the happy
+                    // path (we have windows on this screen) it takes one event loop
+                    // tick for window.isKeyWindow to return true.
+                    DispatchQueue.main.async {
+                        guard !window.isKeyWindow else { return }
+                        self.makeWindowKey(window, retries: 10)
+                    }
                 }
             }
         })
+    }
+
+    /// Attempt to make a window key, supporting retries if necessary. The retries will be attempted
+    /// on a separate event loop tick.
+    ///
+    /// The window must contain the focused surface for this terminal controller.
+    private func makeWindowKey(_ window: NSWindow, retries: UInt8 = 0) {
+        // We must be visible
+        guard visible else { return }
+
+        // If our focused view is somehow not connected to this window then the
+        // function calls below do nothing. I don't think this is possible but
+        // we should guard against it because it is a Cocoa assertion.
+        guard let focusedSurface, focusedSurface.window == window else { return }
+
+        // The window must become top-level
+        window.makeKeyAndOrderFront(nil)
+
+        // The view must gain our keyboard focus
+        window.makeFirstResponder(focusedSurface)
+
+        // If our window is already key then we're done!
+        guard !window.isKeyWindow else { return }
+
+        // If we don't have retries then we're done
+        guard retries > 0 else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(25)) {
+            self.makeWindowKey(window, retries: retries - 1)
+        }
     }
 
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
