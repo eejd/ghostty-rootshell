@@ -843,10 +843,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -868,11 +868,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -902,11 +901,10 @@ test "shape monaspace ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -937,11 +935,10 @@ test "shape left-replaced lig in last run" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -970,12 +967,11 @@ test "shape left-replaced lig in early run" {
         );
 
         const run = (try it.next(alloc)).?;
+
+        try testing.expectEqual(@as(usize, 4), run.cells);
+
         const cells = try shaper.shape(run);
-        try testing.expectEqual(@as(usize, 4), cells.len);
-        try testing.expect(cells[0].glyph_index != null);
-        try testing.expect(cells[1].glyph_index == null);
-        try testing.expect(cells[2].glyph_index == null);
-        try testing.expect(cells[3].glyph_index != null);
+        try testing.expectEqual(@as(usize, 2), cells.len);
     }
 }
 
@@ -1078,8 +1074,7 @@ test "shape emoji width long" {
         count += 1;
         const cells = try shaper.shape(run);
 
-        // screen.testWriteString isn't grapheme aware, otherwise this is one
-        try testing.expectEqual(@as(usize, 5), cells.len);
+        try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -1260,9 +1255,9 @@ test "shape box glyphs" {
         count += 1;
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 2), cells.len);
-        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
-        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index);
         try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
