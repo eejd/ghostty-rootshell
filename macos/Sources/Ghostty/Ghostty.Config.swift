@@ -87,25 +87,6 @@ extension Ghostty {
 #if os(macOS)
         // MARK: - Keybindings
 
-        /// A convenience struct that has the key + modifiers for some keybinding.
-        struct KeyEquivalent: CustomStringConvertible {
-            let key: String
-            let modifiers: NSEvent.ModifierFlags
-
-            var description: String {
-                var key = self.key
-
-                // Note: the order below matters; it matches the ordering modifiers
-                // shown for macOS menu shortcut labels.
-                if modifiers.contains(.command) { key = "⌘\(key)" }
-                if modifiers.contains(.shift) { key = "⇧\(key)" }
-                if modifiers.contains(.option) { key = "⌥\(key)" }
-                if modifiers.contains(.control) { key = "⌃\(key)" }
-
-                return key
-            }
-        }
-
         /// Return the key equivalent for the given action. The action is the name of the action
         /// in the Ghostty configuration. For example `keybind = cmd+q=quit` in Ghostty
         /// configuration would be "quit" action.
@@ -115,33 +96,7 @@ extension Ghostty {
             guard let cfg = self.config else { return nil }
 
             let trigger = ghostty_config_trigger(cfg, action, UInt(action.count))
-            let equiv: String
-            switch (trigger.tag) {
-            case GHOSTTY_TRIGGER_TRANSLATED:
-                if let v = Ghostty.keyEquivalent(key: trigger.key.translated) {
-                    equiv = v
-                } else {
-                    return nil
-                }
-
-            case GHOSTTY_TRIGGER_PHYSICAL:
-                if let v = Ghostty.keyEquivalent(key: trigger.key.physical) {
-                    equiv = v
-                } else {
-                    return nil
-                }
-
-            case GHOSTTY_TRIGGER_UNICODE:
-                equiv = String(trigger.key.unicode)
-
-            default:
-                return nil
-            }
-
-            return KeyEquivalent(
-                key: equiv,
-                modifiers: Ghostty.eventModifierFlags(mods: trigger.mods)
-            )
+            return Ghostty.keyEquivalent(for: trigger)
         }
 #endif
 

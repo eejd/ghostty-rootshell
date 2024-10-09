@@ -2,10 +2,67 @@ import Cocoa
 import GhosttyKit
 
 extension Ghostty {
+    // MARK: Key Equivalents
+
     /// Returns the "keyEquivalent" string for a given input key. This doesn't always have a corresponding key.
     static func keyEquivalent(key: ghostty_input_key_e) -> String? {
         return Self.keyToEquivalent[key]
     }
+
+    /// A convenience struct that has the key + modifiers for some keybinding.
+    struct KeyEquivalent: CustomStringConvertible {
+        let key: String
+        let modifiers: NSEvent.ModifierFlags
+
+        var description: String {
+            var key = self.key
+
+            // Note: the order below matters; it matches the ordering modifiers
+            // shown for macOS menu shortcut labels.
+            if modifiers.contains(.command) { key = "⌘\(key)" }
+            if modifiers.contains(.shift) { key = "⇧\(key)" }
+            if modifiers.contains(.option) { key = "⌥\(key)" }
+            if modifiers.contains(.control) { key = "⌃\(key)" }
+
+            return key
+        }
+    }
+
+    /// Return the key equivalent for the given trigger.
+    ///
+    /// Returns nil if the trigger can't be processed. This should only happen for unknown trigger types
+    /// or keys.
+    static func keyEquivalent(for trigger: ghostty_input_trigger_s) -> KeyEquivalent? {
+        let equiv: String
+        switch (trigger.tag) {
+        case GHOSTTY_TRIGGER_TRANSLATED:
+            if let v = Ghostty.keyEquivalent(key: trigger.key.translated) {
+                equiv = v
+            } else {
+                return nil
+            }
+
+        case GHOSTTY_TRIGGER_PHYSICAL:
+            if let v = Ghostty.keyEquivalent(key: trigger.key.physical) {
+                equiv = v
+            } else {
+                return nil
+            }
+
+        case GHOSTTY_TRIGGER_UNICODE:
+            equiv = String(trigger.key.unicode)
+
+        default:
+            return nil
+        }
+
+        return KeyEquivalent(
+            key: equiv,
+            modifiers: Ghostty.eventModifierFlags(mods: trigger.mods)
+        )
+    }
+
+    // MARK: Mods
 
     /// Returns the event modifier flags set for the Ghostty mods enum.
     static func eventModifierFlags(mods: ghostty_input_mods_e) -> NSEvent.ModifierFlags {

@@ -184,6 +184,34 @@ extension Ghostty {
                 }
                 .ghosttySurfaceView(surfaceView)
 
+#if canImport(AppKit)
+                // If we are in the middle of a key sequence, then we show a visual element. We only
+                // support this on macOS currently although in theory we can support mobile with keyboards!
+                if !surfaceView.keySequence.isEmpty {
+                    let padding: CGFloat = 5
+                    VStack {
+                        Spacer()
+
+                        HStack {
+                            Text(verbatim: "Pending Key Sequence:")
+                            ForEach(0..<surfaceView.keySequence.count, id: \.description) { index in
+                                let key = surfaceView.keySequence[index]
+                                Text(verbatim: key.description)
+                                    .font(.system(.body, design: .monospaced))
+                                    .padding(3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(Color(NSColor.selectedTextBackgroundColor))
+                                    )
+                            }
+                        }
+                        .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                        .frame(maxWidth: .infinity)
+                        .background(.background)
+                    }
+                }
+#endif
+
                 // If we have a URL from hovering a link, we show that.
                 if let url = surfaceView.hoverUrl {
                     let padding: CGFloat = 3
