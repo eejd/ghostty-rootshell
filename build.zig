@@ -1007,10 +1007,6 @@ fn addDeps(
         .optimize = optimize,
     });
     const opengl_dep = b.dependency("opengl", .{});
-    const pixman_dep = b.dependency("pixman", .{
-        .target = target,
-        .optimize = optimize,
-    });
     const sentry_dep = b.dependency("sentry", .{
         .target = target,
         .optimize = optimize,
@@ -1044,6 +1040,7 @@ fn addDeps(
         .target = target,
         .optimize = optimize,
     });
+    const z2d_dep = b.dependency("z2d", .{});
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
@@ -1125,12 +1122,16 @@ fn addDeps(
     step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
     step.root_module.addImport("xev", libxev_dep.module("xev"));
     step.root_module.addImport("opengl", opengl_dep.module("opengl"));
-    step.root_module.addImport("pixman", pixman_dep.module("pixman"));
     step.root_module.addImport("sentry", sentry_dep.module("sentry"));
     step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
     step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
     step.root_module.addImport("wuffs", wuffs_dep.module("wuffs"));
     step.root_module.addImport("zf", zf_dep.module("zf"));
+    step.root_module.addImport("z2d", b.addModule("z2d", .{
+        .root_source_file = z2d_dep.path("src/z2d.zig"),
+        .target = target,
+        .optimize = optimize,
+    }));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
@@ -1196,7 +1197,6 @@ fn addDeps(
         step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         step.linkSystemLibrary2("libpng", dynamic_link_opts);
         step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
-        step.linkSystemLibrary2("pixman-1", dynamic_link_opts);
         step.linkSystemLibrary2("zlib", dynamic_link_opts);
 
         if (config.font_backend.hasFontconfig()) {
@@ -1221,10 +1221,6 @@ fn addDeps(
         // Freetype
         step.linkLibrary(freetype_dep.artifact("freetype"));
         try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
-
-        // Pixman
-        step.linkLibrary(pixman_dep.artifact("pixman"));
-        try static_libs.append(pixman_dep.artifact("pixman").getEmittedBin());
 
         // Harfbuzz
         if (config.font_backend.hasHarfbuzz()) {

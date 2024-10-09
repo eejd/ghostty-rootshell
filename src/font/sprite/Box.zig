@@ -23,6 +23,8 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const Sprite = @import("../sprite.zig").Sprite;
 
+const z2d = @import("z2d");
+
 const log = std.log.scoped(.box_font);
 
 /// The cell width and height because the boxes are fit perfectly
@@ -101,18 +103,53 @@ const Alignment = struct {
     const lower_left: Alignment = .{ .vertical = .bottom, .horizontal = .left };
     const lower_right: Alignment = .{ .vertical = .bottom, .horizontal = .right };
 
+    const center: Alignment = .{};
+
+    const upper_center = upper;
+    const lower_center = lower;
+    const middle_left = left;
+    const middle_right = right;
+    const middle_center: Alignment = center;
+
     const top = upper;
     const bottom = lower;
+    const center_top = top;
+    const center_bottom = bottom;
+
+    const top_left = upper_left;
+    const top_right = upper_right;
+    const bottom_left = lower_left;
+    const bottom_right = lower_right;
+};
+
+const Corner = enum {
+    tl,
+    tr,
+    bl,
+    br,
 };
 
 // Utility names for common fractions
 const one_eighth: f64 = 0.125;
 const one_quarter: f64 = 0.25;
+const one_third: f64 = (1.0 / 3.0);
 const three_eighths: f64 = 0.375;
 const half: f64 = 0.5;
 const five_eighths: f64 = 0.625;
+const two_thirds: f64 = (2.0 / 3.0);
 const three_quarters: f64 = 0.75;
 const seven_eighths: f64 = 0.875;
+
+/// Shades
+const Shade = enum(u8) {
+    off = 0x00,
+    light = 0x40,
+    medium = 0x80,
+    dark = 0xc0,
+    on = 0xff,
+
+    _,
+};
 
 pub fn renderGlyph(
     self: Box,
@@ -160,6 +197,7 @@ pub fn unadjustedCodepoint(cp: u32) bool {
 }
 
 fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void {
+    _ = alloc;
     switch (cp) {
         // '─'
         0x2500 => self.draw_lines(canvas, .{ .left = .light, .right = .light }),
@@ -385,8 +423,15 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x256b => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .light, .right = .light }),
         // '╬'
         0x256c => self.draw_lines(canvas, .{ .up = .double, .down = .double, .left = .double, .right = .double }),
-        0x256d...0x2570 => try self.draw_light_arc(alloc, canvas, cp),
+        // '╭'
+        0x256d => try self.draw_light_arc(canvas, .br),
+        // '╮'
+        0x256e => try self.draw_light_arc(canvas, .bl),
+        // '╯'
+        0x256f => try self.draw_light_arc(canvas, .tl),
 
+        // '╰'
+        0x2570 => try self.draw_light_arc(canvas, .tr),
         // '╱'
         0x2571 => self.draw_light_diagonal_upper_right_to_lower_left(canvas),
         // '╲'
@@ -500,7 +545,7 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x1fb52...0x1fb56,
         0x1fb5d...0x1fb61,
         0x1fb68...0x1fb6b,
-        => try self.draw_wedge_triangle_inverted(alloc, canvas, cp),
+        => try self.draw_wedge_triangle_inverted(canvas, cp),
 
         // '🭆'
         0x1fb46,
@@ -599,6 +644,294 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x1fb8a => self.draw_block(canvas, Alignment.right, three_quarters, 1),
         // '🮋' RIGHT SEVEN EIGHTHS BLOCK
         0x1fb8b => self.draw_block(canvas, Alignment.right, seven_eighths, 1),
+        // '🮌'
+        0x1fb8c => self.draw_block_shade(canvas, Alignment.left, half, 1, .medium),
+        // '🮍'
+        0x1fb8d => self.draw_block_shade(canvas, Alignment.right, half, 1, .medium),
+        // '🮎'
+        0x1fb8e => self.draw_block_shade(canvas, Alignment.upper, 1, half, .medium),
+        // '🮏'
+        0x1fb8f => self.draw_block_shade(canvas, Alignment.lower, 1, half, .medium),
+
+        // '🮐'
+        0x1fb90 => self.draw_medium_shade(canvas),
+        // '🮑'
+        0x1fb91 => {
+            self.draw_medium_shade(canvas);
+            self.draw_block(canvas, Alignment.upper, 1, half);
+        },
+        // '🮒'
+        0x1fb92 => {
+            self.draw_medium_shade(canvas);
+            self.draw_block(canvas, Alignment.lower, 1, half);
+        },
+        // '🮔'
+        0x1fb94 => {
+            self.draw_medium_shade(canvas);
+            self.draw_block(canvas, Alignment.right, half, 1);
+        },
+        // '🮕'
+        0x1fb95 => self.draw_checkerboard_fill(canvas, 0),
+        // '🮖'
+        0x1fb96 => self.draw_checkerboard_fill(canvas, 1),
+        // '🮗'
+        0x1fb97 => {
+            self.draw_horizontal_one_eighth_block_n(canvas, 2);
+            self.draw_horizontal_one_eighth_block_n(canvas, 3);
+            self.draw_horizontal_one_eighth_block_n(canvas, 6);
+            self.draw_horizontal_one_eighth_block_n(canvas, 7);
+        },
+        // '🮘'
+        0x1fb98 => self.draw_upper_left_to_lower_right_fill(canvas),
+        // '🮙'
+        0x1fb99 => self.draw_upper_right_to_lower_left_fill(canvas),
+        // '🮜'
+        0x1fb9c => self.draw_corner_triangle_shade(canvas, .tl, .medium),
+        // '🮝'
+        0x1fb9d => self.draw_corner_triangle_shade(canvas, .tr, .medium),
+        // '🮞'
+        0x1fb9e => self.draw_corner_triangle_shade(canvas, .br, .medium),
+        // '🮟'
+        0x1fb9f => self.draw_corner_triangle_shade(canvas, .bl, .medium),
+
+        // '🮠'
+        0x1fba0 => self.draw_corner_diagonal_lines(canvas, .{ .tl = true }),
+        // '🮡'
+        0x1fba1 => self.draw_corner_diagonal_lines(canvas, .{ .tr = true }),
+        // '🮢'
+        0x1fba2 => self.draw_corner_diagonal_lines(canvas, .{ .bl = true }),
+        // '🮣'
+        0x1fba3 => self.draw_corner_diagonal_lines(canvas, .{ .br = true }),
+        // '🮤'
+        0x1fba4 => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .bl = true }),
+        // '🮥'
+        0x1fba5 => self.draw_corner_diagonal_lines(canvas, .{ .tr = true, .br = true }),
+        // '🮦'
+        0x1fba6 => self.draw_corner_diagonal_lines(canvas, .{ .bl = true, .br = true }),
+        // '🮧'
+        0x1fba7 => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .tr = true }),
+        // '🮨'
+        0x1fba8 => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .br = true }),
+        // '🮩'
+        0x1fba9 => self.draw_corner_diagonal_lines(canvas, .{ .tr = true, .bl = true }),
+        // '🮪'
+        0x1fbaa => self.draw_corner_diagonal_lines(canvas, .{ .tr = true, .bl = true, .br = true }),
+        // '🮫'
+        0x1fbab => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .bl = true, .br = true }),
+        // '🮬'
+        0x1fbac => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .tr = true, .br = true }),
+        // '🮭'
+        0x1fbad => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .tr = true, .bl = true }),
+        // '🮮'
+        0x1fbae => self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .tr = true, .bl = true, .br = true }),
+        // '🮯'
+        0x1fbaf => self.draw_lines(canvas, .{ .up = .heavy, .down = .heavy, .left = .light, .right = .light }),
+
+        // '🮽'
+        0x1fbbd => {
+            self.draw_light_diagonal_cross(canvas);
+            canvas.invert();
+        },
+        // '🮾'
+        0x1fbbe => {
+            self.draw_corner_diagonal_lines(canvas, .{ .br = true });
+            canvas.invert();
+        },
+        // '🮿'
+        0x1fbbf => {
+            self.draw_corner_diagonal_lines(canvas, .{ .tl = true, .tr = true, .bl = true, .br = true });
+            canvas.invert();
+        },
+
+        // '🯎'
+        0x1fbce => self.draw_block(canvas, Alignment.left, two_thirds, 1),
+        // '🯏'
+        0x1fbcf => self.draw_block(canvas, Alignment.left, one_third, 1),
+        // '🯐'
+        0x1fbd0 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.middle_right,
+            Alignment.lower_left,
+        ),
+        // '🯑'
+        0x1fbd1 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_right,
+            Alignment.middle_left,
+        ),
+        // '🯒'
+        0x1fbd2 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_left,
+            Alignment.middle_right,
+        ),
+        // '🯓'
+        0x1fbd3 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.middle_left,
+            Alignment.lower_right,
+        ),
+        // '🯔'
+        0x1fbd4 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_left,
+            Alignment.lower_center,
+        ),
+        // '🯕'
+        0x1fbd5 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_center,
+            Alignment.lower_right,
+        ),
+        // '🯖'
+        0x1fbd6 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_right,
+            Alignment.lower_center,
+        ),
+        // '🯗'
+        0x1fbd7 => self.draw_cell_diagonal(
+            canvas,
+            Alignment.upper_center,
+            Alignment.lower_left,
+        ),
+        // '🯘'
+        0x1fbd8 => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_left,
+                Alignment.middle_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_center,
+                Alignment.upper_right,
+            );
+        },
+        // '🯙'
+        0x1fbd9 => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_right,
+                Alignment.middle_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_center,
+                Alignment.lower_right,
+            );
+        },
+        // '🯚'
+        0x1fbda => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.lower_left,
+                Alignment.middle_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_center,
+                Alignment.lower_right,
+            );
+        },
+        // '🯛'
+        0x1fbdb => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_left,
+                Alignment.middle_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_center,
+                Alignment.lower_left,
+            );
+        },
+        // '🯜'
+        0x1fbdc => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_left,
+                Alignment.lower_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.lower_center,
+                Alignment.upper_right,
+            );
+        },
+        // '🯝'
+        0x1fbdd => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_right,
+                Alignment.middle_left,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_left,
+                Alignment.lower_right,
+            );
+        },
+        // '🯞'
+        0x1fbde => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.lower_left,
+                Alignment.upper_center,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_center,
+                Alignment.lower_right,
+            );
+        },
+        // '🯟'
+        0x1fbdf => {
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.upper_left,
+                Alignment.middle_right,
+            );
+            self.draw_cell_diagonal(
+                canvas,
+                Alignment.middle_right,
+                Alignment.lower_left,
+            );
+        },
+
+        // '🯠'
+        0x1fbe0 => self.draw_circle(canvas, Alignment.top, false),
+        // '🯡'
+        0x1fbe1 => self.draw_circle(canvas, Alignment.right, false),
+        // '🯢'
+        0x1fbe2 => self.draw_circle(canvas, Alignment.bottom, false),
+        // '🯣'
+        0x1fbe3 => self.draw_circle(canvas, Alignment.left, false),
+        // '🯤'
+        0x1fbe4 => self.draw_block(canvas, Alignment.upper_center, 0.5, 0.5),
+        // '🯥'
+        0x1fbe5 => self.draw_block(canvas, Alignment.lower_center, 0.5, 0.5),
+        // '🯦'
+        0x1fbe6 => self.draw_block(canvas, Alignment.middle_left, 0.5, 0.5),
+        // '🯧'
+        0x1fbe7 => self.draw_block(canvas, Alignment.middle_right, 0.5, 0.5),
+        // '🯨'
+        0x1fbe8 => self.draw_circle(canvas, Alignment.top, true),
+        // '🯩'
+        0x1fbe9 => self.draw_circle(canvas, Alignment.right, true),
+        // '🯪'
+        0x1fbea => self.draw_circle(canvas, Alignment.bottom, true),
+        // '🯫'
+        0x1fbeb => self.draw_circle(canvas, Alignment.left, true),
+        // '🯬'
+        0x1fbec => self.draw_circle(canvas, Alignment.top_right, true),
+        // '🯭'
+        0x1fbed => self.draw_circle(canvas, Alignment.bottom_left, true),
+        // '🯮'
+        0x1fbee => self.draw_circle(canvas, Alignment.bottom_right, true),
+        // '🯯'
+        0x1fbef => self.draw_circle(canvas, Alignment.top_left, true),
 
         // Not official box characters but special characters we hide
         // in the high bits of a unicode codepoint.
@@ -610,7 +943,11 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
     }
 }
 
-fn draw_lines(self: Box, canvas: *font.sprite.Canvas, comptime lines: Lines) void {
+fn draw_lines(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime lines: Lines,
+) void {
     const light_px = Thickness.light.height(self.thickness);
     const heavy_px = Thickness.heavy.height(self.thickness);
 
@@ -858,63 +1195,20 @@ fn draw_heavy_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
 }
 
 fn draw_light_diagonal_upper_right_to_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    canvas.trapezoid(.{
-        .top = 0,
-        .bottom = @as(i32, @intCast(self.height)),
-        .left = .{
-            .p1 = .{
-                .x = @as(i32, @intFromFloat(@as(f64, @floatFromInt(self.width)) - @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = 0,
-            },
-
-            .p2 = .{
-                .x = @as(i32, @intFromFloat(0 - @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = @as(i32, @intCast(self.height)),
-            },
-        },
-        .right = .{
-            .p1 = .{
-                .x = @as(i32, @intFromFloat(@as(f64, @floatFromInt(self.width)) + @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = 0,
-            },
-
-            .p2 = .{
-                .x = @as(i32, @intFromFloat(0 + @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = @as(i32, @intCast(self.height)),
-            },
-        },
-    });
+    canvas.line(.{
+        .p0 = .{ .x = @floatFromInt(self.width), .y = 0 },
+        .p1 = .{ .x = 0, .y = @floatFromInt(self.height) },
+    }, @floatFromInt(Thickness.light.height(self.thickness)), .on) catch {};
 }
 
 fn draw_light_diagonal_upper_left_to_lower_right(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    canvas.trapezoid(.{
-        .top = 0,
-        .bottom = @as(i32, @intCast(self.height)),
-        .left = .{
-            .p1 = .{
-                .x = @as(i32, @intFromFloat(0 - @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = 0,
-            },
-
-            .p2 = .{
-                .x = @as(i32, @intFromFloat(@as(f64, @floatFromInt(self.width)) - @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = @as(i32, @intCast(self.height)),
-            },
+    canvas.line(.{
+        .p0 = .{ .x = 0, .y = 0 },
+        .p1 = .{
+            .x = @floatFromInt(self.width),
+            .y = @floatFromInt(self.height),
         },
-        .right = .{
-            .p1 = .{
-                .x = @as(i32, @intFromFloat(0 + @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = 0,
-            },
-
-            .p2 = .{
-                .x = @as(i32, @intFromFloat(@as(f64, @floatFromInt(self.width)) + @as(f64, @floatFromInt(thick_px)) / 2)),
-                .y = @as(i32, @intCast(self.height)),
-            },
-        },
-    });
+    }, @floatFromInt(Thickness.light.height(self.thickness)), .on) catch {};
 }
 
 fn draw_light_diagonal_cross(self: Box, canvas: *font.sprite.Canvas) void {
@@ -925,9 +1219,20 @@ fn draw_light_diagonal_cross(self: Box, canvas: *font.sprite.Canvas) void {
 fn draw_block(
     self: Box,
     canvas: *font.sprite.Canvas,
-    alignment: Alignment,
-    width: f64,
-    height: f64,
+    comptime alignment: Alignment,
+    comptime width: f64,
+    comptime height: f64,
+) void {
+    self.draw_block_shade(canvas, alignment, width, height, .on);
+}
+
+fn draw_block_shade(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime alignment: Alignment,
+    comptime width: f64,
+    comptime height: f64,
+    comptime shade: Shade,
 ) void {
     const float_width: f64 = @floatFromInt(self.width);
     const float_height: f64 = @floatFromInt(self.height);
@@ -947,11 +1252,31 @@ fn draw_block(
     };
 
     canvas.rect(.{
-        .x = @intCast(x),
-        .y = @intCast(y),
-        .width = w,
-        .height = h,
-    }, .on);
+        .x = @floatFromInt(x),
+        .y = @floatFromInt(y),
+        .width = @floatFromInt(w),
+        .height = @floatFromInt(h),
+    }, @as(font.sprite.Color, @enumFromInt(@intFromEnum(shade))));
+}
+
+fn draw_corner_triangle_shade(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime corner: Corner,
+    comptime shade: Shade,
+) void {
+    const x0, const y0, const x1, const y1, const x2, const y2 = switch (corner) {
+        .tl => .{ 0, 0, 0, self.height, self.width, 0 },
+        .tr => .{ 0, 0, self.width, self.height, self.width, 0 },
+        .bl => .{ 0, 0, 0, self.height, self.width, self.height },
+        .br => .{ 0, self.height, self.width, self.height, self.width, 0 },
+    };
+
+    canvas.triangle(.{
+        .p0 = .{ .x = @floatFromInt(x0), .y = @floatFromInt(y0) },
+        .p1 = .{ .x = @floatFromInt(x1), .y = @floatFromInt(y1) },
+        .p2 = .{ .x = @floatFromInt(x2), .y = @floatFromInt(y2) },
+    }, @as(font.sprite.Color, @enumFromInt(@intFromEnum(shade)))) catch {};
 }
 
 fn draw_full_block(self: Box, canvas: *font.sprite.Canvas) void {
@@ -964,25 +1289,220 @@ fn draw_vertical_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u
     self.rect(canvas, x, 0, x + w, self.height);
 }
 
-fn draw_pixman_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
+fn draw_checkerboard_fill(self: Box, canvas: *font.sprite.Canvas, parity: u1) void {
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+    const x_size: usize = 4;
+    const y_size: usize = @intFromFloat(@round(4 * (float_height / float_width)));
+    for (0..x_size) |x| {
+        const x0 = (self.width * x) / x_size;
+        const x1 = (self.width * (x + 1)) / x_size;
+        for (0..y_size) |y| {
+            const y0 = (self.height * y) / y_size;
+            const y1 = (self.height * (y + 1)) / y_size;
+            if ((x + y) % 2 == parity) {
+                canvas.rect(.{
+                    .x = @floatFromInt(x0),
+                    .y = @floatFromInt(y0),
+                    .width = @floatFromInt(x1 -| x0),
+                    .height = @floatFromInt(y1 -| y0),
+                }, .on);
+            }
+        }
+    }
+}
+
+fn draw_upper_left_to_lower_right_fill(self: Box, canvas: *font.sprite.Canvas) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const line_count = self.width / (2 * thick_px);
+
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+    const float_thick: f64 = @floatFromInt(thick_px);
+    const stride = @round(float_width / @as(f64, @floatFromInt(line_count)));
+
+    for (0..line_count * 2 + 1) |_i| {
+        const i = @as(i32, @intCast(_i)) - @as(i32, @intCast(line_count));
+        const top_x = @as(f64, @floatFromInt(i)) * stride;
+        const bottom_x = float_width + top_x;
+        canvas.line(.{
+            .p0 = .{ .x = top_x, .y = 0 },
+            .p1 = .{ .x = bottom_x, .y = float_height },
+        }, float_thick, .on) catch {};
+    }
+}
+
+fn draw_upper_right_to_lower_left_fill(self: Box, canvas: *font.sprite.Canvas) void {
+    const thick_px = Thickness.light.height(self.thickness);
+    const line_count = self.width / (2 * thick_px);
+
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+    const float_thick: f64 = @floatFromInt(thick_px);
+    const stride = @round(float_width / @as(f64, @floatFromInt(line_count)));
+
+    for (0..line_count * 2 + 1) |_i| {
+        const i = @as(i32, @intCast(_i)) - @as(i32, @intCast(line_count));
+        const bottom_x = @as(f64, @floatFromInt(i)) * stride;
+        const top_x = float_width + bottom_x;
+        canvas.line(.{
+            .p0 = .{ .x = top_x, .y = 0 },
+            .p1 = .{ .x = bottom_x, .y = float_height },
+        }, float_thick, .on) catch {};
+    }
+}
+
+fn draw_corner_diagonal_lines(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime corners: Quads,
+) void {
+    const thick_px = Thickness.light.height(self.thickness);
+
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+    const float_thick: f64 = @floatFromInt(thick_px);
+    const center_x: f64 = @floatFromInt(self.width / 2 + self.width % 2);
+    const center_y: f64 = @floatFromInt(self.height / 2 + self.height % 2);
+
+    if (corners.tl) canvas.line(.{
+        .p0 = .{ .x = center_x, .y = 0 },
+        .p1 = .{ .x = 0, .y = center_y },
+    }, float_thick, .on) catch {};
+
+    if (corners.tr) canvas.line(.{
+        .p0 = .{ .x = center_x, .y = 0 },
+        .p1 = .{ .x = float_width, .y = center_y },
+    }, float_thick, .on) catch {};
+
+    if (corners.bl) canvas.line(.{
+        .p0 = .{ .x = center_x, .y = float_height },
+        .p1 = .{ .x = 0, .y = center_y },
+    }, float_thick, .on) catch {};
+
+    if (corners.br) canvas.line(.{
+        .p0 = .{ .x = center_x, .y = float_height },
+        .p1 = .{ .x = float_width, .y = center_y },
+    }, float_thick, .on) catch {};
+}
+
+fn draw_cell_diagonal(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime from: Alignment,
+    comptime to: Alignment,
+) void {
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+
+    const x0: f64 = switch (from.horizontal) {
+        .left => 0,
+        .right => float_width,
+        .center => float_width / 2,
+    };
+    const y0: f64 = switch (from.vertical) {
+        .top => 0,
+        .bottom => float_height,
+        .middle => float_height / 2,
+    };
+    const x1: f64 = switch (to.horizontal) {
+        .left => 0,
+        .right => float_width,
+        .center => float_width / 2,
+    };
+    const y1: f64 = switch (to.vertical) {
+        .top => 0,
+        .bottom => float_height,
+        .middle => float_height / 2,
+    };
+
+    self.draw_line(
+        canvas,
+        .{ .x = x0, .y = y0 },
+        .{ .x = x1, .y = y1 },
+        .light,
+    ) catch {};
+}
+
+fn draw_circle(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime position: Alignment,
+    comptime filled: bool,
+) void {
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+
+    const x: f64 = switch (position.horizontal) {
+        .left => 0,
+        .right => float_width,
+        .center => float_width / 2,
+    };
+    const y: f64 = switch (position.vertical) {
+        .top => 0,
+        .bottom => float_height,
+        .middle => float_height / 2,
+    };
+    const r: f64 = 0.5 * @min(float_width, float_height);
+
+    var ctx: z2d.Context = .{
+        .surface = canvas.sfc,
+        .pattern = .{
+            .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+            },
+        },
+        .line_width = @floatFromInt(Thickness.light.height(self.thickness)),
+    };
+
+    var path = z2d.Path.init(canvas.alloc);
+    defer path.deinit();
+
+    if (filled) {
+        path.arc(x, y, r, 0, std.math.pi * 2, false, null) catch return;
+        path.close() catch return;
+        ctx.fill(canvas.alloc, path) catch return;
+    } else {
+        path.arc(x, y, r - ctx.line_width / 2, 0, std.math.pi * 2, false, null) catch return;
+        path.close() catch return;
+        ctx.stroke(canvas.alloc, path) catch return;
+    }
+}
+
+fn draw_line(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    p0: font.sprite.Point,
+    p1: font.sprite.Point,
+    comptime thickness: Thickness,
+) !void {
+    canvas.line(
+        .{ .p0 = p0, .p1 = p1 },
+        @floatFromInt(thickness.height(self.thickness)),
+        .on,
+    ) catch {};
+}
+
+fn draw_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
     canvas.rect((font.sprite.Box{
-        .x1 = 0,
-        .y1 = 0,
-        .x2 = @as(i32, @intCast(self.width)),
-        .y2 = @as(i32, @intCast(self.height)),
+        .p0 = .{ .x = 0, .y = 0 },
+        .p1 = .{
+            .x = @floatFromInt(self.width),
+            .y = @floatFromInt(self.height),
+        },
     }).rect(), @as(font.sprite.Color, @enumFromInt(v)));
 }
 
 fn draw_light_shade(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_pixman_shade(canvas, 0x40);
+    self.draw_shade(canvas, 0x40);
 }
 
 fn draw_medium_shade(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_pixman_shade(canvas, 0x80);
+    self.draw_shade(canvas, 0x80);
 }
 
 fn draw_dark_shade(self: Box, canvas: *font.sprite.Canvas) void {
-    self.draw_pixman_shade(canvas, 0xc0);
+    self.draw_shade(canvas, 0xc0);
 }
 
 fn draw_horizontal_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
@@ -1495,29 +2015,20 @@ fn draw_wedge_triangle(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
         else => unreachable,
     }
 
-    canvas.triangle(.{
-        .p1 = .{ .x = @as(i32, @intCast(p1_x)), .y = @as(i32, @intCast(p1_y)) },
-        .p2 = .{ .x = @as(i32, @intCast(p2_x)), .y = @as(i32, @intCast(p2_y)) },
-        .p3 = .{ .x = @as(i32, @intCast(p3_x)), .y = @as(i32, @intCast(p3_y)) },
+    try canvas.triangle(.{
+        .p0 = .{ .x = @floatFromInt(p1_x), .y = @floatFromInt(p1_y) },
+        .p1 = .{ .x = @floatFromInt(p2_x), .y = @floatFromInt(p2_y) },
+        .p2 = .{ .x = @floatFromInt(p3_x), .y = @floatFromInt(p3_y) },
     }, .on);
 }
 
 fn draw_wedge_triangle_inverted(
     self: Box,
-    alloc: Allocator,
     canvas: *font.sprite.Canvas,
     cp: u32,
 ) !void {
     try self.draw_wedge_triangle(canvas, cp);
-
-    var src = try font.sprite.Canvas.init(alloc, self.width, self.height);
-    src.rect(.{ .x = 0, .y = 0, .width = self.width, .height = self.height }, .on);
-    defer src.deinit(alloc);
-    canvas.composite(
-        .source_out,
-        &src,
-        .{ .x = 0, .y = 0, .width = self.width, .height = self.height },
-    );
+    canvas.invert();
 }
 
 fn draw_wedge_triangle_and_box(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
@@ -1526,17 +2037,19 @@ fn draw_wedge_triangle_and_box(self: Box, canvas: *font.sprite.Canvas, cp: u32) 
     const y_thirds = self.yThirds();
     const box: font.sprite.Box = switch (cp) {
         0x1fb46, 0x1fb51 => .{
-            .x1 = 0,
-            .y1 = @as(i32, @intCast(y_thirds[1])),
-            .x2 = @as(i32, @intCast(self.width)),
-            .y2 = @as(i32, @intCast(self.height)),
+            .p0 = .{ .x = 0, .y = @floatFromInt(y_thirds[1]) },
+            .p1 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(self.height),
+            },
         },
 
         0x1fb5c, 0x1fb67 => .{
-            .x1 = 0,
-            .y1 = 0,
-            .x2 = @as(i32, @intCast(self.width)),
-            .y2 = @as(i32, @intCast(y_thirds[0])),
+            .p0 = .{ .x = 0, .y = 0 },
+            .p1 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(y_thirds[0]),
+            },
         },
 
         else => unreachable,
@@ -1547,246 +2060,106 @@ fn draw_wedge_triangle_and_box(self: Box, canvas: *font.sprite.Canvas, cp: u32) 
 
 fn draw_light_arc(
     self: Box,
-    alloc: Allocator,
     canvas: *font.sprite.Canvas,
-    cp: u32,
+    comptime corner: Corner,
 ) !void {
-    const supersample = 4;
-    const height = self.height * supersample;
-    const width = self.width * supersample;
+    const thick_px = Thickness.light.height(self.thickness);
+    const float_width: f64 = @floatFromInt(self.width);
+    const float_height: f64 = @floatFromInt(self.height);
+    const float_thick: f64 = @floatFromInt(thick_px);
+    const center_x: f64 = @floatFromInt(self.width / 2 + self.width % 2);
+    const center_y: f64 = @floatFromInt(self.height / 2 + self.height % 2);
 
-    // Allocate our supersample sized canvas
-    var ss_data = try alloc.alloc(u8, height * width);
-    defer alloc.free(ss_data);
-    @memset(ss_data, 0);
+    const r = @min(float_width, float_height) / 2;
 
-    const height_pixels = self.height;
-    const width_pixels = self.width;
-    const thick_pixels = Thickness.light.height(self.thickness);
-    const thick = thick_pixels * supersample;
+    // Fraction away from the center to place the middle control points,
+    const s: f64 = 0.25;
 
-    const circle_inner_edge = (@min(width_pixels, height_pixels) -| thick_pixels) / 2;
-
-    // We want to draw the quartercircle by filling small circles (with r =
-    // thickness/2.) whose centers are on its edge. This means to get the
-    // radius of the quartercircle, we add the exact half thickness to the
-    // radius of the inner circle.
-    var c_r: f64 = @as(f64, @floatFromInt(circle_inner_edge)) + @as(f64, @floatFromInt(thick_pixels)) / 2;
-
-    // We need to draw short lines from the end of the quartercircle to the
-    // box-edges, store one endpoint (the other is the edge of the
-    // quartercircle) in these vars.
-    var vert_to: u32 = 0;
-    var hor_to: u32 = 0;
-
-    // Coordinates of the circle-center.
-    var c_x: u32 = 0;
-    var c_y: u32 = 0;
-
-    // For a given y there are up to two solutions for the circle-equation.
-    // Set to -1 for the left, and 1 for the right hemisphere.
-    var circle_hemisphere: i32 = 0;
-
-    // The quarter circle only has to be evaluated for a small range of
-    // y-values.
-    var y_min: u32 = 0;
-    var y_max: u32 = 0;
-
-    switch (cp) {
-        '╭' => {
-            // Don't use supersampled coordinates yet, we want to align actual
-            // pixels.
-            //
-            // pixel-coordinates of the lower edge of the right line and the
-            // right edge of the bottom line.
-            const right_bottom_edge = (height_pixels + thick_pixels) / 2;
-            const bottom_right_edge = (width_pixels + thick_pixels) / 2;
-
-            // find coordinates of circle-center.
-            c_y = right_bottom_edge + circle_inner_edge;
-            c_x = bottom_right_edge + circle_inner_edge;
-
-            // we want to render the left, not the right hemisphere of the circle.
-            circle_hemisphere = -1;
-
-            // don't evaluate beyond c_y, the vertical line is drawn there.
-            y_min = 0;
-            y_max = c_y;
-
-            // the vertical line should extend to the bottom of the box, the
-            // horizontal to the right.
-            vert_to = height_pixels;
-            hor_to = width_pixels;
+    var ctx: z2d.Context = .{
+        .surface = canvas.sfc,
+        .pattern = .{
+            .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+            },
         },
-        '╮' => {
-            const left_bottom_edge = (height_pixels + thick_pixels) / 2;
-            const bottom_left_edge = (width_pixels -| thick_pixels) / 2;
+        .line_width = float_thick,
+        .line_cap_mode = .round,
+    };
 
-            c_y = left_bottom_edge + circle_inner_edge;
-            c_x = bottom_left_edge -| circle_inner_edge;
+    var path = z2d.Path.init(canvas.alloc);
+    defer path.deinit();
 
-            circle_hemisphere = 1;
-
-            y_min = 0;
-            y_max = c_y;
-
-            vert_to = height_pixels;
-            hor_to = 0;
-        },
-        '╰' => {
-            const right_top_edge = (height_pixels -| thick_pixels) / 2;
-            const top_right_edge = (width_pixels + thick_pixels) / 2;
-
-            c_y = right_top_edge -| circle_inner_edge;
-            c_x = top_right_edge + circle_inner_edge;
-
-            circle_hemisphere = -1;
-
-            y_min = c_y;
-            y_max = height_pixels;
-
-            vert_to = 0;
-            hor_to = width_pixels;
-        },
-        '╯' => {
-            const left_top_edge = (height_pixels -| thick_pixels) / 2;
-            const top_left_edge = (width_pixels -| thick_pixels) / 2;
-
-            c_y = left_top_edge -| circle_inner_edge;
-            c_x = top_left_edge -| circle_inner_edge;
-
-            circle_hemisphere = 1;
-
-            y_min = c_y;
-            y_max = height_pixels;
-
-            vert_to = 0;
-            hor_to = 0;
-        },
-
-        else => {},
-    }
-
-    // store for horizontal+vertical line.
-    const c_x_pixels = c_x;
-    const c_y_pixels = c_y;
-
-    // Bring coordinates from pixel-grid to supersampled grid.
-    c_r *= supersample;
-    c_x *= supersample;
-    c_y *= supersample;
-
-    y_min *= supersample;
-    y_max *= supersample;
-
-    const c_r2 = c_r * c_r;
-
-    // To prevent gaps in the circle, each pixel is sampled multiple times.
-    // As the quartercircle ends (vertically) in the middle of a pixel, an
-    // uneven number helps hit that exactly.
-    {
-        var i: f64 = @as(f64, @floatFromInt(y_min)) * 16;
-        while (i <= @as(f64, @floatFromInt(y_max)) * 16) : (i += 1) {
-            const y = i / 16;
-            const x = x: {
-                // circle_hemisphere * sqrt(c_r2 - (y - c_y) * (y - c_y)) + c_x;
-                const hemi = @as(f64, @floatFromInt(circle_hemisphere));
-                const y_part = y - @as(f64, @floatFromInt(c_y));
-                const y_squared = y_part * y_part;
-                const sqrt = @sqrt(c_r2 - y_squared);
-                const f_c_x = @as(f64, @floatFromInt(c_x));
-
-                // We need to detect overflows and just skip this i
-                const a = hemi * sqrt;
-                const b = a + f_c_x;
-
-                // If the float math didn't work, ignore.
-                if (std.math.isNan(b)) continue;
-
-                break :x b;
-            };
-
-            const row = @as(i32, @intFromFloat(@round(y)));
-            const col = @as(i32, @intFromFloat(@round(x)));
-            if (col < 0) continue;
-
-            // rectangle big enough to fit entire circle with radius thick/2.
-            const row1 = row - @as(i32, @intCast(thick / 2 + 1));
-            const row2 = row + @as(i32, @intCast(thick / 2 + 1));
-            const col1 = col - @as(i32, @intCast(thick / 2 + 1));
-            const col2 = col + @as(i32, @intCast(thick / 2 + 1));
-
-            const row_start = @min(row1, row2);
-            const row_end = @max(row1, row2);
-            const col_start = @min(col1, col2);
-            const col_end = @max(col1, col2);
-
-            assert(row_end > row_start);
-            assert(col_end > col_start);
-
-            // draw circle with radius thick/2 around x,y.
-            // this is accomplished by rejecting pixels where the distance from
-            // their center to x,y is greater than thick/2.
-            var r: i32 = @max(row_start, 0);
-            const r_end = @max(@min(row_end, @as(i32, @intCast(height))), 0);
-            while (r < r_end) : (r += 1) {
-                const r_midpoint = @as(f64, @floatFromInt(r)) + 0.5;
-
-                var c: i32 = @max(col_start, 0);
-                const c_end = @max(@min(col_end, @as(i32, @intCast(width))), 0);
-                while (c < c_end) : (c += 1) {
-                    const c_midpoint = @as(f64, @floatFromInt(c)) + 0.5;
-
-                    // vector from point on quartercircle to midpoint of the current pixel.
-                    const center_midpoint_x = c_midpoint - x;
-                    const center_midpoint_y = r_midpoint - y;
-
-                    // distance from current point to circle-center.
-                    const dist = @sqrt(center_midpoint_x * center_midpoint_x + center_midpoint_y * center_midpoint_y);
-                    // skip if midpoint of pixel is outside the circle.
-                    if (dist > @as(f64, @floatFromInt(thick)) / 2) continue;
-
-                    // Set our pixel
-                    const idx = @as(usize, @intCast(r * @as(i32, @intCast(width)) + c));
-                    ss_data[idx] = 0xFF;
-                }
+    switch (corner) {
+        .tl => {
+            path.moveTo(center_x, 0) catch return;
+            if (self.height > self.width) {
+                path.lineTo(center_x, center_y - r) catch return;
             }
-        }
-    }
-
-    // Downsample
-    {
-        var r: u32 = 0;
-        while (r < self.height) : (r += 1) {
-            var c: u32 = 0;
-            while (c < self.width) : (c += 1) {
-                var total: u32 = 0;
-                var i: usize = 0;
-                while (i < supersample) : (i += 1) {
-                    var j: usize = 0;
-                    while (j < supersample) : (j += 1) {
-                        const idx = (r * supersample + i) * width + (c * supersample + j);
-                        total += ss_data[idx];
-                    }
-                }
-
-                const average = @as(u8, @intCast(@min(total / (supersample * supersample), 0xff)));
-                canvas.rect(
-                    .{
-                        .x = @as(i32, @intCast(c)),
-                        .y = @as(i32, @intCast(r)),
-                        .width = 1,
-                        .height = 1,
-                    },
-                    @as(font.sprite.Color, @enumFromInt(average)),
-                );
+            path.curveTo(
+                center_x,
+                center_y - s * r,
+                center_x - s * r,
+                center_y,
+                center_x - r,
+                center_y,
+            ) catch return;
+            if (self.width > self.height) {
+                path.lineTo(0, center_y) catch return;
             }
-        }
+        },
+        .tr => {
+            path.moveTo(center_x, 0) catch return;
+            if (self.height > self.width) {
+                path.lineTo(center_x, center_y - r) catch return;
+            }
+            path.curveTo(
+                center_x,
+                center_y - s * r,
+                center_x + s * r,
+                center_y,
+                center_x + r,
+                center_y,
+            ) catch return;
+            if (self.width > self.height) {
+                path.lineTo(float_width, center_y) catch return;
+            }
+        },
+        .bl => {
+            path.moveTo(center_x, float_height) catch return;
+            if (self.height > self.width) {
+                path.lineTo(center_x, center_y + r) catch return;
+            }
+            path.curveTo(
+                center_x,
+                center_y + s * r,
+                center_x - s * r,
+                center_y,
+                center_x - r,
+                center_y,
+            ) catch return;
+            if (self.width > self.height) {
+                path.lineTo(0, center_y) catch return;
+            }
+        },
+        .br => {
+            path.moveTo(center_x, float_height) catch return;
+            if (self.height > self.width) {
+                path.lineTo(center_x, center_y + r) catch return;
+            }
+            path.curveTo(
+                center_x,
+                center_y + s * r,
+                center_x + s * r,
+                center_y,
+                center_x + r,
+                center_y,
+            ) catch return;
+            if (self.width > self.height) {
+                path.lineTo(float_width, center_y) catch return;
+            }
+        },
     }
-
-    // draw vertical/horizontal lines from quartercircle-edge to box-edge.
-    self.vline(canvas, @min(c_y_pixels, vert_to), @max(c_y_pixels, vert_to), (width_pixels - thick_pixels) / 2, thick_pixels);
-    self.hline(canvas, @min(c_x_pixels, hor_to), @max(c_x_pixels, hor_to), (height_pixels - thick_pixels) / 2, thick_pixels);
+    ctx.stroke(canvas.alloc, path) catch return;
 }
 
 fn draw_dash_horizontal(
@@ -1978,12 +2351,13 @@ fn vline(
     x: u32,
     thickness_px: u32,
 ) void {
-    canvas.rect((font.sprite.Box{
-        .x1 = @as(i32, @intCast(@min(@max(x, 0), self.width))),
-        .x2 = @as(i32, @intCast(@min(@max(x + thickness_px, 0), self.width))),
-        .y1 = @as(i32, @intCast(@min(@max(y1, 0), self.height))),
-        .y2 = @as(i32, @intCast(@min(@max(y2, 0), self.height))),
-    }).rect(), .on);
+    canvas.rect((font.sprite.Box{ .p0 = .{
+        .x = @floatFromInt(@min(@max(x, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y1, 0), self.height)),
+    }, .p1 = .{
+        .x = @floatFromInt(@min(@max(x + thickness_px, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y2, 0), self.height)),
+    } }).rect(), .on);
 }
 
 fn hline(
@@ -1994,12 +2368,13 @@ fn hline(
     y: u32,
     thickness_px: u32,
 ) void {
-    canvas.rect((font.sprite.Box{
-        .x1 = @as(i32, @intCast(@min(@max(x1, 0), self.width))),
-        .x2 = @as(i32, @intCast(@min(@max(x2, 0), self.width))),
-        .y1 = @as(i32, @intCast(@min(@max(y, 0), self.height))),
-        .y2 = @as(i32, @intCast(@min(@max(y + thickness_px, 0), self.height))),
-    }).rect(), .on);
+    canvas.rect((font.sprite.Box{ .p0 = .{
+        .x = @floatFromInt(@min(@max(x1, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y, 0), self.height)),
+    }, .p1 = .{
+        .x = @floatFromInt(@min(@max(x2, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y + thickness_px, 0), self.height)),
+    } }).rect(), .on);
 }
 
 fn rect(
@@ -2010,12 +2385,13 @@ fn rect(
     x2: u32,
     y2: u32,
 ) void {
-    canvas.rect((font.sprite.Box{
-        .x1 = @as(i32, @intCast(@min(@max(x1, 0), self.width))),
-        .y1 = @as(i32, @intCast(@min(@max(y1, 0), self.height))),
-        .x2 = @as(i32, @intCast(@min(@max(x2, 0), self.width))),
-        .y2 = @as(i32, @intCast(@min(@max(y2, 0), self.height))),
-    }).rect(), .on);
+    canvas.rect((font.sprite.Box{ .p0 = .{
+        .x = @floatFromInt(@min(@max(x1, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y1, 0), self.height)),
+    }, .p1 = .{
+        .x = @floatFromInt(@min(@max(x2, 0), self.width)),
+        .y = @floatFromInt(@min(@max(y2, 0), self.height)),
+    } }).rect(), .on);
 }
 
 test "all" {
@@ -2073,26 +2449,50 @@ test "render all sprites" {
 
     // Symbols for Legacy Computing.
     cp = 0x1fb00;
-    while (cp <= 0x1fb9b) : (cp += 1) {
+    while (cp <= 0x1fbef) : (cp += 1) {
         switch (cp) {
-            0x1FB00...0x1FB3B,
-            0x1FB3C...0x1FB40,
-            0x1FB47...0x1FB4B,
-            0x1FB57...0x1FB5B,
-            0x1FB62...0x1FB66,
-            0x1FB6C...0x1FB6F,
-            0x1FB41...0x1FB45,
-            0x1FB4C...0x1FB50,
-            0x1FB52...0x1FB56,
-            0x1FB5D...0x1FB61,
-            0x1FB68...0x1FB6B,
-            0x1FB70...0x1FB8B,
-            0x1FB46,
-            0x1FB51,
-            0x1FB5C,
-            0x1FB67,
-            0x1FB9A,
-            0x1FB9B,
+            // (Block Mosaics / "Sextants")
+            // 🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠
+            // 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻
+            // (Smooth Mosaics)
+            // 🬼 🬽 🬾 🬿 🭀 🭁 🭂 🭃 🭄 🭅 🭆
+            // 🭇 🭈 🭉 🭊 🭋 🭌 🭍 🭎 🭏 🭐 🭑
+            // 🭒 🭓 🭔 🭕 🭖 🭗 🭘 🭙 🭚 🭛 🭜
+            // 🭝 🭞 🭟 🭠 🭡 🭢 🭣 🭤 🭥 🭦 🭧
+            // 🭨 🭩 🭪 🭫 🭬 🭭 🭮 🭯
+            // (Block Elements)
+            // 🭰 🭱 🭲 🭳 🭴 🭵 🭶 🭷 🭸 🭹 🭺 🭻
+            // 🭼 🭽 🭾 🭿 🮀 🮁
+            // 🮂 🮃 🮄 🮅 🮆
+            // 🮇 🮈 🮉 🮊 🮋
+            // (Rectangular Shade Characters)
+            // 🮌 🮍 🮎 🮏 🮐 🮑 🮒
+            0x1FB00...0x1FB92,
+            // (Rectangular Shade Characters)
+            // 🮔
+            // (Fill Characters)
+            // 🮕 🮖 🮗
+            // (Diagonal Fill Characters)
+            // 🮘 🮙
+            // (Smooth Mosaics)
+            // 🮚 🮛
+            // (Triangular Shade Characters)
+            // 🮜 🮝 🮞 🮟
+            // (Character Cell Diagonals)
+            // 🮠 🮡 🮢 🮣 🮤 🮥 🮦 🮧 🮨 🮩 🮪 🮫 🮬 🮭 🮮
+            // (Light Solid Line With Stroke)
+            // 🮯
+            0x1FB94...0x1FBAF,
+            // (Negative Terminal Characters)
+            // 🮽 🮾 🮿
+            0x1FBBD...0x1FBBF,
+            // (Block Elements)
+            // 🯎 🯏
+            // (Character Cell Diagonals)
+            // 🯐 🯑 🯒 🯓 🯔 🯕 🯖 🯗 🯘 🯙 🯚 🯛 🯜 🯝 🯞 🯟
+            // (Geometric Shapes)
+            // 🯠 🯡 🯢 🯣 🯤 🯥 🯦 🯧 🯨 🯩 🯪 🯫 🯬 🯭 🯮 🯯
+            0x1FBCE...0x1FBEF,
             => _ = try face.renderGlyph(
                 alloc,
                 &atlas_grayscale,

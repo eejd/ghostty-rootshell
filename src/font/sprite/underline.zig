@@ -70,8 +70,8 @@ fn drawSingle(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     canvas.rect(.{
         .x = 0,
         .y = 0,
-        .width = width,
-        .height = thickness,
+        .width = @floatFromInt(width),
+        .height = @floatFromInt(thickness),
     }, .on);
 
     const offset_y: i32 = 0;
@@ -91,15 +91,15 @@ fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     canvas.rect(.{
         .x = 0,
         .y = 0,
-        .width = width,
-        .height = thickness,
+        .width = @floatFromInt(width),
+        .height = @floatFromInt(thickness),
     }, .on);
 
     canvas.rect(.{
         .x = 0,
-        .y = @intCast(thickness + gap),
-        .width = width,
-        .height = thickness,
+        .y = @floatFromInt(thickness * 2),
+        .width = @floatFromInt(width),
+        .height = @floatFromInt(thickness),
     }, .on);
 
     const offset_y: i32 = -@as(i32, @intCast(thickness));
@@ -121,10 +121,10 @@ fn drawDotted(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         const x = @min(i * (dot_width + gap_width), width - 1);
         const rect_width = @min(width - x, dot_width);
         canvas.rect(.{
-            .x = @intCast(x),
+            .x = @floatFromInt(x),
             .y = 0,
-            .width = rect_width,
-            .height = thickness,
+            .width = @floatFromInt(rect_width),
+            .height = @floatFromInt(thickness),
         }, .on);
     }
 
@@ -146,10 +146,10 @@ fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
         const x = @min(i * dash_width, width - 1);
         const rect_width = @min(width - x, dash_width);
         canvas.rect(.{
-            .x = @intCast(x),
+            .x = @floatFromInt(x),
             .y = 0,
-            .width = rect_width,
-            .height = thickness,
+            .width = @floatFromInt(rect_width),
+            .height = @floatFromInt(thickness),
         }, .on);
     }
 
