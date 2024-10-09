@@ -80,10 +80,17 @@ pub fn init(self: *Window, app: *App) !void {
     };
 
     // Create the window
-    const window: *c.GtkWidget = if (self.isAdwWindow())
-        c.adw_application_window_new(app.app)
-    else
-        c.gtk_application_window_new(app.app);
+    const window: *c.GtkWidget = window: {
+        if (self.isAdwWindow()) {
+            const window = c.adw_application_window_new(app.app);
+            c.gtk_widget_add_css_class(@ptrCast(window), "adw");
+            break :window window;
+        } else {
+            const window = c.gtk_application_window_new(app.app);
+            c.gtk_widget_add_css_class(@ptrCast(window), "gtk");
+            break :window window;
+        }
+    };
 
     const gtk_window: *c.GtkWindow = @ptrCast(window);
     errdefer if (self.isAdwWindow()) {
@@ -110,11 +117,6 @@ pub fn init(self: *Window, app: *App) !void {
     if (app.config.@"background-opacity" < 1) {
         c.gtk_widget_remove_css_class(@ptrCast(window), "background");
     }
-
-    // Internally, GTK ensures that only one instance of this provider exists in the provider list
-    // for the display.
-    const display = c.gdk_display_get_default();
-    c.gtk_style_context_add_provider_for_display(display, @ptrCast(app.css_provider), c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // Create our box which will hold our widgets in the main content area.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
