@@ -29,11 +29,7 @@ extension NSScreen {
         // We need to see if our visible frame height is less than the full
         // screen height minus the menu and notch and such.
         let menuHeight = NSApp.mainMenu?.menuBarHeight ?? 0
-        let notchInset: CGFloat = if #available(macOS 12, *) {
-            safeAreaInsets.top
-        } else {
-            0
-        }
+        let notchInset: CGFloat = safeAreaInsets.top
         let boundaryAreaPadding = 5.0
 
         return visibleFrame.height < (frame.height - max(menuHeight, notchInset) - boundaryAreaPadding)
