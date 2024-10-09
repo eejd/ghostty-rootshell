@@ -437,15 +437,6 @@ pub const Shaper = struct {
                     // wait for that.
                     if (cell_offset.cluster > cluster) break :pad;
 
-                    // If we have a gap between clusters then we need to
-                    // add empty cells to the buffer.
-                    for (cell_offset.cluster + 1..cluster) |x| {
-                        try self.cell_buf.append(self.alloc, .{
-                            .x = @intCast(x),
-                            .glyph_index = null,
-                        });
-                    }
-
                     cell_offset = .{ .cluster = cluster };
                 }
 
@@ -460,25 +451,6 @@ pub const Shaper = struct {
                 // Advances apply to the NEXT cell.
                 cell_offset.x += advance.width;
                 cell_offset.y += advance.height;
-            }
-        }
-
-        // If our last cell doesn't match our last cluster then we have
-        // a left-replaced ligature that needs to have spaces appended
-        // so that cells retain their background colors.
-        if (self.cell_buf.items.len > 0) pad: {
-            const last_cell = self.cell_buf.items[self.cell_buf.items.len - 1];
-            const last_cp = state.codepoints.items[state.codepoints.items.len - 1];
-            if (last_cell.x == last_cp.cluster) break :pad;
-            assert(last_cell.x < last_cp.cluster);
-
-            // We need to go back to the last matched cluster and add
-            // padding up to there.
-            for (last_cell.x + 1..last_cp.cluster + 1) |x| {
-                try self.cell_buf.append(self.alloc, .{
-                    .x = @intCast(x),
-                    .glyph_index = null,
-                });
             }
         }
 
