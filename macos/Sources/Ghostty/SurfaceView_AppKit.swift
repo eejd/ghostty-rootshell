@@ -30,6 +30,9 @@ extension Ghostty {
         // The hovered URL string
         @Published var hoverUrl: String? = nil
 
+        // The currently active key sequence. The sequence is not active if this is empty.
+        @Published var keySequence: [Ghostty.KeyEquivalent] = []
+
         // The time this surface last became focused. This is a ContinuousClock.Instant
         // on supported platforms.
         @Published var focusInstant: Any? = nil
@@ -131,6 +134,16 @@ extension Ghostty {
                 self,
                 selector: #selector(onUpdateRendererHealth),
                 name: Ghostty.Notification.didUpdateRendererHealth,
+                object: self)
+            center.addObserver(
+                self,
+                selector: #selector(ghosttyDidContinueKeySequence),
+                name: Ghostty.Notification.didContinueKeySequence,
+                object: self)
+            center.addObserver(
+                self,
+                selector: #selector(ghosttyDidEndKeySequence),
+                name: Ghostty.Notification.didEndKeySequence,
                 object: self)
             center.addObserver(
                 self,
@@ -314,6 +327,16 @@ extension Ghostty {
             guard let healthAny = notification.userInfo?["health"] else { return }
             guard let health = healthAny as? ghostty_action_renderer_health_e else { return }
             healthy = health == GHOSTTY_RENDERER_HEALTH_OK
+        }
+
+        @objc private func ghosttyDidContinueKeySequence(notification: SwiftUI.Notification) {
+            guard let keyAny = notification.userInfo?[Ghostty.Notification.KeySequenceKey] else { return }
+            guard let key = keyAny as? Ghostty.KeyEquivalent else { return }
+            keySequence.append(key)
+        }
+
+        @objc private func ghosttyDidEndKeySequence(notification: SwiftUI.Notification) {
+            keySequence = []
         }
 
         @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {

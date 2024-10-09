@@ -411,6 +411,7 @@ pub fn performAction(
         .size_limit,
         .cell_size,
         .secure_input,
+        .key_sequence,
         .render_inspector,
         .renderer_health,
         => log.warn("unimplemented action={}", .{action}),

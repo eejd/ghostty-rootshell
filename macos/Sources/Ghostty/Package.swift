@@ -262,7 +262,12 @@ extension Ghostty.Notification {
 
     /// Notification that renderer health changed
     static let didUpdateRendererHealth = Notification.Name("com.mitchellh.ghostty.didUpdateRendererHealth")
+
+    /// Notifications related to key sequences
+    static let didContinueKeySequence = Notification.Name("com.mitchellh.ghostty.didContinueKeySequence")
+    static let didEndKeySequence = Notification.Name("com.mitchellh.ghostty.didEndKeySequence")
+    static let KeySequenceKey = didContinueKeySequence.rawValue + ".key"
 }
 
 // Make the input enum hashable.
-extension ghostty_input_key_e : Hashable {}
+extension ghostty_input_key_e : @retroactive Hashable {}

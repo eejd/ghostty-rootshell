@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const apprt = @import("../apprt.zig");
+const input = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const CoreSurface = @import("../Surface.zig");
@@ -173,6 +174,11 @@ pub const Action = union(Key) {
     /// system APIs to not log the input, etc.
     secure_input: SecureInput,
 
+    /// A sequenced key binding has started, continued, or stopped.
+    /// The UI should show some indication that the user is in a sequenced
+    /// key mode because other input may be ignored.
+    key_sequence: KeySequence,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         new_window,
@@ -204,6 +210,7 @@ pub const Action = union(Key) {
         open_config,
         quit_timer,
         secure_input,
+        key_sequence,
     };
 
     /// Sync with: ghostty_action_u
@@ -408,6 +415,24 @@ pub const DesktopNotification = struct {
         return .{
             .title = self.title.ptr,
             .body = self.body.ptr,
+        };
+    }
+};
+
+pub const KeySequence = union(enum) {
+    trigger: input.Trigger,
+    end,
+
+    // Sync with: ghostty_action_key_sequence_s
+    pub const C = extern struct {
+        active: bool,
+        trigger: input.Trigger.C,
+    };
+
+    pub fn cval(self: KeySequence) C {
+        return switch (self) {
+            .trigger => |t| .{ .active = true, .trigger = t.cval() },
+            .end => .{ .active = false, .trigger = .{} },
         };
     }
 };
