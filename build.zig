@@ -729,7 +729,10 @@ pub fn build(b: *std.Build) !void {
         // Force all Mac builds to use a `generic` CPU. This avoids
         // potential issues with `highway` compile errors due to missing
         // `arm_neon` features (see for example https://github.com/mitchellh/ghostty/issues/1640).
-        const test_target = if (target.result.os.tag == .macos and builtin.target.isDarwin()) genericMacOSTarget(b) else target;
+        const test_target = if (target.result.os.tag == .macos and builtin.target.isDarwin())
+            genericMacOSTarget(b, null)
+        else
+            target;
 
         const main_test = b.addTest(.{
             .name = "ghostty-test",
@@ -781,9 +784,9 @@ fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
 
 // Returns a ResolvedTarget for a mac with a `target.result.cpu.model.name` of `generic`.
 // `b.standardTargetOptions()` returns a more specific cpu like `apple_a15`.
-fn genericMacOSTarget(b: *std.Build) ResolvedTarget {
+fn genericMacOSTarget(b: *std.Build, arch: ?std.Target.Cpu.Arch) ResolvedTarget {
     return b.resolveTargetQuery(.{
-        .cpu_arch = .aarch64,
+        .cpu_arch = arch orelse builtin.target.cpu.arch,
         .os_tag = .macos,
         .os_version_min = osVersionMin(.macos),
     });
@@ -816,7 +819,7 @@ fn createMacOSLib(
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
             .root_source_file = b.path("src/main_c.zig"),
-            .target = genericMacOSTarget(b),
+            .target = genericMacOSTarget(b, .aarch64),
             .optimize = optimize,
         });
         lib.bundle_compiler_rt = true;
@@ -840,11 +843,7 @@ fn createMacOSLib(
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
             .root_source_file = b.path("src/main_c.zig"),
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .x86_64,
-                .os_tag = .macos,
-                .os_version_min = osVersionMin(.macos),
-            }),
+            .target = genericMacOSTarget(b, .x86_64),
             .optimize = optimize,
         });
         lib.bundle_compiler_rt = true;
