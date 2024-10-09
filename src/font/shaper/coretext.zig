@@ -1681,6 +1681,73 @@ test "shape cell attribute change" {
     }
 }
 
+test "shape high plane sprite font codepoint" {
+    // While creating runs, the CoreText shaper uses `0` codepoints to
+    // pad its codepoint list to account for high plane characters which
+    // use two UTF-16 code units. This is so that, after shaping, the string
+    // indices can be used to find the originating codepoint / cluster.
+    //
+    // This is a problem for special (sprite) fonts, which need to be "shaped"
+    // by simply returning the input codepoints verbatim. We include logic to
+    // skip `0` codepoints when constructing the shaped run for sprite fonts,
+    // this test verifies that it works correctly.
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
+    defer screen.deinit();
+
+    // U+1FB70: Vertical One Eighth Block-2
+    try screen.testWriteString("\u{1FB70}");
+
+    var shaper = &testdata.shaper;
+    var it = shaper.runIterator(
+        testdata.grid,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
+    // We should get one run
+    const run = (try it.next(alloc)).?;
+    // The run state should have the UTF-16 encoding of the character.
+    try testing.expectEqualSlices(
+        u16,
+        &.{ 0xD83E, 0xDF70 },
+        shaper.run_state.unichars.items,
+    );
+    // The codepoint list should be padded.
+    try testing.expectEqualSlices(
+        Shaper.Codepoint,
+        &.{
+            .{ .codepoint = 0x1FB70, .cluster = 0 },
+            .{ .codepoint = 0, .cluster = 0 },
+        },
+        shaper.run_state.codepoints.items,
+    );
+    // And when shape it
+    const cells = try shaper.shape(run);
+    // we should have
+    // - 1 cell
+    try testing.expectEqual(1, run.cells);
+    // - at position 0
+    try testing.expectEqual(0, run.offset);
+    // - with 1 glyph in it
+    try testing.expectEqual(1, cells.len);
+    // - at position 0
+    try testing.expectEqual(0, cells[0].x);
+    // - the glyph index should be equal to the codepoint
+    try testing.expectEqual(0x1FB70, cells[0].glyph_index);
+    // - it should be a sprite font
+    try testing.expect(run.font_index.special() != null);
+    // And we should get a null run after that
+    try testing.expectEqual(null, try it.next(alloc));
+}
+
 const TestShaper = struct {
     alloc: Allocator,
     shaper: Shaper,
