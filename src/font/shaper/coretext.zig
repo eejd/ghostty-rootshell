@@ -361,6 +361,12 @@ pub const Shaper = struct {
             self.cell_buf.clearRetainingCapacity();
             try self.cell_buf.ensureTotalCapacity(self.alloc, state.codepoints.items.len);
             for (state.codepoints.items) |entry| {
+                // We use null codepoints to pad out our list so indices match
+                // the UTF-16 string we constructed for CoreText. We don't want
+                // to emit these if this is a special font, since they're not
+                // part of the original run.
+                if (entry.codepoint == 0) continue;
+
                 self.cell_buf.appendAssumeCapacity(.{
                     .x = @intCast(entry.cluster),
                     .glyph_index = @intCast(entry.codepoint),
