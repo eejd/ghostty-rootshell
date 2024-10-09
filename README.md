@@ -532,6 +532,7 @@ tasks.
 Other useful commands:
 
 - `zig build test` for running unit tests.
+- `zig build test -Dtest-filter=<filter>` for running a specific subset of those unit tests
 - `zig build run -Dconformance=<name>` runs a conformance test case from
   the `conformance` directory. The `name` is the name of the file. This runs
   in the current running terminal emulator so if you want to check the
