@@ -1379,7 +1379,11 @@ fn gtkMouseScroll(
     const scroll_mods: input.ScrollMods = .{};
 
     self.core_surface.scrollCallback(
-        scaled.x,
+        // We invert because we apply natural scrolling to the values.
+        // This behavior has existed for years without Linux users complaining
+        // but I suspect we'll have to make this configurable in the future
+        // or read a system setting.
+        scaled.x * -1,
         scaled.y * -1,
         scroll_mods,
     ) catch |err| {
