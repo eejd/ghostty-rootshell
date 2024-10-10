@@ -2030,6 +2030,27 @@ pub fn refreshCallback(self: *Surface) !void {
     try self.queueRender();
 }
 
+// The amount to scroll. This structure is always normalized so that
+// negative is down, left and positive is up, right. Note that INTERNALLY,
+// vertical scroll on our terminal uses positive for down (right is not
+// supported by our screen since scrollback is only vertical).
+const ScrollAmount = struct {
+    delta: isize = 0,
+
+    pub fn direction(self: ScrollAmount) enum { down_left, up_right } {
+        return if (self.delta < 0) .down_left else .up_right;
+    }
+
+    pub fn magnitude(self: ScrollAmount) usize {
+        return @abs(self.delta);
+    }
+};
+
+/// Mouse scroll event. Negative is down, left. Positive is up, right.
+///
+/// "Natural scrolling" is a macOS term for inverting the scroll direction.
+/// This should be handled by the apprt implementation. At this layer,
+/// negative is always down, left.
 pub fn scrollCallback(
     self: *Surface,
     xoff: f64,
@@ -2045,22 +2066,23 @@ pub fn scrollCallback(
     // Always show the mouse again if it is hidden
     if (self.mouse.hidden) self.showMouse();
 
-    const ScrollAmount = struct {
-        // Positive is up, right
-        sign: isize = 1,
-        delta_unsigned: usize = 0,
-        delta: isize = 0,
-    };
-
     const y: ScrollAmount = if (yoff == 0) .{} else y: {
-        // Non-precision scrolling is easy to calculate.
+        // Non-precision scrolling is easy to calculate. We don't use
+        // the given offset at all and instead just treat a positive
+        // as a scroll up and a negative as a scroll down and scroll in
+        // steps.
         if (!scroll_mods.precision) {
-            const y_sign: isize = if (yoff > 0) -1 else 1;
-            const grid_rows: f64 = @floatFromInt(self.grid_size.rows);
-            const y_delta_f64 = @round((grid_rows * self.config.mouse_scroll_multiplier) / 15.0);
-            const y_delta_unsigned: usize = @max(1, @as(usize, @intFromFloat(y_delta_f64)));
-            const y_delta: isize = y_sign * @as(isize, @intCast(y_delta_unsigned));
-            break :y .{ .sign = y_sign, .delta_unsigned = y_delta_unsigned, .delta = y_delta };
+            // Calculate our magnitude of scroll. This is constant (not
+            // dependent on yoff).
+            const grid_rows_f64: f64 = @floatFromInt(self.grid_size.rows);
+            const y_delta_f64: f64 = @round((grid_rows_f64 * self.config.mouse_scroll_multiplier) / 15.0);
+            const y_delta_usize: usize = @max(1, @as(usize, @intFromFloat(y_delta_f64)));
+
+            // Calculate our direction of scroll based on the sign of yoff.
+            const y_sign: isize = if (yoff >= 0) 1 else -1;
+            const y_delta_isize: isize = y_sign * @as(isize, @intCast(y_delta_usize));
+
+            break :y .{ .delta = y_delta_isize };
         }
 
         // Precision scrolling is more complicated. We need to maintain state
@@ -2068,17 +2090,14 @@ pub fn scrollCallback(
         // tiny amount so that we can scroll by a full row when we have enough.
 
         // Adjust our offset by the multiplier
-        const yoff_adjusted = yoff * self.config.mouse_scroll_multiplier;
+        const yoff_adjusted: f64 = yoff * self.config.mouse_scroll_multiplier;
 
         // Add our previously saved pending amount to the offset to get the
-        // new offset value.
-        //
-        // NOTE: we currently multiply by -1 because macOS sends the opposite
-        // of what we expect. This is jank we should audit our sign usage and
-        // carefully document what we expect so this can work cross platform.
-        // Right now this isn't important because macOS is the only high-precision
-        // scroller.
-        const poff = self.mouse.pending_scroll_y + (yoff_adjusted * -1);
+        // new offset value. The signs of the pending and yoff should match
+        // so that we move further away from zero, but we don't assert
+        // this because in theory a user could scroll in the opposite
+        // direction and undo a pending scroll.
+        const poff: f64 = self.mouse.pending_scroll_y + yoff_adjusted;
 
         // If the new offset is less than a single unit of scroll, we save
         // the new pending value and do not scroll yet.
@@ -2090,26 +2109,28 @@ pub fn scrollCallback(
 
         // We scroll by the number of rows in the offset and save the remainder
         const amount = poff / cell_size;
+        assert(@abs(amount) >= 1);
         self.mouse.pending_scroll_y = poff - (amount * cell_size);
 
-        break :y .{
-            .sign = if (yoff_adjusted > 0) 1 else -1,
-            .delta_unsigned = @intFromFloat(@abs(amount)),
-            .delta = @intFromFloat(amount),
-        };
+        // Round towards zero.
+        const delta: isize = @intFromFloat(@trunc(amount));
+        assert(@abs(delta) >= 1);
+
+        break :y .{ .delta = delta };
     };
 
     // For detailed comments see the y calculation above.
     const x: ScrollAmount = if (xoff == 0) .{} else x: {
         if (!scroll_mods.precision) {
-            const x_sign: isize = if (xoff < 0) -1 else 1;
-            const x_delta_unsigned: usize = @intFromFloat(@round(1 * self.config.mouse_scroll_multiplier));
-            const x_delta: isize = x_sign * @as(isize, @intCast(x_delta_unsigned));
-            break :x .{ .sign = x_sign, .delta_unsigned = x_delta_unsigned, .delta = x_delta };
+            const x_delta_f64: f64 = @round(1 * self.config.mouse_scroll_multiplier);
+            const x_delta_usize: usize = @max(1, @as(usize, @intFromFloat(x_delta_f64)));
+            const x_sign: isize = if (xoff >= 0) 1 else -1;
+            const x_delta_isize: isize = x_sign * @as(isize, @intCast(x_delta_usize));
+            break :x .{ .delta = x_delta_isize };
         }
 
-        const xoff_adjusted = xoff * self.config.mouse_scroll_multiplier;
-        const poff = self.mouse.pending_scroll_x + (xoff_adjusted * -1);
+        const xoff_adjusted: f64 = xoff * self.config.mouse_scroll_multiplier;
+        const poff: f64 = self.mouse.pending_scroll_x + xoff_adjusted;
         const cell_size: f64 = @floatFromInt(self.cell_size.width);
         if (@abs(poff) < cell_size) {
             self.mouse.pending_scroll_x = poff;
@@ -2117,15 +2138,14 @@ pub fn scrollCallback(
         }
 
         const amount = poff / cell_size;
+        assert(@abs(amount) >= 1);
         self.mouse.pending_scroll_x = poff - (amount * cell_size);
-
-        break :x .{
-            .delta_unsigned = @intFromFloat(@abs(amount)),
-            .delta = @intFromFloat(amount),
-        };
+        const delta: isize = @intFromFloat(@trunc(amount));
+        assert(@abs(delta) >= 1);
+        break :x .{ .delta = delta };
     };
 
-    // log.info("scroll: delta_y={} delta_x={}", .{ y.delta, x.delta });
+    // log.info("SCROLL: delta_y={} delta_x={}", .{ y.delta, x.delta });
 
     {
         self.renderer_state.mutex.lock();
@@ -2146,19 +2166,25 @@ pub fn scrollCallback(
             self.io.terminal.flags.mouse_event == .none and
             self.io.terminal.modes.get(.mouse_alternate_scroll))
         {
-            if (y.delta_unsigned > 0) {
+            if (y.delta != 0) {
                 // When we send mouse events as cursor keys we always
                 // clear the selection.
                 try self.setSelection(null);
 
                 const seq = if (self.io.terminal.modes.get(.cursor_keys)) seq: {
                     // cursor key: application mode
-                    break :seq if (y.delta < 0) "\x1bOA" else "\x1bOB";
+                    break :seq switch (y.direction()) {
+                        .up_right => "\x1bOA",
+                        .down_left => "\x1bOB",
+                    };
                 } else seq: {
                     // cursor key: normal mode
-                    break :seq if (y.delta < 0) "\x1b[A" else "\x1b[B";
+                    break :seq switch (y.direction()) {
+                        .up_right => "\x1b[A",
+                        .down_left => "\x1b[B",
+                    };
                 };
-                for (0..y.delta_unsigned) |_| {
+                for (0..y.magnitude()) |_| {
                     self.io.queueMessage(.{ .write_stable = seq }, .locked);
                 }
             }
@@ -2174,12 +2200,18 @@ pub fn scrollCallback(
         if (self.io.terminal.flags.mouse_event != .none) {
             if (y.delta != 0) {
                 const pos = try self.rt_surface.getCursorPos();
-                try self.mouseReport(if (y.delta < 0) .four else .five, .press, self.mouse.mods, pos);
+                try self.mouseReport(switch (y.direction()) {
+                    .up_right => .four,
+                    .down_left => .five,
+                }, .press, self.mouse.mods, pos);
             }
 
             if (x.delta != 0) {
                 const pos = try self.rt_surface.getCursorPos();
-                try self.mouseReport(if (x.delta > 0) .six else .seven, .press, self.mouse.mods, pos);
+                try self.mouseReport(switch (x.direction()) {
+                    .up_right => .six,
+                    .down_left => .seven,
+                }, .press, self.mouse.mods, pos);
             }
 
             // If mouse reporting is on, we do not want to scroll the
@@ -2187,8 +2219,12 @@ pub fn scrollCallback(
             return;
         }
 
-        // Modify our viewport, this requires a lock since it affects rendering
-        try self.io.terminal.scrollViewport(.{ .delta = y.delta });
+        if (y.delta != 0) {
+            // Modify our viewport, this requires a lock since it affects
+            // rendering. We have to switch signs here because our delta
+            // is negative down but our viewport is positive down.
+            try self.io.terminal.scrollViewport(.{ .delta = y.delta * -1 });
+        }
     }
 
     try self.queueRender();
