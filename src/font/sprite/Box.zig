@@ -56,13 +56,13 @@ const Thickness = enum {
 
 /// Specification of a traditional intersection-style line/box-drawing char,
 /// which can have a different style of line from each edge to the center.
-const Lines = struct {
+const Lines = packed struct(u8) {
     up: Style = .none,
     right: Style = .none,
     down: Style = .none,
     left: Style = .none,
 
-    const Style = enum {
+    const Style = enum(u2) {
         none,
         light,
         heavy,
@@ -122,11 +122,61 @@ const Alignment = struct {
     const bottom_right = lower_right;
 };
 
-const Corner = enum {
+const Corner = enum(u2) {
     tl,
     tr,
     bl,
     br,
+};
+
+const Edge = enum(u2) {
+    top,
+    left,
+    bottom,
+    right,
+};
+
+const SmoothMosaic = packed struct(u10) {
+    tl: bool,
+    ul: bool,
+    ll: bool,
+    bl: bool,
+    bc: bool,
+    br: bool,
+    lr: bool,
+    ur: bool,
+    tr: bool,
+    tc: bool,
+
+    fn from(comptime pattern: *const [15:0]u8) SmoothMosaic {
+        return .{
+            .tl = pattern[0] == '#',
+
+            .ul = pattern[4] == '#' and
+                (pattern[0] != '#' or pattern[8] != '#'),
+
+            .ll = pattern[8] == '#' and
+                (pattern[4] != '#' or pattern[12] != '#'),
+
+            .bl = pattern[12] == '#',
+
+            .bc = pattern[13] == '#' and
+                (pattern[12] != '#' or pattern[14] != '#'),
+
+            .br = pattern[14] == '#',
+
+            .lr = pattern[10] == '#' and
+                (pattern[14] != '#' or pattern[6] != '#'),
+
+            .ur = pattern[6] == '#' and
+                (pattern[10] != '#' or pattern[2] != '#'),
+
+            .tr = pattern[2] == '#',
+
+            .tc = pattern[1] == '#' and
+                (pattern[2] != '#' or pattern[0] != '#'),
+        };
+    }
 };
 
 // Utility names for common fractions
@@ -533,41 +583,350 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
 
         0x1fb00...0x1fb3b => self.draw_sextant(canvas, cp),
 
-        0x1fb3c...0x1fb40,
-        0x1fb47...0x1fb4b,
-        0x1fb57...0x1fb5b,
-        0x1fb62...0x1fb66,
-        0x1fb6c...0x1fb6f,
-        => try self.draw_wedge_triangle(canvas, cp),
+        // '🬼'
+        0x1fb3c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\...
+            \\#..
+            \\##.
+        )),
+        // '🬽'
+        0x1fb3d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\...
+            \\#\.
+            \\###
+        )),
+        // '🬾'
+        0x1fb3e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\#..
+            \\#\.
+            \\##.
+        )),
+        // '🬿'
+        0x1fb3f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\#..
+            \\##.
+            \\###
+        )),
+        // '🭀'
+        0x1fb40 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\#..
+            \\#..
+            \\##.
+            \\##.
+        )),
 
-        0x1fb41...0x1fb45,
-        0x1fb4c...0x1fb50,
-        0x1fb52...0x1fb56,
-        0x1fb5d...0x1fb61,
-        0x1fb68...0x1fb6b,
-        => try self.draw_wedge_triangle_inverted(canvas, cp),
-
+        // '🭁'
+        0x1fb41 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\/##
+            \\###
+            \\###
+            \\###
+        )),
+        // '🭂'
+        0x1fb42 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\./#
+            \\###
+            \\###
+            \\###
+        )),
+        // '🭃'
+        0x1fb43 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\.##
+            \\.##
+            \\###
+            \\###
+        )),
+        // '🭄'
+        0x1fb44 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\..#
+            \\.##
+            \\###
+            \\###
+        )),
+        // '🭅'
+        0x1fb45 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\.##
+            \\.##
+            \\.##
+            \\###
+        )),
         // '🭆'
-        0x1fb46,
+        0x1fb46 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\./#
+            \\###
+            \\###
+        )),
+
+        // '🭇'
+        0x1fb47 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\...
+            \\..#
+            \\.##
+        )),
+        // '🭈'
+        0x1fb48 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\...
+            \\./#
+            \\###
+        )),
+        // '🭉'
+        0x1fb49 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\..#
+            \\./#
+            \\.##
+        )),
+        // '🭊'
+        0x1fb4a => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\..#
+            \\.##
+            \\###
+        )),
+        // '🭋'
+        0x1fb4b => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\..#
+            \\..#
+            \\.##
+            \\.##
+        )),
+
+        // '🭌'
+        0x1fb4c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##\
+            \\###
+            \\###
+            \\###
+        )),
+        // '🭍'
+        0x1fb4d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\#\.
+            \\###
+            \\###
+            \\###
+        )),
+        // '🭎'
+        0x1fb4e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##.
+            \\##.
+            \\###
+            \\###
+        )),
+        // '🭏'
+        0x1fb4f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\#..
+            \\##.
+            \\###
+            \\###
+        )),
+        // '🭐'
+        0x1fb50 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##.
+            \\##.
+            \\##.
+            \\###
+        )),
         // '🭑'
-        0x1fb51,
+        0x1fb51 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\...
+            \\#\.
+            \\###
+            \\###
+        )),
+
+        // '🭒'
+        0x1fb52 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\###
+            \\\##
+        )),
+        // '🭓'
+        0x1fb53 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\###
+            \\.\#
+        )),
+        // '🭔'
+        0x1fb54 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\.##
+            \\.##
+        )),
+        // '🭕'
+        0x1fb55 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\.##
+            \\..#
+        )),
+        // '🭖'
+        0x1fb56 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\.##
+            \\.##
+            \\.##
+        )),
+
+        // '🭗'
+        0x1fb57 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##.
+            \\#..
+            \\...
+            \\...
+        )),
+        // '🭘'
+        0x1fb58 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\#/.
+            \\...
+            \\...
+        )),
+        // '🭙'
+        0x1fb59 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##.
+            \\#/.
+            \\#..
+            \\...
+        )),
+        // '🭚'
+        0x1fb5a => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\##.
+            \\#..
+            \\...
+        )),
+        // '🭛'
+        0x1fb5b => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\##.
+            \\##.
+            \\#..
+            \\#..
+        )),
+
         // '🭜'
-        0x1fb5c,
+        0x1fb5c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\#/.
+            \\...
+        )),
+        // '🭝'
+        0x1fb5d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\###
+            \\##/
+        )),
+        // '🭞'
+        0x1fb5e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\###
+            \\#/.
+        )),
+        // '🭟'
+        0x1fb5f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\##.
+            \\##.
+        )),
+        // '🭠'
+        0x1fb60 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\##.
+            \\#..
+        )),
+        // '🭡'
+        0x1fb61 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\##.
+            \\##.
+            \\##.
+        )),
+
+        // '🭢'
+        0x1fb62 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\.##
+            \\..#
+            \\...
+            \\...
+        )),
+        // '🭣'
+        0x1fb63 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\.\#
+            \\...
+            \\...
+        )),
+        // '🭤'
+        0x1fb64 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\.##
+            \\.\#
+            \\..#
+            \\...
+        )),
+        // '🭥'
+        0x1fb65 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\.##
+            \\..#
+            \\...
+        )),
+        // '🭦'
+        0x1fb66 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\.##
+            \\.##
+            \\..#
+            \\..#
+        )),
         // '🭧'
-        0x1fb67,
-        => try self.draw_wedge_triangle_and_box(canvas, cp),
+        0x1fb67 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+            \\###
+            \\###
+            \\.\#
+            \\...
+        )),
 
-        // '🮚'
-        0x1fb9a => {
-            try self.draw_wedge_triangle(canvas, 0x1fb6d);
-            try self.draw_wedge_triangle(canvas, 0x1fb6f);
+        // '🭨'
+        0x1fb68 => {
+            try self.draw_edge_triangle(canvas, .left);
+            canvas.invert();
         },
-
-        // '🮛'
-        0x1fb9b => {
-            try self.draw_wedge_triangle(canvas, 0x1fb6c);
-            try self.draw_wedge_triangle(canvas, 0x1fb6e);
+        // '🭩'
+        0x1fb69 => {
+            try self.draw_edge_triangle(canvas, .top);
+            canvas.invert();
         },
+        // '🭪'
+        0x1fb6a => {
+            try self.draw_edge_triangle(canvas, .right);
+            canvas.invert();
+        },
+        // '🭫'
+        0x1fb6b => {
+            try self.draw_edge_triangle(canvas, .bottom);
+            canvas.invert();
+        },
+        // '🭬'
+        0x1fb6c => try self.draw_edge_triangle(canvas, .left),
+        // '🭭'
+        0x1fb6d => try self.draw_edge_triangle(canvas, .top),
+        // '🭮'
+        0x1fb6e => try self.draw_edge_triangle(canvas, .right),
+        // '🭯'
+        0x1fb6f => try self.draw_edge_triangle(canvas, .bottom),
 
         // '🭰'
         0x1fb70 => self.draw_vertical_one_eighth_block_n(canvas, 1),
@@ -685,6 +1044,16 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x1fb98 => self.draw_upper_left_to_lower_right_fill(canvas),
         // '🮙'
         0x1fb99 => self.draw_upper_right_to_lower_left_fill(canvas),
+        // '🮚'
+        0x1fb9a => {
+            try self.draw_edge_triangle(canvas, .top);
+            try self.draw_edge_triangle(canvas, .bottom);
+        },
+        // '🮛'
+        0x1fb9b => {
+            try self.draw_edge_triangle(canvas, .left);
+            try self.draw_edge_triangle(canvas, .right);
+        },
         // '🮜'
         0x1fb9c => self.draw_corner_triangle_shade(canvas, .tl, .medium),
         // '🮝'
@@ -946,7 +1315,7 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
 fn draw_lines(
     self: Box,
     canvas: *font.sprite.Canvas,
-    comptime lines: Lines,
+    lines: Lines,
 ) void {
     const light_px = Thickness.light.height(self.thickness);
     const heavy_px = Thickness.heavy.height(self.thickness);
@@ -1669,393 +2038,84 @@ fn yThirds(self: Box) [2]u32 {
     };
 }
 
-fn draw_wedge_triangle(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
-    const width = self.width;
-    const height = self.height;
-
-    const x_halfs = self.xHalfs();
-    const y_thirds = self.yThirds();
-    const halfs0 = x_halfs[0];
-    const halfs1 = x_halfs[1];
-    const thirds0 = y_thirds[0];
-    const thirds1 = y_thirds[1];
-
-    var p1_x: u32 = 0;
-    var p2_x: u32 = 0;
-    var p3_x: u32 = 0;
-    var p1_y: u32 = 0;
-    var p2_y: u32 = 0;
-    var p3_y: u32 = 0;
-
-    switch (cp) {
-        0x1fb3c => {
-            p3_x = halfs0;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb52 => {
-            p3_x = halfs0;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb3d => {
-            p3_x = width;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb53 => {
-            p3_x = width;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb3e => {
-            p3_x = halfs0;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb54 => {
-            p3_x = halfs0;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb3f => {
-            p3_x = width;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb55 => {
-            p3_x = width;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb40, 0x1fb56 => {
-            p3_x = halfs0;
-            p1_y = 0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb47 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb5d => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb48 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb5e => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p1_y = thirds1;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb49 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb5f => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb4a => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb60 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p1_y = thirds0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb4b, 0x1fb61 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p1_y = 0;
-            p2_y = height;
-            p3_y = height;
-        },
-
-        0x1fb57 => {
-            p3_x = halfs0;
-            p2_y = thirds0;
-        },
-
-        0x1fb41 => {
-            p3_x = halfs0;
-            p2_y = thirds0;
-        },
-
-        0x1fb58 => {
-            p3_x = width;
-            p2_y = thirds0;
-        },
-
-        0x1fb42 => {
-            p3_x = width;
-            p2_y = thirds0;
-        },
-
-        0x1fb59 => {
-            p3_x = halfs0;
-            p2_y = thirds1;
-        },
-
-        0x1fb43 => {
-            p3_x = halfs0;
-            p2_y = thirds1;
-        },
-
-        0x1fb5a => {
-            p3_x = width;
-            p2_y = thirds1;
-        },
-
-        0x1fb44 => {
-            p3_x = width;
-            p2_y = thirds1;
-        },
-
-        0x1fb5b, 0x1fb45 => {
-            p3_x = halfs0;
-            p2_y = height;
-        },
-
-        0x1fb62 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p2_y = thirds0;
-        },
-
-        0x1fb4c => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p2_y = thirds0;
-        },
-
-        0x1fb63 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p2_y = thirds0;
-        },
-
-        0x1fb4d => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p2_y = thirds0;
-        },
-
-        0x1fb64 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p2_y = thirds1;
-        },
-
-        0x1fb4e => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p2_y = thirds1;
-        },
-
-        0x1fb65 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p2_y = thirds1;
-        },
-
-        0x1fb4f => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = 0;
-            p2_y = thirds1;
-        },
-
-        0x1fb66, 0x1fb50 => {
-            p1_x = width;
-            p2_x = width;
-            p3_x = halfs1;
-            p2_y = height;
-        },
-
-        0x1fb46 => {
-            p1_x = 0;
-            p1_y = thirds1;
-            p2_x = width;
-            p2_y = thirds0;
-            p3_x = width;
-            p3_y = p1_y;
-        },
-
-        0x1fb51 => {
-            p1_x = 0;
-            p1_y = thirds0;
-            p2_x = 0;
-            p2_y = thirds1;
-            p3_x = width;
-            p3_y = p2_y;
-        },
-
-        0x1fb5c => {
-            p1_x = 0;
-            p1_y = thirds0;
-            p2_x = 0;
-            p2_y = thirds1;
-            p3_x = width;
-            p3_y = p1_y;
-        },
-
-        0x1fb67 => {
-            p1_x = 0;
-            p1_y = thirds0;
-            p2_x = width;
-            p2_y = p1_y;
-            p3_x = width;
-            p3_y = thirds1;
-        },
-
-        0x1fb6c, 0x1fb68 => {
-            p1_x = 0;
-            p1_y = 0;
-            p2_x = halfs0;
-            p2_y = height / 2;
-            p3_x = 0;
-            p3_y = height;
-        },
-
-        0x1fb6d, 0x1fb69 => {
-            p1_x = 0;
-            p1_y = 0;
-            p2_x = halfs1;
-            p2_y = height / 2;
-            p3_x = width;
-            p3_y = 0;
-        },
-
-        0x1fb6e, 0x1fb6a => {
-            p1_x = width;
-            p1_y = 0;
-            p2_x = halfs1;
-            p2_y = height / 2;
-            p3_x = width;
-            p3_y = height;
-        },
-
-        0x1fb6f, 0x1fb6b => {
-            p1_x = 0;
-            p1_y = height;
-            p2_x = halfs1;
-            p2_y = height / 2;
-            p3_x = width;
-            p3_y = height;
-        },
-
-        else => unreachable,
-    }
-
-    try canvas.triangle(.{
-        .p0 = .{ .x = @floatFromInt(p1_x), .y = @floatFromInt(p1_y) },
-        .p1 = .{ .x = @floatFromInt(p2_x), .y = @floatFromInt(p2_y) },
-        .p2 = .{ .x = @floatFromInt(p3_x), .y = @floatFromInt(p3_y) },
-    }, .on);
-}
-
-fn draw_wedge_triangle_inverted(
+fn draw_smooth_mosaic(
     self: Box,
     canvas: *font.sprite.Canvas,
-    cp: u32,
+    mosaic: SmoothMosaic,
 ) !void {
-    try self.draw_wedge_triangle(canvas, cp);
-    canvas.invert();
-}
-
-fn draw_wedge_triangle_and_box(self: Box, canvas: *font.sprite.Canvas, cp: u32) !void {
-    try self.draw_wedge_triangle(canvas, cp);
-
     const y_thirds = self.yThirds();
-    const box: font.sprite.Box = switch (cp) {
-        0x1fb46, 0x1fb51 => .{
-            .p0 = .{ .x = 0, .y = @floatFromInt(y_thirds[1]) },
-            .p1 = .{
-                .x = @floatFromInt(self.width),
-                .y = @floatFromInt(self.height),
+    const top: f64 = 0.0;
+    const upper: f64 = @floatFromInt(y_thirds[0]);
+    const lower: f64 = @floatFromInt(y_thirds[1]);
+    const bottom: f64 = @floatFromInt(self.height);
+    const left: f64 = 0.0;
+    const center: f64 = @round(@as(f64, @floatFromInt(self.width)) / 2);
+    const right: f64 = @floatFromInt(self.width);
+
+    var path = z2d.Path.init(canvas.alloc);
+    defer path.deinit();
+
+    if (mosaic.tl) try path.lineTo(left, top);
+    if (mosaic.ul) try path.lineTo(left, upper);
+    if (mosaic.ll) try path.lineTo(left, lower);
+    if (mosaic.bl) try path.lineTo(left, bottom);
+    if (mosaic.bc) try path.lineTo(center, bottom);
+    if (mosaic.br) try path.lineTo(right, bottom);
+    if (mosaic.lr) try path.lineTo(right, lower);
+    if (mosaic.ur) try path.lineTo(right, upper);
+    if (mosaic.tr) try path.lineTo(right, top);
+    if (mosaic.tc) try path.lineTo(center, top);
+    try path.close();
+
+    var ctx: z2d.Context = .{
+        .surface = canvas.sfc,
+        .pattern = .{
+            .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
             },
         },
-
-        0x1fb5c, 0x1fb67 => .{
-            .p0 = .{ .x = 0, .y = 0 },
-            .p1 = .{
-                .x = @floatFromInt(self.width),
-                .y = @floatFromInt(y_thirds[0]),
-            },
-        },
-
-        else => unreachable,
     };
 
-    canvas.rect(box.rect(), .on);
+    try ctx.fill(canvas.alloc, path);
+}
+
+fn draw_edge_triangle(
+    self: Box,
+    canvas: *font.sprite.Canvas,
+    comptime edge: Edge,
+) !void {
+    const upper: f64 = 0.0;
+    const middle: f64 = @round(@as(f64, @floatFromInt(self.height)) / 2);
+    const lower: f64 = @floatFromInt(self.height);
+    const left: f64 = 0.0;
+    const center: f64 = @round(@as(f64, @floatFromInt(self.width)) / 2);
+    const right: f64 = @floatFromInt(self.width);
+
+    var path = z2d.Path.init(canvas.alloc);
+    defer path.deinit();
+
+    const x0, const y0, const x1, const y1 = switch (edge) {
+        .top => .{ right, upper, left, upper },
+        .left => .{ left, upper, left, lower },
+        .bottom => .{ left, lower, right, lower },
+        .right => .{ right, lower, right, upper },
+    };
+
+    try path.moveTo(center, middle);
+    try path.lineTo(x0, y0);
+    try path.lineTo(x1, y1);
+    try path.close();
+
+    var ctx: z2d.Context = .{
+        .surface = canvas.sfc,
+        .pattern = .{
+            .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+            },
+        },
+    };
+
+    try ctx.fill(canvas.alloc, path);
 }
 
 fn draw_light_arc(
