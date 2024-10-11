@@ -55,6 +55,14 @@ pub const RunIterator = struct {
             break :max 0;
         };
 
+        // Invisible cells don't have any glyphs rendered,
+        // so we explicitly skip them in the shaping process.
+        while (self.i < max and
+            self.row.style(&cells[self.i]).flags.invisible)
+        {
+            self.i += 1;
+        }
+
         // We're over at the max
         if (self.i >= max) return null;
 
