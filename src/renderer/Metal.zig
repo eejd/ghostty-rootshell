@@ -2209,7 +2209,7 @@ fn rebuildCells(
     var row_it = screen.pages.rowIterator(.left_up, .{ .viewport = .{} }, null);
     var y: terminal.size.CellCountInt = screen.pages.rows;
     while (row_it.next()) |row| {
-        y = y - 1;
+        y -= 1;
 
         if (!rebuild) {
             // Only rebuild if we are doing a full rebuild or this row is dirty.
@@ -2255,82 +2255,327 @@ fn rebuildCells(
             },
         }
 
-        // Split our row into runs and shape each one.
-        var iter = self.font_shaper.runIterator(
+        // Iterator of runs for shaping.
+        var run_iter = self.font_shaper.runIterator(
             self.font_grid,
             screen,
             row,
             row_selection,
             if (shape_cursor) screen.cursor.x else null,
         );
-        while (try iter.next(self.alloc)) |run| {
-            // Try to read the cells from the shaping cache if we can.
-            const shaper_cells = self.font_shaper_cache.get(run) orelse cache: {
-                const cells = try self.font_shaper.shape(run);
+        var shaper_run: ?font.shape.TextRun = try run_iter.next(self.alloc);
+        var shaper_cells: ?[]const font.shape.Cell = null;
+        var shaper_cells_i: usize = 0;
 
-                // Try to cache them. If caching fails for any reason we continue
-                // because it is just a performance optimization, not a correctness
-                // issue.
-                self.font_shaper_cache.put(self.alloc, run, cells) catch |err| {
-                    log.warn("error caching font shaping results err={}", .{err});
-                };
+        const row_cells = row.cells(.all);
 
-                // The cells we get from direct shaping are always owned by
-                // the shaper and valid until the next shaping call so we can
-                // just return them.
-                break :cache cells;
-            };
+        for (row_cells, 0..) |*cell, x| {
+            // If this cell falls within our preedit range then we
+            // skip this because preedits are setup separately.
+            if (preedit_range) |range| preedit: {
+                // We're not on the preedit line, no actions necessary.
+                if (range.y != y) break :preedit;
+                // We're before the preedit range, no actions necessary.
+                if (x < range.x[0]) break :preedit;
+                // We're in the preedit range, skip this cell.
+                if (x <= range.x[1]) continue;
+                // After exiting the preedit range we need to catch
+                // the run position up because of the missed cells.
+                // In all other cases, no action is necessary.
+                if (x != range.x[1] + 1) break :preedit;
 
-            for (shaper_cells) |shaper_cell| {
-                // The shaper can emit null glyphs representing the right half
-                // of wide characters, we don't need to do anything with them.
-                if (shaper_cell.glyph_index == null) continue;
-
-                const coord: terminal.Coordinate = .{
-                    .x = shaper_cell.x,
-                    .y = y,
-                };
-
-                // If this cell falls within our preedit range then we
-                // skip this because preedits are setup separately.
-                if (preedit_range) |range| {
-                    if (range.y == coord.y and
-                        coord.x >= range.x[0] and
-                        coord.x <= range.x[1])
-                    {
-                        continue;
-                    }
+                // Step the run iterator until we find a run that ends
+                // after the current cell, which will be the soonest run
+                // that might contain glyphs for our cell.
+                while (shaper_run) |run| {
+                    if (run.offset + run.cells > x) break;
+                    shaper_run = try run_iter.next(self.alloc);
+                    shaper_cells = null;
+                    shaper_cells_i = 0;
                 }
 
-                // It this cell is within our hint range then we need to
-                // underline it.
-                const cell: terminal.Pin = cell: {
-                    var copy = row;
-                    copy.x = coord.x;
-                    break :cell copy;
+                const run = shaper_run orelse break :preedit;
+
+                // If we haven't shaped this run, do so now.
+                shaper_cells = shaper_cells orelse
+                    // Try to read the cells from the shaping cache if we can.
+                    self.font_shaper_cache.get(run) orelse
+                    cache: {
+                    // Otherwise we have to shape them.
+                    const cells = try self.font_shaper.shape(run);
+
+                    // Try to cache them. If caching fails for any reason we
+                    // continue because it is just a performance optimization,
+                    // not a correctness issue.
+                    self.font_shaper_cache.put(
+                        self.alloc,
+                        run,
+                        cells,
+                    ) catch |err| {
+                        log.warn(
+                            "error caching font shaping results err={}",
+                            .{err},
+                        );
+                    };
+
+                    // The cells we get from direct shaping are always owned
+                    // by the shaper and valid until the next shaping call so
+                    // we can safely use them.
+                    break :cache cells;
                 };
 
-                if (self.updateCell(
-                    screen,
-                    cell,
-                    if (link_match_set.contains(screen, cell))
-                        .single
-                    else
-                        null,
-                    color_palette,
-                    shaper_cell,
-                    run,
-                    coord,
-                )) |update| {
-                    assert(update);
-                } else |err| {
-                    log.warn("error building cell, will be invalid x={} y={}, err={}", .{
-                        coord.x,
-                        coord.y,
-                        err,
-                    });
+                // Advance our index until we reach or pass
+                // our current x position in the shaper cells.
+                while (shaper_cells.?[shaper_cells_i].x < x) {
+                    shaper_cells_i += 1;
                 }
             }
+
+            const wide = cell.wide;
+
+            const style = row.style(cell);
+
+            const cell_pin: terminal.Pin = cell: {
+                var copy = row;
+                copy.x = @intCast(x);
+                break :cell copy;
+            };
+
+            // True if this cell is selected
+            const selected: bool = if (screen.selection) |sel|
+                sel.contains(screen, .{
+                    .page = row.page,
+                    .y = row.y,
+                    .x = @intCast(
+                        // Spacer tails should show the selection
+                        // state of the wide cell they belong to.
+                        if (wide == .spacer_tail)
+                            x -| 1
+                        else
+                            x,
+                    ),
+                })
+            else
+                false;
+
+            const bg_style = style.bg(cell, color_palette);
+            const fg_style = style.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color;
+
+            // The final background color for the cell.
+            const bg = bg: {
+                if (selected) {
+                    break :bg if (self.config.invert_selection_fg_bg)
+                        if (style.flags.inverse)
+                            // Cell is selected with invert selection fg/bg
+                            // enabled, and the cell has the inverse style
+                            // flag, so they cancel out and we get the normal
+                            // bg color.
+                            bg_style
+                        else
+                            // If it doesn't have the inverse style
+                            // flag then we use the fg color instead.
+                            fg_style
+                    else
+                        // If we don't have invert selection fg/bg set then we
+                        // just use the selection background if set, otherwise
+                        // the default fg color.
+                        break :bg self.config.selection_background orelse self.foreground_color;
+                }
+
+                // Not selected
+                break :bg if (style.flags.inverse != isCovering(cell.codepoint()))
+                    // Two cases cause us to invert (use the fg color as the bg)
+                    // - The "inverse" style flag.
+                    // - A "covering" glyph; we use fg for bg in that case to
+                    //   help make sure that padding extension works correctly.
+                    // If one of these is true (but not the other)
+                    // then we use the fg style color for the bg.
+                    fg_style
+                else
+                    // Otherwise they cancel out.
+                    bg_style;
+            };
+
+            const fg = fg: {
+                if (selected and !self.config.invert_selection_fg_bg) {
+                    // If we don't have invert selection fg/bg set
+                    // then we just use the selection foreground if
+                    // set, otherwise the default bg color.
+                    break :fg self.config.selection_foreground orelse self.background_color;
+                }
+
+                // Whether we need to use the bg color as our fg color:
+                // - Cell is inverted and not selected
+                // - Cell is selected and not inverted
+                //    Note: if selected then invert sel fg / bg must be
+                //    false since we separately handle it if true above.
+                break :fg if (style.flags.inverse != selected)
+                    bg_style orelse self.background_color
+                else
+                    fg_style;
+            };
+
+            // Foreground alpha for this cell.
+            const alpha: u8 = if (style.flags.faint) 175 else 255;
+
+            // If the cell has a background color, set it.
+            if (bg) |rgb| {
+                // Determine our background alpha. If we have transparency configured
+                // then this is dynamic depending on some situations. This is all
+                // in an attempt to make transparency look the best for various
+                // situations. See inline comments.
+                const bg_alpha: u8 = bg_alpha: {
+                    const default: u8 = 255;
+
+                    if (self.config.background_opacity >= 1) break :bg_alpha default;
+
+                    // If we're selected, we do not apply background opacity
+                    if (selected) break :bg_alpha default;
+
+                    // If we're reversed, do not apply background opacity
+                    if (style.flags.inverse) break :bg_alpha default;
+
+                    // If we have a background and its not the default background
+                    // then we apply background opacity
+                    if (style.bg(cell, color_palette) != null and !rgb.eql(self.background_color)) {
+                        break :bg_alpha default;
+                    }
+
+                    // We apply background opacity.
+                    var bg_alpha: f64 = @floatFromInt(default);
+                    bg_alpha *= self.config.background_opacity;
+                    bg_alpha = @ceil(bg_alpha);
+                    break :bg_alpha @intFromFloat(bg_alpha);
+                };
+
+                self.cells.bgCell(y, x).* = .{
+                    rgb.r, rgb.g, rgb.b, bg_alpha,
+                };
+            }
+
+            // If the invisible flag is set on this cell then we
+            // don't need to render any foreground elements, so
+            // we just skip all glyphs with this x coordinate.
+            //
+            // NOTE: This behavior matches xterm. Some other terminal
+            // emulators, e.g. Alacritty, still render text decorations
+            // and only make the text itself invisible. The decision
+            // has been made here to match xterm's behavior for this.
+            if (style.flags.invisible) {
+                continue;
+            }
+
+            // Give links a single underline, unless they already have
+            // an underline, in which case use a double underline to
+            // distinguish them.
+            const underline: terminal.Attribute.Underline = if (link_match_set.contains(screen, cell_pin))
+                if (style.flags.underline == .single)
+                    .double
+                else
+                    .single
+            else
+                style.flags.underline;
+
+            // We draw underlines first so that they layer underneath text.
+            // This improves readability when a colored underline is used
+            // which intersects parts of the text (descenders).
+            if (underline != .none) self.addUnderline(
+                @intCast(x),
+                @intCast(y),
+                underline,
+                style.underlineColor(color_palette) orelse fg,
+                alpha,
+            ) catch |err| {
+                log.warn(
+                    "error adding underline to cell, will be invalid x={} y={}, err={}",
+                    .{ x, y, err },
+                );
+            };
+
+            // If we're at or past the end of our shaper run then
+            // we need to get the next run from the run iterator.
+            if (shaper_cells != null and shaper_cells_i >= shaper_cells.?.len) {
+                shaper_run = try run_iter.next(self.alloc);
+                shaper_cells = null;
+                shaper_cells_i = 0;
+            }
+
+            if (shaper_run) |run| glyphs: {
+                // If we haven't shaped this run yet, do so.
+                shaper_cells = shaper_cells orelse
+                    // Try to read the cells from the shaping cache if we can.
+                    self.font_shaper_cache.get(run) orelse
+                    cache: {
+                    // Otherwise we have to shape them.
+                    const cells = try self.font_shaper.shape(run);
+
+                    // Try to cache them. If caching fails for any reason we
+                    // continue because it is just a performance optimization,
+                    // not a correctness issue.
+                    self.font_shaper_cache.put(
+                        self.alloc,
+                        run,
+                        cells,
+                    ) catch |err| {
+                        log.warn(
+                            "error caching font shaping results err={}",
+                            .{err},
+                        );
+                    };
+
+                    // The cells we get from direct shaping are always owned
+                    // by the shaper and valid until the next shaping call so
+                    // we can safely use them.
+                    break :cache cells;
+                };
+
+                const cells = shaper_cells orelse break :glyphs;
+
+                // If there are no shaper cells for this run, ignore it.
+                // This can occur for runs of empty cells, and is fine.
+                if (cells.len == 0) break :glyphs;
+
+                // If we encounter a shaper cell to the left of the current
+                // cell then we have some problems. This logic relies on x
+                // position monotonically increasing.
+                assert(cells[shaper_cells_i].x >= x);
+
+                // NOTE: An assumption is made here that a single cell will never
+                // be present in more than one shaper run. If that assumption is
+                // violated, this logic breaks.
+
+                while (shaper_cells_i < cells.len and cells[shaper_cells_i].x == x) : ({
+                    shaper_cells_i += 1;
+                }) {
+                    self.addGlyph(
+                        @intCast(x),
+                        @intCast(y),
+                        cell_pin,
+                        cells[shaper_cells_i],
+                        shaper_run.?,
+                        fg,
+                        alpha,
+                    ) catch |err| {
+                        log.warn(
+                            "error adding glyph to cell, will be invalid x={} y={}, err={}",
+                            .{ x, y, err },
+                        );
+                    };
+                }
+            }
+
+            // Finally, draw a strikethrough if necessary.
+            if (style.flags.strikethrough) self.addStrikethrough(
+                @intCast(x),
+                @intCast(y),
+                fg,
+                alpha,
+            ) catch |err| {
+                log.warn(
+                    "error adding strikethrough to cell, will be invalid x={} y={}, err={}",
+                    .{ x, y, err },
+                );
+            };
         }
     }
 
@@ -2422,252 +2667,133 @@ fn rebuildCells(
     // });
 }
 
-fn updateCell(
+/// Add an underline decoration to the specified cell
+fn addUnderline(
     self: *Metal,
-    screen: *const terminal.Screen,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
+    style: terminal.Attribute.Underline,
+    color: terminal.color.RGB,
+    alpha: u8,
+) !void {
+    const sprite: font.Sprite = switch (style) {
+        .none => unreachable,
+        .single => .underline,
+        .double => .underline_double,
+        .dotted => .underline_dotted,
+        .dashed => .underline_dashed,
+        .curly => .underline_curly,
+    };
+
+    const render = try self.font_grid.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @intFromEnum(sprite),
+        .{
+            .cell_width = 1,
+            .grid_metrics = self.grid_metrics,
+        },
+    );
+
+    try self.cells.add(self.alloc, .underline, .{
+        .mode = .fg,
+        .grid_pos = .{ @intCast(x), @intCast(y) },
+        .constraint_width = 1,
+        .color = .{ color.r, color.g, color.b, alpha },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .bearings = .{
+            @intCast(render.glyph.offset_x),
+            @intCast(render.glyph.offset_y),
+        },
+    });
+}
+
+/// Add a strikethrough decoration to the specified cell
+fn addStrikethrough(
+    self: *Metal,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
+    color: terminal.color.RGB,
+    alpha: u8,
+) !void {
+    const render = try self.font_grid.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @intFromEnum(font.Sprite.strikethrough),
+        .{
+            .cell_width = 1,
+            .grid_metrics = self.grid_metrics,
+        },
+    );
+
+    try self.cells.add(self.alloc, .strikethrough, .{
+        .mode = .fg,
+        .grid_pos = .{ @intCast(x), @intCast(y) },
+        .constraint_width = 1,
+        .color = .{ color.r, color.g, color.b, alpha },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .bearings = .{
+            @intCast(render.glyph.offset_x),
+            @intCast(render.glyph.offset_y),
+        },
+    });
+}
+
+// Add a glyph to the specified cell.
+fn addGlyph(
+    self: *Metal,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
     cell_pin: terminal.Pin,
-    cell_underline: ?terminal.Attribute.Underline,
-    palette: *const terminal.color.Palette,
     shaper_cell: font.shape.Cell,
     shaper_run: font.shape.TextRun,
-    coord: terminal.Coordinate,
-) !bool {
-    const BgFg = struct {
-        /// Background is optional because in un-inverted mode
-        /// it may just be equivalent to the default background in
-        /// which case we do nothing to save on GPU render time.
-        bg: ?terminal.color.RGB,
-
-        /// Fg is always set to some color, though we may not render
-        /// any fg if the cell is empty or has no attributes like
-        /// underline.
-        fg: terminal.color.RGB,
-    };
-
-    // True if this cell is selected
-    const selected: bool = if (screen.selection) |sel|
-        sel.contains(screen, cell_pin)
-    else
-        false;
-
+    color: terminal.color.RGB,
+    alpha: u8,
+) !void {
     const rac = cell_pin.rowAndCell();
     const cell = rac.cell;
-    const style = cell_pin.style(cell);
-    const underline = cell_underline orelse style.flags.underline;
 
-    // The colors for the cell.
-    const colors: BgFg = colors: {
-        // The normal cell result
-        const cell_res: BgFg = if (!style.flags.inverse) .{
-            // In normal mode, background and fg match the cell. We
-            // un-optionalize the fg by defaulting to our fg color.
-            .bg = style.bg(cell, palette),
-            .fg = style.fg(palette, self.config.bold_is_bright) orelse self.foreground_color,
-        } else .{
-            // In inverted mode, the background MUST be set to something
-            // (is never null) so it is either the fg or default fg. The
-            // fg is either the bg or default background.
-            .bg = style.fg(palette, self.config.bold_is_bright) orelse self.foreground_color,
-            .fg = style.bg(cell, palette) orelse self.background_color,
-        };
+    // Render
+    const render = try self.font_grid.renderGlyph(
+        self.alloc,
+        shaper_run.font_index,
+        shaper_cell.glyph_index,
+        .{
+            .grid_metrics = self.grid_metrics,
+            .thicken = self.config.font_thicken,
+        },
+    );
 
-        // If we are selected, we our colors are just inverted fg/bg
-        const selection_res: ?BgFg = if (selected) .{
-            .bg = if (self.config.invert_selection_fg_bg)
-                cell_res.fg
-            else
-                self.config.selection_background orelse self.foreground_color,
-            .fg = if (self.config.invert_selection_fg_bg)
-                cell_res.bg orelse self.background_color
-            else
-                self.config.selection_foreground orelse self.background_color,
-        } else null;
+    // If the glyph is 0 width or height, it will be invisible
+    // when drawn, so don't bother adding it to the buffer.
+    if (render.glyph.width == 0 or render.glyph.height == 0) {
+        return;
+    }
 
-        // If the cell is "invisible" then we just make fg = bg so that
-        // the cell is transparent but still copy-able.
-        const res: BgFg = selection_res orelse cell_res;
-        if (style.flags.invisible) {
-            break :colors .{
-                .bg = res.bg,
-                .fg = res.bg orelse self.background_color,
-            };
-        }
-
-        // If our cell has a covering glyph, then our bg is set to our fg
-        // so that padding extension works correctly.
-        if (!selected and isCovering(cell.codepoint())) {
-            break :colors .{
-                .bg = res.fg,
-                .fg = res.fg,
-            };
-        }
-
-        break :colors res;
+    const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
+        render.presentation,
+        cell_pin,
+    )) {
+        .normal => .fg,
+        .color => .fg_color,
+        .constrained => .fg_constrained,
+        .powerline => .fg_powerline,
     };
 
-    // Alpha multiplier
-    const alpha: u8 = if (style.flags.faint) 175 else 255;
-
-    // If the cell has a background, we always draw it.
-    if (colors.bg) |rgb| {
-        // Determine our background alpha. If we have transparency configured
-        // then this is dynamic depending on some situations. This is all
-        // in an attempt to make transparency look the best for various
-        // situations. See inline comments.
-        const bg_alpha: u8 = bg_alpha: {
-            const default: u8 = 255;
-
-            if (self.config.background_opacity >= 1) break :bg_alpha default;
-
-            // If we're selected, we do not apply background opacity
-            if (selected) break :bg_alpha default;
-
-            // If we're reversed, do not apply background opacity
-            if (style.flags.inverse) break :bg_alpha default;
-
-            // If we have a background and its not the default background
-            // then we apply background opacity
-            if (style.bg(cell, palette) != null and !rgb.eql(self.background_color)) {
-                break :bg_alpha default;
-            }
-
-            // We apply background opacity.
-            var bg_alpha: f64 = @floatFromInt(default);
-            bg_alpha *= self.config.background_opacity;
-            bg_alpha = @ceil(bg_alpha);
-            break :bg_alpha @intFromFloat(bg_alpha);
-        };
-
-        self.cells.bgCell(coord.y, coord.x).* = .{
-            rgb.r, rgb.g, rgb.b, bg_alpha,
-        };
-        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            self.cells.bgCell(coord.y, coord.x + 1).* = .{
-                rgb.r, rgb.g, rgb.b, bg_alpha,
-            };
-        }
-    }
-
-    // If the cell has an underline, draw it before the character glyph,
-    // so that it layers underneath instead of overtop, since that can
-    // make text difficult to read.
-    if (underline != .none) {
-        const sprite: font.Sprite = switch (underline) {
-            .none => unreachable,
-            .single => .underline,
-            .double => .underline_double,
-            .dotted => .underline_dotted,
-            .dashed => .underline_dashed,
-            .curly => .underline_curly,
-        };
-
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(sprite),
-            .{
-                .cell_width = 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        const color = style.underlineColor(palette) orelse colors.fg;
-
-        var gpu_cell: mtl_cell.Key.underline.CellType() = .{
-            .mode = .fg,
-            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = 1,
-            .color = .{ color.r, color.g, color.b, alpha },
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .bearings = .{
-                @intCast(render.glyph.offset_x),
-                @intCast(render.glyph.offset_y),
-            },
-        };
-        try self.cells.add(self.alloc, .underline, gpu_cell);
-        // If it's a wide cell we need to underline the right half as well.
-        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            gpu_cell.grid_pos[0] = @intCast(coord.x + 1);
-            try self.cells.add(self.alloc, .underline, gpu_cell);
-        }
-    }
-
-    // If the shaper cell has a glyph, draw it.
-    if (shaper_cell.glyph_index) |glyph_index| glyph: {
-        // Render
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            shaper_run.font_index,
-            glyph_index,
-            .{
-                .grid_metrics = self.grid_metrics,
-                .thicken = self.config.font_thicken,
-            },
-        );
-
-        // If the glyph is 0 width or height, it will be invisible
-        // when drawn, so don't bother adding it to the buffer.
-        if (render.glyph.width == 0 or render.glyph.height == 0) {
-            break :glyph;
-        }
-
-        const mode: mtl_shaders.CellText.Mode = switch (try fgMode(
-            render.presentation,
-            cell_pin,
-        )) {
-            .normal => .fg,
-            .color => .fg_color,
-            .constrained => .fg_constrained,
-            .powerline => .fg_powerline,
-        };
-
-        try self.cells.add(self.alloc, .text, .{
-            .mode = mode,
-            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = cell.gridWidth(),
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .bearings = .{
-                @intCast(render.glyph.offset_x + shaper_cell.x_offset),
-                @intCast(render.glyph.offset_y + shaper_cell.y_offset),
-            },
-        });
-    }
-
-    if (style.flags.strikethrough) {
-        const render = try self.font_grid.renderGlyph(
-            self.alloc,
-            font.sprite_index,
-            @intFromEnum(font.Sprite.strikethrough),
-            .{
-                .cell_width = 1,
-                .grid_metrics = self.grid_metrics,
-            },
-        );
-
-        var gpu_cell: mtl_cell.Key.strikethrough.CellType() = .{
-            .mode = .fg,
-            .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
-            .constraint_width = 1,
-            .color = .{ colors.fg.r, colors.fg.g, colors.fg.b, alpha },
-            .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
-            .glyph_size = .{ render.glyph.width, render.glyph.height },
-            .bearings = .{
-                @intCast(render.glyph.offset_x),
-                @intCast(render.glyph.offset_y),
-            },
-        };
-        try self.cells.add(self.alloc, .strikethrough, gpu_cell);
-        // If it's a wide cell we need to strike through the right half as well.
-        if (cell.gridWidth() > 1 and coord.x < self.cells.size.columns - 1) {
-            gpu_cell.grid_pos[0] = @intCast(coord.x + 1);
-            try self.cells.add(self.alloc, .strikethrough, gpu_cell);
-        }
-    }
-
-    return true;
+    try self.cells.add(self.alloc, .text, .{
+        .mode = mode,
+        .grid_pos = .{ @intCast(x), @intCast(y) },
+        .constraint_width = cell.gridWidth(),
+        .color = .{ color.r, color.g, color.b, alpha },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .bearings = .{
+            @intCast(render.glyph.offset_x + shaper_cell.x_offset),
+            @intCast(render.glyph.offset_y + shaper_cell.y_offset),
+        },
+    });
 }
 
 fn addCursor(

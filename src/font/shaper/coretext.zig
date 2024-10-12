@@ -361,6 +361,12 @@ pub const Shaper = struct {
             self.cell_buf.clearRetainingCapacity();
             try self.cell_buf.ensureTotalCapacity(self.alloc, state.codepoints.items.len);
             for (state.codepoints.items) |entry| {
+                // We use null codepoints to pad out our list so indices match
+                // the UTF-16 string we constructed for CoreText. We don't want
+                // to emit these if this is a special font, since they're not
+                // part of the original run.
+                if (entry.codepoint == 0) continue;
+
                 self.cell_buf.appendAssumeCapacity(.{
                     .x = @intCast(entry.cluster),
                     .glyph_index = @intCast(entry.codepoint),
@@ -437,15 +443,6 @@ pub const Shaper = struct {
                     // wait for that.
                     if (cell_offset.cluster > cluster) break :pad;
 
-                    // If we have a gap between clusters then we need to
-                    // add empty cells to the buffer.
-                    for (cell_offset.cluster + 1..cluster) |x| {
-                        try self.cell_buf.append(self.alloc, .{
-                            .x = @intCast(x),
-                            .glyph_index = null,
-                        });
-                    }
-
                     cell_offset = .{ .cluster = cluster };
                 }
 
@@ -460,25 +457,6 @@ pub const Shaper = struct {
                 // Advances apply to the NEXT cell.
                 cell_offset.x += advance.width;
                 cell_offset.y += advance.height;
-            }
-        }
-
-        // If our last cell doesn't match our last cluster then we have
-        // a left-replaced ligature that needs to have spaces appended
-        // so that cells retain their background colors.
-        if (self.cell_buf.items.len > 0) pad: {
-            const last_cell = self.cell_buf.items[self.cell_buf.items.len - 1];
-            const last_cp = state.codepoints.items[state.codepoints.items.len - 1];
-            if (last_cell.x == last_cp.cluster) break :pad;
-            assert(last_cell.x < last_cp.cluster);
-
-            // We need to go back to the last matched cluster and add
-            // padding up to there.
-            for (last_cell.x + 1..last_cp.cluster + 1) |x| {
-                try self.cell_buf.append(self.alloc, .{
-                    .x = @intCast(x),
-                    .glyph_index = null,
-                });
             }
         }
 
@@ -865,10 +843,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -890,11 +868,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -924,11 +901,10 @@ test "shape monaspace ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -959,11 +935,10 @@ test "shape left-replaced lig in last run" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -992,12 +967,11 @@ test "shape left-replaced lig in early run" {
         );
 
         const run = (try it.next(alloc)).?;
+
+        try testing.expectEqual(@as(usize, 4), run.cells);
+
         const cells = try shaper.shape(run);
-        try testing.expectEqual(@as(usize, 4), cells.len);
-        try testing.expect(cells[0].glyph_index != null);
-        try testing.expect(cells[1].glyph_index == null);
-        try testing.expect(cells[2].glyph_index == null);
-        try testing.expect(cells[3].glyph_index != null);
+        try testing.expectEqual(@as(usize, 2), cells.len);
     }
 }
 
@@ -1100,8 +1074,7 @@ test "shape emoji width long" {
         count += 1;
         const cells = try shaper.shape(run);
 
-        // screen.testWriteString isn't grapheme aware, otherwise this is one
-        try testing.expectEqual(@as(usize, 5), cells.len);
+        try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -1282,9 +1255,9 @@ test "shape box glyphs" {
         count += 1;
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 2), cells.len);
-        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
-        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index);
         try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);
@@ -1701,6 +1674,73 @@ test "shape cell attribute change" {
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
+}
+
+test "shape high plane sprite font codepoint" {
+    // While creating runs, the CoreText shaper uses `0` codepoints to
+    // pad its codepoint list to account for high plane characters which
+    // use two UTF-16 code units. This is so that, after shaping, the string
+    // indices can be used to find the originating codepoint / cluster.
+    //
+    // This is a problem for special (sprite) fonts, which need to be "shaped"
+    // by simply returning the input codepoints verbatim. We include logic to
+    // skip `0` codepoints when constructing the shaped run for sprite fonts,
+    // this test verifies that it works correctly.
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var testdata = try testShaper(alloc);
+    defer testdata.deinit();
+
+    var screen = try terminal.Screen.init(alloc, 10, 3, 0);
+    defer screen.deinit();
+
+    // U+1FB70: Vertical One Eighth Block-2
+    try screen.testWriteString("\u{1FB70}");
+
+    var shaper = &testdata.shaper;
+    var it = shaper.runIterator(
+        testdata.grid,
+        &screen,
+        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        null,
+        null,
+    );
+    // We should get one run
+    const run = (try it.next(alloc)).?;
+    // The run state should have the UTF-16 encoding of the character.
+    try testing.expectEqualSlices(
+        u16,
+        &.{ 0xD83E, 0xDF70 },
+        shaper.run_state.unichars.items,
+    );
+    // The codepoint list should be padded.
+    try testing.expectEqualSlices(
+        Shaper.Codepoint,
+        &.{
+            .{ .codepoint = 0x1FB70, .cluster = 0 },
+            .{ .codepoint = 0, .cluster = 0 },
+        },
+        shaper.run_state.codepoints.items,
+    );
+    // And when shape it
+    const cells = try shaper.shape(run);
+    // we should have
+    // - 1 cell
+    try testing.expectEqual(1, run.cells);
+    // - at position 0
+    try testing.expectEqual(0, run.offset);
+    // - with 1 glyph in it
+    try testing.expectEqual(1, cells.len);
+    // - at position 0
+    try testing.expectEqual(0, cells[0].x);
+    // - the glyph index should be equal to the codepoint
+    try testing.expectEqual(0x1FB70, cells[0].glyph_index);
+    // - it should be a sprite font
+    try testing.expect(run.font_index.special() != null);
+    // And we should get a null run after that
+    try testing.expectEqual(null, try it.next(alloc));
 }
 
 const TestShaper = struct {

@@ -150,7 +150,7 @@ pub const Shaper = struct {
 
         // Convert all our info/pos to cells and set it.
         self.cell_buf.clearRetainingCapacity();
-        for (info, pos, 0..) |info_v, pos_v, i| {
+        for (info, pos) |info_v, pos_v| {
             // If our cluster changed then we've moved to a new cell.
             if (info_v.cluster != cell_offset.cluster) cell_offset = .{
                 .cluster = info_v.cluster,
@@ -172,48 +172,6 @@ pub const Shaper = struct {
             } else {
                 cell_offset.x += pos_v.x_advance;
                 cell_offset.y += pos_v.y_advance;
-            }
-
-            // Determine the width of the cell. To do this, we have to
-            // find the next cluster that has been shaped. This tells us how
-            // many cells this glyph replaced (i.e. for ligatures). For example
-            // in some fonts "!=" turns into a single glyph from the component
-            // parts "!" and "=" so this cell width would be "2" despite
-            // only having a single glyph.
-            //
-            // Many fonts replace ligature cells with space so that this always
-            // is one (e.g. Fira Code, JetBrains Mono, etc). Some do not
-            // (e.g. Monaspace).
-            const cell_width = width: {
-                if (i + 1 < info.len) {
-                    // We may have to go through multiple glyphs because
-                    // multiple can be replaced. e.g. "==="
-                    for (info[i + 1 ..]) |next_info_v| {
-                        if (next_info_v.cluster != info_v.cluster) {
-                            // We do a saturating sub here because for RTL
-                            // text, the next cluster can be less than the
-                            // current cluster. We don't really support RTL
-                            // currently so we do this to prevent an underflow
-                            // but it isn't correct generally.
-                            break :width next_info_v.cluster -| info_v.cluster;
-                        }
-                    }
-                }
-
-                // If we reached the end then our width is our max cluster
-                // minus this one.
-                const max = run.offset + run.cells;
-                break :width max - info_v.cluster;
-            };
-            if (cell_width > 1) {
-                // To make the renderer implementations simpler, we convert
-                // the extra spaces for width to blank cells.
-                for (1..cell_width) |j| {
-                    try self.cell_buf.append(self.alloc, .{
-                        .x = @intCast(info_v.cluster + j),
-                        .glyph_index = null,
-                    });
-                }
             }
 
             // const i = self.cell_buf.items.len - 1;
@@ -428,10 +386,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -453,11 +411,10 @@ test "shape inconsolata ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -487,11 +444,10 @@ test "shape monaspace ligs" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 3), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 3), cells.len);
-            try testing.expect(cells[0].glyph_index != null);
-            try testing.expect(cells[1].glyph_index == null);
-            try testing.expect(cells[2].glyph_index == null);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -521,8 +477,10 @@ test "shape emoji width" {
         while (try it.next(alloc)) |run| {
             count += 1;
 
+            try testing.expectEqual(@as(usize, 2), run.cells);
+
             const cells = try shaper.shape(run);
-            try testing.expectEqual(@as(usize, 2), cells.len);
+            try testing.expectEqual(@as(usize, 1), cells.len);
         }
         try testing.expectEqual(@as(usize, 1), count);
     }
@@ -564,8 +522,7 @@ test "shape emoji width long" {
 
         const cells = try shaper.shape(run);
 
-        // screen.testWriteString isn't grapheme aware, otherwise this is two
-        try testing.expectEqual(@as(usize, 5), cells.len);
+        try testing.expectEqual(@as(usize, 1), cells.len);
     }
     try testing.expectEqual(@as(usize, 1), count);
 }
@@ -751,9 +708,9 @@ test "shape box glyphs" {
         try testing.expectEqual(@as(u32, 2), shaper.hb_buf.getLength());
         const cells = try shaper.shape(run);
         try testing.expectEqual(@as(usize, 2), cells.len);
-        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2500), cells[0].glyph_index);
         try testing.expectEqual(@as(u16, 0), cells[0].x);
-        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index.?);
+        try testing.expectEqual(@as(u32, 0x2501), cells[1].glyph_index);
         try testing.expectEqual(@as(u16, 1), cells[1].x);
     }
     try testing.expectEqual(@as(usize, 1), count);

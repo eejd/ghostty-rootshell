@@ -111,7 +111,13 @@ pub const Shaper = struct {
         // expose a public API for this.
         const face = try run.grid.resolver.collection.getFace(run.font_index);
         for (state.codepoints.items) |entry| {
-            const glyph_index = face.glyphIndex(entry.codepoint);
+            const glyph_index = face.glyphIndex(entry.codepoint) orelse {
+                // The run iterator shared logic should guarantee that
+                // there is a glyph index for all codepoints in the run.
+                // This is not well tested because we don't use the noop
+                // shaper in any release builds.
+                unreachable;
+            };
             try self.cell_buf.append(self.alloc, .{
                 .x = @intCast(entry.cluster),
                 .glyph_index = glyph_index,
