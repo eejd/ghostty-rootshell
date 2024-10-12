@@ -101,7 +101,7 @@ pub fn fgMode(
                 break :next_cp next_cell.codepoint();
             };
             if (next_cp == 0 or
-                next_cp == ' ' or
+                isSpace(next_cp) or
                 isPowerline(next_cp))
             {
                 break :text .normal;
@@ -110,6 +110,17 @@ pub fn fgMode(
             // Must be constrained
             break :text .constrained;
         },
+    };
+}
+
+// Some general spaces, others intentionally kept
+// to force the font to render as a fixed width.
+fn isSpace(char: u21) bool {
+    return switch (char) {
+        0x0020, // SPACE
+        0x2002, // EN SPACE
+        => true,
+        else => false,
     };
 }
 
