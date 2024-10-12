@@ -720,7 +720,10 @@ fn gtkActionAbout(
     const icon = "com.mitchellh.ghostty";
     const website = "https://github.com/ghostty-org/ghostty";
 
-    if (self.isAdwWindow()) {
+    if ((comptime adwaita.versionAtLeast(1, 5, 0)) and
+        adwaita.versionAtLeast(1, 5, 0) and
+        self.isAdwWindow())
+    {
         c.adw_show_about_dialog(
             @ptrCast(self.window),
             "application-name",
