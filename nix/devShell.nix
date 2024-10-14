@@ -53,7 +53,7 @@
     [
       libGL
     ]
-    ++ lib.optionals stdenv.isLinux [
+    ++ lib.optionals stdenv.hostPlatform.isLinux [
       bzip2
       expat
       fontconfig
@@ -106,7 +106,7 @@ in
         wabt
         wasmtime
       ]
-      ++ lib.optionals stdenv.isLinux [
+      ++ lib.optionals stdenv.hostPlatform.isLinux [
         # My nix shell environment installs the non-interactive version
         # by default so we have to include this.
         bashInteractive
@@ -148,7 +148,7 @@ in
 
     # On Linux we need to setup the environment so that all GTK data
     # is available (namely icons).
-    shellHook = lib.optionalString stdenv.isLinux ''
+    shellHook = lib.optionalString stdenv.hostPlatform.isLinux ''
       # Minimal subset of env set by wrapGAppsHook4 for icons and global settings
       export XDG_DATA_DIRS=$XDG_DATA_DIRS:${hicolor-icon-theme}/share:${gnome.adwaita-icon-theme}/share
       export XDG_DATA_DIRS=$XDG_DATA_DIRS:$GSETTINGS_SCHEMAS_PATH # from glib setup hook
