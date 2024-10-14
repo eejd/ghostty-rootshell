@@ -187,7 +187,9 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     // follow Xiaolin Wu's antialias algorithm to draw the curve
     var x: u32 = 0;
     while (x < width) : (x += 1) {
-        const t: f64 = @as(f64, @floatFromInt(x)) * wave_period;
+        // We sample the wave function at the *middle* of each
+        // pixel column, to ensure that it renders symmetrically.
+        const t: f64 = (@as(f64, @floatFromInt(x)) + 0.5) * wave_period;
         // Use the slope at this location to add thickness to
         // the line on this column, counteracting the thinning
         // caused by the slope.
