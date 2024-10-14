@@ -163,7 +163,9 @@ fn drawDashed(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 /// geometry.
 fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const float_width: f64 = @floatFromInt(width);
-    const float_thick: f64 = @floatFromInt(thickness);
+    // Because of we way we draw the undercurl, we end up making it around 1px
+    // thicker than it should be, to fix this we just reduce the thickness by 1.
+    const float_thick: f64 = @floatFromInt(@max(1, thickness -| 1));
 
     // Calculate the wave period for a single character
     //   `2 * pi...` = 1 peak per character
@@ -185,7 +187,9 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     // follow Xiaolin Wu's antialias algorithm to draw the curve
     var x: u32 = 0;
     while (x < width) : (x += 1) {
-        const t: f64 = @as(f64, @floatFromInt(x)) * wave_period;
+        // We sample the wave function at the *middle* of each
+        // pixel column, to ensure that it renders symmetrically.
+        const t: f64 = (@as(f64, @floatFromInt(x)) + 0.5) * wave_period;
         // Use the slope at this location to add thickness to
         // the line on this column, counteracting the thinning
         // caused by the slope.
