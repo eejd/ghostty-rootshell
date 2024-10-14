@@ -852,45 +852,72 @@ fn syncActionAccelerator(
 }
 
 fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+
+    const window_theme = config.@"window-theme";
     const unfocused_fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
     const headerbar_background = config.background;
     const headerbar_foreground = config.foreground;
 
-    const fmt =
+    try writer.print(
         \\widget.unfocused-split {{
         \\ opacity: {d:.2};
         \\ background-color: rgb({d},{d},{d});
         \\}}
-        \\window.window-theme-ghostty .top-bar,
-        \\window.window-theme-ghostty .bottom-bar,
-        \\window.window-theme-ghostty box > tabbar {{
-        \\ background-color: rgb({d},{d},{d});
-        \\ color: rgb({d},{d},{d});
-        \\}}
-    ;
-    // The length required is always less than the length of the pre-formatted string:
-    // -> '{d:.2}' gets replaced with max 4 bytes (0.00)
-    // -> each {d} could be replaced with max 3 bytes
-    var css_buf: [fmt.len]u8 = undefined;
+    , .{
+        1.0 - config.@"unfocused-split-opacity",
+        unfocused_fill.r,
+        unfocused_fill.g,
+        unfocused_fill.b,
+    });
 
-    const css = try std.fmt.bufPrintZ(
-        &css_buf,
-        fmt,
-        .{
-            1.0 - config.@"unfocused-split-opacity",
-            unfocused_fill.r,
-            unfocused_fill.g,
-            unfocused_fill.b,
-            headerbar_background.r,
-            headerbar_background.g,
-            headerbar_background.b,
-            headerbar_foreground.r,
-            headerbar_foreground.g,
-            headerbar_foreground.b,
-        },
-    );
+    // this is specifically a runtime-only check
+    if (version.atLeast(4, 16, 0)) {
+        switch (window_theme) {
+            .ghostty => try writer.print(
+                \\:root {{
+                \\  --headerbar-fg-color: rgb({d},{d},{d});
+                \\  --headerbar-bg-color: rgb({d},{d},{d});
+                \\  --headerbar-backdrop-color: oklab(from var(--headerbar-bg-color) calc(l * 0.9) a b / alpha);
+                \\}}
+            ,
+                .{
+                    headerbar_foreground.r,
+                    headerbar_foreground.g,
+                    headerbar_foreground.b,
+                    headerbar_background.r,
+                    headerbar_background.g,
+                    headerbar_background.b,
+                },
+            ),
+            else => {},
+        }
+    } else {
+        try writer.print(
+            \\window.window-theme-ghostty .top-bar,
+            \\window.window-theme-ghostty .bottom-bar,
+            \\window.window-theme-ghostty box > tabbar {{
+            \\ background-color: rgb({d},{d},{d});
+            \\ color: rgb({d},{d},{d});
+            \\}}
+        ,
+            .{
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+            },
+        );
+    }
+
+    const css = fbs.getWritten();
+
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_data(provider, css, @intCast(css.len));
+    c.gtk_css_provider_load_from_data(provider, css.ptr, @intCast(css.len));
 }
 
 /// Called by CoreApp to wake up the event loop.
