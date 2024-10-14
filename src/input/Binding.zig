@@ -266,6 +266,8 @@ pub const Action = union(enum) {
     ///
     ///   - "paste": Paste the file path into the terminal.
     ///   - "open": Open the file in the default OS editor for text files.
+    ///     The default OS editor is determined by using `open` on macOS
+    ///     and `xdg-open` on Linux.
     ///
     write_scrollback_file: WriteScreenAction,
 
