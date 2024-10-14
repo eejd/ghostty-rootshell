@@ -126,7 +126,7 @@ in
       [
         libGL
       ]
-      ++ lib.optionals stdenv.isLinux [
+      ++ lib.optionals stdenv.hostPlatform.isLinux [
         bzip2
         expat
         fontconfig
@@ -161,7 +161,7 @@ in
 
     postInstall = ''
       terminfo_src=${
-        if stdenv.isDarwin
+        if stdenv.hostPlatform.isDarwin
         then ''"$out/Applications/Ghostty.app/Contents/Resources/terminfo"''
         else "$out/share/terminfo"
       }
