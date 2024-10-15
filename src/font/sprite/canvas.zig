@@ -156,8 +156,12 @@ pub const Canvas = struct {
                 // ignore it, so that this method (and `rect` which uses it) have
                 // implicit bounds clipping.
             },
-            else => {
-                std.log.err("Wtf? err={}", .{e});
+
+            error.InvalidHeight,
+            error.InvalidWidth,
+            error.InvalidPixelFormat,
+            => {
+                std.log.err("unexpected (considered impossible) error err={}", .{e});
                 unreachable; // This shouldn't be possible.
             },
         };
