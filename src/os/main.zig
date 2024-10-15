@@ -15,6 +15,7 @@ const pipepkg = @import("pipe.zig");
 const resourcesdir = @import("resourcesdir.zig");
 
 // Namespaces
+pub const args = @import("args.zig");
 pub const cgroup = @import("cgroup.zig");
 pub const passwd = @import("passwd.zig");
 pub const xdg = @import("xdg.zig");

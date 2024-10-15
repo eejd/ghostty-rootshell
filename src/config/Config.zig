@@ -2290,8 +2290,12 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     switch (builtin.os.tag) {
         .windows => {},
 
-        // Fast-path if we are non-Windows and no args, do nothing.
-        else => if (std.os.argv.len <= 1) return,
+        // Fast-path if we are Linux and have no args.
+        .linux => if (std.os.argv.len <= 1) return,
+
+        // Everything else we have to at least try because it may
+        // not use std.os.argv.
+        else => {},
     }
 
     // On Linux, we have a special case where if the executing
@@ -2360,9 +2364,13 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         counter[i] = @field(self, field).list.items.len;
     }
 
-    // Parse the config from the CLI args
-    var iter = try std.process.argsWithAllocator(alloc_gpa);
+    // Initialize our CLI iterator. The first argument is always assumed
+    // to be the program name so we skip over that.
+    var iter = try internal_os.args.iterator(alloc_gpa);
     defer iter.deinit();
+    if (iter.next()) |argv0| log.debug("skipping argv0 value={s}", .{argv0});
+
+    // Parse the config from the CLI args
     try self.loadIter(alloc_gpa, &iter);
 
     // If we are not loading the default files, then we need to
