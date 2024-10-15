@@ -551,8 +551,9 @@ zig build -Doptimize=ReleaseFast
 ```
 
 You can verify you have a release version by checking the filesize of the
-built binary (`zig-out/bin/ghostty`). The release version should be less
-than 5 MB on all platforms. The debug version is around 70MB.
+built binary (`zig-out/bin/ghostty`). The release version should be significantly
+smaller than debug builds. On Linux, the release build is around 31MB while the
+debug build is around 145MB.
 
 When using the GTK runtime (`-Dapp-runtime=gtk`) a release build will
 use a [single-instance application](https://developer.gnome.org/documentation/tutorials/application.html).
