@@ -2475,24 +2475,13 @@ test "all" {
     }
 }
 
-test "render all sprites" {
-    // Renders all sprites to an atlas and compares
-    // it to a ground truth for regression testing.
-
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var atlas_grayscale = try font.Atlas.init(alloc, 1024, .grayscale);
-    defer atlas_grayscale.deinit(alloc);
-
-    const face: Box = .{ .width = 18, .height = 36, .thickness = 2 };
-
+fn testRenderAll(self: Box, alloc: Allocator, atlas: *font.Atlas) !void {
     // Box Drawing and Block Elements.
     var cp: u32 = 0x2500;
     while (cp <= 0x259f) : (cp += 1) {
-        _ = try face.renderGlyph(
+        _ = try self.renderGlyph(
             alloc,
-            &atlas_grayscale,
+            atlas,
             cp,
         );
     }
@@ -2500,9 +2489,9 @@ test "render all sprites" {
     // Braille
     cp = 0x2800;
     while (cp <= 0x28ff) : (cp += 1) {
-        _ = try face.renderGlyph(
+        _ = try self.renderGlyph(
             alloc,
-            &atlas_grayscale,
+            atlas,
             cp,
         );
     }
@@ -2553,14 +2542,39 @@ test "render all sprites" {
             // (Geometric Shapes)
             // 🯠 🯡 🯢 🯣 🯤 🯥 🯦 🯧 🯨 🯩 🯪 🯫 🯬 🯭 🯮 🯯
             0x1FBCE...0x1FBEF,
-            => _ = try face.renderGlyph(
+            => _ = try self.renderGlyph(
                 alloc,
-                &atlas_grayscale,
+                atlas,
                 cp,
             ),
             else => {},
         }
     }
+}
+
+test "render all sprites" {
+    // Renders all sprites to an atlas and compares
+    // it to a ground truth for regression testing.
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var atlas_grayscale = try font.Atlas.init(alloc, 1024, .grayscale);
+    defer atlas_grayscale.deinit(alloc);
+
+    // Even cell size and thickness
+    try (Box{
+        .width = 18,
+        .height = 36,
+        .thickness = 2,
+    }).testRenderAll(alloc, &atlas_grayscale);
+
+    // Odd cell size and thickness
+    try (Box{
+        .width = 9,
+        .height = 15,
+        .thickness = 1,
+    }).testRenderAll(alloc, &atlas_grayscale);
 
     const ground_truth = @embedFile("./testdata/Box.ppm");
 
