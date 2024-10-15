@@ -57,6 +57,7 @@ rt_surface: *apprt.runtime.Surface,
 /// The font structures
 font_grid_key: font.SharedGridSet.Key,
 font_size: font.face.DesiredSize,
+font_metrics: font.Metrics,
 
 /// The renderer for this surface.
 renderer: Renderer,
@@ -448,6 +449,7 @@ pub fn init(
         .rt_surface = rt_surface,
         .font_grid_key = font_grid_key,
         .font_size = font_size,
+        .font_metrics = font_grid.metrics,
         .renderer = renderer_impl,
         .renderer_thread = render_thread,
         .renderer_state = .{
@@ -1105,27 +1107,37 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
     // Our sizes are all scaled so we need to send the unscaled values back.
     const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
 
+    // We need to account for padding as well.
+    const pad = if (self.config.window_padding_balance)
+        renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
+    else
+        self.padding;
+
     const x: f64 = x: {
-        // Simple x * cell width gives the top-left corner
+        // Simple x * cell width gives the left
         var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
 
-        // We want the midpoint
-        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+        // Add padding
+        x += @floatFromInt(pad.left);
 
-        // And scale it
+        // Scale
         x /= content_scale.x;
 
         break :x x;
     };
 
     const y: f64 = y: {
-        // Simple x * cell width gives the top-left corner
+        // Simple y * cell height gives the top
         var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
 
-        // We want the bottom
+        // We want the text baseline
         y += @floatFromInt(self.cell_size.height);
+        y -= @floatFromInt(self.font_metrics.cell_baseline);
 
-        // And scale it
+        // Add padding
+        y += @floatFromInt(pad.top);
+
+        // Scale
         y /= content_scale.y;
 
         break :y y;
@@ -1367,6 +1379,7 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
 
     // Once we've sent the key we can replace our key
     self.font_grid_key = font_grid_key;
+    self.font_metrics = font_grid.metrics;
 
     // Schedule render which also drains our mailbox
     self.queueRender() catch unreachable;
