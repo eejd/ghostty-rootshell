@@ -97,7 +97,7 @@ fn drawDouble(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
 
     canvas.rect(.{
         .x = 0,
-        .y = @intCast(thickness + gap),
+        .y = thickness * 2,
         .width = width,
         .height = thickness,
     }, .on);

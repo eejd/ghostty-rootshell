@@ -11,7 +11,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const font = @import("../main.zig");
-const Trapezoid = @import("canvas.zig").Trapezoid;
+const Quad = @import("canvas.zig").Quad;
 
 const log = std.log.scoped(.powerline_font);
 
@@ -176,10 +176,10 @@ fn draw_wedge_triangle(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !v
         else => unreachable,
     }
 
-    canvas.triangle(.{
-        .p1 = .{ .x = @as(i32, @intCast(p1_x)), .y = @as(i32, @intCast(p1_y)) },
-        .p2 = .{ .x = @as(i32, @intCast(p2_x)), .y = @as(i32, @intCast(p2_y)) },
-        .p3 = .{ .x = @as(i32, @intCast(p3_x)), .y = @as(i32, @intCast(p3_y)) },
+    try canvas.triangle(.{
+        .p0 = .{ .x = @floatFromInt(p1_x), .y = @floatFromInt(p1_y) },
+        .p1 = .{ .x = @floatFromInt(p2_x), .y = @floatFromInt(p2_y) },
+        .p2 = .{ .x = @floatFromInt(p3_x), .y = @floatFromInt(p3_y) },
     }, .on);
 }
 
@@ -404,110 +404,86 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
 }
 
 fn draw_trapezoid_top_bottom(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
-    const t_top: Trapezoid = if (cp == 0xE0D4)
+    const t_top: Quad(f64) = if (cp == 0xE0D4)
         .{
-            .top = 0,
-            .bottom = @intCast(self.height / 2 - self.height / 20),
-            .left = .{
-                .p1 = .{
-                    .x = 0,
-                    .y = 0,
-                },
-                .p2 = .{
-                    .x = @intCast(self.width - self.width / 3),
-                    .y = @intCast(self.height / 2 - self.height / 20),
-                },
+            .p0 = .{
+                .x = 0,
+                .y = 0,
             },
-            .right = .{
-                .p1 = .{
-                    .x = @intCast(self.width),
-                    .y = 0,
-                },
-                .p2 = .{
-                    .x = @intCast(self.width),
-                    .y = @intCast(self.height / 2 - self.height / 20),
-                },
+            .p1 = .{
+                .x = @floatFromInt(self.width - self.width / 3),
+                .y = @floatFromInt(self.height / 2 - self.height / 20),
+            },
+            .p2 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(self.height / 2 - self.height / 20),
+            },
+            .p3 = .{
+                .x = @floatFromInt(self.width),
+                .y = 0,
             },
         }
     else
         .{
-            .top = 0,
-            .bottom = @intCast(self.height / 2 - self.height / 20),
-            .left = .{
-                .p1 = .{
-                    .x = 0,
-                    .y = 0,
-                },
-                .p2 = .{
-                    .x = 0,
-                    .y = @intCast(self.height / 2 - self.height / 20),
-                },
+            .p0 = .{
+                .x = 0,
+                .y = 0,
             },
-            .right = .{
-                .p1 = .{
-                    .x = @intCast(self.width),
-                    .y = 0,
-                },
-                .p2 = .{
-                    .x = @intCast(self.width / 3),
-                    .y = @intCast(self.height / 2 - self.height / 20),
-                },
+            .p1 = .{
+                .x = 0,
+                .y = @floatFromInt(self.height / 2 - self.height / 20),
+            },
+            .p2 = .{
+                .x = @floatFromInt(self.width / 3),
+                .y = @floatFromInt(self.height / 2 - self.height / 20),
+            },
+            .p3 = .{
+                .x = @floatFromInt(self.width),
+                .y = 0,
             },
         };
 
-    const t_bottom: Trapezoid = if (cp == 0xE0D4)
+    const t_bottom: Quad(f64) = if (cp == 0xE0D4)
         .{
-            .top = @intCast(self.height / 2 + self.height / 20),
-            .bottom = @intCast(self.height),
-            .left = .{
-                .p1 = .{
-                    .x = @intCast(self.width - self.width / 3),
-                    .y = @intCast(self.height / 2 + self.height / 20),
-                },
-                .p2 = .{
-                    .x = 0,
-                    .y = @intCast(self.height),
-                },
+            .p0 = .{
+                .x = @floatFromInt(self.width - self.width / 3),
+                .y = @floatFromInt(self.height / 2 + self.height / 20),
             },
-            .right = .{
-                .p1 = .{
-                    .x = @intCast(self.width),
-                    .y = @intCast(self.height / 2 + self.height / 20),
-                },
-                .p2 = .{
-                    .x = @intCast(self.width),
-                    .y = @intCast(self.height),
-                },
+            .p1 = .{
+                .x = 0,
+                .y = @floatFromInt(self.height),
+            },
+            .p2 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(self.height),
+            },
+            .p3 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(self.height / 2 + self.height / 20),
             },
         }
     else
         .{
-            .top = @intCast(self.height / 2 + self.height / 20),
-            .bottom = @intCast(self.height),
-            .left = .{
-                .p1 = .{
-                    .x = 0,
-                    .y = @intCast(self.height / 2 + self.height / 20),
-                },
-                .p2 = .{
-                    .x = 0,
-                    .y = @intCast(self.height),
-                },
+            .p0 = .{
+                .x = 0,
+                .y = @floatFromInt(self.height / 2 + self.height / 20),
             },
-            .right = .{
-                .p1 = .{
-                    .x = @intCast(self.width / 3),
-                    .y = @intCast(self.height / 2 + self.height / 20),
-                },
-                .p2 = .{
-                    .x = @intCast(self.width),
-                    .y = @intCast(self.height),
-                },
+            .p1 = .{
+                .x = 0,
+                .y = @floatFromInt(self.height),
+            },
+            .p2 = .{
+                .x = @floatFromInt(self.width),
+                .y = @floatFromInt(self.height),
+            },
+            .p3 = .{
+                .x = @floatFromInt(self.width / 3),
+                .y = @floatFromInt(self.height / 2 + self.height / 20),
             },
         };
 
-    canvas.trapezoid(t_top);
-    canvas.trapezoid(t_bottom);
+    try canvas.quad(t_top, .on);
+    try canvas.quad(t_bottom, .on);
 }
 
 test "all" {

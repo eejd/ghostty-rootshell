@@ -83,7 +83,7 @@ pub const Region = extern struct {
     height: u32,
 };
 
-pub fn init(alloc: Allocator, size: u32, format: Format) !Atlas {
+pub fn init(alloc: Allocator, size: u32, format: Format) Allocator.Error!Atlas {
     var result = Atlas{
         .data = try alloc.alloc(u8, size * size * format.depth()),
         .size = size,
@@ -111,7 +111,12 @@ pub fn deinit(self: *Atlas, alloc: Allocator) void {
 ///
 /// May allocate to add a new rectangle into the internal list of rectangles.
 /// This will not automatically enlarge the texture if it is full.
-pub fn reserve(self: *Atlas, alloc: Allocator, width: u32, height: u32) !Region {
+pub fn reserve(
+    self: *Atlas,
+    alloc: Allocator,
+    width: u32,
+    height: u32,
+) (Allocator.Error || Error)!Region {
     // x, y are populated within :best_idx below
     var region: Region = .{ .x = 0, .y = 0, .width = width, .height = height };
 
@@ -295,6 +300,29 @@ pub fn clear(self: *Atlas) void {
     // and is the initial rectangle we fit our regions in. We keep a 1px border
     // to avoid artifacting when sampling the texture.
     self.nodes.appendAssumeCapacity(.{ .x = 1, .y = 1, .width = self.size - 2 });
+}
+
+/// Dump the atlas as a PPM to a writer, for debug purposes.
+/// Only supports grayscale and rgb atlases.
+pub fn dump(self: Atlas, writer: anytype) !void {
+    try writer.print(
+        \\P{c}
+        \\{d} {d}
+        \\255
+        \\
+    , .{
+        @as(u8, switch (self.format) {
+            .grayscale => '5',
+            .rgb => '6',
+            else => {
+                log.err("Unsupported format for dump: {}", .{self.format});
+                @panic("Cannot dump this atlas format.");
+            },
+        }),
+        self.size,
+        self.size,
+    });
+    try writer.writeAll(self.data);
 }
 
 /// The wasm-compatible API. This lacks documentation unless the API differs

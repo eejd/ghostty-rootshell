@@ -41,7 +41,6 @@
   libXi,
   libXinerama,
   libXrandr,
-  pixman,
   zlib,
   alejandra,
   pandoc,
@@ -61,7 +60,6 @@
       harfbuzz
       libpng
       oniguruma
-      pixman
       zlib
 
       libX11
@@ -126,7 +124,6 @@ in
         harfbuzz
         libpng
         oniguruma
-        pixman
         zlib
 
         libX11

@@ -7,7 +7,6 @@
   freetype,
   harfbuzz,
   libpng,
-  pixman,
   zlib,
   libGL,
   libX11,
@@ -133,7 +132,6 @@ in
         freetype
         harfbuzz
         libpng
-        pixman
         zlib
 
         libX11

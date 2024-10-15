@@ -36,7 +36,6 @@
         .macos = .{ .path = "./pkg/macos" },
         .oniguruma = .{ .path = "./pkg/oniguruma" },
         .opengl = .{ .path = "./pkg/opengl" },
-        .pixman = .{ .path = "./pkg/pixman" },
         .sentry = .{ .path = "./pkg/sentry" },
         .simdutf = .{ .path = "./pkg/simdutf" },
         .utfcpp = .{ .path = "./pkg/utfcpp" },
@@ -60,6 +59,10 @@
         .zf = .{
             .url = "git+https://github.com/natecraddock/zf.git?ref=main#bb27a917c3513785c6a91f0b1c10002a5029cacc",
             .hash = "1220a74107c7f153a2f809e41c7fa7e8dbf75c91043e39fad998247804e5edac2cc8",
+        },
+        .z2d = .{
+            .url = "git+https://github.com/vancluever/z2d?ref=main#285a796eb9c25a2389f087d008f0e60faf0b8eda",
+            .hash = "12206445aa45bcf0170ace371905f705aec1d8d4f61e7dd77839c6621b8c407680a5",
         },
     },
 }

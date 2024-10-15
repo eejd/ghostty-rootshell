@@ -3,6 +3,7 @@ const canvas = @import("sprite/canvas.zig");
 pub const Face = @import("sprite/Face.zig");
 
 pub const Box = canvas.Box;
+pub const Point = canvas.Point;
 pub const Canvas = canvas.Canvas;
 pub const Color = canvas.Color;
 
