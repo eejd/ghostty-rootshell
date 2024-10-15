@@ -2127,8 +2127,8 @@ fn draw_light_arc(
     const float_width: f64 = @floatFromInt(self.width);
     const float_height: f64 = @floatFromInt(self.height);
     const float_thick: f64 = @floatFromInt(thick_px);
-    const center_x: f64 = @floatFromInt(self.width / 2 + self.width % 2);
-    const center_y: f64 = @floatFromInt(self.height / 2 + self.height % 2);
+    const center_x: f64 = @as(f64, @floatFromInt((self.width -| thick_px) / 2)) + float_thick / 2;
+    const center_y: f64 = @as(f64, @floatFromInt((self.height -| thick_px) / 2)) + float_thick / 2;
 
     const r = @min(float_width, float_height) / 2;
 
