@@ -102,7 +102,11 @@ pub const Canvas = struct {
     }
 
     /// Write the data in this drawing to the atlas.
-    pub fn writeAtlas(self: *Canvas, alloc: Allocator, atlas: *font.Atlas) !font.Atlas.Region {
+    pub fn writeAtlas(
+        self: *Canvas,
+        alloc: Allocator,
+        atlas: *font.Atlas,
+    ) (Allocator.Error || font.Atlas.Error)!font.Atlas.Region {
         assert(atlas.format == .grayscale);
 
         const width = @as(u32, @intCast(self.sfc.getWidth()));
