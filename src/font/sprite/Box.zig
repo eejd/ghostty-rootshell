@@ -2151,75 +2151,59 @@ fn draw_light_arc(
 
     switch (corner) {
         .tl => {
-            path.moveTo(center_x, 0) catch return;
-            if (self.height > self.width) {
-                path.lineTo(center_x, center_y - r) catch return;
-            }
-            path.curveTo(
+            try path.moveTo(center_x, 0);
+            try path.lineTo(center_x, center_y - r);
+            try path.curveTo(
                 center_x,
                 center_y - s * r,
                 center_x - s * r,
                 center_y,
                 center_x - r,
                 center_y,
-            ) catch return;
-            if (self.width > self.height) {
-                path.lineTo(0, center_y) catch return;
-            }
+            );
+            try path.lineTo(0, center_y);
         },
         .tr => {
-            path.moveTo(center_x, 0) catch return;
-            if (self.height > self.width) {
-                path.lineTo(center_x, center_y - r) catch return;
-            }
-            path.curveTo(
+            try path.moveTo(center_x, 0);
+            try path.lineTo(center_x, center_y - r);
+            try path.curveTo(
                 center_x,
                 center_y - s * r,
                 center_x + s * r,
                 center_y,
                 center_x + r,
                 center_y,
-            ) catch return;
-            if (self.width > self.height) {
-                path.lineTo(float_width, center_y) catch return;
-            }
+            );
+            try path.lineTo(float_width, center_y);
         },
         .bl => {
-            path.moveTo(center_x, float_height) catch return;
-            if (self.height > self.width) {
-                path.lineTo(center_x, center_y + r) catch return;
-            }
-            path.curveTo(
+            try path.moveTo(center_x, float_height);
+            try path.lineTo(center_x, center_y + r);
+            try path.curveTo(
                 center_x,
                 center_y + s * r,
                 center_x - s * r,
                 center_y,
                 center_x - r,
                 center_y,
-            ) catch return;
-            if (self.width > self.height) {
-                path.lineTo(0, center_y) catch return;
-            }
+            );
+            try path.lineTo(0, center_y);
         },
         .br => {
-            path.moveTo(center_x, float_height) catch return;
-            if (self.height > self.width) {
-                path.lineTo(center_x, center_y + r) catch return;
-            }
-            path.curveTo(
+            try path.moveTo(center_x, float_height);
+            try path.lineTo(center_x, center_y + r);
+            try path.curveTo(
                 center_x,
                 center_y + s * r,
                 center_x + s * r,
                 center_y,
                 center_x + r,
                 center_y,
-            ) catch return;
-            if (self.width > self.height) {
-                path.lineTo(float_width, center_y) catch return;
-            }
+            );
+            try path.lineTo(float_width, center_y);
         },
     }
-    ctx.stroke(canvas.alloc, path) catch return;
+    try ctx.stroke(canvas.alloc, path);
 }
 
 fn draw_dash_horizontal(
