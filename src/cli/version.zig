@@ -1,9 +1,11 @@
 const std = @import("std");
+const build_options = @import("build_options");
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const xev = @import("xev");
 const renderer = @import("../renderer.zig");
+const gtk = if (build_config.app_runtime == .gtk) @import("../apprt/gtk/c.zig").c else void;
 
 /// The `version` command is used to display information about Ghostty.
 pub fn run(alloc: Allocator) !u8 {
@@ -28,5 +30,31 @@ pub fn run(alloc: Allocator) !u8 {
     try stdout.print("  - font engine: {}\n", .{build_config.font_backend});
     try stdout.print("  - renderer   : {}\n", .{renderer.Renderer});
     try stdout.print("  - libxev     : {}\n", .{xev.backend});
+    if (comptime build_config.app_runtime == .gtk) {
+        try stdout.print("  - GTK version:\n", .{});
+        try stdout.print("    build      : {d}.{d}.{d}\n", .{
+            gtk.GTK_MAJOR_VERSION,
+            gtk.GTK_MINOR_VERSION,
+            gtk.GTK_MICRO_VERSION,
+        });
+        try stdout.print("    runtime    : {d}.{d}.{d}\n", .{
+            gtk.gtk_get_major_version(),
+            gtk.gtk_get_minor_version(),
+            gtk.gtk_get_micro_version(),
+        });
+        if (comptime build_options.libadwaita) {
+            try stdout.print("  - libadwaita : enabled\n", .{});
+            try stdout.print("    build      : {s}\n", .{
+                gtk.ADW_VERSION_S,
+            });
+            try stdout.print("    runtime    : {}.{}.{}\n", .{
+                gtk.adw_get_major_version(),
+                gtk.adw_get_minor_version(),
+                gtk.adw_get_micro_version(),
+            });
+        } else {
+            try stdout.print("  - libadwaita : disabled\n", .{});
+        }
+    }
     return 0;
 }
