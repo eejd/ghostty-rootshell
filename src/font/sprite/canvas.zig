@@ -6,53 +6,66 @@ const Allocator = std.mem.Allocator;
 const z2d = @import("z2d");
 const font = @import("../main.zig");
 
-pub const Point = struct {
-    x: f64,
-    y: f64,
-};
+pub fn Point(comptime T: type) type {
+    return struct {
+        x: T,
+        y: T,
+    };
+}
 
-pub const Line = struct {
-    p0: Point,
-    p1: Point,
-};
+pub fn Line(comptime T: type) type {
+    return struct {
+        p0: Point(T),
+        p1: Point(T),
+    };
+}
 
-pub const Box = struct {
-    p0: Point,
-    p1: Point,
+pub fn Box(comptime T: type) type {
+    return struct {
+        p0: Point(T),
+        p1: Point(T),
 
-    pub fn rect(self: Box) Rect {
-        const tl_x = @min(self.p0.x, self.p1.x);
-        const tl_y = @min(self.p0.y, self.p1.y);
-        const br_x = @max(self.p0.x, self.p1.x);
-        const br_y = @max(self.p0.y, self.p1.y);
-        return .{
-            .x = tl_x,
-            .y = tl_y,
-            .width = br_x - tl_x,
-            .height = br_y - tl_y,
-        };
-    }
-};
+        pub fn rect(self: Box(T)) Rect(T) {
+            const tl_x = @min(self.p0.x, self.p1.x);
+            const tl_y = @min(self.p0.y, self.p1.y);
+            const br_x = @max(self.p0.x, self.p1.x);
+            const br_y = @max(self.p0.y, self.p1.y);
 
-pub const Rect = struct {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-};
+            return .{
+                .x = tl_x,
+                .y = tl_y,
+                .width = br_x - tl_x,
+                .height = br_y - tl_y,
+            };
+        }
+    };
+}
 
-pub const Triangle = struct {
-    p0: Point,
-    p1: Point,
-    p2: Point,
-};
+pub fn Rect(comptime T: type) type {
+    return struct {
+        x: T,
+        y: T,
+        width: T,
+        height: T,
+    };
+}
 
-pub const Quad = struct {
-    p0: Point,
-    p1: Point,
-    p2: Point,
-    p3: Point,
-};
+pub fn Triangle(comptime T: type) type {
+    return struct {
+        p0: Point(T),
+        p1: Point(T),
+        p2: Point(T),
+    };
+}
+
+pub fn Quad(comptime T: type) type {
+    return struct {
+        p0: Point(T),
+        p1: Point(T),
+        p2: Point(T),
+        p3: Point(T),
+    };
+}
 
 /// We only use alpha-channel so a pixel can only be "on" or "off".
 pub const Color = enum(u8) {
@@ -137,19 +150,26 @@ pub const Canvas = struct {
             @intCast(x),
             @intCast(y),
             .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-        ) catch {
-            // If we try to set out of range this will fail.
-            // We just silently ignore that.
+        ) catch |e| switch (e) {
+            error.OutOfRange => {
+                // If we try to set out of range this will fail. We just silently
+                // ignore it, so that this method (and `rect` which uses it) have
+                // implicit bounds clipping.
+            },
+            else => {
+                std.log.err("Wtf? err={}", .{e});
+                unreachable; // This shouldn't be possible.
+            },
         };
     }
 
     /// Draw and fill a rectangle. This is the main primitive for drawing
     /// lines as well (which are just generally skinny rectangles...)
-    pub fn rect(self: *Canvas, v: Rect, color: Color) void {
-        const x0: usize = @intFromFloat(v.x);
-        const x1: usize = @intFromFloat(v.x + v.width);
-        const y0: usize = @intFromFloat(v.y);
-        const y1: usize = @intFromFloat(v.y + v.height);
+    pub fn rect(self: *Canvas, v: Rect(u32), color: Color) void {
+        const x0 = v.x;
+        const x1 = v.x + v.width;
+        const y0 = v.y;
+        const y1 = v.y + v.height;
 
         for (y0..y1) |y| {
             for (x0..x1) |x| {
@@ -163,7 +183,7 @@ pub const Canvas = struct {
     }
 
     /// Draw and fill a quad.
-    pub fn quad(self: *Canvas, q: Quad, color: Color) !void {
+    pub fn quad(self: *Canvas, q: Quad(f64), color: Color) !void {
         var ctx: z2d.Context = .{
             .surface = self.sfc,
             .pattern = .{
@@ -186,7 +206,7 @@ pub const Canvas = struct {
     }
 
     /// Draw and fill a triangle.
-    pub fn triangle(self: *Canvas, t: Triangle, color: Color) !void {
+    pub fn triangle(self: *Canvas, t: Triangle(f64), color: Color) !void {
         var ctx: z2d.Context = .{
             .surface = self.sfc,
             .pattern = .{
@@ -208,7 +228,7 @@ pub const Canvas = struct {
     }
 
     /// Stroke a line.
-    pub fn line(self: *Canvas, l: Line, thickness: f64, color: Color) !void {
+    pub fn line(self: *Canvas, l: Line(f64), thickness: f64, color: Color) !void {
         var ctx: z2d.Context = .{
             .surface = self.sfc,
             .pattern = .{

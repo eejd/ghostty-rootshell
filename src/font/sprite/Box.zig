@@ -20,10 +20,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const z2d = @import("z2d");
+
 const font = @import("../main.zig");
 const Sprite = @import("../sprite.zig").Sprite;
-
-const z2d = @import("z2d");
 
 const log = std.log.scoped(.box_font);
 
@@ -72,7 +72,7 @@ const Lines = packed struct(u8) {
 
 /// Specification of a quadrants char, which has each of the
 /// 4 quadrants of the character cell either filled or empty.
-const Quads = struct {
+const Quads = packed struct(u4) {
     tl: bool = false,
     tr: bool = false,
     bl: bool = false,
@@ -1621,10 +1621,10 @@ fn draw_block_shade(
     };
 
     canvas.rect(.{
-        .x = @floatFromInt(x),
-        .y = @floatFromInt(y),
-        .width = @floatFromInt(w),
-        .height = @floatFromInt(h),
+        .x = x,
+        .y = y,
+        .width = w,
+        .height = h,
     }, @as(font.sprite.Color, @enumFromInt(@intFromEnum(shade))));
 }
 
@@ -1671,10 +1671,10 @@ fn draw_checkerboard_fill(self: Box, canvas: *font.sprite.Canvas, parity: u1) vo
             const y1 = (self.height * (y + 1)) / y_size;
             if ((x + y) % 2 == parity) {
                 canvas.rect(.{
-                    .x = @floatFromInt(x0),
-                    .y = @floatFromInt(y0),
-                    .width = @floatFromInt(x1 -| x0),
-                    .height = @floatFromInt(y1 -| y0),
+                    .x = @intCast(x0),
+                    .y = @intCast(y0),
+                    .width = @intCast(x1 -| x0),
+                    .height = @intCast(y1 -| y0),
                 }, .on);
             }
         }
@@ -1841,8 +1841,8 @@ fn draw_circle(
 fn draw_line(
     self: Box,
     canvas: *font.sprite.Canvas,
-    p0: font.sprite.Point,
-    p1: font.sprite.Point,
+    p0: font.sprite.Point(f64),
+    p1: font.sprite.Point(f64),
     comptime thickness: Thickness,
 ) !void {
     canvas.line(
@@ -1853,11 +1853,11 @@ fn draw_line(
 }
 
 fn draw_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
-    canvas.rect((font.sprite.Box{
+    canvas.rect((font.sprite.Box(u32){
         .p0 = .{ .x = 0, .y = 0 },
         .p1 = .{
-            .x = @floatFromInt(self.width),
-            .y = @floatFromInt(self.height),
+            .x = self.width,
+            .y = self.height,
         },
     }).rect(), @as(font.sprite.Color, @enumFromInt(v)));
 }
@@ -2395,12 +2395,12 @@ fn vline(
     x: u32,
     thickness_px: u32,
 ) void {
-    canvas.rect((font.sprite.Box{ .p0 = .{
-        .x = @floatFromInt(@min(@max(x, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y1, 0), self.height)),
+    canvas.rect((font.sprite.Box(u32){ .p0 = .{
+        .x = @min(@max(x, 0), self.width),
+        .y = @min(@max(y1, 0), self.height),
     }, .p1 = .{
-        .x = @floatFromInt(@min(@max(x + thickness_px, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y2, 0), self.height)),
+        .x = @min(@max(x + thickness_px, 0), self.width),
+        .y = @min(@max(y2, 0), self.height),
     } }).rect(), .on);
 }
 
@@ -2412,12 +2412,12 @@ fn hline(
     y: u32,
     thickness_px: u32,
 ) void {
-    canvas.rect((font.sprite.Box{ .p0 = .{
-        .x = @floatFromInt(@min(@max(x1, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y, 0), self.height)),
+    canvas.rect((font.sprite.Box(u32){ .p0 = .{
+        .x = @min(@max(x1, 0), self.width),
+        .y = @min(@max(y, 0), self.height),
     }, .p1 = .{
-        .x = @floatFromInt(@min(@max(x2, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y + thickness_px, 0), self.height)),
+        .x = @min(@max(x2, 0), self.width),
+        .y = @min(@max(y + thickness_px, 0), self.height),
     } }).rect(), .on);
 }
 
@@ -2429,12 +2429,12 @@ fn rect(
     x2: u32,
     y2: u32,
 ) void {
-    canvas.rect((font.sprite.Box{ .p0 = .{
-        .x = @floatFromInt(@min(@max(x1, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y1, 0), self.height)),
+    canvas.rect((font.sprite.Box(u32){ .p0 = .{
+        .x = @min(@max(x1, 0), self.width),
+        .y = @min(@max(y1, 0), self.height),
     }, .p1 = .{
-        .x = @floatFromInt(@min(@max(x2, 0), self.width)),
-        .y = @floatFromInt(@min(@max(y2, 0), self.height)),
+        .x = @min(@max(x2, 0), self.width),
+        .y = @min(@max(y2, 0), self.height),
     } }).rect(), .on);
 }
 

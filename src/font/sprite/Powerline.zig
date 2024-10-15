@@ -391,8 +391,8 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
                 const average = @as(u8, @intCast(@min(total / (supersample * supersample), 0xFF)));
                 canvas.rect(
                     .{
-                        .x = @floatFromInt(c),
-                        .y = @floatFromInt(r),
+                        .x = @intCast(c),
+                        .y = @intCast(r),
                         .width = 1,
                         .height = 1,
                     },
@@ -404,7 +404,7 @@ fn draw_half_circle(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canv
 }
 
 fn draw_trapezoid_top_bottom(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
-    const t_top: Quad = if (cp == 0xE0D4)
+    const t_top: Quad(f64) = if (cp == 0xE0D4)
         .{
             .p0 = .{
                 .x = 0,
@@ -443,7 +443,7 @@ fn draw_trapezoid_top_bottom(self: Powerline, canvas: *font.sprite.Canvas, cp: u
             },
         };
 
-    const t_bottom: Quad = if (cp == 0xE0D4)
+    const t_bottom: Quad(f64) = if (cp == 0xE0D4)
         .{
             .p0 = .{
                 .x = @floatFromInt(self.width - self.width / 3),
