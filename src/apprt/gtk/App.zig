@@ -12,6 +12,7 @@ const App = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
@@ -390,7 +391,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         @ptrCast(css_provider),
         c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
-    try loadRuntimeCss(&config, css_provider);
+    loadRuntimeCss(core_app.alloc, &config, css_provider) catch |err| switch (err) {
+        error.OutOfMemory => log.warn(
+            "out of memory loading runtime CSS, no runtime CSS applied",
+            .{},
+        ),
+    };
 
     return .{
         .core_app = core_app,
@@ -793,7 +799,15 @@ pub fn reloadConfig(self: *App) !?*const Config {
 fn syncConfigChanges(self: *App) !void {
     try self.updateConfigErrors();
     try self.syncActionAccelerators();
-    try loadRuntimeCss(&self.config, self.css_provider);
+
+    // Load our runtime CSS. If this fails then our window is just stuck
+    // with the old CSS but we don't want to fail the entire sync operation.
+    loadRuntimeCss(self.core_app.alloc, &self.config, self.css_provider) catch |err| switch (err) {
+        error.OutOfMemory => log.warn(
+            "out of memory loading runtime CSS, no runtime CSS applied",
+            .{},
+        ),
+    };
 }
 
 /// This should be called whenever the configuration changes to update
@@ -851,10 +865,15 @@ fn syncActionAccelerator(
     );
 }
 
-fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
-    var buf: [4096]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const writer = fbs.writer();
+fn loadRuntimeCss(
+    alloc: Allocator,
+    config: *const Config,
+    provider: *c.GtkCssProvider,
+) Allocator.Error!void {
+    var stack_alloc = std.heap.stackFallback(4096, alloc);
+    var buf = std.ArrayList(u8).init(stack_alloc.get());
+    defer buf.deinit();
+    const writer = buf.writer();
 
     const window_theme = config.@"window-theme";
     const unfocused_fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
@@ -873,7 +892,6 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
         unfocused_fill.b,
     });
 
-    // this is specifically a runtime-only check
     if (version.atLeast(4, 16, 0)) {
         switch (window_theme) {
             .ghostty => try writer.print(
@@ -882,16 +900,14 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
                 \\  --headerbar-bg-color: rgb({d},{d},{d});
                 \\  --headerbar-backdrop-color: oklab(from var(--headerbar-bg-color) calc(l * 0.9) a b / alpha);
                 \\}}
-            ,
-                .{
-                    headerbar_foreground.r,
-                    headerbar_foreground.g,
-                    headerbar_foreground.b,
-                    headerbar_background.r,
-                    headerbar_background.g,
-                    headerbar_background.b,
-                },
-            ),
+            , .{
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+            }),
             else => {},
         }
     } else {
@@ -902,22 +918,22 @@ fn loadRuntimeCss(config: *const Config, provider: *c.GtkCssProvider) !void {
             \\ background-color: rgb({d},{d},{d});
             \\ color: rgb({d},{d},{d});
             \\}}
-        ,
-            .{
-                headerbar_background.r,
-                headerbar_background.g,
-                headerbar_background.b,
-                headerbar_foreground.r,
-                headerbar_foreground.g,
-                headerbar_foreground.b,
-            },
-        );
+        , .{
+            headerbar_background.r,
+            headerbar_background.g,
+            headerbar_background.b,
+            headerbar_foreground.r,
+            headerbar_foreground.g,
+            headerbar_foreground.b,
+        });
     }
 
-    const css = fbs.getWritten();
-
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_data(provider, css.ptr, @intCast(css.len));
+    c.gtk_css_provider_load_from_data(
+        provider,
+        buf.items.ptr,
+        @intCast(buf.items.len),
+    );
 }
 
 /// Called by CoreApp to wake up the event loop.

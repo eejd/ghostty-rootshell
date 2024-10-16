@@ -110,7 +110,8 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_window_set_icon_name(gtk_window, "com.mitchellh.ghostty");
 
     // Apply class to color headerbar if window-theme is set to `ghostty` and
-    // GTK version is before 4.16.
+    // GTK version is before 4.16. The conditional is because above 4.16
+    // we use GTK CSS color variables.
     if (!version.atLeast(4, 16, 0) and app.config.@"window-theme" == .ghostty) {
         c.gtk_widget_add_css_class(@ptrCast(gtk_window), "window-theme-ghostty");
     }
