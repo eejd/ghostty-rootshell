@@ -55,9 +55,14 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     try cfg.finalize();
 
-    if (!cfg._errors.empty()) {
-        for (cfg._errors.list.items) |err| {
-            try stdout.print("{s}\n", .{err.message});
+    if (cfg._diagnostics.items().len > 0) {
+        var buf = std.ArrayList(u8).init(alloc);
+        defer buf.deinit();
+
+        for (cfg._diagnostics.items()) |diag| {
+            try diag.write(buf.writer());
+            try stdout.print("{s}\n", .{buf.items});
+            buf.clearRetainingCapacity();
         }
 
         return 1;

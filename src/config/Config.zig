@@ -1662,10 +1662,9 @@ term: []const u8 = "xterm-ghostty",
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 
-/// List of errors that occurred while loading. This can be accessed directly
-/// by callers. It is only underscore-prefixed so it can't be set by the
-/// configuration file.
-_errors: ErrorList = .{},
+/// List of diagnostics that were generated during the loading of
+/// the configuration.
+_diagnostics: cli.DiagnosticList = .{},
 
 /// The steps we can use to reload the configuration after it has been loaded
 /// without reopening the files. This is used in very specific cases such
@@ -2446,7 +2445,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         // We must only load a unique file once
         if (try loaded.fetchPut(path, {}) != null) {
-            try self._errors.add(arena_alloc, .{
+            try self._diagnostics.append(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "config-file {s}: cycle detected",
@@ -2458,7 +2457,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         var file = cwd.openFile(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
-                try self._errors.add(arena_alloc, .{
+                try self._diagnostics.append(arena_alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "error opening config-file {s}: {}",
@@ -2495,7 +2494,7 @@ fn expandPaths(self: *Config, base: []const u8) !void {
             try @field(self, field.name).expand(
                 arena_alloc,
                 base,
-                &self._errors,
+                &self._diagnostics,
             );
         }
     }
@@ -2506,7 +2505,7 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     const file: std.fs.File = (try themepkg.open(
         self._arena.?.allocator(),
         theme,
-        &self._errors,
+        &self._diagnostics,
     )) orelse return;
     defer file.close();
 
@@ -2697,7 +2696,12 @@ pub fn finalize(self: *Config) !void {
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
-pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
+pub fn parseManuallyHook(
+    self: *Config,
+    alloc: Allocator,
+    arg: []const u8,
+    iter: anytype,
+) !bool {
     // Keep track of our input args no matter what..
     try self._replay_steps.append(alloc, .{ .arg = try alloc.dupe(u8, arg) });
 
@@ -2714,7 +2718,8 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         }
 
         if (command.items.len == 0) {
-            try self._errors.add(alloc, .{
+            try self._diagnostics.append(alloc, .{
+                .location = cli.Diagnostic.Location.fromIter(iter),
                 .message = try std.fmt.allocPrintZ(
                     alloc,
                     "missing command after {s}",
@@ -3506,7 +3511,7 @@ pub const RepeatablePath = struct {
         self: *Self,
         alloc: Allocator,
         base: []const u8,
-        errors: *ErrorList,
+        diags: *cli.DiagnosticList,
     ) !void {
         assert(std.fs.path.isAbsolute(base));
         var dir = try std.fs.cwd().openDir(base, .{});
@@ -3533,7 +3538,7 @@ pub const RepeatablePath = struct {
                     break :abs buf[0..resolved.len];
                 }
 
-                try errors.add(alloc, .{
+                try diags.append(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
                         "error resolving file path {s}: {}",

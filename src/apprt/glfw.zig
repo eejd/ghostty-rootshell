@@ -69,9 +69,13 @@ pub const App = struct {
         errdefer config.deinit();
 
         // If we had configuration errors, then log them.
-        if (!config._errors.empty()) {
-            for (config._errors.list.items) |err| {
-                log.warn("configuration error: {s}", .{err.message});
+        if (!config._diagnostics.empty()) {
+            var buf = std.ArrayList(u8).init(core_app.alloc);
+            defer buf.deinit();
+            for (config._diagnostics.items()) |diag| {
+                try diag.write(buf.writer());
+                log.warn("configuration error: {s}", .{buf.items});
+                buf.clearRetainingCapacity();
             }
         }
 

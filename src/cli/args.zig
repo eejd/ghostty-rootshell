@@ -3,8 +3,9 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-
-const ErrorList = @import("../config/ErrorList.zig");
+const diags = @import("diagnostics.zig");
+const Diagnostic = diags.Diagnostic;
+const DiagnosticList = diags.DiagnosticList;
 
 // TODO:
 //   - Only `--long=value` format is accepted. Do we want to allow
@@ -32,13 +33,18 @@ pub const Error = error{
 /// an arena allocator will be created (or reused if set already) for any
 /// allocations. Allocations are necessary for certain types, like `[]const u8`.
 ///
-/// If the destination type has a field "_errors" of type "ErrorList" then
-/// errors will be added to that list. In this case, the only error returned by
-/// parse are allocation errors.
+/// If the destination type has a field "_diagnostics", it must be of type
+/// "DiagnosticList" and any diagnostic messages will be added to that list.
+/// When diagnostics are present, only allocation errors will be returned.
 ///
 /// Note: If the arena is already non-null, then it will be used. In this
 /// case, in the case of an error some memory might be leaked into the arena.
-pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
+pub fn parse(
+    comptime T: type,
+    alloc: Allocator,
+    dst: *T,
+    iter: anytype,
+) !void {
     const info = @typeInfo(T);
     assert(info == .Struct);
 
@@ -69,7 +75,11 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
     while (iter.next()) |arg| {
         // Do manual parsing if we have a hook for it.
         if (@hasDecl(T, "parseManuallyHook")) {
-            if (!try dst.parseManuallyHook(arena_alloc, arg, iter)) return;
+            if (!try dst.parseManuallyHook(
+                arena_alloc,
+                arg,
+                iter,
+            )) return;
         }
 
         // If the destination supports help then we check for it, call
@@ -96,56 +106,39 @@ pub fn parse(comptime T: type, alloc: Allocator, dst: *T, iter: anytype) !void {
             };
 
             parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
-                if (comptime !canTrackErrors(T)) return err;
+                if (comptime !canTrackDiags(T)) return err;
 
                 // The error set is dependent on comptime T, so we always add
                 // an extra error so we can have the "else" below.
                 const ErrSet = @TypeOf(err) || error{Unknown};
-                switch (@as(ErrSet, @errorCast(err))) {
+                const message: [:0]const u8 = switch (@as(ErrSet, @errorCast(err))) {
                     // OOM is not recoverable since we need to allocate to
                     // track more error messages.
                     error.OutOfMemory => return err,
+                    error.InvalidField => "unknown field",
+                    error.ValueRequired => "value required",
+                    error.InvalidValue => "invalid value",
+                    else => try std.fmt.allocPrintZ(
+                        arena_alloc,
+                        "unknown error {}",
+                        .{err},
+                    ),
+                };
 
-                    error.InvalidField => try dst._errors.add(arena_alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            arena_alloc,
-                            "{s}: unknown field",
-                            .{key},
-                        ),
-                    }),
-
-                    error.ValueRequired => try dst._errors.add(arena_alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            arena_alloc,
-                            "{s}: value required",
-                            .{key},
-                        ),
-                    }),
-
-                    error.InvalidValue => try dst._errors.add(arena_alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            arena_alloc,
-                            "{s}: invalid value",
-                            .{key},
-                        ),
-                    }),
-
-                    else => try dst._errors.add(arena_alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            arena_alloc,
-                            "{s}: unknown error {}",
-                            .{ key, err },
-                        ),
-                    }),
-                }
+                // Add our diagnostic
+                try dst._diagnostics.append(arena_alloc, .{
+                    .key = try arena_alloc.dupeZ(u8, key),
+                    .message = message,
+                    .location = Diagnostic.Location.fromIter(iter),
+                });
             };
         }
     }
 }
 
-/// Returns true if this type can track errors.
-fn canTrackErrors(comptime T: type) bool {
-    return @hasField(T, "_errors");
+/// Returns true if this type can track diagnostics.
+fn canTrackDiags(comptime T: type) bool {
+    return @hasField(T, "_diagnostics");
 }
 
 /// Parse a single key/value pair into the destination type T.
@@ -198,15 +191,6 @@ fn parseIntoField(
 
                         // 3 arg = (self, alloc, input) => void
                         3 => try @field(dst, field.name).parseCLI(alloc, value),
-
-                        // 4 arg = (self, alloc, errors, input) => void
-                        4 => if (comptime canTrackErrors(T)) {
-                            try @field(dst, field.name).parseCLI(alloc, &dst._errors, value);
-                        } else {
-                            var list: ErrorList = .{};
-                            try @field(dst, field.name).parseCLI(alloc, &list, value);
-                            if (!list.empty()) return error.InvalidValue;
-                        },
 
                         else => @compileError("parseCLI invalid argument count"),
                     }
@@ -468,7 +452,7 @@ test "parse: empty value resets to default" {
     try testing.expect(!data.b);
 }
 
-test "parse: error tracking" {
+test "parse: diagnostic tracking" {
     const testing = std.testing;
 
     var data: struct {
@@ -476,7 +460,7 @@ test "parse: error tracking" {
         b: enum { one } = .one,
 
         _arena: ?ArenaAllocator = null,
-        _errors: ErrorList = .{},
+        _diagnostics: DiagnosticList = .{},
     } = .{};
     defer if (data._arena) |arena| arena.deinit();
 
@@ -488,7 +472,48 @@ test "parse: error tracking" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expect(data._arena != null);
     try testing.expectEqualStrings("42", data.a);
-    try testing.expect(!data._errors.empty());
+    try testing.expect(data._diagnostics.items().len == 1);
+    {
+        const diag = data._diagnostics.items()[0];
+        try testing.expectEqual(Diagnostic.Location.none, diag.location);
+        try testing.expectEqualStrings("what", diag.key);
+        try testing.expectEqualStrings("unknown field", diag.message);
+    }
+}
+
+test "parse: diagnostic location" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: []const u8 = "",
+        b: enum { one, two } = .one,
+
+        _arena: ?ArenaAllocator = null,
+        _diagnostics: DiagnosticList = .{},
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var fbs = std.io.fixedBufferStream(
+        \\a=42
+        \\what
+        \\b=two
+    );
+    const r = fbs.reader();
+
+    const Iter = LineIterator(@TypeOf(r));
+    var iter: Iter = .{ .r = r, .filepath = "test" };
+    try parse(@TypeOf(data), testing.allocator, &data, &iter);
+    try testing.expect(data._arena != null);
+    try testing.expectEqualStrings("42", data.a);
+    try testing.expect(data.b == .two);
+    try testing.expect(data._diagnostics.items().len == 1);
+    {
+        const diag = data._diagnostics.items()[0];
+        try testing.expectEqualStrings("what", diag.key);
+        try testing.expectEqualStrings("unknown field", diag.message);
+        try testing.expectEqualStrings("test", diag.location.file.path);
+        try testing.expectEqual(2, diag.location.file.line);
+    }
 }
 
 test "parseIntoField: ignore underscore-prefixed fields" {
@@ -738,62 +763,6 @@ test "parseIntoField: struct with parse func" {
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
 }
 
-test "parseIntoField: struct with parse func with error tracking" {
-    const testing = std.testing;
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var data: struct {
-        a: struct {
-            const Self = @This();
-
-            pub fn parseCLI(
-                _: Self,
-                parse_alloc: Allocator,
-                errors: *ErrorList,
-                value: ?[]const u8,
-            ) !void {
-                _ = value;
-                try errors.add(parse_alloc, .{ .message = "OH NO!" });
-            }
-        } = .{},
-
-        _errors: ErrorList = .{},
-    } = .{};
-
-    try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
-    try testing.expect(!data._errors.empty());
-}
-
-test "parseIntoField: struct with parse func with unsupported error tracking" {
-    const testing = std.testing;
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var data: struct {
-        a: struct {
-            const Self = @This();
-
-            pub fn parseCLI(
-                _: Self,
-                parse_alloc: Allocator,
-                errors: *ErrorList,
-                value: ?[]const u8,
-            ) !void {
-                _ = value;
-                try errors.add(parse_alloc, .{ .message = "OH NO!" });
-            }
-        } = .{},
-    } = .{};
-
-    try testing.expectError(
-        error.InvalidValue,
-        parseIntoField(@TypeOf(data), alloc, &data, "a", "42"),
-    );
-}
-
 test "parseIntoField: tagged union" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
@@ -899,7 +868,21 @@ pub fn LineIterator(comptime ReaderType: type) type {
         /// like 4 years and be wrong about this.
         pub const MAX_LINE_SIZE = 4096;
 
+        /// Our stateful reader.
         r: ReaderType,
+
+        /// Filepath that is used for diagnostics. This is only used for
+        /// diagnostic messages so it can be formatted however you want.
+        /// It is prefixed to the messages followed by the line number.
+        filepath: []const u8 = "",
+
+        /// The current line that we're on. This is 1-indexed because
+        /// lines are generally 1-indexed in the real world. The value
+        /// can be zero if we haven't read any lines yet.
+        line: usize = 0,
+
+        /// This is the buffer where we store the current entry that
+        /// is formatted to be compatible with the parse function.
         entry: [MAX_LINE_SIZE]u8 = [_]u8{ '-', '-' } ++ ([_]u8{0} ** (MAX_LINE_SIZE - 2)),
 
         pub fn next(self: *Self) ?[]const u8 {
@@ -911,6 +894,9 @@ pub fn LineIterator(comptime ReaderType: type) type {
                         // TODO: handle errors
                         unreachable;
                     } orelse return null;
+
+                    // Increment our line counter
+                    self.line += 1;
 
                     // Trim any whitespace (including CR) around it
                     const trim = std.mem.trim(u8, entry, whitespace ++ "\r");
@@ -958,6 +944,18 @@ pub fn LineIterator(comptime ReaderType: type) type {
             // of our buffer so that we can trick the CLI parser to treat it
             // as CLI args.
             return self.entry[0 .. buf.len + 2];
+        }
+
+        /// Modify the diagnostic so it includes richer context about
+        /// the location of the error.
+        pub fn location(self: *const Self) ?Diagnostic.Location {
+            // If we have no filepath then we have no location.
+            if (self.filepath.len == 0) return null;
+
+            return .{ .file = .{
+                .path = self.filepath,
+                .line = self.line,
+            } };
         }
     };
 }

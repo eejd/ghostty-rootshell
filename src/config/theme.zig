@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const global_state = &@import("../global.zig").state;
 const internal_os = @import("../os/main.zig");
-const ErrorList = @import("ErrorList.zig");
+const cli = @import("../cli.zig");
 
 /// Location of possible themes. The order of this enum matters because it
 /// defines the priority of theme search (from top to bottom).
@@ -107,19 +107,19 @@ pub const LocationIterator = struct {
 pub fn open(
     arena_alloc: Allocator,
     theme: []const u8,
-    errors: *ErrorList,
+    diags: *cli.DiagnosticList,
 ) error{OutOfMemory}!?std.fs.File {
 
     // Absolute themes are loaded a different path.
     if (std.fs.path.isAbsolute(theme)) return try openAbsolute(
         arena_alloc,
         theme,
-        errors,
+        diags,
     );
 
     const basename = std.fs.path.basename(theme);
     if (!std.mem.eql(u8, theme, basename)) {
-        try errors.add(arena_alloc, .{
+        try diags.append(arena_alloc, .{
             .message = try std.fmt.allocPrintZ(
                 arena_alloc,
                 "theme \"{s}\" cannot include path separators unless it is an absolute path",
@@ -143,7 +143,7 @@ pub fn open(
 
             // Anything else is an error we log and give up on.
             else => {
-                try errors.add(arena_alloc, .{
+                try diags.append(arena_alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "failed to load theme \"{s}\" from the file \"{s}\": {}",
@@ -163,7 +163,7 @@ pub fn open(
     it.reset();
     while (try it.next()) |loc| {
         const path = try std.fs.path.join(arena_alloc, &.{ loc.dir, theme });
-        try errors.add(arena_alloc, .{
+        try diags.append(arena_alloc, .{
             .message = try std.fmt.allocPrintZ(
                 arena_alloc,
                 "theme \"{s}\" not found, tried path \"{s}\"",
@@ -186,18 +186,18 @@ pub fn open(
 pub fn openAbsolute(
     arena_alloc: Allocator,
     theme: []const u8,
-    errors: *ErrorList,
+    diags: *cli.DiagnosticList,
 ) error{OutOfMemory}!?std.fs.File {
     return std.fs.openFileAbsolute(theme, .{}) catch |err| {
         switch (err) {
-            error.FileNotFound => try errors.add(arena_alloc, .{
+            error.FileNotFound => try diags.append(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "failed to load theme from the path \"{s}\"",
                     .{theme},
                 ),
             }),
-            else => try errors.add(arena_alloc, .{
+            else => try diags.append(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "failed to load theme from the path \"{s}\": {}",

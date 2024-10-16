@@ -112,14 +112,15 @@ fn config_trigger_(
     return trigger.cval();
 }
 
-export fn ghostty_config_errors_count(self: *Config) u32 {
-    return @intCast(self._errors.list.items.len);
+export fn ghostty_config_diagnostics_count(self: *Config) u32 {
+    return @intCast(self._diagnostics.items().len);
 }
 
-export fn ghostty_config_get_error(self: *Config, idx: u32) Error {
-    if (idx >= self._errors.list.items.len) return .{};
-    const err = self._errors.list.items[idx];
-    return .{ .message = err.message.ptr };
+export fn ghostty_config_get_diagnostic(self: *Config, idx: u32) Diagnostic {
+    const items = self._diagnostics.items();
+    if (idx >= items.len) return .{};
+    const message = self._diagnostics.precompute.messages.items[idx];
+    return .{ .message = message.ptr };
 }
 
 export fn ghostty_config_open() void {
@@ -128,7 +129,7 @@ export fn ghostty_config_open() void {
     };
 }
 
-/// Sync with ghostty_error_s
-const Error = extern struct {
+/// Sync with ghostty_diagnostic_s
+const Diagnostic = extern struct {
     message: [*:0]const u8 = "",
 };
