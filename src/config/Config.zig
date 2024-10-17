@@ -1166,7 +1166,7 @@ keybind: Keybinds = .{},
 ///
 /// If this is false, the default configuration paths will not be loaded.
 /// This is targeted directly at using Ghostty from the CLI in a way
-/// that minimizes external affects.
+/// that minimizes external effects.
 ///
 /// This is a CLI-only configuration. Setting this in a configuration file
 /// will have no effect. It is not an error, but it will not do anything.
