@@ -46,7 +46,7 @@ pub const Options = struct {
 /// for Ghostty
 ///
 /// The `--plain` flag will disable formatting and make the output more
-/// friendly fro Unix tooling. This is default when not printing to a tty.
+/// friendly for Unix tooling. This is default when not printing to a tty.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
