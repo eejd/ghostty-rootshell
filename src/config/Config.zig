@@ -2260,7 +2260,9 @@ pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     std.log.info("reading configuration file path={s}", .{path});
 
     var buf_reader = std.io.bufferedReader(file.reader());
-    var iter = cli.args.lineIterator(buf_reader.reader());
+    const reader = buf_reader.reader();
+    const Iter = cli.args.LineIterator(@TypeOf(reader));
+    var iter: Iter = .{ .r = reader, .filepath = path };
     try self.loadIter(alloc, &iter);
     try self.expandPaths(std.fs.path.dirname(path).?);
 }
@@ -2471,7 +2473,9 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         log.info("loading config-file path={s}", .{path});
         var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli.args.lineIterator(buf_reader.reader());
+        const reader = buf_reader.reader();
+        const Iter = cli.args.LineIterator(@TypeOf(reader));
+        var iter: Iter = .{ .r = reader, .filepath = path };
         try self.loadIter(alloc_gpa, &iter);
         try self.expandPaths(std.fs.path.dirname(path).?);
     }
@@ -2502,11 +2506,13 @@ fn expandPaths(self: *Config, base: []const u8) !void {
 
 fn loadTheme(self: *Config, theme: []const u8) !void {
     // Find our theme file and open it. See the open function for details.
-    const file: std.fs.File = (try themepkg.open(
+    const themefile = (try themepkg.open(
         self._arena.?.allocator(),
         theme,
         &self._diagnostics,
     )) orelse return;
+    const path = themefile.path;
+    const file = themefile.file;
     defer file.close();
 
     // From this point onwards, we load the theme and do a bit of a dance
@@ -2532,7 +2538,9 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
 
     // Load our theme
     var buf_reader = std.io.bufferedReader(file.reader());
-    var iter = cli.args.lineIterator(buf_reader.reader());
+    const reader = buf_reader.reader();
+    const Iter = cli.args.LineIterator(@TypeOf(reader));
+    var iter: Iter = .{ .r = reader, .filepath = path };
     try new_config.loadIter(alloc_gpa, &iter);
 
     // Replay our previous inputs so that we can override values
