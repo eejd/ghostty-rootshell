@@ -129,7 +129,7 @@ pub fn parse(
                 try dst._diagnostics.append(arena_alloc, .{
                     .key = try arena_alloc.dupeZ(u8, key),
                     .message = message,
-                    .location = Diagnostic.Location.fromIter(iter),
+                    .location = diags.Location.fromIter(iter),
                 });
             };
         }
@@ -475,7 +475,7 @@ test "parse: diagnostic tracking" {
     try testing.expect(data._diagnostics.items().len == 1);
     {
         const diag = data._diagnostics.items()[0];
-        try testing.expectEqual(Diagnostic.Location.none, diag.location);
+        try testing.expectEqual(diags.Location.none, diag.location);
         try testing.expectEqualStrings("what", diag.key);
         try testing.expectEqualStrings("unknown field", diag.message);
     }
@@ -878,7 +878,7 @@ pub fn ArgsIterator(comptime Iterator: type) type {
         }
 
         /// Returns a location for a diagnostic message.
-        pub fn location(self: *const Self) ?Diagnostic.Location {
+        pub fn location(self: *const Self) ?diags.Location {
             return .{ .cli = self.index };
         }
     };
@@ -975,7 +975,7 @@ pub fn LineIterator(comptime ReaderType: type) type {
         }
 
         /// Returns a location for a diagnostic message.
-        pub fn location(self: *const Self) ?Diagnostic.Location {
+        pub fn location(self: *const Self) ?diags.Location {
             // If we have no filepath then we have no location.
             if (self.filepath.len == 0) return null;
 

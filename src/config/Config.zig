@@ -2731,7 +2731,7 @@ pub fn parseManuallyHook(
 
         if (command.items.len == 0) {
             try self._diagnostics.append(alloc, .{
-                .location = cli.Diagnostic.Location.fromIter(iter),
+                .location = cli.Location.fromIter(iter),
                 .message = try std.fmt.allocPrintZ(
                     alloc,
                     "missing command after {s}",

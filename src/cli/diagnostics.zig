@@ -15,31 +15,6 @@ pub const Diagnostic = struct {
     key: [:0]const u8 = "",
     message: [:0]const u8,
 
-    /// The possible locations for a diagnostic message. This is used
-    /// to provide context for the message.
-    pub const Location = union(enum) {
-        none,
-        cli: usize,
-        file: struct {
-            path: []const u8,
-            line: usize,
-        },
-
-        pub fn fromIter(iter: anytype) Location {
-            const Iter = t: {
-                const T = @TypeOf(iter);
-                break :t switch (@typeInfo(T)) {
-                    .Pointer => |v| v.child,
-                    .Struct => T,
-                    else => return .none,
-                };
-            };
-
-            if (!@hasDecl(Iter, "location")) return .none;
-            return iter.location() orelse .none;
-        }
-    };
-
     /// Write the full user-friendly diagnostic message to the writer.
     pub fn write(self: *const Diagnostic, writer: anytype) !void {
         switch (self.location) {
@@ -58,6 +33,31 @@ pub const Diagnostic = struct {
         }
 
         try writer.print("{s}", .{self.message});
+    }
+};
+
+/// The possible locations for a diagnostic message. This is used
+/// to provide context for the message.
+pub const Location = union(enum) {
+    none,
+    cli: usize,
+    file: struct {
+        path: []const u8,
+        line: usize,
+    },
+
+    pub fn fromIter(iter: anytype) Location {
+        const Iter = t: {
+            const T = @TypeOf(iter);
+            break :t switch (@typeInfo(T)) {
+                .Pointer => |v| v.child,
+                .Struct => T,
+                else => return .none,
+            };
+        };
+
+        if (!@hasDecl(Iter, "location")) return .none;
+        return iter.location() orelse .none;
     }
 };
 

@@ -4,7 +4,7 @@ pub const args = @import("cli/args.zig");
 pub const Action = @import("cli/action.zig").Action;
 pub const DiagnosticList = diags.DiagnosticList;
 pub const Diagnostic = diags.Diagnostic;
-pub const Location = diags.Diagnostic.Location;
+pub const Location = diags.Location;
 
 test {
     @import("std").testing.refAllDecls(@This());
