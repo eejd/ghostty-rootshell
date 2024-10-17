@@ -856,6 +856,34 @@ test "parseIntoField: tagged union missing tag" {
     );
 }
 
+/// An iterator that considers its location to be CLI args. It
+/// iterates through an underlying iterator and increments a counter
+/// to track the current CLI arg index.
+pub fn ArgsIterator(comptime Iterator: type) type {
+    return struct {
+        const Self = @This();
+
+        /// The underlying args iterator.
+        iterator: Iterator,
+
+        /// Our current index into the iterator. This is 1-indexed.
+        /// The 0 value is used to indicate that we haven't read any
+        /// values yet.
+        index: usize = 0,
+
+        pub fn next(self: *Self) ?[]const u8 {
+            const value = self.iterator.next() orelse return null;
+            self.index += 1;
+            return value;
+        }
+
+        /// Returns a location for a diagnostic message.
+        pub fn location(self: *const Self) ?Diagnostic.Location {
+            return .{ .cli = self.index };
+        }
+    };
+}
+
 /// Returns an iterator (implements "next") that reads CLI args by line.
 /// Each CLI arg is expected to be a single line. This is used to implement
 /// configuration files.
@@ -946,8 +974,7 @@ pub fn LineIterator(comptime ReaderType: type) type {
             return self.entry[0 .. buf.len + 2];
         }
 
-        /// Modify the diagnostic so it includes richer context about
-        /// the location of the error.
+        /// Returns a location for a diagnostic message.
         pub fn location(self: *const Self) ?Diagnostic.Location {
             // If we have no filepath then we have no location.
             if (self.filepath.len == 0) return null;

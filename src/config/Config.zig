@@ -2372,7 +2372,11 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     if (iter.next()) |argv0| log.debug("skipping argv0 value={s}", .{argv0});
 
     // Parse the config from the CLI args
-    try self.loadIter(alloc_gpa, &iter);
+    {
+        const ArgsIter = cli.args.ArgsIterator(@TypeOf(iter));
+        var args_iter: ArgsIter = .{ .iterator = iter };
+        try self.loadIter(alloc_gpa, &args_iter);
+    }
 
     // If we are not loading the default files, then we need to
     // replay the steps up to this point so that we can rebuild
