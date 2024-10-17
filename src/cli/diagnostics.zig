@@ -118,7 +118,7 @@ pub const DiagnosticList = struct {
         return self.list.items.len == 0;
     }
 
-    pub fn items(self: *DiagnosticList) []Diagnostic {
+    pub fn items(self: *const DiagnosticList) []const Diagnostic {
         return self.list.items;
     }
 };

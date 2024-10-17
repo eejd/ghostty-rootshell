@@ -123,9 +123,13 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     errdefer config.deinit();
 
     // If we had configuration errors, then log them.
-    if (!config._errors.empty()) {
-        for (config._errors.list.items) |err| {
-            log.warn("configuration error: {s}", .{err.message});
+    if (!config._diagnostics.empty()) {
+        var buf = std.ArrayList(u8).init(core_app.alloc);
+        defer buf.deinit();
+        for (config._diagnostics.items()) |diag| {
+            try diag.write(buf.writer());
+            log.warn("configuration error: {s}", .{buf.items});
+            buf.clearRetainingCapacity();
         }
     }
 
@@ -815,7 +819,7 @@ fn syncConfigChanges(self: *App) !void {
 /// there are new configuration errors and hide the window if the errors
 /// are resolved.
 fn updateConfigErrors(self: *App) !void {
-    if (!self.config._errors.empty()) {
+    if (!self.config._diagnostics.empty()) {
         if (self.config_errors_window == null) {
             try ConfigErrorsWindow.create(self);
             assert(self.config_errors_window != null);
