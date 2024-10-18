@@ -131,6 +131,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             log.warn("configuration error: {s}", .{buf.items});
             buf.clearRetainingCapacity();
         }
+
+        // If we have any CLI errors, exit.
+        if (config._diagnostics.containsLocation(.cli)) {
+            log.warn("CLI errors detected, exiting", .{});
+            std.posix.exit(1);
+        }
     }
 
     c.gtk_init();
@@ -1368,10 +1374,7 @@ fn gtkActionQuit(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
-    self.core_app.setQuit() catch |err| {
-        log.warn("error setting quit err={}", .{err});
-        return;
-    };
+    self.core_app.setQuit();
 }
 
 /// Action sent by the window manager asking us to present a specific surface to
