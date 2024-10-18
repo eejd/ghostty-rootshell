@@ -93,46 +93,60 @@ pub fn parse(
             }
         }
 
-        if (mem.startsWith(u8, arg, "--")) {
-            var key: []const u8 = arg[2..];
-            const value: ?[]const u8 = value: {
-                // If the arg has "=" then the value is after the "=".
-                if (mem.indexOf(u8, key, "=")) |idx| {
-                    defer key = key[0..idx];
-                    break :value key[idx + 1 ..];
-                }
+        // If this doesn't start with "--" then it isn't a config
+        // flag. We don't support positional arguments or configuration
+        // values set with spaces so this is an error.
+        if (!mem.startsWith(u8, arg, "--")) {
+            if (comptime !canTrackDiags(T)) return Error.InvalidField;
 
-                break :value null;
-            };
+            // Add our diagnostic
+            try dst._diagnostics.append(arena_alloc, .{
+                .key = try arena_alloc.dupeZ(u8, arg),
+                .message = "invalid field",
+                .location = diags.Location.fromIter(iter),
+            });
 
-            parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
-                if (comptime !canTrackDiags(T)) return err;
-
-                // The error set is dependent on comptime T, so we always add
-                // an extra error so we can have the "else" below.
-                const ErrSet = @TypeOf(err) || error{Unknown};
-                const message: [:0]const u8 = switch (@as(ErrSet, @errorCast(err))) {
-                    // OOM is not recoverable since we need to allocate to
-                    // track more error messages.
-                    error.OutOfMemory => return err,
-                    error.InvalidField => "unknown field",
-                    error.ValueRequired => "value required",
-                    error.InvalidValue => "invalid value",
-                    else => try std.fmt.allocPrintZ(
-                        arena_alloc,
-                        "unknown error {}",
-                        .{err},
-                    ),
-                };
-
-                // Add our diagnostic
-                try dst._diagnostics.append(arena_alloc, .{
-                    .key = try arena_alloc.dupeZ(u8, key),
-                    .message = message,
-                    .location = diags.Location.fromIter(iter),
-                });
-            };
+            continue;
         }
+
+        var key: []const u8 = arg[2..];
+        const value: ?[]const u8 = value: {
+            // If the arg has "=" then the value is after the "=".
+            if (mem.indexOf(u8, key, "=")) |idx| {
+                defer key = key[0..idx];
+                break :value key[idx + 1 ..];
+            }
+
+            break :value null;
+        };
+
+        parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
+            if (comptime !canTrackDiags(T)) return err;
+
+            // The error set is dependent on comptime T, so we always add
+            // an extra error so we can have the "else" below.
+            const ErrSet = @TypeOf(err) || error{Unknown};
+            const message: [:0]const u8 = switch (@as(ErrSet, @errorCast(err))) {
+                // OOM is not recoverable since we need to allocate to
+                // track more error messages.
+                error.OutOfMemory => return err,
+                error.InvalidField => "unknown field",
+                error.ValueRequired => "value required",
+                error.InvalidValue => "invalid value",
+                else => try std.fmt.allocPrintZ(
+                    arena_alloc,
+                    "unknown error {}",
+                    .{err},
+                ),
+            };
+
+            // Add our diagnostic
+            try dst._diagnostics.append(arena_alloc, .{
+                .key = try arena_alloc.dupeZ(u8, key),
+                .message = message,
+                .location = diags.Location.fromIter(iter),
+            });
+        };
     }
 }
 
@@ -450,6 +464,27 @@ test "parse: empty value resets to default" {
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expectEqual(@as(u8, 42), data.a);
     try testing.expect(!data.b);
+}
+
+test "parse: positional arguments are invalid" {
+    const testing = std.testing;
+
+    var data: struct {
+        a: u8 = 42,
+        _arena: ?ArenaAllocator = null,
+    } = .{};
+    defer if (data._arena) |arena| arena.deinit();
+
+    var iter = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--a=84 what",
+    );
+    defer iter.deinit();
+    try testing.expectError(
+        error.InvalidField,
+        parse(@TypeOf(data), testing.allocator, &data, &iter),
+    );
+    try testing.expectEqual(@as(u8, 84), data.a);
 }
 
 test "parse: diagnostic tracking" {
