@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const diags = @import("diagnostics.zig");
+const internal_os = @import("../os/main.zig");
 const Diagnostic = diags.Diagnostic;
 const DiagnosticList = diags.DiagnosticList;
 
@@ -894,6 +895,9 @@ test "parseIntoField: tagged union missing tag" {
 /// An iterator that considers its location to be CLI args. It
 /// iterates through an underlying iterator and increments a counter
 /// to track the current CLI arg index.
+///
+/// This also ignores any argument that starts with `+`. It assumes that
+/// actions were parsed out before this iterator was created.
 pub fn ArgsIterator(comptime Iterator: type) type {
     return struct {
         const Self = @This();
@@ -906,9 +910,21 @@ pub fn ArgsIterator(comptime Iterator: type) type {
         /// values yet.
         index: usize = 0,
 
+        pub fn deinit(self: *Self) void {
+            if (@hasDecl(Iterator, "deinit")) {
+                self.iterator.deinit();
+            }
+        }
+
         pub fn next(self: *Self) ?[]const u8 {
             const value = self.iterator.next() orelse return null;
             self.index += 1;
+
+            // We ignore any argument that starts with "+". This is used
+            // to indicate actions and are expected to be parsed out before
+            // this iterator is created.
+            if (value.len > 0 and value[0] == '+') return self.next();
+
             return value;
         }
 
@@ -917,6 +933,31 @@ pub fn ArgsIterator(comptime Iterator: type) type {
             return .{ .cli = self.index };
         }
     };
+}
+
+/// Create an args iterator for the process args. This will skip argv0.
+pub fn argsIterator(alloc_gpa: Allocator) internal_os.args.ArgIterator.InitError!ArgsIterator(internal_os.args.ArgIterator) {
+    var iter = try internal_os.args.iterator(alloc_gpa);
+    errdefer iter.deinit();
+    _ = iter.next(); // skip argv0
+    return .{ .iterator = iter };
+}
+
+test "ArgsIterator" {
+    const testing = std.testing;
+
+    const child = try std.process.ArgIteratorGeneral(.{}).init(
+        testing.allocator,
+        "--what +list-things --a=42",
+    );
+    const Iter = ArgsIterator(@TypeOf(child));
+    var iter: Iter = .{ .iterator = child };
+    defer iter.deinit();
+
+    try testing.expectEqualStrings("--what", iter.next().?);
+    try testing.expectEqualStrings("--a=42", iter.next().?);
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
+    try testing.expectEqual(@as(?[]const u8, null), iter.next());
 }
 
 /// Returns an iterator (implements "next") that reads CLI args by line.

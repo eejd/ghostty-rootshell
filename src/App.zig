@@ -238,7 +238,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             // If we're quitting, then we set the quit flag and stop
             // draining the mailbox immediately. This lets us defer
             // mailbox processing to the next tick so that the apprt
-            // can try to quick as quickly as possible.
+            // can try to quit as quickly as possible.
             .quit => {
                 log.info("quit message received, short circuiting mailbox drain", .{});
                 self.setQuit();

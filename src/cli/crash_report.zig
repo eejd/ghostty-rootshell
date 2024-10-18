@@ -33,9 +33,9 @@ pub fn run(alloc_gpa: Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(alloc);
+        var iter = try args.argsIterator(alloc_gpa);
         defer iter.deinit();
-        try args.parse(Options, alloc, &opts, &iter);
+        try args.parse(Options, alloc_gpa, &opts, &iter);
     }
 
     const crash_dir = try crash.defaultDir(alloc);
