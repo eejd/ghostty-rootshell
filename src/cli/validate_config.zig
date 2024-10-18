@@ -32,7 +32,7 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(alloc);
+        var iter = try args.argsIterator(alloc);
         defer iter.deinit();
         try args.parse(Options, alloc, &opts, &iter);
     }
@@ -46,7 +46,6 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     if (opts.@"config-file") |config_path| {
         var buf: [std.fs.max_path_bytes]u8 = undefined;
         const abs_path = try std.fs.cwd().realpath(config_path, &buf);
-
         try cfg.loadFile(alloc, abs_path);
         try cfg.loadRecursiveFiles(alloc);
     } else {

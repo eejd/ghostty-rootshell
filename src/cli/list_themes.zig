@@ -91,7 +91,7 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(gpa_alloc);
+        var iter = try args.argsIterator(gpa_alloc);
         defer iter.deinit();
         try args.parse(Options, gpa_alloc, &opts, &iter);
     }

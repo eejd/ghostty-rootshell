@@ -2365,18 +2365,10 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         counter[i] = @field(self, field).list.items.len;
     }
 
-    // Initialize our CLI iterator. The first argument is always assumed
-    // to be the program name so we skip over that.
-    var iter = try internal_os.args.iterator(alloc_gpa);
+    // Initialize our CLI iterator.
+    var iter = try cli.args.argsIterator(alloc_gpa);
     defer iter.deinit();
-    if (iter.next()) |argv0| log.debug("skipping argv0 value={s}", .{argv0});
-
-    // Parse the config from the CLI args
-    {
-        const ArgsIter = cli.args.ArgsIterator(@TypeOf(iter));
-        var args_iter: ArgsIter = .{ .iterator = iter };
-        try self.loadIter(alloc_gpa, &args_iter);
-    }
+    try self.loadIter(alloc_gpa, &iter);
 
     // If we are not loading the default files, then we need to
     // replay the steps up to this point so that we can rebuild
