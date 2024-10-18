@@ -118,7 +118,7 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
         break :item item;
     };
 
-    return self.getFaceFromEntry(item);
+    return try self.getFaceFromEntry(item);
 }
 
 /// Get the face from an entry.

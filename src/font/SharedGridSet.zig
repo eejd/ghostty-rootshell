@@ -46,8 +46,10 @@ font_discover: ?Discover = null,
 /// Lock to protect multi-threaded access to the map.
 lock: std.Thread.Mutex = .{},
 
+pub const InitError = Library.InitError;
+
 /// Initialize a new SharedGridSet.
-pub fn init(alloc: Allocator) !SharedGridSet {
+pub fn init(alloc: Allocator) InitError!SharedGridSet {
     var font_lib = try Library.init();
     errdefer font_lib.deinit();
 
@@ -428,7 +430,10 @@ pub const DerivedConfig = struct {
 
     /// Initialize a DerivedConfig. The config should be either a
     /// config.Config or another DerivedConfig to clone from.
-    pub fn init(alloc_gpa: Allocator, config: anytype) !DerivedConfig {
+    pub fn init(
+        alloc_gpa: Allocator,
+        config: anytype,
+    ) Allocator.Error!DerivedConfig {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();
@@ -511,7 +516,7 @@ pub const Key = struct {
         alloc_gpa: Allocator,
         config_src: *const DerivedConfig,
         font_size: DesiredSize,
-    ) !Key {
+    ) Allocator.Error!Key {
         var arena = ArenaAllocator.init(alloc_gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();

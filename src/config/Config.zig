@@ -2758,7 +2758,10 @@ pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
 /// Create a copy of this configuration. This is useful as a starting
 /// point for modifying a configuration since a config can NOT be
 /// modified once it is in use by an app or surface.
-pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
+pub fn clone(
+    self: *const Config,
+    alloc_gpa: Allocator,
+) Allocator.Error!Config {
     // Start with an empty config with a new arena we're going
     // to use for all our copies.
     var result: Config = .{
@@ -2779,7 +2782,11 @@ pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
     return result;
 }
 
-fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
+fn cloneValue(
+    alloc: Allocator,
+    comptime T: type,
+    src: T,
+) Allocator.Error!T {
     // Do known named types first
     switch (T) {
         []const u8 => return try alloc.dupe(u8, src),
@@ -3129,7 +3136,7 @@ pub const Color = packed struct(u24) {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Color, _: Allocator) !Color {
+    pub fn clone(self: Color, _: Allocator) error{}!Color {
         return self;
     }
 
@@ -3225,7 +3232,7 @@ pub const Palette = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Self, _: Allocator) !Self {
+    pub fn clone(self: Self, _: Allocator) error{}!Self {
         return self;
     }
 
@@ -3301,7 +3308,7 @@ pub const RepeatableString = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         // Copy the list and all the strings in the list.
         const list = try self.list.clone(alloc);
         for (list.items) |*item| {
@@ -3445,7 +3452,7 @@ pub const RepeatablePath = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         const value = try self.value.clone(alloc);
         for (value.items) |*item| {
             switch (item.*) {
@@ -3656,7 +3663,7 @@ pub const RepeatableFontVariation = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         return .{
             .list = try self.list.clone(alloc),
         };
@@ -3789,7 +3796,7 @@ pub const Keybinds = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
+    pub fn clone(self: *const Keybinds, alloc: Allocator) Allocator.Error!Keybinds {
         return .{ .set = try self.set.clone(alloc) };
     }
 
@@ -3944,7 +3951,7 @@ pub const RepeatableCodepointMap = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         return .{ .map = try self.map.clone(alloc) };
     }
 
@@ -4227,7 +4234,7 @@ pub const FontStyle = union(enum) {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Self, alloc: Allocator) !Self {
+    pub fn clone(self: Self, alloc: Allocator) Allocator.Error!Self {
         return switch (self) {
             .default, .false => self,
             .name => |v| .{ .name = try alloc.dupeZ(u8, v) },
@@ -4332,7 +4339,7 @@ pub const RepeatableLink = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) error{}!Self {
         _ = self;
         _ = alloc;
         return .{};
@@ -4539,7 +4546,7 @@ pub const Duration = struct {
         .{ .name = "ns", .factor = 1 },
     };
 
-    pub fn clone(self: *const Duration, _: Allocator) !Duration {
+    pub fn clone(self: *const Duration, _: Allocator) error{}!Duration {
         return .{ .duration = self.duration };
     }
 
@@ -4661,7 +4668,7 @@ pub const WindowPadding = struct {
     top_left: u32 = 0,
     bottom_right: u32 = 0,
 
-    pub fn clone(self: Self, _: Allocator) !Self {
+    pub fn clone(self: Self, _: Allocator) error{}!Self {
         return self;
     }
 

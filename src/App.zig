@@ -66,6 +66,8 @@ font_grid_set: font.SharedGridSet,
 last_notification_time: ?std.time.Instant = null,
 last_notification_digest: u64 = 0,
 
+pub const CreateError = Allocator.Error || font.SharedGridSet.InitError;
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -74,7 +76,7 @@ last_notification_digest: u64 = 0,
 /// `focusEvent` to set the initial focus state of the app.
 pub fn create(
     alloc: Allocator,
-) !*App {
+) CreateError!*App {
     var app = try alloc.create(App);
     errdefer alloc.destroy(app);
 
@@ -150,7 +152,10 @@ pub fn updateConfig(self: *App, config: *const Config) !void {
 /// Add an initialized surface. This is really only for the runtime
 /// implementations to call and should NOT be called by general app users.
 /// The surface must be from the pool.
-pub fn addSurface(self: *App, rt_surface: *apprt.Surface) !void {
+pub fn addSurface(
+    self: *App,
+    rt_surface: *apprt.Surface,
+) Allocator.Error!void {
     try self.surfaces.append(self.alloc, rt_surface);
 
     // Since we have non-zero surfaces, we can cancel the quit timer.
@@ -225,11 +230,11 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .reload_config => try self.reloadConfig(rt_app),
             .open_config => try self.performAction(rt_app, .open_config),
             .new_window => |msg| try self.newWindow(rt_app, msg),
-            .close => |surface| try self.closeSurface(surface),
-            .quit => try self.setQuit(),
+            .close => |surface| self.closeSurface(surface),
+            .quit => self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
-            .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
-            .redraw_inspector => |surface| try self.redrawInspector(rt_app, surface),
+            .redraw_surface => |surface| self.redrawSurface(rt_app, surface),
+            .redraw_inspector => |surface| self.redrawInspector(rt_app, surface),
         }
     }
 }
@@ -242,7 +247,7 @@ pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
     }
 }
 
-pub fn closeSurface(self: *App, surface: *Surface) !void {
+pub fn closeSurface(self: *App, surface: *Surface) void {
     if (!self.hasSurface(surface)) return;
     surface.close();
 }
@@ -252,12 +257,12 @@ pub fn focusSurface(self: *App, surface: *Surface) void {
     self.focused_surface = surface;
 }
 
-fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
+fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) void {
     if (!self.hasSurface(&surface.core_surface)) return;
     rt_app.redrawSurface(surface);
 }
 
-fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) !void {
+fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) void {
     if (!self.hasSurface(&surface.core_surface)) return;
     rt_app.redrawInspector(surface);
 }
@@ -278,7 +283,7 @@ pub fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
 }
 
 /// Start quitting
-pub fn setQuit(self: *App) !void {
+pub fn setQuit(self: *App) void {
     if (self.quit) return;
     self.quit = true;
 }
@@ -373,7 +378,7 @@ pub fn performAction(
     switch (action) {
         .unbind => unreachable,
         .ignore => {},
-        .quit => try self.setQuit(),
+        .quit => self.setQuit(),
         .new_window => try self.newWindow(rt_app, .{ .parent = null }),
         .open_config => try rt_app.performAction(.app, .open_config, {}),
         .reload_config => try self.reloadConfig(rt_app),
