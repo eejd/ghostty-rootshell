@@ -231,10 +231,19 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .open_config => try self.performAction(rt_app, .open_config),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| self.closeSurface(surface),
-            .quit => self.setQuit(),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
             .redraw_surface => |surface| self.redrawSurface(rt_app, surface),
             .redraw_inspector => |surface| self.redrawInspector(rt_app, surface),
+
+            // If we're quitting, then we set the quit flag and stop
+            // draining the mailbox immediately. This lets us defer
+            // mailbox processing to the next tick so that the apprt
+            // can try to quick as quickly as possible.
+            .quit => {
+                log.info("quit message received, short circuiting mailbox drain", .{});
+                self.setQuit();
+                return;
+            },
         }
     }
 }

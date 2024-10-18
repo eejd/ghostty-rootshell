@@ -28,7 +28,7 @@ pub fn create(app: *App) !void {
 }
 
 pub fn update(self: *ConfigErrors) void {
-    if (self.app.config._errors.empty()) {
+    if (self.app.config._diagnostics.empty()) {
         c.gtk_window_destroy(@ptrCast(self.window));
         return;
     }
@@ -130,8 +130,21 @@ const PrimaryView = struct {
         const buf = c.gtk_text_buffer_new(null);
         errdefer c.g_object_unref(buf);
 
-        for (config._errors.list.items) |err| {
-            c.gtk_text_buffer_insert_at_cursor(buf, err.message, @intCast(err.message.len));
+        var msg_buf: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&msg_buf);
+
+        for (config._diagnostics.items()) |diag| {
+            fbs.reset();
+            diag.write(fbs.writer()) catch |err| {
+                log.warn(
+                    "error writing diagnostic to buffer err={}",
+                    .{err},
+                );
+                continue;
+            };
+
+            const msg = fbs.getWritten();
+            c.gtk_text_buffer_insert_at_cursor(buf, msg.ptr, @intCast(msg.len));
             c.gtk_text_buffer_insert_at_cursor(buf, "\n", -1);
         }
 
