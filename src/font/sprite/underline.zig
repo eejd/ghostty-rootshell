@@ -165,7 +165,11 @@ fn drawCurly(alloc: Allocator, width: u32, thickness: u32) !CanvasAndOffset {
     const float_width: f64 = @floatFromInt(width);
     // Because of we way we draw the undercurl, we end up making it around 1px
     // thicker than it should be, to fix this we just reduce the thickness by 1.
-    const float_thick: f64 = @floatFromInt(@max(1, thickness -| 1));
+    //
+    // We use a minimum thickness of 0.414 because this empirically produces
+    // the nicest undercurls at 1px underline thickness; thinner tends to look
+    // too thin compared to straight underlines and has artefacting.
+    const float_thick: f64 = @max(0.414, @as(f64, @floatFromInt(thickness -| 1)));
 
     // Calculate the wave period for a single character
     //   `2 * pi...` = 1 peak per character
