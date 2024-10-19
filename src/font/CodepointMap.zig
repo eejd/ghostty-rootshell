@@ -54,8 +54,9 @@ pub fn add(self: *CodepointMap, alloc: Allocator, entry: Entry) !void {
 /// Get a descriptor for a codepoint.
 pub fn get(self: *const CodepointMap, cp: u21) ?discovery.Descriptor {
     const items = self.list.items(.range);
-    for (items, 0..) |range, forward_i| {
+    for (0..items.len) |forward_i| {
         const i = items.len - forward_i - 1;
+        const range = items[i];
         if (range[0] <= cp and cp <= range[1]) {
             const descs = self.list.items(.descriptor);
             return descs[i];
@@ -110,4 +111,15 @@ test "codepointmap" {
     // Non-matching
     try testing.expect(m.get(0) == null);
     try testing.expect(m.get(3) == null);
+
+    try m.add(alloc, .{ .range = .{ 3, 4 }, .descriptor = .{ .family = "C" } });
+    try m.add(alloc, .{ .range = .{ 5, 6 }, .descriptor = .{ .family = "D" } });
+    {
+        const d = m.get(3).?;
+        try testing.expectEqualStrings("C", d.family.?);
+    }
+    {
+        const d = m.get(1).?;
+        try testing.expectEqualStrings("B", d.family.?);
+    }
 }
