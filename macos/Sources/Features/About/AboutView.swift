@@ -83,6 +83,7 @@ struct AboutView: View {
                         .tint(.secondary)
                         .opacity(0.8)
                 }
+                .textSelection(.enabled)
                 VStack(spacing: 2) {
                     ForEach(computedStrings) { item in
 
@@ -97,6 +98,7 @@ struct AboutView: View {
                                     .opacity(0.8)
                         }
                         .font(.callout)
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity)
                     }
                 }
@@ -119,6 +121,7 @@ struct AboutView: View {
                 if let copy = self.copyright {
                     Text(copy)
                         .font(.caption)
+                        .textSelection(.enabled)
                         .tint(.secondary)
                         .opacity(0.8)
                         .multilineTextAlignment(.center)
