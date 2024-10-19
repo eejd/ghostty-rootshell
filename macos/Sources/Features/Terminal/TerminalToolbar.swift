@@ -43,17 +43,18 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             item.view = self.titleTextField
             item.visibilityPriority = .user
 
-            // NSToolbarItem.minSize and NSToolbarItem.maxSize are deprecated, and make big ugly
-            // warnings in Xcode when you use them, but I cannot for the life of me figure out
-            // how to get this to work with constraints. The behavior isn't the same, instead of
-            // shrinking the item and clipping the subview, it hides the item as soon as the
-            // intrinsic size of the subview gets too big for the toolbar width, regardless of
-            // whether I have constraints set on its width, height, or both :/
-            //
-            // If someone can fix this so we don't have to use deprecated properties: Please do.
-            item.minSize = NSSize(width: 32, height: 1)
-            item.maxSize = NSSize(width: 1024, height: self.titleTextField.intrinsicContentSize.height)
+            self.titleTextField.translatesAutoresizingMaskIntoConstraints = false
 
+            self.titleTextField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            self.titleTextField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+            
+            // Add constraints to the toolbar item's view
+            NSLayoutConstraint.activate([
+                // Set the height constraint to match the toolbar's height
+                self.titleTextField.heightAnchor.constraint(equalToConstant: 22), // Adjust as needed
+                
+            ])
+            
             item.isEnabled = true
         case .resetZoom:
             item = NSToolbarItem(itemIdentifier: .resetZoom)
@@ -73,23 +74,28 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         // getting smaller than the max size so starts clipping. Lucky for us, two of the
         // built-in spacers plus the un-zoom button item seems to exactly match the space
         // on the left that's reserved for the window buttons.
-		return [.titleText, .flexibleSpace, .space, .space, .resetZoom]
+        return [.flexibleSpace, .titleText, .flexibleSpace]
     }
 }
 
 /// A label that expands to fit whatever text you put in it and horizontally centers itself in the current window.
 fileprivate class CenteredDynamicLabel: NSTextField {
     override func viewDidMoveToSuperview() {
-        // Truncate the title when it gets too long, cutting it off with an ellipsis.
+        // Configure the text field
+        
+        isEditable = false
+        isBordered = false
+        drawsBackground = false
+        alignment = .center
+        lineBreakMode = .byTruncatingTail
         cell?.truncatesLastVisibleLine = true
-        cell?.lineBreakMode = .byCharWrapping
-
-        // Make the text field as small as possible while fitting its text.
-        setContentHuggingPriority(.required, for: .horizontal)
-        cell?.alignment = .center
-
-        // We've changed some alignment settings, make sure the layout is updated immediately.
-        needsLayout = true
+                
+        // Use Auto Layout
+        translatesAutoresizingMaskIntoConstraints = false
+        
+        // Set content hugging and compression resistance priorities
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+        setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     }
 }
 
