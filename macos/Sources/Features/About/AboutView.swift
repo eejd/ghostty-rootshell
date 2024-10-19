@@ -3,8 +3,6 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.openURL) var openURL
 
-    /// Eventually this should be a redirect like https://go.ghostty.dev/discord or https://go.ghostty.dev/github
-    private let discordLink = URL(string: "https://discord.gg/ghostty")
     private let githubLink = URL(string: "https://github.com/ghostty-org/ghostty")
 
     /// Read the commit from the bundle.
@@ -13,36 +11,36 @@ struct AboutView: View {
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
     private var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
 
-    private struct ValuePair<Value: Equatable>: Identifiable {
+    private var properties: [KeyValue<String>] {
+        let list: [KeyValue<String?>] = [
+            .init(key: "Version", value: version),
+            .init(key: "Build", value: build),
+            .init(key: "Commit", value: commit == "" ? nil : commit)
+        ]
+
+        return list.compactMap {
+            guard let value = $0.value else { return nil }
+            return .init(key: $0.key, value: value)
+        }
+    }
+
+    private struct KeyValue<Value: Equatable>: Identifiable {
         var id = UUID()
         public let key: LocalizedStringResource
         public let value: Value
-
-    }
-
-    private var computedStrings: [ValuePair<String>] {
-        let list: [ValuePair<String?>] = [
-            ValuePair(key: "Version", value: self.version),
-            ValuePair(key: "Build", value: self.build),
-            ValuePair(key: "Commit", value: self.commit == "" ? nil : self.commit)
-        ]
-
-        let strings: [ValuePair<String>] = list.compactMap {
-            guard let value = $0.value else { return nil }
-
-            return ValuePair(key: $0.key, value: value)
-        }
-
-        return strings
     }
 
     #if os(macOS)
+    // This creates a background style similar to the Apple "About My Mac" Window
     private struct VisualEffectBackground: NSViewRepresentable {
         let material: NSVisualEffectView.Material
         let blendingMode: NSVisualEffectView.BlendingMode
         let isEmphasized: Bool
 
-        init(material: NSVisualEffectView.Material, blendingMode: NSVisualEffectView.BlendingMode = .behindWindow, isEmphasized: Bool = false) {
+        init(material: NSVisualEffectView.Material,
+             blendingMode: NSVisualEffectView.BlendingMode = .behindWindow,
+             isEmphasized: Bool = false)
+        {
             self.material = material
             self.blendingMode = blendingMode
             self.isEmphasized = isEmphasized
@@ -56,9 +54,7 @@ struct AboutView: View {
 
         func makeNSView(context: Context) -> NSVisualEffectView {
             let visualEffect = NSVisualEffectView()
-
             visualEffect.autoresizingMask = [.width, .height]
-
             return visualEffect
         }
     }
@@ -85,8 +81,7 @@ struct AboutView: View {
                 }
                 .textSelection(.enabled)
                 VStack(spacing: 2) {
-                    ForEach(computedStrings) { item in
-
+                    ForEach(properties) { item in
                         HStack(spacing: 4) {
                                 Text(item.key)
                                     .frame(width: 126, alignment: .trailing)
@@ -105,11 +100,6 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
-                    if let url = discordLink {
-                        Button("Discord") {
-                            openURL(url)
-                        }
-                    }
                     if let url = githubLink {
                         Button("GitHub") {
                             openURL(url)
