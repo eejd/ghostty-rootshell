@@ -43,8 +43,8 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             item.view = self.titleTextField
             item.visibilityPriority = .user
 
+            // This ensures the title text field doesn't disappear when shrinking the view
             self.titleTextField.translatesAutoresizingMaskIntoConstraints = false
-
             self.titleTextField.setContentHuggingPriority(.defaultLow, for: .horizontal)
             self.titleTextField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
             
@@ -52,7 +52,6 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
             NSLayoutConstraint.activate([
                 // Set the height constraint to match the toolbar's height
                 self.titleTextField.heightAnchor.constraint(equalToConstant: 22), // Adjust as needed
-                
             ])
             
             item.isEnabled = true
@@ -82,7 +81,6 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 fileprivate class CenteredDynamicLabel: NSTextField {
     override func viewDidMoveToSuperview() {
         // Configure the text field
-        
         isEditable = false
         isBordered = false
         drawsBackground = false

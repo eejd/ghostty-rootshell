@@ -383,6 +383,7 @@ fn coalesceCallback(
         cb.io.resize(
             &cb.data,
             v.grid_size,
+            v.cell_size,
             v.screen_size,
             v.padding,
         ) catch |err| {

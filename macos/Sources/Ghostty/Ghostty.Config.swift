@@ -56,7 +56,13 @@ extension Ghostty {
             // same filesystem concept.
 #if os(macOS)
             ghostty_config_load_default_files(cfg);
-            ghostty_config_load_cli_args(cfg);
+
+            // We only load CLI args when not running in Xcode because in Xcode we
+            // pass some special parameters to control the debugger.
+            if !isRunningInXcode() {
+                ghostty_config_load_cli_args(cfg);
+            }
+
             ghostty_config_load_recursive_files(cfg);
 #endif
 

@@ -10,6 +10,7 @@ class AboutController: NSWindowController, NSWindowDelegate {
     override func windowDidLoad() {
         guard let window = window else { return }
         window.center()
+        window.isMovableByWindowBackground = true
         window.contentView = NSHostingView(rootView: AboutView())
     }
 

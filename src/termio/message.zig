@@ -20,6 +20,9 @@ pub const Message = union(enum) {
         /// The grid size for the given screen size with padding applied.
         grid_size: renderer.GridSize,
 
+        /// The updated cell size.
+        cell_size: renderer.CellSize,
+
         /// The full screen (drawable) size. This does NOT include padding.
         /// This should be sent on to the renderer.
         screen_size: renderer.ScreenSize,
