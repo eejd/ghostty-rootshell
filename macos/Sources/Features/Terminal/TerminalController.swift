@@ -358,7 +358,8 @@ class TerminalController: BaseTerminalController {
         self.fixTabBar()
     }
 
-    func windowDidMove(_ notification: Notification) {
+    override func windowDidMove(_ notification: Notification) {
+        super.windowDidMove(notification)
         self.fixTabBar()
     }
 

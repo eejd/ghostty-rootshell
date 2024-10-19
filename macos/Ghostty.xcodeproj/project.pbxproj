@@ -61,6 +61,7 @@
 		A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */; };
 		A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59FB5D02AE0DEA7009128F3 /* MetalView.swift */; };
 		A5A1F8852A489D6800D1E8BC /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A5A1F8842A489D6800D1E8BC /* terminfo */; };
+		A5A6F72A2CC41B8900B232A5 /* Xcode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A6F7292CC41B8700B232A5 /* Xcode.swift */; };
 		A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */; };
 		A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CBD0572C9F30860017A1AE /* Cursor.swift */; };
@@ -139,6 +140,7 @@
 		A59FB5CE2AE0DB50009128F3 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		A59FB5D02AE0DEA7009128F3 /* MetalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalView.swift; sourceTree = "<group>"; };
 		A5A1F8842A489D6800D1E8BC /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "../zig-out/share/terminfo"; sourceTree = "<group>"; };
+		A5A6F7292CC41B8700B232A5 /* Xcode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Xcode.swift; sourceTree = "<group>"; };
 		A5B30531299BEAAA0047F10C /* Ghostty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ghostty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A5B30538299BEAAB0047F10C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghostty.entitlements; sourceTree = "<group>"; };
@@ -233,6 +235,7 @@
 		A534263D2A7DCBB000EBB7A2 /* Helpers */ = {
 			isa = PBXGroup;
 			children = (
+				A5A6F7292CC41B8700B232A5 /* Xcode.swift */,
 				A5CEAFFE29C2410700646FDA /* Backport.swift */,
 				A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */,
 				A5CBD0572C9F30860017A1AE /* Cursor.swift */,
@@ -582,6 +585,7 @@
 				A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */,
+				A5A6F72A2CC41B8900B232A5 /* Xcode.swift in Sources */,
 				A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */,
 				A5333E222B5A2128008AEFF7 /* SurfaceView_AppKit.swift in Sources */,
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
