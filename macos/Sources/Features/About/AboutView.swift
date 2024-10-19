@@ -4,23 +4,23 @@ struct AboutView: View {
     @Environment(\.openURL) var openURL
 
     /// Eventually this should be a redirect like https://go.ghostty.dev/discord or https://go.ghostty.dev/github
-    @State var discordLink: String = "https://discord.gg/ghostty"
-    @State var githubLink: String = "https://github.com/ghostty-org/ghostty"
+    private let discordLink = URL(string: "https://discord.gg/ghostty")
+    private let githubLink = URL(string: "https://github.com/ghostty-org/ghostty")
 
     /// Read the commit from the bundle.
-    var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
-    var commit: String? { Bundle.main.infoDictionary?["GhosttyCommit"] as? String }
-    var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
-    var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
+    private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
+    private var commit: String? { Bundle.main.infoDictionary?["GhosttyCommit"] as? String }
+    private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+    private var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
 
-    struct ValuePair<Value: Equatable>: Identifiable {
+    private struct ValuePair<Value: Equatable>: Identifiable {
         var id = UUID()
         public let key: LocalizedStringResource
         public let value: Value
 
     }
 
-    var computedStrings: [ValuePair<String>] {
+    private var computedStrings: [ValuePair<String>] {
         let list: [ValuePair<String?>] = [
             ValuePair(key: "Version", value: self.version),
             ValuePair(key: "Build", value: self.build),
@@ -37,7 +37,7 @@ struct AboutView: View {
     }
 
     #if os(macOS)
-    struct VisualEffectBackground: NSViewRepresentable {
+    private struct VisualEffectBackground: NSViewRepresentable {
         let material: NSVisualEffectView.Material
         let blendingMode: NSVisualEffectView.BlendingMode
         let isEmphasized: Bool
@@ -103,16 +103,17 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
-                    Button("Discord") {
-                        guard let url = URL(string: discordLink) else { return
+                    if let url = discordLink {
+                        Button("Discord") {
+                            openURL(url)
                         }
-                        openURL(url)
                     }
-                    Button("Github") {
-                        guard let url = URL(string: githubLink) else { return
+                    if let url = githubLink {
+                        Button("GitHub") {
+                            openURL(url)
                         }
-                        openURL(url)
                     }
+
                 }
 
                 if let copy = self.copyright {
