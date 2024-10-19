@@ -1456,8 +1456,13 @@ keybind: Keybinds = .{},
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
 /// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
 ///
+/// The default value is `left`. This allows alt-based bindings to work
+/// with the left *Option* key while still allowing the right *Option* key
+/// to be used for Unicode input. This is a common setup for users of
+/// certain keyboard layouts.
+///
 /// This does not work with GLFW builds.
-@"macos-option-as-alt": OptionAsAlt = .false,
+@"macos-option-as-alt": OptionAsAlt = .left,
 
 /// Whether to enable the macOS window shadow. The default value is true.
 /// With some window managers and window transparency settings, you may
