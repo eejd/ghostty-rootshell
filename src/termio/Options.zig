@@ -11,6 +11,9 @@ const termio = @import("../termio.zig");
 /// The size of the terminal grid.
 grid_size: renderer.GridSize,
 
+/// The size of a single cell, in pixels.
+cell_size: renderer.CellSize,
+
 /// The size of the viewport in pixels.
 screen_size: renderer.ScreenSize,
 

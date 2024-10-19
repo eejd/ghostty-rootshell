@@ -500,6 +500,7 @@ pub fn init(
 
         try termio.Termio.init(&self.io, alloc, .{
             .grid_size = grid_size,
+            .cell_size = cell_size,
             .screen_size = screen_size,
             .padding = padding,
             .full_config = config,
@@ -1331,6 +1332,7 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     self.io.queueMessage(.{
         .resize = .{
             .grid_size = self.grid_size,
+            .cell_size = self.cell_size,
             .screen_size = self.screen_size,
             .padding = self.padding,
         },
@@ -1435,6 +1437,7 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     self.io.queueMessage(.{
         .resize = .{
             .grid_size = self.grid_size,
+            .cell_size = self.cell_size,
             .screen_size = self.screen_size,
             .padding = self.padding,
         },
