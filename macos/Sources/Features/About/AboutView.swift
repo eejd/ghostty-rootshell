@@ -76,7 +76,7 @@ struct AboutView: View {
                     Text("Ghostty")
                         .bold()
                         .font(.title)
-                    Text("Fast, native, feature-rich terminal emulator pushing modern features.")
+                    Text("Fast, native, feature-rich terminal \nemulator pushing modern features.")
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)
