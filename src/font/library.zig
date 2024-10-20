@@ -24,7 +24,9 @@ pub const Library = switch (options.backend) {
 pub const FreetypeLibrary = struct {
     lib: freetype.Library,
 
-    pub fn init() freetype.Error!Library {
+    pub const InitError = freetype.Error;
+
+    pub fn init() InitError!Library {
         return Library{ .lib = try freetype.Library.init() };
     }
 
@@ -34,7 +36,9 @@ pub const FreetypeLibrary = struct {
 };
 
 pub const NoopLibrary = struct {
-    pub fn init() !Library {
+    pub const InitError = error{};
+
+    pub fn init() InitError!Library {
         return Library{};
     }
 

@@ -11,6 +11,7 @@ const Allocator = std.mem.Allocator;
 const glfw = @import("glfw");
 const macos = @import("macos");
 const objc = @import("objc");
+const cli = @import("../cli.zig");
 const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
@@ -69,13 +70,26 @@ pub const App = struct {
         errdefer config.deinit();
 
         // If we had configuration errors, then log them.
-        if (!config._errors.empty()) {
-            for (config._errors.list.items) |err| {
-                log.warn("configuration error: {s}", .{err.message});
+        if (!config._diagnostics.empty()) {
+            var buf = std.ArrayList(u8).init(core_app.alloc);
+            defer buf.deinit();
+            for (config._diagnostics.items()) |diag| {
+                try diag.write(buf.writer());
+                log.warn("configuration error: {s}", .{buf.items});
+                buf.clearRetainingCapacity();
+            }
+
+            // If we have any CLI errors, exit.
+            if (config._diagnostics.containsLocation(.cli)) {
+                log.warn("CLI errors detected, exiting", .{});
+                _ = core_app.mailbox.push(.{
+                    .quit = {},
+                }, .{ .forever = {} });
             }
         }
 
         // Queue a single new window that starts on launch
+        // Note: above we may send a quit so this may never happen
         _ = core_app.mailbox.push(.{
             .new_window = .{},
         }, .{ .forever = {} });

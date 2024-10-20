@@ -22,7 +22,7 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(alloc);
+        var iter = try args.argsIterator(alloc);
         defer iter.deinit();
         try args.parse(Options, alloc, &opts, &iter);
     }

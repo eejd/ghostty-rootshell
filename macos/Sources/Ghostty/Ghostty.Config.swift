@@ -22,15 +22,15 @@ extension Ghostty {
         var errors: [String] {
             guard let cfg = self.config else { return [] }
 
-            var errors: [String] = [];
-            let errCount = ghostty_config_errors_count(cfg)
-            for i in 0..<errCount {
-                let err = ghostty_config_get_error(cfg, UInt32(i))
-                let message = String(cString: err.message)
-                errors.append(message)
+            var diags: [String] = [];
+            let diagsCount = ghostty_config_diagnostics_count(cfg)
+            for i in 0..<diagsCount {
+                let diag = ghostty_config_get_diagnostic(cfg, UInt32(i))
+                let message = String(cString: diag.message)
+                diags.append(message)
             }
 
-            return errors
+            return diags
         }
 
         init() {
@@ -56,7 +56,13 @@ extension Ghostty {
             // same filesystem concept.
 #if os(macOS)
             ghostty_config_load_default_files(cfg);
-            ghostty_config_load_cli_args(cfg);
+
+            // We only load CLI args when not running in Xcode because in Xcode we
+            // pass some special parameters to control the debugger.
+            if !isRunningInXcode() {
+                ghostty_config_load_cli_args(cfg);
+            }
+
             ghostty_config_load_recursive_files(cfg);
 #endif
 
@@ -69,14 +75,14 @@ extension Ghostty {
 
             // Log any configuration errors. These will be automatically shown in a
             // pop-up window too.
-            let errCount = ghostty_config_errors_count(cfg)
-            if errCount > 0 {
-                logger.warning("config error: \(errCount) configuration errors on reload")
-                var errors: [String] = [];
-                for i in 0..<errCount {
-                    let err = ghostty_config_get_error(cfg, UInt32(i))
-                    let message = String(cString: err.message)
-                    errors.append(message)
+            let diagsCount = ghostty_config_diagnostics_count(cfg)
+            if diagsCount > 0 {
+                logger.warning("config error: \(diagsCount) configuration errors on reload")
+                var diags: [String] = [];
+                for i in 0..<diagsCount {
+                    let diag = ghostty_config_get_diagnostic(cfg, UInt32(i))
+                    let message = String(cString: diag.message)
+                    diags.append(message)
                     logger.warning("config error: \(message)")
                 }
             }

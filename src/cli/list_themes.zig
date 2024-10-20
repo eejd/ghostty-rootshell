@@ -91,7 +91,7 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(gpa_alloc);
+        var iter = try args.argsIterator(gpa_alloc);
         defer iter.deinit();
         try args.parse(Options, gpa_alloc, &opts, &iter);
     }
@@ -882,7 +882,7 @@ const Preview = struct {
             next_start += child.height;
         }
 
-        if (!config._errors.empty()) {
+        if (config._diagnostics.items().len > 0) {
             const child = win.child(
                 .{
                     .x_off = x_off,
@@ -891,7 +891,7 @@ const Preview = struct {
                         .limit = width,
                     },
                     .height = .{
-                        .limit = if (config._errors.empty()) 0 else 2 + config._errors.list.items.len,
+                        .limit = if (config._diagnostics.items().len == 0) 0 else 2 + config._diagnostics.items().len,
                     },
                 },
             );
@@ -908,10 +908,14 @@ const Preview = struct {
                     },
                 );
             }
-            for (config._errors.list.items, 0..) |err, i| {
+
+            var buf = std.ArrayList(u8).init(alloc);
+            defer buf.deinit();
+            for (config._diagnostics.items(), 0..) |diag, i| {
+                try diag.write(buf.writer());
                 _ = try child.printSegment(
                     .{
-                        .text = err.message,
+                        .text = buf.items,
                         .style = self.ui_err(),
                     },
                     .{
@@ -919,6 +923,7 @@ const Preview = struct {
                         .col_offset = 2,
                     },
                 );
+                buf.clearRetainingCapacity();
             }
             next_start += child.height;
         }

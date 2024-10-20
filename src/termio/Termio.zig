@@ -60,6 +60,9 @@ surface_mailbox: apprt.surface.Mailbox,
 /// The cached grid size whenever a resize is called.
 grid_size: renderer.GridSize,
 
+/// The size of a single cell. Used for size reports.
+cell_size: renderer.CellSize,
+
 /// The mailbox implementation to use.
 mailbox: termio.Mailbox,
 
@@ -171,9 +174,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     backend.initTerminal(&term);
 
     // Setup our terminal size in pixels for certain requests.
-    const screen_size = opts.screen_size.subPadding(opts.padding);
-    term.width_px = screen_size.width;
-    term.height_px = screen_size.height;
+    term.width_px = opts.grid_size.columns * opts.cell_size.width;
+    term.height_px = opts.grid_size.rows * opts.cell_size.height;
 
     // Create our stream handler. This points to memory in self so it
     // isn't safe to use until self.* is set.
@@ -214,6 +216,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .renderer_mailbox = opts.renderer_mailbox,
         .surface_mailbox = opts.surface_mailbox,
         .grid_size = opts.grid_size,
+        .cell_size = opts.cell_size,
         .backend = opts.backend,
         .mailbox = opts.mailbox,
         .terminal_stream = .{
@@ -348,6 +351,7 @@ pub fn resize(
     self: *Termio,
     td: *ThreadData,
     grid_size: renderer.GridSize,
+    cell_size: renderer.CellSize,
     screen_size: renderer.ScreenSize,
     padding: renderer.Padding,
 ) !void {
@@ -357,6 +361,7 @@ pub fn resize(
 
     // Update our cached grid size
     self.grid_size = grid_size;
+    self.cell_size = cell_size;
 
     // Enter the critical area that we want to keep small
     {
@@ -371,8 +376,8 @@ pub fn resize(
         );
 
         // Update our pixel sizes
-        self.terminal.width_px = padded_size.width;
-        self.terminal.height_px = padded_size.height;
+        self.terminal.width_px = self.grid_size.columns * self.cell_size.width;
+        self.terminal.height_px = self.grid_size.rows * self.cell_size.height;
 
         // Disable synchronized output mode so that we show changes
         // immediately for a resize. This is allowed by the spec.
@@ -412,24 +417,24 @@ fn sizeReportLocked(self: *Termio, td: *ThreadData, style: termio.Message.SizeRe
             .{
                 self.grid_size.rows,
                 self.grid_size.columns,
-                self.terminal.height_px,
-                self.terminal.width_px,
+                self.grid_size.rows * self.cell_size.height,
+                self.grid_size.columns * self.cell_size.width,
             },
         ),
         .csi_14_t => try std.fmt.bufPrint(
             &buf,
             "\x1b[4;{};{}t",
             .{
-                self.terminal.height_px,
-                self.terminal.width_px,
+                self.grid_size.rows * self.cell_size.height,
+                self.grid_size.columns * self.cell_size.width,
             },
         ),
         .csi_16_t => try std.fmt.bufPrint(
             &buf,
             "\x1b[6;{};{}t",
             .{
-                self.terminal.height_px / self.grid_size.rows,
-                self.terminal.width_px / self.grid_size.columns,
+                self.cell_size.height,
+                self.cell_size.width,
             },
         ),
         .csi_18_t => try std.fmt.bufPrint(

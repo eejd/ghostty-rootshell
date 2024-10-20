@@ -1456,8 +1456,13 @@ keybind: Keybinds = .{},
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
 /// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
 ///
+/// The default value is `left`. This allows alt-based bindings to work
+/// with the left *Option* key while still allowing the right *Option* key
+/// to be used for Unicode input. This is a common setup for users of
+/// certain keyboard layouts.
+///
 /// This does not work with GLFW builds.
-@"macos-option-as-alt": OptionAsAlt = .false,
+@"macos-option-as-alt": OptionAsAlt = .left,
 
 /// Whether to enable the macOS window shadow. The default value is true.
 /// With some window managers and window transparency settings, you may
@@ -1662,10 +1667,9 @@ term: []const u8 = "xterm-ghostty",
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 
-/// List of errors that occurred while loading. This can be accessed directly
-/// by callers. It is only underscore-prefixed so it can't be set by the
-/// configuration file.
-_errors: ErrorList = .{},
+/// List of diagnostics that were generated during the loading of
+/// the configuration.
+_diagnostics: cli.DiagnosticList = .{},
 
 /// The steps we can use to reload the configuration after it has been loaded
 /// without reopening the files. This is used in very specific cases such
@@ -2261,7 +2265,9 @@ pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     std.log.info("reading configuration file path={s}", .{path});
 
     var buf_reader = std.io.bufferedReader(file.reader());
-    var iter = cli.args.lineIterator(buf_reader.reader());
+    const reader = buf_reader.reader();
+    const Iter = cli.args.LineIterator(@TypeOf(reader));
+    var iter: Iter = .{ .r = reader, .filepath = path };
     try self.loadIter(alloc, &iter);
     try self.expandPaths(std.fs.path.dirname(path).?);
 }
@@ -2364,13 +2370,9 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         counter[i] = @field(self, field).list.items.len;
     }
 
-    // Initialize our CLI iterator. The first argument is always assumed
-    // to be the program name so we skip over that.
-    var iter = try internal_os.args.iterator(alloc_gpa);
+    // Initialize our CLI iterator.
+    var iter = try cli.args.argsIterator(alloc_gpa);
     defer iter.deinit();
-    if (iter.next()) |argv0| log.debug("skipping argv0 value={s}", .{argv0});
-
-    // Parse the config from the CLI args
     try self.loadIter(alloc_gpa, &iter);
 
     // If we are not loading the default files, then we need to
@@ -2446,7 +2448,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         // We must only load a unique file once
         if (try loaded.fetchPut(path, {}) != null) {
-            try self._errors.add(arena_alloc, .{
+            try self._diagnostics.append(arena_alloc, .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "config-file {s}: cycle detected",
@@ -2458,7 +2460,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         var file = cwd.openFile(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
-                try self._errors.add(arena_alloc, .{
+                try self._diagnostics.append(arena_alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "error opening config-file {s}: {}",
@@ -2472,7 +2474,9 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         log.info("loading config-file path={s}", .{path});
         var buf_reader = std.io.bufferedReader(file.reader());
-        var iter = cli.args.lineIterator(buf_reader.reader());
+        const reader = buf_reader.reader();
+        const Iter = cli.args.LineIterator(@TypeOf(reader));
+        var iter: Iter = .{ .r = reader, .filepath = path };
         try self.loadIter(alloc_gpa, &iter);
         try self.expandPaths(std.fs.path.dirname(path).?);
     }
@@ -2495,7 +2499,7 @@ fn expandPaths(self: *Config, base: []const u8) !void {
             try @field(self, field.name).expand(
                 arena_alloc,
                 base,
-                &self._errors,
+                &self._diagnostics,
             );
         }
     }
@@ -2503,11 +2507,13 @@ fn expandPaths(self: *Config, base: []const u8) !void {
 
 fn loadTheme(self: *Config, theme: []const u8) !void {
     // Find our theme file and open it. See the open function for details.
-    const file: std.fs.File = (try themepkg.open(
+    const themefile = (try themepkg.open(
         self._arena.?.allocator(),
         theme,
-        &self._errors,
+        &self._diagnostics,
     )) orelse return;
+    const path = themefile.path;
+    const file = themefile.file;
     defer file.close();
 
     // From this point onwards, we load the theme and do a bit of a dance
@@ -2533,7 +2539,9 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
 
     // Load our theme
     var buf_reader = std.io.bufferedReader(file.reader());
-    var iter = cli.args.lineIterator(buf_reader.reader());
+    const reader = buf_reader.reader();
+    const Iter = cli.args.LineIterator(@TypeOf(reader));
+    var iter: Iter = .{ .r = reader, .filepath = path };
     try new_config.loadIter(alloc_gpa, &iter);
 
     // Replay our previous inputs so that we can override values
@@ -2697,7 +2705,12 @@ pub fn finalize(self: *Config) !void {
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
-pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter: anytype) !bool {
+pub fn parseManuallyHook(
+    self: *Config,
+    alloc: Allocator,
+    arg: []const u8,
+    iter: anytype,
+) !bool {
     // Keep track of our input args no matter what..
     try self._replay_steps.append(alloc, .{ .arg = try alloc.dupe(u8, arg) });
 
@@ -2714,7 +2727,8 @@ pub fn parseManuallyHook(self: *Config, alloc: Allocator, arg: []const u8, iter:
         }
 
         if (command.items.len == 0) {
-            try self._errors.add(alloc, .{
+            try self._diagnostics.append(alloc, .{
+                .location = cli.Location.fromIter(iter),
                 .message = try std.fmt.allocPrintZ(
                     alloc,
                     "missing command after {s}",
@@ -2758,7 +2772,10 @@ pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
 /// Create a copy of this configuration. This is useful as a starting
 /// point for modifying a configuration since a config can NOT be
 /// modified once it is in use by an app or surface.
-pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
+pub fn clone(
+    self: *const Config,
+    alloc_gpa: Allocator,
+) Allocator.Error!Config {
     // Start with an empty config with a new arena we're going
     // to use for all our copies.
     var result: Config = .{
@@ -2779,7 +2796,11 @@ pub fn clone(self: *const Config, alloc_gpa: Allocator) !Config {
     return result;
 }
 
-fn cloneValue(alloc: Allocator, comptime T: type, src: T) !T {
+fn cloneValue(
+    alloc: Allocator,
+    comptime T: type,
+    src: T,
+) Allocator.Error!T {
     // Do known named types first
     switch (T) {
         []const u8 => return try alloc.dupe(u8, src),
@@ -3129,7 +3150,7 @@ pub const Color = packed struct(u24) {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Color, _: Allocator) !Color {
+    pub fn clone(self: Color, _: Allocator) error{}!Color {
         return self;
     }
 
@@ -3225,7 +3246,7 @@ pub const Palette = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Self, _: Allocator) !Self {
+    pub fn clone(self: Self, _: Allocator) error{}!Self {
         return self;
     }
 
@@ -3301,7 +3322,7 @@ pub const RepeatableString = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         // Copy the list and all the strings in the list.
         const list = try self.list.clone(alloc);
         for (list.items) |*item| {
@@ -3445,7 +3466,7 @@ pub const RepeatablePath = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         const value = try self.value.clone(alloc);
         for (value.items) |*item| {
             switch (item.*) {
@@ -3499,7 +3520,7 @@ pub const RepeatablePath = struct {
         self: *Self,
         alloc: Allocator,
         base: []const u8,
-        errors: *ErrorList,
+        diags: *cli.DiagnosticList,
     ) !void {
         assert(std.fs.path.isAbsolute(base));
         var dir = try std.fs.cwd().openDir(base, .{});
@@ -3526,7 +3547,7 @@ pub const RepeatablePath = struct {
                     break :abs buf[0..resolved.len];
                 }
 
-                try errors.add(alloc, .{
+                try diags.append(alloc, .{
                     .message = try std.fmt.allocPrintZ(
                         alloc,
                         "error resolving file path {s}: {}",
@@ -3656,7 +3677,7 @@ pub const RepeatableFontVariation = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         return .{
             .list = try self.list.clone(alloc),
         };
@@ -3789,7 +3810,7 @@ pub const Keybinds = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Keybinds, alloc: Allocator) !Keybinds {
+    pub fn clone(self: *const Keybinds, alloc: Allocator) Allocator.Error!Keybinds {
         return .{ .set = try self.set.clone(alloc) };
     }
 
@@ -3944,7 +3965,7 @@ pub const RepeatableCodepointMap = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         return .{ .map = try self.map.clone(alloc) };
     }
 
@@ -4227,7 +4248,7 @@ pub const FontStyle = union(enum) {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: Self, alloc: Allocator) !Self {
+    pub fn clone(self: Self, alloc: Allocator) Allocator.Error!Self {
         return switch (self) {
             .default, .false => self,
             .name => |v| .{ .name = try alloc.dupeZ(u8, v) },
@@ -4332,7 +4353,7 @@ pub const RepeatableLink = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) !Self {
+    pub fn clone(self: *const Self, alloc: Allocator) error{}!Self {
         _ = self;
         _ = alloc;
         return .{};
@@ -4539,7 +4560,7 @@ pub const Duration = struct {
         .{ .name = "ns", .factor = 1 },
     };
 
-    pub fn clone(self: *const Duration, _: Allocator) !Duration {
+    pub fn clone(self: *const Duration, _: Allocator) error{}!Duration {
         return .{ .duration = self.duration };
     }
 
@@ -4661,7 +4682,7 @@ pub const WindowPadding = struct {
     top_left: u32 = 0,
     bottom_right: u32 = 0,
 
-    pub fn clone(self: Self, _: Allocator) !Self {
+    pub fn clone(self: Self, _: Allocator) error{}!Self {
         return self;
     }
 

@@ -32,7 +32,7 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try std.process.argsWithAllocator(alloc);
+        var iter = try args.argsIterator(alloc);
         defer iter.deinit();
         try args.parse(Options, alloc, &opts, &iter);
     }
@@ -46,7 +46,6 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
     if (opts.@"config-file") |config_path| {
         var buf: [std.fs.max_path_bytes]u8 = undefined;
         const abs_path = try std.fs.cwd().realpath(config_path, &buf);
-
         try cfg.loadFile(alloc, abs_path);
         try cfg.loadRecursiveFiles(alloc);
     } else {
@@ -55,9 +54,14 @@ pub fn run(alloc: std.mem.Allocator) !u8 {
 
     try cfg.finalize();
 
-    if (!cfg._errors.empty()) {
-        for (cfg._errors.list.items) |err| {
-            try stdout.print("{s}\n", .{err.message});
+    if (cfg._diagnostics.items().len > 0) {
+        var buf = std.ArrayList(u8).init(alloc);
+        defer buf.deinit();
+
+        for (cfg._diagnostics.items()) |diag| {
+            try diag.write(buf.writer());
+            try stdout.print("{s}\n", .{buf.items});
+            buf.clearRetainingCapacity();
         }
 
         return 1;

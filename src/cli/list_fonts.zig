@@ -53,7 +53,7 @@ pub const Config = struct {
 /// specific styles. It is not guaranteed that only those styles are returned,
 /// it will just prioritize fonts that match those styles.
 pub fn run(alloc: Allocator) !u8 {
-    var iter = try std.process.argsWithAllocator(alloc);
+    var iter = try args.argsIterator(alloc);
     defer iter.deinit();
     return try runArgs(alloc, &iter);
 }

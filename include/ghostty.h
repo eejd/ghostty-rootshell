@@ -291,7 +291,7 @@ typedef struct {
 
 typedef struct {
   const char* message;
-} ghostty_error_s;
+} ghostty_diagnostic_s;
 
 typedef struct {
   double tl_px_x;
@@ -607,7 +607,6 @@ ghostty_info_s ghostty_info(void);
 ghostty_config_t ghostty_config_new();
 void ghostty_config_free(ghostty_config_t);
 void ghostty_config_load_cli_args(ghostty_config_t);
-void ghostty_config_load_string(ghostty_config_t, const char*, uintptr_t);
 void ghostty_config_load_default_files(ghostty_config_t);
 void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
@@ -615,8 +614,8 @@ bool ghostty_config_get(ghostty_config_t, void*, const char*, uintptr_t);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t,
                                                const char*,
                                                uintptr_t);
-uint32_t ghostty_config_errors_count(ghostty_config_t);
-ghostty_error_s ghostty_config_get_error(ghostty_config_t, uint32_t);
+uint32_t ghostty_config_diagnostics_count(ghostty_config_t);
+ghostty_diagnostic_s ghostty_config_get_diagnostic(ghostty_config_t, uint32_t);
 void ghostty_config_open();
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s*,

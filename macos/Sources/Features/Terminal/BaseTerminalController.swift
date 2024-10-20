@@ -57,6 +57,14 @@ class BaseTerminalController: NSWindowController,
     /// Event monitor (see individual events for why)
     private var eventMonitor: Any? = nil
 
+    /// The previous frame information from the window
+    private var savedFrame: SavedFrame? = nil
+
+    struct SavedFrame {
+        let window: NSRect
+        let screen: NSRect
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for this view")
     }
@@ -80,6 +88,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(onConfirmClipboardRequest),
             name: Ghostty.Notification.confirmClipboard,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(didChangeScreenParametersNotification),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -89,6 +102,8 @@ class BaseTerminalController: NSWindowController,
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
+
         if let eventMonitor {
             NSEvent.removeMonitor(eventMonitor)
         }
@@ -119,6 +134,57 @@ class BaseTerminalController: NSWindowController,
                 leaf.surface == focusedSurface!
             leaf.surface.focusDidChange(focused)
         }
+    }
+
+    // Call this whenever the frame changes
+    private func windowFrameDidChange() {
+        // We need to update our saved frame information in case of monitor
+        // changes (see didChangeScreenParameters notification).
+        savedFrame = nil
+        guard let window, let screen = window.screen else { return }
+        savedFrame = .init(window: window.frame, screen: screen.visibleFrame)
+    }
+
+    // MARK: Notifications
+
+    @objc private func didChangeScreenParametersNotification(_ notification: Notification) {
+        // If we have a window that is visible and it is outside the bounds of the
+        // screen then we clamp it back to within the screen.
+        guard let window else { return }
+        guard window.isVisible else { return }
+        guard let screen = window.screen else { return }
+
+        let visibleFrame = screen.visibleFrame
+        var newFrame = window.frame
+
+        // Clamp width/height
+        if newFrame.size.width > visibleFrame.size.width {
+            newFrame.size.width = visibleFrame.size.width
+        }
+        if newFrame.size.height > visibleFrame.size.height {
+            newFrame.size.height = visibleFrame.size.height
+        }
+
+        // Ensure the window is on-screen. We only do this if the previous frame
+        // was also on screen. If a user explicitly wanted their window off screen
+        // then we let it stay that way.
+        x: if newFrame.origin.x < visibleFrame.origin.x {
+            if let savedFrame, savedFrame.window.origin.x < savedFrame.screen.origin.x {
+                break x;
+            }
+
+            newFrame.origin.x = visibleFrame.origin.x
+        }
+        y: if newFrame.origin.y < visibleFrame.origin.y {
+            if let savedFrame, savedFrame.window.origin.y < savedFrame.screen.origin.y {
+                break y;
+            }
+
+            newFrame.origin.y = visibleFrame.origin.y
+        }
+
+        // Apply the new window frame
+        window.setFrame(newFrame, display: true)
     }
 
     // MARK: Local Events
@@ -369,6 +435,14 @@ class BaseTerminalController: NSWindowController,
                 ghostty_surface_set_occlusion(surface, visible)
             }
         }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        windowFrameDidChange()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        windowFrameDidChange()
     }
 
     // MARK: First Responder
