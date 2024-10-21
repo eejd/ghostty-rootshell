@@ -35,6 +35,7 @@ pub const Style = struct {
         inverse: bool = false,
         invisible: bool = false,
         strikethrough: bool = false,
+        overline: bool = false,
         underline: sgr.Attribute.Underline = .none,
     } = .{},
 

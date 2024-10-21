@@ -12,6 +12,7 @@ pub const Key = enum {
     text,
     underline,
     strikethrough,
+    overline,
 
     /// Returns the GPU vertex type for this key.
     pub fn CellType(self: Key) type {
@@ -21,6 +22,7 @@ pub const Key = enum {
             .text,
             .underline,
             .strikethrough,
+            .overline,
             => mtl_shaders.CellText,
         };
     }
@@ -196,6 +198,7 @@ pub const Contents = struct {
             .text,
             .underline,
             .strikethrough,
+            .overline,
             // We have a special list containing the cursor cell at the start
             // of our fg row pool, so we need to add 1 to the y to get the
             // correct index.

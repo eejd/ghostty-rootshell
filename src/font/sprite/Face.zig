@@ -150,6 +150,16 @@ pub fn renderGlyph(
             self.thickness,
         ),
 
+        .overline => try underline.renderGlyph(
+            alloc,
+            atlas,
+            @enumFromInt(cp),
+            width,
+            self.height,
+            0,
+            self.thickness,
+        ),
+
         .powerline => powerline: {
             const f: Powerline = .{
                 .width = width,
@@ -166,6 +176,7 @@ pub fn renderGlyph(
 const Kind = enum {
     box,
     underline,
+    overline,
     strikethrough,
     powerline,
 
@@ -178,6 +189,9 @@ const Kind = enum {
                 .underline_dashed,
                 .underline_curly,
                 => .underline,
+
+                .overline,
+                => .overline,
 
                 .strikethrough,
                 => .strikethrough,

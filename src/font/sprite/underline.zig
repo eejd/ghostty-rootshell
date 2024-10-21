@@ -34,6 +34,7 @@ pub fn renderGlyph(
         .underline_dotted => try drawDotted(alloc, width, line_thickness),
         .underline_dashed => try drawDashed(alloc, width, line_thickness),
         .underline_curly => try drawCurly(alloc, width, line_thickness),
+        .overline => try drawSingle(alloc, width, line_thickness),
         .strikethrough => try drawSingle(alloc, width, line_thickness),
         else => unreachable,
     };

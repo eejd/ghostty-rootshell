@@ -27,6 +27,8 @@ pub const Sprite = enum(u32) {
 
     strikethrough,
 
+    overline,
+
     cursor_rect,
     cursor_hollow_rect,
     cursor_bar,
