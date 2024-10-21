@@ -2492,6 +2492,18 @@ fn rebuildCells(
                 );
             };
 
+            if (style.flags.overline) self.addOverline(
+                @intCast(x),
+                @intCast(y),
+                fg,
+                alpha
+            ) catch |err| {
+                log.warn(
+                    "error adding overline to cell, will be invalid x={} y={}, err={}",
+                    .{ x, y, err },
+                );
+            };
+
             // If we're at or past the end of our shaper run then
             // we need to get the next run from the run iterator.
             if (shaper_cells != null and shaper_cells_i >= shaper_cells.?.len) {
@@ -2696,6 +2708,38 @@ fn addUnderline(
     );
 
     try self.cells.add(self.alloc, .underline, .{
+        .mode = .fg,
+        .grid_pos = .{ @intCast(x), @intCast(y) },
+        .constraint_width = 1,
+        .color = .{ color.r, color.g, color.b, alpha },
+        .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+        .glyph_size = .{ render.glyph.width, render.glyph.height },
+        .bearings = .{
+            @intCast(render.glyph.offset_x),
+            @intCast(render.glyph.offset_y),
+        },
+    });
+}
+
+/// Add a overline decoration to the specified cell
+fn addOverline(
+    self: *Metal,
+    x: terminal.size.CellCountInt,
+    y: terminal.size.CellCountInt,
+    color: terminal.color.RGB,
+    alpha: u8,
+) !void {
+    const render = try self.font_grid.renderGlyph(
+        self.alloc,
+        font.sprite_index,
+        @intFromEnum(font.Sprite.overline),
+        .{
+            .cell_width = 1,
+            .grid_metrics = self.grid_metrics,
+        },
+    );
+
+    try self.cells.add(self.alloc, .overline, .{
         .mode = .fg,
         .grid_pos = .{ @intCast(x), @intCast(y) },
         .constraint_width = 1,

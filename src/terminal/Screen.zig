@@ -1618,6 +1618,14 @@ pub fn setAttribute(self: *Screen, attr: sgr.Attribute) !void {
             self.cursor.style.underline_color = .none;
         },
 
+        .overline => {
+            self.cursor.style.flags.overline = true;
+        },
+
+        .reset_overline => {
+            self.cursor.style.flags.overline = false;
+        },
+
         .blink => {
             self.cursor.style.flags.blink = true;
         },

@@ -37,6 +37,10 @@ pub const Attribute = union(enum) {
     @"256_underline_color": u8,
     reset_underline_color: void,
 
+    // Overline the text
+    overline: void,
+    reset_overline: void,
+
     /// Blink the text
     blink: void,
     reset_blink: void,
@@ -236,6 +240,9 @@ pub const Parser = struct {
             },
 
             49 => return Attribute{ .reset_bg = {} },
+
+            53 => return Attribute{ .overline = {} },
+            55 => return Attribute{ .reset_overline = {} },
 
             58 => if (slice.len >= 5 and slice[1] == 2) {
                 self.idx += 4;
