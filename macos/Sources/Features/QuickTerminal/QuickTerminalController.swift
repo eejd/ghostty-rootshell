@@ -140,6 +140,12 @@ class QuickTerminalController: BaseTerminalController {
         guard !visible else { return }
         visible = true
 
+        // Notify the change
+        NotificationCenter.default.post(
+            name: .quickTerminalDidChangeVisibility,
+            object: self
+        )
+
         // If we have a previously focused application and it isn't us, then
         // we want to store it so we can restore state later.
         if !NSApp.isActive {
@@ -169,6 +175,12 @@ class QuickTerminalController: BaseTerminalController {
         // Set our visibility state
         guard visible else { return }
         visible = false
+
+        // Notify the change
+        NotificationCenter.default.post(
+            name: .quickTerminalDidChangeVisibility,
+            object: self
+        )
 
         animateWindowOut(window: window, to: position)
     }
@@ -349,4 +361,9 @@ class QuickTerminalController: BaseTerminalController {
     @objc private func ghosttyDidReloadConfig(notification: SwiftUI.Notification) {
         syncAppearance()
     }
+}
+
+extension Notification.Name {
+    /// The quick terminal did become hidden or visible.
+    static let quickTerminalDidChangeVisibility = Notification.Name("QuickTerminalDidChangeVisibility")
 }

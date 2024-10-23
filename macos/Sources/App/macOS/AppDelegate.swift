@@ -155,6 +155,14 @@ class AppDelegate: NSObject,
             matching: [.keyDown],
             handler: localEventHandler)
 
+        // Notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(quickTerminalDidChangeVisibility),
+            name: .quickTerminalDidChangeVisibility,
+            object: nil
+        )
+
         // Configure user notifications
         let actions = [
             UNNotificationAction(identifier: Ghostty.userNotificationActionShow, title: "Show")
@@ -409,6 +417,11 @@ class AppDelegate: NSObject,
         return event
     }
 
+    @objc private func quickTerminalDidChangeVisibility(_ notification: Notification) {
+        guard let quickController = notification.object as? QuickTerminalController else { return }
+        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
+    }
+
     //MARK: - Restorable State
 
     /// We support NSSecureCoding for restorable state. Required as of macOS Sonoma (14) but a good idea anyways.
@@ -622,8 +635,6 @@ class AppDelegate: NSObject,
 
         guard let quickController = self.quickController else { return }
         quickController.toggle()
-
-        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
     }
 
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
