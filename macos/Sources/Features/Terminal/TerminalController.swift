@@ -211,7 +211,7 @@ class TerminalController: BaseTerminalController {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
-
+        
         // If window decorations are disabled, remove our title
         if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
 
