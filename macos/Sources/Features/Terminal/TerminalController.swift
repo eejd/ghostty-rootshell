@@ -211,9 +211,16 @@ class TerminalController: BaseTerminalController {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
-
+        
         // If window decorations are disabled, remove our title
-        if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
+        if (!ghostty.config.windowDecorations) {
+            window.titleVisibility = .hidden
+            window.standardWindowButton(.closeButton)?.isHidden = true
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+        }
 
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
