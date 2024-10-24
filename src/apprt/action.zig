@@ -322,12 +322,6 @@ pub const GotoTab = enum(c_int) {
     _,
 };
 
-/// Move current tab .
-pub const MoveCurrentTabDirection = enum(c_int) {
-    right,
-    left,
-};
-
 /// The fullscreen mode to toggle to if we're moving to fullscreen.
 pub const Fullscreen = enum(c_int) {
     native,
