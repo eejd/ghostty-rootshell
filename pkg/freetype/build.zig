@@ -23,13 +23,13 @@ pub fn build(b: *std.Build) !void {
     module.addIncludePath(upstream.path("include"));
     module.addIncludePath(b.path(""));
 
-    // Dependencies
-    const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
-    lib.linkLibrary(zlib_dep.artifact("z"));
-    if (libpng_enabled) {
-        const libpng_dep = b.dependency("libpng", .{ .target = target, .optimize = optimize });
-        lib.linkLibrary(libpng_dep.artifact("png"));
-    }
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    };
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
@@ -43,7 +43,30 @@ pub fn build(b: *std.Build) !void {
 
         "-fno-sanitize=undefined",
     });
-    if (libpng_enabled) try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
+
+    // Zlib
+    if (b.systemIntegrationOption("zlib", .{})) {
+        lib.linkSystemLibrary2("zlib", dynamic_link_opts);
+    } else {
+        const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
+        lib.linkLibrary(zlib_dep.artifact("z"));
+    }
+
+    // Libpng
+    _ = b.systemIntegrationOption("libpng", .{}); // So it shows up in help
+    if (libpng_enabled) {
+        try flags.append("-DFT_CONFIG_OPTION_USE_PNG=1");
+
+        if (b.systemIntegrationOption("libpng", .{})) {
+            lib.linkSystemLibrary2("libpng", dynamic_link_opts);
+        } else {
+            const libpng_dep = b.dependency(
+                "libpng",
+                .{ .target = target, .optimize = optimize },
+            );
+            lib.linkLibrary(libpng_dep.artifact("png"));
+        }
+    }
 
     lib.addCSourceFiles(.{
         .root = upstream.path(""),

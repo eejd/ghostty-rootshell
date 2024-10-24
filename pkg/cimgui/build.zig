@@ -12,11 +12,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     const imgui = b.dependency("imgui", .{});
-    const freetype = b.dependency("freetype", .{
-        .target = target,
-        .optimize = optimize,
-        .@"enable-libpng" = true,
-    });
     const lib = b.addStaticLibrary(.{
         .name = "cimgui",
         .target = target,
@@ -24,9 +19,28 @@ pub fn build(b: *std.Build) !void {
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    lib.linkLibrary(freetype.artifact("freetype"));
     if (target.result.os.tag == .windows) {
         lib.linkSystemLibrary("imm32");
+    }
+
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    };
+
+    if (b.systemIntegrationOption("freetype", .{})) {
+        lib.linkSystemLibrary2("freetype", dynamic_link_opts);
+    } else {
+        const freetype = b.dependency("freetype", .{
+            .target = target,
+            .optimize = optimize,
+            .@"enable-libpng" = true,
+        });
+        lib.linkLibrary(freetype.artifact("freetype"));
+        module.addIncludePath(freetype.builder.dependency("freetype", .{}).path("include"));
     }
 
     lib.addIncludePath(imgui.path(""));

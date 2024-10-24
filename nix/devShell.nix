@@ -28,6 +28,7 @@
   fontconfig,
   freetype,
   glib,
+  glslang,
   gtk4,
   libadwaita,
   gnome,
@@ -41,6 +42,9 @@
   libXi,
   libXinerama,
   libXrandr,
+  libxml2,
+  spirv-cross,
+  simdutf,
   zlib,
   alejandra,
   pandoc,
@@ -59,8 +63,13 @@
       freetype
       harfbuzz
       libpng
+      libxml2
       oniguruma
+      simdutf
       zlib
+
+      glslang
+      spirv-cross
 
       libX11
       libXcursor
@@ -123,8 +132,13 @@ in
         freetype
         harfbuzz
         libpng
+        libxml2
         oniguruma
+        simdutf
         zlib
+
+        glslang
+        spirv-cross
 
         libX11
         libXcursor

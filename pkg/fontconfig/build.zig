@@ -25,18 +25,6 @@ pub fn build(b: *std.Build) !void {
     if (target.result.os.tag != .windows) {
         lib.linkSystemLibrary("pthread");
     }
-    if (freetype_enabled) {
-        const freetype_dep = b.dependency("freetype", .{ .target = target, .optimize = optimize });
-        lib.linkLibrary(freetype_dep.artifact("freetype"));
-    }
-    if (libxml2_enabled) {
-        const libxml2_dep = b.dependency("libxml2", .{
-            .target = target,
-            .optimize = optimize,
-            .iconv = libxml2_iconv_enabled,
-        });
-        lib.linkLibrary(libxml2_dep.artifact("xml2"));
-    }
 
     lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(b.path("override/include"));
@@ -142,6 +130,31 @@ pub fn build(b: *std.Build) !void {
             });
         }
     }
+
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    };
+
+    // Freetype2
+    _ = b.systemIntegrationOption("freetype", .{}); // So it shows up in help
+    if (freetype_enabled) {
+        if (b.systemIntegrationOption("freetype", .{})) {
+            lib.linkSystemLibrary2("freetype", dynamic_link_opts);
+        } else {
+            const freetype_dep = b.dependency(
+                "freetype",
+                .{ .target = target, .optimize = optimize },
+            );
+            lib.linkLibrary(freetype_dep.artifact("freetype"));
+        }
+    }
+
+    // Libxml2
+    _ = b.systemIntegrationOption("libxml2", .{}); // So it shows up in help
     if (libxml2_enabled) {
         try flags.appendSlice(&.{
             "-DENABLE_LIBXML2",
@@ -153,6 +166,17 @@ pub fn build(b: *std.Build) !void {
             try flags.appendSlice(&.{
                 "-Werror=implicit-function-declaration",
             });
+        }
+
+        if (b.systemIntegrationOption("libxml2", .{})) {
+            lib.linkSystemLibrary2("libxml-2.0", dynamic_link_opts);
+        } else {
+            const libxml2_dep = b.dependency("libxml2", .{
+                .target = target,
+                .optimize = optimize,
+                .iconv = libxml2_iconv_enabled,
+            });
+            lib.linkLibrary(libxml2_dep.artifact("xml2"));
         }
     }
 
