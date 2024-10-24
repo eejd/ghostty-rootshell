@@ -1270,6 +1270,10 @@ keybind: Keybinds = .{},
 /// by the operating system.
 @"quick-terminal-screen": QuickTerminalScreen = .main,
 
+/// Duration (in seconds) of the quick terminal enter and exit animation.
+/// Set it to 0 to disable animation.
+@"quick-terminal-animate-duration": f64 = 0.2,
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
