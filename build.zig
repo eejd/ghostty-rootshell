@@ -234,7 +234,11 @@ pub fn build(b: *std.Build) !void {
         }) |dep| {
             _ = b.systemIntegrationOption(
                 dep,
-                .{ .default = !target.result.isDarwin() },
+                .{
+                    // If we're not on darwin we want to use whatever the
+                    // default is via the system package mode
+                    .default = if (target.result.isDarwin()) false else null,
+                },
             );
         }
 
