@@ -47,6 +47,7 @@
   simdutf,
   zlib,
   alejandra,
+  minisign,
   pandoc,
   hyperfine,
   typos,
@@ -88,6 +89,7 @@ in
       [
         # For builds
         llvmPackages_latest.llvm
+        minisign
         ncurses
         pandoc
         pkg-config

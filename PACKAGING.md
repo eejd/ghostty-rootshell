@@ -16,10 +16,14 @@ package Ghostty for distribution.
 
 Source tarballs with stable checksums are available on the
 [GitHub releases page](https://github.com/ghostty-org/ghostty/releases).
+Use the `ghostty-source.tar.gz` asset and _not the GitHub auto-generated
+source tarball_.
 
-> [!WARNING]
->
-> These are not currently signed with PGP. I'm working on this.
+Signature files are signed with [minisign](https://jedisct1.github.io/minisign/) using the following public key:
+
+```
+RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV
+```
 
 ## Zig Version
 
