@@ -12,6 +12,11 @@ class QuickTerminalWindow: NSWindow {
         // Note: almost all of this stuff can be done in the nib/xib directly
         // but I prefer to do it programmatically because the properties we
         // care about are less hidden.
+        
+        // Set the base style mask to be HUD Window (which satisfies the AeroSpace
+        // window manager's heuristics allowing the quick terminal window to be
+        // unaffected by AeroSpace's window positioning and resizing)
+        self.styleMask = .hudWindow
 
         // Remove the title completely. This will make the window square. One
         // downside is it also hides the cursor indications of resize but the
