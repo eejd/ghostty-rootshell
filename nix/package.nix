@@ -7,6 +7,7 @@
   freetype,
   harfbuzz,
   libpng,
+  oniguruma,
   zlib,
   libGL,
   libX11,
@@ -132,6 +133,7 @@ in
         freetype
         harfbuzz
         libpng
+        oniguruma
         zlib
 
         libX11
