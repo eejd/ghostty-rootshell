@@ -3913,6 +3913,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             },
         ),
 
+        .move_current_tab => |position| try self.rt_app.performAction(
+            .{ .surface = self },
+            .move_current_tab,
+            position,
+        ),
+
         .new_split => |direction| try self.rt_app.performAction(
             .{ .surface = self },
             .new_split,

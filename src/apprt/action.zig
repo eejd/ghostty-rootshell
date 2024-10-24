@@ -100,6 +100,9 @@ pub const Action = union(Key) {
     /// Toggle the visibility of all Ghostty terminal windows.
     toggle_visibility,
 
+    /// Move current tab given a position
+    move_current_tab: isize,
+
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
     goto_tab: GotoTab,
@@ -190,6 +193,7 @@ pub const Action = union(Key) {
         toggle_window_decorations,
         toggle_quick_terminal,
         toggle_visibility,
+        move_current_tab,
         goto_tab,
         goto_split,
         resize_split,
@@ -316,6 +320,12 @@ pub const GotoTab = enum(c_int) {
     next = -2,
     last = -3,
     _,
+};
+
+/// Move current tab .
+pub const MoveCurrentTabDirection = enum(c_int) {
+    right,
+    left,
 };
 
 /// The fullscreen mode to toggle to if we're moving to fullscreen.

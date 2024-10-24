@@ -300,6 +300,9 @@ pub const Action = union(enum) {
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 
+    /// Move current tab to a position
+    move_current_tab: isize,
+
     /// Toggle the tab overview.
     /// This only works with libadwaita enabled currently.
     toggle_tab_overview: void,
@@ -646,6 +649,7 @@ pub const Action = union(enum) {
             .next_tab,
             .last_tab,
             .goto_tab,
+            .move_current_tab,
             .toggle_tab_overview,
             .new_split,
             .goto_split,

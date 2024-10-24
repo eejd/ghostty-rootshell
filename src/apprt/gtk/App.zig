@@ -456,6 +456,7 @@ pub fn performAction(
 
         .new_tab => try self.newTab(target),
         .goto_tab => self.gotoTab(target, value),
+        .move_current_tab => self.moveCurrentTab(target, value),
         .new_split => try self.newSplit(target, value),
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
@@ -523,6 +524,23 @@ fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
                 .last => window.gotoLastTab(),
                 else => window.gotoTab(@intCast(@intFromEnum(tab))),
             }
+        },
+    }
+}
+
+fn moveCurrentTab(_: *App, target: apprt.Target, position: isize) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse {
+                log.info(
+                    "moveCurrentTab invalid for container={s}",
+                    .{@tagName(v.rt_surface.container)},
+                );
+                return;
+            };
+
+            window.moveCurrentTab(v.rt_surface, @intCast(position));
         },
     }
 }
