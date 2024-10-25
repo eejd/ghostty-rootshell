@@ -528,7 +528,7 @@ fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
     }
 }
 
-fn moveTab(_: *App, target: apprt.Target, position: isize) void {
+fn moveTab(_: *App, target: apprt.Target, move_tab: apprt.action.MoveTab) void {
     switch (target) {
         .app => {},
         .surface => |v| {
@@ -540,7 +540,7 @@ fn moveTab(_: *App, target: apprt.Target, position: isize) void {
                 return;
             };
 
-            window.moveTab(v.rt_surface, @intCast(position));
+            window.moveTab(v.rt_surface, @intCast(move_tab.amount));
         },
     }
 }
