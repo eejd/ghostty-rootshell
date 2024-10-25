@@ -232,9 +232,18 @@ class BaseTerminalController: NSWindowController,
 
     func titleDidChange(to: String) {
         guard let window else { return }
-
+        
         // Set the main window title
         window.title = to
+        
+        // Get the current working directory from the focused surface
+        if let pwd = focusedSurface?.pwd {
+            // Set the window's representedURL to the current working directory
+            window.representedURL = URL(fileURLWithPath: pwd)
+        } else {
+            // If we don't have a pwd, set representedURL to nil
+            window.representedURL = nil
+        }
     }
 
     func cellSizeDidChange(to: NSSize) {
