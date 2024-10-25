@@ -101,9 +101,11 @@ pub const Action = union(Key) {
     toggle_visibility,
 
     /// Moves a tab by a relative offset.
-    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
-    /// If the new position is out of bounds, it wraps around cyclically within the tab range.
-    move_tab: isize,
+    ///
+    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1
+    /// for right). If the new position is out of bounds, it wraps around
+    /// cyclically within the tab range.
+    move_tab: MoveTab,
 
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
@@ -312,6 +314,10 @@ pub const ResizeSplit = extern struct {
         left,
         right,
     };
+};
+
+pub const MoveTab = extern struct {
+    amount: isize,
 };
 
 /// The tab to jump to. This is non-exhaustive so that integer values represent
