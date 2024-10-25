@@ -300,8 +300,10 @@ pub const Action = union(enum) {
     /// Go to the tab with the specific number, 1-indexed.
     goto_tab: usize,
 
-    /// Move current tab to a position
-    move_current_tab: isize,
+    /// Moves a tab by a relative offset.
+    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
+    /// If the new position is out of bounds, it wraps around cyclically within the tab range.
+    move_tab: isize,
 
     /// Toggle the tab overview.
     /// This only works with libadwaita enabled currently.
@@ -649,7 +651,7 @@ pub const Action = union(enum) {
             .next_tab,
             .last_tab,
             .goto_tab,
-            .move_current_tab,
+            .move_tab,
             .toggle_tab_overview,
             .new_split,
             .goto_split,

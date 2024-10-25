@@ -3913,9 +3913,9 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             },
         ),
 
-        .move_current_tab => |position| try self.rt_app.performAction(
+        .move_tab => |position| try self.rt_app.performAction(
             .{ .surface = self },
-            .move_current_tab,
+            .move_tab,
             position,
         ),
 

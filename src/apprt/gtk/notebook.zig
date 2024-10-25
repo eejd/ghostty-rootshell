@@ -184,6 +184,22 @@ pub const Notebook = union(enum) {
     }
 
     pub fn moveTab(self: Notebook, tab: *Tab, position: c_int) void {
+        const page_idx = self.getTabPosition(tab) orelse return;
+
+        const max = self.nPages() -| 1;
+        var new_position: c_int = page_idx + position;
+
+        if (new_position < 0) {
+            new_position = max + new_position + 1;
+        } else if (new_position > max) {
+            new_position = new_position - max - 1;
+        }
+
+        if (new_position == page_idx) return;
+        self.reorderPage(tab, new_position);
+    }
+
+    pub fn reorderPage(self: Notebook, tab: *Tab, position: c_int) void {
         switch (self) {
             .gtk_notebook => |notebook| {
                 c.gtk_notebook_reorder_child(notebook, @ptrCast(tab.box), position);
@@ -191,21 +207,7 @@ pub const Notebook = union(enum) {
             .adw_tab_view => |tab_view| {
                 if (comptime !adwaita.versionAtLeast(0, 0, 0)) unreachable;
                 const page = c.adw_tab_view_get_page(tab_view, @ptrCast(tab.box));
-
-                const page_idx = self.getTabPosition(tab) orelse return;
-
-                const max = self.nPages() -| 1;
-                var new_position: c_int = page_idx + position;
-
-                if (new_position < 0) {
-                    new_position = max;
-                } else if (new_position > max) {
-                    new_position = 0;
-                }
-
-                if (new_position == page_idx) return;
-
-                _ = c.adw_tab_view_reorder_page(tab_view, page, new_position);
+                _ = c.adw_tab_view_reorder_page(tab_view, page, position);
             },
         }
     }

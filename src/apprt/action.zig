@@ -100,8 +100,10 @@ pub const Action = union(Key) {
     /// Toggle the visibility of all Ghostty terminal windows.
     toggle_visibility,
 
-    /// Move current tab given a position
-    move_current_tab: isize,
+    /// Moves a tab by a relative offset.
+    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
+    /// If the new position is out of bounds, it wraps around cyclically within the tab range.
+    move_tab: isize,
 
     /// Jump to a specific tab. Must handle the scenario that the tab
     /// value is invalid.
@@ -193,7 +195,7 @@ pub const Action = union(Key) {
         toggle_window_decorations,
         toggle_quick_terminal,
         toggle_visibility,
-        move_current_tab,
+        move_tab,
         goto_tab,
         goto_split,
         resize_split,

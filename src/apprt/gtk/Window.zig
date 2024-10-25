@@ -457,7 +457,7 @@ pub fn gotoNextTab(self: *Window, surface: *Surface) void {
 }
 
 /// Move the current tab for a surface.
-pub fn moveCurrentTab(self: *Window, surface: *Surface, position: c_int) void {
+pub fn moveTab(self: *Window, surface: *Surface, position: c_int) void {
     const tab = surface.container.tab() orelse {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
         return;
