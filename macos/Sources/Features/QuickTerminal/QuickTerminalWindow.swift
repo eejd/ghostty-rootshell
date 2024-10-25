@@ -13,10 +13,9 @@ class QuickTerminalWindow: NSWindow {
         // but I prefer to do it programmatically because the properties we
         // care about are less hidden.
         
-        // Set the base style mask to be HUD Window (which satisfies the AeroSpace
-        // window manager's heuristics allowing the quick terminal window to be
-        // unaffected by AeroSpace's window positioning and resizing)
-        self.styleMask = .hudWindow
+        // Add a custom identifier so third party apps can use the Accessibility
+        // API to apply special rules to the quick terminal. 
+        self.identifier = .init(rawValue: "com.mitchellh.ghostty.quickTerminal")
 
         // Remove the title completely. This will make the window square. One
         // downside is it also hides the cursor indications of resize but the
