@@ -238,7 +238,7 @@ class BaseTerminalController: NSWindowController,
         
     }
     
-    func proxyIconURLDidChange(to: URL?){
+    func pwdDidChange(to: URL?){
         
         guard let window else { return }
         

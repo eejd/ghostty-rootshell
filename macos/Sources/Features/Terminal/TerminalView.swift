@@ -11,8 +11,8 @@ protocol TerminalViewDelegate: AnyObject {
     /// The title of the terminal should change.
     func titleDidChange(to: String)
     
-    /// The URL of the proxy icon should change.
-    func proxyIconURLDidChange(to: URL?)
+    /// The URL of the pwd should change.
+    func pwdDidChange(to: URL?)
 
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
@@ -99,7 +99,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         self.delegate?.titleDidChange(to: newValue)
                     }
                     .onChange(of: proxyIconURL) { newValue in
-                        self.delegate?.proxyIconURLDidChange(to: newValue)
+                        self.delegate?.pwdDidChange(to: newValue)
                     }
                     .onChange(of: cellSize) { newValue in
                         guard let size = newValue else { return }
