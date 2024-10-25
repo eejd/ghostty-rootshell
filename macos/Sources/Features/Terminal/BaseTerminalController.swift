@@ -243,7 +243,7 @@ class BaseTerminalController: NSWindowController,
         guard let window else { return }
         
         // Get the current working directory from the focused surface
-        if ghostty.config.macosTitlebarProxyIcon == "visible", let pwd = focusedSurface?.pwd {
+        if ghostty.config.macosTitlebarProxyIcon == .visible, let pwd = focusedSurface?.pwd {
             // Set the window's representedURL to the current working directory
             window.representedURL = URL(fileURLWithPath: pwd)
         } else {
