@@ -228,6 +228,16 @@ extension Ghostty {
             guard let ptr = v else { return defaultValue }
             return String(cString: ptr)
         }
+        
+        var macosTitlebarProxyIcon: String {
+            let defaultValue = "visible"
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-titlebar-proxy-icon"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return String(cString: ptr)
+        }
 
         var macosWindowShadow: Bool {
             guard let config = self.config else { return false }

@@ -307,6 +307,10 @@ class TerminalController: BaseTerminalController {
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true
+            
+            // Hide document icon button(proxy icon)
+            window.representedURL = nil
+            window.standardWindowButton(.documentIconButton)?.isHidden = true
 
             // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
             window.tabbingMode = .disallowed

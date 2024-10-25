@@ -236,8 +236,14 @@ class BaseTerminalController: NSWindowController,
         // Set the main window title
         window.title = to
         
+    }
+    
+    func proxyIconURLDidChange(to: URL?){
+        
+        guard let window else { return }
+        
         // Get the current working directory from the focused surface
-        if let pwd = focusedSurface?.pwd {
+        if ghostty.config.macosTitlebarProxyIcon == "visible", let pwd = focusedSurface?.pwd {
             // Set the window's representedURL to the current working directory
             window.representedURL = URL(fileURLWithPath: pwd)
         } else {
