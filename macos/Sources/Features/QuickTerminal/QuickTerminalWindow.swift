@@ -16,6 +16,10 @@ class QuickTerminalWindow: NSWindow {
         // Add a custom identifier so third party apps can use the Accessibility
         // API to apply special rules to the quick terminal. 
         self.identifier = .init(rawValue: "com.mitchellh.ghostty.quickTerminal")
+        
+        // Set the correct AXSubrole of kAXFloatingWindowSubrole (allows
+        // AeroSpace to treat the Quick Terminal as a floating window)
+        self.setAccessibilitySubrole(.floatingWindow)
 
         // Remove the title completely. This will make the window square. One
         // downside is it also hides the cursor indications of resize but the
