@@ -10,6 +10,9 @@ protocol TerminalViewDelegate: AnyObject {
 
     /// The title of the terminal should change.
     func titleDidChange(to: String)
+    
+    /// The URL of the pwd should change.
+    func pwdDidChange(to: URL?)
 
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
@@ -62,7 +65,16 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
         return title
     }
-
+    
+    // The proxy icon URL for our window
+    private var proxyIconURL: URL? {
+        guard let proxyURLString = focusedSurface?.pwd else {
+            return nil
+        }
+        // Use fileURLWithPath initializer for file paths
+        return URL(fileURLWithPath: proxyURLString)
+    }
+    
     var body: some View {
         switch ghostty.readiness {
         case .loading:
@@ -86,6 +98,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     }
                     .onChange(of: title) { newValue in
                         self.delegate?.titleDidChange(to: newValue)
+                    }
+                    .onChange(of: proxyIconURL) { newValue in
+                        self.delegate?.pwdDidChange(to: newValue)
                     }
                     .onChange(of: cellSize) { newValue in
                         guard let size = newValue else { return }

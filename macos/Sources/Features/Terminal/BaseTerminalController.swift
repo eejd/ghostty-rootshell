@@ -235,16 +235,20 @@ class BaseTerminalController: NSWindowController,
         
         // Set the main window title
         window.title = to
-        
-        // Get the current working directory from the focused surface
-        if let pwd = focusedSurface?.pwd {
-            // Set the window's representedURL to the current working directory
-            window.representedURL = URL(fileURLWithPath: pwd)
+
+    }
+    
+    func pwdDidChange(to: URL?) {
+        guard let window else { return }
+
+        if ghostty.config.macosTitlebarProxyIcon == .visible {
+            // Use the 'to' URL directly
+            window.representedURL = to
         } else {
-            // If we don't have a pwd, set representedURL to nil
             window.representedURL = nil
         }
     }
+
 
     func cellSizeDidChange(to: NSSize) {
         guard ghostty.config.windowStepResize else { return }

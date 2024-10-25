@@ -194,6 +194,13 @@ extension Ghostty {
             }
         }
     }
+    
+    /// Enum for the macos-titlebar-proxy-icon config option
+    enum MacOSTitlebarProxyIcon: String {
+        case visible
+        case hidden
+    }
+    
 }
 
 // MARK: Surface Notifications
