@@ -71,7 +71,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         guard let proxyURLString = focusedSurface?.pwd else {
             return nil
         }
-        return URL(string: proxyURLString)
+        // Use fileURLWithPath initializer for file paths
+        return URL(fileURLWithPath: proxyURLString)
     }
     
     var body: some View {
