@@ -100,7 +100,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     }
                     .onChange(of: proxyIconURL) { newValue in
                         self.delegate?.proxyIconURLDidChange(to: newValue)
-                        
                     }
                     .onChange(of: cellSize) { newValue in
                         guard let size = newValue else { return }
