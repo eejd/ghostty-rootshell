@@ -310,6 +310,14 @@ class TerminalController: BaseTerminalController {
 
             // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
             window.tabbingMode = .disallowed
+
+            // Nuke it from orbit -- hide the titlebar container entirely, just in case. There are
+            // some operations that appear to bring back the titlebar visibility so this ensures
+            // it is gone forever.
+            if let themeFrame = window.contentView?.superview,
+               let titleBarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView") {
+                titleBarContainer.isHidden = true
+            }
         }
 
         // In various situations, macOS automatically tabs new windows. Ghostty handles

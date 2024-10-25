@@ -235,12 +235,12 @@ class BaseTerminalController: NSWindowController,
         
         // Set the main window title
         window.title = to
-        
+
     }
     
     func pwdDidChange(to: URL?) {
         guard let window else { return }
-        
+
         if ghostty.config.macosTitlebarProxyIcon == .visible {
             // Use the 'to' URL directly
             window.representedURL = to
