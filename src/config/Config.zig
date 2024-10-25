@@ -1444,9 +1444,20 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime only applies to new windows.
 @"macos-titlebar-style": MacTitlebarStyle = .transparent,
 
-/// State of the proxy icon for the macOS titlebar.
-/// The "hidden" style hides the proxy icon.
-/// The default value is "visible".
+/// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
+/// is the icon that represents the folder of the current working directory.
+/// You can see this very clearly in the macOS built-in Terminal.app
+/// titlebar.
+///
+/// The proxy icon is only visible with the native macOS titlebar style.
+///
+/// The default value is `visible`.
+///
+/// This setting can be changed at runtime and will affect all currently
+/// open windows but only after their working directory changes again.
+/// Therefore, to make this work after changing the setting, you must
+/// usually `cd` to a different directory, open a different file in an
+/// editor, etc.
 @"macos-titlebar-proxy-icon": MacTitlebarProxyIcon = .visible,
 
 /// If `true`, the *Option* key will be treated as *Alt*. This makes terminal

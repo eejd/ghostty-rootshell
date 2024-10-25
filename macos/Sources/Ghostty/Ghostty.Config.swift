@@ -229,15 +229,15 @@ extension Ghostty {
             return String(cString: ptr)
         }
         
-        var macosTitlebarProxyIcon: Ghostty.MacOSTitlebarProxyIcon {
-            let defaultValue = Ghostty.MacOSTitlebarProxyIcon.visible
+        var macosTitlebarProxyIcon: MacOSTitlebarProxyIcon {
+            let defaultValue = MacOSTitlebarProxyIcon.visible
             guard let config = self.config else { return defaultValue }
             var v: UnsafePointer<Int8>? = nil
             let key = "macos-titlebar-proxy-icon"
             guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
             guard let ptr = v else { return defaultValue }
             let str = String(cString: ptr)
-            return Ghostty.MacOSTitlebarProxyIcon(rawValue: str) ?? defaultValue
+            return MacOSTitlebarProxyIcon(rawValue: str) ?? defaultValue
         }
 
         var macosWindowShadow: Bool {
