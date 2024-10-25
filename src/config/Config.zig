@@ -1444,6 +1444,11 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime only applies to new windows.
 @"macos-titlebar-style": MacTitlebarStyle = .transparent,
 
+/// State of the proxy icon for the macOS titlebar.
+/// The "hidden" style hides the proxy icon.
+/// The default value is "visible".
+@"macos-titlebar-proxy-icon": MacTitlebarProxyIcon = .visible,
+
 /// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
 /// sequences expecting *Alt* to work properly, but will break Unicode input
 /// sequences on macOS if you use them via the *Alt* key. You may set this to
@@ -4427,6 +4432,12 @@ pub const MacTitlebarStyle = enum {
     native,
     transparent,
     tabs,
+    hidden,
+};
+
+/// See macos-titlebar-proxy-icon
+pub const MacTitlebarProxyIcon: type = enum {
+    visible,
     hidden,
 };
 
