@@ -94,12 +94,6 @@ pub fn build(b: *std.Build) !void {
         "Enables the use of libadwaita when using the gtk rendering backend.",
     ) orelse true;
 
-    config.static = b.option(
-        bool,
-        "static",
-        "Statically build as much as possible for the exe",
-    ) orelse true;
-
     const conformance = b.option(
         []const u8,
         "conformance",
@@ -220,6 +214,44 @@ pub fn build(b: *std.Build) !void {
             .build = vsn.short_hash,
         };
     };
+
+    // These are all our dependencies that can be used with system
+    // packages if they exist. We set them up here so that we can set
+    // their defaults early. The first call configures the integration and
+    // subsequent calls just return the configured value.
+    {
+        // These dependencies we want to default false if we're on macOS.
+        // On macOS we don't want to use system libraries because we
+        // generally want a fat binary. This can be overridden with the
+        // `-fsys` flag.
+        for (&[_][]const u8{
+            "freetype",
+            "harfbuzz",
+            "fontconfig",
+            "libpng",
+            "zlib",
+            "oniguruma",
+        }) |dep| {
+            _ = b.systemIntegrationOption(
+                dep,
+                .{
+                    // If we're not on darwin we want to use whatever the
+                    // default is via the system package mode
+                    .default = if (target.result.isDarwin()) false else null,
+                },
+            );
+        }
+
+        // These default to false because they're rarely available as
+        // system packages so we usually want to statically link them.
+        for (&[_][]const u8{
+            "glslang",
+            "spirv-cross",
+            "simdutf",
+        }) |dep| {
+            _ = b.systemIntegrationOption(dep, .{ .default = false });
+        }
+    }
 
     // We can use wasmtime to test wasm
     b.enable_wasmtime = true;
@@ -653,10 +685,6 @@ pub fn build(b: *std.Build) !void {
         const wasm_config: BuildConfig = config: {
             var copy = config;
 
-            // Always static for the wasm app because we want all of our
-            // dependencies in a fat static library.
-            copy.static = true;
-
             // Backends that are fixed for wasm
             copy.font_backend = .web_canvas;
 
@@ -748,12 +776,7 @@ pub fn build(b: *std.Build) !void {
 
         {
             if (emit_test_exe) b.installArtifact(main_test);
-            _ = try addDeps(b, main_test, config: {
-                var copy = config;
-                copy.static = true;
-                break :config copy;
-            });
-
+            _ = try addDeps(b, main_test, config);
             const test_run = b.addRunArtifact(main_test);
             test_step.dependOn(&test_run.step);
         }
@@ -807,17 +830,6 @@ fn createMacOSLib(
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
-    // Modify our build configuration for macOS builds.
-    const macos_config: BuildConfig = config: {
-        var copy = config;
-
-        // Always static for the macOS app because we want all of our
-        // dependencies in a fat static library.
-        copy.static = true;
-
-        break :config copy;
-    };
-
     const static_lib_aarch64 = lib: {
         const lib = b.addStaticLibrary(.{
             .name = "ghostty",
@@ -829,7 +841,7 @@ fn createMacOSLib(
         lib.linkLibC();
 
         // Create a single static lib with all our dependencies merged
-        var lib_list = try addDeps(b, lib, macos_config);
+        var lib_list = try addDeps(b, lib, config);
         try lib_list.append(lib.getEmittedBin());
         const libtool = LibtoolStep.create(b, .{
             .name = "ghostty",
@@ -853,7 +865,7 @@ fn createMacOSLib(
         lib.linkLibC();
 
         // Create a single static lib with all our dependencies merged
-        var lib_list = try addDeps(b, lib, macos_config);
+        var lib_list = try addDeps(b, lib, config);
         try lib_list.append(lib.getEmittedBin());
         const libtool = LibtoolStep.create(b, .{
             .name = "ghostty",
@@ -888,12 +900,6 @@ fn createIOSLib(
     optimize: std.builtin.OptimizeMode,
     config: BuildConfig,
 ) !struct { *std.Build.Step, std.Build.LazyPath } {
-    const ios_config: BuildConfig = config: {
-        var copy = config;
-        copy.static = true;
-        break :config copy;
-    };
-
     const lib = b.addStaticLibrary(.{
         .name = "ghostty",
         .root_source_file = b.path("src/main_c.zig"),
@@ -909,7 +915,7 @@ fn createIOSLib(
     lib.linkLibC();
 
     // Create a single static lib with all our dependencies merged
-    var lib_list = try addDeps(b, lib, ios_config);
+    var lib_list = try addDeps(b, lib, config);
     try lib_list.append(lib.getEmittedBin());
     const libtool = LibtoolStep.create(b, .{
         .name = "ghostty",
@@ -938,8 +944,13 @@ fn addDeps(
     try config.addOptions(exe_options);
     step.root_module.addOptions("build_options", exe_options);
 
+    // We maintain a list of our static libraries and return it so that
+    // we can build a single fat static library for the final app.
     var static_libs = LazyPathList.init(b.allocator);
     errdefer static_libs.deinit();
+
+    const target = step.root_module.resolved_target.?;
+    const optimize = step.root_module.optimize.?;
 
     // For dynamic linking, we prefer dynamic linking and to search by
     // mode first. Mode first will search all paths for a dynamic library
@@ -949,106 +960,167 @@ fn addDeps(
         .search_strategy = .mode_first,
     };
 
-    const target = step.root_module.resolved_target.?;
-    const optimize = step.root_module.optimize.?;
+    // Freetype
+    _ = b.systemIntegrationOption("freetype", .{}); // Shows it in help
+    if (config.font_backend.hasFreetype()) {
+        const freetype_dep = b.dependency("freetype", .{
+            .target = target,
+            .optimize = optimize,
+            .@"enable-libpng" = true,
+        });
+        step.root_module.addImport("freetype", freetype_dep.module("freetype"));
 
-    // Dependencies
-    const cimgui_dep = b.dependency("cimgui", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const js_dep = b.dependency("zig_js", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const libxev_dep = b.dependency("libxev", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const objc_dep = b.dependency("zig_objc", .{
-        .target = target,
-        .optimize = optimize,
-    });
+        if (b.systemIntegrationOption("freetype", .{})) {
+            step.linkSystemLibrary2("bzip2", dynamic_link_opts);
+            step.linkSystemLibrary2("freetype", dynamic_link_opts);
+        } else {
+            step.linkLibrary(freetype_dep.artifact("freetype"));
+            try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
+        }
+    }
 
-    const fontconfig_dep = b.dependency("fontconfig", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const freetype_dep = b.dependency("freetype", .{
-        .target = target,
-        .optimize = optimize,
-        .@"enable-libpng" = true,
-    });
-    const glslang_dep = b.dependency("glslang", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const spirv_cross_dep = b.dependency("spirv_cross", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const highway_dep = b.dependency("highway", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const simdutf_dep = b.dependency("simdutf", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const utfcpp_dep = b.dependency("utfcpp", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const libpng_dep = b.dependency("libpng", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const macos_dep = b.dependency("macos", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    // Harfbuzz
+    _ = b.systemIntegrationOption("harfbuzz", .{}); // Shows it in help
+    if (config.font_backend.hasHarfbuzz()) {
+        const harfbuzz_dep = b.dependency("harfbuzz", .{
+            .target = target,
+            .optimize = optimize,
+            .@"enable-freetype" = true,
+            .@"enable-coretext" = config.font_backend.hasCoretext(),
+        });
+
+        step.root_module.addImport(
+            "harfbuzz",
+            harfbuzz_dep.module("harfbuzz"),
+        );
+        if (b.systemIntegrationOption("harfbuzz", .{})) {
+            step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
+        } else {
+            step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+            try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
+        }
+    }
+
+    // Fontconfig
+    _ = b.systemIntegrationOption("fontconfig", .{}); // Shows it in help
+    if (config.font_backend.hasFontconfig()) {
+        const fontconfig_dep = b.dependency("fontconfig", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        step.root_module.addImport(
+            "fontconfig",
+            fontconfig_dep.module("fontconfig"),
+        );
+
+        if (b.systemIntegrationOption("fontconfig", .{})) {
+            step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
+        } else {
+            step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
+            try static_libs.append(fontconfig_dep.artifact("fontconfig").getEmittedBin());
+        }
+    }
+
+    // Libpng - Ghostty doesn't actually use this directly, its only used
+    // through dependencies, so we only need to add it to our static
+    // libs list if we're not using system integration. The dependencies
+    // will handle linking it.
+    if (!b.systemIntegrationOption("libpng", .{})) {
+        const libpng_dep = b.dependency("libpng", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        step.linkLibrary(libpng_dep.artifact("png"));
+        try static_libs.append(libpng_dep.artifact("png").getEmittedBin());
+    }
+
+    // Zlib - same as libpng, only used through dependencies.
+    if (!b.systemIntegrationOption("zlib", .{})) {
+        const zlib_dep = b.dependency("zlib", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        step.linkLibrary(zlib_dep.artifact("z"));
+        try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
+    }
+
+    // Oniguruma
     const oniguruma_dep = b.dependency("oniguruma", .{
         .target = target,
         .optimize = optimize,
     });
-    const opengl_dep = b.dependency("opengl", .{});
+    step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
+    if (b.systemIntegrationOption("oniguruma", .{})) {
+        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
+    } else {
+        step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
+        try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
+    }
+
+    // Glslang
+    const glslang_dep = b.dependency("glslang", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    step.root_module.addImport("glslang", glslang_dep.module("glslang"));
+    if (b.systemIntegrationOption("glslang", .{})) {
+        step.linkSystemLibrary2("glslang", dynamic_link_opts);
+    } else {
+        step.linkLibrary(glslang_dep.artifact("glslang"));
+        try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
+    }
+
+    // Spirv-cross
+    const spirv_cross_dep = b.dependency("spirv_cross", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
+    if (b.systemIntegrationOption("spirv-cross", .{})) {
+        step.linkSystemLibrary2("spirv-cross", dynamic_link_opts);
+    } else {
+        step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
+        try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
+    }
+
+    // Simdutf
+    if (b.systemIntegrationOption("simdutf", .{})) {
+        step.linkSystemLibrary2("simdutf", dynamic_link_opts);
+    } else {
+        const simdutf_dep = b.dependency("simdutf", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        step.linkLibrary(simdutf_dep.artifact("simdutf"));
+        try static_libs.append(simdutf_dep.artifact("simdutf").getEmittedBin());
+    }
+
+    // Sentry
     const sentry_dep = b.dependency("sentry", .{
         .target = target,
         .optimize = optimize,
         .backend = .breakpad,
     });
-    const zlib_dep = b.dependency("zlib", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const harfbuzz_dep = b.dependency("harfbuzz", .{
-        .target = target,
-        .optimize = optimize,
-        .@"enable-freetype" = true,
-        .@"enable-coretext" = config.font_backend.hasCoretext(),
-    });
-    const ziglyph_dep = b.dependency("ziglyph", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const vaxis_dep = b.dependency("vaxis", .{
-        .target = target,
-        .optimize = optimize,
-        .libxev = false,
-        .images = false,
-    });
-    const wuffs_dep = b.dependency("wuffs", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const zf_dep = b.dependency("zf", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const z2d_dep = b.dependency("z2d", .{});
+    step.root_module.addImport("sentry", sentry_dep.module("sentry"));
+    if (target.result.os.tag != .windows) {
+        // Sentry
+        step.linkLibrary(sentry_dep.artifact("sentry"));
+        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
+
+        // We also need to include breakpad in the static libs.
+        const breakpad_dep = sentry_dep.builder.dependency("breakpad", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        try static_libs.append(breakpad_dep.artifact("breakpad").getEmittedBin());
+    }
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
+        const js_dep = b.dependency("zig_js", .{
+            .target = target,
+            .optimize = optimize,
+        });
         step.root_module.addImport("zig-js", js_dep.module("zig-js"));
 
         return static_libs;
@@ -1100,9 +1172,6 @@ fn addDeps(
         });
     }
 
-    // If we're building a lib we have some different deps
-    const lib = step.kind == .lib;
-
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().isDarwin()) {
@@ -1110,36 +1179,50 @@ fn addDeps(
         try addMetallib(b, step);
     }
 
-    // We always need the Zig packages
-    // TODO: This can't be the right way to use the new Zig modules system,
-    // so take a closer look at this again later.
-    if (config.font_backend.hasFontconfig()) step.root_module.addImport(
-        "fontconfig",
-        fontconfig_dep.module("fontconfig"),
-    );
-    if (config.font_backend.hasHarfbuzz()) step.root_module.addImport(
-        "harfbuzz",
-        harfbuzz_dep.module("harfbuzz"),
-    );
-    step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
-    step.root_module.addImport("freetype", freetype_dep.module("freetype"));
-    step.root_module.addImport("glslang", glslang_dep.module("glslang"));
-    step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
-    step.root_module.addImport("xev", libxev_dep.module("xev"));
-    step.root_module.addImport("opengl", opengl_dep.module("opengl"));
-    step.root_module.addImport("sentry", sentry_dep.module("sentry"));
-    step.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
-    step.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
-    step.root_module.addImport("wuffs", wuffs_dep.module("wuffs"));
-    step.root_module.addImport("zf", zf_dep.module("zf"));
+    // Other dependencies, mostly pure Zig
+    step.root_module.addImport("opengl", b.dependency(
+        "opengl",
+        .{},
+    ).module("opengl"));
+    step.root_module.addImport("vaxis", b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+        .libxev = false,
+        .images = false,
+    }).module("vaxis"));
+    step.root_module.addImport("wuffs", b.dependency("wuffs", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("wuffs"));
+    step.root_module.addImport("xev", b.dependency("libxev", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("xev"));
     step.root_module.addImport("z2d", b.addModule("z2d", .{
-        .root_source_file = z2d_dep.path("src/z2d.zig"),
+        .root_source_file = b.dependency("z2d", .{}).path("src/z2d.zig"),
         .target = target,
         .optimize = optimize,
     }));
+    step.root_module.addImport("ziglyph", b.dependency("ziglyph", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("ziglyph"));
+    step.root_module.addImport("zf", b.dependency("zf", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zf"));
 
     // Mac Stuff
     if (step.rootModuleTarget().isDarwin()) {
+        const objc_dep = b.dependency("zig_objc", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        const macos_dep = b.dependency("macos", .{
+            .target = target,
+            .optimize = optimize,
+        });
+
         // This is a bit of a hack that should probably be fixed upstream
         // in zig-objc, but we need to add the apple SDK paths to the
         // zig-objc module so that it can find the objc runtime headers.
@@ -1158,89 +1241,32 @@ fn addDeps(
     }
 
     // cimgui
+    const cimgui_dep = b.dependency("cimgui", .{
+        .target = target,
+        .optimize = optimize,
+    });
     step.root_module.addImport("cimgui", cimgui_dep.module("cimgui"));
     step.linkLibrary(cimgui_dep.artifact("cimgui"));
     try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
 
-    // Glslang
-    step.linkLibrary(glslang_dep.artifact("glslang"));
-    try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
-
     // Highway
+    const highway_dep = b.dependency("highway", .{
+        .target = target,
+        .optimize = optimize,
+    });
     step.linkLibrary(highway_dep.artifact("highway"));
     try static_libs.append(highway_dep.artifact("highway").getEmittedBin());
 
-    // simdutf
-    step.linkLibrary(simdutf_dep.artifact("simdutf"));
-    try static_libs.append(simdutf_dep.artifact("simdutf").getEmittedBin());
-
-    // utfcpp
+    // utfcpp - This is used as a dependency on our hand-written C++ code
+    const utfcpp_dep = b.dependency("utfcpp", .{
+        .target = target,
+        .optimize = optimize,
+    });
     step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
     try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
 
-    // Spirv-Cross
-    step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
-    try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
-
-    if (target.result.os.tag != .windows) {
-        // Sentry
-        step.linkLibrary(sentry_dep.artifact("sentry"));
-        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
-
-        // We also need to include breakpad in the static libs.
-        const breakpad_dep = sentry_dep.builder.dependency("breakpad", .{
-            .target = target,
-            .optimize = optimize,
-        });
-        try static_libs.append(breakpad_dep.artifact("breakpad").getEmittedBin());
-    }
-
-    // Dynamic link
-    if (!config.static) {
-        step.addIncludePath(freetype_dep.path(""));
-        step.linkSystemLibrary2("bzip2", dynamic_link_opts);
-        step.linkSystemLibrary2("freetype2", dynamic_link_opts);
-        step.linkSystemLibrary2("libpng", dynamic_link_opts);
-        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
-        step.linkSystemLibrary2("zlib", dynamic_link_opts);
-
-        if (config.font_backend.hasFontconfig()) {
-            step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
-        }
-        if (config.font_backend.hasHarfbuzz()) {
-            step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
-        }
-    }
-
-    // Other dependencies, we may dynamically link
-    if (config.static) {
-        step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
-        try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
-
-        step.linkLibrary(zlib_dep.artifact("z"));
-        try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
-
-        step.linkLibrary(libpng_dep.artifact("png"));
-        try static_libs.append(libpng_dep.artifact("png").getEmittedBin());
-
-        // Freetype
-        step.linkLibrary(freetype_dep.artifact("freetype"));
-        try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
-
-        // Harfbuzz
-        if (config.font_backend.hasHarfbuzz()) {
-            step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
-            try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
-        }
-
-        // Only Linux gets fontconfig
-        if (config.font_backend.hasFontconfig()) {
-            // Fontconfig
-            step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
-        }
-    }
-
-    if (!lib) {
+    // If we're building an exe then we have additional dependencies.
+    if (step.kind != .lib) {
         // We always statically compile glad
         step.addIncludePath(b.path("vendor/glad/include/"));
         step.addCSourceFile(.{
@@ -1515,8 +1541,6 @@ fn benchSteps(
         if (install) b.installArtifact(c_exe);
         _ = try addDeps(b, c_exe, config: {
             var copy = config;
-            copy.static = true;
-
             var enum_name: [64]u8 = undefined;
             @memcpy(enum_name[0..name.len], name);
             std.mem.replaceScalar(u8, enum_name[0..name.len], '-', '_');

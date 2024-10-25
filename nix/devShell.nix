@@ -28,6 +28,7 @@
   fontconfig,
   freetype,
   glib,
+  glslang,
   gtk4,
   libadwaita,
   gnome,
@@ -41,8 +42,12 @@
   libXi,
   libXinerama,
   libXrandr,
+  libxml2,
+  spirv-cross,
+  simdutf,
   zlib,
   alejandra,
+  minisign,
   pandoc,
   hyperfine,
   typos,
@@ -59,8 +64,13 @@
       freetype
       harfbuzz
       libpng
+      libxml2
       oniguruma
+      simdutf
       zlib
+
+      glslang
+      spirv-cross
 
       libX11
       libXcursor
@@ -79,6 +89,7 @@ in
       [
         # For builds
         llvmPackages_latest.llvm
+        minisign
         ncurses
         pandoc
         pkg-config
@@ -123,8 +134,13 @@ in
         freetype
         harfbuzz
         libpng
+        libxml2
         oniguruma
+        simdutf
         zlib
+
+        glslang
+        spirv-cross
 
         libX11
         libXcursor

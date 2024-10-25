@@ -20,10 +20,22 @@ pub fn build(b: *std.Build) !void {
         try apple_sdk.addPaths(b, &lib.root_module);
     }
 
-    const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
-    lib.linkLibrary(zlib_dep.artifact("z"));
-    lib.addIncludePath(upstream.path(""));
-    lib.addIncludePath(b.path(""));
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    };
+
+    if (b.systemIntegrationOption("zlib", .{})) {
+        lib.linkSystemLibrary2("zlib", dynamic_link_opts);
+    } else {
+        const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
+        lib.linkLibrary(zlib_dep.artifact("z"));
+        lib.addIncludePath(upstream.path(""));
+        lib.addIncludePath(b.path(""));
+    }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();

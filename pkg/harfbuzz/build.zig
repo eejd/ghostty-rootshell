@@ -41,13 +41,13 @@ pub fn build(b: *std.Build) !void {
         try apple_sdk.addPaths(b, module);
     }
 
-    const freetype_dep = b.dependency("freetype", .{
-        .target = target,
-        .optimize = optimize,
-        .@"enable-libpng" = true,
-    });
-    lib.linkLibrary(freetype_dep.artifact("freetype"));
-    module.addIncludePath(freetype_dep.builder.dependency("freetype", .{}).path("include"));
+    // For dynamic linking, we prefer dynamic linking and to search by
+    // mode first. Mode first will search all paths for a dynamic library
+    // before falling back to static.
+    const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    };
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
@@ -61,15 +61,28 @@ pub fn build(b: *std.Build) !void {
             "-DHAVE_PTHREAD=1",
         });
     }
-    if (freetype_enabled) try flags.appendSlice(&.{
-        "-DHAVE_FREETYPE=1",
 
-        // Let's just assume a new freetype
-        "-DHAVE_FT_GET_VAR_BLEND_COORDINATES=1",
-        "-DHAVE_FT_SET_VAR_BLEND_COORDINATES=1",
-        "-DHAVE_FT_DONE_MM_VAR=1",
-        "-DHAVE_FT_GET_TRANSFORM=1",
-    });
+    // Freetype
+    _ = b.systemIntegrationOption("freetype", .{}); // So it shows up in help
+    if (freetype_enabled) {
+        try flags.appendSlice(&.{
+            "-DHAVE_FREETYPE=1",
+
+            // Let's just assume a new freetype
+            "-DHAVE_FT_GET_VAR_BLEND_COORDINATES=1",
+            "-DHAVE_FT_SET_VAR_BLEND_COORDINATES=1",
+            "-DHAVE_FT_DONE_MM_VAR=1",
+            "-DHAVE_FT_GET_TRANSFORM=1",
+        });
+
+        if (b.systemIntegrationOption("freetype", .{})) {
+            lib.linkSystemLibrary2("freetype", dynamic_link_opts);
+        } else {
+            lib.linkLibrary(freetype.artifact("freetype"));
+            module.addIncludePath(freetype.builder.dependency("freetype", .{}).path("include"));
+        }
+    }
+
     if (coretext_enabled) {
         try flags.appendSlice(&.{"-DHAVE_CORETEXT=1"});
         lib.linkFramework("CoreText");
@@ -99,7 +112,7 @@ pub fn build(b: *std.Build) !void {
 
         var it = module.import_table.iterator();
         while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
-        test_exe.linkLibrary(freetype_dep.artifact("freetype"));
+        test_exe.linkLibrary(freetype.artifact("freetype"));
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");
         test_step.dependOn(&tests_run.step);

@@ -20,7 +20,6 @@ const WasmTarget = @import("os/wasm/target.zig").Target;
 /// build types, etc.
 pub const BuildConfig = struct {
     version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
-    static: bool = false,
     flatpak: bool = false,
     libadwaita: bool = false,
     app_runtime: apprt.Runtime = .none,
