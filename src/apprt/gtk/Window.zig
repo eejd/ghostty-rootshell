@@ -466,11 +466,10 @@ pub fn gotoLastTab(self: *Window) void {
 pub fn gotoTab(self: *Window, n: usize) void {
     if (n == 0) return;
     const max = self.notebook.nPages();
+    if (max == 0) return;
     const page_idx = std.math.cast(c_int, n - 1) orelse return;
-    if (page_idx < max) {
-        self.notebook.gotoNthTab(page_idx);
-        self.focusCurrentTab();
-    }
+    self.notebook.gotoNthTab(@min(page_idx, max - 1));
+    self.focusCurrentTab();
 }
 
 /// Toggle tab overview (if present)

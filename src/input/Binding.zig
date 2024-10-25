@@ -297,7 +297,8 @@ pub const Action = union(enum) {
     /// Go to the last tab (the one with the highest index)
     last_tab: void,
 
-    /// Go to the tab with the specific number, 1-indexed.
+    /// Go to the tab with the specific number, 1-indexed. If the tab number
+    /// is higher than the number of tabs, this will go to the last tab.
     goto_tab: usize,
 
     /// Toggle the tab overview.

@@ -211,7 +211,7 @@ class TerminalController: BaseTerminalController {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
-        
+
         // If window decorations are disabled, remove our title
         if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
 
@@ -514,11 +514,14 @@ class TerminalController: BaseTerminalController {
                 return
             }
         } else {
-            // Tabs are 0-indexed here, so we subtract one from the key the user hit.
-            finalIndex = Int(tabIndex - 1)
+            // The configured value is 1-indexed.
+            guard tabIndex >= 1 else { return }
+
+            // If our index is outside our boundary then we use the max
+            finalIndex = min(Int(tabIndex - 1), tabbedWindows.count - 1)
         }
 
-        guard finalIndex >= 0 && finalIndex < tabbedWindows.count else { return }
+        guard finalIndex >= 0 else { return }
         let targetWindow = tabbedWindows[finalIndex]
         targetWindow.makeKeyAndOrderFront(nil)
     }
