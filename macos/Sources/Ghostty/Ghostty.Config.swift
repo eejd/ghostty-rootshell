@@ -344,10 +344,10 @@ extension Ghostty {
             return QuickTerminalScreen(fromGhosttyConfig: str) ?? .main
         }
 
-        var quickTerminalAnimateDuration: Double {
+        var quickTerminalAnimationDuration: Double {
             guard let config = self.config else { return 0.2 }
             var v: Double = 0.2
-            let key = "quick-terminal-animate-duration"
+            let key = "quick-terminal-animation-duration"
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
