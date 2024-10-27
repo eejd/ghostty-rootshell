@@ -515,8 +515,9 @@ const Preview = struct {
                 }
                 if (theme_list.hasMouse(mouse)) |_| {
                     if (mouse.button == .left and mouse.type == .release) {
-                        if (self.window + mouse.row < self.filtered.items.len) {
-                            self.current = self.window + mouse.row;
+                        const selection = self.window + mouse.row;
+                        if (selection < self.filtered.items.len) {
+                            self.current = selection;
                         }
                     }
                     highlight = mouse.row;
