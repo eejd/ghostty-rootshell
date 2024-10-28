@@ -1816,9 +1816,12 @@ keybind: Keybinds = .{},
 /// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
 /// however, it does not remove the frame from the window or cause it to have
 /// squared corners. Changing to or from this option at run-time may affect
-/// existing windows in buggy ways. The top titlebar area of the window will
-/// continue to drag the window around and you will not be able to use
-/// the mouse for terminal events in this space.
+/// existing windows in buggy ways.
+///
+/// When "hidden", the top titlebar area can no longer be used for dragging
+/// the window. To drag the window, you can use option+click on the resizable
+/// areas of the frame to drag the window. This is a standard macOS behavior
+/// and not something Ghostty enables.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
