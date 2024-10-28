@@ -4118,9 +4118,13 @@ fn writeScreenFile(
     var tmp_dir = try internal_os.TempDir.init();
     errdefer tmp_dir.deinit();
 
+    var filename_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const filename = try std.fmt.bufPrint(&filename_buf, "{s}.txt", .{@tagName(loc)});
+
     // Open our scrollback file
-    var file = try tmp_dir.dir.createFile(@tagName(loc), .{});
+    var file = try tmp_dir.dir.createFile(filename, .{});
     defer file.close();
+
     // Screen.dumpString writes byte-by-byte, so buffer it
     var buf_writer = std.io.bufferedWriter(file.writer());
 
@@ -4179,7 +4183,7 @@ fn writeScreenFile(
 
     // Get the final path
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = try tmp_dir.dir.realpath(@tagName(loc), &path_buf);
+    const path = try tmp_dir.dir.realpath(filename, &path_buf);
 
     switch (write_action) {
         .open => try internal_os.open(self.alloc, path),
