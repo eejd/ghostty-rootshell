@@ -186,6 +186,12 @@ pub const Action = union(Key) {
     /// key mode because other input may be ignored.
     key_sequence: KeySequence,
 
+    /// The terminal background color was changed.
+    set_background: SetBackground,
+
+    /// The terminal foreground color was changed.
+    set_foreground: SetForeground,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         new_window,
@@ -219,6 +225,8 @@ pub const Action = union(Key) {
         quit_timer,
         secure_input,
         key_sequence,
+        set_background,
+        set_foreground,
     };
 
     /// Sync with: ghostty_action_u
@@ -447,4 +455,16 @@ pub const KeySequence = union(enum) {
             .end => .{ .active = false, .trigger = .{} },
         };
     }
+};
+
+pub const SetBackground = extern struct {
+    r: u8,
+    g: u8,
+    b: u8,
+};
+
+pub const SetForeground = extern struct {
+    r: u8,
+    g: u8,
+    b: u8,
 };

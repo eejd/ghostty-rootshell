@@ -1215,12 +1215,14 @@ pub const StreamHandler = struct {
                 _ = self.renderer_mailbox.push(.{
                     .foreground_color = color,
                 }, .{ .forever = {} });
+                self.surfaceMessageWriter(.{ .set_background = color });
             },
             .background => {
                 self.background_color = color;
                 _ = self.renderer_mailbox.push(.{
                     .background_color = color,
                 }, .{ .forever = {} });
+                self.surfaceMessageWriter(.{ .set_background = color });
             },
             .cursor => {
                 self.cursor_color = color;

@@ -799,6 +799,22 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             }, .unlocked);
         },
 
+        .set_background => |color| {
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_background,
+                .{ .r = color.r, .g = color.g, .b = color.b },
+            );
+        },
+
+        .set_foreground => |color| {
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_background,
+                .{ .r = color.r, .g = color.g, .b = color.b },
+            );
+        },
+
         .set_mouse_shape => |shape| {
             log.debug("changing mouse shape: {}", .{shape});
             try self.rt_app.performAction(
