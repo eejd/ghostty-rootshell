@@ -975,7 +975,7 @@ fn addDeps(
 
         if (b.systemIntegrationOption("freetype", .{})) {
             step.linkSystemLibrary2("bzip2", dynamic_link_opts);
-            step.linkSystemLibrary2("freetype", dynamic_link_opts);
+            step.linkSystemLibrary2("freetype2", dynamic_link_opts);
         } else {
             step.linkLibrary(freetype_dep.artifact("freetype"));
             try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
@@ -1068,6 +1068,7 @@ fn addDeps(
     step.root_module.addImport("glslang", glslang_dep.module("glslang"));
     if (b.systemIntegrationOption("glslang", .{})) {
         step.linkSystemLibrary2("glslang", dynamic_link_opts);
+        step.linkSystemLibrary2("glslang-default-resource-limits", dynamic_link_opts);
     } else {
         step.linkLibrary(glslang_dep.artifact("glslang"));
         try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
