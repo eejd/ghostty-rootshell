@@ -152,7 +152,7 @@ class BaseTerminalController: NSWindowController,
         // screen then we clamp it back to within the screen.
         guard let window else { return }
         guard window.isVisible else { return }
-        guard window.isOnActiveSpace else { return }
+        guard !window.styleMask.contains(.fullScreen) else { return }
         guard let screen = window.screen else { return }
 
         let visibleFrame = screen.visibleFrame
