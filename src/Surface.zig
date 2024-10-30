@@ -130,6 +130,11 @@ config: DerivedConfig,
 /// This is used to determine if we need to confirm, hold open, etc.
 child_exited: bool = false,
 
+/// We maintain our focus state and assume we're focused by default.
+/// If we're not initially focused then apprts can call focusCallback
+/// to let us know.
+focused: bool = true,
+
 /// The effect of an input event. This can be used by callers to take
 /// the appropriate action after an input event. For example, key
 /// input can be forwarded to the OS for further processing if it
@@ -1988,6 +1993,10 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
+    // If our focus state is the same we do nothing.
+    if (self.focused == focused) return;
+    self.focused = focused;
+
     // Notify our render thread of the new state
     _ = self.renderer_thread.mailbox.push(.{
         .focus = focused,
@@ -2043,6 +2052,12 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
 
     // Schedule render which also drains our mailbox
     try self.queueRender();
+
+    // Whenever our focus changes we unhide the mouse. The mouse will be
+    // hidden again if the user starts typing. This helps alleviate some
+    // buggy behavior upstream in macOS with the mouse never becoming visible
+    // again when tabbing between programs (see #2525).
+    self.showMouse();
 
     // Update the focus state and notify the terminal
     {
