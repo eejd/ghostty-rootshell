@@ -1229,6 +1229,12 @@ pub const StreamHandler = struct {
                 }, .{ .forever = {} });
             },
         }
+
+        // Notify the surface of the color change
+        self.surfaceMessageWriter(.{ .color_change = .{
+            .kind = kind,
+            .color = color,
+        } });
     }
 
     pub fn resetColor(
