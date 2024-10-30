@@ -485,8 +485,7 @@ pub fn performAction(
         .key_sequence,
         .render_inspector,
         .renderer_health,
-        .set_foreground,
-        .set_background,
+        .color_change,
         => log.warn("unimplemented action={}", .{action}),
     }
 }

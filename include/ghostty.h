@@ -512,19 +512,20 @@ typedef struct {
   ghostty_input_trigger_s trigger;
 } ghostty_action_key_sequence_s;
 
-// apprt.action.SetBackground
-typedef struct {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-} ghostty_action_set_background_s;
+// apprt.action.ColorKind
+typedef enum {
+  GHOSTTY_ACTION_COLOR_KIND_FOREGROUND = -1,
+  GHOSTTY_ACTION_COLOR_KIND_BACKGROUND = -2,
+  GHOSTTY_ACTION_COLOR_KIND_CURSOR = -3,
+} ghostty_action_color_kind_e;
 
-// apprt.action.SetForeground
+// apprt.action.ColorChange
 typedef struct {
+  ghostty_action_color_kind_e kind;
   uint8_t r;
   uint8_t g;
   uint8_t b;
-} ghostty_action_set_foreground_s;
+} ghostty_action_color_change_s;
 
 // apprt.Action.Key
 typedef enum {
@@ -559,8 +560,7 @@ typedef enum {
   GHOSTTY_ACTION_QUIT_TIMER,
   GHOSTTY_ACTION_SECURE_INPUT,
   GHOSTTY_ACTION_KEY_SEQUENCE,
-  GHOSTTY_ACTION_SET_BACKGROUND,
-  GHOSTTY_ACTION_SET_FOREGROUND,
+  GHOSTTY_ACTION_COLOR_CHANGE,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -583,8 +583,7 @@ typedef union {
   ghostty_action_quit_timer_e quit_timer;
   ghostty_action_secure_input_e secure_input;
   ghostty_action_key_sequence_s key_sequence;
-  ghostty_action_set_background_s set_background;
-  ghostty_action_set_foreground_s set_foreground;
+  ghostty_action_color_change_s color_change;
 } ghostty_action_u;
 
 typedef struct {

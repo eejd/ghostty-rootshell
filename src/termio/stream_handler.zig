@@ -1215,14 +1215,12 @@ pub const StreamHandler = struct {
                 _ = self.renderer_mailbox.push(.{
                     .foreground_color = color,
                 }, .{ .forever = {} });
-                self.surfaceMessageWriter(.{ .set_background = color });
             },
             .background => {
                 self.background_color = color;
                 _ = self.renderer_mailbox.push(.{
                     .background_color = color,
                 }, .{ .forever = {} });
-                self.surfaceMessageWriter(.{ .set_background = color });
             },
             .cursor => {
                 self.cursor_color = color;
@@ -1231,6 +1229,12 @@ pub const StreamHandler = struct {
                 }, .{ .forever = {} });
             },
         }
+
+        // Notify the surface of the color change
+        self.surfaceMessageWriter(.{ .color_change = .{
+            .kind = kind,
+            .color = color,
+        } });
     }
 
     pub fn resetColor(

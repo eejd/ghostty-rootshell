@@ -799,21 +799,21 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             }, .unlocked);
         },
 
-        .set_background => |color| {
-            try self.rt_app.performAction(
-                .{ .surface = self },
-                .set_background,
-                .{ .r = color.r, .g = color.g, .b = color.b },
-            );
-        },
-
-        .set_foreground => |color| {
-            try self.rt_app.performAction(
-                .{ .surface = self },
-                .set_background,
-                .{ .r = color.r, .g = color.g, .b = color.b },
-            );
-        },
+        .color_change => |change| try self.rt_app.performAction(
+            .{ .surface = self },
+            .color_change,
+            .{
+                .kind = switch (change.kind) {
+                    .background => .background,
+                    .foreground => .foreground,
+                    .cursor => .cursor,
+                    .palette => |v| @enumFromInt(v),
+                },
+                .r = change.color.r,
+                .g = change.color.g,
+                .b = change.color.b,
+            },
+        ),
 
         .set_mouse_shape => |shape| {
             log.debug("changing mouse shape: {}", .{shape});

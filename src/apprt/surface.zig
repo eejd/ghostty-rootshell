@@ -70,11 +70,11 @@ pub const Message = union(enum) {
     /// unless the surface exits.
     password_input: bool,
 
-    /// The terminal background color was changed.
-    set_background: terminal.color.RGB,
-
-    /// The terminal foreground color was changed.
-    set_foreground: terminal.color.RGB,
+    /// A terminal color was changed using OSC sequences.
+    color_change: struct {
+        kind: terminal.osc.Command.ColorKind,
+        color: terminal.color.RGB,
+    },
 
     pub const ReportTitleStyle = enum {
         csi_21_t,
