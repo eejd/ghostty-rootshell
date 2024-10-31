@@ -2744,12 +2744,20 @@ pub fn mouseButtonCallback(
     }
 
     // For left button click release we check if we are moving our cursor.
-    if (button == .left and action == .release and mods.alt) click_move: {
+    if (button == .left and
+        action == .release and
+        mods.alt)
+    click_move: {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // If we have a selection then we do not do click to move because
+        // it means that we moved our cursor while pressing the mouse button.
+        if (self.io.terminal.screen.selection != null) break :click_move;
+
         // Moving always resets the click count so that we don't highlight.
         self.mouse.left_click_count = 0;
         const pin = self.mouse.left_click_pin orelse break :click_move;
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
         try self.clickMoveCursor(pin.*);
         return true;
     }
