@@ -3468,7 +3468,7 @@ fn dragLeftClickSingle(
         try self.setSelection(if (selected) terminal.Selection.init(
             drag_pin,
             drag_pin,
-            self.mouse.mods.ctrlOrSuper() and self.mouse.mods.alt,
+            SurfaceMouse.isRectangleSelectState(self.mouse.mods),
         ) else null);
 
         return;
@@ -3503,7 +3503,7 @@ fn dragLeftClickSingle(
         try self.setSelection(terminal.Selection.init(
             start,
             drag_pin,
-            self.mouse.mods.ctrlOrSuper() and self.mouse.mods.alt,
+            SurfaceMouse.isRectangleSelectState(self.mouse.mods),
         ));
         return;
     }

@@ -146,7 +146,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     // MARK: Notifications
-
+    
     @objc private func didChangeScreenParametersNotification(_ notification: Notification) {
         // If we have a window that is visible and it is outside the bounds of the
         // screen then we clamp it back to within the screen.
