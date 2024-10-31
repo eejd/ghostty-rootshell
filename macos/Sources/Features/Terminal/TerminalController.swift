@@ -78,15 +78,13 @@ class TerminalController: BaseTerminalController {
         }
     }
 
-    override func ghosttyDidReloadConfig() {
-        super.ghosttyDidReloadConfig()
+    //MARK: - Methods
 
+    func configDidReload() {
         guard let window = window as? TerminalWindow else { return }
         window.focusFollowsMouse = ghostty.config.focusFollowsMouse
         syncAppearance()
     }
-
-    //MARK: - Methods
 
     /// Update the accessory view of each tab according to the keyboard
     /// shortcut that activates it (if any). This is called when the key window
@@ -166,6 +164,21 @@ class TerminalController: BaseTerminalController {
             window.titlebarFont = nil
         }
 
+        // If we have window transparency then set it transparent. Otherwise set it opaque.
+        if (ghostty.config.backgroundOpacity < 1) {
+            window.isOpaque = false
+
+            // This is weird, but we don't use ".clear" because this creates a look that
+            // matches Terminal.app much more closer. This lets users transition from
+            // Terminal.app more easily.
+            window.backgroundColor = .white.withAlphaComponent(0.001)
+
+            ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+        }
+
         window.hasShadow = ghostty.config.macosWindowShadow
 
         guard window.hasStyledTabs else { return }
@@ -195,20 +208,31 @@ class TerminalController: BaseTerminalController {
     }
 
     override func windowDidLoad() {
-        super.windowDidLoad()
-        
         guard let window = window as? TerminalWindow else { return }
-        
+
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
         if (restorable) {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
-        
+
         // If window decorations are disabled, remove our title
         if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
-        
+
+        // Terminals typically operate in sRGB color space and macOS defaults
+        // to "native" which is typically P3. There is a lot more resources
+        // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
+        // Ghostty defaults to sRGB but this can be overridden.
+        switch (ghostty.config.windowColorspace) {
+        case "display-p3":
+            window.colorSpace = .displayP3
+        case "srgb":
+            fallthrough
+        default:
+            window.colorSpace = .sRGB
+        }
+
         // If we have only a single surface (no splits) and that surface requested
         // an initial size then we set it here now.
         if case let .leaf(leaf) = surfaceTree {
@@ -221,21 +245,21 @@ class TerminalController: BaseTerminalController {
                 frame.size.height -= leaf.surface.frame.size.height
                 frame.size.width += min(initialSize.width, screen.frame.width)
                 frame.size.height += min(initialSize.height, screen.frame.height)
-                
+
                 // We have no tabs and we are not a split, so set the initial size of the window.
                 window.setFrame(frame, display: true)
             }
         }
-        
+
         // Center the window to start, we'll move the window frame automatically
         // when cascading.
         window.center()
-        
+
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = ghostty.config.windowTheme {
             window.windowTheme = .init(rawValue: windowTheme)
         }
-        
+
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
@@ -248,50 +272,50 @@ class TerminalController: BaseTerminalController {
         } else if (ghostty.config.macosTitlebarStyle == "transparent") {
             window.transparentTabs = true
         }
-        
+
         if window.hasStyledTabs {
             // Set the background color of the window
             let backgroundColor = NSColor(ghostty.config.backgroundColor)
             window.backgroundColor = backgroundColor
-            
+
             // This makes sure our titlebar renders correctly when there is a transparent background
             window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
         }
-        
+
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
             viewModel: self,
             delegate: self
         ))
-        
+
         // If our titlebar style is "hidden" we adjust the style appropriately
         if (ghostty.config.macosTitlebarStyle == "hidden") {
             window.styleMask = [
                 // We need `titled` in the mask to get the normal window frame
                 .titled,
-                
+
                 // Full size content view so we can extend
                 // content in to the hidden titlebar's area
-                    .fullSizeContentView,
-                
-                    .resizable,
+                .fullSizeContentView,
+
+                .resizable,
                 .closable,
                 .miniaturizable,
             ]
-            
+
             // Hide the title
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
-            
+
             // Hide the traffic lights (window control buttons)
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true
-            
+
             // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
             window.tabbingMode = .disallowed
-            
+
             // Nuke it from orbit -- hide the titlebar container entirely, just in case. There are
             // some operations that appear to bring back the titlebar visibility so this ensures
             // it is gone forever.
@@ -300,7 +324,7 @@ class TerminalController: BaseTerminalController {
                 titleBarContainer.isHidden = true
             }
         }
-        
+
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
         // it.
@@ -320,9 +344,9 @@ class TerminalController: BaseTerminalController {
                 window.tabGroup?.removeWindow(window)
             }
         }
-        
+
         window.focusFollowsMouse = ghostty.config.focusFollowsMouse
-        
+
         // Apply any additional appearance-related properties to the new window.
         syncAppearance()
     }

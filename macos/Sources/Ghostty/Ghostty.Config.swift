@@ -128,14 +128,13 @@ extension Ghostty {
             return v
         }
 
-        var windowColorspace: WindowColorspace {
-            guard let config = self.config else { return .srgb }
+        var windowColorspace: String {
+            guard let config = self.config else { return "" }
             var v: UnsafePointer<Int8>? = nil
             let key = "window-colorspace"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return .srgb }
-            guard let ptr = v else { return .srgb }
-            let str = String(cString: ptr)
-            return WindowColorspace(rawValue: str) ?? .srgb
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return "" }
+            guard let ptr = v else { return "" }
+            return String(cString: ptr)
         }
 
         var windowSaveState: String {
@@ -474,10 +473,5 @@ extension Ghostty.Config {
             default: return false;
             }
         }
-    }
-
-    enum WindowColorspace : String {
-        case srgb
-        case displayP3 = "display-p3"
     }
 }

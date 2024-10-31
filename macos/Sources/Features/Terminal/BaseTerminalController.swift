@@ -93,11 +93,6 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(didChangeScreenParametersNotification),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil)
-        center.addObserver(
-            self,
-            selector: #selector(ghosttyDidReloadConfigNotification),
-            name: Ghostty.Notification.ghosttyDidReloadConfig,
-            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -128,7 +123,7 @@ class BaseTerminalController: NSWindowController,
 
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
     /// what surface is focused. This must be called whenever a surface OR window changes focus.
-    private func syncFocusToSurfaceTree() {
+    func syncFocusToSurfaceTree() {
         guard let tree = self.surfaceTree else { return }
 
         for leaf in tree {
@@ -141,48 +136,6 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    // Call this whenever we want to setup our appearance parameters based on
-    // configuration changes.
-    private func syncAppearance() {
-        guard let window else { return }
-
-        // If our window is not visible, then delay this. This is possible specifically
-        // during state restoration but probably in other scenarios as well. To delay,
-        // we just loop directly on the dispatch queue. We have to delay because some
-        // APIs such as window blur have no effect unless the window is visible.
-        guard window.isVisible else {
-            // Weak window so that if the window changes or is destroyed we aren't holding a ref
-            DispatchQueue.main.async { [weak self] in self?.syncAppearance() }
-            return
-        }
-
-        // If we have window transparency then set it transparent. Otherwise set it opaque.
-        if (ghostty.config.backgroundOpacity < 1) {
-            window.isOpaque = false
-
-            // This is weird, but we don't use ".clear" because this creates a look that
-            // matches Terminal.app much more closer. This lets users transition from
-            // Terminal.app more easily.
-            window.backgroundColor = .white.withAlphaComponent(0.001)
-
-            ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
-        } else {
-            window.isOpaque = true
-            window.backgroundColor = .windowBackgroundColor
-        }
-
-        // Terminals typically operate in sRGB color space and macOS defaults
-        // to "native" which is typically P3. There is a lot more resources
-        // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
-        // Ghostty defaults to sRGB but this can be overridden.
-        switch (ghostty.config.windowColorspace) {
-        case .displayP3:
-            window.colorSpace = .displayP3
-        case .srgb:
-            window.colorSpace = .sRGB
-        }
-    }
-
     // Call this whenever the frame changes
     private func windowFrameDidChange() {
         // We need to update our saved frame information in case of monitor
@@ -190,14 +143,6 @@ class BaseTerminalController: NSWindowController,
         savedFrame = nil
         guard let window, let screen = window.screen else { return }
         savedFrame = .init(window: window.frame, screen: screen.visibleFrame)
-    }
-
-    // MARK: Overridable Callbacks
-
-    /// Called whenever Ghostty reloads the configuration. Callers should call super.
-    open func ghosttyDidReloadConfig() {
-        // Whenever the config changes we setup our appearance.
-        syncAppearance()
     }
 
     // MARK: Notifications
@@ -244,10 +189,6 @@ class BaseTerminalController: NSWindowController,
 
         // Apply the new window frame
         window.setFrame(newFrame, display: true)
-    }
-
-    @objc private func ghosttyDidReloadConfigNotification(notification: SwiftUI.Notification) {
-        ghosttyDidReloadConfig()
     }
 
     // MARK: Local Events
@@ -440,16 +381,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    // MARK: NSWindowController
-
-    override func windowDidLoad() {
-        super.windowDidLoad()
-
-        // Setup our configured appearance that we support.
-        syncAppearance()
-    }
-
-    // MARK: NSWindowDelegate
+    //MARK: - NSWindowDelegate
 
     // This is called when performClose is called on a window (NOT when close()
     // is called directly). performClose is called primarily when UI elements such

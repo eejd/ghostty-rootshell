@@ -496,6 +496,11 @@ class AppDelegate: NSObject,
         // AppKit mutex on the appearance.
         DispatchQueue.main.async { self.syncAppearance() }
 
+        // Update all of our windows
+        terminalManager.windows.forEach { window in
+            window.controller.configDidReload()
+        }
+
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = state.config.errors
