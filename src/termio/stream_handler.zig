@@ -1071,7 +1071,9 @@ pub const StreamHandler = struct {
                 // The URI will be parsed as if the last set o digit is a port, so we need to
                 // make sure that part is included when it's set.
                 if (uri.port) |port| {
-                    // 65_535 is considered the highest port number on Linux.
+                    // RFC 793 defines port numbers as 16-bit numbers. 5 digits is sufficient to represent
+                    // the maximum since 2^16 - 1 = 65_535.
+                    // See https://www.rfc-editor.org/rfc/rfc793#section-3.1.
                     const PORT_NUMBER_MAX_DIGITS = 5;
 
                     // Make sure there is space for a max length hostname + the max number of digits.
