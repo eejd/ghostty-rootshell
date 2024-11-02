@@ -207,6 +207,7 @@ pub const GPUState = struct {
         for (&self.frames) |*frame| frame.deinit();
         self.instance.deinit();
         self.queue.release();
+        self.device.release();
     }
 
     /// Get the next frame state to draw to. This will wait on the
