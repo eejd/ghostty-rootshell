@@ -1253,6 +1253,11 @@ pub const StreamHandler = struct {
                         self.terminal.flags.dirty.palette = true;
                         self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                         mask.unset(i);
+
+                        self.surfaceMessageWriter(.{ .color_change = .{
+                            .kind = .{ .palette = @intCast(i) },
+                            .color = self.terminal.color_palette.colors[i],
+                        } });
                     }
                 } else {
                     var it = std.mem.tokenizeScalar(u8, value, ';');
@@ -1263,6 +1268,11 @@ pub const StreamHandler = struct {
                             self.terminal.flags.dirty.palette = true;
                             self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
                             mask.unset(i);
+
+                            self.surfaceMessageWriter(.{ .color_change = .{
+                                .kind = .{ .palette = @intCast(i) },
+                                .color = self.terminal.color_palette.colors[i],
+                            } });
                         }
                     }
                 }
@@ -1272,18 +1282,35 @@ pub const StreamHandler = struct {
                 _ = self.renderer_mailbox.push(.{
                     .foreground_color = self.foreground_color,
                 }, .{ .forever = {} });
+
+                self.surfaceMessageWriter(.{ .color_change = .{
+                    .kind = .foreground,
+                    .color = self.foreground_color,
+                } });
             },
             .background => {
                 self.background_color = self.default_background_color;
                 _ = self.renderer_mailbox.push(.{
                     .background_color = self.background_color,
                 }, .{ .forever = {} });
+
+                self.surfaceMessageWriter(.{ .color_change = .{
+                    .kind = .background,
+                    .color = self.background_color,
+                } });
             },
             .cursor => {
                 self.cursor_color = self.default_cursor_color;
                 _ = self.renderer_mailbox.push(.{
                     .cursor_color = self.cursor_color,
                 }, .{ .forever = {} });
+
+                if (self.cursor_color) |color| {
+                    self.surfaceMessageWriter(.{ .color_change = .{
+                        .kind = .cursor,
+                        .color = color,
+                    } });
+                }
             },
         }
     }
