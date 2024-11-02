@@ -175,7 +175,7 @@ pub const GPUState = struct {
     instance: InstanceBuffer, // MTLBuffer
 
     pub fn init() !GPUState {
-        const device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
+        const device = try chooseDevice();
         const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
         errdefer queue.release();
 
@@ -198,6 +198,25 @@ pub const GPUState = struct {
         }
 
         return result;
+    }
+
+    fn chooseDevice() error{NoMetalDevice}!objc.Object {
+        const devices = objc.Object.fromId(mtl.MTLCopyAllDevices());
+        defer devices.release();
+        var chosen_device: ?objc.Object = null;
+        var iter = devices.iterate();
+        while (iter.next()) |device| {
+            // We want a GPU that’s connected to a display.
+            if (device.getProperty(bool, "isHeadless")) continue;
+            chosen_device = device;
+            // If the user has an eGPU plugged in, they probably want
+            // to use it. Otherwise, integrated GPUs are better for
+            // battery life and thermals.
+            if (device.getProperty(bool, "isRemovable") or
+                device.getProperty(bool, "isLowPower")) break;
+        }
+        const device = chosen_device orelse return error.NoMetalDevice;
+        return device.retain();
     }
 
     pub fn deinit(self: *GPUState) void {
