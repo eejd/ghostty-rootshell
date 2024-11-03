@@ -133,7 +133,29 @@ pub fn parse(
                 error.OutOfMemory => return err,
                 error.InvalidField => "unknown field",
                 error.ValueRequired => "value required",
-                error.InvalidValue => "invalid value",
+                error.InvalidValue => msg: {
+                    var buf = std.ArrayList(u8).init(arena_alloc);
+                    errdefer buf.deinit();
+                    const writer = buf.writer();
+                    try writer.print("invalid value \"{?s}\"", .{value});
+                    const typeinfo = @typeInfo(T);
+                    inline for (typeinfo.Struct.fields) |f| {
+                        if (std.mem.eql(u8, key, f.name)) {
+                            switch (@typeInfo(f.type)) {
+                                .Enum => |e| {
+                                    try writer.print(", valid values are: ", .{});
+                                    inline for (e.fields, 0..) |field, i| {
+                                        if (i != 0) try writer.print(", ", .{});
+                                        try writer.print("{s}", .{field.name});
+                                    }
+                                },
+                                else => {},
+                            }
+                            break;
+                        }
+                    }
+                    break :msg try buf.toOwnedSliceSentinel(0);
+                },
                 else => try std.fmt.allocPrintZ(
                     arena_alloc,
                     "unknown error {}",
