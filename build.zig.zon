@@ -14,8 +14,8 @@
             .lazy = true,
         },
         .zig_objc = .{
-            .url = "https://github.com/mitchellh/zig-objc/archive/fe5ac419530cf800294369d996133fe9cd067aec.tar.gz",
-            .hash = "122034b3e15d582d8d101a7713e5f13c872b8b8eb6d9cb47515b8e34ee75e122630d",
+            .url = "https://github.com/mitchellh/zig-objc/archive/7e1acc8a45227fcdf0163cc1d9360a4f8b70e33e.tar.gz",
+            .hash = "122060402a6931a32ee40538291fd87d3eee7b43739c7ac63573f4f5b8deea7ce214",
         },
         .zig_js = .{
             .url = "https://github.com/mitchellh/zig-js/archive/d0b8b0a57c52fbc89f9d9fecba75ca29da7dd7d1.tar.gz",

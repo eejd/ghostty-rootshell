@@ -1227,14 +1227,7 @@ fn addDeps(
             .optimize = optimize,
         });
 
-        // This is a bit of a hack that should probably be fixed upstream
-        // in zig-objc, but we need to add the apple SDK paths to the
-        // zig-objc module so that it can find the objc runtime headers.
-        const module = objc_dep.module("objc");
-        module.resolved_target = step.root_module.resolved_target;
-        try @import("apple_sdk").addPaths(b, module);
-        step.root_module.addImport("objc", module);
-
+        step.root_module.addImport("objc", objc_dep.module("objc"));
         step.root_module.addImport("macos", macos_dep.module("macos"));
         step.linkLibrary(macos_dep.artifact("macos"));
         try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
