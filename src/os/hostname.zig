@@ -43,6 +43,50 @@ pub fn isLocalHostname(hostname: []const u8) !bool {
     return std.mem.eql(u8, hostname, ourHostname);
 }
 
+test "bufPrintHostnameFromFileUri succeeds with ascii hostname" {
+    const uri = try std.Uri.parse("file://localhost/");
+
+    var buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const actual = try bufPrintHostnameFromFileUri(&buf, uri);
+
+    try std.testing.expectEqualStrings("localhost", actual);
+}
+
+test "bufPrintHostnameFromFileUri succeeds with hostname as mac address" {
+    const uri = try std.Uri.parse("file://12:34:56:78:90:12");
+
+    var buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const actual = try bufPrintHostnameFromFileUri(&buf, uri);
+
+    try std.testing.expectEqualStrings("12:34:56:78:90:12", actual);
+}
+
+test "bufPrintHostnameFromFileUri returns only hostname when there is a port component in the URI" {
+    // First: try with a non-2-digit port, to test general port handling.
+    const four_port_uri = try std.Uri.parse("file://has-a-port:1234");
+
+    var four_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const four_port_actual = try bufPrintHostnameFromFileUri(&four_port_buf, four_port_uri);
+
+    try std.testing.expectEqualStrings("has-a-port", four_port_actual);
+
+    // Second: try with a 2-digit port to test mac-address handling.
+    const two_port_uri = try std.Uri.parse("file://has-a-port:12");
+
+    var two_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const two_port_actual = try bufPrintHostnameFromFileUri(&two_port_buf, two_port_uri);
+
+    try std.testing.expectEqualStrings("has-a-port", two_port_actual);
+
+    // Third: try with a mac-address that has a port-component added to it to test mac-address handling.
+    const mac_with_port_uri = try std.Uri.parse("file://12:34:56:78:90:12:1234");
+
+    var mac_with_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const mac_with_port_actual = try bufPrintHostnameFromFileUri(&mac_with_port_buf, mac_with_port_uri);
+
+    try std.testing.expectEqualStrings("12:34:56:78:90:12", mac_with_port_actual);
+}
+
 test "isLocalHostname returns true when provided hostname is localhost" {
     try std.testing.expect(try isLocalHostname("localhost"));
 }
