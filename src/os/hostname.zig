@@ -12,10 +12,26 @@ pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) ![]const u8 {
     };
 
     // When the "Private Wi-Fi address" setting is toggled on macOS the hostname
-    // is set to a string of digits separated by a colon, e.g. '12:34:56:78:90:12'.
-    // The URI will be parsed as if the last set o digit is a port, so we need to
-    // make sure that part is included when it's set.
+    // is set to a random mac address, e.g. '12:34:56:78:90:ab'.
+    // The URI will be parsed as if the last set of digits is a port number, so
+    // we need to make sure that part is included when it's set.
+
+    // We're only interested in special port handling when the current hostname is a
+    // partial MAC address that's potentially missing the last component.
+    // If that's not the case we just return the plain URI hostname directly.
+    // NOTE: This implementation is not sufficient to verify a valid mac address, but
+    //       it's probably sufficient for this specific purpose.
+    if (host.len != 14 or std.mem.count(u8, host, ":") != 4) {
+        return host;
+    }
+
     if (uri.port) |port| {
+        // If the port is not a 2-digit number we're not looking at a partial MAC-address,
+        // and instead just a regular port so we return the plain URI hostname.
+        if (port < 10 or port > 99) {
+            return host;
+        }
+
         var fbs = std.io.fixedBufferStream(buf);
         std.fmt.format(fbs.writer().any(), "{s}:{d}", .{ host, port }) catch |err| switch (err) {
             error.NoSpaceLeft => return error.NoSpaceLeft,
