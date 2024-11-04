@@ -42,3 +42,18 @@ pub fn isLocalHostname(hostname: []const u8) !bool {
 
     return std.mem.eql(u8, hostname, ourHostname);
 }
+
+test "isLocalHostname returns true when provided hostname is localhost" {
+    try std.testing.expect(try isLocalHostname("localhost"));
+}
+
+test "isLocalHostname returns true when hostname is local" {
+    var buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const localHostname = try posix.gethostname(&buf);
+
+    try std.testing.expect(try isLocalHostname(localHostname));
+}
+
+test "isLocalHostname returns false when hostname is not local" {
+    try std.testing.expectEqual(false, try isLocalHostname("not-the-local-hostname"));
+}
