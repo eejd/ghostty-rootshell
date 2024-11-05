@@ -499,6 +499,22 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
+    // Neovim plugin
+    // This is just a copy-paste of the Vim plugin, but using a Neovim subdir.
+    // By default, Neovim doesn't look inside share/vim/vimfiles. Some distros
+    // configure it to do that however. Fedora, does not as a counterexample.
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("syntax/ghostty.vim", config_vim.syntax);
+        _ = wf.add("ftdetect/ghostty.vim", config_vim.ftdetect);
+        _ = wf.add("ftplugin/ghostty.vim", config_vim.ftplugin);
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/nvim/site",
+        });
+    }
+
     // Documentation
     if (emit_docs) {
         try buildDocumentation(b, config);
