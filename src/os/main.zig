@@ -43,7 +43,3 @@ pub const clickInterval = mouse.clickInterval;
 pub const open = openpkg.open;
 pub const pipe = pipepkg.pipe;
 pub const resourcesDir = resourcesdir.resourcesDir;
-
-test {
-    @import("std").testing.refAllDecls(@This());
-}
