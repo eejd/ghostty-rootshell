@@ -1,22 +1,21 @@
 const std = @import("std");
 const posix = std.posix;
 
-const HostnameParsingError = error{
+pub const HostnameParsingError = error{
     NoHostnameInUri,
     NoSpaceLeft,
 };
 
-const LocalHostnameValidationError = error{
-    PermissionDenied,
-    Unexpected,
-};
-
-pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) HostnameParsingError![]const u8 {
+/// Print the hostname from a file URI into a buffer.
+pub fn bufPrintHostnameFromFileUri(
+    buf: []u8,
+    uri: std.Uri,
+) HostnameParsingError![]const u8 {
     // Get the raw string of the URI. Its unclear to me if the various
     // tags of this enum guarantee no percent-encoding so we just
     // check all of it. This isn't a performance critical path.
-    const host_component = uri.host orelse return HostnameParsingError.NoHostnameInUri;
-    const host = switch (host_component) {
+    const host_component = uri.host orelse return error.NoHostnameInUri;
+    const host: []const u8 = switch (host_component) {
         .raw => |v| v,
         .percent_encoded => |v| v,
     };
@@ -31,42 +30,42 @@ pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) HostnameParsingError
     // If that's not the case we just return the plain URI hostname directly.
     // NOTE: This implementation is not sufficient to verify a valid mac address, but
     //       it's probably sufficient for this specific purpose.
-    if (host.len != 14 or std.mem.count(u8, host, ":") != 4) {
-        return host;
-    }
+    if (host.len != 14 or std.mem.count(u8, host, ":") != 4) return host;
 
-    if (uri.port) |port| {
-        // If the port is not a 2-digit number we're not looking at a partial MAC-address,
-        // and instead just a regular port so we return the plain URI hostname.
-        if (port < 10 or port > 99) {
-            return host;
-        }
+    // If we don't have a port then we can return the hostname as-is because
+    // it's not a partial MAC-address.
+    const port = uri.port orelse return host;
 
-        var fbs = std.io.fixedBufferStream(buf);
-        std.fmt.format(fbs.writer().any(), "{s}:{d}", .{ host, port }) catch |err| switch (err) {
-            error.NoSpaceLeft => return HostnameParsingError.NoSpaceLeft,
-            else => unreachable,
-        };
+    // If the port is not a 2-digit number we're not looking at a partial
+    // MAC-address, and instead just a regular port so we return the plain
+    // URI hostname.
+    if (port < 10 or port > 99) return host;
 
-        return fbs.getWritten();
-    }
+    var fbs = std.io.fixedBufferStream(buf);
+    try std.fmt.format(
+        fbs.writer(),
+        "{s}:{d}",
+        .{ host, port },
+    );
 
-    return host;
+    return fbs.getWritten();
 }
 
+pub const LocalHostnameValidationError = error{
+    PermissionDenied,
+    Unexpected,
+};
+
+/// Checks if a hostname is local to the current machine. This matches
+/// both "localhost" and the current hostname of the machine (as returned
+/// by `gethostname`).
 pub fn isLocalHostname(hostname: []const u8) LocalHostnameValidationError!bool {
     // A 'localhost' hostname is always considered local.
-    if (std.mem.eql(u8, "localhost", hostname)) {
-        return true;
-    }
+    if (std.mem.eql(u8, "localhost", hostname)) return true;
 
     // If hostname is not "localhost" it must match our hostname.
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
-    const ourHostname = posix.gethostname(&buf) catch |err| switch (err) {
-        error.PermissionDenied => return LocalHostnameValidationError.PermissionDenied,
-        error.Unexpected => return LocalHostnameValidationError.Unexpected,
-    };
-
+    const ourHostname = try posix.gethostname(&buf);
     return std.mem.eql(u8, hostname, ourHostname);
 }
 
@@ -75,7 +74,6 @@ test "bufPrintHostnameFromFileUri succeeds with ascii hostname" {
 
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const actual = try bufPrintHostnameFromFileUri(&buf, uri);
-
     try std.testing.expectEqualStrings("localhost", actual);
 }
 
@@ -84,7 +82,6 @@ test "bufPrintHostnameFromFileUri succeeds with hostname as mac address" {
 
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const actual = try bufPrintHostnameFromFileUri(&buf, uri);
-
     try std.testing.expectEqualStrings("12:34:56:78:90:12", actual);
 }
 
@@ -94,7 +91,6 @@ test "bufPrintHostnameFromFileUri returns only hostname when there is a port com
 
     var four_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const four_port_actual = try bufPrintHostnameFromFileUri(&four_port_buf, four_port_uri);
-
     try std.testing.expectEqualStrings("has-a-port", four_port_actual);
 
     // Second: try with a 2-digit port to test mac-address handling.
@@ -102,7 +98,6 @@ test "bufPrintHostnameFromFileUri returns only hostname when there is a port com
 
     var two_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const two_port_actual = try bufPrintHostnameFromFileUri(&two_port_buf, two_port_uri);
-
     try std.testing.expectEqualStrings("has-a-port", two_port_actual);
 
     // Third: try with a mac-address that has a port-component added to it to test mac-address handling.
@@ -110,7 +105,6 @@ test "bufPrintHostnameFromFileUri returns only hostname when there is a port com
 
     var mac_with_port_buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const mac_with_port_actual = try bufPrintHostnameFromFileUri(&mac_with_port_buf, mac_with_port_uri);
-
     try std.testing.expectEqualStrings("12:34:56:78:90:12", mac_with_port_actual);
 }
 
@@ -119,7 +113,6 @@ test "bufPrintHostnameFromFileUri returns NoHostnameInUri error when hostname is
 
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const actual = bufPrintHostnameFromFileUri(&buf, uri);
-
     try std.testing.expectError(HostnameParsingError.NoHostnameInUri, actual);
 }
 
@@ -128,7 +121,6 @@ test "bufPrintHostnameFromFileUri returns NoSpaceLeft error when provided buffer
 
     var buf: [5]u8 = undefined;
     const actual = bufPrintHostnameFromFileUri(&buf, uri);
-
     try std.testing.expectError(HostnameParsingError.NoSpaceLeft, actual);
 }
 
@@ -139,10 +131,12 @@ test "isLocalHostname returns true when provided hostname is localhost" {
 test "isLocalHostname returns true when hostname is local" {
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
     const localHostname = try posix.gethostname(&buf);
-
     try std.testing.expect(try isLocalHostname(localHostname));
 }
 
 test "isLocalHostname returns false when hostname is not local" {
-    try std.testing.expectEqual(false, try isLocalHostname("not-the-local-hostname"));
+    try std.testing.expectEqual(
+        false,
+        try isLocalHostname("not-the-local-hostname"),
+    );
 }

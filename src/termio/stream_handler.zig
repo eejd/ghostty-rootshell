@@ -5,7 +5,7 @@ const xev = @import("xev");
 const apprt = @import("../apprt.zig");
 const build_config = @import("../build_config.zig");
 const configpkg = @import("../config.zig");
-const hostname = @import("../os/hostname.zig");
+const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
 const terminal = @import("../terminal/main.zig");
@@ -1055,8 +1055,10 @@ pub const StreamHandler = struct {
         const PORT_NUMBER_MAX_DIGITS = 5;
         // Make sure there is space for a max length hostname + the max number of digits.
         var host_and_port_buf: [posix.HOST_NAME_MAX + PORT_NUMBER_MAX_DIGITS]u8 = undefined;
-
-        const hostname_from_uri = hostname.bufPrintHostnameFromFileUri(&host_and_port_buf, uri) catch |err| switch (err) {
+        const hostname_from_uri = internal_os.hostname.bufPrintHostnameFromFileUri(
+            &host_and_port_buf,
+            uri,
+        ) catch |err| switch (err) {
             error.NoHostnameInUri => {
                 log.warn("OSC 7 uri must contain a hostname: {}", .{err});
                 return;
@@ -1070,13 +1072,16 @@ pub const StreamHandler = struct {
         // OSC 7 is a little sketchy because anyone can send any value from
         // any host (such an SSH session). The best practice terminals follow
         // is to valid the hostname to be local.
-        const host_valid = hostname.isLocalHostname(hostname_from_uri) catch |err| switch (err) {
-            error.PermissionDenied, error.Unexpected => {
+        const host_valid = internal_os.hostname.isLocalHostname(
+            hostname_from_uri,
+        ) catch |err| switch (err) {
+            error.PermissionDenied,
+            error.Unexpected,
+            => {
                 log.warn("failed to get hostname for OSC 7 validation: {}", .{err});
                 return;
             },
         };
-
         if (!host_valid) {
             log.warn("OSC 7 host must be local", .{});
             return;
