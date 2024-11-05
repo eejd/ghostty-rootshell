@@ -1,11 +1,21 @@
 const std = @import("std");
 const posix = std.posix;
 
-pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) ![]const u8 {
+const HostnameParsingError = error{
+    NoHostnameInUri,
+    NoSpaceLeft,
+};
+
+const LocalHostnameValidationError = error{
+    PermissionDenied,
+    Unexpected,
+};
+
+pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) HostnameParsingError![]const u8 {
     // Get the raw string of the URI. Its unclear to me if the various
     // tags of this enum guarantee no percent-encoding so we just
     // check all of it. This isn't a performance critical path.
-    const host_component = uri.host orelse return error.NoHostnameInUri;
+    const host_component = uri.host orelse return HostnameParsingError.NoHostnameInUri;
     const host = switch (host_component) {
         .raw => |v| v,
         .percent_encoded => |v| v,
@@ -34,7 +44,7 @@ pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) ![]const u8 {
 
         var fbs = std.io.fixedBufferStream(buf);
         std.fmt.format(fbs.writer().any(), "{s}:{d}", .{ host, port }) catch |err| switch (err) {
-            error.NoSpaceLeft => return error.NoSpaceLeft,
+            error.NoSpaceLeft => return HostnameParsingError.NoSpaceLeft,
             else => unreachable,
         };
 
@@ -44,7 +54,7 @@ pub fn bufPrintHostnameFromFileUri(buf: []u8, uri: std.Uri) ![]const u8 {
     return host;
 }
 
-pub fn isLocalHostname(hostname: []const u8) !bool {
+pub fn isLocalHostname(hostname: []const u8) LocalHostnameValidationError!bool {
     // A 'localhost' hostname is always considered local.
     if (std.mem.eql(u8, "localhost", hostname)) {
         return true;
@@ -52,8 +62,9 @@ pub fn isLocalHostname(hostname: []const u8) !bool {
 
     // If hostname is not "localhost" it must match our hostname.
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
-    const ourHostname = posix.gethostname(&buf) catch |err| {
-        return err;
+    const ourHostname = posix.gethostname(&buf) catch |err| switch (err) {
+        error.PermissionDenied => return LocalHostnameValidationError.PermissionDenied,
+        error.Unexpected => return LocalHostnameValidationError.Unexpected,
     };
 
     return std.mem.eql(u8, hostname, ourHostname);
@@ -101,6 +112,24 @@ test "bufPrintHostnameFromFileUri returns only hostname when there is a port com
     const mac_with_port_actual = try bufPrintHostnameFromFileUri(&mac_with_port_buf, mac_with_port_uri);
 
     try std.testing.expectEqualStrings("12:34:56:78:90:12", mac_with_port_actual);
+}
+
+test "bufPrintHostnameFromFileUri returns NoHostnameInUri error when hostname is missing from uri" {
+    const uri = try std.Uri.parse("file:///");
+
+    var buf: [posix.HOST_NAME_MAX]u8 = undefined;
+    const actual = bufPrintHostnameFromFileUri(&buf, uri);
+
+    try std.testing.expectError(HostnameParsingError.NoHostnameInUri, actual);
+}
+
+test "bufPrintHostnameFromFileUri returns NoSpaceLeft error when provided buffer has insufficient size" {
+    const uri = try std.Uri.parse("file://12:34:56:78:90:12/");
+
+    var buf: [5]u8 = undefined;
+    const actual = bufPrintHostnameFromFileUri(&buf, uri);
+
+    try std.testing.expectError(HostnameParsingError.NoSpaceLeft, actual);
 }
 
 test "isLocalHostname returns true when provided hostname is localhost" {
