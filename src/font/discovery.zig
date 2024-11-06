@@ -235,21 +235,7 @@ pub const Descriptor = struct {
             );
         }
 
-        // Build our descriptor from attrs
-        var desc = try macos.text.FontDescriptor.createWithAttributes(@ptrCast(attrs));
-        errdefer desc.release();
-
-        // Variations are built by copying the descriptor. I don't know a way
-        // to set it on attrs directly.
-        for (self.variations) |v| {
-            const id = try macos.foundation.Number.create(.int, @ptrCast(&v.id));
-            defer id.release();
-            const next = try desc.createCopyWithVariation(id, v.value);
-            desc.release();
-            desc = next;
-        }
-
-        return desc;
+        return try macos.text.FontDescriptor.createWithAttributes(@ptrCast(attrs));
     }
 };
 
