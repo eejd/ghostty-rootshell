@@ -79,7 +79,7 @@ pub const Descriptor = struct {
 
             // This is not correct, but we don't currently depend on the
             // hash value being different based on decimal values of variations.
-            autoHash(hasher, @as(u64, @intFromFloat(variation.value)));
+            autoHash(hasher, @as(i64, @intFromFloat(variation.value)));
         }
     }
 
@@ -384,6 +384,7 @@ pub const CoreText = struct {
         return DiscoverIterator{
             .alloc = alloc,
             .list = zig_list,
+            .variations = desc.variations,
             .i = 0,
         };
     }
@@ -420,6 +421,7 @@ pub const CoreText = struct {
             return DiscoverIterator{
                 .alloc = alloc,
                 .list = list,
+                .variations = desc.variations,
                 .i = 0,
             };
         }
@@ -443,6 +445,7 @@ pub const CoreText = struct {
             return DiscoverIterator{
                 .alloc = alloc,
                 .list = list,
+                .variations = desc.variations,
                 .i = 0,
             };
         }
@@ -721,6 +724,7 @@ pub const CoreText = struct {
     pub const DiscoverIterator = struct {
         alloc: Allocator,
         list: []const *macos.text.FontDescriptor,
+        variations: []const Variation,
         i: usize,
 
         pub fn deinit(self: *DiscoverIterator) void {
@@ -756,7 +760,10 @@ pub const CoreText = struct {
             defer self.i += 1;
 
             return DeferredFace{
-                .ct = .{ .font = font },
+                .ct = .{
+                    .font = font,
+                    .variations = self.variations,
+                },
             };
         }
     };
