@@ -10,6 +10,7 @@ const font = @import("src/font/main.zig");
 const renderer = @import("src/renderer.zig");
 const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
+const config_sublime_syntax = @import("src/config/sublime_syntax.zig");
 const fish_completions = @import("src/build/fish_completions.zig");
 const build_config = @import("src/build_config.zig");
 const BuildConfig = build_config.BuildConfig;
@@ -512,6 +513,22 @@ pub fn build(b: *std.Build) !void {
             .source_dir = wf.getDirectory(),
             .install_dir = .prefix,
             .install_subdir = "share/nvim/site",
+        });
+    }
+
+    // Sublime syntax highlighting for bat cli tool
+    // NOTE: The current implementation requires symlinking the generated
+    // 'ghostty.sublime-syntax' file from zig-out to the '~.config/bat/syntaxes'
+    // directory. The syntax then needs to be mapped to the correct language in
+    // the config file within the '~.config/bat' directory
+    // (ex: --map-syntax "/Users/user/.config/ghostty/config:Ghostty Config").
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("ghostty.sublime-syntax", config_sublime_syntax.syntax);
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/bat/syntaxes",
         });
     }
 
