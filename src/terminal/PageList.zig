@@ -7,8 +7,9 @@ const std = @import("std");
 const build_config = @import("../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const color = @import("color.zig");
 const fastmem = @import("../fastmem.zig");
+const DoublyLinkedList = @import("../datastruct/main.zig").IntrusiveDoublyLinkedList;
+const color = @import("color.zig");
 const kitty = @import("kitty.zig");
 const point = @import("point.zig");
 const pagepkg = @import("page.zig");
@@ -33,7 +34,16 @@ const page_preheat = 4;
 /// The list of pages in the screen. These are expected to be in order
 /// where the first page is the topmost page (scrollback) and the last is
 /// the bottommost page (the current active page).
-pub const List = std.DoublyLinkedList(Page);
+pub const List = DoublyLinkedList(Node);
+
+/// A single node within the PageList linked list.
+///
+/// This isn't pub because you can access the type via List.Node.
+const Node = struct {
+    prev: ?*Node = null,
+    next: ?*Node = null,
+    data: Page,
+};
 
 /// The memory pool we get page nodes from.
 const NodePool = std.heap.MemoryPool(List.Node);
@@ -1699,7 +1709,8 @@ pub fn grow(self: *PageList) !?*List.Node {
     // reuses the popped page. It is possible to have a single page and
     // exceed the max size if that page was adjusted to be larger after
     // initial allocation.
-    if (self.pages.len > 1 and
+    if (self.pages.first != null and
+        self.pages.first != self.pages.last and
         self.page_size + PagePool.item_size > self.maxSize())
     prune: {
         // If we need to add more memory to ensure our active area is
