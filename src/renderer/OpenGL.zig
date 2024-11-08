@@ -11,7 +11,6 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const link = @import("link.zig");
 const isCovering = @import("cell.zig").isCovering;
 const fgMode = @import("cell.zig").fgMode;
-const freetype = @import("freetype").Face;
 const shadertoy = @import("shadertoy.zig");
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
