@@ -318,7 +318,13 @@ pub const Face = struct {
             //
             // This must be enabled for color faces though because those are
             // often colored bitmaps, which we support.
-            .no_bitmap = !self.face.hasColor(),
+            .no_bitmap = !self.face.hasColor() or !opts.load_flags.bitmap,
+
+            // use options from config
+            .no_hinting = !opts.load_flags.hinting,
+            .force_autohint = !opts.load_flags.@"force-autohint",
+            .monochrome = !opts.load_flags.monochrome,
+            .no_autohint = !opts.load_flags.autohint,
         });
         const glyph = self.face.handle.*.glyph;
 

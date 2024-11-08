@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
 pub const Metrics = @import("face/Metrics.zig");
+const FreetypeLoadFlags = @import("../config/Config.zig").FreetypeLoadFlags;
 const freetype = @import("face/freetype.zig");
 const coretext = @import("face/coretext.zig");
 pub const web_canvas = @import("face/web_canvas.zig");
@@ -90,6 +91,8 @@ pub const RenderOptions = struct {
     ///
     /// This only works with CoreText currently.
     thicken: bool = false,
+
+    load_flags: FreetypeLoadFlags,
 };
 
 test {
