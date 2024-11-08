@@ -305,7 +305,7 @@ const c = @cImport({
 ///   * `autohint` - Use the freetype auto-hinter. Enabled by default.
 ///
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
-@"freetype-load-flag": FreetypeLoadFlags = .{},
+@"freetype-load-flags": FreetypeLoadFlags = .{},
 
 /// A theme to use. If the theme is an absolute pathname, Ghostty will attempt
 /// to load that file as a theme. If that file does not exist or is inaccessible,
@@ -4586,7 +4586,7 @@ pub const GraphemeWidthMethod = enum {
 };
 
 /// See freetype-load-flag
-pub const FreetypeLoadFlags = packed struct  {
+pub const FreetypeLoadFlags = packed struct {
     hinting: bool = true,
     bitmap: bool = true,
     @"force-autohint": bool = false,

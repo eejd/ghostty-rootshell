@@ -452,6 +452,8 @@ pub const LoadOptions = struct {
     /// for this is owned by the user and is not freed by the collection.
     metric_modifiers: Metrics.ModifierSet = .{},
 
+    freetype_load_flags: config.Config.FreetypeLoadFlags = .{},
+
     pub fn deinit(self: *LoadOptions, alloc: Allocator) void {
         _ = self;
         _ = alloc;
@@ -462,6 +464,7 @@ pub const LoadOptions = struct {
         return .{
             .size = self.size,
             .metric_modifiers = &self.metric_modifiers,
+            .freetype_load_flags = self.freetype_load_flags,
         };
     }
 };

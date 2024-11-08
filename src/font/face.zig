@@ -31,6 +31,7 @@ pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
 pub const Options = struct {
     size: DesiredSize,
     metric_modifiers: ?*const Metrics.ModifierSet = null,
+    freetype_load_flags: FreetypeLoadFlags,
 };
 
 /// The desired size for loading a font.
@@ -91,8 +92,6 @@ pub const RenderOptions = struct {
     ///
     /// This only works with CoreText currently.
     thicken: bool = false,
-
-    load_flags: FreetypeLoadFlags,
 };
 
 test {

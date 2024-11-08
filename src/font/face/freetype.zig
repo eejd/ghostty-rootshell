@@ -18,6 +18,7 @@ const Library = font.Library;
 const convert = @import("freetype_convert.zig");
 const fastmem = @import("../../fastmem.zig");
 const quirks = @import("../../quirks.zig");
+const FreetypeLoadFlags = @import("../../config/Config.zig").FreetypeLoadFlags;
 
 const log = std.log.scoped(.font_face);
 
@@ -33,6 +34,9 @@ pub const Face = struct {
 
     /// Metrics for this font face. These are useful for renderers.
     metrics: font.face.Metrics,
+
+    /// Metrics for this font face. These are useful for renderers.
+    load_flags: FreetypeLoadFlags,
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
@@ -77,6 +81,7 @@ pub const Face = struct {
             .face = face,
             .hb_font = hb_font,
             .metrics = calcMetrics(face, opts.metric_modifiers),
+            .load_flags = opts.freetype_load_flags,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
@@ -318,13 +323,13 @@ pub const Face = struct {
             //
             // This must be enabled for color faces though because those are
             // often colored bitmaps, which we support.
-            .no_bitmap = !self.face.hasColor() or !opts.load_flags.bitmap,
+            .no_bitmap = !self.face.hasColor() or !self.load_flags.bitmap,
 
             // use options from config
-            .no_hinting = !opts.load_flags.hinting,
-            .force_autohint = !opts.load_flags.@"force-autohint",
-            .monochrome = !opts.load_flags.monochrome,
-            .no_autohint = !opts.load_flags.autohint,
+            .no_hinting = !self.load_flags.hinting,
+            .force_autohint = !self.load_flags.@"force-autohint",
+            .monochrome = !self.load_flags.monochrome,
+            .no_autohint = !self.load_flags.autohint,
         });
         const glyph = self.face.handle.*.glyph;
 

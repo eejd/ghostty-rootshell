@@ -289,7 +289,6 @@ pub const DerivedConfig = struct {
     font_thicken: bool,
     font_features: std.ArrayListUnmanaged([:0]const u8),
     font_styles: font.CodepointResolver.StyleStatus,
-    load_flags: configpkg.Config.FreetypeLoadFlags,
     cursor_color: ?terminal.color.RGB,
     cursor_invert: bool,
     cursor_text: ?terminal.color.RGB,
@@ -334,14 +333,11 @@ pub const DerivedConfig = struct {
 
         const cursor_invert = config.@"cursor-invert-fg-bg";
 
-        const load_flags = config.@"freetype-load-flag";
-
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
             .font_features = font_features,
             .font_styles = font_styles,
-            .load_flags = load_flags,
 
             .cursor_color = if (!cursor_invert and config.@"cursor-color" != null)
                 config.@"cursor-color".?.toTerminalRGB()
@@ -1770,7 +1766,7 @@ fn addPreeditCell(
         @intCast(cp.codepoint),
         .regular,
         .text,
-        .{ .grid_metrics = self.grid_metrics, .load_flags = self.config.load_flags },
+        .{ .grid_metrics = self.grid_metrics },
     ) catch |err| {
         log.warn("error rendering preedit glyph err={}", .{err});
         return;
@@ -1871,7 +1867,6 @@ fn addCursor(
                 .{
                     .cell_width = if (wide) 2 else 1,
                     .grid_metrics = self.grid_metrics,
-                    .load_flags = self.config.load_flags,
                 },
             ) catch |err| {
                 log.warn("error rendering cursor glyph err={}", .{err});
@@ -1887,7 +1882,6 @@ fn addCursor(
             .{
                 .cell_width = if (wide) 2 else 1,
                 .grid_metrics = self.grid_metrics,
-                .load_flags = self.config.load_flags,
             },
         ) catch |err| {
             log.warn("error rendering cursor glyph err={}", .{err});
@@ -1950,7 +1944,6 @@ fn addUnderline(
         .{
             .cell_width = 1,
             .grid_metrics = self.grid_metrics,
-            .load_flags = self.config.load_flags,
         },
     );
 
@@ -1992,7 +1985,6 @@ fn addOverline(
         .{
             .cell_width = 1,
             .grid_metrics = self.grid_metrics,
-            .load_flags = self.config.load_flags,
         },
     );
 
@@ -2034,7 +2026,6 @@ fn addStrikethrough(
         .{
             .cell_width = 1,
             .grid_metrics = self.grid_metrics,
-            .load_flags = self.config.load_flags,
         },
     );
 
@@ -2083,7 +2074,6 @@ fn addGlyph(
         .{
             .grid_metrics = self.grid_metrics,
             .thicken = self.config.font_thicken,
-            .load_flags = self.config.load_flags,
         },
     );
 
