@@ -1,6 +1,8 @@
 const builtin = @import("builtin");
 
 const formatter = @import("config/formatter.zig");
+const font = @import("font/main.zig");
+const options = font.options;
 pub const Config = @import("config/Config.zig");
 pub const string = @import("config/string.zig");
 pub const edit = @import("config/edit.zig");
@@ -9,6 +11,18 @@ pub const url = @import("config/url.zig");
 pub const FileFormatter = formatter.FileFormatter;
 pub const entryFormatter = formatter.entryFormatter;
 pub const formatEntry = formatter.formatEntry;
+pub const FreetypeLoadFlags = switch (options.backend) {
+    .freetype,
+    .fontconfig_freetype,
+    .coretext_freetype,
+    => Config.FreetypeLoadFlags,
+
+    .coretext,
+    .coretext_harfbuzz,
+    .coretext_noshape,
+    .web_canvas,
+    => void,
+};
 
 // Field types
 pub const ClipboardAccess = Config.ClipboardAccess;

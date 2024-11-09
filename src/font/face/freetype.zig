@@ -18,7 +18,7 @@ const Library = font.Library;
 const convert = @import("freetype_convert.zig");
 const fastmem = @import("../../fastmem.zig");
 const quirks = @import("../../quirks.zig");
-const FreetypeLoadFlags = @import("../../config/Config.zig").FreetypeLoadFlags;
+const config = @import("../../config.zig");
 
 const log = std.log.scoped(.font_face);
 
@@ -36,7 +36,7 @@ pub const Face = struct {
     metrics: font.face.Metrics,
 
     /// Metrics for this font face. These are useful for renderers.
-    load_flags: FreetypeLoadFlags,
+    load_flags: config.FreetypeLoadFlags,
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,

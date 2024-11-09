@@ -428,7 +428,7 @@ pub const DerivedConfig = struct {
     @"adjust-strikethrough-position": ?Metrics.Modifier,
     @"adjust-strikethrough-thickness": ?Metrics.Modifier,
     @"adjust-cursor-thickness": ?Metrics.Modifier,
-    @"freetype-load-flags": configpkg.Config.FreetypeLoadFlags,
+    @"freetype-load-flags": configpkg.FreetypeLoadFlags,
 
     /// Initialize a DerivedConfig. The config should be either a
     /// config.Config or another DerivedConfig to clone from.
@@ -463,7 +463,18 @@ pub const DerivedConfig = struct {
             .@"adjust-strikethrough-position" = config.@"adjust-strikethrough-position",
             .@"adjust-strikethrough-thickness" = config.@"adjust-strikethrough-thickness",
             .@"adjust-cursor-thickness" = config.@"adjust-cursor-thickness",
-            .@"freetype-load-flags" = config.@"freetype-load-flags",
+            .@"freetype-load-flags" = switch (font.options.backend) {
+                .freetype,
+                .fontconfig_freetype,
+                .coretext_freetype,
+                => config.@"freetype-load-flags",
+
+                .coretext,
+                .coretext_harfbuzz,
+                .coretext_noshape,
+                .web_canvas,
+                => {},
+            },
 
             // This must be last so the arena contains all our allocations
             // from above since Zig does assignment in order.
@@ -503,7 +514,18 @@ pub const Key = struct {
     /// font grid.
     font_size: DesiredSize = .{ .points = 12 },
 
-    load_flags: configpkg.Config.FreetypeLoadFlags = .{},
+    load_flags: configpkg.FreetypeLoadFlags = switch (font.options.backend) {
+        .freetype,
+        .fontconfig_freetype,
+        .coretext_freetype,
+        => .{},
+
+        .coretext,
+        .coretext_harfbuzz,
+        .coretext_noshape,
+        .web_canvas,
+        => {},
+    },
 
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;

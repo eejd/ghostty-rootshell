@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
 pub const Metrics = @import("face/Metrics.zig");
-const FreetypeLoadFlags = @import("../config/Config.zig").FreetypeLoadFlags;
+const config = @import("../config.zig");
 const freetype = @import("face/freetype.zig");
 const coretext = @import("face/coretext.zig");
 pub const web_canvas = @import("face/web_canvas.zig");
@@ -31,7 +31,7 @@ pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
 pub const Options = struct {
     size: DesiredSize,
     metric_modifiers: ?*const Metrics.ModifierSet = null,
-    freetype_load_flags: FreetypeLoadFlags,
+    freetype_load_flags: config.FreetypeLoadFlags,
 };
 
 /// The desired size for loading a font.
