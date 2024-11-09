@@ -428,7 +428,7 @@ pub const DerivedConfig = struct {
     @"adjust-strikethrough-position": ?Metrics.Modifier,
     @"adjust-strikethrough-thickness": ?Metrics.Modifier,
     @"adjust-cursor-thickness": ?Metrics.Modifier,
-    @"freetype-load-flags": configpkg.FreetypeLoadFlags,
+    @"freetype-load-flags": font.face.FreetypeLoadFlags,
 
     /// Initialize a DerivedConfig. The config should be either a
     /// config.Config or another DerivedConfig to clone from.
@@ -514,18 +514,7 @@ pub const Key = struct {
     /// font grid.
     font_size: DesiredSize = .{ .points = 12 },
 
-    load_flags: configpkg.FreetypeLoadFlags = switch (font.options.backend) {
-        .freetype,
-        .fontconfig_freetype,
-        .coretext_freetype,
-        => .{},
-
-        .coretext,
-        .coretext_harfbuzz,
-        .coretext_noshape,
-        .web_canvas,
-        => {},
-    },
+    load_flags: configpkg.FreetypeLoadFlags = font.face.freetype_load_flags_default,
 
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;

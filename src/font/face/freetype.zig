@@ -36,7 +36,7 @@ pub const Face = struct {
     metrics: font.face.Metrics,
 
     /// Freetype load flags for this font face.
-    load_flags: config.FreetypeLoadFlags,
+    load_flags: font.face.FreetypeLoadFlags,
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,

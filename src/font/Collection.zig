@@ -452,18 +452,7 @@ pub const LoadOptions = struct {
     /// for this is owned by the user and is not freed by the collection.
     metric_modifiers: Metrics.ModifierSet = .{},
 
-    freetype_load_flags: config.FreetypeLoadFlags = switch (font.options.backend) {
-        .freetype,
-        .fontconfig_freetype,
-        .coretext_freetype,
-        => .{},
-
-        .coretext,
-        .coretext_harfbuzz,
-        .coretext_noshape,
-        .web_canvas,
-        => {},
-    },
+    freetype_load_flags: font.face.FreetypeLoadFlags = font.face.freetype_load_flags_default,
 
     pub fn deinit(self: *LoadOptions, alloc: Allocator) void {
         _ = self;

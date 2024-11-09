@@ -11,18 +11,6 @@ pub const url = @import("config/url.zig");
 pub const FileFormatter = formatter.FileFormatter;
 pub const entryFormatter = formatter.entryFormatter;
 pub const formatEntry = formatter.formatEntry;
-pub const FreetypeLoadFlags = switch (options.backend) {
-    .freetype,
-    .fontconfig_freetype,
-    .coretext_freetype,
-    => Config.FreetypeLoadFlags,
-
-    .coretext,
-    .coretext_harfbuzz,
-    .coretext_noshape,
-    .web_canvas,
-    => void,
-};
 
 // Field types
 pub const ClipboardAccess = Config.ClipboardAccess;
