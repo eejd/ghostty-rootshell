@@ -45,7 +45,7 @@ pub const freetype_load_flags_default = if (options.backend.hasFreetype()) .{} e
 pub const Options = struct {
     size: DesiredSize,
     metric_modifiers: ?*const Metrics.ModifierSet = null,
-    freetype_load_flags: FreetypeLoadFlags,
+    freetype_load_flags: FreetypeLoadFlags = freetype_load_flags_default,
 };
 
 /// The desired size for loading a font.
