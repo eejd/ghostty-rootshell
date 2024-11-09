@@ -1481,6 +1481,112 @@ pub const Page = struct {
         return self.grapheme_map.map(self.memory).capacity();
     }
 
+    /// Options for encoding the page as UTF-8.
+    pub const EncodeUtf8Options = struct {
+        /// The range of rows to encode. If end_y is null, then it will
+        /// encode to the end of the page.
+        start_y: size.CellCountInt = 0,
+        end_y: ?size.CellCountInt = null,
+
+        /// If true, this will unwrap soft-wrapped lines. If false, this will
+        /// dump the screen as it is visually seen in a rendered window.
+        unwrap: bool = true,
+
+        /// Preceding state from encoding the prior page. Used to preserve
+        /// blanks properly across multiple pages.
+        preceding: TrailingUtf8State = .{},
+
+        /// Trailing state for UTF-8 encoding.
+        pub const TrailingUtf8State = struct {
+            rows: usize = 0,
+            cells: usize = 0,
+        };
+    };
+
+    /// Encode the page contents as UTF-8.
+    ///
+    /// If preceding is non-null, then it will be used to initialize our
+    /// blank rows/cells count so that we can accumulate blanks across
+    /// multiple pages.
+    ///
+    /// Note: The tests for this function are done via Screen.dumpString
+    /// tests since that function is a thin wrapper around this one and
+    /// it makes it easier to test input contents.
+    pub fn encodeUtf8(
+        self: *const Page,
+        writer: anytype,
+        opts: EncodeUtf8Options,
+    ) anyerror!EncodeUtf8Options.TrailingUtf8State {
+        var blank_rows: usize = opts.preceding.rows;
+        var blank_cells: usize = opts.preceding.cells;
+
+        const start_y: size.CellCountInt = opts.start_y;
+        const end_y: size.CellCountInt = opts.end_y orelse self.size.rows;
+        for (start_y..end_y) |y| {
+            const row: *Row = self.getRow(y);
+            const cells: []const Cell = self.getCells(row);
+
+            // If this row is blank, accumulate to avoid a bunch of extra
+            // work later. If it isn't blank, make sure we dump all our
+            // blanks.
+            if (!Cell.hasTextAny(cells)) {
+                blank_rows += 1;
+                continue;
+            }
+            for (0..blank_rows) |_| try writer.writeByte('\n');
+            blank_rows = 0;
+
+            // If we're not wrapped, we always add a newline so after
+            // the row is printed we can add a newline.
+            if (!row.wrap or !opts.unwrap) blank_rows += 1;
+
+            // If the row doesn't continue a wrap then we need to reset
+            // our blank cell count.
+            if (!row.wrap_continuation or !opts.unwrap) blank_cells = 0;
+
+            // Go through each cell and print it
+            for (cells) |*cell| {
+                // Skip spacers
+                switch (cell.wide) {
+                    .narrow, .wide => {},
+                    .spacer_head, .spacer_tail => continue,
+                }
+
+                // If we have a zero value, then we accumulate a counter. We
+                // only want to turn zero values into spaces if we have a non-zero
+                // char sometime later.
+                if (!cell.hasText()) {
+                    blank_cells += 1;
+                    continue;
+                }
+                if (blank_cells > 0) {
+                    try writer.writeByteNTimes(' ', blank_cells);
+                    blank_cells = 0;
+                }
+
+                switch (cell.content_tag) {
+                    .codepoint => {
+                        try writer.print("{u}", .{cell.content.codepoint});
+                    },
+
+                    .codepoint_grapheme => {
+                        try writer.print("{u}", .{cell.content.codepoint});
+                        for (self.lookupGrapheme(cell).?) |cp| {
+                            try writer.print("{u}", .{cp});
+                        }
+                    },
+
+                    // Unreachable since we do hasText() above
+                    .bg_color_palette,
+                    .bg_color_rgb,
+                    => unreachable,
+                }
+            }
+        }
+
+        return .{ .rows = blank_rows, .cells = blank_cells };
+    }
+
     /// Returns the bitset for the dirty bits on this page.
     ///
     /// The returned value is a DynamicBitSetUnmanaged but it is NOT

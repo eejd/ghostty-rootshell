@@ -2731,95 +2731,15 @@ pub fn promptPath(
     return .{ .x = to_x - from_x, .y = to_y - from_y };
 }
 
-pub const DumpString = struct {
-    /// The start and end points of the dump, both inclusive. The x will
-    /// be ignored and the full row will always be dumped.
-    tl: Pin,
-    br: ?Pin = null,
-
-    /// If true, this will unwrap soft-wrapped lines. If false, this will
-    /// dump the screen as it is visually seen in a rendered window.
-    unwrap: bool = true,
-};
-
 /// Dump the screen to a string. The writer given should be buffered;
 /// this function does not attempt to efficiently write and generally writes
 /// one byte at a time.
 pub fn dumpString(
     self: *const Screen,
     writer: anytype,
-    opts: DumpString,
-) !void {
-    var blank_rows: usize = 0;
-    var blank_cells: usize = 0;
-
-    var iter = opts.tl.rowIterator(.right_down, opts.br);
-    while (iter.next()) |row_offset| {
-        const rac = row_offset.rowAndCell();
-        const row = rac.row;
-        const cells = cells: {
-            const cells: [*]pagepkg.Cell = @ptrCast(rac.cell);
-            break :cells cells[0..self.pages.cols];
-        };
-
-        if (!pagepkg.Cell.hasTextAny(cells)) {
-            blank_rows += 1;
-            continue;
-        }
-        if (blank_rows > 0) {
-            for (0..blank_rows) |_| try writer.writeByte('\n');
-            blank_rows = 0;
-        }
-
-        if (!row.wrap or !opts.unwrap) {
-            // If we're not wrapped, we always add a newline.
-            // If we are wrapped, we only add a new line if we're unwrapping
-            // soft-wrapped lines.
-            blank_rows += 1;
-        }
-
-        if (!row.wrap_continuation or !opts.unwrap) {
-            // We should also reset blank cell counts at the start of each row
-            // unless we're unwrapping and this row is a wrap continuation.
-            blank_cells = 0;
-        }
-
-        for (cells) |*cell| {
-            // Skip spacers
-            switch (cell.wide) {
-                .narrow, .wide => {},
-                .spacer_head, .spacer_tail => continue,
-            }
-
-            // If we have a zero value, then we accumulate a counter. We
-            // only want to turn zero values into spaces if we have a non-zero
-            // char sometime later.
-            if (!cell.hasText()) {
-                blank_cells += 1;
-                continue;
-            }
-            if (blank_cells > 0) {
-                try writer.writeByteNTimes(' ', blank_cells);
-                blank_cells = 0;
-            }
-
-            switch (cell.content_tag) {
-                .codepoint => {
-                    try writer.print("{u}", .{cell.content.codepoint});
-                },
-
-                .codepoint_grapheme => {
-                    try writer.print("{u}", .{cell.content.codepoint});
-                    const cps = row_offset.node.data.lookupGrapheme(cell).?;
-                    for (cps) |cp| {
-                        try writer.print("{u}", .{cp});
-                    }
-                },
-
-                else => unreachable,
-            }
-        }
-    }
+    opts: PageList.EncodeUtf8Options,
+) anyerror!void {
+    try self.pages.encodeUtf8(writer, opts);
 }
 
 /// You should use dumpString, this is a restricted version mostly for
