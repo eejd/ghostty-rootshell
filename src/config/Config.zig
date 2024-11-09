@@ -963,7 +963,7 @@ keybind: Keybinds = .{},
 ///   * `dark` - Use the dark theme regardless of system theme.
 ///   * `ghostty` - Use the background and foreground colors specified in the
 ///     Ghostty configuration. This is only supported on Linux builds with
-///     libadwaita and `gtk-adwaita` enabled.
+///     Adwaita and `gtk-adwaita` enabled.
 ///
 /// On macOS, if `macos-titlebar-style` is "tabs", the window theme will be
 /// automatically set based on the luminosity of the terminal background color.
@@ -1641,12 +1641,12 @@ keybind: Keybinds = .{},
 /// Determines the side of the screen that the GTK tab bar will stick to.
 /// Top, bottom, left, and right are supported. The default is top.
 ///
-/// If this option has value `left` or `right` when using `libadwaita`, it falls
+/// If this option has value `left` or `right` when using Adwaita, it falls
 /// back to `top`.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
 /// Determines the appearance of the top and bottom bars when using the
-/// adwaita tab bar. This requires `gtk-adwaita` to be enabled (it is
+/// Adwaita tab bar. This requires `gtk-adwaita` to be enabled (it is
 /// by default).
 ///
 /// Valid values are:
@@ -1665,7 +1665,7 @@ keybind: Keybinds = .{},
 /// which is the old style.
 @"gtk-wide-tabs": bool = true,
 
-/// If `true` (default), Ghostty will enable libadwaita theme support. This
+/// If `true` (default), Ghostty will enable Adwaita theme support. This
 /// will make `window-theme` work properly and will also allow Ghostty to
 /// properly respond to system theme changes, light/dark mode changing, etc.
 /// This requires a GTK4 desktop with a GTK4 theme.
@@ -1676,7 +1676,7 @@ keybind: Keybinds = .{},
 /// expected.
 ///
 /// This configuration only has an effect if Ghostty was built with
-/// libadwaita support.
+/// Adwaita support.
 @"gtk-adwaita": bool = true,
 
 /// If `true` (default), applications running in the terminal can show desktop
