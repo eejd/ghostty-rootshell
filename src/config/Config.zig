@@ -287,21 +287,24 @@ const c = @cImport({
 /// terminals. Only new terminals will use the new configuration.
 @"grapheme-width-method": GraphemeWidthMethod = .unicode,
 
-/// Freetype load flags to enable. The format of this is a list of flags to
+/// FreeType load flags to enable. The format of this is a list of flags to
 /// enable separated by commas. If you prefix a flag with `no-` then it is
 /// disabled. If you omit a flag, it's default value is used, so you must
 /// explicitly disable flags you don't want. You can also use `true` or `false`
 /// to turn all flags on or off.
 ///
+/// This configuration only applies to Ghostty builds that use FreeType.
+/// This is usually the case only for Linux builds. macOS uses CoreText
+/// and does not have an equivalent configuration.
+///
 /// Available flags:
 ///
 ///   * `hinting` - Enable or disable hinting, enabled by default.
-///   * `bitmap` - Enable or disable loading of any pre-rendered bitmap strikes,
-///     enabled by default
-///   * `force-autohint` - Use the freetype auto-hinter rather than the font's
-///     native hinter. Enabled by default.
-///   * `monochrome` - Instructs renderer to use 1-bit monochrome rendering.
-///     This option doesn't impact the hinter. Enabled by default.
+///   * `force-autohint` - Use the freetype auto-hinter rather than the
+///     font's native hinter. Enabled by default.
+///   * `monochrome` - Instructs renderer to use 1-bit monochrome
+///     rendering. This option doesn't impact the hinter.
+///     Enabled by default.
 ///   * `autohint` - Use the freetype auto-hinter. Enabled by default.
 ///
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
@@ -4587,10 +4590,12 @@ pub const GraphemeWidthMethod = enum {
 
 /// See freetype-load-flag
 pub const FreetypeLoadFlags = packed struct {
+    // The defaults here at the time of writing this match the defaults
+    // for Freetype itself. Ghostty hasn't made any opinionated changes
+    // to these defaults.
     hinting: bool = true,
-    bitmap: bool = true,
-    @"force-autohint": bool = false,
-    monochrome: bool = false,
+    @"force-autohint": bool = true,
+    monochrome: bool = true,
     autohint: bool = true,
 };
 

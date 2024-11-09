@@ -23,6 +23,11 @@ const config = @import("../../config.zig");
 const log = std.log.scoped(.font_face);
 
 pub const Face = struct {
+    comptime {
+        // If we have the freetype backend, we should have load flags.
+        assert(font.face.FreetypeLoadFlags != void);
+    }
+
     /// Our freetype library
     lib: freetype.Library,
 
@@ -323,7 +328,7 @@ pub const Face = struct {
             //
             // This must be enabled for color faces though because those are
             // often colored bitmaps, which we support.
-            .no_bitmap = !self.face.hasColor() or !self.load_flags.bitmap,
+            .no_bitmap = !self.face.hasColor(),
 
             // use options from config
             .no_hinting = !self.load_flags.hinting,

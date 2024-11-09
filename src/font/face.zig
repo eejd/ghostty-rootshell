@@ -27,8 +27,13 @@ pub const Face = switch (options.backend) {
 /// using whatever platform method you can.
 pub const default_dpi = if (builtin.os.tag == .macos) 72 else 96;
 
-pub const FreetypeLoadFlags = if (options.backend.hasFreetype()) config.Config.FreetypeLoadFlags else void;
-pub const freetype_load_flags_default = if (options.backend.hasFreetype()) .{} else {};
+/// These are the flags to customize how freetype loads fonts. This is
+/// only non-void if the freetype backend is enabled.
+pub const FreetypeLoadFlags = if (options.backend.hasFreetype())
+    config.FreetypeLoadFlags
+else
+    void;
+pub const freetype_load_flags_default = if (FreetypeLoadFlags != void) .{} else {};
 
 /// Options for initializing a font face.
 pub const Options = struct {
