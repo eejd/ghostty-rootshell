@@ -1496,11 +1496,27 @@ pub const Page = struct {
         /// blanks properly across multiple pages.
         preceding: TrailingUtf8State = .{},
 
+        /// If non-null, this will be cleared and filled with the x/y
+        /// coordinates of each byte in the UTF-8 encoded output.
+        /// The index in the array is the byte offset in the output
+        /// where 0 is the cursor of the writer when the function is
+        /// called.
+        cell_map: ?*CellMap = null,
+
         /// Trailing state for UTF-8 encoding.
         pub const TrailingUtf8State = struct {
             rows: usize = 0,
             cells: usize = 0,
         };
+    };
+
+    /// See cell_map
+    pub const CellMap = std.ArrayList(CellMapEntry);
+
+    /// The x/y coordinate of a single cell in the cell map.
+    pub const CellMapEntry = struct {
+        y: size.CellCountInt,
+        x: size.CellCountInt,
     };
 
     /// Encode the page contents as UTF-8.
@@ -1509,7 +1525,7 @@ pub const Page = struct {
     /// blank rows/cells count so that we can accumulate blanks across
     /// multiple pages.
     ///
-    /// Note: The tests for this function are done via Screen.dumpString
+    /// Note: Many tests for this function are done via Screen.dumpString
     /// tests since that function is a thin wrapper around this one and
     /// it makes it easier to test input contents.
     pub fn encodeUtf8(
@@ -1522,7 +1538,18 @@ pub const Page = struct {
 
         const start_y: size.CellCountInt = opts.start_y;
         const end_y: size.CellCountInt = opts.end_y orelse self.size.rows;
-        for (start_y..end_y) |y| {
+
+        // We can probably avoid this by doing the logic below in a different
+        // way. The reason this exists is so that when we end a non-blank
+        // line with a newline, we can correctly map the cell map over to
+        // the correct x value.
+        //
+        // For example "A\nB". The cell map for "\n" should be (1, 0).
+        // This is tested in Screen.zig so feel free to refactor this.
+        var last_x: size.CellCountInt = 0;
+
+        for (start_y..end_y) |y_usize| {
+            const y: size.CellCountInt = @intCast(y_usize);
             const row: *Row = self.getRow(y);
             const cells: []const Cell = self.getCells(row);
 
@@ -1533,7 +1560,19 @@ pub const Page = struct {
                 blank_rows += 1;
                 continue;
             }
-            for (0..blank_rows) |_| try writer.writeByte('\n');
+            for (1..blank_rows + 1) |i| {
+                try writer.writeByte('\n');
+
+                // This is tested in Screen.zig, i.e. one test is
+                // "cell map with newlines"
+                if (opts.cell_map) |cell_map| {
+                    try cell_map.append(.{
+                        .x = last_x,
+                        .y = @intCast(y - blank_rows + i - 1),
+                    });
+                    last_x = 0;
+                }
+            }
             blank_rows = 0;
 
             // If we're not wrapped, we always add a newline so after
@@ -1545,7 +1584,9 @@ pub const Page = struct {
             if (!row.wrap_continuation or !opts.unwrap) blank_cells = 0;
 
             // Go through each cell and print it
-            for (cells) |*cell| {
+            for (cells, 0..) |*cell, x_usize| {
+                const x: size.CellCountInt = @intCast(x_usize);
+
                 // Skip spacers
                 switch (cell.wide) {
                     .narrow, .wide => {},
@@ -1561,18 +1602,44 @@ pub const Page = struct {
                 }
                 if (blank_cells > 0) {
                     try writer.writeByteNTimes(' ', blank_cells);
+                    if (opts.cell_map) |cell_map| {
+                        for (0..blank_cells) |i| try cell_map.append(.{
+                            .x = @intCast(x - blank_cells + i),
+                            .y = y,
+                        });
+                    }
+
                     blank_cells = 0;
                 }
 
                 switch (cell.content_tag) {
                     .codepoint => {
                         try writer.print("{u}", .{cell.content.codepoint});
+                        if (opts.cell_map) |cell_map| {
+                            last_x = x + 1;
+                            try cell_map.append(.{
+                                .x = x,
+                                .y = y,
+                            });
+                        }
                     },
 
                     .codepoint_grapheme => {
                         try writer.print("{u}", .{cell.content.codepoint});
+                        if (opts.cell_map) |cell_map| {
+                            last_x = x + 1;
+                            try cell_map.append(.{
+                                .x = x,
+                                .y = y,
+                            });
+                        }
+
                         for (self.lookupGrapheme(cell).?) |cp| {
                             try writer.print("{u}", .{cp});
+                            if (opts.cell_map) |cell_map| try cell_map.append(.{
+                                .x = x,
+                                .y = y,
+                            });
                         }
                     },
 

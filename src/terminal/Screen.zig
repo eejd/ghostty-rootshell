@@ -8468,3 +8468,81 @@ test "Screen: adjustCapacity cursor style ref count" {
         );
     }
 }
+
+test "Screen UTF8 cell map with newlines" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    try s.testWriteString("A\n\nB\n\nC");
+
+    var cell_map = Page.CellMap.init(alloc);
+    defer cell_map.deinit();
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+    try s.dumpString(builder.writer(), .{
+        .tl = s.pages.getTopLeft(.screen),
+        .br = s.pages.getBottomRight(.screen),
+        .cell_map = &cell_map,
+    });
+
+    try testing.expectEqual(7, builder.items.len);
+    try testing.expectEqualStrings("A\n\nB\n\nC", builder.items);
+    try testing.expectEqual(builder.items.len, cell_map.items.len);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 0,
+        .y = 0,
+    }, cell_map.items[0]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 1,
+        .y = 0,
+    }, cell_map.items[1]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 0,
+        .y = 1,
+    }, cell_map.items[2]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 0,
+        .y = 2,
+    }, cell_map.items[3]);
+}
+
+test "Screen UTF8 cell map with blank prefix" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    s.cursorAbsolute(2, 1);
+    try s.testWriteString("B");
+
+    var cell_map = Page.CellMap.init(alloc);
+    defer cell_map.deinit();
+    var builder = std.ArrayList(u8).init(alloc);
+    defer builder.deinit();
+    try s.dumpString(builder.writer(), .{
+        .tl = s.pages.getTopLeft(.screen),
+        .br = s.pages.getBottomRight(.screen),
+        .cell_map = &cell_map,
+    });
+
+    try testing.expectEqualStrings("\n  B", builder.items);
+    try testing.expectEqual(builder.items.len, cell_map.items.len);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 0,
+        .y = 0,
+    }, cell_map.items[0]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 0,
+        .y = 1,
+    }, cell_map.items[1]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 1,
+        .y = 1,
+    }, cell_map.items[2]);
+    try testing.expectEqual(Page.CellMapEntry{
+        .x = 2,
+        .y = 1,
+    }, cell_map.items[3]);
+}

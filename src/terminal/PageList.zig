@@ -2553,6 +2553,9 @@ pub const EncodeUtf8Options = struct {
     /// If true, this will unwrap soft-wrapped lines. If false, this will
     /// dump the screen as it is visually seen in a rendered window.
     unwrap: bool = true,
+
+    /// See Page.EncodeUtf8Options.
+    cell_map: ?*Page.CellMap = null,
 };
 
 /// Encode the pagelist to utf8 to the given writer.
@@ -2572,7 +2575,10 @@ pub fn encodeUtf8(
     // need state on here so... letting it go.
     _ = self;
 
-    var page_opts: Page.EncodeUtf8Options = .{ .unwrap = opts.unwrap };
+    var page_opts: Page.EncodeUtf8Options = .{
+        .unwrap = opts.unwrap,
+        .cell_map = opts.cell_map,
+    };
     var iter = opts.tl.pageIterator(.right_down, opts.br);
     while (iter.next()) |chunk| {
         const page: *const Page = &chunk.node.data;
