@@ -1,8 +1,6 @@
 const builtin = @import("builtin");
 
 const formatter = @import("config/formatter.zig");
-const font = @import("font/main.zig");
-const options = font.options;
 pub const Config = @import("config/Config.zig");
 pub const string = @import("config/string.zig");
 pub const edit = @import("config/edit.zig");
