@@ -463,18 +463,7 @@ pub const DerivedConfig = struct {
             .@"adjust-strikethrough-position" = config.@"adjust-strikethrough-position",
             .@"adjust-strikethrough-thickness" = config.@"adjust-strikethrough-thickness",
             .@"adjust-cursor-thickness" = config.@"adjust-cursor-thickness",
-            .@"freetype-load-flags" = switch (font.options.backend) {
-                .freetype,
-                .fontconfig_freetype,
-                .coretext_freetype,
-                => config.@"freetype-load-flags",
-
-                .coretext,
-                .coretext_harfbuzz,
-                .coretext_noshape,
-                .web_canvas,
-                => {},
-            },
+            .@"freetype-load-flags" = if (comptime font.options.backend.hasFreetype()) config.@"freetype-load-flags" else {},
 
             // This must be last so the arena contains all our allocations
             // from above since Zig does assignment in order.
@@ -514,7 +503,7 @@ pub const Key = struct {
     /// font grid.
     font_size: DesiredSize = .{ .points = 12 },
 
-    load_flags: configpkg.FreetypeLoadFlags = font.face.freetype_load_flags_default,
+    load_flags: font.face.FreetypeLoadFlags = font.face.freetype_load_flags_default,
 
     const style_offsets_len = std.enums.directEnumArrayLen(Style, 0);
     const StyleOffsets = [style_offsets_len]usize;
