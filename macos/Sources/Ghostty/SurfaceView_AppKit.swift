@@ -14,6 +14,10 @@ extension Ghostty {
         // to the app level and it is set from there.
         @Published var title: String = "👻"
 
+        // The current pwd of the surface as defined by the pty. This can be
+        // changed with escape codes.
+        @Published var pwd: String? = nil
+
         // The cell size of this surface. This is set by the core when the
         // surface is first created and any time the cell size changes (i.e.
         // when the font size changes). This is used to allow windows to be
@@ -69,17 +73,6 @@ extension Ghostty {
         var needsConfirmQuit: Bool {
             guard let surface = self.surface else { return false }
             return ghostty_surface_needs_confirm_quit(surface)
-        }
-
-        /// Returns the pwd of the surface if it has one.
-        var pwd: String? {
-            guard let surface = self.surface else { return nil }
-            let v = String(unsafeUninitializedCapacity: 1024) {
-                Int(ghostty_surface_pwd(surface, $0.baseAddress, UInt($0.count)))
-            }
-
-            if (v.count == 0) { return nil }
-            return v
         }
 
         // Returns the inspector instance for this surface, or nil if the

@@ -92,6 +92,7 @@ extension Ghostty {
                     Surface(view: surfaceView, size: geo.size)
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfaceTitle, surfaceView.title)
+                        .focusedValue(\.ghosttySurfacePwd, surfaceView.pwd)
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                     #if canImport(AppKit)
@@ -512,9 +513,7 @@ extension FocusedValues {
     struct FocusedGhosttySurface: FocusedValueKey {
         typealias Value = Ghostty.SurfaceView
     }
-}
 
-extension FocusedValues {
     var ghosttySurfaceTitle: String? {
         get { self[FocusedGhosttySurfaceTitle.self] }
         set { self[FocusedGhosttySurfaceTitle.self] = newValue }
@@ -523,9 +522,16 @@ extension FocusedValues {
     struct FocusedGhosttySurfaceTitle: FocusedValueKey {
         typealias Value = String
     }
-}
 
-extension FocusedValues {
+    var ghosttySurfacePwd: String? {
+        get { self[FocusedGhosttySurfacePwd.self] }
+        set { self[FocusedGhosttySurfacePwd.self] = newValue }
+    }
+
+    struct FocusedGhosttySurfacePwd: FocusedValueKey {
+        typealias Value = String
+    }
+
     var ghosttySurfaceZoomed: Bool? {
         get { self[FocusedGhosttySurfaceZoomed.self] }
         set { self[FocusedGhosttySurfaceZoomed.self] = newValue }
@@ -534,9 +540,7 @@ extension FocusedValues {
     struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
         typealias Value = Bool
     }
-}
 
-extension FocusedValues {
     var ghosttySurfaceCellSize: OSSize? {
         get { self[FocusedGhosttySurfaceCellSize.self] }
         set { self[FocusedGhosttySurfaceCellSize.self] = newValue }

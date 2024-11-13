@@ -488,6 +488,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_SET_TITLE:
                 setTitle(app, target: target, v: action.action.set_title)
 
+            case GHOSTTY_ACTION_PWD:
+                pwdChanged(app, target: target, v: action.action.pwd)
+
             case GHOSTTY_ACTION_OPEN_CONFIG:
                 ghostty_config_open()
 
@@ -937,6 +940,26 @@ extension Ghostty {
                     surfaceView.title = title
                 }
 
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func pwdChanged(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_pwd_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("pwd change does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let pwd = String(cString: v.pwd!, encoding: .utf8) else { return }
+                surfaceView.pwd = pwd
 
             default:
                 assertionFailure()
