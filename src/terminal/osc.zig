@@ -400,7 +400,7 @@ pub const Parser = struct {
             .@"0" => switch (c) {
                 ';' => {
                     self.command = .{ .change_window_title = undefined };
-
+                    self.complete = true;
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
                     self.buf_start = self.buf_idx;
@@ -477,7 +477,7 @@ pub const Parser = struct {
                 '2' => self.state = .@"22",
                 ';' => {
                     self.command = .{ .change_window_title = undefined };
-
+                    self.complete = true;
                     self.state = .string;
                     self.temp_state = .{ .str = &self.command.change_window_title };
                     self.buf_start = self.buf_idx;
@@ -1157,6 +1157,17 @@ test "OSC: change_window_title with utf8" {
     const cmd = p.end(null).?;
     try testing.expect(cmd == .change_window_title);
     try testing.expectEqualStrings("— ‐", cmd.change_window_title);
+}
+
+test "OSC: change_window_title empty" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+    p.next('2');
+    p.next(';');
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .change_window_title);
+    try testing.expectEqualStrings("", cmd.change_window_title);
 }
 
 test "OSC: change_window_icon" {

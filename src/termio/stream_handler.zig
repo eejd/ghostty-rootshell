@@ -965,7 +965,23 @@ pub const StreamHandler = struct {
         @memcpy(buf[0..title.len], title);
         buf[title.len] = 0;
 
-        // Mark that we've seen a title
+        // Special handling for the empty title. We treat the empty title
+        // as resetting to as if we never saw a title. Other terminals
+        // behave this way too (e.g. iTerm2).
+        if (title.len == 0) {
+            // If we have a pwd then we set the title as the pwd else
+            // we just set it to blank.
+            if (self.terminal.getPwd()) |pwd| pwd: {
+                if (pwd.len >= buf.len) break :pwd;
+                @memcpy(buf[0..pwd.len], pwd);
+                buf[pwd.len] = 0;
+            }
+
+            self.surfaceMessageWriter(.{ .set_title = buf });
+            self.seen_title = false;
+            return;
+        }
+
         self.seen_title = true;
         self.surfaceMessageWriter(.{ .set_title = buf });
     }
