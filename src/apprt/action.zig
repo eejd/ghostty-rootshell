@@ -151,6 +151,9 @@ pub const Action = union(Key) {
     /// Set the title of the target.
     set_title: SetTitle,
 
+    /// The current working directory has changed for the target terminal.
+    pwd: Pwd,
+
     /// Set the mouse cursor shape.
     mouse_shape: terminal.MouseShape,
 
@@ -215,6 +218,7 @@ pub const Action = union(Key) {
         render_inspector,
         desktop_notification,
         set_title,
+        pwd,
         mouse_shape,
         mouse_visibility,
         mouse_over_link,
@@ -413,6 +417,21 @@ pub const SetTitle = struct {
     pub fn cval(self: SetTitle) C {
         return .{
             .title = self.title.ptr,
+        };
+    }
+};
+
+pub const Pwd = struct {
+    pwd: [:0]const u8,
+
+    // Sync with: ghostty_action_set_pwd_s
+    pub const C = extern struct {
+        pwd: [*:0]const u8,
+    };
+
+    pub fn cval(self: Pwd) C {
+        return .{
+            .pwd = self.pwd.ptr,
         };
     }
 };

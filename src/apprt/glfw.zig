@@ -224,6 +224,7 @@ pub const App = struct {
             .cell_size,
             .renderer_health,
             .color_change,
+            .pwd,
             => log.info("unimplemented action={}", .{action}),
         }
     }
