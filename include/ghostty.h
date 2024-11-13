@@ -712,7 +712,6 @@ void ghostty_surface_complete_clipboard_request(ghostty_surface_t,
                                                 const char*,
                                                 void*,
                                                 bool);
-uintptr_t ghostty_surface_pwd(ghostty_surface_t, char*, uintptr_t);
 bool ghostty_surface_has_selection(ghostty_surface_t);
 uintptr_t ghostty_surface_selection(ghostty_surface_t, char*, uintptr_t);
 
