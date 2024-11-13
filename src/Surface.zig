@@ -856,6 +856,20 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             },
         },
 
+        .pwd_change => |w| {
+            defer w.deinit();
+
+            // We always allocate for this because we need to null-terminate.
+            const str = try self.alloc.dupeZ(u8, w.slice());
+            defer self.alloc.free(str);
+
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .pwd,
+                .{ .pwd = str },
+            );
+        },
+
         .close => self.close(),
 
         // Close without confirmation.

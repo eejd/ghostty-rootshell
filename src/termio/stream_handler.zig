@@ -1123,6 +1123,14 @@ pub const StreamHandler = struct {
         log.debug("terminal pwd: {s}", .{path});
         try self.terminal.setPwd(path);
 
+        // Report it to the surface. If creating our write request fails
+        // then we just ignore it.
+        if (apprt.surface.Message.WriteReq.init(self.alloc, path)) |req| {
+            self.surfaceMessageWriter(.{ .pwd_change = req });
+        } else |err| {
+            log.warn("error notifying surface of pwd change err={}", .{err});
+        }
+
         // If we haven't seen a title, use our pwd as the title.
         if (!self.seen_title) {
             try self.changeWindowTitle(path);

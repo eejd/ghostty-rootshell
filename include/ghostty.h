@@ -430,6 +430,11 @@ typedef struct {
   const char* title;
 } ghostty_action_set_title_s;
 
+// apprt.action.Pwd.C
+typedef struct {
+  const char* pwd;
+} ghostty_action_pwd_s;
+
 // terminal.MouseShape
 typedef enum {
   GHOSTTY_MOUSE_SHAPE_DEFAULT,
@@ -552,6 +557,7 @@ typedef enum {
   GHOSTTY_ACTION_RENDER_INSPECTOR,
   GHOSTTY_ACTION_DESKTOP_NOTIFICATION,
   GHOSTTY_ACTION_SET_TITLE,
+  GHOSTTY_ACTION_PWD,
   GHOSTTY_ACTION_MOUSE_SHAPE,
   GHOSTTY_ACTION_MOUSE_VISIBILITY,
   GHOSTTY_ACTION_MOUSE_OVER_LINK,
@@ -576,6 +582,7 @@ typedef union {
   ghostty_action_inspector_e inspector;
   ghostty_action_desktop_notification_s desktop_notification;
   ghostty_action_set_title_s set_title;
+  ghostty_action_pwd_s pwd;
   ghostty_action_mouse_shape_e mouse_shape;
   ghostty_action_mouse_visibility_e mouse_visibility;
   ghostty_action_mouse_over_link_s mouse_over_link;

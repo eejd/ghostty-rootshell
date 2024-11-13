@@ -76,6 +76,9 @@ pub const Message = union(enum) {
         color: terminal.color.RGB,
     },
 
+    /// The terminal has reported a change in the working directory.
+    pwd_change: WriteReq,
+
     pub const ReportTitleStyle = enum {
         csi_21_t,
 
