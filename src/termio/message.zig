@@ -194,9 +194,9 @@ pub fn MessageData(comptime Elem: type, comptime small_size: comptime_int) type 
         }
 
         /// Returns a const slice of the data pointed to by this request.
-        pub fn slice(self: Self) []const Elem {
-            return switch (self) {
-                .small => |v| v.data[0..v.len],
+        pub fn slice(self: *const Self) []const Elem {
+            return switch (self.*) {
+                .small => |*v| v.data[0..v.len],
                 .stable => |v| v,
                 .alloc => |v| v.data,
             };
