@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const xev = @import("xev");
 const apprt = @import("../apprt.zig");
@@ -1048,6 +1049,28 @@ pub const StreamHandler = struct {
     }
 
     pub fn reportPwd(self: *StreamHandler, url: []const u8) !void {
+        // Special handling for the empty URL. We treat the empty URL
+        // as resetting the pwd as if we never saw a pwd. I can't find any
+        // other terminal that does this but it seems like a reasonable
+        // behavior that enables some useful features. For example, the macOS
+        // proxy icon can be hidden when a program reports it doesn't know
+        // the pwd rather than showing a stale pwd.
+        if (url.len == 0) {
+            // Blank value can never fail because no allocs happen.
+            self.terminal.setPwd("") catch unreachable;
+
+            // If we haven't seen a title, we're using the pwd as our title.
+            // Set it to blank which will reset our title behavior.
+            if (!self.seen_title) {
+                try self.changeWindowTitle("");
+                assert(!self.seen_title);
+            }
+
+            // Report the change.
+            self.surfaceMessageWriter(.{ .pwd_change = .{ .stable = "" } });
+            return;
+        }
+
         if (builtin.os.tag == .windows) {
             log.warn("reportPwd unimplemented on windows", .{});
             return;
