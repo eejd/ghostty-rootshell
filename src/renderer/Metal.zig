@@ -622,7 +622,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     };
     errdefer if (display_link) |v| v.release();
 
-    return Metal{
+    var result: Metal = .{
         .alloc = alloc,
         .config = options.config,
         .surface_mailbox = options.surface_mailbox,
@@ -663,6 +663,12 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         .custom_shader_state = custom_shader_state,
         .gpu_state = gpu_state,
     };
+
+    // Do an initialize screen size setup to ensure our undefined values
+    // above are initialized.
+    try result.setScreenSize(result.size);
+
+    return result;
 }
 
 pub fn deinit(self: *Metal) void {
