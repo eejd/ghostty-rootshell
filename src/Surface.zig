@@ -324,6 +324,32 @@ const DerivedConfig = struct {
         for (self.links) |*link| link.regex.deinit();
         self.arena.deinit();
     }
+
+    fn scaledPadding(self: *const DerivedConfig, x_dpi: f32, y_dpi: f32) renderer.Padding {
+        const padding_top: u32 = padding_top: {
+            const padding_top: f32 = @floatFromInt(self.window_padding_top);
+            break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
+        };
+        const padding_bottom: u32 = padding_bottom: {
+            const padding_bottom: f32 = @floatFromInt(self.window_padding_bottom);
+            break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
+        };
+        const padding_left: u32 = padding_left: {
+            const padding_left: f32 = @floatFromInt(self.window_padding_left);
+            break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
+        };
+        const padding_right: u32 = padding_right: {
+            const padding_right: f32 = @floatFromInt(self.window_padding_right);
+            break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
+        };
+
+        return .{
+            .top = padding_top,
+            .bottom = padding_bottom,
+            .left = padding_left,
+            .right = padding_right,
+        };
+    }
 };
 
 /// Create a new surface. This must be called from the main thread. The
@@ -373,30 +399,6 @@ pub fn init(
     // Pre-calculate our initial cell size ourselves.
     const cell_size = font_grid.cellSize();
 
-    // Convert our padding from points to pixels
-    const padding_top: u32 = padding_top: {
-        const padding_top: f32 = @floatFromInt(derived_config.window_padding_top);
-        break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
-    };
-    const padding_bottom: u32 = padding_bottom: {
-        const padding_bottom: f32 = @floatFromInt(derived_config.window_padding_bottom);
-        break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
-    };
-    const padding_left: u32 = padding_left: {
-        const padding_left: f32 = @floatFromInt(derived_config.window_padding_left);
-        break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
-    };
-    const padding_right: u32 = padding_right: {
-        const padding_right: f32 = @floatFromInt(derived_config.window_padding_right);
-        break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
-    };
-    const padding: renderer.Padding = .{
-        .top = padding_top,
-        .bottom = padding_bottom,
-        .left = padding_left,
-        .right = padding_right,
-    };
-
     // Build our size struct which has all the sizes we need.
     const size: renderer.Size = size: {
         var size: renderer.Size = .{
@@ -409,10 +411,10 @@ pub fn init(
             },
 
             .cell = font_grid.cellSize(),
-            .padding = padding,
+            .padding = derived_config.scaledPadding(x_dpi, y_dpi),
         };
 
-        if (config.@"window-padding-balance") {
+        if (derived_config.window_padding_balance) {
             size.balancePadding();
         }
 
@@ -591,12 +593,12 @@ pub fn init(
         // account for the padding so we get the exact correct grid size.
         const final_width: u32 =
             @as(u32, @intFromFloat(@ceil(width_f32 / scale.x))) +
-            padding.left +
-            padding.right;
+            size.padding.left +
+            size.padding.right;
         const final_height: u32 =
             @as(u32, @intFromFloat(@ceil(height_f32 / scale.y))) +
-            padding.top +
-            padding.bottom;
+            size.padding.top +
+            size.padding.bottom;
 
         rt_app.performAction(
             .{ .surface = self },
@@ -1151,7 +1153,7 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
 
     const x: f64 = x: {
         // Simple x * cell width gives the left
-        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
+        var x: f64 = @floatFromInt(tl_coord.x * self.size.cell.width);
 
         // Add padding
         x += @floatFromInt(self.size.padding.left);
@@ -1164,10 +1166,10 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
 
     const y: f64 = y: {
         // Simple y * cell height gives the top
-        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
+        var y: f64 = @floatFromInt(tl_coord.y * self.size.cell.height);
 
         // We want the text baseline
-        y += @floatFromInt(self.cell_size.height);
+        y += @floatFromInt(self.size.cell.height);
         y -= @floatFromInt(self.font_metrics.cell_baseline);
 
         // Add padding
@@ -1212,10 +1214,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const x: f64 = x: {
         // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatFromInt(cursor.x * self.cell_size.width);
+        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width);
 
         // We want the midpoint
-        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+        x += @as(f64, @floatFromInt(self.size.cell.width)) / 2;
 
         // And scale it
         x /= content_scale.x;
@@ -1225,10 +1227,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const y: f64 = y: {
         // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatFromInt(cursor.y * self.cell_size.height);
+        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height);
 
         // We want the bottom
-        y += @floatFromInt(self.cell_size.height);
+        y += @floatFromInt(self.size.cell.height);
 
         // And scale it
         y /= content_scale.y;
@@ -2299,34 +2301,8 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 
     // Update our padding which is dependent on DPI. We only do this for
     // unbalanced padding since balanced padding is not dependent on DPI.
-    if (!self.config.window_padding_balanced) {
-        self.size.padding = padding: {
-            const padding_top: u32 = padding_top: {
-                const padding_top: f32 = @floatFromInt(self.config.window_padding_top);
-                break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
-            };
-            const padding_bottom: u32 = padding_bottom: {
-                const padding_bottom: f32 = @floatFromInt(self.config.window_padding_bottom);
-                break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
-            };
-            const padding_left: u32 = padding_left: {
-                const padding_left: f32 = @floatFromInt(self.config.window_padding_left);
-                break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
-            };
-            const padding_right: u32 = padding_right: {
-                const padding_right: f32 = @floatFromInt(self.config.window_padding_right);
-                break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
-            };
-
-            break :padding .{
-                .top = padding_top,
-                .bottom = padding_bottom,
-                .left = padding_left,
-                .right = padding_right,
-            };
-        };
-
-        self.padding = self.size.padding;
+    if (!self.config.window_padding_balance) {
+        self.size.padding = self.config.scaledPadding(x_dpi, y_dpi);
     }
 
     // Force a resize event because the change in padding will affect
