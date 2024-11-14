@@ -513,10 +513,7 @@ pub fn init(
         errdefer io_mailbox.deinit(alloc);
 
         try termio.Termio.init(&self.io, alloc, .{
-            .grid_size = size.grid(),
-            .cell_size = size.cell,
-            .screen_size = size.screen,
-            .padding = padding,
+            .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
             .backend = .{ .exec = io_exec },
