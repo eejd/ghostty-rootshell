@@ -168,13 +168,13 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Set our default cursor style
     term.screen.cursor.cursor_style = opts.config.cursor_style;
 
-    // Setup our backend.
-    var backend = opts.backend;
-    backend.initTerminal(&term);
-
     // Setup our terminal size in pixels for certain requests.
     term.width_px = opts.grid_size.columns * opts.cell_size.width;
     term.height_px = opts.grid_size.rows * opts.cell_size.height;
+
+    // Setup our backend.
+    var backend = opts.backend;
+    backend.initTerminal(&term);
 
     // Create our stream handler. This points to memory in self so it
     // isn't safe to use until self.* is set.

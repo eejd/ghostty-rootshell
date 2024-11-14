@@ -24,6 +24,16 @@ pub const Size = struct {
     pub fn grid(self: Size) GridSize {
         return GridSize.init(self.screen.subPadding(self.padding), self.cell);
     }
+
+    /// Set the padding to be balanced around the grid. Overwrites the current
+    /// padding.
+    pub fn balancePadding(self: *Size) void {
+        self.padding = Padding.balanced(
+            self.screen,
+            self.grid(),
+            self.cell,
+        );
+    }
 };
 
 /// A coordinate. This is defined as a tagged union to allow for different
