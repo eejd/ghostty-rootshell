@@ -57,6 +57,11 @@ pub fn build(b: *std.Build) !void {
         break :target result;
     };
 
+    // This is set to true when we're building a system package. For now
+    // this is trivially detected using the "system_package_mode" bool
+    // but we may want to make this more sophisticated in the future.
+    const system_package: bool = b.graph.system_package_mode;
+
     const wasm_target: WasmTarget = .browser;
 
     // We use env vars throughout the build so we grab them immediately here.
@@ -101,8 +106,8 @@ pub fn build(b: *std.Build) !void {
     const pie = b.option(
         bool,
         "pie",
-        "Build a Position Independent Executable",
-    ) orelse false;
+        "Build a Position Independent Executable. Default true for system packages.",
+    ) orelse system_package;
 
     const conformance = b.option(
         []const u8,

@@ -80,7 +80,9 @@ relevant to package maintainers:
 
 - `--system`: The path to the offline cache directory. This disables
   any package fetching from the internet. This flag also triggers all
-  dependencies to be dynamically linked by default.
+  dependencies to be dynamically linked by default. This flag also makes
+  the binary a PIE (Position Independent Executable) by default (override
+  with `-Dpie`).
 
 - `-Doptimize=ReleaseFast`: Build with optimizations enabled and safety checks
   disabled. This is the recommended build mode for distribution. I'd prefer
