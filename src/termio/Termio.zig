@@ -382,12 +382,7 @@ pub fn resize(
     }
 
     // Mail the renderer so that it can update the GPU and re-render
-    _ = self.renderer_mailbox.push(.{
-        .resize = .{
-            .screen_size = size.screen,
-            .padding = size.padding,
-        },
-    }, .{ .forever = {} });
+    _ = self.renderer_mailbox.push(.{ .resize = size }, .{ .forever = {} });
     self.renderer_wakeup.notify() catch {};
 }
 
