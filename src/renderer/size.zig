@@ -25,6 +25,12 @@ pub const Size = struct {
         return GridSize.init(self.screen.subPadding(self.padding), self.cell);
     }
 
+    /// The size of the terminal. This is the same as the screen without
+    /// padding.
+    pub fn terminal(self: Size) ScreenSize {
+        return self.screen.subPadding(self.padding);
+    }
+
     /// Set the padding to be balanced around the grid. Overwrites the current
     /// padding.
     pub fn balancePadding(self: *Size) void {

@@ -349,18 +349,16 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
 pub fn resize(
     self: *Termio,
     td: *ThreadData,
-    grid_size: renderer.GridSize,
-    cell_size: renderer.CellSize,
-    screen_size: renderer.ScreenSize,
-    padding: renderer.Padding,
+    size: renderer.Size,
 ) !void {
+    const grid_size = size.grid();
+
     // Update the size of our pty.
-    const padded_size = screen_size.subPadding(padding);
-    try self.backend.resize(grid_size, padded_size);
+    try self.backend.resize(grid_size, size.terminal());
 
     // Update our cached grid size
-    self.grid_size = grid_size;
-    self.cell_size = cell_size;
+    self.grid_size = size.grid();
+    self.cell_size = size.cell;
 
     // Enter the critical area that we want to keep small
     {
@@ -375,8 +373,8 @@ pub fn resize(
         );
 
         // Update our pixel sizes
-        self.terminal.width_px = self.grid_size.columns * self.cell_size.width;
-        self.terminal.height_px = self.grid_size.rows * self.cell_size.height;
+        self.terminal.width_px = grid_size.columns * self.cell_size.width;
+        self.terminal.height_px = grid_size.rows * self.cell_size.height;
 
         // Disable synchronized output mode so that we show changes
         // immediately for a resize. This is allowed by the spec.
@@ -391,8 +389,8 @@ pub fn resize(
     // Mail the renderer so that it can update the GPU and re-render
     _ = self.renderer_mailbox.push(.{
         .resize = .{
-            .screen_size = screen_size,
-            .padding = padding,
+            .screen_size = size.screen,
+            .padding = size.padding,
         },
     }, .{ .forever = {} });
     self.renderer_wakeup.notify() catch {};

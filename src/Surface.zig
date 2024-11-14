@@ -1365,14 +1365,7 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     if (self.config.window_padding_balance) self.size.balancePadding();
 
     // Notify the terminal
-    self.io.queueMessage(.{
-        .resize = .{
-            .grid_size = self.size.grid(),
-            .cell_size = self.size.cell,
-            .screen_size = self.size.screen,
-            .padding = self.size.padding,
-        },
-    }, .unlocked);
+    self.io.queueMessage(.{ .resize = self.size }, .unlocked);
 
     // Notify the window
     try self.rt_app.performAction(
@@ -1468,14 +1461,7 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     }
 
     // Mail the IO thread
-    self.io.queueMessage(.{
-        .resize = .{
-            .grid_size = grid_size,
-            .cell_size = self.size.cell,
-            .screen_size = self.size.screen,
-            .padding = self.size.padding,
-        },
-    }, .unlocked);
+    self.io.queueMessage(.{ .resize = self.size }, .unlocked);
 }
 
 /// Called to set the preedit state for character input. Preedit is used
