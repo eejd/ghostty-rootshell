@@ -397,20 +397,6 @@ pub fn init(
         .right = padding_right,
     };
 
-    // Create our terminal grid with the initial size
-    const app_mailbox: App.Mailbox = .{ .rt_app = rt_app, .mailbox = &app.mailbox };
-    var renderer_impl = try Renderer.init(alloc, .{
-        .config = try Renderer.DerivedConfig.init(alloc, config),
-        .font_grid = font_grid,
-        .padding = .{
-            .explicit = padding,
-            .balance = config.@"window-padding-balance",
-        },
-        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
-        .rt_surface = rt_surface,
-    });
-    errdefer renderer_impl.deinit();
-
     // Build our size struct which has all the sizes we need.
     const size: renderer.Size = size: {
         var size: renderer.Size = .{
@@ -432,6 +418,17 @@ pub fn init(
 
         break :size size;
     };
+
+    // Create our terminal grid with the initial size
+    const app_mailbox: App.Mailbox = .{ .rt_app = rt_app, .mailbox = &app.mailbox };
+    var renderer_impl = try Renderer.init(alloc, .{
+        .config = try Renderer.DerivedConfig.init(alloc, config),
+        .font_grid = font_grid,
+        .size = size,
+        .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+        .rt_surface = rt_surface,
+    });
+    errdefer renderer_impl.deinit();
 
     // The mutex used to protect our renderer state.
     const mutex = try alloc.create(std.Thread.Mutex);
