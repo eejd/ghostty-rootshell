@@ -530,9 +530,7 @@ pub fn displayRealize(self: *OpenGL) !void {
     self.texture_color_resized = 0;
 
     // We need to reset our uniforms
-    if (self.screen_size) |size| {
-        self.deferred_screen_size = .{ .size = size };
-    }
+    self.deferred_screen_size = .{ .size = self.size };
     self.deferred_font_size = .{ .metrics = self.grid_metrics };
     self.deferred_config = .{};
 }
