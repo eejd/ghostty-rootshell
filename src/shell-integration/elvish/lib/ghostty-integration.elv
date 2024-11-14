@@ -1,4 +1,3 @@
-#!/usr/bin/elvish
 {
   fn restore-xdg-dirs {
     use str
