@@ -182,7 +182,7 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(
-                                        RoundedRectangle(cornerRadius: 5)
+                                        RoundedRectangle(cornerRadius: 3)
                                             .fill(.background)
                                     )
                                     .lineLimit(1)
@@ -199,7 +199,7 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(
-                                        RoundedRectangle(cornerRadius: 5)
+                                        RoundedRectangle(cornerRadius: 3)
                                             .fill(.background)
                                     )
                                     .lineLimit(1)
