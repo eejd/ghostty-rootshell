@@ -411,11 +411,17 @@ pub fn init(
             },
 
             .cell = font_grid.cellSize(),
-            .padding = derived_config.scaledPadding(x_dpi, y_dpi),
+            .padding = .{},
         };
 
+        const explicit: renderer.Padding = derived_config.scaledPadding(
+            x_dpi,
+            y_dpi,
+        );
         if (derived_config.window_padding_balance) {
-            size.balancePadding();
+            size.balancePadding(explicit);
+        } else {
+            size.padding = explicit;
         }
 
         break :size size;
@@ -1358,7 +1364,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
 fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
     // Update our cell size within our size struct
     self.size.cell = size;
-    if (self.config.window_padding_balance) self.size.balancePadding();
+    self.balancePaddingIfNeeded();
 
     // Notify the terminal
     self.io.queueMessage(.{ .resize = self.size }, .unlocked);
@@ -1440,7 +1446,7 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
 fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     // Save our screen size
     self.size.screen = size;
-    if (self.config.window_padding_balance) self.size.balancePadding();
+    self.balancePaddingIfNeeded();
 
     // Recalculate our grid size. Because Ghostty supports fluid resizing,
     // its possible the grid doesn't change at all even if the screen size changes.
@@ -1458,6 +1464,15 @@ fn resize(self: *Surface, size: renderer.ScreenSize) !void {
 
     // Mail the IO thread
     self.io.queueMessage(.{ .resize = self.size }, .unlocked);
+}
+
+/// Recalculate the balanced padding if needed.
+fn balancePaddingIfNeeded(self: *Surface) void {
+    if (!self.config.window_padding_balance) return;
+    const content_scale = try self.rt_surface.getContentScale();
+    const x_dpi = content_scale.x * font.face.default_dpi;
+    const y_dpi = content_scale.y * font.face.default_dpi;
+    self.size.balancePadding(self.config.scaledPadding(x_dpi, y_dpi));
 }
 
 /// Called to set the preedit state for character input. Preedit is used
