@@ -350,6 +350,7 @@ pub fn resize(
     td: *ThreadData,
     size: renderer.Size,
 ) !void {
+    self.size = size;
     const grid_size = size.grid();
 
     // Update the size of our pty.
