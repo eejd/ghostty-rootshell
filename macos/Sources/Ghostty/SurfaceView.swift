@@ -172,7 +172,7 @@ extension Ghostty {
 
                 // If we have a URL from hovering a link, we show that.
                 if let url = surfaceView.hoverUrl {
-                    let padding: CGFloat = 3
+                    let padding: CGFloat = 5
                     ZStack {
                         HStack {
                             Spacer()
@@ -182,7 +182,7 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(
-                                        RoundedRectangle(cornerRadius: 3)
+                                        UnevenRoundedRectangle(cornerRadii: .init(topLeading: 9))
                                             .fill(.background)
                                     )
                                     .lineLimit(1)
@@ -190,7 +190,6 @@ extension Ghostty {
                                     .opacity(isHoveringURLLeft ? 1 : 0)
                             }
                         }
-                        .padding([.trailing, .bottom], padding)
 
                         HStack {
                             VStack(alignment: .leading) {
@@ -199,7 +198,7 @@ extension Ghostty {
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                                     .background(
-                                        RoundedRectangle(cornerRadius: 3)
+                                        UnevenRoundedRectangle(cornerRadii: .init(topTrailing: 9))
                                             .fill(.background)
                                     )
                                     .lineLimit(1)
@@ -211,7 +210,6 @@ extension Ghostty {
                             }
                             Spacer()
                         }
-                        .padding([.leading, .bottom], padding)
                     }
                 }
 
