@@ -181,12 +181,16 @@ extension Ghostty {
 
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                    .background(.background)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(.background)
+                                    )
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                     .opacity(isHoveringURLLeft ? 1 : 0)
                             }
                         }
+                        .padding([.trailing, .bottom], padding)
 
                         HStack {
                             VStack(alignment: .leading) {
@@ -194,7 +198,10 @@ extension Ghostty {
 
                                 Text(verbatim: url)
                                     .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                    .background(.background)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(.background)
+                                    )
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                     .opacity(isHoveringURLLeft ? 0 : 1)
@@ -204,6 +211,7 @@ extension Ghostty {
                             }
                             Spacer()
                         }
+                        .padding([.leading, .bottom], padding)
                     }
                 }
 
