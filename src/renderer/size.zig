@@ -31,9 +31,14 @@ pub const Size = struct {
         return self.screen.subPadding(self.padding);
     }
 
-    /// Set the padding to be balanced around the grid. Overwrites the current
-    /// padding.
-    pub fn balancePadding(self: *Size) void {
+    /// Set the padding to be balanced around the grid. The balanced
+    /// padding is calculated AFTER the explicit padding is taken
+    /// into account.
+    pub fn balancePadding(self: *Size, explicit: Padding) void {
+        // This ensure grid() does the right thing
+        self.padding = explicit;
+
+        // Now we can calculate the balanced padding
         self.padding = Padding.balanced(
             self.screen,
             self.grid(),
