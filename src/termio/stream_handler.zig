@@ -26,7 +26,7 @@ const disable_kitty_keyboard_protocol = apprt.runtime == apprt.glfw;
 /// unless all of the member fields are copied.
 pub const StreamHandler = struct {
     alloc: Allocator,
-    grid_size: *renderer.GridSize,
+    size: *renderer.Size,
     terminal: *terminal.Terminal,
 
     /// Mailbox for data to the termio thread.
@@ -611,12 +611,15 @@ pub const StreamHandler = struct {
             },
 
             // Force resize back to the window size
-            .enable_mode_3 => self.terminal.resize(
-                self.alloc,
-                self.grid_size.columns,
-                self.grid_size.rows,
-            ) catch |err| {
-                log.err("error updating terminal size: {}", .{err});
+            .enable_mode_3 => {
+                const grid_size = self.size.grid();
+                self.terminal.resize(
+                    self.alloc,
+                    grid_size.columns,
+                    grid_size.rows,
+                ) catch |err| {
+                    log.err("error updating terminal size: {}", .{err});
+                };
             },
 
             .@"132_column" => try self.terminal.deccolm(

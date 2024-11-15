@@ -1447,13 +1447,14 @@ pub const CAPI = struct {
 
     /// Return the size information a surface has.
     export fn ghostty_surface_size(surface: *Surface) SurfaceSize {
+        const grid_size = surface.core_surface.size.grid();
         return .{
-            .columns = surface.core_surface.grid_size.columns,
-            .rows = surface.core_surface.grid_size.rows,
-            .width_px = surface.core_surface.screen_size.width,
-            .height_px = surface.core_surface.screen_size.height,
-            .cell_width_px = surface.core_surface.cell_size.width,
-            .cell_height_px = surface.core_surface.cell_size.height,
+            .columns = grid_size.columns,
+            .rows = grid_size.rows,
+            .width_px = surface.core_surface.size.screen.width,
+            .height_px = surface.core_surface.size.screen.height,
+            .cell_width_px = surface.core_surface.size.cell.width,
+            .cell_height_px = surface.core_surface.size.cell.height,
         };
     }
 

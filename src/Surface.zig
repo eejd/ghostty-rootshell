@@ -113,13 +113,8 @@ io_thr: std.Thread,
 /// Terminal inspector
 inspector: ?*inspector.Inspector = null,
 
-/// All the cached sizes since we need them at various times.
-screen_size: renderer.ScreenSize,
-grid_size: renderer.GridSize,
-cell_size: renderer.CellSize,
-
-/// Explicit padding due to configuration
-padding: renderer.Padding,
+/// All our sizing information.
+size: renderer.Size,
 
 /// The configuration derived from the main config. We "derive" it so that
 /// we don't have a shared pointer hanging around that we need to worry about
@@ -329,6 +324,32 @@ const DerivedConfig = struct {
         for (self.links) |*link| link.regex.deinit();
         self.arena.deinit();
     }
+
+    fn scaledPadding(self: *const DerivedConfig, x_dpi: f32, y_dpi: f32) renderer.Padding {
+        const padding_top: u32 = padding_top: {
+            const padding_top: f32 = @floatFromInt(self.window_padding_top);
+            break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
+        };
+        const padding_bottom: u32 = padding_bottom: {
+            const padding_bottom: f32 = @floatFromInt(self.window_padding_bottom);
+            break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
+        };
+        const padding_left: u32 = padding_left: {
+            const padding_left: f32 = @floatFromInt(self.window_padding_left);
+            break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
+        };
+        const padding_right: u32 = padding_right: {
+            const padding_right: f32 = @floatFromInt(self.window_padding_right);
+            break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
+        };
+
+        return .{
+            .top = padding_top,
+            .bottom = padding_bottom,
+            .left = padding_left,
+            .right = padding_right,
+        };
+    }
 };
 
 /// Create a new surface. This must be called from the main thread. The
@@ -378,28 +399,26 @@ pub fn init(
     // Pre-calculate our initial cell size ourselves.
     const cell_size = font_grid.cellSize();
 
-    // Convert our padding from points to pixels
-    const padding_top: u32 = padding_top: {
-        const padding_top: f32 = @floatFromInt(derived_config.window_padding_top);
-        break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
-    };
-    const padding_bottom: u32 = padding_bottom: {
-        const padding_bottom: f32 = @floatFromInt(derived_config.window_padding_bottom);
-        break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
-    };
-    const padding_left: u32 = padding_left: {
-        const padding_left: f32 = @floatFromInt(derived_config.window_padding_left);
-        break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
-    };
-    const padding_right: u32 = padding_right: {
-        const padding_right: f32 = @floatFromInt(derived_config.window_padding_right);
-        break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
-    };
-    const padding: renderer.Padding = .{
-        .top = padding_top,
-        .bottom = padding_bottom,
-        .left = padding_left,
-        .right = padding_right,
+    // Build our size struct which has all the sizes we need.
+    const size: renderer.Size = size: {
+        var size: renderer.Size = .{
+            .screen = screen: {
+                const surface_size = try rt_surface.getSize();
+                break :screen .{
+                    .width = surface_size.width,
+                    .height = surface_size.height,
+                };
+            },
+
+            .cell = font_grid.cellSize(),
+            .padding = derived_config.scaledPadding(x_dpi, y_dpi),
+        };
+
+        if (derived_config.window_padding_balance) {
+            size.balancePadding();
+        }
+
+        break :size size;
     };
 
     // Create our terminal grid with the initial size
@@ -407,25 +426,11 @@ pub fn init(
     var renderer_impl = try Renderer.init(alloc, .{
         .config = try Renderer.DerivedConfig.init(alloc, config),
         .font_grid = font_grid,
-        .padding = .{
-            .explicit = padding,
-            .balance = config.@"window-padding-balance",
-        },
+        .size = size,
         .surface_mailbox = .{ .surface = self, .app = app_mailbox },
         .rt_surface = rt_surface,
     });
     errdefer renderer_impl.deinit();
-
-    // Calculate our grid size based on known dimensions.
-    const surface_size = try rt_surface.getSize();
-    const screen_size: renderer.ScreenSize = .{
-        .width = surface_size.width,
-        .height = surface_size.height,
-    };
-    const grid_size = renderer.GridSize.init(
-        screen_size.subPadding(padding),
-        cell_size,
-    );
 
     // The mutex used to protect our renderer state.
     const mutex = try alloc.create(std.Thread.Mutex);
@@ -467,10 +472,7 @@ pub fn init(
         .io = undefined,
         .io_thread = io_thread,
         .io_thr = undefined,
-        .screen_size = .{ .width = 0, .height = 0 },
-        .grid_size = .{},
-        .cell_size = cell_size,
-        .padding = padding,
+        .size = size,
         .config = derived_config,
     };
 
@@ -510,10 +512,7 @@ pub fn init(
         errdefer io_mailbox.deinit(alloc);
 
         try termio.Termio.init(&self.io, alloc, .{
-            .grid_size = grid_size,
-            .cell_size = cell_size,
-            .screen_size = screen_size,
-            .padding = padding,
+            .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
             .backend = .{ .exec = io_exec },
@@ -532,7 +531,7 @@ pub fn init(
     try rt_app.performAction(
         .{ .surface = self },
         .cell_size,
-        .{ .width = cell_size.width, .height = cell_size.height },
+        .{ .width = size.cell.width, .height = size.cell.height },
     );
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
@@ -541,8 +540,8 @@ pub fn init(
         .{ .surface = self },
         .size_limit,
         .{
-            .min_width = cell_size.width * 10,
-            .min_height = cell_size.height * 4,
+            .min_width = size.cell.width * 10,
+            .min_height = size.cell.height * 4,
             // No max:
             .max_width = 0,
             .max_height = 0,
@@ -554,7 +553,7 @@ pub fn init(
     // init stuff we should get rid of this. But this is required because
     // sizeCallback does retina-aware stuff we don't do here and don't want
     // to duplicate.
-    try self.sizeCallback(surface_size);
+    try self.resize(self.size.screen);
 
     // Give the renderer one more opportunity to finalize any surface
     // setup on the main thread prior to spinning up the rendering thread.
@@ -594,12 +593,12 @@ pub fn init(
         // account for the padding so we get the exact correct grid size.
         const final_width: u32 =
             @as(u32, @intFromFloat(@ceil(width_f32 / scale.x))) +
-            padding.left +
-            padding.right;
+            size.padding.left +
+            size.padding.right;
         const final_height: u32 =
             @as(u32, @intFromFloat(@ceil(height_f32 / scale.y))) +
-            padding.top +
-            padding.bottom;
+            size.padding.top +
+            size.padding.bottom;
 
         rt_app.performAction(
             .{ .surface = self },
@@ -1152,18 +1151,12 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
     // Our sizes are all scaled so we need to send the unscaled values back.
     const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
 
-    // We need to account for padding as well.
-    const pad = if (self.config.window_padding_balance)
-        renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
-    else
-        self.padding;
-
     const x: f64 = x: {
         // Simple x * cell width gives the left
-        var x: f64 = @floatFromInt(tl_coord.x * self.cell_size.width);
+        var x: f64 = @floatFromInt(tl_coord.x * self.size.cell.width);
 
         // Add padding
-        x += @floatFromInt(pad.left);
+        x += @floatFromInt(self.size.padding.left);
 
         // Scale
         x /= content_scale.x;
@@ -1173,14 +1166,14 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
 
     const y: f64 = y: {
         // Simple y * cell height gives the top
-        var y: f64 = @floatFromInt(tl_coord.y * self.cell_size.height);
+        var y: f64 = @floatFromInt(tl_coord.y * self.size.cell.height);
 
         // We want the text baseline
-        y += @floatFromInt(self.cell_size.height);
+        y += @floatFromInt(self.size.cell.height);
         y -= @floatFromInt(self.font_metrics.cell_baseline);
 
         // Add padding
-        y += @floatFromInt(pad.top);
+        y += @floatFromInt(self.size.padding.top);
 
         // Scale
         y /= content_scale.y;
@@ -1221,10 +1214,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const x: f64 = x: {
         // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatFromInt(cursor.x * self.cell_size.width);
+        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width);
 
         // We want the midpoint
-        x += @as(f64, @floatFromInt(self.cell_size.width)) / 2;
+        x += @as(f64, @floatFromInt(self.size.cell.width)) / 2;
 
         // And scale it
         x /= content_scale.x;
@@ -1234,10 +1227,10 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
 
     const y: f64 = y: {
         // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatFromInt(cursor.y * self.cell_size.height);
+        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height);
 
         // We want the bottom
-        y += @floatFromInt(self.cell_size.height);
+        y += @floatFromInt(self.size.cell.height);
 
         // And scale it
         y /= content_scale.y;
@@ -1363,24 +1356,12 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
 /// Change the cell size for the terminal grid. This can happen as
 /// a result of changing the font size at runtime.
 fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
-    // Update our new cell size for future calcs
-    self.cell_size = size;
-
-    // Update our grid_size
-    self.grid_size = renderer.GridSize.init(
-        self.screen_size.subPadding(self.padding),
-        self.cell_size,
-    );
+    // Update our cell size within our size struct
+    self.size.cell = size;
+    if (self.config.window_padding_balance) self.size.balancePadding();
 
     // Notify the terminal
-    self.io.queueMessage(.{
-        .resize = .{
-            .grid_size = self.grid_size,
-            .cell_size = self.cell_size,
-            .screen_size = self.screen_size,
-            .padding = self.padding,
-        },
-    }, .unlocked);
+    self.io.queueMessage(.{ .resize = self.size }, .unlocked);
 
     // Notify the window
     try self.rt_app.performAction(
@@ -1451,41 +1432,32 @@ pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     // Update our screen size, but only if it actually changed. And if
     // the screen size didn't change, then our grid size could not have
     // changed, so we just return.
-    if (self.screen_size.equals(new_screen_size)) return;
+    if (self.size.screen.equals(new_screen_size)) return;
 
     try self.resize(new_screen_size);
 }
 
 fn resize(self: *Surface, size: renderer.ScreenSize) !void {
     // Save our screen size
-    self.screen_size = size;
+    self.size.screen = size;
+    if (self.config.window_padding_balance) self.size.balancePadding();
 
     // Recalculate our grid size. Because Ghostty supports fluid resizing,
     // its possible the grid doesn't change at all even if the screen size changes.
     // We have to update the IO thread no matter what because we send
     // pixel-level sizing to the subprocess.
-    self.grid_size = renderer.GridSize.init(
-        self.screen_size.subPadding(self.padding),
-        self.cell_size,
-    );
-    if (self.grid_size.columns < 5 and (self.padding.left > 0 or self.padding.right > 0)) {
+    const grid_size = self.size.grid();
+    if (grid_size.columns < 5 and (self.size.padding.left > 0 or self.size.padding.right > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
-    if (self.grid_size.rows < 2 and (self.padding.top > 0 or self.padding.bottom > 0)) {
+    if (grid_size.rows < 2 and (self.size.padding.top > 0 or self.size.padding.bottom > 0)) {
         log.warn("WARNING: very small terminal grid detected with padding " ++
             "set. Is your padding reasonable?", .{});
     }
 
     // Mail the IO thread
-    self.io.queueMessage(.{
-        .resize = .{
-            .grid_size = self.grid_size,
-            .cell_size = self.cell_size,
-            .screen_size = self.screen_size,
-            .padding = self.padding,
-        },
-    }, .unlocked);
+    self.io.queueMessage(.{ .resize = self.size }, .unlocked);
 }
 
 /// Called to set the preedit state for character input. Preedit is used
@@ -2144,7 +2116,8 @@ pub fn scrollCallback(
         if (!scroll_mods.precision) {
             // Calculate our magnitude of scroll. This is constant (not
             // dependent on yoff).
-            const grid_rows_f64: f64 = @floatFromInt(self.grid_size.rows);
+            const grid_size = self.size.grid();
+            const grid_rows_f64: f64 = @floatFromInt(grid_size.rows);
             const y_delta_f64: f64 = @round((grid_rows_f64 * self.config.mouse_scroll_multiplier) / 15.0);
             const y_delta_usize: usize = @max(1, @as(usize, @intFromFloat(y_delta_f64)));
 
@@ -2171,7 +2144,7 @@ pub fn scrollCallback(
 
         // If the new offset is less than a single unit of scroll, we save
         // the new pending value and do not scroll yet.
-        const cell_size: f64 = @floatFromInt(self.cell_size.height);
+        const cell_size: f64 = @floatFromInt(self.size.cell.height);
         if (@abs(poff) < cell_size) {
             self.mouse.pending_scroll_y = poff;
             break :y .{};
@@ -2201,7 +2174,7 @@ pub fn scrollCallback(
 
         const xoff_adjusted: f64 = xoff * self.config.mouse_scroll_multiplier;
         const poff: f64 = self.mouse.pending_scroll_x + xoff_adjusted;
-        const cell_size: f64 = @floatFromInt(self.cell_size.width);
+        const cell_size: f64 = @floatFromInt(self.size.cell.width);
         if (@abs(poff) < cell_size) {
             self.mouse.pending_scroll_x = poff;
             break :x .{};
@@ -2326,36 +2299,15 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 
     try self.setFontSize(size);
 
-    // Update our padding which is dependent on DPI.
-    self.padding = padding: {
-        const padding_top: u32 = padding_top: {
-            const padding_top: f32 = @floatFromInt(self.config.window_padding_top);
-            break :padding_top @intFromFloat(@floor(padding_top * y_dpi / 72));
-        };
-        const padding_bottom: u32 = padding_bottom: {
-            const padding_bottom: f32 = @floatFromInt(self.config.window_padding_bottom);
-            break :padding_bottom @intFromFloat(@floor(padding_bottom * y_dpi / 72));
-        };
-        const padding_left: u32 = padding_left: {
-            const padding_left: f32 = @floatFromInt(self.config.window_padding_left);
-            break :padding_left @intFromFloat(@floor(padding_left * x_dpi / 72));
-        };
-        const padding_right: u32 = padding_right: {
-            const padding_right: f32 = @floatFromInt(self.config.window_padding_right);
-            break :padding_right @intFromFloat(@floor(padding_right * x_dpi / 72));
-        };
-
-        break :padding .{
-            .top = padding_top,
-            .bottom = padding_bottom,
-            .left = padding_left,
-            .right = padding_right,
-        };
-    };
+    // Update our padding which is dependent on DPI. We only do this for
+    // unbalanced padding since balanced padding is not dependent on DPI.
+    if (!self.config.window_padding_balance) {
+        self.size.padding = self.config.scaledPadding(x_dpi, y_dpi);
+    }
 
     // Force a resize event because the change in padding will affect
     // pixel-level changes to the renderer and viewport.
-    try self.resize(self.screen_size);
+    try self.resize(self.size.screen);
 }
 
 /// The type of action to report for a mouse event.
@@ -2394,8 +2346,8 @@ fn mouseReport(
     // We always report release events no matter where they happen.
     if (action != .release) {
         const pos_out_viewport = pos_out_viewport: {
-            const max_x: f32 = @floatFromInt(self.screen_size.width);
-            const max_y: f32 = @floatFromInt(self.screen_size.height);
+            const max_x: f32 = @floatFromInt(self.size.screen.width);
+            const max_y: f32 = @floatFromInt(self.size.screen.height);
             break :pos_out_viewport pos.x < 0 or pos.y < 0 or
                 pos.x > max_x or pos.y > max_y;
         };
@@ -2554,15 +2506,22 @@ fn mouseReport(
         .sgr_pixels => {
             // Final character to send in the CSI
             const final: u8 = if (action == .release) 'm' else 'M';
-            const adjusted = self.posAdjusted(pos.x, pos.y);
+
+            // The position has to be adjusted to the terminal space.
+            const coord: renderer.Coordinate.Terminal = (renderer.Coordinate{
+                .surface = .{
+                    .x = pos.x,
+                    .y = pos.y,
+                },
+            }).convert(.terminal, self.size).terminal;
 
             // Response always is at least 4 chars, so this leaves the
             // remainder for numbers which are very large...
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(&data, "\x1B[<{d};{d};{d}{c}", .{
                 button_code,
-                @as(i32, @intFromFloat(@round(adjusted.x))),
-                @as(i32, @intFromFloat(@round(adjusted.y))),
+                @as(i32, @intFromFloat(@round(coord.x))),
+                @as(i32, @intFromFloat(@round(coord.y))),
                 final,
             });
 
@@ -2817,7 +2776,7 @@ pub fn mouseButtonCallback(
         // If we move our cursor too much between clicks then we reset
         // the multi-click state.
         if (self.mouse.left_click_count > 0) {
-            const max_distance: f64 = @floatFromInt(self.cell_size.width);
+            const max_distance: f64 = @floatFromInt(self.size.cell.width);
             const distance = @sqrt(
                 std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
                     std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
@@ -3317,8 +3276,8 @@ pub fn cursorPosCallback(
         // We allow for a 1 pixel buffer at the top and bottom to detect
         // scroll even in full screen windows.
         // Note: one day, we can change this from distance to time based if we want.
-        //log.warn("CURSOR POS: {} {}", .{ pos, self.screen_size });
-        const max_y: f32 = @floatFromInt(self.screen_size.height);
+        //log.warn("CURSOR POS: {} {}", .{ pos, self.size.screen });
+        const max_y: f32 = @floatFromInt(self.size.screen.height);
         if (pos.y <= 1 or pos.y > max_y - 1) {
             const delta: isize = if (pos.y < 0) -1 else 1;
             try self.io.terminal.scrollViewport(.{ .delta = delta });
@@ -3477,11 +3436,11 @@ fn dragLeftClickSingle(
     const click_pin = self.mouse.left_click_pin.?.*;
 
     // the boundary point at which we consider selection or non-selection
-    const cell_width_f64: f64 = @floatFromInt(self.cell_size.width);
+    const cell_width_f64: f64 = @floatFromInt(self.size.cell.width);
     const cell_xboundary = cell_width_f64 * 0.6;
 
     // first xpos of the clicked cell adjusted for padding
-    const left_padding_f64: f64 = @as(f64, @floatFromInt(self.padding.left));
+    const left_padding_f64: f64 = @as(f64, @floatFromInt(self.size.padding.left));
     const cell_xstart = @as(f64, @floatFromInt(click_pin.x)) * cell_width_f64;
     const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart - left_padding_f64;
 
@@ -3631,43 +3590,11 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     if (report) try self.reportColorScheme();
 }
 
-pub fn posAdjusted(self: Surface, xpos: f64, ypos: f64) struct { x: f64, y: f64 } {
-    const pad = if (self.config.window_padding_balance)
-        renderer.Padding.balanced(self.screen_size, self.grid_size, self.cell_size)
-    else
-        self.padding;
-
-    return .{
-        .x = xpos - @as(f64, @floatFromInt(pad.left)),
-        .y = ypos - @as(f64, @floatFromInt(pad.top)),
-    };
-}
-
 pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // xpos/ypos need to be adjusted for window padding
-    // (i.e. "window-padding-*" settings.
-    const adjusted = self.posAdjusted(xpos, ypos);
-
-    // adjusted.x and adjusted.y can be negative if while dragging, the user moves the
-    // mouse off the surface. Likewise, they can be larger than our surface
-    // width if the user drags out of the surface positively.
-    return .{
-        .x = if (adjusted.x < 0) 0 else x: {
-            // Our cell is the mouse divided by cell width
-            const cell_width: f64 = @floatFromInt(self.cell_size.width);
-            const x: usize = @intFromFloat(adjusted.x / cell_width);
-
-            // Can be off the screen if the user drags it out, so max
-            // it out on our available columns
-            break :x @min(x, self.grid_size.columns - 1);
-        },
-
-        .y = if (adjusted.y < 0) 0 else y: {
-            const cell_height: f64 = @floatFromInt(self.cell_size.height);
-            const y: usize = @intFromFloat(adjusted.y / cell_height);
-            break :y @min(y, self.grid_size.rows - 1);
-        },
-    };
+    // Get our grid cell
+    const coord: renderer.Coordinate = .{ .surface = .{ .x = xpos, .y = ypos } };
+    const grid = coord.convert(.grid, self.size).grid;
+    return .{ .x = grid.x, .y = grid.y };
 }
 
 /// Scroll to the bottom of the viewport.
@@ -3905,21 +3832,21 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .scroll_page_up => {
-            const rows: isize = @intCast(self.grid_size.rows);
+            const rows: isize = @intCast(self.size.grid().rows);
             self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = -1 * rows },
             }, .unlocked);
         },
 
         .scroll_page_down => {
-            const rows: isize = @intCast(self.grid_size.rows);
+            const rows: isize = @intCast(self.size.grid().rows);
             self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = rows },
             }, .unlocked);
         },
 
         .scroll_page_fractional => |fraction| {
-            const rows: f32 = @floatFromInt(self.grid_size.rows);
+            const rows: f32 = @floatFromInt(self.size.grid().rows);
             const delta: isize = @intFromFloat(@trunc(fraction * rows));
             self.io.queueMessage(.{
                 .scroll_viewport = .{ .delta = delta },
@@ -3989,7 +3916,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 .left => .left,
                 .down => .down,
                 .up => .up,
-                .auto => if (self.screen_size.width > self.screen_size.height)
+                .auto => if (self.size.screen.width > self.size.screen.height)
                     .right
                 else
                     .down,
