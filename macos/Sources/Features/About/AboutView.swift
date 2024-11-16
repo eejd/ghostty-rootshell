@@ -106,9 +106,9 @@ struct AboutView: View {
     }
 
     private struct PropertyRow: View {
-        let label: String
-        let text: String
-        let url: URL?
+        private let label: String
+        private let text: String
+        private let url: URL?
 
         init(label: String, text: String, url: URL? = nil) {
             self.label = label
