@@ -46,7 +46,6 @@ extension Ghostty {
         @Published var surfaceSize: ghostty_surface_size_s? = nil
 
         // Whether the pointer should be visible or not
-        @Published private(set) var pointerVisible: Bool = true
         @Published private(set) var pointerStyle: BackportPointerStyle = .default
 
         // An initial size to request for a window. This will only affect
@@ -309,7 +308,11 @@ extension Ghostty {
         }
 
         func setCursorVisibility(_ visible: Bool) {
-            pointerVisible = visible
+            // Technically this action could be called anytime we want to
+            // change the mouse visibility but at the time of writing this
+            // mouse-hide-while-typing is the only use case so this is the
+            // preferred method.
+            NSCursor.setHiddenUntilMouseMoves(!visible)
         }
 
         // MARK: - Notifications
