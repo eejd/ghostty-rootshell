@@ -1238,8 +1238,6 @@ fn addDeps(
     step.root_module.addImport("vaxis", b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,
-        .libxev = false,
-        .images = false,
     }).module("vaxis"));
     step.root_module.addImport("wuffs", b.dependency("wuffs", .{
         .target = target,
@@ -1261,6 +1259,7 @@ fn addDeps(
     step.root_module.addImport("zf", b.dependency("zf", .{
         .target = target,
         .optimize = optimize,
+        .with_tui = false,
     }).module("zf"));
 
     // Mac Stuff
