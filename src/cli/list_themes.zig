@@ -500,8 +500,8 @@ const Preview = struct {
         const theme_list = win.child(.{
             .x_off = 0,
             .y_off = 0,
-            .width = .{ .limit = 32 },
-            .height = .{ .limit = win.height },
+            .width = 32,
+            .height = win.height,
         });
 
         var highlight: ?usize = null;
@@ -543,7 +543,8 @@ const Preview = struct {
 
         theme_list.fill(.{ .style = self.ui_standard() });
 
-        for (0..theme_list.height) |row| {
+        for (0..theme_list.height) |row_capture| {
+            const row: u16 = @intCast(row_capture);
             const index = self.window + row;
             if (index >= self.filtered.items.len) break;
 
@@ -556,7 +557,7 @@ const Preview = struct {
             };
 
             if (style == .selected) {
-                _ = try theme_list.printSegment(
+                _ = theme_list.printSegment(
                     .{
                         .text = "❯ ",
                         .style = self.ui_selected(),
@@ -567,7 +568,7 @@ const Preview = struct {
                     },
                 );
             }
-            _ = try theme_list.printSegment(
+            _ = theme_list.printSegment(
                 .{
                     .text = theme.theme,
                     .style = switch (style) {
@@ -586,8 +587,9 @@ const Preview = struct {
             );
             if (style == .selected) {
                 if (theme.theme.len < theme_list.width - 4) {
-                    for (2 + theme.theme.len..theme_list.width - 2) |i|
-                        _ = try theme_list.printSegment(
+                    for (2 + theme.theme.len..theme_list.width - 2) |i_capture| {
+                        const i: u16 = @intCast(i_capture);
+                        _ = theme_list.printSegment(
                             .{
                                 .text = " ",
                                 .style = self.ui_selected(),
@@ -597,8 +599,9 @@ const Preview = struct {
                                 .col_offset = i,
                             },
                         );
+                    }
                 }
-                _ = try theme_list.printSegment(
+                _ = theme_list.printSegment(
                     .{
                         .text = " ❮",
                         .style = self.ui_selected(),
@@ -625,12 +628,8 @@ const Preview = struct {
                     .{
                         .x_off = win.width / 2 -| width / 2,
                         .y_off = win.height / 2 -| height / 2,
-                        .width = .{
-                            .limit = width,
-                        },
-                        .height = .{
-                            .limit = height,
-                        },
+                        .width = width,
+                        .height = height,
                         .border = .{
                             .where = .all,
                             .style = self.ui_standard(),
@@ -660,8 +659,9 @@ const Preview = struct {
                     .{ .keys = "⏎", .help = "Close search window." },
                 };
 
-                for (key_help, 0..) |help, i| {
-                    _ = try child.printSegment(
+                for (key_help, 0..) |help, captured_i| {
+                    const i: u16 = @intCast(captured_i);
+                    _ = child.printSegment(
                         .{
                             .text = help.keys,
                             .style = self.ui_standard(),
@@ -671,7 +671,7 @@ const Preview = struct {
                             .col_offset = 2,
                         },
                     );
-                    _ = try child.printSegment(
+                    _ = child.printSegment(
                         .{
                             .text = "—",
                             .style = self.ui_standard(),
@@ -681,7 +681,7 @@ const Preview = struct {
                             .col_offset = 15,
                         },
                     );
-                    _ = try child.printSegment(
+                    _ = child.printSegment(
                         .{
                             .text = help.help,
                             .style = self.ui_standard(),
@@ -697,12 +697,8 @@ const Preview = struct {
                 const child = win.child(.{
                     .x_off = 20,
                     .y_off = win.height - 5,
-                    .width = .{
-                        .limit = win.width - 40,
-                    },
-                    .height = .{
-                        .limit = 3,
-                    },
+                    .width = win.width - 40,
+                    .height = 3,
                     .border = .{
                         .where = .all,
                         .style = self.ui_standard(),
@@ -714,8 +710,9 @@ const Preview = struct {
         }
     }
 
-    pub fn drawPreview(self: *Preview, alloc: std.mem.Allocator, win: vaxis.Window, x_off: usize) !void {
-        const width = win.width - x_off;
+    pub fn drawPreview(self: *Preview, alloc: std.mem.Allocator, win: vaxis.Window, x_off_unconverted: i17) !void {
+        const x_off: u16 = @intCast(x_off_unconverted);
+        const width: u16 = win.width - x_off;
 
         const theme = self.themes[self.filtered.items[self.current]];
 
