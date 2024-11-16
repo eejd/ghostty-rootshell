@@ -53,12 +53,12 @@
             .hash = "1220217ae916146a4c598f8ba5bfff0ff940335d00572e337f20b4accf24fa2ca4fc",
         },
         .vaxis = .{
-            .url = "https://github.com/rockorager/libvaxis/archive/refs/tags/v0.5.1.tar.gz",
-            .hash = "1220de23a3240e503397ea579de4fd85db422f537e10036ef74717c50164475813ce",
+            .url = "git+https://github.com/rockorager/libvaxis/?ref=main#6d729a2dc3b934818dffe06d2ba3ce02841ed74b",
+            .hash = "12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f",
         },
         .zf = .{
-            .url = "https://github.com/natecraddock/zf/archive/refs/tags/0.10.2.tar.gz",
-            .hash = "1220014ae47a57902e90aa7b4ff9751832ba1f426d7b138580db06859e0e9b51dfe5",
+            .url = "git+https://github.com/natecraddock/zf/?ref=main#ed99ca18b02dda052e20ba467e90b623c04690dd",
+            .hash = "1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8",
         },
         .z2d = .{
             .url = "git+https://github.com/vancluever/z2d?ref=main#285a796eb9c25a2389f087d008f0e60faf0b8eda",
