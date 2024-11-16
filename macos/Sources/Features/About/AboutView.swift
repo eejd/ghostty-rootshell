@@ -118,9 +118,9 @@ struct AboutView: View {
 
         var body: some View {
             HStack(spacing: 4) {
-                    Text(label)
-                        .frame(width: 126, alignment: .trailing)
-                        .padding(.trailing, 2)
+                Text(label)
+                    .frame(width: 126, alignment: .trailing)
+                    .padding(.trailing, 2)
                 if let url {
                     Link(destination: url) {
                         PropertyText(text: text)
