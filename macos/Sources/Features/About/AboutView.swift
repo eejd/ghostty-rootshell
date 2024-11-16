@@ -64,14 +64,14 @@ struct AboutView: View {
 
                 VStack(spacing: 2) {
                     if let version {
-                        propertyRow("Version", text: version)
+                        PropertyRow(label: "Version", text: version)
                     }
                     if let build {
-                        propertyRow("Build", text: build)
+                        PropertyRow(label: "Build", text: build)
                     }
                     if let commit, commit != "",
                        let url = githubURL?.appendingPathComponent("/commits/\(commit)") {
-                        propertyRow("Commit", text: commit, url: url)
+                        PropertyRow(label: "Commit", text: commit, url: url)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -105,31 +105,47 @@ struct AboutView: View {
         #endif
     }
 
-    private func propertyRow(_ label: LocalizedStringResource, text: String, url: URL? = nil) -> some View {
-        HStack(spacing: 4) {
-                Text(label)
-                    .frame(width: 126, alignment: .trailing)
-                    .padding(.trailing, 2)
-            if let url {
-                Link(destination: url) {
-                    propertyText(text)
-                }
-            } else {
-                propertyText(text)
-            }
+    private struct PropertyRow: View {
+        let label: String
+        let text: String
+        let url: URL?
+
+        init(label: String, text: String, url: URL? = nil) {
+            self.label = label
+            self.text = text
+            self.url = url
         }
-        .font(.callout)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity)
+
+        var body: some View {
+            HStack(spacing: 4) {
+                    Text(label)
+                        .frame(width: 126, alignment: .trailing)
+                        .padding(.trailing, 2)
+                if let url {
+                    Link(destination: url) {
+                        PropertyText(text: text)
+                    }
+                } else {
+                    PropertyText(text: text)
+                }
+            }
+            .font(.callout)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity)
+        }
     }
 
-    private func propertyText(_ text: String) -> some View {
-        Text(text)
-            .frame(width: 125, alignment: .leading)
-            .padding(.leading, 2)
-            .tint(.secondary)
-            .opacity(0.8)
-            .monospaced()
+    private struct PropertyText: View {
+        let text: String
+
+        var body: some View {
+            Text(text)
+                .frame(width: 125, alignment: .leading)
+                .padding(.leading, 2)
+                .tint(.secondary)
+                .opacity(0.8)
+                .monospaced()
+        }
     }
 }
 
