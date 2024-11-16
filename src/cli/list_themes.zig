@@ -293,7 +293,7 @@ const Preview = struct {
 
             for (self.themes, 0..) |*theme, i| {
                 theme.rank = zf.rank(theme.theme, tokens.items, .{
-                    .to_lower = false,
+                    .to_lower = true,
                     .plain = true,
                 });
                 if (theme.rank != null) try self.filtered.append(i);
