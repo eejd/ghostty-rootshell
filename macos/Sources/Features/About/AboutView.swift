@@ -116,6 +116,15 @@ struct AboutView: View {
             self.url = url
         }
 
+        @ViewBuilder private var textView: some View {
+            Text(text)
+                .frame(width: 125, alignment: .leading)
+                .padding(.leading, 2)
+                .tint(.secondary)
+                .opacity(0.8)
+                .monospaced()
+        }
+
         var body: some View {
             HStack(spacing: 4) {
                 Text(label)
@@ -123,28 +132,15 @@ struct AboutView: View {
                     .padding(.trailing, 2)
                 if let url {
                     Link(destination: url) {
-                        PropertyText(text: text)
+                        textView
                     }
                 } else {
-                    PropertyText(text: text)
+                    textView
                 }
             }
             .font(.callout)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity)
-        }
-    }
-
-    private struct PropertyText: View {
-        let text: String
-
-        var body: some View {
-            Text(text)
-                .frame(width: 125, alignment: .leading)
-                .padding(.leading, 2)
-                .tint(.secondary)
-                .opacity(0.8)
-                .monospaced()
         }
     }
 }
