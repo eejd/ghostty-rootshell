@@ -868,6 +868,13 @@ pub fn getTitle(self: *Surface) ?[:0]const u8 {
     return null;
 }
 
+pub fn setPwd(self: *Surface, pwd: [:0]const u8) !void {
+    // If we have a tab and are the focused child, then we have to update the tab
+    if (self.container.tab()) |tab| {
+        tab.setTooltipText(pwd);
+    }
+}
+
 pub fn setMouseShape(
     self: *Surface,
     shape: terminal.MouseShape,

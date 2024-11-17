@@ -465,6 +465,7 @@ pub fn performAction(
         .inspector => self.controlInspector(target, value),
         .desktop_notification => self.showDesktopNotification(target, value),
         .set_title => try self.setTitle(target, value),
+        .pwd => try self.setPwd(target, value),
         .present_terminal => self.presentTerminal(target),
         .initial_size => try self.setInitialSize(target, value),
         .mouse_visibility => self.setMouseVisibility(target, value),
@@ -486,7 +487,6 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        .pwd,
         => log.warn("unimplemented action={}", .{action}),
     }
 }
@@ -714,6 +714,17 @@ fn setTitle(
     switch (target) {
         .app => {},
         .surface => |v| try v.rt_surface.setTitle(title.title),
+    }
+}
+
+fn setPwd(
+    _: *App,
+    target: apprt.Target,
+    pwd: apprt.action.Pwd,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| try v.rt_surface.setPwd(pwd.pwd),
     }
 }
 
