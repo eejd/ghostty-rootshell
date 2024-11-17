@@ -448,6 +448,8 @@ fn setupXdgDataDirs(
     try env.put("GHOSTTY_SHELL_INTEGRATION_XDG_DIR", integ_dir);
 
     {
+        const xdg_data_dir_key = "XDG_DATA_DIRS";
+
         // We attempt to avoid allocating by using the stack up to 4K.
         // Max stack size is considerably larger on macOS and Linux but
         // 4K is a reasonable size for this for most cases. However, env
@@ -456,21 +458,20 @@ fn setupXdgDataDirs(
         var stack_alloc_state = std.heap.stackFallback(4096, alloc_arena);
         const stack_alloc = stack_alloc_state.get();
 
-        const old_value = if (env.get("XDG_DATA_DIRS")) |old|
-            old
-        else
-            // No XDG_DATA_DIRS set, we prepend to the default value.
-            // <https://specifications.freedesktop.org/basedir-spec/0.6/#variables>
-            "/usr/local/share:/usr/share";
+        // If no XDG_DATA_DIRS set use the default value as specified.
+        // This ensures that the default directories aren't lost by setting
+        // our desired integration dir directly. See #2711.
+        // <https://specifications.freedesktop.org/basedir-spec/0.6/#variables>
+        const old = env.get(xdg_data_dir_key) orelse "/usr/local/share:/usr/share";
 
-        const prepended = try std.fmt.allocPrint(
-            stack_alloc,
-            "{s}{c}{s}",
-            .{ integ_dir, std.fs.path.delimiter, old_value },
-        );
+        const prepended = try std.fmt.allocPrint(stack_alloc, "{s}{c}{s}", .{
+            integ_dir,
+            std.fs.path.delimiter,
+            old,
+        });
         defer stack_alloc.free(prepended);
 
-        try env.put("XDG_DATA_DIRS", prepended);
+        try env.put(xdg_data_dir_key, prepended);
     }
 }
 
