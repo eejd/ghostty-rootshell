@@ -1118,6 +1118,15 @@ keybind: Keybinds = .{},
 /// required to be a fixed-width font.
 @"window-title-font-family": ?[:0]const u8 = null,
 
+/// The text that will be displayed in the subtitle of the window. Valid values:
+///
+///   * `false` - Disable the subtitle.
+///   * `working-directory` - Set the subtitle to the working directory of the
+///      surface.
+///
+/// This feature is only supported on GTK with Adwaita enabled.
+@"window-subtitle": WindowSubtitle = .false,
+
 /// The theme to use for the windows. Valid values:
 ///
 ///   * `auto` - Determine the theme based on the configured terminal
@@ -3966,6 +3975,11 @@ pub const WindowPaddingColor = enum {
     background,
     extend,
     @"extend-always",
+};
+
+pub const WindowSubtitle = enum {
+    false,
+    @"working-directory",
 };
 
 /// Color represents a color using RGB.
