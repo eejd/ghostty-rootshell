@@ -447,27 +447,30 @@ fn setupXdgDataDirs(
     // so that our modifications don't interfere with other commands.
     try env.put("GHOSTTY_SHELL_INTEGRATION_XDG_DIR", integ_dir);
 
-    if (env.get("XDG_DATA_DIRS")) |old| {
-        // We have an old value, We need to prepend our value to it.
-
+    {
         // We attempt to avoid allocating by using the stack up to 4K.
         // Max stack size is considerably larger on macOS and Linux but
         // 4K is a reasonable size for this for most cases. However, env
         // vars can be significantly larger so if we have to we fall
         // back to a heap allocated value.
-        var stack_alloc = std.heap.stackFallback(4096, alloc_arena);
-        const alloc = stack_alloc.get();
+        var stack_alloc_state = std.heap.stackFallback(4096, alloc_arena);
+        const stack_alloc = stack_alloc_state.get();
+
+        const old_value = if (env.get("XDG_DATA_DIRS")) |old|
+            old
+        else
+            // No XDG_DATA_DIRS set, we prepend to the default value.
+            // <https://specifications.freedesktop.org/basedir-spec/0.6/#variables>
+            "/usr/local/share:/usr/share";
+
         const prepended = try std.fmt.allocPrint(
-            alloc,
+            stack_alloc,
             "{s}{c}{s}",
-            .{ integ_dir, std.fs.path.delimiter, old },
+            .{ integ_dir, std.fs.path.delimiter, old_value },
         );
-        defer alloc.free(prepended);
+        defer stack_alloc.free(prepended);
 
         try env.put("XDG_DATA_DIRS", prepended);
-    } else {
-        // No XDG_DATA_DIRS set, we just set it our desired value.
-        try env.put("XDG_DATA_DIRS", integ_dir);
     }
 }
 
