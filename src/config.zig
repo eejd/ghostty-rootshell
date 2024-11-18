@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 
 const formatter = @import("config/formatter.zig");
 pub const Config = @import("config/Config.zig");
+pub const conditional = @import("config/conditional.zig");
 pub const string = @import("config/string.zig");
 pub const edit = @import("config/edit.zig");
 pub const url = @import("config/url.zig");
