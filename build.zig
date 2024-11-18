@@ -141,6 +141,9 @@ pub fn build(b: *std.Build) !void {
         // If we are emitting any other artifacts then we default to false.
         if (emit_bench or emit_test_exe or emit_helpgen) break :emit_docs false;
 
+        // We always emit docs in system package mode.
+        if (system_package) break :emit_docs true;
+
         // We only default to true if we can find pandoc.
         const path = Command.expandPath(b.allocator, "pandoc") catch
             break :emit_docs false;
