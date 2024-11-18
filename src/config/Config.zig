@@ -23,6 +23,8 @@ const internal_os = @import("../os/main.zig");
 const cli = @import("../cli.zig");
 const Command = @import("../Command.zig");
 
+const conditional = @import("conditional.zig");
+const Conditional = conditional.Conditional;
 const formatterpkg = @import("formatter.zig");
 const themepkg = @import("theme.zig");
 const url = @import("url.zig");
@@ -1743,6 +1745,10 @@ _arena: ?ArenaAllocator = null,
 /// the configuration.
 _diagnostics: cli.DiagnosticList = .{},
 
+/// The conditional truths for the configuration. This is used to
+/// determine if a conditional configuration matches or not.
+_conditional_state: conditional.State = .{},
+
 /// The steps we can use to reload the configuration after it has been loaded
 /// without reopening the files. This is used in very specific cases such
 /// as loadTheme which has more details on why.
@@ -3127,6 +3133,14 @@ const Replay = struct {
 
         /// A base path to expand relative paths against.
         expand: []const u8,
+
+        /// A conditional argument. This arg is parsed only if all
+        /// conditions match (an "AND"). An "OR" can be achieved by
+        /// having multiple conditional arg entries.
+        conditional_arg: struct {
+            conditions: []const Conditional,
+            arg: []const u8,
+        },
     };
 
     const Iterator = struct {
@@ -3141,7 +3155,6 @@ const Replay = struct {
                 if (self.idx >= self.slice.len) return null;
                 defer self.idx += 1;
                 switch (self.slice[self.idx]) {
-                    .arg => |arg| return arg,
                     .expand => |base| self.config.expandPaths(base) catch |err| {
                         // This shouldn't happen because to reach this step
                         // means that it succeeded before. Its possible since
@@ -3149,6 +3162,19 @@ const Replay = struct {
                         // world state changed and we can't expand anymore.
                         // In that really unfortunate case, we log a warning.
                         log.warn("error expanding paths err={}", .{err});
+                    },
+
+                    .arg => |arg| return arg,
+
+                    .conditional_arg => |v| conditional: {
+                        // All conditions must match.
+                        for (v.conditions) |cond| {
+                            if (!self.config._conditional_state.match(cond)) {
+                                break :conditional;
+                            }
+                        }
+
+                        return v.arg;
                     },
                 }
             }
