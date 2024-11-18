@@ -2560,6 +2560,36 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     }
 }
 
+/// Change the state of conditionals and reload the configuration
+/// based on the new state. This returns a new configuration based
+/// on the new state. The caller must free the old configuration if they
+/// wish.
+///
+/// This doesn't re-read any files, it just re-applies the same
+/// configuration with the new conditional state. Importantly, this means
+/// that if you change the conditional state and the user in the interim
+/// deleted a file that was referenced in the configuration, then the
+/// configuration can still be reloaded.
+/// TODO: totally untested
+pub fn changeConditionalState(
+    self: *Config,
+    new: conditional.State,
+) !Config {
+    // Create our new configuration
+    const alloc_gpa = self._arena.?.child_allocator;
+    var new_config = try default(alloc_gpa);
+    errdefer new_config.deinit();
+
+    // Set our conditional state so the replay below can use it
+    new_config._conditional_state = new;
+
+    // Replay all of our steps to rebuild the configuration
+    var it = Replay.iterator(self._replay_steps.items, &new_config);
+    try new_config.loadIter(alloc_gpa, &it);
+
+    return new_config;
+}
+
 /// Expand the relative paths in config-files to be absolute paths
 /// relative to the base directory.
 fn expandPaths(self: *Config, base: []const u8) !void {
