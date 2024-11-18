@@ -14,7 +14,7 @@ const Template = struct {
         \\contexts:
         \\  main:
         \\    # Comments
-        \\    - match: '#.*$'
+        \\    - match: '^\s*#.*$'
         \\      scope: comment.line.number-sign.ghostty
         \\
         \\    # Keywords
