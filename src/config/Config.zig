@@ -1199,6 +1199,21 @@ keybind: Keybinds = .{},
 ///
 /// Cycles are not allowed. If a cycle is detected, an error will be logged and
 /// the configuration file will be ignored.
+///
+/// Configuration files are loaded after the configuration they're defined
+/// within in the order they're defined. **THIS IS A VERY SUBTLE BUT IMPORTANT
+/// POINT.** To put it another way: configuration files do not take effect
+/// until after the entire configuration is loaded. For example, in the
+/// configuration below:
+///
+/// ```
+/// config-file = "foo"
+/// a = 1
+/// ```
+///
+/// If "foo" contains `a = 2`, the final value of `a` will be 2, because
+/// `foo` is loaded after the configuration file that configures the
+/// nested `config-file` value.
 @"config-file": RepeatablePath = .{},
 
 /// When this is true, the default configuration file paths will be loaded.
