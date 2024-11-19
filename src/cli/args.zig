@@ -310,8 +310,9 @@ fn parseIntoField(
                         value orelse return error.ValueRequired,
                     ) orelse return error.InvalidValue,
 
-                    .Struct => try parsePackedStruct(
+                    .Struct => try parseStruct(
                         Field,
+                        alloc,
                         value orelse return error.ValueRequired,
                     ),
 
@@ -378,9 +379,79 @@ fn parseTaggedUnion(comptime T: type, alloc: Allocator, v: []const u8) !T {
     return error.InvalidValue;
 }
 
+fn parseStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
+    return switch (@typeInfo(T).Struct.layout) {
+        .auto => parseAutoStruct(T, alloc, v),
+        .@"packed" => parsePackedStruct(T, v),
+        else => @compileError("unsupported struct layout"),
+    };
+}
+
+fn parseAutoStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
+    const info = @typeInfo(T).Struct;
+    comptime assert(info.layout == .auto);
+
+    // We start our result as undefined so we don't get an error for required
+    // fields. We track required fields below and we validate that we set them
+    // all at the bottom of this function (in addition to setting defaults for
+    // optionals).
+    var result: T = undefined;
+
+    // Keep track of which fields were set so we can error if a required
+    // field was not set.
+    const FieldSet = std.StaticBitSet(info.fields.len);
+    var fields_set: FieldSet = FieldSet.initEmpty();
+
+    // We split each value by ","
+    var iter = std.mem.splitSequence(u8, v, ",");
+    loop: while (iter.next()) |entry| {
+        // Find the key/value, trimming whitespace. The value may be quoted
+        // which we strip the quotes from.
+        const idx = mem.indexOf(u8, entry, ":") orelse return error.InvalidValue;
+        const key = std.mem.trim(u8, entry[0..idx], whitespace);
+        const value = value: {
+            var value = std.mem.trim(u8, entry[idx + 1 ..], whitespace);
+
+            // Detect a quoted string.
+            if (value.len >= 2 and
+                value[0] == '"' and
+                value[value.len - 1] == '"')
+            {
+                // Trim quotes since our CLI args processor expects
+                // quotes to already be gone.
+                value = value[1 .. value.len - 1];
+            }
+
+            break :value value;
+        };
+
+        inline for (info.fields, 0..) |field, i| {
+            if (std.mem.eql(u8, field.name, key)) {
+                try parseIntoField(T, alloc, &result, key, value);
+                fields_set.set(i);
+                continue :loop;
+            }
+        }
+
+        // No field matched
+        return error.InvalidValue;
+    }
+
+    // Ensure all required fields are set
+    inline for (info.fields, 0..) |field, i| {
+        if (!fields_set.isSet(i)) {
+            const default_ptr = field.default_value orelse return error.InvalidValue;
+            const typed_ptr: *const field.type = @alignCast(@ptrCast(default_ptr));
+            @field(result, field.name) = typed_ptr.*;
+        }
+    }
+
+    return result;
+}
+
 fn parsePackedStruct(comptime T: type, v: []const u8) !T {
     const info = @typeInfo(T).Struct;
-    assert(info.layout == .@"packed");
+    comptime assert(info.layout == .@"packed");
 
     var result: T = .{};
 
@@ -845,6 +916,39 @@ test "parseIntoField: struct with parse func" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
+}
+
+test "parseIntoField: struct with basic fields" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        value: struct {
+            a: []const u8,
+            b: u32,
+            c: u8 = 12,
+        } = undefined,
+    } = .{};
+
+    // Set required fields
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "a:hello,b:42");
+    try testing.expectEqualStrings("hello", data.value.a);
+    try testing.expectEqual(42, data.value.b);
+    try testing.expectEqual(12, data.value.c);
+
+    // Set all fields
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "a:world,b:84,c:24");
+    try testing.expectEqualStrings("world", data.value.a);
+    try testing.expectEqual(84, data.value.b);
+    try testing.expectEqual(24, data.value.c);
+
+    // Missing require dfield
+    try testing.expectError(
+        error.InvalidValue,
+        parseIntoField(@TypeOf(data), alloc, &data, "value", "a:hello"),
+    );
 }
 
 test "parseIntoField: tagged union" {
