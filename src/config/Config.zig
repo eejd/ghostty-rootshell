@@ -970,7 +970,9 @@ keybind: Keybinds = .{},
 /// The theme to use for the windows. Valid values:
 ///
 ///   * `auto` - Determine the theme based on the configured terminal
-///      background color.
+///      background color. This has no effect if the "theme" configuration
+///      has separate light and dark themes. In that case, the behavior
+///      of "auto" is equivalent to "system".
 ///   * `system` - Use the system theme.
 ///   * `light` - Use the light theme regardless of system theme.
 ///   * `dark` - Use the dark theme regardless of system theme.
@@ -2721,7 +2723,17 @@ pub fn finalize(self: *Config) !void {
 
     // We always load the theme first because it may set other fields
     // in our config.
-    if (self.theme) |theme| try self.loadTheme(theme);
+    if (self.theme) |theme| {
+        try self.loadTheme(theme);
+
+        // If we have different light vs dark mode themes, disable
+        // window-theme = auto since that breaks it.
+        if (self.@"window-theme" == .auto and
+            !std.mem.eql(u8, theme.light, theme.dark))
+        {
+            self.@"window-theme" = .system;
+        }
+    }
 
     // If we have a font-family set and don't set the others, default
     // the others to the font family. This way, if someone does
