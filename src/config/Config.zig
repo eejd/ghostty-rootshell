@@ -334,6 +334,18 @@ const c = @cImport({
 ///
 /// To see a list of available themes, run `ghostty +list-themes`.
 ///
+/// A theme file is simply another Ghostty configuration file. They share
+/// the same syntax and same configuration options. A theme can set any valid
+/// configuration option so please do not use a theme file from an untrusted
+/// source. The built-in themes are audited to only set safe configuration
+/// options.
+///
+/// Some options cannot be set within theme files. The reason these are not
+/// supported should be self-evident. A theme file cannot set `theme` or
+/// `config-file`. At the time of writing this, Ghostty will not show any
+/// warnings or errors if you set these options in a theme file but they will
+/// be silently ignored.
+///
 /// Any additional colors specified via background, foreground, palette, etc.
 /// will override the colors specified in the theme.
 theme: ?[]const u8 = null,
@@ -2634,7 +2646,8 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     //   (2) We want to free existing memory that we aren't using anymore
     //       as a result of reloading the configuration.
     //
-    // Point 2 is strictly a result of aur approach to point 1.
+    // Point 2 is strictly a result of aur approach to point 1, but it is
+    // a nice property to have to limit memory bloat as much as possible.
 
     // Keep track of our replay length prior to loading the theme
     // so that we can replay the previous config to override values.
