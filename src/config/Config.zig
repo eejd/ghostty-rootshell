@@ -348,7 +348,7 @@ const c = @cImport({
 ///
 /// Any additional colors specified via background, foreground, palette, etc.
 /// will override the colors specified in the theme.
-theme: ?[]const u8 = null,
+theme: ?Theme = null,
 
 /// Background color for the window.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
@@ -2625,11 +2625,12 @@ fn expandPaths(self: *Config, base: []const u8) !void {
     }
 }
 
-fn loadTheme(self: *Config, theme: []const u8) !void {
+fn loadTheme(self: *Config, theme: Theme) !void {
     // Find our theme file and open it. See the open function for details.
+    // TODO: handle dark
     const themefile = (try themepkg.open(
         self._arena.?.allocator(),
-        theme,
+        theme.light,
         &self._diagnostics,
     )) orelse return;
     const path = themefile.path;
@@ -4624,6 +4625,105 @@ pub const AutoUpdate = enum {
     off,
     check,
     download,
+};
+
+/// See theme
+pub const Theme = struct {
+    light: []const u8,
+    dark: []const u8,
+
+    pub fn parseCLI(self: *Theme, alloc: Allocator, input_: ?[]const u8) !void {
+        const input = input_ orelse return error.ValueRequired;
+        if (input.len == 0) return error.ValueRequired;
+
+        // If there is a comma, equal sign, or colon, then we assume that
+        // we're parsing a light/dark mode theme pair. Note that "=" isn't
+        // actually valid for setting a light/dark mode pair but I anticipate
+        // it'll be a common typo.
+        if (std.mem.indexOf(u8, input, ",") != null or
+            std.mem.indexOf(u8, input, "=") != null or
+            std.mem.indexOf(u8, input, ":") != null)
+        {
+            self.* = try cli.args.parseAutoStruct(
+                Theme,
+                alloc,
+                input,
+            );
+            return;
+        }
+
+        // Trim our value
+        const trimmed = std.mem.trim(u8, input, cli.args.whitespace);
+
+        // Set the value to the specified value directly.
+        self.* = .{
+            .light = try alloc.dupeZ(u8, trimmed),
+            .dark = self.light,
+        };
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const Theme, alloc: Allocator) Allocator.Error!Theme {
+        return .{
+            .light = try alloc.dupeZ(u8, self.light),
+            .dark = try alloc.dupeZ(u8, self.dark),
+        };
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(
+        self: Theme,
+        formatter: anytype,
+    ) !void {
+        var buf: [4096]u8 = undefined;
+        if (std.mem.eql(u8, self.light, self.dark)) {
+            try formatter.formatEntry([]const u8, self.light);
+            return;
+        }
+
+        const str = std.fmt.bufPrint(&buf, "light:{s},dark:{s}", .{
+            self.light,
+            self.dark,
+        }) catch return error.OutOfMemory;
+        try formatter.formatEntry([]const u8, str);
+    }
+
+    test "parse Theme" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // Single
+        {
+            var v: Theme = undefined;
+            try v.parseCLI(alloc, "foo");
+            try testing.expectEqualStrings("foo", v.light);
+            try testing.expectEqualStrings("foo", v.dark);
+        }
+
+        // Single whitespace
+        {
+            var v: Theme = undefined;
+            try v.parseCLI(alloc, "  foo  ");
+            try testing.expectEqualStrings("foo", v.light);
+            try testing.expectEqualStrings("foo", v.dark);
+        }
+
+        // Light/dark
+        {
+            var v: Theme = undefined;
+            try v.parseCLI(alloc, " light:foo,  dark : bar  ");
+            try testing.expectEqualStrings("foo", v.light);
+            try testing.expectEqualStrings("bar", v.dark);
+        }
+
+        var v: Theme = undefined;
+        try testing.expectError(error.ValueRequired, v.parseCLI(alloc, null));
+        try testing.expectError(error.ValueRequired, v.parseCLI(alloc, ""));
+        try testing.expectError(error.InvalidValue, v.parseCLI(alloc, "light:foo"));
+        try testing.expectError(error.InvalidValue, v.parseCLI(alloc, "dark:foo"));
+    }
 };
 
 pub const Duration = struct {
