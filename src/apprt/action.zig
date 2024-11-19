@@ -193,6 +193,13 @@ pub const Action = union(Key) {
     /// such as OSC 10/11.
     color_change: ColorChange,
 
+    /// The state of conditionals in the configuration has changed, so
+    /// the configuration should be reloaded. The apprt doesn't need
+    /// to do a full physical reload; it should call the
+    /// `changeConditionalState` function and then `updateConfig`
+    /// on the app or surface.
+    config_change_conditional_state,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         new_window,
@@ -228,6 +235,7 @@ pub const Action = union(Key) {
         secure_input,
         key_sequence,
         color_change,
+        config_change_conditional_state,
     };
 
     /// Sync with: ghostty_action_u

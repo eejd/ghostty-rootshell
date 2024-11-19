@@ -2583,7 +2583,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 /// deleted a file that was referenced in the configuration, then the
 /// configuration can still be reloaded.
 pub fn changeConditionalState(
-    self: *Config,
+    self: *const Config,
     new: conditional.State,
 ) !Config {
     // Create our new configuration
