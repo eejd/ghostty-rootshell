@@ -1727,10 +1727,17 @@ keybind: Keybinds = .{},
 @"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
-/// Top, bottom, left, and right are supported. The default is top.
+/// Top, bottom, left, right, and hidden are supported. The default is top.
 ///
 /// If this option has value `left` or `right` when using Adwaita, it falls
-/// back to `top`.
+/// back to `top`. `hidden`, meaning that tabs don't exist, is not supported
+/// without using Adwaita, falling back to `top`.
+///
+/// When `hidden` is set and Adwaita is enabled, a tab button displaying the
+/// number of tabs will appear in the title bar. It has the ability to open a
+/// tab overview for displaying tabs. Alternatively, you can use the
+/// `toggle_tab_overview` action in a keybind if your window doesn't have a
+/// title bar, or you can switch tabs with keybinds.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
 /// Determines the appearance of the top and bottom bars when using the
@@ -4854,6 +4861,7 @@ pub const GtkTabsLocation = enum {
     bottom,
     left,
     right,
+    hidden,
 };
 
 /// See adw-toolbar-style
