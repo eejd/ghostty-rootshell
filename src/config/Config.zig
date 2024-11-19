@@ -2675,6 +2675,8 @@ fn loadTheme(self: *Config, theme: []const u8) !void {
     self.* = new_config;
 }
 
+/// Call this once after you are done setting configuration. This
+/// is idempotent but will waste memory if called multiple times.
 pub fn finalize(self: *Config) !void {
     const alloc = self._arena.?.allocator();
 
@@ -2720,7 +2722,9 @@ pub fn finalize(self: *Config) !void {
     // to look up defaults which is kind of expensive. We only do this
     // on desktop.
     const wd_home = std.mem.eql(u8, "home", wd);
-    if (comptime !builtin.target.isWasm()) {
+    if ((comptime !builtin.target.isWasm()) and
+        (comptime !builtin.is_test))
+    {
         if (self.command == null or wd_home) command: {
             // First look up the command using the SHELL env var if needed.
             // We don't do this in flatpak because SHELL in Flatpak is always
@@ -2790,7 +2794,9 @@ pub fn finalize(self: *Config) !void {
     if (std.mem.eql(u8, wd, "inherit")) self.@"working-directory" = null;
 
     // Default our click interval
-    if (self.@"click-repeat-interval" == 0) {
+    if (self.@"click-repeat-interval" == 0 and
+        (comptime !builtin.is_test))
+    {
         self.@"click-repeat-interval" = internal_os.clickInterval() orelse 500;
     }
 
@@ -3018,82 +3024,6 @@ pub const ChangeIterator = struct {
         return null;
     }
 };
-
-const TestIterator = struct {
-    data: []const []const u8,
-    i: usize = 0,
-
-    pub fn next(self: *TestIterator) ?[]const u8 {
-        if (self.i >= self.data.len) return null;
-        const result = self.data[self.i];
-        self.i += 1;
-        return result;
-    }
-};
-
-test "parse hook: invalid command" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    var it: TestIterator = .{ .data = &.{"foo"} };
-    try testing.expect(try cfg.parseManuallyHook(alloc, "--command", &it));
-    try testing.expect(cfg.command == null);
-}
-
-test "parse e: command only" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    var it: TestIterator = .{ .data = &.{"foo"} };
-    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
-    try testing.expectEqualStrings("foo", cfg.@"initial-command".?);
-}
-
-test "parse e: command and args" {
-    const testing = std.testing;
-    var cfg = try Config.default(testing.allocator);
-    defer cfg.deinit();
-    const alloc = cfg._arena.?.allocator();
-
-    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
-    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
-    try testing.expectEqualStrings("echo foo bar baz", cfg.@"initial-command".?);
-}
-
-test "clone default" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var source = try Config.default(alloc);
-    defer source.deinit();
-    var dest = try source.clone(alloc);
-    defer dest.deinit();
-
-    // Should have no changes
-    var it = source.changeIterator(&dest);
-    try testing.expectEqual(@as(?Key, null), it.next());
-
-    // I want to do this but this doesn't work (the API doesn't work)
-    // try testing.expectEqualDeep(dest, source);
-}
-
-test "changed" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var source = try Config.default(alloc);
-    defer source.deinit();
-    var dest = try source.clone(alloc);
-    defer dest.deinit();
-    dest.@"font-thicken" = true;
-
-    try testing.expect(source.changed(&dest, .@"font-thicken"));
-    try testing.expect(!source.changed(&dest, .@"font-size"));
-}
 
 /// A config-specific helper to determine if two values of the same
 /// type are equal. This isn't the same as std.mem.eql or std.testing.equals
@@ -5023,4 +4953,147 @@ test "test entryFormatter" {
     var p: Duration = .{ .duration = std.math.maxInt(u64) };
     try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
     try std.testing.expectEqualStrings("a = 584y 49w 23h 34m 33s 709ms 551µs 615ns\n", buf.items);
+}
+
+const TestIterator = struct {
+    data: []const []const u8,
+    i: usize = 0,
+
+    pub fn next(self: *TestIterator) ?[]const u8 {
+        if (self.i >= self.data.len) return null;
+        const result = self.data[self.i];
+        self.i += 1;
+        return result;
+    }
+};
+
+test "parse hook: invalid command" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(try cfg.parseManuallyHook(alloc, "--command", &it));
+    try testing.expect(cfg.command == null);
+}
+
+test "parse e: command only" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{"foo"} };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("foo", cfg.@"initial-command".?);
+}
+
+test "parse e: command and args" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const alloc = cfg._arena.?.allocator();
+
+    var it: TestIterator = .{ .data = &.{ "echo", "foo", "bar baz" } };
+    try testing.expect(!try cfg.parseManuallyHook(alloc, "-e", &it));
+    try testing.expectEqualStrings("echo foo bar baz", cfg.@"initial-command".?);
+}
+
+test "clone default" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var source = try Config.default(alloc);
+    defer source.deinit();
+    var dest = try source.clone(alloc);
+    defer dest.deinit();
+
+    // Should have no changes
+    var it = source.changeIterator(&dest);
+    try testing.expectEqual(@as(?Key, null), it.next());
+
+    // I want to do this but this doesn't work (the API doesn't work)
+    // try testing.expectEqualDeep(dest, source);
+}
+
+test "changed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var source = try Config.default(alloc);
+    defer source.deinit();
+    var dest = try source.clone(alloc);
+    defer dest.deinit();
+    dest.@"font-thicken" = true;
+
+    try testing.expect(source.changed(&dest, .@"font-thicken"));
+    try testing.expect(!source.changed(&dest, .@"font-size"));
+}
+
+test "theme loading" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const alloc_arena = arena.allocator();
+
+    // Setup our test theme
+    var td = try internal_os.TempDir.init();
+    defer td.deinit();
+    {
+        var file = try td.dir.createFile("theme", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_simple"));
+    }
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try td.dir.realpath("theme", &path_buf);
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        try std.fmt.allocPrint(alloc_arena, "--theme={s}", .{path}),
+    } };
+    try cfg.loadIter(alloc, &it);
+    try cfg.finalize();
+
+    try testing.expectEqual(Color{
+        .r = 0x12,
+        .g = 0x3A,
+        .b = 0xBC,
+    }, cfg.background);
+}
+
+test "theme priority is lower than config" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const alloc_arena = arena.allocator();
+
+    // Setup our test theme
+    var td = try internal_os.TempDir.init();
+    defer td.deinit();
+    {
+        var file = try td.dir.createFile("theme", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_simple"));
+    }
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try td.dir.realpath("theme", &path_buf);
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--background=#ABCDEF",
+        try std.fmt.allocPrint(alloc_arena, "--theme={s}", .{path}),
+    } };
+    try cfg.loadIter(alloc, &it);
+    try cfg.finalize();
+
+    try testing.expectEqual(Color{
+        .r = 0xAB,
+        .g = 0xCD,
+        .b = 0xEF,
+    }, cfg.background);
 }
