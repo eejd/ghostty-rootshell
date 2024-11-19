@@ -13,7 +13,7 @@ const DiagnosticList = diags.DiagnosticList;
 //     `--long value`? Not currently allowed.
 
 // For trimming
-const whitespace = " \t";
+pub const whitespace = " \t";
 
 /// The base errors for arg parsing. Additional errors can be returned due
 /// to type-specific parsing but these are always possible.
@@ -209,7 +209,7 @@ fn canTrackDiags(comptime T: type) bool {
 /// This may result in allocations. The allocations can only be freed by freeing
 /// all the memory associated with alloc. It is expected that alloc points to
 /// an arena.
-fn parseIntoField(
+pub fn parseIntoField(
     comptime T: type,
     alloc: Allocator,
     dst: *T,
@@ -250,10 +250,32 @@ fn parseIntoField(
                         1 => @field(dst, field.name) = try Field.parseCLI(value),
 
                         // 2 arg = (self, input) => void
-                        2 => try @field(dst, field.name).parseCLI(value),
+                        2 => switch (@typeInfo(field.type)) {
+                            .Struct,
+                            .Union,
+                            .Enum,
+                            => try @field(dst, field.name).parseCLI(value),
+
+                            .Optional => {
+                                @field(dst, field.name) = undefined;
+                                try @field(dst, field.name).?.parseCLI(value);
+                            },
+                            else => @compileError("unexpected field type"),
+                        },
 
                         // 3 arg = (self, alloc, input) => void
-                        3 => try @field(dst, field.name).parseCLI(alloc, value),
+                        3 => switch (@typeInfo(field.type)) {
+                            .Struct,
+                            .Union,
+                            .Enum,
+                            => try @field(dst, field.name).parseCLI(alloc, value),
+
+                            .Optional => {
+                                @field(dst, field.name) = undefined;
+                                try @field(dst, field.name).?.parseCLI(alloc, value);
+                            },
+                            else => @compileError("unexpected field type"),
+                        },
 
                         else => @compileError("parseCLI invalid argument count"),
                     }
@@ -387,7 +409,7 @@ fn parseStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
     };
 }
 
-fn parseAutoStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
+pub fn parseAutoStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
     const info = @typeInfo(T).Struct;
     comptime assert(info.layout == .auto);
 
@@ -916,6 +938,29 @@ test "parseIntoField: struct with parse func" {
 
     try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
     try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
+}
+
+test "parseIntoField: optional struct with parse func" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: ?struct {
+            const Self = @This();
+
+            v: []const u8,
+
+            pub fn parseCLI(self: *Self, _: Allocator, value: ?[]const u8) !void {
+                _ = value;
+                self.* = .{ .v = "HELLO!" };
+            }
+        } = null,
+    } = .{};
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "42");
+    try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.?.v);
 }
 
 test "parseIntoField: struct with basic fields" {
