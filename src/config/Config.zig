@@ -2582,7 +2582,6 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 /// that if you change the conditional state and the user in the interim
 /// deleted a file that was referenced in the configuration, then the
 /// configuration can still be reloaded.
-/// TODO: totally untested
 pub fn changeConditionalState(
     self: *Config,
     new: conditional.State,
@@ -2598,6 +2597,7 @@ pub fn changeConditionalState(
     // Replay all of our steps to rebuild the configuration
     var it = Replay.iterator(self._replay_steps.items, &new_config);
     try new_config.loadIter(alloc_gpa, &it);
+    try new_config.finalize();
 
     return new_config;
 }
@@ -2626,11 +2626,18 @@ fn expandPaths(self: *Config, base: []const u8) !void {
 }
 
 fn loadTheme(self: *Config, theme: Theme) !void {
+    // Load the correct theme depending on the conditional state.
+    // Dark/light themes were programmed prior to conditional configuration
+    // so when we introduce that we probably want to replace this.
+    const name: []const u8 = switch (self._conditional_state.theme) {
+        .light => theme.light,
+        .dark => theme.dark,
+    };
+
     // Find our theme file and open it. See the open function for details.
-    // TODO: handle dark
     const themefile = (try themepkg.open(
         self._arena.?.allocator(),
-        theme.light,
+        name,
         &self._diagnostics,
     )) orelse return;
     const path = themefile.path;
@@ -2650,10 +2657,6 @@ fn loadTheme(self: *Config, theme: Theme) !void {
     // Point 2 is strictly a result of aur approach to point 1, but it is
     // a nice property to have to limit memory bloat as much as possible.
 
-    // Keep track of our replay length prior to loading the theme
-    // so that we can replay the previous config to override values.
-    const replay_len = self._replay_steps.items.len;
-
     // Load into a new configuration so that we can free the existing memory.
     const alloc_gpa = self._arena.?.child_allocator;
     var new_config = try default(alloc_gpa);
@@ -2666,9 +2669,44 @@ fn loadTheme(self: *Config, theme: Theme) !void {
     var iter: Iter = .{ .r = reader, .filepath = path };
     try new_config.loadIter(alloc_gpa, &iter);
 
+    // Setup our replay to be conditional.
+    for (new_config._replay_steps.items) |*item| switch (item.*) {
+        .expand => {},
+
+        // Change our arg to be conditional on our theme.
+        .arg => |v| {
+            const alloc_arena = new_config._arena.?.allocator();
+            const conds = try alloc_arena.alloc(Conditional, 1);
+            conds[0] = .{
+                .key = .theme,
+                .op = .eq,
+                .value = @tagName(self._conditional_state.theme),
+            };
+            item.* = .{ .conditional_arg = .{
+                .conditions = conds,
+                .arg = v,
+            } };
+        },
+
+        .conditional_arg => |v| {
+            const alloc_arena = new_config._arena.?.allocator();
+            const conds = try alloc_arena.alloc(Conditional, v.conditions.len + 1);
+            conds[0] = .{
+                .key = .theme,
+                .op = .eq,
+                .value = @tagName(self._conditional_state.theme),
+            };
+            @memcpy(conds[1..], v.conditions);
+            item.* = .{ .conditional_arg = .{
+                .conditions = conds,
+                .arg = v.arg,
+            } };
+        },
+    };
+
     // Replay our previous inputs so that we can override values
     // from the theme.
-    var slice_it = Replay.iterator(self._replay_steps.items[0..replay_len], &new_config);
+    var slice_it = Replay.iterator(self._replay_steps.items, &new_config);
     try new_config.loadIter(alloc_gpa, &slice_it);
 
     // Success, swap our new config in and free the old.
@@ -3138,7 +3176,9 @@ const Replay = struct {
                         log.warn("error expanding paths err={}", .{err});
                     },
 
-                    .arg => |arg| return arg,
+                    .arg => |arg| {
+                        return arg;
+                    },
 
                     .conditional_arg => |v| conditional: {
                         // All conditions must match.
@@ -5196,4 +5236,96 @@ test "theme priority is lower than config" {
         .g = 0xCD,
         .b = 0xEF,
     }, cfg.background);
+}
+
+test "theme loading correct light/dark" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const alloc_arena = arena.allocator();
+
+    // Setup our test theme
+    var td = try internal_os.TempDir.init();
+    defer td.deinit();
+    {
+        var file = try td.dir.createFile("theme_light", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_light"));
+    }
+    {
+        var file = try td.dir.createFile("theme_dark", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_dark"));
+    }
+    var light_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const light = try td.dir.realpath("theme_light", &light_buf);
+    var dark_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dark = try td.dir.realpath("theme_dark", &dark_buf);
+
+    // Light
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            try std.fmt.allocPrint(
+                alloc_arena,
+                "--theme=light:{s},dark:{s}",
+                .{ light, dark },
+            ),
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(Color{
+            .r = 0xFF,
+            .g = 0xFF,
+            .b = 0xFF,
+        }, cfg.background);
+    }
+
+    // Dark
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        cfg._conditional_state = .{ .theme = .dark };
+        var it: TestIterator = .{ .data = &.{
+            try std.fmt.allocPrint(
+                alloc_arena,
+                "--theme=light:{s},dark:{s}",
+                .{ light, dark },
+            ),
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(Color{
+            .r = 0xEE,
+            .g = 0xEE,
+            .b = 0xEE,
+        }, cfg.background);
+    }
+
+    // Light to Dark
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            try std.fmt.allocPrint(
+                alloc_arena,
+                "--theme=light:{s},dark:{s}",
+                .{ light, dark },
+            ),
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        var new = try cfg.changeConditionalState(.{ .theme = .dark });
+        defer new.deinit();
+        try testing.expectEqual(Color{
+            .r = 0xEE,
+            .g = 0xEE,
+            .b = 0xEE,
+        }, new.background);
+    }
 }
