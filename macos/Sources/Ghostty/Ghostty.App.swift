@@ -3,9 +3,6 @@ import UserNotifications
 import GhosttyKit
 
 protocol GhosttyAppDelegate: AnyObject {
-    /// Called when the configuration did finish reloading.
-    func configDidReload(_ app: Ghostty.App)
-
     #if os(macOS)
     /// Called when a callback needs access to a specific surface. This should return nil
     /// when the surface is no longer valid.
@@ -379,16 +376,6 @@ extension Ghostty {
             // It is safe to free the old config from within this function call.
             let state = Unmanaged<Self>.fromOpaque(userdata!).takeUnretainedValue()
             state.config = newConfig
-
-            // If we have a delegate, notify.
-            if let delegate = state.delegate {
-                delegate.configDidReload(state)
-            }
-
-            // Send an event out
-            NotificationCenter.default.post(
-                name: Ghostty.Notification.ghosttyDidReloadConfig,
-                object: nil)
 
             return newConfig.config
         }
@@ -1166,26 +1153,40 @@ extension Ghostty {
             _ app: ghostty_app_t,
             target: ghostty_target_s,
             v: ghostty_action_config_change_s) {
-            switch (target.tag) {
-            case GHOSTTY_TARGET_APP:
-                NotificationCenter.default.post(
-                    name: .ghosttyConfigChange,
-                    object: nil
-                )
-                return
+                logger.info("config change notification")
 
-            case GHOSTTY_TARGET_SURFACE:
-                guard let surface = target.target.surface else { return }
-                guard let surfaceView = self.surfaceView(from: surface) else { return }
-                NotificationCenter.default.post(
-                   name: .ghosttyConfigChange,
-                   object: surfaceView
-                )
+                // Clone the config so we own the memory. It'd be nicer to not have to do
+                // this but since we async send the config out below we have to own the lifetime.
+                // A future improvement might be to add reference counting to config or
+                // something so apprt's do not have to do this.
+                let config = Config(clone: v.config)
 
-            default:
-                assertionFailure()
+                switch (target.tag) {
+                case GHOSTTY_TARGET_APP:
+                    NotificationCenter.default.post(
+                        name: .ghosttyConfigDidChange,
+                        object: nil,
+                        userInfo: [
+                            SwiftUI.Notification.Name.GhosttyConfigChangeKey: config,
+                        ]
+                    )
+                    return
+
+                case GHOSTTY_TARGET_SURFACE:
+                    guard let surface = target.target.surface else { return }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    NotificationCenter.default.post(
+                        name: .ghosttyConfigDidChange,
+                        object: surfaceView,
+                        userInfo: [
+                            SwiftUI.Notification.Name.GhosttyConfigChangeKey: config,
+                        ]
+                    )
+
+                default:
+                    assertionFailure()
+                }
             }
-        }
 
         // MARK: User Notifications
 

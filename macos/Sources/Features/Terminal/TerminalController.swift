@@ -20,6 +20,9 @@ class TerminalController: BaseTerminalController {
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
 
+    /// The configuration derived from the Ghostty config so we don't need to rely on references.
+    private var derivedConfig: DerivedConfig
+
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: Ghostty.SplitNode? = nil
@@ -30,6 +33,9 @@ class TerminalController: BaseTerminalController {
         // as the script. We may want to revisit this behavior when we have scrollback
         // restoration.
         self.restorable = (base?.command ?? "") == ""
+
+        // Setup our initial derived config based on the current app config
+        self.derivedConfig = DerivedConfig(ghostty.config)
 
         super.init(ghostty, baseConfig: base, surfaceTree: tree)
 
@@ -50,6 +56,12 @@ class TerminalController: BaseTerminalController {
             selector: #selector(onGotoTab),
             name: Ghostty.Notification.ghosttyGotoTab,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyConfigDidChange(_:)),
+            name: .ghosttyConfigDidChange,
+            object: nil
+        )
         center.addObserver(
             self,
             selector: #selector(onFrameDidChange),
@@ -80,10 +92,22 @@ class TerminalController: BaseTerminalController {
 
     //MARK: - Methods
 
-    func configDidReload() {
+    @objc private func ghosttyConfigDidChange(_ notification: Notification) {
+        // We only care if the configuration is a global configuration, not a
+        // surface-specific one.
+        guard notification.object == nil else { return }
+
+        // Get our managed configuration object out
+        guard let config = notification.userInfo?[
+            Notification.Name.GhosttyConfigChangeKey
+        ] as? Ghostty.Config else { return }
+
+        // Update our derived config
+        self.derivedConfig = DerivedConfig(config)
+
         guard let window = window as? TerminalWindow else { return }
-        window.focusFollowsMouse = ghostty.config.focusFollowsMouse
-        syncAppearance()
+        window.focusFollowsMouse = config.focusFollowsMouse
+        syncAppearance(config)
     }
 
     /// Update the accessory view of each tab according to the keyboard
@@ -144,7 +168,7 @@ class TerminalController: BaseTerminalController {
         self.relabelTabs()
     }
 
-    private func syncAppearance() {
+    private func syncAppearance(_ config: Ghostty.Config) {
         guard let window = self.window as? TerminalWindow else { return }
 
         // If our window is not visible, then delay this. This is possible specifically
@@ -153,19 +177,19 @@ class TerminalController: BaseTerminalController {
         // APIs such as window blur have no effect unless the window is visible.
         guard window.isVisible else {
             // Weak window so that if the window changes or is destroyed we aren't holding a ref
-            DispatchQueue.main.async { [weak self] in self?.syncAppearance() }
+            DispatchQueue.main.async { [weak self] in self?.syncAppearance(config) }
             return
         }
 
         // Set the font for the window and tab titles.
-        if let titleFontName = ghostty.config.windowTitleFontFamily {
+        if let titleFontName = config.windowTitleFontFamily {
             window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
         } else {
             window.titlebarFont = nil
         }
 
         // If we have window transparency then set it transparent. Otherwise set it opaque.
-        if (ghostty.config.backgroundOpacity < 1) {
+        if (config.backgroundOpacity < 1) {
             window.isOpaque = false
 
             // This is weird, but we don't use ".clear" because this creates a look that
@@ -179,14 +203,14 @@ class TerminalController: BaseTerminalController {
             window.backgroundColor = .windowBackgroundColor
         }
 
-        window.hasShadow = ghostty.config.macosWindowShadow
+        window.hasShadow = config.macosWindowShadow
 
         guard window.hasStyledTabs else { return }
 
         // The titlebar is always updated. We don't need to worry about opacity
         // because we handle it here.
-        let backgroundColor = OSColor(ghostty.config.backgroundColor)
-        window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+        let backgroundColor = OSColor(config.backgroundColor)
+        window.titlebarColor = backgroundColor.withAlphaComponent(config.backgroundOpacity)
 
         if (window.isOpaque) {
             // Bg color is only synced if we have no transparency. This is because
@@ -210,6 +234,12 @@ class TerminalController: BaseTerminalController {
     override func windowDidLoad() {
         guard let window = window as? TerminalWindow else { return }
 
+        // I copy this because we may change the source in the future but also because
+        // I regularly audit our codebase for "ghostty.config" access because generally
+        // you shouldn't use it. Its safe in this case because for a new window we should
+        // use whatever the latest app-level config is.
+        let config = ghostty.config
+
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
         if (restorable) {
@@ -218,13 +248,13 @@ class TerminalController: BaseTerminalController {
         }
 
         // If window decorations are disabled, remove our title
-        if (!ghostty.config.windowDecorations) { window.styleMask.remove(.titled) }
+        if (!config.windowDecorations) { window.styleMask.remove(.titled) }
 
         // Terminals typically operate in sRGB color space and macOS defaults
         // to "native" which is typically P3. There is a lot more resources
         // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
         // Ghostty defaults to sRGB but this can be overridden.
-        switch (ghostty.config.windowColorspace) {
+        switch (config.windowColorspace) {
         case "display-p3":
             window.colorSpace = .displayP3
         case "srgb":
@@ -256,30 +286,30 @@ class TerminalController: BaseTerminalController {
         window.center()
 
         // Make sure our theme is set on the window so styling is correct.
-        if let windowTheme = ghostty.config.windowTheme {
+        if let windowTheme = config.windowTheme {
             window.windowTheme = .init(rawValue: windowTheme)
         }
 
         // Handle titlebar tabs config option. Something about what we do while setting up the
         // titlebar tabs interferes with the window restore process unless window.tabbingMode
         // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
-        if (ghostty.config.macosTitlebarStyle == "tabs") {
+        if (config.macosTitlebarStyle == "tabs") {
             window.tabbingMode = .preferred
             window.titlebarTabs = true
             DispatchQueue.main.async {
                 window.tabbingMode = .automatic
             }
-        } else if (ghostty.config.macosTitlebarStyle == "transparent") {
+        } else if (config.macosTitlebarStyle == "transparent") {
             window.transparentTabs = true
         }
 
         if window.hasStyledTabs {
             // Set the background color of the window
-            let backgroundColor = NSColor(ghostty.config.backgroundColor)
+            let backgroundColor = NSColor(config.backgroundColor)
             window.backgroundColor = backgroundColor
 
             // This makes sure our titlebar renders correctly when there is a transparent background
-            window.titlebarColor = backgroundColor.withAlphaComponent(ghostty.config.backgroundOpacity)
+            window.titlebarColor = backgroundColor.withAlphaComponent(config.backgroundOpacity)
         }
 
         // Initialize our content view to the SwiftUI root
@@ -290,7 +320,7 @@ class TerminalController: BaseTerminalController {
         ))
 
         // If our titlebar style is "hidden" we adjust the style appropriately
-        if (ghostty.config.macosTitlebarStyle == "hidden") {
+        if (config.macosTitlebarStyle == "hidden") {
             window.styleMask = [
                 // We need `titled` in the mask to get the normal window frame
                 .titled,
@@ -345,10 +375,10 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        window.focusFollowsMouse = ghostty.config.focusFollowsMouse
+        window.focusFollowsMouse = config.focusFollowsMouse
 
         // Apply any additional appearance-related properties to the new window.
-        syncAppearance()
+        syncAppearance(config)
     }
 
     // Shows the "+" button in the tab bar, responds to that click.
@@ -464,7 +494,7 @@ class TerminalController: BaseTerminalController {
 
         // Custom toolbar-based title used when titlebar tabs are enabled.
         if let toolbar = window.toolbar as? TerminalToolbar {
-            if (window.titlebarTabs || ghostty.config.macosTitlebarStyle == "hidden") {
+            if (window.titlebarTabs || derivedConfig.macosTitlebarStyle == "hidden") {
                 // Updating the title text as above automatically reveals the
                 // native title view in macOS 15.0 and above. Since we're using
                 // a custom view instead, we need to re-hide it.
@@ -592,5 +622,17 @@ class TerminalController: BaseTerminalController {
         }
 
         toggleFullscreen(mode: fullscreenMode)
+    }
+
+    private struct DerivedConfig {
+        let macosTitlebarStyle: String
+
+        init() {
+            self.macosTitlebarStyle = "system"
+        }
+
+        init(_ config: Ghostty.Config) {
+            self.macosTitlebarStyle = config.macosTitlebarStyle
+        }
     }
 }
