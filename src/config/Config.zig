@@ -312,9 +312,14 @@ const c = @cImport({
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
 @"freetype-load-flags": FreetypeLoadFlags = .{},
 
-/// A theme to use. If the theme is an absolute pathname, Ghostty will attempt
-/// to load that file as a theme. If that file does not exist or is inaccessible,
-/// an error will be logged and no other directories will be searched.
+/// A theme to use. This can be a built-in theme name, a custom theme
+/// name, or an absolute path to a custom theme file. Ghostty also supports
+/// specifying a different them to use for light and dark mode. Each
+/// option is documented below.
+///
+/// If the theme is an absolute pathname, Ghostty will attempt to load that
+/// file as a theme. If that file does not exist or is inaccessible, an error
+/// will be logged and no other directories will be searched.
 ///
 /// If the theme is not an absolute pathname, two different directories will be
 /// searched for a file name that matches the theme. This is case sensitive on
@@ -348,6 +353,20 @@ const c = @cImport({
 ///
 /// Any additional colors specified via background, foreground, palette, etc.
 /// will override the colors specified in the theme.
+///
+/// To specify a different theme for light and dark mode, use the following
+/// syntax: `light:theme-name,dark:theme-name`. For example:
+/// `light:rose-pine-dawn,dark:rose-pine`. Whitespace around all values are
+/// trimmed and order of light and dark does not matter. Both light and dark
+/// must be specified in this form. In this form, the theme used will be
+/// based on the current desktop environment theme.
+///
+/// There are some known bugs with light/dark mode theming. These will
+/// be fixed in a future update:
+///
+///   - macOS: titlebar tabs style is not updated when switching themes.
+///   - macOS: native titlebar style is not supported.
+///
 theme: ?Theme = null,
 
 /// Background color for the window.
