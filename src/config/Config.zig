@@ -3478,10 +3478,17 @@ pub const RepeatableString = struct {
     /// Deep copy of the struct. Required by Config.
     pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
         // Copy the list and all the strings in the list.
-        const list = try self.list.clone(alloc);
-        for (list.items) |*item| {
-            const copy = try alloc.dupeZ(u8, item.*);
-            item.* = copy;
+        var list = try std.ArrayListUnmanaged([:0]const u8).initCapacity(
+            alloc,
+            self.list.items.len,
+        );
+        errdefer {
+            for (list.items) |item| alloc.free(item);
+            list.deinit(alloc);
+        }
+        for (self.list.items) |item| {
+            const copy = try alloc.dupeZ(u8, item);
+            list.appendAssumeCapacity(copy);
         }
 
         return .{ .list = list };
