@@ -1518,6 +1518,11 @@ keybind: Keybinds = .{},
 /// but its one I think is the most aesthetically pleasing and works in
 /// most cases.
 ///
+/// BUG: If a separate light/dark mode theme is configured with "theme",
+/// then `macos-titlebar-style = transparent` will not work correctly. To
+/// avoid ugly titlebars, `macos-titlebar-style` will become `native` if
+/// a separate light/dark theme is configured.
+///
 /// Changing this option at runtime only applies to new windows.
 @"macos-titlebar-style": MacTitlebarStyle = .transparent,
 
@@ -2728,10 +2733,16 @@ pub fn finalize(self: *Config) !void {
 
         // If we have different light vs dark mode themes, disable
         // window-theme = auto since that breaks it.
-        if (self.@"window-theme" == .auto and
-            !std.mem.eql(u8, theme.light, theme.dark))
-        {
-            self.@"window-theme" = .system;
+        if (!std.mem.eql(u8, theme.light, theme.dark)) {
+            // This setting doesn't make sense with different light/dark themes
+            // because it'll force the theme based on the Ghostty theme.
+            if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
+
+            // This is buggy with different light/dark themes and is noted
+            // in the documentation.
+            if (self.@"macos-titlebar-style" == .transparent) {
+                self.@"macos-titlebar-style" = .native;
+            }
         }
     }
 
