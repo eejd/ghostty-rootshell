@@ -646,6 +646,7 @@ ghostty_info_s ghostty_info(void);
 
 ghostty_config_t ghostty_config_new();
 void ghostty_config_free(ghostty_config_t);
+ghostty_config_t ghostty_config_clone(ghostty_config_t);
 void ghostty_config_load_cli_args(ghostty_config_t);
 void ghostty_config_load_default_files(ghostty_config_t);
 void ghostty_config_load_recursive_files(ghostty_config_t);
