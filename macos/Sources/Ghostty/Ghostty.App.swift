@@ -524,6 +524,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_KEY_SEQUENCE:
                 keySequence(app, target: target, v: action.action.key_sequence)
 
+            case GHOSTTY_ACTION_CONFIG_CHANGE:
+                configChange(app, target: target, v: action.action.config_change)
+
             case GHOSTTY_ACTION_COLOR_CHANGE:
                 fallthrough
             case GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
@@ -1153,6 +1156,31 @@ extension Ghostty {
                         object: surfaceView
                     )
                 }
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func configChange(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_config_change_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                NotificationCenter.default.post(
+                    name: .ghosttyConfigChange,
+                    object: nil
+                )
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                   name: .ghosttyConfigChange,
+                   object: surfaceView
+                )
 
             default:
                 assertionFailure()

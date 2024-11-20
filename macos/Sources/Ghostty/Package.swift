@@ -206,6 +206,10 @@ extension Ghostty {
 // MARK: Surface Notification
 
 extension Notification.Name {
+    /// Configuration change. If the object is nil then it is app-wide. Otherwise its surface-specific.
+    static let ghosttyConfigChange = Notification.Name("com.mitchellh.ghostty.configChange")
+    static let GhosttyConfigChangeKey = ghosttyConfigChange.rawValue
+
     /// Goto tab. Has tab index in the userinfo.
     static let ghosttyMoveTab = Notification.Name("com.mitchellh.ghostty.moveTab")
     static let GhosttyMoveTabKey = ghosttyMoveTab.rawValue
