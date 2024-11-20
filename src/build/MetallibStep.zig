@@ -16,9 +16,6 @@ pub const Options = struct {
 
     /// The Metal source files.
     sources: []const LazyPath,
-
-    /// Whether to enable Metal shader logging.
-    logging: bool = false,
 };
 
 step: *Step,
@@ -45,20 +42,7 @@ pub fn create(b: *std.Build, opts: Options) *MetallibStep {
         b,
         b.fmt("metal {s}", .{opts.name}),
     );
-    run_ir.addArgs(&.{
-        "xcrun",
-        "-sdk",
-        sdk,
-        "metal",
-        "-std=metal3.2",
-    });
-
-    if (opts.logging) run_ir.addArgs(&.{
-        // https://developer.apple.com/documentation/metal/logging_shader_debug_messages
-        "-fmetal-enable-logging",
-    });
-
-    run_ir.addArgs(&.{"-o"});
+    run_ir.addArgs(&.{ "xcrun", "-sdk", sdk, "metal", "-o" });
     const output_ir = run_ir.addOutputFileArg(b.fmt("{s}.ir", .{opts.name}));
     run_ir.addArgs(&.{"-c"});
     for (opts.sources) |source| run_ir.addFileArg(source);

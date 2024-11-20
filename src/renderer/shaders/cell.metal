@@ -2,8 +2,6 @@
 
 using namespace metal;
 
-constant os_log logger("com.mitchellh.ghostty", "cell");
-
 enum Padding : uint8_t {
   EXTEND_LEFT = 1u,
   EXTEND_RIGHT = 2u,
@@ -81,7 +79,9 @@ struct FullScreenVertexOut {
   float4 position [[position]];
 };
 
-vertex FullScreenVertexOut full_screen_vertex(uint vid [[vertex_id]]) {
+vertex FullScreenVertexOut full_screen_vertex(
+  uint vid [[vertex_id]]
+) {
   FullScreenVertexOut out;
 
   float4 position;
@@ -112,11 +112,12 @@ vertex FullScreenVertexOut full_screen_vertex(uint vid [[vertex_id]]) {
 //-------------------------------------------------------------------
 #pragma mark - Cell BG Shader
 
-fragment float4 cell_bg_fragment(FullScreenVertexOut in [[stage_in]],
-                                 constant uchar4* cells [[buffer(0)]],
-                                 constant Uniforms& uniforms [[buffer(1)]]) {
-  int2 grid_pos = int2(
-      floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
+fragment float4 cell_bg_fragment(
+  FullScreenVertexOut in [[stage_in]],
+  constant uchar4 *cells [[buffer(0)]],
+  constant Uniforms& uniforms [[buffer(1)]]
+) {
+  int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
 
   // Clamp x position, extends edge bg colors in to padding on sides.
   if (grid_pos.x < 0) {
@@ -196,12 +197,12 @@ struct CellTextVertexOut {
   float2 tex_coord;
 };
 
-vertex CellTextVertexOut cell_text_vertex(uint vid [[vertex_id]],
-                                          CellTextVertexIn in [[stage_in]],
-                                          constant Uniforms& uniforms
-                                          [[buffer(1)]],
-                                          constant uchar4* bg_colors
-                                          [[buffer(2)]]) {
+vertex CellTextVertexOut cell_text_vertex(
+  uint vid [[vertex_id]],
+  CellTextVertexIn in [[stage_in]],
+  constant Uniforms& uniforms [[buffer(1)]],
+  constant uchar4 *bg_colors [[buffer(2)]]
+) {
   // Convert the grid x, y into world space x, y by accounting for cell size
   float2 cell_pos = uniforms.cell_size * float2(in.grid_pos);
 
@@ -286,31 +287,36 @@ vertex CellTextVertexOut cell_text_vertex(uint vid [[vertex_id]],
   // and Powerline glyphs to be unaffected (else parts of the line would
   // have different colors as some parts are displayed via background colors).
   if (uniforms.min_contrast > 1.0f && in.mode == MODE_TEXT) {
-    float4 bg_color =
-        float4(
-            bg_colors[in.grid_pos.y * uniforms.grid_size.x + in.grid_pos.x]) /
-        255.0f;
+    float4 bg_color = float4(bg_colors[in.grid_pos.y * uniforms.grid_size.x + in.grid_pos.x]) / 255.0f;
     out.color = contrasted_color(uniforms.min_contrast, out.color, bg_color);
   }
 
   // If this cell is the cursor cell, then we need to change the color.
-  if (in.mode != MODE_TEXT_CURSOR &&
-      (in.grid_pos.x == uniforms.cursor_pos.x ||
-       uniforms.cursor_wide && in.grid_pos.x == uniforms.cursor_pos.x + 1) &&
-      in.grid_pos.y == uniforms.cursor_pos.y) {
+  if (
+    in.mode != MODE_TEXT_CURSOR &&
+    (
+      in.grid_pos.x == uniforms.cursor_pos.x ||
+      uniforms.cursor_wide &&
+        in.grid_pos.x == uniforms.cursor_pos.x + 1
+    ) &&
+    in.grid_pos.y == uniforms.cursor_pos.y
+  ) {
     out.color = float4(uniforms.cursor_color) / 255.0f;
   }
 
   return out;
 }
 
-fragment float4 cell_text_fragment(CellTextVertexOut in [[stage_in]],
-                                   texture2d<float> textureGrayscale
-                                   [[texture(0)]],
-                                   texture2d<float> textureColor
-                                   [[texture(1)]]) {
-  constexpr sampler textureSampler(coord::pixel, address::clamp_to_edge,
-                                   filter::nearest);
+fragment float4 cell_text_fragment(
+  CellTextVertexOut in [[stage_in]],
+  texture2d<float> textureGrayscale [[texture(0)]],
+  texture2d<float> textureColor [[texture(1)]]
+) {
+  constexpr sampler textureSampler(
+    coord::pixel,
+    address::clamp_to_edge,
+    filter::nearest
+  );
 
   switch (in.mode) {
     default:
@@ -361,10 +367,12 @@ struct ImageVertexOut {
   float2 tex_coord;
 };
 
-vertex ImageVertexOut image_vertex(uint vid [[vertex_id]],
-                                   ImageVertexIn in [[stage_in]],
-                                   texture2d<uint> image [[texture(0)]],
-                                   constant Uniforms& uniforms [[buffer(1)]]) {
+vertex ImageVertexOut image_vertex(
+  uint vid [[vertex_id]],
+  ImageVertexIn in [[stage_in]],
+  texture2d<uint> image [[texture(0)]],
+  constant Uniforms& uniforms [[buffer(1)]]
+) {
   // The size of the image in pixels
   float2 image_size = float2(image.get_width(), image.get_height());
 
@@ -401,8 +409,10 @@ vertex ImageVertexOut image_vertex(uint vid [[vertex_id]],
   return out;
 }
 
-fragment float4 image_fragment(ImageVertexOut in [[stage_in]],
-                               texture2d<uint> image [[texture(0)]]) {
+fragment float4 image_fragment(
+  ImageVertexOut in [[stage_in]],
+  texture2d<uint> image [[texture(0)]]
+) {
   constexpr sampler textureSampler(address::clamp_to_edge, filter::linear);
 
   // Ehhhhh our texture is in RGBA8Uint but our color attachment is
@@ -416,3 +426,4 @@ fragment float4 image_fragment(ImageVertexOut in [[stage_in]],
   result.rgb *= result.a;
   return result;
 }
+
