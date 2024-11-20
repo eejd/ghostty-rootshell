@@ -1385,10 +1385,21 @@ fn addMetallib(
     b: *std.Build,
     step: *std.Build.Step.Compile,
 ) !void {
+    const optimize = step.root_module.optimize.?;
+
     const metal_step = MetallibStep.create(b, .{
         .name = "Ghostty",
         .target = step.root_module.resolved_target.?,
         .sources = &.{b.path("src/renderer/shaders/cell.metal")},
+        .logging = switch (optimize) {
+            .Debug,
+            => true,
+
+            .ReleaseFast,
+            .ReleaseSmall,
+            .ReleaseSafe,
+            => false,
+        },
     });
 
     metal_step.output.addStepDependencies(&step.step);
