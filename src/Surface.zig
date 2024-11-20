@@ -94,11 +94,6 @@ keyboard: Keyboard,
 /// less important.
 pressed_key: ?input.KeyEvent = null,
 
-/// The current color scheme of the GUI element containing this surface.
-/// This will default to light until the apprt sends us the actual color
-/// scheme. This is used by mode 3031 and CSI 996 n.
-color_scheme: apprt.ColorScheme = .light,
-
 /// The hash value of the last keybinding trigger that we performed. This
 /// is only set if the last key input matched a keybinding, consumed it,
 /// and performed it. This is used to prevent sending release/repeat events
@@ -120,6 +115,12 @@ size: renderer.Size,
 /// we don't have a shared pointer hanging around that we need to worry about
 /// the lifetime of. This makes updating config at runtime easier.
 config: DerivedConfig,
+
+/// The conditional state of the configuration. This can affect
+/// how certain configurations take effect such as light/dark mode.
+/// This is managed completely by Ghostty core but an apprt action
+/// is sent whenever this changes.
+config_conditional_state: configpkg.ConditionalState,
 
 /// This is set to true if our IO thread notifies us our child exited.
 /// This is used to determine if we need to confirm, hold open, etc.
@@ -480,6 +481,7 @@ pub fn init(
         .io_thr = undefined,
         .size = size,
         .config = derived_config,
+        .config_conditional_state = .{},
     };
 
     // The command we're going to execute
@@ -777,7 +779,7 @@ pub fn needsConfirmQuit(self: *Surface) bool {
 /// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
-        .change_config => |config| try self.changeConfig(config),
+        .change_config => |config| try self.updateConfig(config),
 
         .set_title => |*v| {
             // We ignore the message in case the title was set via config.
@@ -935,7 +937,7 @@ fn passwordInput(self: *Surface, v: bool) !void {
 
 /// Sends a DSR response for the current color scheme to the pty.
 fn reportColorScheme(self: *Surface) !void {
-    const output = switch (self.color_scheme) {
+    const output = switch (self.config_conditional_state.theme) {
         .light => "\x1B[?997;2n",
         .dark => "\x1B[?997;1n",
     };
@@ -1058,8 +1060,25 @@ fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
     };
 }
 
-/// Update our configuration at runtime.
-fn changeConfig(self: *Surface, config: *const configpkg.Config) !void {
+/// This should be called anytime `config_conditional_state` changes
+/// so that the apprt can reload the configuration.
+fn notifyConfigConditionalState(self: *Surface) void {
+    self.rt_app.performAction(
+        .{ .surface = self },
+        .config_change_conditional_state,
+        {},
+    ) catch |err| {
+        log.warn("failed to notify app of config state change err={}", .{err});
+    };
+}
+
+/// Update our configuration at runtime. This can be called by the apprt
+/// to set a surface-specific configuration that differs from the app
+/// or other surfaces.
+pub fn updateConfig(
+    self: *Surface,
+    config: *const configpkg.Config,
+) !void {
     // Update our new derived config immediately
     const derived = DerivedConfig.init(self.alloc, config) catch |err| {
         // If the derivation fails then we just log and return. We don't
@@ -3590,11 +3609,17 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
-    // If our scheme didn't change, then we don't do anything.
-    if (self.color_scheme == scheme) return;
+    const new_scheme: configpkg.ConditionalState.Theme = switch (scheme) {
+        .light => .light,
+        .dark => .dark,
+    };
 
-    // Set our new scheme
-    self.color_scheme = scheme;
+    // If our scheme didn't change, then we don't do anything.
+    if (self.config_conditional_state.theme == new_scheme) return;
+
+    // Setup our conditional state which has the current color theme.
+    self.config_conditional_state.theme = new_scheme;
+    self.notifyConfigConditionalState();
 
     // If mode 2031 is on, then we report the change live.
     const report = report: {

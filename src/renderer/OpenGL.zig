@@ -290,7 +290,7 @@ pub const DerivedConfig = struct {
         const custom_shaders = try config.@"custom-shader".clone(alloc);
 
         // Copy our font features
-        const font_features = try config.@"font-feature".list.clone(alloc);
+        const font_features = try config.@"font-feature".clone(alloc);
 
         // Get our font styles
         var font_styles = font.CodepointResolver.StyleStatus.initFill(true);
@@ -309,7 +309,7 @@ pub const DerivedConfig = struct {
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
-            .font_features = font_features,
+            .font_features = font_features.list,
             .font_styles = font_styles,
 
             .cursor_color = if (!cursor_invert and config.@"cursor-color" != null)
