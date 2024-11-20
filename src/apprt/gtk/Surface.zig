@@ -308,8 +308,8 @@ pub const URLWidget = struct {
 /// surface has been initialized.
 realized: bool = false,
 
-/// True if this surface had a parent to start with.
-parent_surface: bool = false,
+/// The config to use to initialize a surface.
+init_config: InitConfig,
 
 /// The GUI container that this surface has been attached to. This
 /// dictates some behaviors such as new splits, etc.
@@ -369,6 +369,36 @@ im_len: u7 = 0,
 /// The surface-specific cgroup path. See App.transient_cgroup_path for
 /// details on what this is.
 cgroup_path: ?[]const u8 = null,
+
+/// Configuration used for initializing the surface. We have to copy some
+/// data since initialization is delayed with GTK (on realize).
+pub const InitConfig = struct {
+    parent: bool = false,
+    pwd: ?[]const u8 = null,
+
+    pub fn init(
+        alloc: Allocator,
+        app: *App,
+        opts: Options,
+    ) Allocator.Error!InitConfig {
+        const parent = opts.parent orelse return .{};
+
+        const pwd: ?[]const u8 = if (app.config.@"window-inherit-working-directory")
+            try parent.pwd(alloc)
+        else
+            null;
+        errdefer if (pwd) |p| alloc.free(p);
+
+        return .{
+            .parent = true,
+            .pwd = pwd,
+        };
+    }
+
+    pub fn deinit(self: *InitConfig, alloc: Allocator) void {
+        if (self.pwd) |pwd| alloc.free(pwd);
+    }
+};
 
 pub fn create(alloc: Allocator, app: *App, opts: Options) !*Surface {
     var surface = try alloc.create(Surface);
@@ -494,6 +524,10 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     };
     errdefer if (cgroup_path) |path| app.core_app.alloc.free(path);
 
+    // Build our initialization config
+    const init_config = try InitConfig.init(app.core_app.alloc, app, opts);
+    errdefer init_config.deinit(app.core_app.alloc);
+
     // Build our result
     self.* = .{
         .app = app,
@@ -504,7 +538,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .title_text = null,
         .core_surface = undefined,
         .font_size = font_size,
-        .parent_surface = opts.parent != null,
+        .init_config = init_config,
         .size = .{ .width = 800, .height = 600 },
         .cursor_pos = .{ .x = 0, .y = 0 },
         .im_context = im_context,
@@ -555,7 +589,11 @@ fn realize(self: *Surface) !void {
     // Get our new surface config
     var config = try apprt.surface.newConfig(self.app.core_app, &self.app.config);
     defer config.deinit();
-    if (!self.parent_surface) {
+
+    if (self.init_config.pwd) |pwd| {
+        // If we have a working directory we want, then we force that.
+        config.@"working-directory" = pwd;
+    } else if (!self.init_config.parent) {
         // A hack, see the "parent_surface" field for more information.
         config.@"working-directory" = self.app.config.@"working-directory";
     }
@@ -583,6 +621,7 @@ fn realize(self: *Surface) !void {
 }
 
 pub fn deinit(self: *Surface) void {
+    self.init_config.deinit(self.app.core_app.alloc);
     if (self.title_text) |title| self.app.core_app.alloc.free(title);
 
     // We don't allocate anything if we aren't realized.
