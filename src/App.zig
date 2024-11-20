@@ -147,11 +147,18 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
 /// Update the configuration associated with the app. This can only be
 /// called from the main thread. The caller owns the config memory. The
 /// memory can be freed immediately when this returns.
-pub fn updateConfig(self: *App, config: *const Config) !void {
+pub fn updateConfig(self: *App, rt_app: *apprt.App, config: *const Config) !void {
     // Go through and update all of the surface configurations.
     for (self.surfaces.items) |surface| {
         try surface.core_surface.handleMessage(.{ .change_config = config });
     }
+
+    // Notify the apprt that the app has changed configuration.
+    try rt_app.performAction(
+        .app,
+        .config_change,
+        .{ .config = config },
+    );
 }
 
 /// Add an initialized surface. This is really only for the runtime
@@ -257,7 +264,7 @@ pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
     log.debug("reloading configuration", .{});
     if (try rt_app.reloadConfig()) |new| {
         log.debug("new configuration received, applying", .{});
-        try self.updateConfig(new);
+        try self.updateConfig(rt_app, new);
     }
 }
 

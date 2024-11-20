@@ -532,6 +532,11 @@ typedef struct {
   uint8_t b;
 } ghostty_action_color_change_s;
 
+// apprt.action.ConfigChange
+typedef struct {
+  ghostty_config_t config;
+} ghostty_action_config_change_s;
+
 // apprt.Action.Key
 typedef enum {
   GHOSTTY_ACTION_NEW_WINDOW,
@@ -568,6 +573,7 @@ typedef enum {
   GHOSTTY_ACTION_KEY_SEQUENCE,
   GHOSTTY_ACTION_COLOR_CHANGE,
   GHOSTTY_ACTION_CONFIG_CHANGE_CONDITIONAL_STATE,
+  GHOSTTY_ACTION_CONFIG_CHANGE,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -592,6 +598,7 @@ typedef union {
   ghostty_action_secure_input_e secure_input;
   ghostty_action_key_sequence_s key_sequence;
   ghostty_action_color_change_s color_change;
+  ghostty_action_config_change_s config_change;
 } ghostty_action_u;
 
 typedef struct {
