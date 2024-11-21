@@ -1,6 +1,7 @@
 import Foundation
 import Cocoa
 import SwiftUI
+import Combine
 import GhosttyKit
 
 /// A classic, tabbed terminal experience.
@@ -22,6 +23,9 @@ class TerminalController: BaseTerminalController {
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private var derivedConfig: DerivedConfig
+
+    /// The notification cancellable for focused surface property changes.
+    private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -225,7 +229,7 @@ class TerminalController: BaseTerminalController {
 
         // The titlebar is always updated. We don't need to worry about opacity
         // because we handle it here.
-        let backgroundColor = OSColor(surfaceConfig.backgroundColor)
+        let backgroundColor = OSColor(focusedSurface?.backgroundColor ?? surfaceConfig.backgroundColor)
         window.titlebarColor = backgroundColor.withAlphaComponent(surfaceConfig.backgroundOpacity)
 
         if (window.isOpaque) {
@@ -536,10 +540,31 @@ class TerminalController: BaseTerminalController {
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
 
+        // We always cancel our event listener
+        surfaceAppearanceCancellables.removeAll()
+
         // When our focus changes, we update our window appearance based on the
         // currently focused surface.
         guard let focusedSurface else { return }
         syncAppearance(focusedSurface.derivedConfig)
+
+        // We also want to get notified of certain changes to update our appearance.
+        focusedSurface.$derivedConfig
+            .sink { [weak self, weak focusedSurface] _ in self?.syncAppearanceOnPropertyChange(focusedSurface) }
+            .store(in: &surfaceAppearanceCancellables)
+        focusedSurface.$backgroundColor
+            .sink { [weak self, weak focusedSurface] _ in self?.syncAppearanceOnPropertyChange(focusedSurface) }
+            .store(in: &surfaceAppearanceCancellables)
+    }
+
+    private func syncAppearanceOnPropertyChange(_ surface: Ghostty.SurfaceView?) {
+        guard let surface else { return }
+        DispatchQueue.main.async { [weak self, weak surface] in
+            guard let surface else { return }
+            guard let self else { return }
+            guard self.focusedSurface == surface else { return }
+            self.syncAppearance(surface.derivedConfig)
+        }
     }
 
     //MARK: - Notifications

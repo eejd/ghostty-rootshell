@@ -210,6 +210,10 @@ extension Notification.Name {
     static let ghosttyConfigDidChange = Notification.Name("com.mitchellh.ghostty.configDidChange")
     static let GhosttyConfigChangeKey = ghosttyConfigDidChange.rawValue
 
+    /// Color change. Object is the surface changing.
+    static let ghosttyColorDidChange = Notification.Name("com.mitchellh.ghostty.ghosttyColorDidChange")
+    static let GhosttyColorChangeKey = ghosttyColorDidChange.rawValue
+
     /// Goto tab. Has tab index in the userinfo.
     static let ghosttyMoveTab = Notification.Name("com.mitchellh.ghostty.moveTab")
     static let GhosttyMoveTabKey = ghosttyMoveTab.rawValue

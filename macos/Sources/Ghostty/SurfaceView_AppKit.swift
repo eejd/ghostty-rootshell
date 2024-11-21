@@ -51,6 +51,10 @@ extension Ghostty {
         /// The configuration derived from the Ghostty config so we don't need to rely on references.
         @Published private(set) var derivedConfig: DerivedConfig
 
+        /// The background color within the color palette of the surface. This is only set if it is
+        /// dynamically updated. Otherwise, the background color is the default background color.
+        @Published private(set) var backgroundColor: Color? = nil
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
@@ -151,6 +155,11 @@ extension Ghostty {
                 self,
                 selector: #selector(ghosttyConfigDidChange(_:)),
                 name: .ghosttyConfigDidChange,
+                object: self)
+            center.addObserver(
+                self,
+                selector: #selector(ghosttyColorDidChange(_:)),
+                name: .ghosttyColorDidChange,
                 object: self)
             center.addObserver(
                 self,
@@ -356,6 +365,21 @@ extension Ghostty {
 
             // Update our derived config
             self.derivedConfig = DerivedConfig(config)
+        }
+
+        @objc private func ghosttyColorDidChange(_ notification: SwiftUI.Notification) {
+            guard let change = notification.userInfo?[
+                SwiftUI.Notification.Name.GhosttyColorChangeKey
+            ] as? Ghostty.Action.ColorChange else { return }
+
+            switch (change.kind) {
+            case .background:
+                self.backgroundColor = change.color
+
+            default:
+                // We don't do anything for the other colors yet.
+                break
+            }
         }
 
         @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {
