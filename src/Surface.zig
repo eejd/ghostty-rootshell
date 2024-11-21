@@ -1127,6 +1127,13 @@ pub fn updateConfig(
     self.queueRender() catch |err| {
         log.warn("failed to notify renderer of config change err={}", .{err});
     };
+
+    // Notify the window
+    try self.rt_app.performAction(
+        .{ .surface = self },
+        .config_change,
+        .{ .config = config },
+    );
 }
 
 /// Returns true if the terminal has a selection.

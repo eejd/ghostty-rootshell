@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const apprt = @import("../apprt.zig");
+const configpkg = @import("../config.zig");
 const input = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
@@ -200,6 +201,20 @@ pub const Action = union(Key) {
     /// on the app or surface.
     config_change_conditional_state,
 
+    /// The configuration has changed. The value is a pointer to the new
+    /// configuration. The pointer is only valid for the duration of the
+    /// action and should not be stored.
+    ///
+    /// This should be used by apprts to update any internal state that
+    /// depends on configuration for the given target (i.e. headerbar colors).
+    /// The apprt should copy any data it needs since the memory lifetime
+    /// is only valid for the duration of the action.
+    ///
+    /// This allows an apprt to have config-dependent state reactively
+    /// change without having to store the entire configuration or poll
+    /// for changes.
+    config_change: ConfigChange,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         new_window,
@@ -236,6 +251,7 @@ pub const Action = union(Key) {
         key_sequence,
         color_change,
         config_change_conditional_state,
+        config_change,
     };
 
     /// Sync with: ghostty_action_u
@@ -496,4 +512,19 @@ pub const ColorKind = enum(c_int) {
 
     // 0+ values indicate a palette index
     _,
+};
+
+pub const ConfigChange = struct {
+    config: *const configpkg.Config,
+
+    // Sync with: ghostty_action_config_change_s
+    pub const C = extern struct {
+        config: *const configpkg.Config,
+    };
+
+    pub fn cval(self: ConfigChange) C {
+        return .{
+            .config = self.config,
+        };
+    }
 };

@@ -60,6 +60,9 @@ class BaseTerminalController: NSWindowController,
     /// The previous frame information from the window
     private var savedFrame: SavedFrame? = nil
 
+    /// The configuration derived from the Ghostty config so we don't need to rely on references.
+    private var derivedConfig: DerivedConfig
+
     struct SavedFrame {
         let window: NSRect
         let screen: NSRect
@@ -74,6 +77,7 @@ class BaseTerminalController: NSWindowController,
          surfaceTree tree: Ghostty.SplitNode? = nil
     ) {
         self.ghostty = ghostty
+        self.derivedConfig = DerivedConfig(ghostty.config)
 
         super.init(window: nil)
 
@@ -92,6 +96,11 @@ class BaseTerminalController: NSWindowController,
             self,
             selector: #selector(didChangeScreenParametersNotification),
             name: NSApplication.didChangeScreenParametersNotification,
+            object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyConfigDidChangeBase(_:)),
+            name: .ghosttyConfigDidChange,
             object: nil)
 
         // Listen for local events that we need to know of outside of
@@ -191,6 +200,20 @@ class BaseTerminalController: NSWindowController,
         window.setFrame(newFrame, display: true)
     }
 
+    @objc private func ghosttyConfigDidChangeBase(_ notification: Notification) {
+        // We only care if the configuration is a global configuration, not a
+        // surface-specific one.
+        guard notification.object == nil else { return }
+        
+        // Get our managed configuration object out
+        guard let config = notification.userInfo?[
+            Notification.Name.GhosttyConfigChangeKey
+        ] as? Ghostty.Config else { return }
+        
+        // Update our derived config
+        self.derivedConfig = DerivedConfig(config)
+    }
+
     // MARK: Local Events
 
     private func localEventHandler(_ event: NSEvent) -> NSEvent? {
@@ -245,7 +268,7 @@ class BaseTerminalController: NSWindowController,
     func pwdDidChange(to: URL?) {
         guard let window else { return }
 
-        if ghostty.config.macosTitlebarProxyIcon == .visible {
+        if derivedConfig.macosTitlebarProxyIcon == .visible {
             // Use the 'to' URL directly
             window.representedURL = to
         } else {
@@ -255,7 +278,7 @@ class BaseTerminalController: NSWindowController,
 
 
     func cellSizeDidChange(to: NSSize) {
-        guard ghostty.config.windowStepResize else { return }
+        guard derivedConfig.windowStepResize else { return }
         self.window?.contentResizeIncrements = to
     }
 
@@ -562,5 +585,20 @@ class BaseTerminalController: NSWindowController,
     @objc func resetTerminal(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.resetTerminal(surface: surface)
+    }
+
+    private struct DerivedConfig {
+        let macosTitlebarProxyIcon: Ghostty.MacOSTitlebarProxyIcon
+        let windowStepResize: Bool
+
+        init() {
+            self.macosTitlebarProxyIcon = .visible
+            self.windowStepResize = false
+        }
+
+        init(_ config: Ghostty.Config) {
+            self.macosTitlebarProxyIcon = config.macosTitlebarProxyIcon
+            self.windowStepResize = config.windowStepResize
+        }
     }
 }
