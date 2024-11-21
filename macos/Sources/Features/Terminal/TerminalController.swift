@@ -227,9 +227,21 @@ class TerminalController: BaseTerminalController {
 
         guard window.hasStyledTabs else { return }
 
-        // The titlebar is always updated. We don't need to worry about opacity
-        // because we handle it here.
-        let backgroundColor = OSColor(focusedSurface?.backgroundColor ?? surfaceConfig.backgroundColor)
+        // Our background color depends on if our focused surface borders the top or not.
+        // If it does, we match the focused surface. If it doesn't, we use the app
+        // configuration.
+        let backgroundColor: OSColor
+        if let surfaceTree {
+            if let focusedSurface, surfaceTree.doesBorderTop(view: focusedSurface) {
+                backgroundColor = OSColor(focusedSurface.backgroundColor ?? derivedConfig.backgroundColor)
+            } else {
+                // We don't have a focused surface or our surface doesn't border the
+                // top. We choose to match the color of the top-left most surface.
+                backgroundColor = OSColor(surfaceTree.topLeft().backgroundColor ?? derivedConfig.backgroundColor)
+            }
+        } else {
+            backgroundColor = OSColor(self.derivedConfig.backgroundColor)
+        }
         window.titlebarColor = backgroundColor.withAlphaComponent(surfaceConfig.backgroundOpacity)
 
         if (window.isOpaque) {
@@ -677,13 +689,16 @@ class TerminalController: BaseTerminalController {
     }
 
     private struct DerivedConfig {
+        let backgroundColor: Color
         let macosTitlebarStyle: String
 
         init() {
+            self.backgroundColor = Color(NSColor.windowBackgroundColor)
             self.macosTitlebarStyle = "system"
         }
 
         init(_ config: Ghostty.Config) {
+            self.backgroundColor = config.backgroundColor
             self.macosTitlebarStyle = config.macosTitlebarStyle
         }
     }

@@ -1518,6 +1518,13 @@ keybind: Keybinds = .{},
 /// This makes a more seamless window appearance but looks a little less
 /// typical for a macOS application and may not work well with all themes.
 ///
+/// The "transparent" style will also update in real-time to dynamic
+/// changes to the window background color, i.e. via OSC 11. To make this
+/// more aesthetically pleasing, this only happens if the terminal is
+/// a window, tab, or split that borders the top of the window. This
+/// avoids a disjointed appearance where the titlebar color changes
+/// but all the topmost terminals don't match.
+///
 /// The "tabs" style is a completely custom titlebar that integrates the
 /// tab bar into the titlebar. This titlebar always matches the background
 /// color of the terminal. There are some limitations to this style:
@@ -1535,11 +1542,6 @@ keybind: Keybinds = .{},
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
 /// most cases.
-///
-/// BUG: If a separate light/dark mode theme is configured with "theme",
-/// then `macos-titlebar-style = transparent` will not work correctly. To
-/// avoid ugly titlebars, `macos-titlebar-style` will become `native` if
-/// a separate light/dark theme is configured.
 ///
 /// Changing this option at runtime only applies to new windows.
 @"macos-titlebar-style": MacTitlebarStyle = .transparent,
