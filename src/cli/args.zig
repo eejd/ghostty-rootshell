@@ -256,10 +256,20 @@ pub fn parseIntoField(
                             .Enum,
                             => try @field(dst, field.name).parseCLI(value),
 
-                            .Optional => {
-                                @field(dst, field.name) = undefined;
-                                try @field(dst, field.name).?.parseCLI(value);
+                            // If the field is optional and set, then we use
+                            // the pointer value directly into it. If its not
+                            // set we need to create a new instance.
+                            .Optional => if (@field(dst, field.name)) |*v| {
+                                try v.parseCLI(value);
+                            } else {
+                                // Note: you cannot do @field(dst, name) = undefined
+                                // because this causes the value to be "null"
+                                // in ReleaseFast modes.
+                                var tmp: Field = undefined;
+                                try tmp.parseCLI(value);
+                                @field(dst, field.name) = tmp;
                             },
+
                             else => @compileError("unexpected field type"),
                         },
 
@@ -270,10 +280,14 @@ pub fn parseIntoField(
                             .Enum,
                             => try @field(dst, field.name).parseCLI(alloc, value),
 
-                            .Optional => {
-                                @field(dst, field.name) = undefined;
-                                try @field(dst, field.name).?.parseCLI(alloc, value);
+                            .Optional => if (@field(dst, field.name)) |*v| {
+                                try v.parseCLI(alloc, value);
+                            } else {
+                                var tmp: Field = undefined;
+                                try tmp.parseCLI(alloc, value);
+                                @field(dst, field.name) = tmp;
                             },
+
                             else => @compileError("unexpected field type"),
                         },
 
