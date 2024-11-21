@@ -191,15 +191,10 @@ class TerminalController: BaseTerminalController {
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         guard let window = self.window as? TerminalWindow else { return }
 
-        // If our window is not visible, then delay this. This is possible specifically
-        // during state restoration but probably in other scenarios as well. To delay,
-        // we just loop directly on the dispatch queue. We have to delay because some
-        // APIs such as window blur have no effect unless the window is visible.
-        guard window.isVisible else {
-            // Weak window so that if the window changes or is destroyed we aren't holding a ref
-            DispatchQueue.main.async { [weak self] in self?.syncAppearance(surfaceConfig) }
-            return
-        }
+        // If our window is not visible, then we do nothing. Some things such as blurring
+        // have no effect if the window is not visible. Ultimately, we'll have this called
+        // at some point when a surface becomes focused.
+        guard window.isVisible else { return }
 
         // Set the font for the window and tab titles.
         if let titleFontName = surfaceConfig.windowTitleFontFamily {
@@ -233,7 +228,7 @@ class TerminalController: BaseTerminalController {
         let backgroundColor: OSColor
         if let surfaceTree {
             if let focusedSurface, surfaceTree.doesBorderTop(view: focusedSurface) {
-                backgroundColor = OSColor(focusedSurface.backgroundColor ?? derivedConfig.backgroundColor)
+                backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor)
             } else {
                 // We don't have a focused surface or our surface doesn't border the
                 // top. We choose to match the color of the top-left most surface.

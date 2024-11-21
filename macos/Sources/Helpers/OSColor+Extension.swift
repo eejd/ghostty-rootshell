@@ -21,6 +21,14 @@ extension OSColor {
         return (0.299 * r) + (0.587 * g) + (0.114 * b)
     }
 
+    var hexString: String? {
+        guard let rgb = usingColorSpace(.deviceRGB) else { return nil }
+        let red = Int(rgb.redComponent * 255)
+        let green = Int(rgb.greenComponent * 255)
+        let blue = Int(rgb.blueComponent * 255)
+        return String(format: "#%02X%02X%02X", red, green, blue)
+    }
+
     func darken(by amount: CGFloat) -> OSColor {
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         self.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
