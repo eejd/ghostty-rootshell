@@ -48,6 +48,9 @@ extension Ghostty {
         // Whether the pointer should be visible or not
         @Published private(set) var pointerStyle: BackportPointerStyle = .default
 
+        /// The configuration derived from the Ghostty config so we don't need to rely on references.
+        @Published private(set) var derivedConfig: DerivedConfig
+
         // An initial size to request for a window. This will only affect
         // then the view is moved to a new window.
         var initialSize: NSSize? = nil
@@ -114,6 +117,13 @@ extension Ghostty {
             self.markedText = NSMutableAttributedString()
             self.uuid = uuid ?? .init()
 
+            // Our initial config always is our application wide config.
+            if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
+                self.derivedConfig = DerivedConfig(appDelegate.ghostty.config)
+            } else {
+                self.derivedConfig = DerivedConfig()
+            }
+
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
@@ -136,6 +146,11 @@ extension Ghostty {
                 self,
                 selector: #selector(ghosttyDidEndKeySequence),
                 name: Ghostty.Notification.didEndKeySequence,
+                object: self)
+            center.addObserver(
+                self,
+                selector: #selector(ghosttyConfigDidChange(_:)),
+                name: .ghosttyConfigDidChange,
                 object: self)
             center.addObserver(
                 self,
@@ -331,6 +346,16 @@ extension Ghostty {
 
         @objc private func ghosttyDidEndKeySequence(notification: SwiftUI.Notification) {
             keySequence = []
+        }
+
+        @objc private func ghosttyConfigDidChange(_ notification: SwiftUI.Notification) {
+            // Get our managed configuration object out
+            guard let config = notification.userInfo?[
+                SwiftUI.Notification.Name.GhosttyConfigChangeKey
+            ] as? Ghostty.Config else { return }
+
+            // Update our derived config
+            self.derivedConfig = DerivedConfig(config)
         }
 
         @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {
@@ -1023,6 +1048,27 @@ extension Ghostty {
             if focus {
                 self.window?.makeKeyAndOrderFront(self)
                 Ghostty.moveFocus(to: self)
+            }
+        }
+
+        struct DerivedConfig {
+            let backgroundColor: Color
+            let backgroundOpacity: Double
+            let macosWindowShadow: Bool
+            let windowTitleFontFamily: String?
+
+            init() {
+                self.backgroundColor = Color(NSColor.windowBackgroundColor)
+                self.backgroundOpacity = 1
+                self.macosWindowShadow = true
+                self.windowTitleFontFamily = nil
+            }
+
+            init(_ config: Ghostty.Config) {
+                self.backgroundColor = config.backgroundColor
+                self.backgroundOpacity = config.backgroundOpacity
+                self.macosWindowShadow = config.macosWindowShadow
+                self.windowTitleFontFamily = config.windowTitleFontFamily
             }
         }
     }

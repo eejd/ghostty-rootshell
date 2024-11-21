@@ -365,7 +365,6 @@ const c = @cImport({
 /// be fixed in a future update:
 ///
 ///   - macOS: titlebar tabs style is not updated when switching themes.
-///   - macOS: native titlebar style is not supported.
 ///
 theme: ?Theme = null,
 
@@ -2756,12 +2755,6 @@ pub fn finalize(self: *Config) !void {
             // This setting doesn't make sense with different light/dark themes
             // because it'll force the theme based on the Ghostty theme.
             if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
-
-            // This is buggy with different light/dark themes and is noted
-            // in the documentation.
-            if (self.@"macos-titlebar-style" == .transparent) {
-                self.@"macos-titlebar-style" = .native;
-            }
         }
     }
 

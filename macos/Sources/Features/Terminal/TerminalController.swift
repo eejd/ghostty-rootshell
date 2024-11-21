@@ -93,21 +93,37 @@ class TerminalController: BaseTerminalController {
     //MARK: - Methods
 
     @objc private func ghosttyConfigDidChange(_ notification: Notification) {
-        // We only care if the configuration is a global configuration, not a
-        // surface-specific one.
-        guard notification.object == nil else { return }
-
         // Get our managed configuration object out
         guard let config = notification.userInfo?[
             Notification.Name.GhosttyConfigChangeKey
         ] as? Ghostty.Config else { return }
 
-        // Update our derived config
-        self.derivedConfig = DerivedConfig(config)
+        // If this is an app-level config update then we update some things.
+        if (notification.object == nil) {
+            // Update our derived config
+            self.derivedConfig = DerivedConfig(config)
 
-        guard let window = window as? TerminalWindow else { return }
-        window.focusFollowsMouse = config.focusFollowsMouse
-        syncAppearance(config)
+            guard let window = window as? TerminalWindow else { return }
+            window.focusFollowsMouse = config.focusFollowsMouse
+
+            // If we have no surfaces in our window (is that possible?) then we update
+            // our window appearance based on the root config. If we have surfaces, we
+            // don't call this because the TODO
+            if surfaceTree == nil {
+                syncAppearance(.init(config))
+            }
+
+            return
+        }
+
+        // This is a surface-level config update. If we have the surface, we
+        // update our appearance based on it.
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+
+        // We can't use surfaceView.derivedConfig because it may not be updated
+        // yet since it also responds to notifications.
+        syncAppearance(.init(config))
     }
 
     /// Update the accessory view of each tab according to the keyboard
@@ -168,7 +184,7 @@ class TerminalController: BaseTerminalController {
         self.relabelTabs()
     }
 
-    private func syncAppearance(_ config: Ghostty.Config) {
+    private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         guard let window = self.window as? TerminalWindow else { return }
 
         // If our window is not visible, then delay this. This is possible specifically
@@ -177,19 +193,19 @@ class TerminalController: BaseTerminalController {
         // APIs such as window blur have no effect unless the window is visible.
         guard window.isVisible else {
             // Weak window so that if the window changes or is destroyed we aren't holding a ref
-            DispatchQueue.main.async { [weak self] in self?.syncAppearance(config) }
+            DispatchQueue.main.async { [weak self] in self?.syncAppearance(surfaceConfig) }
             return
         }
 
         // Set the font for the window and tab titles.
-        if let titleFontName = config.windowTitleFontFamily {
+        if let titleFontName = surfaceConfig.windowTitleFontFamily {
             window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
         } else {
             window.titlebarFont = nil
         }
 
         // If we have window transparency then set it transparent. Otherwise set it opaque.
-        if (config.backgroundOpacity < 1) {
+        if (surfaceConfig.backgroundOpacity < 1) {
             window.isOpaque = false
 
             // This is weird, but we don't use ".clear" because this creates a look that
@@ -203,14 +219,14 @@ class TerminalController: BaseTerminalController {
             window.backgroundColor = .windowBackgroundColor
         }
 
-        window.hasShadow = config.macosWindowShadow
+        window.hasShadow = surfaceConfig.macosWindowShadow
 
         guard window.hasStyledTabs else { return }
 
         // The titlebar is always updated. We don't need to worry about opacity
         // because we handle it here.
-        let backgroundColor = OSColor(config.backgroundColor)
-        window.titlebarColor = backgroundColor.withAlphaComponent(config.backgroundOpacity)
+        let backgroundColor = OSColor(surfaceConfig.backgroundColor)
+        window.titlebarColor = backgroundColor.withAlphaComponent(surfaceConfig.backgroundOpacity)
 
         if (window.isOpaque) {
             // Bg color is only synced if we have no transparency. This is because
@@ -377,8 +393,10 @@ class TerminalController: BaseTerminalController {
 
         window.focusFollowsMouse = config.focusFollowsMouse
 
-        // Apply any additional appearance-related properties to the new window.
-        syncAppearance(config)
+        // Apply any additional appearance-related properties to the new window. We
+        // apply this based on the root config but change it later based on surface
+        // config (see focused surface change callback).
+        syncAppearance(.init(config))
     }
 
     // Shows the "+" button in the tab bar, responds to that click.
@@ -513,6 +531,15 @@ class TerminalController: BaseTerminalController {
     override func zoomStateDidChange(to: Bool) {
         guard let window = window as? TerminalWindow else { return }
         window.surfaceIsZoomed = to
+    }
+
+    override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
+        super.focusedSurfaceDidChange(to: to)
+
+        // When our focus changes, we update our window appearance based on the
+        // currently focused surface.
+        guard let focusedSurface else { return }
+        syncAppearance(focusedSurface.derivedConfig)
     }
 
     //MARK: - Notifications
