@@ -462,7 +462,8 @@ pub fn performAction(
         .equalize_splits => self.equalizeSplits(target),
         .goto_split => self.gotoSplit(target, value),
         .open_config => try configpkg.edit.open(self.core_app.alloc),
-        .config_change_conditional_state => self.configChangeConditionalState(target),
+        .config_change => self.configChange(value.config),
+        .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
         .desktop_notification => self.showDesktopNotification(target, value),
         .set_title => try self.setTitle(target, value),
@@ -489,6 +490,7 @@ pub fn performAction(
         .renderer_health,
         .color_change,
         .config_change,
+        .config_change_conditional_state,
         => log.warn("unimplemented action={}", .{action}),
     }
 }
@@ -818,48 +820,9 @@ fn showDesktopNotification(
     c.g_application_send_notification(g_app, n.body.ptr, notification);
 }
 
-fn configChangeConditionalState(
-    self: *App,
-    target: apprt.Target,
-) void {
-    const surface: *CoreSurface = switch (target) {
-        .app => return,
-        .surface => |v| v,
-    };
+fn configChange(self: *App, new_config: *const Config) void {
+    _ = new_config;
 
-    // Build our new configuration. We can free the memory
-    // immediately after because the surface will derive any
-    // values it needs to.
-    var new_config = self.config.changeConditionalState(
-        surface.config_conditional_state,
-    ) catch |err| {
-        // Not a big deal if we error... we just don't update
-        // the config. We log the error and move on.
-        log.warn("error changing config conditional state err={}", .{err});
-        return;
-    };
-    defer new_config.deinit();
-
-    // Update our surface.
-    surface.updateConfig(&new_config) catch |err| {
-        log.warn("error updating surface config for state change err={}", .{err});
-        return;
-    };
-}
-
-/// Reload the configuration. This should return the new configuration.
-/// The old value can be freed immediately at this point assuming a
-/// successful return.
-///
-/// The returned pointer value is only valid for a stable self pointer.
-pub fn reloadConfig(self: *App) !?*const Config {
-    // Load our configuration
-    var config = try Config.load(self.core_app.alloc);
-    errdefer config.deinit();
-
-    // Update the existing config, be sure to clean up the old one.
-    self.config.deinit();
-    self.config = config;
     self.syncConfigChanges() catch |err| {
         log.warn("error handling configuration changes err={}", .{err});
     };
@@ -870,8 +833,36 @@ pub fn reloadConfig(self: *App) !?*const Config {
             if (surface.container.window()) |window| window.onConfigReloaded();
         }
     }
+}
 
-    return &self.config;
+fn reloadConfig(
+    self: *App,
+    target: apprt.action.Target,
+    opts: apprt.action.ReloadConfig,
+) !void {
+    if (opts.soft) {
+        switch (target) {
+            .app => try self.core_app.updateConfig(self, &self.config),
+            .surface => |core_surface| try core_surface.updateConfig(
+                &self.config,
+            ),
+        }
+        return;
+    }
+
+    // Load our configuration
+    var config = try Config.load(self.core_app.alloc);
+    errdefer config.deinit();
+
+    // Call into our app to update
+    switch (target) {
+        .app => try self.core_app.updateConfig(self, &config),
+        .surface => |core_surface| try core_surface.updateConfig(&config),
+    }
+
+    // Update the existing config, be sure to clean up the old one.
+    self.config.deinit();
+    self.config = config;
 }
 
 /// Call this anytime the configuration changes.
@@ -1439,9 +1430,9 @@ fn gtkActionReloadConfig(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
-    _ = self.core_app.mailbox.push(.{
-        .reload_config = {},
-    }, .{ .forever = {} });
+    self.reloadConfig(.app, .{}) catch |err| {
+        log.err("error reloading configuration: {s}", .{err});
+    };
 }
 
 fn gtkActionQuit(
