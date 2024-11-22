@@ -820,21 +820,28 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             }, .unlocked);
         },
 
-        .color_change => |change| try self.rt_app.performAction(
-            .{ .surface = self },
-            .color_change,
-            .{
-                .kind = switch (change.kind) {
-                    .background => .background,
-                    .foreground => .foreground,
-                    .cursor => .cursor,
-                    .palette => |v| @enumFromInt(v),
+        .color_change => |change| {
+            // On any color change, we have to report for mode 2031
+            // if it is enabled.
+            self.reportColorScheme(false);
+
+            // Notify our apprt
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .color_change,
+                .{
+                    .kind = switch (change.kind) {
+                        .background => .background,
+                        .foreground => .foreground,
+                        .cursor => .cursor,
+                        .palette => |v| @enumFromInt(v),
+                    },
+                    .r = change.color.r,
+                    .g = change.color.g,
+                    .b = change.color.b,
                 },
-                .r = change.color.r,
-                .g = change.color.g,
-                .b = change.color.b,
-            },
-        ),
+            );
+        },
 
         .set_mouse_shape => |shape| {
             log.debug("changing mouse shape: {}", .{shape});
@@ -898,7 +905,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
 
         .renderer_health => |health| self.updateRendererHealth(health),
 
-        .report_color_scheme => try self.reportColorScheme(),
+        .report_color_scheme => |force| self.reportColorScheme(force),
 
         .present_surface => try self.presentSurface(),
 
@@ -935,8 +942,18 @@ fn passwordInput(self: *Surface, v: bool) !void {
     try self.queueRender();
 }
 
-/// Sends a DSR response for the current color scheme to the pty.
-fn reportColorScheme(self: *Surface) !void {
+/// Sends a DSR response for the current color scheme to the pty. If
+/// force is false then we only send the response if the terminal mode
+/// 2031 is enabled.
+fn reportColorScheme(self: *Surface, force: bool) void {
+    if (!force) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        if (!self.renderer_state.terminal.modes.get(.report_color_scheme)) {
+            return;
+        }
+    }
+
     const output = switch (self.config_conditional_state.theme) {
         .light => "\x1B[?997;2n",
         .dark => "\x1B[?997;1n",
@@ -3643,12 +3660,7 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     self.notifyConfigConditionalState();
 
     // If mode 2031 is on, then we report the change live.
-    const report = report: {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-        break :report self.renderer_state.terminal.modes.get(.report_color_scheme);
-    };
-    if (report) try self.reportColorScheme();
+    self.reportColorScheme(false);
 }
 
 pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
