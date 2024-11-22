@@ -1212,6 +1212,7 @@ extension Ghostty {
 
                 switch (target.tag) {
                 case GHOSTTY_TARGET_APP:
+                    // Notify the world that the app config changed
                     NotificationCenter.default.post(
                         name: .ghosttyConfigDidChange,
                         object: nil,
@@ -1219,6 +1220,14 @@ extension Ghostty {
                             SwiftUI.Notification.Name.GhosttyConfigChangeKey: config,
                         ]
                     )
+
+                    // We also REPLACE our app-level config when this happens. This lets
+                    // all the various things that depend on this but are still theme specific
+                    // such as split border color work.
+                    guard let app_ud = ghostty_app_userdata(app) else { return }
+                    let ghostty = Unmanaged<App>.fromOpaque(app_ud).takeUnretainedValue()
+                    ghostty.config = config
+
                     return
 
                 case GHOSTTY_TARGET_SURFACE:

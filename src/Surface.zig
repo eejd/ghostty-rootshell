@@ -359,11 +359,25 @@ const DerivedConfig = struct {
 pub fn init(
     self: *Surface,
     alloc: Allocator,
-    config: *const configpkg.Config,
+    config_original: *const configpkg.Config,
     app: *App,
     rt_app: *apprt.runtime.App,
     rt_surface: *apprt.runtime.Surface,
 ) !void {
+    // Apply our conditional state. If we fail to apply the conditional state
+    // then we log and attempt to move forward with the old config.
+    var config_: ?configpkg.Config = config_original.changeConditionalState(
+        app.config_conditional_state,
+    ) catch |err| err: {
+        log.warn("failed to apply conditional state to config err={}", .{err});
+        break :err null;
+    };
+    defer if (config_) |*c| c.deinit();
+
+    // We want a config pointer for everything so we get that either
+    // based on our conditional state or the original config.
+    const config: *const configpkg.Config = if (config_) |*c| c else config_original;
+
     // Get our configuration
     var derived_config = try DerivedConfig.init(alloc, config);
     errdefer derived_config.deinit();
@@ -481,7 +495,10 @@ pub fn init(
         .io_thr = undefined,
         .size = size,
         .config = derived_config,
-        .config_conditional_state = .{},
+
+        // Our conditional state is initialized to the app state. This
+        // lets us get the most likely correct color theme and so on.
+        .config_conditional_state = app.config_conditional_state,
     };
 
     // The command we're going to execute
