@@ -12,7 +12,8 @@ const apprt = @import("apprt.zig");
 const Surface = @import("Surface.zig");
 const tracy = @import("tracy");
 const input = @import("input.zig");
-const Config = @import("config.zig").Config;
+const configpkg = @import("config.zig");
+const Config = configpkg.Config;
 const BlockingQueue = @import("datastruct/main.zig").BlockingQueue;
 const renderer = @import("renderer.zig");
 const font = @import("font/main.zig");
@@ -239,7 +240,6 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
     while (self.mailbox.pop()) |message| {
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
-            .reload_config => try self.reloadConfig(rt_app),
             .open_config => try self.performAction(rt_app, .open_config),
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| self.closeSurface(surface),
@@ -257,14 +257,6 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
                 return;
             },
         }
-    }
-}
-
-pub fn reloadConfig(self: *App, rt_app: *apprt.App) !void {
-    log.debug("reloading configuration", .{});
-    if (try rt_app.reloadConfig()) |new| {
-        log.debug("new configuration received, applying", .{});
-        try self.updateConfig(rt_app, new);
     }
 }
 
@@ -402,7 +394,7 @@ pub fn performAction(
         .quit => self.setQuit(),
         .new_window => try self.newWindow(rt_app, .{ .parent = null }),
         .open_config => try rt_app.performAction(.app, .open_config, {}),
-        .reload_config => try self.reloadConfig(rt_app),
+        .reload_config => try rt_app.performAction(.app, .reload_config, .{}),
         .close_all_windows => try rt_app.performAction(.app, .close_all_windows, {}),
         .toggle_quick_terminal => try rt_app.performAction(.app, .toggle_quick_terminal, {}),
         .toggle_visibility => try rt_app.performAction(.app, .toggle_visibility, {}),
@@ -462,10 +454,6 @@ fn hasSurface(self: *const App, surface: *const Surface) bool {
 
 /// The message types that can be sent to the app thread.
 pub const Message = union(enum) {
-    /// Reload the configuration for the entire app and propagate it to
-    /// all the active surfaces.
-    reload_config: void,
-
     // Open the configuration file
     open_config: void,
 
