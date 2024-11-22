@@ -1357,6 +1357,22 @@ pub const CAPI = struct {
         return v.hasGlobalKeybinds();
     }
 
+    /// Update the color scheme of the app.
+    export fn ghostty_app_set_color_scheme(v: *App, scheme_raw: c_int) void {
+        const scheme = std.meta.intToEnum(apprt.ColorScheme, scheme_raw) catch {
+            log.warn(
+                "invalid color scheme to ghostty_surface_set_color_scheme value={}",
+                .{scheme_raw},
+            );
+            return;
+        };
+
+        v.core_app.colorSchemeEvent(v, scheme) catch |err| {
+            log.err("error setting color scheme err={}", .{err});
+            return;
+        };
+    }
+
     /// Returns initial surface options.
     export fn ghostty_surface_config_new() apprt.Surface.Options {
         return .{};

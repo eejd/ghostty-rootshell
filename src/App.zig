@@ -67,6 +67,11 @@ font_grid_set: font.SharedGridSet,
 last_notification_time: ?std.time.Instant = null,
 last_notification_digest: u64 = 0,
 
+/// The conditional state of the configuration. See the equivalent field
+/// in the Surface struct for more information. In this case, this applies
+/// to the app-level config and as a default for new surfaces.
+config_conditional_state: configpkg.ConditionalState,
+
 /// Set to false once we've created at least one surface. This
 /// never goes true again. This can be used by surfaces to determine
 /// if they are the first surface.
@@ -95,6 +100,7 @@ pub fn create(
         .mailbox = .{},
         .quit = false,
         .font_grid_set = font_grid_set,
+        .config_conditional_state = .{},
     };
     errdefer app.surfaces.deinit(alloc);
 
@@ -154,11 +160,24 @@ pub fn updateConfig(self: *App, rt_app: *apprt.App, config: *const Config) !void
         try surface.core_surface.handleMessage(.{ .change_config = config });
     }
 
+    // Apply our conditional state. If we fail to apply the conditional state
+    // then we log and attempt to move forward with the old config.
+    // We only apply this to the app-level config because the surface
+    // config applies its own conditional state.
+    var applied_: ?configpkg.Config = config.changeConditionalState(
+        self.config_conditional_state,
+    ) catch |err| err: {
+        log.warn("failed to apply conditional state to config err={}", .{err});
+        break :err null;
+    };
+    defer if (applied_) |*c| c.deinit();
+    const applied: *const configpkg.Config = if (applied_) |*c| c else config;
+
     // Notify the apprt that the app has changed configuration.
     try rt_app.performAction(
         .app,
         .config_change,
-        .{ .config = config },
+        .{ .config = applied },
     );
 }
 
@@ -378,6 +397,33 @@ pub fn keyEvent(
     };
 
     return true;
+}
+
+/// Call to notify Ghostty that the color scheme for the app has changed.
+/// "Color scheme" in this case refers to system themes such as "light/dark".
+pub fn colorSchemeEvent(
+    self: *App,
+    rt_app: *apprt.App,
+    scheme: apprt.ColorScheme,
+) !void {
+    const new_scheme: configpkg.ConditionalState.Theme = switch (scheme) {
+        .light => .light,
+        .dark => .dark,
+    };
+
+    // If our scheme didn't change, then we don't do anything.
+    if (self.config_conditional_state.theme == new_scheme) return;
+
+    // Setup our conditional state which has the current color theme.
+    self.config_conditional_state.theme = new_scheme;
+
+    // Request our configuration be reloaded because the new scheme may
+    // impact the colors of the app.
+    try rt_app.performAction(
+        .app,
+        .reload_config,
+        .{ .soft = true },
+    );
 }
 
 /// Perform a binding action. This only accepts actions that are scoped

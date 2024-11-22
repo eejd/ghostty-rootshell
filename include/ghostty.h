@@ -675,6 +675,7 @@ void ghostty_app_open_config(ghostty_app_t);
 void ghostty_app_update_config(ghostty_app_t, ghostty_config_t);
 bool ghostty_app_needs_confirm_quit(ghostty_app_t);
 bool ghostty_app_has_global_keybinds(ghostty_app_t);
+void ghostty_app_set_color_scheme(ghostty_app_t, ghostty_color_scheme_e);
 
 ghostty_surface_config_s ghostty_surface_config_new();
 

@@ -95,6 +95,9 @@ class AppDelegate: NSObject,
     /// makes our logic very easy.
     private var isVisible: Bool = true
 
+    /// The observer for the app appearance.
+    private var appearanceObserver: NSKeyValueObservation? = nil
+
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
@@ -187,6 +190,23 @@ class AppDelegate: NSObject,
             )
         ])
         center.delegate = self
+
+        // Observe our appearance so we can report the correct value to libghostty.
+        self.appearanceObserver = NSApplication.shared.observe(
+            \.effectiveAppearance,
+             options: [.new, .initial]
+        ) { _, change in
+            guard let appearance = change.newValue else { return }
+            guard let app = self.ghostty.app else { return }
+            let scheme: ghostty_color_scheme_e
+            if (appearance.isDark) {
+                scheme = GHOSTTY_COLOR_SCHEME_DARK
+            } else {
+                scheme = GHOSTTY_COLOR_SCHEME_LIGHT
+            }
+
+            ghostty_app_set_color_scheme(app, scheme)
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
