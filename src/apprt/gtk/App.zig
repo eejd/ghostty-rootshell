@@ -489,7 +489,6 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        .config_change,
         => log.warn("unimplemented action={}", .{action}),
     }
 }
@@ -834,7 +833,7 @@ fn configChange(self: *App, new_config: *const Config) void {
     }
 }
 
-fn reloadConfig(
+pub fn reloadConfig(
     self: *App,
     target: apprt.action.Target,
     opts: apprt.action.ReloadConfig,
@@ -1430,7 +1429,7 @@ fn gtkActionReloadConfig(
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
     self.reloadConfig(.app, .{}) catch |err| {
-        log.err("error reloading configuration: {s}", .{err});
+        log.err("error reloading configuration: {}", .{err});
     };
 }
 
