@@ -1553,6 +1553,11 @@ keybind: Keybinds = .{},
 ///
 /// The proxy icon is only visible with the native macOS titlebar style.
 ///
+/// Valid values are:
+/// 
+///   * `visible` - Show the proxy icon.
+///   * `hidden` - Hide the proxy icon.
+/// 
 /// The default value is `visible`.
 ///
 /// This setting can be changed at runtime and will affect all currently
