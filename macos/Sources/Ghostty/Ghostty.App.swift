@@ -154,7 +154,7 @@ extension Ghostty {
             // Hard or full updates have to reload the full configuration
             let newConfig = Config()
             guard newConfig.loaded else {
-                AppDelegate.logger.warning("failed to reload configuration")
+                Ghostty.logger.warning("failed to reload configuration")
                 return
             }
 
@@ -177,7 +177,7 @@ extension Ghostty {
             // config. We free it after the call.
             let newConfig = Config()
             guard newConfig.loaded else {
-                AppDelegate.logger.warning("failed to reload configuration")
+                Ghostty.logger.warning("failed to reload configuration")
                 return
             }
 
