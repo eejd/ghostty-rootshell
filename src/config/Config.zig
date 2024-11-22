@@ -2744,13 +2744,9 @@ fn loadTheme(self: *Config, theme: Theme) !void {
 /// Call this once after you are done setting configuration. This
 /// is idempotent but will waste memory if called multiple times.
 pub fn finalize(self: *Config) !void {
-    const alloc = self._arena.?.allocator();
-
     // We always load the theme first because it may set other fields
     // in our config.
     if (self.theme) |theme| {
-        try self.loadTheme(theme);
-
         // If we have different light vs dark mode themes, disable
         // window-theme = auto since that breaks it.
         if (!std.mem.eql(u8, theme.light, theme.dark)) {
@@ -2758,7 +2754,13 @@ pub fn finalize(self: *Config) !void {
             // because it'll force the theme based on the Ghostty theme.
             if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
         }
+
+        // Warning: loadTheme will deinit our existing config and replace
+        // it so all memory from self prior to this point will be freed.
+        try self.loadTheme(theme);
     }
+
+    const alloc = self._arena.?.allocator();
 
     // If we have a font-family set and don't set the others, default
     // the others to the font family. This way, if someone does
