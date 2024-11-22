@@ -47,11 +47,6 @@ pub const App = struct {
         /// Callback called to handle an action.
         action: *const fn (*App, apprt.Target.C, apprt.Action.C) callconv(.C) void,
 
-        /// Reload the configuration and return the new configuration.
-        /// The old configuration can be freed immediately when this is
-        /// called.
-        reload_config: *const fn (AppUD) callconv(.C) ?*const Config,
-
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
         /// value then this should return null.
@@ -375,16 +370,6 @@ pub const App = struct {
         }
     }
 
-    pub fn reloadConfig(self: *App) !?*const Config {
-        // Reload
-        if (self.opts.reload_config(self.opts.userdata)) |new| {
-            self.config = new;
-            return self.config;
-        }
-
-        return null;
-    }
-
     pub fn wakeup(self: App) void {
         self.opts.wakeup(self.opts.userdata);
     }
@@ -462,30 +447,6 @@ pub const App = struct {
                     const alloc = self.core_app.alloc;
                     if (surface.rt_surface.title) |v| alloc.free(v);
                     surface.rt_surface.title = alloc.dupeZ(u8, value.title) catch null;
-                },
-            },
-
-            .config_change_conditional_state => switch (target) {
-                .app => {},
-                .surface => |surface| action: {
-                    // Build our new configuration. We can free the memory
-                    // immediately after because the surface will derive any
-                    // values it needs to.
-                    var new_config = self.config.changeConditionalState(
-                        surface.config_conditional_state,
-                    ) catch |err| {
-                        // Not a big deal if we error... we just don't update
-                        // the config. We log the error and move on.
-                        log.warn("error changing config conditional state err={}", .{err});
-                        break :action;
-                    };
-                    defer new_config.deinit();
-
-                    // Update our surface.
-                    surface.updateConfig(&new_config) catch |err| {
-                        log.warn("error updating surface config for state change err={}", .{err});
-                        break :action;
-                    };
                 },
             },
 
@@ -1374,10 +1335,14 @@ pub const CAPI = struct {
         };
     }
 
-    /// Reload the configuration.
-    export fn ghostty_app_reload_config(v: *App) void {
-        _ = v.core_app.reloadConfig(v) catch |err| {
-            log.err("error reloading config err={}", .{err});
+    /// Update the configuration to the provided config. This will propagate
+    /// to all surfaces as well.
+    export fn ghostty_app_update_config(
+        v: *App,
+        config: *const Config,
+    ) void {
+        v.core_app.updateConfig(v, config) catch |err| {
+            log.err("error updating config err={}", .{err});
             return;
         };
     }
@@ -1432,6 +1397,17 @@ pub const CAPI = struct {
     /// Returns the config to use for surfaces that inherit from this one.
     export fn ghostty_surface_inherited_config(surface: *Surface) Surface.Options {
         return surface.newSurfaceOptions();
+    }
+
+    /// Update the configuration to the provided config for only this surface.
+    export fn ghostty_surface_update_config(
+        surface: *Surface,
+        config: *const Config,
+    ) void {
+        surface.core_surface.updateConfig(config) catch |err| {
+            log.err("error updating config err={}", .{err});
+            return;
+        };
     }
 
     /// Returns true if the surface needs to confirm quitting.

@@ -200,6 +200,8 @@ pub const App = struct {
                 }),
             },
 
+            .reload_config => try self.reloadConfig(target, value),
+
             // Unimplemented
             .new_split,
             .goto_split,
@@ -225,7 +227,6 @@ pub const App = struct {
             .renderer_health,
             .color_change,
             .pwd,
-            .config_change_conditional_state,
             .config_change,
             => log.info("unimplemented action={}", .{action}),
         }
@@ -236,16 +237,34 @@ pub const App = struct {
     /// successful return.
     ///
     /// The returned pointer value is only valid for a stable self pointer.
-    pub fn reloadConfig(self: *App) !?*const Config {
+    fn reloadConfig(
+        self: *App,
+        target: apprt.action.Target,
+        opts: apprt.action.ReloadConfig,
+    ) !void {
+        if (opts.soft) {
+            switch (target) {
+                .app => try self.app.updateConfig(self, &self.config),
+                .surface => |core_surface| try core_surface.updateConfig(
+                    &self.config,
+                ),
+            }
+            return;
+        }
+
         // Load our configuration
         var config = try Config.load(self.app.alloc);
         errdefer config.deinit();
 
+        // Call into our app to update
+        switch (target) {
+            .app => try self.app.updateConfig(self, &config),
+            .surface => |core_surface| try core_surface.updateConfig(&config),
+        }
+
         // Update the existing config, be sure to clean up the old one.
         self.config.deinit();
         self.config = config;
-
-        return &self.config;
     }
 
     /// Toggle the window to fullscreen mode.

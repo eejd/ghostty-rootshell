@@ -1554,10 +1554,10 @@ keybind: Keybinds = .{},
 /// The proxy icon is only visible with the native macOS titlebar style.
 ///
 /// Valid values are:
-/// 
+///
 ///   * `visible` - Show the proxy icon.
 ///   * `hidden` - Hide the proxy icon.
-/// 
+///
 /// The default value is `visible`.
 ///
 /// This setting can be changed at runtime and will affect all currently
@@ -2752,17 +2752,19 @@ pub fn finalize(self: *Config) !void {
     // We always load the theme first because it may set other fields
     // in our config.
     if (self.theme) |theme| {
-        // If we have different light vs dark mode themes, disable
-        // window-theme = auto since that breaks it.
-        if (!std.mem.eql(u8, theme.light, theme.dark)) {
-            // This setting doesn't make sense with different light/dark themes
-            // because it'll force the theme based on the Ghostty theme.
-            if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
-        }
+        const different = !std.mem.eql(u8, theme.light, theme.dark);
 
         // Warning: loadTheme will deinit our existing config and replace
         // it so all memory from self prior to this point will be freed.
         try self.loadTheme(theme);
+
+        // If we have different light vs dark mode themes, disable
+        // window-theme = auto since that breaks it.
+        if (different) {
+            // This setting doesn't make sense with different light/dark themes
+            // because it'll force the theme based on the Ghostty theme.
+            if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
+        }
     }
 
     const alloc = self._arena.?.allocator();
@@ -5378,5 +5380,23 @@ test "theme loading correct light/dark" {
             .g = 0xEE,
             .b = 0xEE,
         }, new.background);
+    }
+}
+
+test "theme specifying light/dark changes window-theme from auto" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--theme=light:foo,dark:bar",
+            "--window-theme=auto",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expect(cfg.@"window-theme" == .system);
     }
 }

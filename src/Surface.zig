@@ -1065,8 +1065,8 @@ fn updateRendererHealth(self: *Surface, health: renderer.Health) void {
 fn notifyConfigConditionalState(self: *Surface) void {
     self.rt_app.performAction(
         .{ .surface = self },
-        .config_change_conditional_state,
-        {},
+        .reload_config,
+        .{ .soft = true },
     ) catch |err| {
         log.warn("failed to notify app of config state change err={}", .{err});
     };
@@ -1077,8 +1077,22 @@ fn notifyConfigConditionalState(self: *Surface) void {
 /// or other surfaces.
 pub fn updateConfig(
     self: *Surface,
-    config: *const configpkg.Config,
+    original: *const configpkg.Config,
 ) !void {
+    // Apply our conditional state. If we fail to apply the conditional state
+    // then we log and attempt to move forward with the old config.
+    var config_: ?configpkg.Config = original.changeConditionalState(
+        self.config_conditional_state,
+    ) catch |err| err: {
+        log.warn("failed to apply conditional state to config err={}", .{err});
+        break :err null;
+    };
+    defer if (config_) |*c| c.deinit();
+
+    // We want a config pointer for everything so we get that either
+    // based on our conditional state or the original config.
+    const config: *const configpkg.Config = if (config_) |*c| c else original;
+
     // Update our new derived config immediately
     const derived = DerivedConfig.init(self.alloc, config) catch |err| {
         // If the derivation fails then we just log and return. We don't

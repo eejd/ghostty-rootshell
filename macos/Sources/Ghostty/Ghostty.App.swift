@@ -65,7 +65,6 @@ extension Ghostty {
                 supports_selection_clipboard: false,
                 wakeup_cb: { userdata in App.wakeup(userdata) },
                 action_cb: { app, target, action in App.action(app!, target: target, action: action) },
-                reload_config_cb: { userdata in App.reloadConfig(userdata) },
                 read_clipboard_cb: { userdata, loc, state in App.readClipboard(userdata, location: loc, state: state) },
                 confirm_read_clipboard_cb: { userdata, str, state, request in App.confirmReadClipboard(userdata, string: str, state: state, request: request ) },
                 write_clipboard_cb: { userdata, str, loc, confirm in App.writeClipboard(userdata, string: str, location: loc, confirm: confirm) },
@@ -142,9 +141,47 @@ extension Ghostty {
             ghostty_app_open_config(app)
         }
 
-        func reloadConfig() {
+        /// Reload the configuration.
+        func reloadConfig(soft: Bool = false) {
             guard let app = self.app else { return }
-            ghostty_app_reload_config(app)
+
+            // Soft updates just call with our existing config
+            if (soft) {
+                ghostty_app_update_config(app, config.config!)
+                return
+            }
+
+            // Hard or full updates have to reload the full configuration
+            let newConfig = Config()
+            guard newConfig.loaded else {
+                Ghostty.logger.warning("failed to reload configuration")
+                return
+            }
+
+            ghostty_app_update_config(app, newConfig.config!)
+
+            // We can only set our config after updating it so that we don't free
+            // memory that may still be in use
+            self.config = newConfig
+        }
+
+        func reloadConfig(surface: ghostty_surface_t, soft: Bool = false) {
+            // Soft updates just call with our existing config
+            if (soft) {
+                ghostty_surface_update_config(surface, config.config!)
+                return
+            }
+
+            // Hard or full updates have to reload the full configuration.
+            // NOTE: We never set this on self.config because this is a surface-only
+            // config. We free it after the call.
+            let newConfig = Config()
+            guard newConfig.loaded else {
+                Ghostty.logger.warning("failed to reload configuration")
+                return
+            }
+
+            ghostty_surface_update_config(surface, newConfig.config!)
         }
 
         /// Request that the given surface is closed. This will trigger the full normal surface close event
@@ -237,7 +274,6 @@ extension Ghostty {
 
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {}
         static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) {}
-        static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? { return nil }
         static func readClipboard(
             _ userdata: UnsafeMutableRawPointer?,
             location: ghostty_clipboard_e,
@@ -363,21 +399,6 @@ extension Ghostty {
                     Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
                 ]
             )
-        }
-
-        static func reloadConfig(_ userdata: UnsafeMutableRawPointer?) -> ghostty_config_t? {
-            let newConfig = Config()
-            guard newConfig.loaded else {
-                AppDelegate.logger.warning("failed to reload configuration")
-                return nil
-            }
-
-            // Assign the new config. This will automatically free the old config.
-            // It is safe to free the old config from within this function call.
-            let state = Unmanaged<Self>.fromOpaque(userdata!).takeUnretainedValue()
-            state.config = newConfig
-
-            return newConfig.config
         }
 
         static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
@@ -513,6 +534,9 @@ extension Ghostty {
 
             case GHOSTTY_ACTION_CONFIG_CHANGE:
                 configChange(app, target: target, v: action.action.config_change)
+
+            case GHOSTTY_ACTION_RELOAD_CONFIG:
+                configReload(app, target: target, v: action.action.reload_config)
 
             case GHOSTTY_ACTION_COLOR_CHANGE:
                 colorChange(app, target: target, change: action.action.color_change)
@@ -1144,6 +1168,30 @@ extension Ghostty {
                         object: surfaceView
                     )
                 }
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func configReload(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_reload_config_s)
+        {
+            logger.info("config reload notification")
+
+            guard let app_ud = ghostty_app_userdata(app) else { return }
+            let ghostty = Unmanaged<App>.fromOpaque(app_ud).takeUnretainedValue()
+
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                ghostty.reloadConfig(soft: v.soft)
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                ghostty.reloadConfig(surface: surface, soft: v.soft)
 
             default:
                 assertionFailure()

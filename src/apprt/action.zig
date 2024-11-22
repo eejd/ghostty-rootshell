@@ -194,12 +194,14 @@ pub const Action = union(Key) {
     /// such as OSC 10/11.
     color_change: ColorChange,
 
-    /// The state of conditionals in the configuration has changed, so
-    /// the configuration should be reloaded. The apprt doesn't need
-    /// to do a full physical reload; it should call the
-    /// `changeConditionalState` function and then `updateConfig`
-    /// on the app or surface.
-    config_change_conditional_state,
+    /// A request to reload the configuration. The reload request can be
+    /// from a user or for some internal reason. The reload request may
+    /// request it is a soft reload or a full reload. See the struct for
+    /// more documentation.
+    ///
+    /// The configuration should be passed to updateConfig either at the
+    /// app or surface level depending on the target.
+    reload_config: ReloadConfig,
 
     /// The configuration has changed. The value is a pointer to the new
     /// configuration. The pointer is only valid for the duration of the
@@ -250,7 +252,7 @@ pub const Action = union(Key) {
         secure_input,
         key_sequence,
         color_change,
-        config_change_conditional_state,
+        reload_config,
         config_change,
     };
 
@@ -512,6 +514,13 @@ pub const ColorKind = enum(c_int) {
 
     // 0+ values indicate a palette index
     _,
+};
+
+pub const ReloadConfig = extern struct {
+    /// A soft reload means that the configuration doesn't need to be
+    /// read off disk, but libghostty needs the full config again so call
+    /// updateConfig with it.
+    soft: bool = false,
 };
 
 pub const ConfigChange = struct {

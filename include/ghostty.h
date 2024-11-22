@@ -537,6 +537,11 @@ typedef struct {
   ghostty_config_t config;
 } ghostty_action_config_change_s;
 
+// apprt.action.ReloadConfig
+typedef struct {
+  bool soft;
+} ghostty_action_reload_config_s;
+
 // apprt.Action.Key
 typedef enum {
   GHOSTTY_ACTION_NEW_WINDOW,
@@ -572,7 +577,7 @@ typedef enum {
   GHOSTTY_ACTION_SECURE_INPUT,
   GHOSTTY_ACTION_KEY_SEQUENCE,
   GHOSTTY_ACTION_COLOR_CHANGE,
-  GHOSTTY_ACTION_CONFIG_CHANGE_CONDITIONAL_STATE,
+  GHOSTTY_ACTION_RELOAD_CONFIG,
   GHOSTTY_ACTION_CONFIG_CHANGE,
 } ghostty_action_tag_e;
 
@@ -598,6 +603,7 @@ typedef union {
   ghostty_action_secure_input_e secure_input;
   ghostty_action_key_sequence_s key_sequence;
   ghostty_action_color_change_s color_change;
+  ghostty_action_reload_config_s reload_config;
   ghostty_action_config_change_s config_change;
 } ghostty_action_u;
 
@@ -607,7 +613,6 @@ typedef struct {
 } ghostty_action_s;
 
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
-typedef const ghostty_config_t (*ghostty_runtime_reload_config_cb)(void*);
 typedef void (*ghostty_runtime_read_clipboard_cb)(void*,
                                                   ghostty_clipboard_e,
                                                   void*);
@@ -630,7 +635,6 @@ typedef struct {
   bool supports_selection_clipboard;
   ghostty_runtime_wakeup_cb wakeup_cb;
   ghostty_runtime_action_cb action_cb;
-  ghostty_runtime_reload_config_cb reload_config_cb;
   ghostty_runtime_read_clipboard_cb read_clipboard_cb;
   ghostty_runtime_confirm_read_clipboard_cb confirm_read_clipboard_cb;
   ghostty_runtime_write_clipboard_cb write_clipboard_cb;
@@ -668,7 +672,7 @@ void ghostty_app_set_focus(ghostty_app_t, bool);
 bool ghostty_app_key(ghostty_app_t, ghostty_input_key_s);
 void ghostty_app_keyboard_changed(ghostty_app_t);
 void ghostty_app_open_config(ghostty_app_t);
-void ghostty_app_reload_config(ghostty_app_t);
+void ghostty_app_update_config(ghostty_app_t, ghostty_config_t);
 bool ghostty_app_needs_confirm_quit(ghostty_app_t);
 bool ghostty_app_has_global_keybinds(ghostty_app_t);
 
@@ -679,6 +683,7 @@ void ghostty_surface_free(ghostty_surface_t);
 void* ghostty_surface_userdata(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 ghostty_surface_config_s ghostty_surface_inherited_config(ghostty_surface_t);
+void ghostty_surface_update_config(ghostty_surface_t, ghostty_config_t);
 bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 void ghostty_surface_refresh(ghostty_surface_t);
 void ghostty_surface_draw(ghostty_surface_t);
