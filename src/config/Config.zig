@@ -2981,31 +2981,25 @@ pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
     return result;
 }
 
-/// Create a copy of this configuration. This is useful as a starting
-/// point for modifying a configuration since a config can NOT be
-/// modified once it is in use by an app or surface.
+/// Create a copy of this configuration.
+///
+/// This will not re-read referenced configuration files except for the
+/// theme, but the config-file values will be preserved.
 pub fn clone(
     self: *const Config,
     alloc_gpa: Allocator,
-) Allocator.Error!Config {
-    // Start with an empty config with a new arena we're going
-    // to use for all our copies.
-    var result: Config = .{
-        ._arena = ArenaAllocator.init(alloc_gpa),
-    };
-    errdefer result.deinit();
-    const alloc = result._arena.?.allocator();
+) !Config {
+    // Create a new config with a new arena
+    var new_config = try default(alloc_gpa);
+    errdefer new_config.deinit();
+    new_config._conditional_state = self._conditional_state;
 
-    inline for (@typeInfo(Config).Struct.fields) |field| {
-        if (!@hasField(Key, field.name)) continue;
-        @field(result, field.name) = try cloneValue(
-            alloc,
-            field.type,
-            @field(self, field.name),
-        );
-    }
+    // Replay all of our steps to rebuild the configuration
+    var it = Replay.iterator(self._replay_steps.items, &new_config);
+    try new_config.loadIter(alloc_gpa, &it);
+    try new_config.finalize();
 
-    return result;
+    return new_config;
 }
 
 fn cloneValue(
