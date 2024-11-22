@@ -450,30 +450,6 @@ pub const App = struct {
                 },
             },
 
-            .config_change_conditional_state => switch (target) {
-                .app => {},
-                .surface => |surface| action: {
-                    // Build our new configuration. We can free the memory
-                    // immediately after because the surface will derive any
-                    // values it needs to.
-                    var new_config = self.config.changeConditionalState(
-                        surface.config_conditional_state,
-                    ) catch |err| {
-                        // Not a big deal if we error... we just don't update
-                        // the config. We log the error and move on.
-                        log.warn("error changing config conditional state err={}", .{err});
-                        break :action;
-                    };
-                    defer new_config.deinit();
-
-                    // Update our surface.
-                    surface.updateConfig(&new_config) catch |err| {
-                        log.warn("error updating surface config for state change err={}", .{err});
-                        break :action;
-                    };
-                },
-            },
-
             else => {},
         }
     }

@@ -490,7 +490,6 @@ pub fn performAction(
         .renderer_health,
         .color_change,
         .config_change,
-        .config_change_conditional_state,
         => log.warn("unimplemented action={}", .{action}),
     }
 }
