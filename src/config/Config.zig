@@ -2505,7 +2505,8 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         if (replay_len_end == replay_len_start) break :reload;
         log.info("config-default-files unset, discarding configuration from default files", .{});
 
-        var new_config = try default(alloc_gpa);
+        var new_config = try self.cloneEmpty(alloc_gpa);
+        errdefer new_config.deinit();
         var it = Replay.iterator(
             self._replay_steps.items[replay_len_start..replay_len_end],
             &new_config,
@@ -2620,7 +2621,7 @@ pub fn changeConditionalState(
 ) !Config {
     // Create our new configuration
     const alloc_gpa = self._arena.?.child_allocator;
-    var new_config = try default(alloc_gpa);
+    var new_config = try self.cloneEmpty(alloc_gpa);
     errdefer new_config.deinit();
 
     // Set our conditional state so the replay below can use it
@@ -2691,7 +2692,7 @@ fn loadTheme(self: *Config, theme: Theme) !void {
 
     // Load into a new configuration so that we can free the existing memory.
     const alloc_gpa = self._arena.?.child_allocator;
-    var new_config = try default(alloc_gpa);
+    var new_config = try self.cloneEmpty(alloc_gpa);
     errdefer new_config.deinit();
 
     // Load our theme
@@ -2981,6 +2982,17 @@ pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
     return result;
 }
 
+/// Create a copy of the metadata of this configuration but without
+/// the actual values. Metadata includes conditional state.
+pub fn cloneEmpty(
+    self: *const Config,
+    alloc_gpa: Allocator,
+) Allocator.Error!Config {
+    var result = try default(alloc_gpa);
+    result._conditional_state = self._conditional_state;
+    return result;
+}
+
 /// Create a copy of this configuration.
 ///
 /// This will not re-read referenced configuration files except for the
@@ -2990,9 +3002,8 @@ pub fn clone(
     alloc_gpa: Allocator,
 ) !Config {
     // Create a new config with a new arena
-    var new_config = try default(alloc_gpa);
+    var new_config = try self.cloneEmpty(alloc_gpa);
     errdefer new_config.deinit();
-    new_config._conditional_state = self._conditional_state;
 
     // Replay all of our steps to rebuild the configuration
     var it = Replay.iterator(self._replay_steps.items, &new_config);
@@ -5204,6 +5215,26 @@ test "clone default" {
     // try testing.expectEqualDeep(dest, source);
 }
 
+test "clone preserves conditional state" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var a = try Config.default(alloc);
+    defer a.deinit();
+    var b = try a.changeConditionalState(.{ .theme = .dark });
+    defer b.deinit();
+    try testing.expectEqual(.dark, b._conditional_state.theme);
+    var dest = try b.clone(alloc);
+    defer dest.deinit();
+
+    // Should have no changes
+    var it = b.changeIterator(&dest);
+    try testing.expectEqual(@as(?Key, null), it.next());
+
+    // Should have the same conditional state
+    try testing.expectEqual(.dark, dest._conditional_state.theme);
+}
+
 test "changed" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -5249,6 +5280,36 @@ test "theme loading" {
         .g = 0x3A,
         .b = 0xBC,
     }, cfg.background);
+}
+
+test "theme loading preserves conditional state" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const alloc_arena = arena.allocator();
+
+    // Setup our test theme
+    var td = try internal_os.TempDir.init();
+    defer td.deinit();
+    {
+        var file = try td.dir.createFile("theme", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_simple"));
+    }
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try td.dir.realpath("theme", &path_buf);
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    cfg._conditional_state = .{ .theme = .dark };
+    var it: TestIterator = .{ .data = &.{
+        try std.fmt.allocPrint(alloc_arena, "--theme={s}", .{path}),
+    } };
+    try cfg.loadIter(alloc, &it);
+    try cfg.finalize();
+
+    try testing.expect(cfg._conditional_state.theme == .dark);
 }
 
 test "theme priority is lower than config" {
