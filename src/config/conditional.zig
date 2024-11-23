@@ -61,6 +61,17 @@ pub const Conditional = struct {
     value: []const u8,
 
     pub const Op = enum { eq, ne };
+
+    pub fn clone(
+        self: Conditional,
+        alloc: Allocator,
+    ) Allocator.Error!Conditional {
+        return .{
+            .key = self.key,
+            .op = self.op,
+            .value = try alloc.dupe(u8, self.value),
+        };
+    }
 };
 
 test "conditional enum match" {

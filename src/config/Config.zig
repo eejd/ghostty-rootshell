@@ -2995,22 +2995,41 @@ pub fn cloneEmpty(
 
 /// Create a copy of this configuration.
 ///
-/// This will not re-read referenced configuration files except for the
-/// theme, but the config-file values will be preserved.
+/// This will not re-read referenced configuration files and operates
+/// purely in-memory.
 pub fn clone(
     self: *const Config,
     alloc_gpa: Allocator,
-) !Config {
-    // Create a new config with a new arena
-    var new_config = try self.cloneEmpty(alloc_gpa);
-    errdefer new_config.deinit();
+) Allocator.Error!Config {
+    // Start with an empty config
+    var result = try self.cloneEmpty(alloc_gpa);
+    errdefer result.deinit();
+    const alloc_arena = result._arena.?.allocator();
 
-    // Replay all of our steps to rebuild the configuration
-    var it = Replay.iterator(self._replay_steps.items, &new_config);
-    try new_config.loadIter(alloc_gpa, &it);
-    try new_config.finalize();
+    // Copy our values
+    inline for (@typeInfo(Config).Struct.fields) |field| {
+        if (!@hasField(Key, field.name)) continue;
+        @field(result, field.name) = try cloneValue(
+            alloc_arena,
+            field.type,
+            @field(self, field.name),
+        );
+    }
 
-    return new_config;
+    // Preserve our replay steps. We copy them exactly to also preserve
+    // the exact conditionals required for some steps.
+    try result._replay_steps.ensureTotalCapacity(
+        alloc_arena,
+        self._replay_steps.items.len,
+    );
+    for (self._replay_steps.items) |item| {
+        result._replay_steps.appendAssumeCapacity(
+            try item.clone(alloc_arena),
+        );
+    }
+    assert(result._replay_steps.items.len == self._replay_steps.items.len);
+
+    return result;
 }
 
 fn cloneValue(
@@ -3204,6 +3223,24 @@ const Replay = struct {
             conditions: []const Conditional,
             arg: []const u8,
         },
+
+        fn clone(
+            self: Step,
+            alloc: Allocator,
+        ) Allocator.Error!Step {
+            return switch (self) {
+                .arg => |v| .{ .arg = try alloc.dupe(u8, v) },
+                .expand => |v| .{ .expand = try alloc.dupe(u8, v) },
+                .conditional_arg => |v| conditional: {
+                    var conds = try alloc.alloc(Conditional, v.conditions.len);
+                    for (v.conditions, 0..) |cond, i| conds[i] = try cond.clone(alloc);
+                    break :conditional .{ .conditional_arg = .{
+                        .conditions = conds,
+                        .arg = try alloc.dupe(u8, v.arg),
+                    } };
+                },
+            };
+        }
     };
 
     const Iterator = struct {
@@ -5233,6 +5270,75 @@ test "clone preserves conditional state" {
 
     // Should have the same conditional state
     try testing.expectEqual(.dark, dest._conditional_state.theme);
+}
+
+test "clone can then change conditional state" {
+    // This tests a particular bug sequence where:
+    //   1. Load light
+    //   2. Convert to dark
+    //   3. Clone dark
+    //   4. Convert to light
+    //   5. Config is still dark (bug)
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var arena = ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const alloc_arena = arena.allocator();
+
+    // Setup our test theme
+    var td = try internal_os.TempDir.init();
+    defer td.deinit();
+    {
+        var file = try td.dir.createFile("theme_light", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_light"));
+    }
+    {
+        var file = try td.dir.createFile("theme_dark", .{});
+        defer file.close();
+        try file.writer().writeAll(@embedFile("testdata/theme_dark"));
+    }
+    var light_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const light = try td.dir.realpath("theme_light", &light_buf);
+    var dark_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dark = try td.dir.realpath("theme_dark", &dark_buf);
+
+    var cfg_light = try Config.default(alloc);
+    defer cfg_light.deinit();
+    var it: TestIterator = .{ .data = &.{
+        try std.fmt.allocPrint(
+            alloc_arena,
+            "--theme=light:{s},dark:{s}",
+            .{ light, dark },
+        ),
+    } };
+    try cfg_light.loadIter(alloc, &it);
+    try cfg_light.finalize();
+
+    var cfg_dark = try cfg_light.changeConditionalState(.{ .theme = .dark });
+    defer cfg_dark.deinit();
+
+    try testing.expectEqual(Color{
+        .r = 0xEE,
+        .g = 0xEE,
+        .b = 0xEE,
+    }, cfg_dark.background);
+
+    var cfg_clone = try cfg_dark.clone(alloc);
+    defer cfg_clone.deinit();
+    try testing.expectEqual(Color{
+        .r = 0xEE,
+        .g = 0xEE,
+        .b = 0xEE,
+    }, cfg_clone.background);
+
+    var cfg_light2 = try cfg_clone.changeConditionalState(.{ .theme = .light });
+    defer cfg_light2.deinit();
+    try testing.expectEqual(Color{
+        .r = 0xFF,
+        .g = 0xFF,
+        .b = 0xFF,
+    }, cfg_light2.background);
 }
 
 test "changed" {
