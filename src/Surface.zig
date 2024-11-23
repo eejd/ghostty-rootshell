@@ -376,7 +376,13 @@ pub fn init(
 
     // We want a config pointer for everything so we get that either
     // based on our conditional state or the original config.
-    const config: *const configpkg.Config = if (config_) |*c| c else config_original;
+    const config: *const configpkg.Config = if (config_) |*c| config: {
+        // We want to preserve our original working directory. We
+        // don't need to dupe memory here because termio will derive
+        // it. We preserve this so directory inheritance works.
+        c.@"working-directory" = config_original.@"working-directory";
+        break :config c;
+    } else config_original;
 
     // Get our configuration
     var derived_config = try DerivedConfig.init(alloc, config);
