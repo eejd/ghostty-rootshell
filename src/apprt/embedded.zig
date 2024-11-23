@@ -85,26 +85,38 @@ pub const App = struct {
     };
 
     core_app: *CoreApp,
-    config: *const Config,
     opts: Options,
     keymap: input.Keymap,
+
+    /// The configuration for the app. This is owned by this structure.
+    config: Config,
 
     /// The keymap state is used for global keybinds only. Each surface
     /// also has its own keymap state for focused keybinds.
     keymap_state: input.Keymap.State,
 
-    pub fn init(core_app: *CoreApp, config: *const Config, opts: Options) !App {
+    pub fn init(
+        core_app: *CoreApp,
+        config: *const Config,
+        opts: Options,
+    ) !App {
+        // We have to clone the config.
+        const alloc = core_app.alloc;
+        var config_clone = try config.clone(alloc);
+        errdefer config_clone.deinit();
+
         return .{
             .core_app = core_app,
-            .config = config,
+            .config = config_clone,
             .opts = opts,
             .keymap = try input.Keymap.init(),
             .keymap_state = .{},
         };
     }
 
-    pub fn terminate(self: App) void {
+    pub fn terminate(self: *App) void {
         self.keymap.deinit();
+        self.config.deinit();
     }
 
     /// Returns true if there are any global keybinds in the configuration.
@@ -370,11 +382,11 @@ pub const App = struct {
         }
     }
 
-    pub fn wakeup(self: App) void {
+    pub fn wakeup(self: *const App) void {
         self.opts.wakeup(self.opts.userdata);
     }
 
-    pub fn wait(self: App) !void {
+    pub fn wait(self: *const App) !void {
         _ = self;
     }
 
@@ -447,6 +459,19 @@ pub const App = struct {
                     const alloc = self.core_app.alloc;
                     if (surface.rt_surface.title) |v| alloc.free(v);
                     surface.rt_surface.title = alloc.dupeZ(u8, value.title) catch null;
+                },
+            },
+
+            .config_change => switch (target) {
+                .surface => {},
+
+                // For app updates, we update our core config. We need to
+                // clone it because the caller owns the param.
+                .app => if (value.config.clone(self.core_app.alloc)) |config| {
+                    self.config.deinit();
+                    self.config = config;
+                } else |err| {
+                    log.err("error updating app config err={}", .{err});
                 },
             },
 
@@ -573,7 +598,7 @@ pub const Surface = struct {
         errdefer app.core_app.deleteSurface(self);
 
         // Shallow copy the config so that we can modify it.
-        var config = try apprt.surface.newConfig(app.core_app, app.config);
+        var config = try apprt.surface.newConfig(app.core_app, &app.config);
         defer config.deinit();
 
         // If we have a working directory from the options then we set it.
@@ -1831,7 +1856,7 @@ pub const CAPI = struct {
         // This is only supported on macOS
         if (comptime builtin.target.os.tag != .macos) return;
 
-        const config = app.config;
+        const config = &app.config;
 
         // Do nothing if we don't have background transparency enabled
         if (config.@"background-opacity" >= 1.0) return;
