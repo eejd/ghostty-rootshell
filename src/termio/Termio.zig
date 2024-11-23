@@ -200,9 +200,9 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
             .default_cursor_style = opts.config.cursor_style,
             .default_cursor_blink = opts.config.cursor_blink,
             .default_cursor_color = default_cursor_color,
-            .cursor_color = default_cursor_color,
-            .foreground_color = opts.config.foreground.toTerminalRGB(),
-            .background_color = opts.config.background.toTerminalRGB(),
+            .cursor_color = null,
+            .foreground_color = null,
+            .background_color = null,
         };
     };
 
