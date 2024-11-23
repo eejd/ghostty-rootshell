@@ -126,6 +126,9 @@ pub const StreamHandler = struct {
         if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
             log.warn("failed to set default cursor style: {}", .{err});
         };
+
+        // The config could have changed any of our colors so update mode 2031
+        self.surfaceMessageWriter(.{ .report_color_scheme = false });
     }
 
     inline fn surfaceMessageWriter(
@@ -767,7 +770,7 @@ pub const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
-            .color_scheme => self.surfaceMessageWriter(.{ .report_color_scheme = {} }),
+            .color_scheme => self.surfaceMessageWriter(.{ .report_color_scheme = true }),
         }
     }
 
@@ -892,6 +895,9 @@ pub const StreamHandler = struct {
     ) !void {
         self.terminal.fullReset();
         try self.setMouseShape(.text);
+
+        // Reset resets our palette so we report it for mode 2031.
+        self.surfaceMessageWriter(.{ .report_color_scheme = false });
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
