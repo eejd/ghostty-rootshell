@@ -1793,6 +1793,10 @@ _diagnostics: cli.DiagnosticList = .{},
 /// determine if a conditional configuration matches or not.
 _conditional_state: conditional.State = .{},
 
+/// The conditional keys that are used at any point during the configuration
+/// loading. This is used to speed up the conditional evaluation process.
+_conditional_set: std.EnumSet(conditional.Key) = .{},
+
 /// The steps we can use to reload the configuration after it has been loaded
 /// without reopening the files. This is used in very specific cases such
 /// as loadTheme which has more details on why.
@@ -2610,6 +2614,10 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 /// on the new state. The caller must free the old configuration if they
 /// wish.
 ///
+/// This returns null if the conditional state would result in no changes
+/// to the configuration. In this case, the caller can continue to use
+/// the existing configuration or clone if they want a copy.
+///
 /// This doesn't re-read any files, it just re-applies the same
 /// configuration with the new conditional state. Importantly, this means
 /// that if you change the conditional state and the user in the interim
@@ -2618,7 +2626,30 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 pub fn changeConditionalState(
     self: *const Config,
     new: conditional.State,
-) !Config {
+) !?Config {
+    // If the conditional state between the old and new is the same,
+    // then we don't need to do anything.
+    relevant: {
+        inline for (@typeInfo(conditional.Key).Enum.fields) |field| {
+            const key: conditional.Key = @field(conditional.Key, field.name);
+
+            // Conditional set contains the keys that this config uses. So we
+            // only continue if we use this key.
+            if (self._conditional_set.contains(key) and !equalField(
+                @TypeOf(@field(self._conditional_state, field.name)),
+                @field(self._conditional_state, field.name),
+                @field(new, field.name),
+            )) {
+                break :relevant;
+            }
+        }
+
+        // If we got here, then we didn't find any differences between
+        // the old and new conditional state that would affect the
+        // configuration.
+        return null;
+    }
+
     // Create our new configuration
     const alloc_gpa = self._arena.?.child_allocator;
     var new_config = try self.cloneEmpty(alloc_gpa);
@@ -2765,6 +2796,9 @@ pub fn finalize(self: *Config) !void {
             // This setting doesn't make sense with different light/dark themes
             // because it'll force the theme based on the Ghostty theme.
             if (self.@"window-theme" == .auto) self.@"window-theme" = .system;
+
+            // Mark that we use a conditional theme
+            self._conditional_set.insert(.theme);
         }
     }
 
@@ -3028,6 +3062,9 @@ pub fn clone(
         );
     }
     assert(result._replay_steps.items.len == self._replay_steps.items.len);
+
+    // Copy the conditional set
+    result._conditional_set = self._conditional_set;
 
     return result;
 }
@@ -5258,14 +5295,13 @@ test "clone preserves conditional state" {
 
     var a = try Config.default(alloc);
     defer a.deinit();
-    var b = try a.changeConditionalState(.{ .theme = .dark });
-    defer b.deinit();
-    try testing.expectEqual(.dark, b._conditional_state.theme);
-    var dest = try b.clone(alloc);
+    a._conditional_state.theme = .dark;
+    try testing.expectEqual(.dark, a._conditional_state.theme);
+    var dest = try a.clone(alloc);
     defer dest.deinit();
 
     // Should have no changes
-    var it = b.changeIterator(&dest);
+    var it = a.changeIterator(&dest);
     try testing.expectEqual(@as(?Key, null), it.next());
 
     // Should have the same conditional state
@@ -5315,7 +5351,7 @@ test "clone can then change conditional state" {
     try cfg_light.loadIter(alloc, &it);
     try cfg_light.finalize();
 
-    var cfg_dark = try cfg_light.changeConditionalState(.{ .theme = .dark });
+    var cfg_dark = (try cfg_light.changeConditionalState(.{ .theme = .dark })).?;
     defer cfg_dark.deinit();
 
     try testing.expectEqual(Color{
@@ -5332,13 +5368,32 @@ test "clone can then change conditional state" {
         .b = 0xEE,
     }, cfg_clone.background);
 
-    var cfg_light2 = try cfg_clone.changeConditionalState(.{ .theme = .light });
+    var cfg_light2 = (try cfg_clone.changeConditionalState(.{ .theme = .light })).?;
     defer cfg_light2.deinit();
     try testing.expectEqual(Color{
         .r = 0xFF,
         .g = 0xFF,
         .b = 0xFF,
     }, cfg_light2.background);
+}
+
+test "clone preserves conditional set" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--theme=light:foo,dark:bar",
+        "--window-theme=auto",
+    } };
+    try cfg.loadIter(alloc, &it);
+    try cfg.finalize();
+
+    var clone1 = try cfg.clone(alloc);
+    defer clone1.deinit();
+
+    try testing.expect(clone1._conditional_set.contains(.theme));
 }
 
 test "changed" {
@@ -5355,6 +5410,44 @@ test "changed" {
     try testing.expect(!source.changed(&dest, .@"font-size"));
 }
 
+test "changeConditionalState ignores irrelevant changes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--theme=foo",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expect(try cfg.changeConditionalState(
+            .{ .theme = .dark },
+        ) == null);
+    }
+}
+
+test "changeConditionalState applies relevant changes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--theme=light:foo,dark:bar",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        var cfg2 = (try cfg.changeConditionalState(.{ .theme = .dark })).?;
+        defer cfg2.deinit();
+
+        try testing.expect(cfg2._conditional_set.contains(.theme));
+    }
+}
 test "theme loading" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -5386,6 +5479,9 @@ test "theme loading" {
         .g = 0x3A,
         .b = 0xBC,
     }, cfg.background);
+
+    // Not a conditional theme
+    try testing.expect(!cfg._conditional_set.contains(.theme));
 }
 
 test "theme loading preserves conditional state" {
@@ -5534,7 +5630,7 @@ test "theme loading correct light/dark" {
         try cfg.loadIter(alloc, &it);
         try cfg.finalize();
 
-        var new = try cfg.changeConditionalState(.{ .theme = .dark });
+        var new = (try cfg.changeConditionalState(.{ .theme = .dark })).?;
         defer new.deinit();
         try testing.expectEqual(Color{
             .r = 0xEE,
@@ -5559,5 +5655,24 @@ test "theme specifying light/dark changes window-theme from auto" {
         try cfg.finalize();
 
         try testing.expect(cfg.@"window-theme" == .system);
+    }
+}
+
+test "theme specifying light/dark sets theme usage in conditional state" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--theme=light:foo,dark:bar",
+            "--window-theme=auto",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expect(cfg.@"window-theme" == .system);
+        try testing.expect(cfg._conditional_set.contains(.theme));
     }
 }
