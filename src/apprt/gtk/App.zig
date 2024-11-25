@@ -462,7 +462,7 @@ pub fn performAction(
         .equalize_splits => self.equalizeSplits(target),
         .goto_split => self.gotoSplit(target, value),
         .open_config => try configpkg.edit.open(self.core_app.alloc),
-        .config_change => self.configChange(value.config),
+        .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
         .desktop_notification => self.showDesktopNotification(target, value),
@@ -818,18 +818,32 @@ fn showDesktopNotification(
     c.g_application_send_notification(g_app, n.body.ptr, notification);
 }
 
-fn configChange(self: *App, new_config: *const Config) void {
+fn configChange(
+    self: *App,
+    target: apprt.Target,
+    new_config: *const Config,
+) void {
     _ = new_config;
 
-    self.syncConfigChanges() catch |err| {
-        log.warn("error handling configuration changes err={}", .{err});
-    };
+    switch (target) {
+        // We don't do anything for surface config change events. There
+        // is nothing to sync with regards to a surface today.
+        .surface => {},
 
-    if (adwaita.enabled(&self.config)) {
-        if (self.core_app.focusedSurface()) |core_surface| {
-            const surface = core_surface.rt_surface;
-            if (surface.container.window()) |window| window.onConfigReloaded();
-        }
+        .app => {
+            self.syncConfigChanges() catch |err| {
+                log.warn("error handling configuration changes err={}", .{err});
+            };
+
+            // App changes needs to show a toast that our configuration
+            // has reloaded.
+            if (adwaita.enabled(&self.config)) {
+                if (self.core_app.focusedSurface()) |core_surface| {
+                    const surface = core_surface.rt_surface;
+                    if (surface.container.window()) |window| window.onConfigReloaded();
+                }
+            }
+        },
     }
 }
 
