@@ -62,6 +62,47 @@ pub fn appSupportDir(
     });
 }
 
+pub const SetQosClassError = error{
+    // The thread can't have its QoS class changed usually because
+    // a different pthread API was called that makes it an invalid
+    // target.
+    ThreadIncompatible,
+};
+
+/// Set the QoS class of the running thread.
+///
+/// https://developer.apple.com/documentation/apple-silicon/tuning-your-code-s-performance-for-apple-silicon?preferredLanguage=occ
+pub fn setQosClass(class: QosClass) !void {
+    return switch (std.posix.errno(pthread_set_qos_class_self_np(
+        class,
+        0,
+    ))) {
+        .SUCCESS => {},
+        .PERM => error.ThreadIncompatible,
+
+        // EPERM is the only known error that can happen based on
+        // the man pages for pthread_set_qos_class_self_np. I haven't
+        // checked the XNU source code to see if there are other
+        // possible errors.
+        else => @panic("unexpected pthread_set_qos_class_self_np error"),
+    };
+}
+
+/// https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheTaskLevel.html#//apple_ref/doc/uid/TP40013929-CH35-SW1
+pub const QosClass = enum(c_uint) {
+    user_interactive = 0x21,
+    user_initiated = 0x19,
+    default = 0x15,
+    utility = 0x11,
+    background = 0x09,
+    unspecified = 0x00,
+};
+
+extern "c" fn pthread_set_qos_class_self_np(
+    qos_class: QosClass,
+    relative_priority: c_int,
+) c_int;
+
 pub const NSOperatingSystemVersion = extern struct {
     major: i64,
     minor: i64,
