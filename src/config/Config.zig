@@ -1809,14 +1809,10 @@ pub fn deinit(self: *Config) void {
 /// Load the configuration according to the default rules:
 ///
 ///   1. Defaults
-///   2. Configuration Files
-///   3. CLI flags
-///   4. Recursively defined configuration files
-///
-/// Configuration files are loaded in the follow order:
-///
-///   1. XDG Config File
-///   2. "Application Support" Config File on macOS
+///   2. XDG config dir
+///   3. "Application Support" directory (macOS only)
+///   4. CLI flags
+///   5. Recursively defined configuration files
 ///
 pub fn load(alloc_gpa: Allocator) !Config {
     var result = try default(alloc_gpa);
@@ -2423,8 +2419,8 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     defer alloc.free(xdg_path);
     self.loadOptionalFile(alloc, xdg_path);
 
-    if (builtin.os.tag == .macos) {
-        const app_support_path = try internal_os.macos.getAppSupportDir(alloc, "config");
+    if (comptime builtin.os.tag == .macos) {
+        const app_support_path = try internal_os.macos.appSupportDir(alloc, "config");
         defer alloc.free(app_support_path);
         self.loadOptionalFile(alloc, app_support_path);
     }
