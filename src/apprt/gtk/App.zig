@@ -99,9 +99,11 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_micro_version(),
     });
 
+    // Disabling Vulkan can improve startup times by hundreds of
+    // milliseconds on some systems
     if (version.atLeast(4, 16, 0)) {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE
-        _ = internal_os.setenv("GDK_DISABLE", "gles-api");
+        _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
         _ = internal_os.setenv("GDK_DEBUG", "opengl");
     } else if (version.atLeast(4, 14, 0)) {
         // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
@@ -110,7 +112,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // reassess...
         //
         // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+        _ = internal_os.setenv("GDK_DISABLE", "vulkan");
         _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles");
+    } else {
+        _ = internal_os.setenv("GDK_DISABLE", "vulkan");
     }
 
     if (version.atLeast(4, 14, 0)) {
