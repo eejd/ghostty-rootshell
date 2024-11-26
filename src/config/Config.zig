@@ -4610,17 +4610,33 @@ pub const RepeatableLink = struct {
     }
 
     /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) error{}!Self {
-        _ = self;
-        _ = alloc;
-        return .{};
+    pub fn clone(
+        self: *const Self,
+        alloc: Allocator,
+    ) Allocator.Error!Self {
+        // Note: we don't do any errdefers below since the allocation
+        // is expected to be arena allocated.
+
+        var list = try std.ArrayListUnmanaged(inputpkg.Link).initCapacity(
+            alloc,
+            self.links.items.len,
+        );
+        for (self.links.items) |item| {
+            const copy = try item.clone(alloc);
+            list.appendAssumeCapacity(copy);
+        }
+
+        return .{ .links = list };
     }
 
     /// Compare if two of our value are requal. Required by Config.
     pub fn equal(self: Self, other: Self) bool {
-        _ = self;
-        _ = other;
-        return true;
+        const itemsA = self.links.items;
+        const itemsB = other.links.items;
+        if (itemsA.len != itemsB.len) return false;
+        for (itemsA, itemsB) |*a, *b| {
+            if (!a.equal(b)) return false;
+        } else return true;
     }
 
     /// Used by Formatter
