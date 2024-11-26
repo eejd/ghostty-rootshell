@@ -3063,6 +3063,9 @@ pub fn clone(
         );
     }
 
+    // Copy our diagnostics
+    result._diagnostics = try self._diagnostics.clone(alloc_arena);
+
     // Preserve our replay steps. We copy them exactly to also preserve
     // the exact conditionals required for some steps.
     try result._replay_steps.ensureTotalCapacity(
