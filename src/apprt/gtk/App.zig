@@ -14,6 +14,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
+const build_config = @import("../../build_config.zig");
 const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
 const input = @import("../../input.zig");
@@ -181,7 +182,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             }
         }
 
-        const default_id = "com.mitchellh.ghostty";
+        const default_id = comptime build_config.bundle_id;
         break :app_id if (builtin.mode == .Debug) default_id ++ "-debug" else default_id;
     };
 

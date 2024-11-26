@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const objc = @import("objc");
 const Allocator = std.mem.Allocator;
@@ -56,7 +57,7 @@ pub fn appSupportDir(
 
     return try std.fs.path.join(alloc, &.{
         app_support_dir,
-        "com.mitchellh.ghostty",
+        build_config.bundle_id,
         sub_path,
     });
 }
