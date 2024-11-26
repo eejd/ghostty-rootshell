@@ -1813,9 +1813,10 @@ pub fn deinit(self: *Config) void {
 /// Load the configuration according to the default rules:
 ///
 ///   1. Defaults
-///   2. XDG Config File
-///   3. CLI flags
-///   4. Recursively defined configuration files
+///   2. XDG config dir
+///   3. "Application Support" directory (macOS only)
+///   4. CLI flags
+///   5. Recursively defined configuration files
 ///
 pub fn load(alloc_gpa: Allocator) !Config {
     var result = try default(alloc_gpa);
@@ -2398,23 +2399,35 @@ pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     try self.expandPaths(std.fs.path.dirname(path).?);
 }
 
-/// Load the configuration from the default configuration file. The default
-/// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
-pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
-    const config_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
-    defer alloc.free(config_path);
-
-    self.loadFile(alloc, config_path) catch |err| switch (err) {
+/// Load optional configuration file from `path`. All errors are ignored.
+pub fn loadOptionalFile(self: *Config, alloc: Allocator, path: []const u8) void {
+    self.loadFile(alloc, path) catch |err| switch (err) {
         error.FileNotFound => std.log.info(
-            "homedir config not found, not loading path={s}",
-            .{config_path},
+            "optional config file not found, not loading path={s}",
+            .{path},
         ),
-
         else => std.log.warn(
-            "error reading config file, not loading err={} path={s}",
-            .{ err, config_path },
+            "error reading optional config file, not loading err={} path={s}",
+            .{ err, path },
         ),
     };
+}
+
+/// Load configurations from the default configuration files. The default
+/// configuration file is at `$XDG_CONFIG_HOME/ghostty/config`.
+///
+/// On macOS, `$HOME/Library/Application Support/$CFBundleIdentifier/config`
+/// is also loaded.
+pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
+    const xdg_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
+    defer alloc.free(xdg_path);
+    self.loadOptionalFile(alloc, xdg_path);
+
+    if (comptime builtin.os.tag == .macos) {
+        const app_support_path = try internal_os.macos.appSupportDir(alloc, "config");
+        defer alloc.free(app_support_path);
+        self.loadOptionalFile(alloc, app_support_path);
+    }
 }
 
 /// Load and parse the CLI args.
