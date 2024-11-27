@@ -48,7 +48,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         };
 
         /// Initialize a new circular buffer that can store size elements.
-        pub fn init(alloc: Allocator, size: usize) !Self {
+        pub fn init(alloc: Allocator, size: usize) Allocator.Error!Self {
             const buf = try alloc.alloc(T, size);
             @memset(buf, default);
 
@@ -56,7 +56,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
                 .storage = buf,
                 .head = 0,
                 .tail = 0,
-                .full = false,
+                .full = size == 0,
             };
         }
 
@@ -67,7 +67,7 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
 
         /// Append a single value to the buffer. If the buffer is full,
         /// an error will be returned.
-        pub fn append(self: *Self, v: T) !void {
+        pub fn append(self: *Self, v: T) Allocator.Error!void {
             if (self.full) return error.OutOfMemory;
             self.storage[self.head] = v;
             self.head += 1;
@@ -256,7 +256,7 @@ test {
     try testing.expectEqual(@as(usize, 0), buf.len());
 }
 
-test "append" {
+test "CircBuf append" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -273,7 +273,7 @@ test "append" {
     try testing.expectError(error.OutOfMemory, buf.append(5));
 }
 
-test "forward iterator" {
+test "CircBuf forward iterator" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -319,7 +319,7 @@ test "forward iterator" {
     }
 }
 
-test "reverse iterator" {
+test "CircBuf reverse iterator" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -365,7 +365,7 @@ test "reverse iterator" {
     }
 }
 
-test "getPtrSlice fits" {
+test "CircBuf getPtrSlice fits" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -379,7 +379,7 @@ test "getPtrSlice fits" {
     try testing.expectEqual(@as(usize, 11), buf.len());
 }
 
-test "getPtrSlice wraps" {
+test "CircBuf getPtrSlice wraps" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -435,7 +435,7 @@ test "getPtrSlice wraps" {
     }
 }
 
-test "rotateToZero" {
+test "CircBuf rotateToZero" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -447,7 +447,7 @@ test "rotateToZero" {
     try buf.rotateToZero(alloc);
 }
 
-test "rotateToZero offset" {
+test "CircBuf rotateToZero offset" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -471,7 +471,7 @@ test "rotateToZero offset" {
     try testing.expectEqual(@as(usize, 1), buf.head);
 }
 
-test "rotateToZero wraps" {
+test "CircBuf rotateToZero wraps" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -511,7 +511,7 @@ test "rotateToZero wraps" {
     }
 }
 
-test "rotateToZero full no wrap" {
+test "CircBuf rotateToZero full no wrap" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -549,7 +549,32 @@ test "rotateToZero full no wrap" {
     }
 }
 
-test "resize grow" {
+test "CircBuf resize grow from zero" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const Buf = CircBuf(u8, 0);
+    var buf = try Buf.init(alloc, 0);
+    defer buf.deinit(alloc);
+    try testing.expect(buf.full);
+
+    // Resize
+    try buf.resize(alloc, 2);
+    try testing.expect(!buf.full);
+    try testing.expectEqual(@as(usize, 0), buf.len());
+    try testing.expectEqual(@as(usize, 2), buf.capacity());
+
+    try buf.append(1);
+    try buf.append(2);
+
+    {
+        const slices = buf.getPtrSlice(0, 2);
+        try testing.expectEqual(@as(u8, 1), slices[0][0]);
+        try testing.expectEqual(@as(u8, 2), slices[0][1]);
+    }
+}
+
+test "CircBuf resize grow" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -582,7 +607,7 @@ test "resize grow" {
     }
 }
 
-test "resize shrink" {
+test "CircBuf resize shrink" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
