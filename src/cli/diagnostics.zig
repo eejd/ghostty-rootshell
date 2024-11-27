@@ -56,7 +56,7 @@ pub const Location = union(enum) {
 
     pub const Key = @typeInfo(Location).Union.tag_type.?;
 
-    pub fn fromIter(iter: anytype) Location {
+    pub fn fromIter(iter: anytype, alloc: Allocator) Allocator.Error!Location {
         const Iter = t: {
             const T = @TypeOf(iter);
             break :t switch (@typeInfo(T)) {
@@ -67,7 +67,7 @@ pub const Location = union(enum) {
         };
 
         if (!@hasDecl(Iter, "location")) return .none;
-        return iter.location() orelse .none;
+        return (try iter.location(alloc)) orelse .none;
     }
 
     pub fn clone(self: *const Location, alloc: Allocator) Allocator.Error!Location {
