@@ -385,22 +385,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     if (config.@"initial-window")
         c.g_application_activate(gapp);
 
-    // Register for dbus events
-    if (c.g_application_get_dbus_connection(gapp)) |dbus_connection| {
-        _ = c.g_dbus_connection_signal_subscribe(
-            dbus_connection,
-            null,
-            "org.freedesktop.portal.Settings",
-            "SettingChanged",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.appearance",
-            c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
-            &gtkNotifyColorScheme,
-            core_app,
-            null,
-        );
-    }
-
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
     const css_provider = c.gtk_css_provider_new();
@@ -409,12 +393,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         @ptrCast(css_provider),
         c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
-    loadRuntimeCss(core_app.alloc, &config, css_provider) catch |err| switch (err) {
-        error.OutOfMemory => log.warn(
-            "out of memory loading runtime CSS, no runtime CSS applied",
-            .{},
-        ),
-    };
 
     return .{
         .core_app = core_app,
@@ -831,14 +809,20 @@ fn configChange(
     target: apprt.Target,
     new_config: *const Config,
 ) void {
-    _ = new_config;
-
     switch (target) {
         // We don't do anything for surface config change events. There
         // is nothing to sync with regards to a surface today.
         .surface => {},
 
         .app => {
+            // We clone (to take ownership) and update our configuration.
+            if (new_config.clone(self.core_app.alloc)) |config_clone| {
+                self.config.deinit();
+                self.config = config_clone;
+            } else |err| {
+                log.warn("error cloning configuration err={}", .{err});
+            }
+
             self.syncConfigChanges() catch |err| {
                 log.warn("error handling configuration changes err={}", .{err});
             };
@@ -892,7 +876,7 @@ fn syncConfigChanges(self: *App) !void {
 
     // Load our runtime CSS. If this fails then our window is just stuck
     // with the old CSS but we don't want to fail the entire sync operation.
-    loadRuntimeCss(self.core_app.alloc, &self.config, self.css_provider) catch |err| switch (err) {
+    self.loadRuntimeCss() catch |err| switch (err) {
         error.OutOfMemory => log.warn(
             "out of memory loading runtime CSS, no runtime CSS applied",
             .{},
@@ -956,15 +940,14 @@ fn syncActionAccelerator(
 }
 
 fn loadRuntimeCss(
-    alloc: Allocator,
-    config: *const Config,
-    provider: *c.GtkCssProvider,
+    self: *const App,
 ) Allocator.Error!void {
-    var stack_alloc = std.heap.stackFallback(4096, alloc);
+    var stack_alloc = std.heap.stackFallback(4096, self.core_app.alloc);
     var buf = std.ArrayList(u8).init(stack_alloc.get());
     defer buf.deinit();
     const writer = buf.writer();
 
+    const config: *const Config = &self.config;
     const window_theme = config.@"window-theme";
     const unfocused_fill: Config.Color = config.@"unfocused-split-fill" orelse config.background;
     const headerbar_background = config.background;
@@ -1027,7 +1010,7 @@ fn loadRuntimeCss(
 
     // Clears any previously loaded CSS from this provider
     c.gtk_css_provider_load_from_data(
-        provider,
+        self.css_provider,
         buf.items.ptr,
         @intCast(buf.items.len),
     );
@@ -1076,10 +1059,16 @@ pub fn run(self: *App) !void {
         self.transient_cgroup_base = path;
     } else log.debug("cgroup isolation disabled config={}", .{self.config.@"linux-cgroup"});
 
+    // Setup our D-Bus connection for listening to settings changes.
+    self.initDbus();
+
     // Setup our menu items
     self.initActions();
     self.initMenu();
     self.initContextMenu();
+
+    // Setup our initial color scheme
+    self.colorSchemeEvent(self.getColorScheme());
 
     // On startup, we want to check for configuration errors right away
     // so we can show our error window. We also need to setup other initial
@@ -1112,6 +1101,26 @@ pub fn run(self: *App) !void {
 
         if (must_quit) self.quit();
     }
+}
+
+fn initDbus(self: *App) void {
+    const dbus = c.g_application_get_dbus_connection(@ptrCast(self.app)) orelse {
+        log.warn("unable to get dbus connection, not setting up events", .{});
+        return;
+    };
+
+    _ = c.g_dbus_connection_signal_subscribe(
+        dbus,
+        null,
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.appearance",
+        c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
+        &gtkNotifyColorScheme,
+        self,
+        null,
+    );
 }
 
 // This timeout function is started when no surfaces are open. It can be
@@ -1394,7 +1403,7 @@ fn gtkNotifyColorScheme(
     parameters: ?*c.GVariant,
     user_data: ?*anyopaque,
 ) callconv(.C) void {
-    const core_app: *CoreApp = @ptrCast(@alignCast(user_data orelse {
+    const self: *App = @ptrCast(@alignCast(user_data orelse {
         log.err("style change notification: userdata is null", .{});
         return;
     }));
@@ -1426,9 +1435,20 @@ fn gtkNotifyColorScheme(
     else
         .light;
 
-    for (core_app.surfaces.items) |surface| {
-        surface.core_surface.colorSchemeCallback(color_scheme) catch |err| {
-            log.err("unable to tell surface about color scheme change: {}", .{err});
+    self.colorSchemeEvent(color_scheme);
+}
+
+fn colorSchemeEvent(
+    self: *App,
+    scheme: apprt.ColorScheme,
+) void {
+    self.core_app.colorSchemeEvent(self, scheme) catch |err| {
+        log.err("error updating app color scheme err={}", .{err});
+    };
+
+    for (self.core_app.surfaces.items) |surface| {
+        surface.core_surface.colorSchemeCallback(scheme) catch |err| {
+            log.err("unable to tell surface about color scheme change err={}", .{err});
         };
     }
 }
