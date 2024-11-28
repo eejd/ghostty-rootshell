@@ -348,6 +348,13 @@ support](https://www.openssh.com/txt/release-8.7) for setting `TERM` via
 > `xterm-256color` does not include all of Ghostty's capabilities, terminal
 > features beyond xterm's like colored and styled underlines will not work.
 
+### Desktop Integration (Plasma only)
+The build process detects if you are running plasma through an environment variable ```DESKTOP_SESSION``` and will install a ```.desktop``` file for a right-click menu action to open Ghostty in the working directory. To enable this, you need to give the file executable permissions: 
+```bash
+chmod +x ~/.local/share/kio/servicemenus/ghostty_dolphin.desktop
+```
+You should see an action called "Open Ghostty Here" when you right click in any directory in Dolphin.
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
