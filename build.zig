@@ -573,6 +573,13 @@ pub fn build(b: *std.Build) !void {
             b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
         }
 
+        // Right click menu action in case of Plasma desktop
+        if (env.get("DESKTOP_SESSION")) |desktop| {
+            if (std.mem.eql(u8, desktop, "plasma")) {
+                b.installFile("dist/linux/ghostty_dolphin.desktop", "share/kio/servicemenus/ghostty_dolphin.desktop");
+            }
+        }
+
         // Various icons that our application can use, including the icon
         // that will be used for the desktop.
         b.installFile("images/icons/icon_16x16.png", "share/icons/hicolor/16x16/apps/com.mitchellh.ghostty.png");
