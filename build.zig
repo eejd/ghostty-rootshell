@@ -576,7 +576,7 @@ pub fn build(b: *std.Build) !void {
         // Right click menu action in case of Plasma desktop
         if (env.get("DESKTOP_SESSION")) |desktop| {
             if (std.mem.eql(u8, desktop, "plasma")) {
-                b.installFile("dist/linux/ghostty_dolphin.desktop", "share/kio/servicemenus/ghostty_dolphin.desktop");
+                b.installFile("dist/linux/ghostty_dolphin.desktop", "share/kio/servicemenus/com.mitchellh.ghostty.desktop");
             }
         }
 
