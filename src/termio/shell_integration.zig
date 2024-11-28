@@ -78,7 +78,7 @@ pub fn setup(
             try setupXdgDataDirs(alloc_arena, resource_dir, env);
             break :shell .{
                 .shell = .elvish,
-                .command = command,
+                .command = try alloc_arena.dupe(u8, command),
             };
         }
 
@@ -86,7 +86,7 @@ pub fn setup(
             try setupXdgDataDirs(alloc_arena, resource_dir, env);
             break :shell .{
                 .shell = .fish,
-                .command = command,
+                .command = try alloc_arena.dupe(u8, command),
             };
         }
 
@@ -94,7 +94,7 @@ pub fn setup(
             try setupZsh(resource_dir, env);
             break :shell .{
                 .shell = .zsh,
-                .command = command,
+                .command = try alloc_arena.dupe(u8, command),
             };
         }
 

@@ -52,20 +52,20 @@ pub const StreamHandler = struct {
     default_cursor_blink: ?bool,
     default_cursor_color: ?terminal.color.RGB,
 
-    /// Actual cursor color. This can be changed with OSC 12.
+    /// Actual cursor color. This can be changed with OSC 12. If unset, falls
+    /// back to the default cursor color.
     cursor_color: ?terminal.color.RGB,
 
     /// The default foreground and background color are those set by the user's
-    /// config file. These can be overridden by terminal applications using OSC
-    /// 10 and OSC 11, respectively.
+    /// config file.
     default_foreground_color: terminal.color.RGB,
     default_background_color: terminal.color.RGB,
 
-    /// The actual foreground and background color. Normally this will be the
-    /// same as the default foreground and background color, unless changed by a
-    /// terminal application.
-    foreground_color: terminal.color.RGB,
-    background_color: terminal.color.RGB,
+    /// The foreground and background color as set by an OSC 10 or OSC 11
+    /// sequence. If unset then the respective color falls back to the default
+    /// value.
+    foreground_color: ?terminal.color.RGB,
+    background_color: ?terminal.color.RGB,
 
     /// The response to use for ENQ requests. The memory is owned by
     /// whoever owns StreamHandler.
@@ -126,6 +126,9 @@ pub const StreamHandler = struct {
         if (self.default_cursor) self.setCursorStyle(.default) catch |err| {
             log.warn("failed to set default cursor style: {}", .{err});
         };
+
+        // The config could have changed any of our colors so update mode 2031
+        self.surfaceMessageWriter(.{ .report_color_scheme = false });
     }
 
     inline fn surfaceMessageWriter(
@@ -767,7 +770,7 @@ pub const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
-            .color_scheme => self.surfaceMessageWriter(.{ .report_color_scheme = {} }),
+            .color_scheme => self.surfaceMessageWriter(.{ .report_color_scheme = true }),
         }
     }
 
@@ -892,6 +895,9 @@ pub const StreamHandler = struct {
     ) !void {
         self.terminal.fullReset();
         try self.setMouseShape(.text);
+
+        // Reset resets our palette so we report it for mode 2031.
+        self.surfaceMessageWriter(.{ .report_color_scheme = false });
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
@@ -1191,9 +1197,12 @@ pub const StreamHandler = struct {
 
         const color = switch (kind) {
             .palette => |i| self.terminal.color_palette.colors[i],
-            .foreground => self.foreground_color,
-            .background => self.background_color,
-            .cursor => self.cursor_color orelse self.foreground_color,
+            .foreground => self.foreground_color orelse self.default_foreground_color,
+            .background => self.background_color orelse self.default_background_color,
+            .cursor => self.cursor_color orelse
+                self.default_cursor_color orelse
+                self.foreground_color orelse
+                self.default_foreground_color,
         };
 
         var msg: termio.Message = .{ .write_small = .{} };
@@ -1336,34 +1345,35 @@ pub const StreamHandler = struct {
                 }
             },
             .foreground => {
-                self.foreground_color = self.default_foreground_color;
+                self.foreground_color = null;
                 _ = self.renderer_mailbox.push(.{
-                    .foreground_color = self.foreground_color,
+                    .foreground_color = self.default_foreground_color,
                 }, .{ .forever = {} });
 
                 self.surfaceMessageWriter(.{ .color_change = .{
                     .kind = .foreground,
-                    .color = self.foreground_color,
+                    .color = self.default_foreground_color,
                 } });
             },
             .background => {
-                self.background_color = self.default_background_color;
+                self.background_color = null;
                 _ = self.renderer_mailbox.push(.{
-                    .background_color = self.background_color,
+                    .background_color = self.default_background_color,
                 }, .{ .forever = {} });
 
                 self.surfaceMessageWriter(.{ .color_change = .{
                     .kind = .background,
-                    .color = self.background_color,
+                    .color = self.default_background_color,
                 } });
             },
             .cursor => {
-                self.cursor_color = self.default_cursor_color;
+                self.cursor_color = null;
+
                 _ = self.renderer_mailbox.push(.{
-                    .cursor_color = self.cursor_color,
+                    .cursor_color = self.default_cursor_color,
                 }, .{ .forever = {} });
 
-                if (self.cursor_color) |color| {
+                if (self.default_cursor_color) |color| {
                     self.surfaceMessageWriter(.{ .color_change = .{
                         .kind = .cursor,
                         .color = color,
@@ -1408,7 +1418,7 @@ pub const StreamHandler = struct {
         var buf = std.ArrayList(u8).init(self.alloc);
         defer buf.deinit();
         const writer = buf.writer();
-        try writer.writeAll("\x1b[21");
+        try writer.writeAll("\x1b]21");
 
         for (request.list.items) |item| {
             switch (item) {
@@ -1416,16 +1426,16 @@ pub const StreamHandler = struct {
                     const color: terminal.color.RGB = switch (key) {
                         .palette => |palette| self.terminal.color_palette.colors[palette],
                         .special => |special| switch (special) {
-                            .foreground => self.foreground_color,
-                            .background => self.background_color,
-                            .cursor => self.cursor_color,
+                            .foreground => self.foreground_color orelse self.default_foreground_color,
+                            .background => self.background_color orelse self.default_background_color,
+                            .cursor => self.cursor_color orelse self.default_cursor_color,
                             else => {
                                 log.warn("ignoring unsupported kitty color protocol key: {}", .{key});
                                 continue;
                             },
                         },
                     } orelse {
-                        log.warn("no color configured for {}", .{key});
+                        try writer.print(";{}=", .{key});
                         continue;
                     };
 
@@ -1479,15 +1489,15 @@ pub const StreamHandler = struct {
                     .special => |special| {
                         const msg: renderer.Message = switch (special) {
                             .foreground => msg: {
-                                self.foreground_color = self.default_foreground_color;
+                                self.foreground_color = null;
                                 break :msg .{ .foreground_color = self.default_foreground_color };
                             },
                             .background => msg: {
-                                self.background_color = self.default_background_color;
+                                self.background_color = null;
                                 break :msg .{ .background_color = self.default_background_color };
                             },
                             .cursor => msg: {
-                                self.cursor_color = self.default_cursor_color;
+                                self.cursor_color = null;
                                 break :msg .{ .cursor_color = self.default_cursor_color };
                             },
                             else => {

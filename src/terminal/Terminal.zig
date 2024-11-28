@@ -1955,13 +1955,9 @@ pub fn deleteChars(self: *Terminal, count_req: usize) void {
 }
 
 pub fn eraseChars(self: *Terminal, count_req: usize) void {
-    const count = @max(count_req, 1);
-
-    // Our last index is at most the end of the number of chars we have
-    // in the current line.
-    const end = end: {
+    const count = end: {
         const remaining = self.cols - self.screen.cursor.x;
-        var end = @min(remaining, count);
+        var end = @min(remaining, @max(count_req, 1));
 
         // If our last cell is a wide char then we need to also clear the
         // cell beyond it since we can't just split a wide char.
@@ -1979,7 +1975,7 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
     // protected modes. We need to figure out how to make `clearCells` or at
     // least `clearUnprotectedCells` handle boundary conditions...
     self.screen.splitCellBoundary(self.screen.cursor.x);
-    self.screen.splitCellBoundary(end);
+    self.screen.splitCellBoundary(self.screen.cursor.x + count);
 
     // Reset our row's soft-wrap.
     self.screen.cursorResetWrap();
@@ -1997,7 +1993,7 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
         self.screen.clearCells(
             &self.screen.cursor.page_pin.node.data,
             self.screen.cursor.page_row,
-            cells[0..end],
+            cells[0..count],
         );
         return;
     }
@@ -2005,7 +2001,7 @@ pub fn eraseChars(self: *Terminal, count_req: usize) void {
     self.screen.clearUnprotectedCells(
         &self.screen.cursor.page_pin.node.data,
         self.screen.cursor.page_row,
-        cells[0..end],
+        cells[0..count],
     );
 }
 
@@ -6101,6 +6097,36 @@ test "Terminal: eraseChars wide char boundary conditions" {
         const str = try t.plainString(alloc);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("     b😀", str);
+    }
+}
+
+test "Terminal: eraseChars wide char splits proper cell boundaries" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 1, .cols = 30 });
+    defer t.deinit(alloc);
+
+    // This is a test for a bug: https://github.com/ghostty-org/ghostty/issues/2817
+    // To explain the setup:
+    // (1) We need our wide characters starting on an even (1-based) column.
+    // (2) We need our cursor to be in the middle somewhere.
+    // (3) We need our count to be less than our cursor X and on a split cell.
+    // The bug was that we split the wrong cell boundaries.
+
+    try t.printString("x食べて下さい");
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("x食べて下さい", str);
+    }
+
+    t.setCursorPos(1, 6); // At: て
+    t.eraseChars(4); // Delete: て下
+    t.screen.cursor.page_pin.node.data.assertIntegrity();
+
+    {
+        const str = try t.plainString(alloc);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("x食べ    さい", str);
     }
 }
 
