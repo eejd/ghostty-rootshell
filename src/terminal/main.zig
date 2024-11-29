@@ -47,6 +47,7 @@ pub const CursorStyle = Screen.CursorStyle;
 pub const CursorStyleReq = ansi.CursorStyle;
 pub const DeviceAttributeReq = ansi.DeviceAttributeReq;
 pub const Mode = modes.Mode;
+pub const ModePacked = modes.ModePacked;
 pub const ModifyKeyFormat = ansi.ModifyKeyFormat;
 pub const ProtectedMode = ansi.ProtectedMode;
 pub const StatusLineType = ansi.StatusLineType;

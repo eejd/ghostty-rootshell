@@ -193,6 +193,10 @@ pub const Options = struct {
     cols: size.CellCountInt,
     rows: size.CellCountInt,
     max_scrollback: usize = 10_000,
+
+    /// The default mode state. When the terminal gets a reset, it
+    /// will revert back to this state.
+    default_modes: modes.ModePacked = .{},
 };
 
 /// Initialize a new terminal.
@@ -216,6 +220,10 @@ pub fn init(
             .right = cols - 1,
         },
         .pwd = std.ArrayList(u8).init(alloc),
+        .modes = .{
+            .values = opts.default_modes,
+            .default = opts.default_modes,
+        },
     };
 }
 
@@ -2680,7 +2688,7 @@ fn resetCommonState(self: *Terminal) void {
 
     self.screen.endHyperlink();
     self.screen.charset = .{};
-    self.modes = .{};
+    self.modes.reset();
     self.flags = .{};
     self.tabstops.reset(TABSTOP_INTERVAL);
     self.screen.kitty_keyboard = .{};
@@ -10553,6 +10561,18 @@ test "Terminal: fullReset clears alt screen kitty keyboard state" {
 
     t.fullReset();
     try testing.expectEqual(0, t.secondary_screen.kitty_keyboard.current().int());
+}
+
+test "Terminal: fullReset default modes" {
+    var t = try init(testing.allocator, .{
+        .cols = 10,
+        .rows = 10,
+        .default_modes = .{ .grapheme_cluster = true },
+    });
+    defer t.deinit(testing.allocator);
+    try testing.expect(t.modes.get(.grapheme_cluster));
+    t.fullReset();
+    try testing.expect(t.modes.get(.grapheme_cluster));
 }
 
 // https://github.com/mitchellh/ghostty/issues/272
