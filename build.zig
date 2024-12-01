@@ -573,6 +573,9 @@ pub fn build(b: *std.Build) !void {
             b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
         }
 
+        // Right click menu action for Plasma desktop
+        b.installFile("dist/linux/ghostty_dolphin.desktop", "share/kio/servicemenus/com.mitchellh.ghostty.desktop");
+
         // Various icons that our application can use, including the icon
         // that will be used for the desktop.
         b.installFile("images/icons/icon_16x16.png", "share/icons/hicolor/16x16/apps/com.mitchellh.ghostty.png");
