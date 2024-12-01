@@ -275,6 +275,7 @@ class TerminalController: BaseTerminalController {
     }
 
     override func windowDidLoad() {
+        super.windowDidLoad()
         guard let window = window as? TerminalWindow else { return }
 
         // I copy this because we may change the source in the future but also because
