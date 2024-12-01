@@ -2336,7 +2336,7 @@ pub fn scrollCallback(
 
         // If we're scrolling up or down, then send a mouse event.
         if (self.io.terminal.flags.mouse_event != .none) {
-            if (y.delta != 0) {
+            for (0..@abs(y.delta)) |_| {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.mouseReport(switch (y.direction()) {
                     .up_right => .four,
@@ -2344,7 +2344,7 @@ pub fn scrollCallback(
                 }, .press, self.mouse.mods, pos);
             }
 
-            if (x.delta != 0) {
+            for (0..@abs(x.delta)) |_| {
                 const pos = try self.rt_surface.getCursorPos();
                 try self.mouseReport(switch (x.direction()) {
                     .up_right => .six,
