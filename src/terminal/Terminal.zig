@@ -10575,6 +10575,16 @@ test "Terminal: fullReset default modes" {
     try testing.expect(t.modes.get(.grapheme_cluster));
 }
 
+test "Terminal: fullReset tracked pins" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Create a tracked pin
+    const p = try t.screen.pages.trackPin(t.screen.cursor.page_pin.*);
+    t.fullReset();
+    try testing.expect(t.screen.pages.pinIsValid(p.*));
+}
+
 // https://github.com/mitchellh/ghostty/issues/272
 // This is also tested in depth in screen resize tests but I want to keep
 // this test around to ensure we don't regress at multiple layers.
