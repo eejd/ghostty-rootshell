@@ -2627,82 +2627,38 @@ pub fn plainStringUnwrapped(self: *Terminal, alloc: Allocator) ![]const u8 {
 
 /// Full reset.
 ///
-/// This will attempt to free the existing screen memory and allocate
-/// new screens but if that fails this will reuse the existing memory
-/// from the prior screens. In the latter case, memory may be wasted
-/// (since its unused) but it isn't leaked.
+/// This will attempt to free the existing screen memory but if that fails
+/// this will reuse the existing memory. In the latter case, memory may
+/// be wasted (since its unused) but it isn't leaked.
 pub fn fullReset(self: *Terminal) void {
-    // Attempt to initialize new screens.
-    var new_primary = Screen.init(
-        self.screen.alloc,
-        self.cols,
-        self.rows,
-        self.screen.pages.explicit_max_size,
-    ) catch |err| {
-        log.warn("failed to allocate new primary screen, reusing old memory err={}", .{err});
-        self.fallbackReset();
-        return;
-    };
-    const new_secondary = Screen.init(
-        self.secondary_screen.alloc,
-        self.cols,
-        self.rows,
-        0,
-    ) catch |err| {
-        log.warn("failed to allocate new secondary screen, reusing old memory err={}", .{err});
-        new_primary.deinit();
-        self.fallbackReset();
-        return;
-    };
+    // Reset our screens
+    self.screen.reset();
+    self.secondary_screen.reset();
 
-    // If we got here, both new screens were successfully allocated
-    // and we can deinitialize the old screens.
-    self.screen.deinit();
-    self.secondary_screen.deinit();
+    // Ensure we're back on primary screen
+    if (self.active_screen != .primary) {
+        const old = self.screen;
+        self.screen = self.secondary_screen;
+        self.secondary_screen = old;
+        self.active_screen = .primary;
+    }
 
-    // Replace with the newly allocated screens.
-    self.screen = new_primary;
-    self.secondary_screen = new_secondary;
-
-    self.resetCommonState();
-}
-
-fn fallbackReset(self: *Terminal) void {
-    // Clear existing screens without reallocation
-    self.primaryScreen(.{ .clear_on_exit = true, .cursor_save = false });
-    self.screen.clearSelection();
-    self.eraseDisplay(.scrollback, false);
-    self.eraseDisplay(.complete, false);
-    self.screen.cursorAbsolute(0, 0);
-    self.resetCommonState();
-}
-
-fn resetCommonState(self: *Terminal) void {
-    // We set the saved cursor to null and then restore. This will force
-    // our cursor to go back to the default which will also move the cursor
-    // to the top-left.
-    self.screen.saved_cursor = null;
-    self.restoreCursor() catch |err| {
-        log.warn("restore cursor on primary screen failed err={}", .{err});
-    };
-
-    self.screen.endHyperlink();
-    self.screen.charset = .{};
+    // Rest our basic state
     self.modes.reset();
     self.flags = .{};
     self.tabstops.reset(TABSTOP_INTERVAL);
-    self.screen.kitty_keyboard = .{};
-    self.secondary_screen.kitty_keyboard = .{};
-    self.screen.protected_mode = .off;
+    self.previous_char = null;
+    self.pwd.clearRetainingCapacity();
+    self.status_display = .main;
     self.scrolling_region = .{
         .top = 0,
         .bottom = self.rows - 1,
         .left = 0,
         .right = self.cols - 1,
     };
-    self.previous_char = null;
-    self.pwd.clearRetainingCapacity();
-    self.status_display = .main;
+
+    // Always mark dirty so we redraw everything
+    self.flags.dirty.clear = true;
 }
 
 /// Returns true if the point is dirty, used for testing.
@@ -10573,6 +10529,16 @@ test "Terminal: fullReset default modes" {
     try testing.expect(t.modes.get(.grapheme_cluster));
     t.fullReset();
     try testing.expect(t.modes.get(.grapheme_cluster));
+}
+
+test "Terminal: fullReset tracked pins" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Create a tracked pin
+    const p = try t.screen.pages.trackPin(t.screen.cursor.page_pin.*);
+    t.fullReset();
+    try testing.expect(t.screen.pages.pinIsValid(p.*));
 }
 
 // https://github.com/mitchellh/ghostty/issues/272

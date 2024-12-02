@@ -83,8 +83,8 @@ pub const Dirty = packed struct {
 /// The cursor position and style.
 pub const Cursor = struct {
     // The x/y position within the viewport.
-    x: size.CellCountInt,
-    y: size.CellCountInt,
+    x: size.CellCountInt = 0,
+    y: size.CellCountInt = 0,
 
     /// The visual style of the cursor. This defaults to block because
     /// it has to default to something, but users of this struct are
@@ -247,6 +247,50 @@ pub fn assertIntegrity(self: *const Screen) void {
         assert(self.cursor.x == pt.active.x);
         assert(self.cursor.y == pt.active.y);
     }
+}
+
+/// Reset the screen according to the logic of a DEC RIS sequence.
+///
+/// - Clears the screen and attempts to reclaim memory.
+/// - Moves the cursor to the top-left.
+/// - Clears any cursor state: style, hyperlink, etc.
+/// - Resets the charset
+/// - Clears the selection
+/// - Deletes all Kitty graphics
+/// - Resets Kitty Keyboard settings
+/// - Disables protection mode
+///
+pub fn reset(self: *Screen) void {
+    // Reset our pages
+    self.pages.reset();
+
+    // The above reset preserves tracked pins so we can still use
+    // our cursor pin, which should be at the top-left already.
+    const cursor_pin: *PageList.Pin = self.cursor.page_pin;
+    assert(cursor_pin.node == self.pages.pages.first.?);
+    assert(cursor_pin.x == 0);
+    assert(cursor_pin.y == 0);
+    const cursor_rac = cursor_pin.rowAndCell();
+    self.cursor.deinit(self.alloc);
+    self.cursor = .{
+        .page_pin = cursor_pin,
+        .page_row = cursor_rac.row,
+        .page_cell = cursor_rac.cell,
+    };
+
+    // Clear kitty graphics
+    self.kitty_images.delete(
+        self.alloc,
+        undefined, // All image deletion doesn't need the terminal
+        .{ .all = true },
+    );
+
+    // Reset our basic state
+    self.saved_cursor = null;
+    self.charset = .{};
+    self.kitty_keyboard = .{};
+    self.protected_mode = .off;
+    self.clearSelection();
 }
 
 /// Clone the screen.
