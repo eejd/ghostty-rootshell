@@ -171,9 +171,18 @@ const SlidingWindow = struct {
 
             // We can now delete all the metas up to but NOT including
             // the meta we found through meta_it.
-            @panic("TODO: test");
+            meta_it = self.meta.iterator(.forward);
+            var prune_data_len: usize = 0;
+            for (0..prune_count) |_| {
+                const meta = meta_it.next().?;
+                prune_data_len += meta.cell_map.items.len;
+                meta.deinit();
+            }
+            self.meta.deleteOldest(prune_count);
+            self.data.deleteOldest(prune_data_len);
         }
 
+        self.assertIntegrity();
         return null;
     }
 
@@ -393,6 +402,33 @@ test "SlidingWindow single append" {
     try testing.expect(w.next(needle) == null);
 }
 
+test "SlidingWindow single append no match" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    try s.testWriteString("hello. boo! hello. boo!");
+
+    // Imaginary needle for search
+    const needle = "nope!";
+
+    // We want to test single-page cases.
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+
+    // No matches
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
+
+    // Should still keep the page
+    try testing.expectEqual(1, w.meta.len());
+}
+
 test "SlidingWindow two pages" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -447,4 +483,82 @@ test "SlidingWindow two pages" {
     }
     try testing.expect(w.next(needle) == null);
     try testing.expect(w.next(needle) == null);
+}
+
+test "SlidingWindow two pages no match prunes first page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    // Fill up the first page. The final bytes in the first page
+    // are "boo!"
+    const first_page_rows = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_rows - 1) |_| try s.testWriteString("\n");
+    for (0..s.pages.cols - 4) |_| try s.testWriteString("x");
+    try s.testWriteString("boo!");
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    try s.testWriteString("\n");
+    try testing.expect(s.pages.pages.first != s.pages.pages.last);
+    try s.testWriteString("hello. boo!");
+
+    // Add both pages
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node.next.?);
+
+    // Imaginary needle for search. Doesn't match!
+    const needle = "nope!";
+
+    // Search should find nothing
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
+
+    // We should've pruned our page because the second page
+    // has enough text to contain our needle.
+    try testing.expectEqual(1, w.meta.len());
+}
+
+test "SlidingWindow two pages no match keeps both pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    // Fill up the first page. The final bytes in the first page
+    // are "boo!"
+    const first_page_rows = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_rows - 1) |_| try s.testWriteString("\n");
+    for (0..s.pages.cols - 4) |_| try s.testWriteString("x");
+    try s.testWriteString("boo!");
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    try s.testWriteString("\n");
+    try testing.expect(s.pages.pages.first != s.pages.pages.last);
+    try s.testWriteString("hello. boo!");
+
+    // Add both pages
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node.next.?);
+
+    // Imaginary needle for search. Doesn't match!
+    var needle_list = std.ArrayList(u8).init(alloc);
+    defer needle_list.deinit();
+    try needle_list.appendNTimes('x', first_page_rows * s.pages.cols);
+    const needle: []const u8 = needle_list.items;
+
+    // Search should find nothing
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
+
+    // No pruning because both pages are needed to fit needle.
+    try testing.expectEqual(2, w.meta.len());
 }
