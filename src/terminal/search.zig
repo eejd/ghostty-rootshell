@@ -53,8 +53,9 @@ pub const PageListSearch = struct {
     }
 };
 
-/// The sliding window of the pages we're searching. The window is always
-/// big enough so that the needle can fit in it.
+/// Search pages via a sliding window. The sliding window always maintains
+/// the invariant that data isn't pruned until we've searched it and
+/// accounted for overlaps across pages.
 const SlidingWindow = struct {
     /// The data buffer is a circular buffer of u8 that contains the
     /// encoded page text that we can use to search for the needle.
@@ -137,8 +138,42 @@ const SlidingWindow = struct {
             return self.selection(slices[0].len + idx, needle.len);
         }
 
-        // No match. Clear everything.
-        self.clearAndRetainCapacity();
+        // No match. We keep `needle.len - 1` bytes available to
+        // handle the future overlap case.
+        var meta_it = self.meta.iterator(.reverse);
+        prune: {
+            var saved: usize = 0;
+            while (meta_it.next()) |meta| {
+                const needed = needle.len - 1 - saved;
+                if (meta.cell_map.items.len >= needed) {
+                    // We save up to this meta. We set our data offset
+                    // to exactly where it needs to be to continue
+                    // searching.
+                    self.data_offset = meta.cell_map.items.len - needed;
+                    break;
+                }
+
+                saved += meta.cell_map.items.len;
+            } else {
+                // If we exited the while loop naturally then we
+                // never got the amount we needed and so there is
+                // nothing to prune.
+                assert(saved < needle.len - 1);
+                break :prune;
+            }
+
+            const prune_count = self.meta.len() - meta_it.idx;
+            if (prune_count == 0) {
+                // This can happen if we need to save up to the first
+                // meta value to retain our window.
+                break :prune;
+            }
+
+            // We can now delete all the metas up to but NOT including
+            // the meta we found through meta_it.
+            @panic("TODO: test");
+        }
+
         return null;
     }
 
@@ -158,71 +193,74 @@ const SlidingWindow = struct {
         assert(start < self.data.len());
         assert(start + len <= self.data.len());
 
+        // meta_consumed is the number of bytes we've consumed in the
+        // data buffer up to and NOT including the meta where we've
+        // found our pin. This is important because it tells us the
+        // amount of data we can safely deleted from self.data since
+        // we can't partially delete a meta block's data. (The partial
+        // amount is represented by self.data_offset).
         var meta_it = self.meta.iterator(.forward);
-        const tl: Pin = pin(&meta_it, start);
+        var meta_consumed: usize = 0;
+        const tl: Pin = pin(&meta_it, &meta_consumed, start);
 
         // We have to seek back so that we reinspect our current
         // iterator value again in case the start and end are in the
         // same segment.
         meta_it.seekBy(-1);
-        const br: Pin = pin(&meta_it, start + len - 1);
+        const br: Pin = pin(&meta_it, &meta_consumed, start + len - 1);
         assert(meta_it.idx >= 1);
 
-        // meta_it.idx is now the index after the br pin. We can
-        // safely prune our data up to this index. (It is after
-        // because next() is called at least once).
-        const br_meta_idx: usize = meta_it.idx - 1;
-        meta_it.reset();
-        var offset: usize = 0;
-        while (meta_it.next()) |meta| {
-            const meta_idx = start - offset;
-            if (meta_idx >= meta.cell_map.items.len) {
-                // Prior to our matches, we can prune it.
-                offset += meta.cell_map.items.len;
-                meta.deinit();
+        // Our offset into the current meta block is the start index
+        // minus the amount of data fully consumed. We then add one
+        // to move one past the match so we don't repeat it.
+        self.data_offset = start - meta_consumed + 1;
+
+        // meta_it.idx is br's meta index plus one (because the iterator
+        // moves one past the end; we call next() one last time). So
+        // we compare against one to check that the meta that we matched
+        // in has prior meta blocks we can prune.
+        if (meta_it.idx > 1) {
+            // Deinit all our memory in the meta blocks prior to our
+            // match.
+            const meta_count = meta_it.idx - 1;
+            meta_it.reset();
+            for (0..meta_count) |_| meta_it.next().?.deinit();
+            if (comptime std.debug.runtime_safety) {
+                assert(meta_it.idx == meta_count);
+                assert(meta_it.next().?.node == br.node);
             }
+            self.meta.deleteOldest(meta_count);
 
-            assert(meta_it.idx == br_meta_idx + 1);
-            break;
+            // Delete all the data up to our current index.
+            assert(meta_consumed > 0);
+            self.data.deleteOldest(meta_consumed);
         }
 
-        // If we have metas to prune, then prune them. They should be
-        // deinitialized already from the while loop above.
-        if (br_meta_idx > 0) {
-            assert(offset > 0);
-            self.meta.deleteOldest(br_meta_idx);
-            self.data.deleteOldest(offset);
-            @panic("TODO: TEST");
-        }
-
-        // Move our data one beyond so we don't rematch.
-        self.data_offset = start - offset + 1;
-
+        self.assertIntegrity();
         return Selection.init(tl, br, false);
     }
 
     /// Convert a data index into a pin.
     ///
-    /// Tip: you can get the offset into the meta buffer we searched
-    /// by inspecting the iterator index after this function returns.
-    /// I note this because this is useful if you want to prune the
-    /// meta buffer after you find a match.
+    /// The iterator and offset are both expected to be passed by
+    /// pointer so that the pin can be efficiently called for multiple
+    /// indexes (in order). See selection() for an example.
     ///
     /// Precondition: the index must be within the data buffer.
     fn pin(
         it: *MetaBuf.Iterator,
+        offset: *usize,
         idx: usize,
     ) Pin {
-        var offset: usize = 0;
         while (it.next()) |meta| {
             // meta_i is the index we expect to find the match in the
             // cell map within this meta if it contains it.
-            const meta_i = idx - offset;
+            const meta_i = idx - offset.*;
             if (meta_i >= meta.cell_map.items.len) {
                 // This meta doesn't contain the match. This means we
                 // can also prune this set of data because we only look
                 // forward.
-                offset += meta.cell_map.items.len;
+                offset.* += meta.cell_map.items.len;
                 continue;
             }
 
@@ -240,19 +278,13 @@ const SlidingWindow = struct {
         unreachable;
     }
 
-    /// Add a new node to the sliding window.
-    ///
-    /// The window will prune itself if it can while always maintaining
-    /// the invariant that the `fixed_size` always fits within the window.
-    ///
-    /// Note it is possible for the window to be smaller than `fixed_size`
-    /// if not enough nodes have been added yet or the screen is just
-    /// smaller than the needle.
+    /// Add a new node to the sliding window. This will always grow
+    /// the sliding window; data isn't pruned until it is consumed
+    /// via a search (via next()).
     pub fn append(
         self: *SlidingWindow,
         alloc: Allocator,
         node: *PageList.List.Node,
-        required_size: usize,
     ) Allocator.Error!void {
         // Initialize our metadata for the node.
         var meta: Meta = .{
@@ -280,35 +312,6 @@ const SlidingWindow = struct {
         };
         assert(meta.cell_map.items.len == encoded.items.len);
 
-        // Now that we know our buffer length, we can consider if we can
-        // prune our circular buffer or if we need to grow it.
-        prune: {
-            // Our buffer size after adding the new node.
-            const before_size: usize = self.data.len() + encoded.items.len;
-
-            // Prune as long as removing the first (oldest) node retains
-            // our required size invariant.
-            var after_size: usize = before_size;
-            while (self.meta.first()) |oldest_meta| {
-                const new_size = after_size - oldest_meta.cell_map.items.len;
-                if (new_size < required_size) break :prune;
-
-                // We can prune this node and retain our invariant.
-                // Update our new size, deinitialize the memory, and
-                // remove from the circular buffer.
-                after_size = new_size;
-                oldest_meta.deinit();
-                self.meta.deleteOldest(1);
-            }
-            assert(after_size <= before_size);
-
-            // If we didn't prune anything then we're done.
-            if (after_size == before_size) break :prune;
-
-            // We need to prune our data buffer as well.
-            self.data.deleteOldest(before_size - after_size);
-        }
-
         // Ensure our buffers are big enough to store what we need.
         try self.data.ensureUnusedCapacity(alloc, encoded.items.len);
         try self.meta.ensureUnusedCapacity(alloc, 1);
@@ -317,13 +320,20 @@ const SlidingWindow = struct {
         try self.data.appendSlice(encoded.items);
         try self.meta.append(meta);
 
+        self.assertIntegrity();
+    }
+
+    fn assertIntegrity(self: *const SlidingWindow) void {
+        if (comptime !std.debug.runtime_safety) return;
+
         // Integrity check: verify our data matches our metadata exactly.
-        if (comptime std.debug.runtime_safety) {
-            var meta_it = self.meta.iterator(.forward);
-            var data_len: usize = 0;
-            while (meta_it.next()) |m| data_len += m.cell_map.items.len;
-            assert(data_len == self.data.len());
-        }
+        var meta_it = self.meta.iterator(.forward);
+        var data_len: usize = 0;
+        while (meta_it.next()) |m| data_len += m.cell_map.items.len;
+        assert(data_len == self.data.len());
+
+        // Integrity check: verify our data offset is within bounds.
+        assert(self.data_offset < self.data.len());
     }
 };
 
@@ -354,7 +364,7 @@ test "SlidingWindow single append" {
     // We want to test single-page cases.
     try testing.expect(s.pages.pages.first == s.pages.pages.last);
     const node: *PageList.List.Node = s.pages.pages.first.?;
-    try w.append(alloc, node, needle.len);
+    try w.append(alloc, node);
 
     // We should be able to find two matches.
     {
@@ -409,10 +419,34 @@ test "SlidingWindow two pages" {
 
     // Add both pages
     const node: *PageList.List.Node = s.pages.pages.first.?;
-    try w.append(alloc, node, needle.len);
-    try w.append(alloc, node.next.?, needle.len);
+    try w.append(alloc, node);
+    try w.append(alloc, node.next.?);
 
-    // Ensure our data is correct
+    // Search should find two matches
+    {
+        const sel = w.next(needle).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 76,
+            .y = 22,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 79,
+            .y = 22,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    {
+        const sel = w.next(needle).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 7,
+            .y = 23,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 10,
+            .y = 23,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
 }
 
 pub const PageSearch = struct {
