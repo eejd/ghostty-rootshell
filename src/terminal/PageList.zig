@@ -378,6 +378,25 @@ pub fn reset(self: *PageList) void {
         .retain_with_limit = page_count * NodePool.item_size,
     });
 
+    // Our page pool relies on mmap to zero our page memory. Since we're
+    // retaining a certain amount of memory, it won't use mmap and won't
+    // be zeroed. This block zeroes out all the memory in the pool arena.
+    {
+        // Note: we only have to do this for the page pool because the
+        // nodes are always fully overwritten on each allocation.
+        const page_arena = &self.pool.pages.arena;
+        var it = page_arena.state.buffer_list.first;
+        while (it) |node| : (it = node.next) {
+            // The fully allocated buffer
+            const alloc_buf = @as([*]u8, @ptrCast(node))[0..node.data];
+
+            // The buffer minus our header
+            const BufNode = @TypeOf(page_arena.state.buffer_list).Node;
+            const data_buf = alloc_buf[@sizeOf(BufNode)..];
+            @memset(data_buf, 0);
+        }
+    }
+
     // Initialize our pages. This should not be able to fail since
     // we retained the capacity for the minimum number of pages we need.
     self.pages, self.page_size = initPages(
