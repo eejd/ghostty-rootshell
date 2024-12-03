@@ -66,6 +66,9 @@ const SlidingWindow = struct {
     /// data to meta.
     meta: MetaBuf,
 
+    /// The cursor into the data buffer for our current search.
+    i: usize = 0,
+
     const DataBuf = CircBuf(u8, 0);
     const MetaBuf = CircBuf(Meta, undefined);
     const Meta = struct {
@@ -98,25 +101,50 @@ const SlidingWindow = struct {
         self.meta.deinit(alloc);
     }
 
-    /// Search the window for the next occurrence of the needle. As
-    /// the window moves, the window will prune itself while maintaining
-    /// the invariant that the window is always big enough to contain
-    /// the needle.
-    pub fn next(self: *SlidingWindow, needle: []const u8) ?Selection {
+    /// Search the window for the next occurrence of the needle.
+    pub fn next(self: *SlidingWindow, needle: []const u8) void {
         const slices = self.data.getPtrSlice(0, self.data.len());
 
         // Search the first slice for the needle.
-        if (std.mem.indexOf(u8, slices[0], needle)) |idx| {
-            return self.selection(idx, needle.len);
-        }
+        if (std.mem.indexOf(u8, slices[0][self.i..], needle)) |idx| {
+            // Found, map the match to a selection.
+            var meta_it = self.meta.iterator(.forward);
+            var i: usize = 0;
+            while (meta_it.next()) |meta| {
+                const meta_idx = idx - i;
+                if (meta.cell_map.items.len < meta_idx) {
+                    // This meta doesn't contain the match.
+                    i += meta.cell_map.items.len;
+                    continue;
+                }
 
-        @panic("TODO");
+                // We found the meta that contains the start of the match.
+                const tl: PageList.Pin = tl: {
+                    const map = meta.cell_map.items[meta_idx];
+                    break :tl .{
+                        .node = meta.node,
+                        .y = map.y,
+                        .x = map.x,
+                    };
+                };
+
+                _ = tl;
+            }
+
+            // Found, we can move our index to the next character
+            // after the match. This let's us find all matches even if
+            // they overlap.
+
+            self.i = idx + 1;
+
+            @panic("TODO");
+        }
     }
 
     /// Return a selection for the given start and length into the data
     /// buffer and also prune the data/meta buffers if possible up to
     /// this start index.
-    fn selection(
+    fn selectAndPrune(
         self: *SlidingWindow,
         start: usize,
         len: usize,
@@ -125,56 +153,117 @@ const SlidingWindow = struct {
         assert(start + len < self.data.len());
 
         var meta_it = self.meta.iterator(.forward);
-        const tl: Pin = pin(&meta_it, start);
+        var meta_: ?Meta = meta_it.next();
 
-        // We have to seek back so that we reinspect our current
-        // iterator value again in case the start and end are in the
-        // same segment.
-        meta_it.seekBy(-1);
-        const br: Pin = pin(&meta_it, start + len - 1);
+        // Find the start of the match
+        var offset: usize = 0;
+        var skip_nodes: usize = 0;
+        const tl: PageList.Pin = tl: {
+            while (meta_) |meta| : (meta_ = meta_it.next()) {
+                // meta_i is the index we expect to find the match in the
+                // cell map within this meta if it contains it.
+                const meta_i = start - offset;
+                if (meta_i >= meta.cell_map.items.len) {
+                    // This meta doesn't contain the match. This means we
+                    // can also prune this set of data because we only look
+                    // forward.
+                    offset += meta.cell_map.items.len;
+                    skip_nodes += 1;
+                    continue;
+                }
 
-        // TODO: prune based on meta_it.idx
+                // We found the meta that contains the start of the match.
+                const map = meta.cell_map.items[start];
+                break :tl .{
+                    .node = meta.node,
+                    .y = map.y,
+                    .x = map.x,
+                };
+            }
 
-        return Selection.init(tl, br, false);
+            // We never found the top-left. This is unreachable because
+            // we assert that the start index is within the data buffer,
+            // and when building the data buffer we assert the cell map
+            // length exactly matches the data buffer length.
+            unreachable;
+        };
+
+        // Keep track of the number of nodes we skipped for the tl.
+        const tl_skip_nodes = skip_nodes;
+        skip_nodes = 0;
+
+        // Find the end of the match
+        const br: PageList.Pin = br: {
+            const end_idx = start + len - 1;
+            while (meta_) |meta| : (meta_ = meta_it.next()) {
+                const meta_i = end_idx - offset;
+                if (meta_i >= meta.cell_map.items.len) {
+                    offset += meta.cell_map.items.len;
+                    skip_nodes += 1;
+                    continue;
+                }
+
+                // We found the meta that contains the start of the match.
+                const map = meta.cell_map.items[end_idx];
+                break :br .{
+                    .node = meta.node,
+                    .y = map.y,
+                    .x = map.x,
+                };
+            }
+        };
+
+        // If we skipped any nodes for the bottom-right then we can prune
+        // all the way up to the total. If we didn't, it means we found
+        // the bottom-right in the same node as the top-left and we can't
+        // prune the node that the match is on because there may be
+        // more matches.
+        if (skip_nodes > 0) skip_nodes += tl_skip_nodes;
+
+        _ = tl;
+        _ = br;
     }
 
     /// Convert a data index into a pin.
-    ///
-    /// Tip: you can get the offset into the meta buffer we searched
-    /// by inspecting the iterator index after this function returns.
-    /// I note this because this is useful if you want to prune the
-    /// meta buffer after you find a match.
-    ///
-    /// Precondition: the index must be within the data buffer.
     fn pin(
-        it: *MetaBuf.Iterator,
+        self: *const SlidingWindow,
         idx: usize,
-    ) Pin {
-        var offset: usize = 0;
+        it: ?*MetaBuf.Iterator,
+    ) struct {
+        /// The pin for the data index.
+        pin: Pin,
+
+        /// The offset into the meta buffer that the pin was found.
+        /// This can be used to prune the meta buffer (its safe to prune
+        /// before this i).
+        meta_i: usize,
+    } {
+        _ = self;
+        _ = idx;
+        _ = start;
+
         while (it.next()) |meta| {
-            // meta_i is the index we expect to find the match in the
-            // cell map within this meta if it contains it.
-            const meta_i = idx - offset;
-            if (meta_i >= meta.cell_map.items.len) {
-                // This meta doesn't contain the match. This means we
-                // can also prune this set of data because we only look
-                // forward.
-                offset += meta.cell_map.items.len;
-                continue;
+                // meta_i is the index we expect to find the match in the
+                // cell map within this meta if it contains it.
+                const meta_i = start - offset;
+                if (meta_i >= meta.cell_map.items.len) {
+                    // This meta doesn't contain the match. This means we
+                    // can also prune this set of data because we only look
+                    // forward.
+                    offset += meta.cell_map.items.len;
+                    skip_nodes += 1;
+                    continue;
+                }
+
+                // We found the meta that contains the start of the match.
+                const map = meta.cell_map.items[start];
+                break :tl .{
+                    .node = meta.node,
+                    .y = map.y,
+                    .x = map.x,
+                };
             }
 
-            // We found the meta that contains the start of the match.
-            const map = meta.cell_map.items[meta_i];
-            return .{
-                .node = meta.node,
-                .y = map.y,
-                .x = map.x,
-            };
-        }
-
-        // Unreachable because it is a precondition that the index is
-        // within the data buffer.
-        unreachable;
     }
 
     /// Add a new node to the sliding window.
@@ -292,30 +381,6 @@ test "SlidingWindow single append" {
     try testing.expect(s.pages.pages.first == s.pages.pages.last);
     const node: *PageList.List.Node = s.pages.pages.first.?;
     try w.append(alloc, node, needle.len);
-
-    // We should be able to find two matches.
-    {
-        const sel = w.next(needle).?;
-        try testing.expectEqual(point.Point{ .active = .{
-            .x = 7,
-            .y = 0,
-        } }, s.pages.pointFromPin(.active, sel.start()).?);
-        try testing.expectEqual(point.Point{ .active = .{
-            .x = 10,
-            .y = 0,
-        } }, s.pages.pointFromPin(.active, sel.end()).?);
-    }
-    {
-        const sel = w.next(needle).?;
-        try testing.expectEqual(point.Point{ .active = .{
-            .x = 19,
-            .y = 0,
-        } }, s.pages.pointFromPin(.active, sel.start()).?);
-        try testing.expectEqual(point.Point{ .active = .{
-            .x = 22,
-            .y = 0,
-        } }, s.pages.pointFromPin(.active, sel.end()).?);
-    }
 }
 
 test "SlidingWindow two pages" {
