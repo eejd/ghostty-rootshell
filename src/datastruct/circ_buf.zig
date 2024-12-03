@@ -56,6 +56,11 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
                     self.idx -|= @intCast(@abs(amount));
                 }
             }
+
+            /// Reset the iterator back to the first value.
+            pub fn reset(self: *Iterator) void {
+                self.idx = 0;
+            }
         };
 
         /// Initialize a new circular buffer that can store size elements.

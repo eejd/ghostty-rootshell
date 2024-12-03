@@ -66,6 +66,11 @@ const SlidingWindow = struct {
     /// data to meta.
     meta: MetaBuf,
 
+    /// Offset into data for our current state. This handles the
+    /// situation where our search moved through meta[0] but didn't
+    /// do enough to prune it.
+    data_offset: usize = 0,
+
     const DataBuf = CircBuf(u8, 0);
     const MetaBuf = CircBuf(Meta, undefined);
     const Meta = struct {
@@ -98,31 +103,60 @@ const SlidingWindow = struct {
         self.meta.deinit(alloc);
     }
 
+    /// Clear all data but retain allocated capacity.
+    pub fn clearAndRetainCapacity(self: *SlidingWindow) void {
+        var meta_it = self.meta.iterator(.forward);
+        while (meta_it.next()) |meta| meta.deinit();
+        self.meta.clear();
+        self.data.clear();
+        self.data_offset = 0;
+    }
+
     /// Search the window for the next occurrence of the needle. As
     /// the window moves, the window will prune itself while maintaining
     /// the invariant that the window is always big enough to contain
     /// the needle.
     pub fn next(self: *SlidingWindow, needle: []const u8) ?Selection {
-        const slices = self.data.getPtrSlice(0, self.data.len());
+        const data_len = self.data.len();
+        if (data_len == 0) return null;
+        const slices = self.data.getPtrSlice(
+            self.data_offset,
+            data_len - self.data_offset,
+        );
 
         // Search the first slice for the needle.
         if (std.mem.indexOf(u8, slices[0], needle)) |idx| {
             return self.selection(idx, needle.len);
         }
 
-        @panic("TODO");
+        // TODO: search overlap
+
+        // Search the last slice for the needle.
+        if (std.mem.indexOf(u8, slices[1], needle)) |idx| {
+            if (true) @panic("TODO: test");
+            return self.selection(slices[0].len + idx, needle.len);
+        }
+
+        // No match. Clear everything.
+        self.clearAndRetainCapacity();
+        return null;
     }
 
     /// Return a selection for the given start and length into the data
     /// buffer and also prune the data/meta buffers if possible up to
     /// this start index.
+    ///
+    /// The start index is assumed to be relative to the offset. i.e.
+    /// index zero is actually at `self.data[self.data_offset]`. The
+    /// selection will account for the offset.
     fn selection(
         self: *SlidingWindow,
-        start: usize,
+        start_offset: usize,
         len: usize,
     ) Selection {
+        const start = start_offset + self.data_offset;
         assert(start < self.data.len());
-        assert(start + len < self.data.len());
+        assert(start + len <= self.data.len());
 
         var meta_it = self.meta.iterator(.forward);
         const tl: Pin = pin(&meta_it, start);
@@ -132,8 +166,37 @@ const SlidingWindow = struct {
         // same segment.
         meta_it.seekBy(-1);
         const br: Pin = pin(&meta_it, start + len - 1);
+        assert(meta_it.idx >= 1);
 
-        // TODO: prune based on meta_it.idx
+        // meta_it.idx is now the index after the br pin. We can
+        // safely prune our data up to this index. (It is after
+        // because next() is called at least once).
+        const br_meta_idx: usize = meta_it.idx - 1;
+        meta_it.reset();
+        var offset: usize = 0;
+        while (meta_it.next()) |meta| {
+            const meta_idx = start - offset;
+            if (meta_idx >= meta.cell_map.items.len) {
+                // Prior to our matches, we can prune it.
+                offset += meta.cell_map.items.len;
+                meta.deinit();
+            }
+
+            assert(meta_it.idx == br_meta_idx + 1);
+            break;
+        }
+
+        // If we have metas to prune, then prune them. They should be
+        // deinitialized already from the while loop above.
+        if (br_meta_idx > 0) {
+            assert(offset > 0);
+            self.meta.deleteOldest(br_meta_idx);
+            self.data.deleteOldest(offset);
+            @panic("TODO: TEST");
+        }
+
+        // Move our data one beyond so we don't rematch.
+        self.data_offset = start - offset + 1;
 
         return Selection.init(tl, br, false);
     }
@@ -316,6 +379,8 @@ test "SlidingWindow single append" {
             .y = 0,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
 }
 
 test "SlidingWindow two pages" {
