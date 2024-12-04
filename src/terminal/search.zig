@@ -10,46 +10,64 @@ const Pin = PageList.Pin;
 const Selection = terminal.Selection;
 const Screen = terminal.Screen;
 
+/// Searches for a term in a PageList structure.
 pub const PageListSearch = struct {
-    alloc: Allocator,
-
     /// The list we're searching.
     list: *PageList,
 
-    /// The search term we're searching for.
-    needle: []const u8,
-
-    /// The window is our sliding window of pages that we're searching so
-    /// we can handle boundary cases where a needle is partially on the end
-    /// of one page and the beginning of the next.
-    ///
-    /// Note that we're not guaranteed to straddle exactly two pages. If
-    /// the needle is large enough and/or the pages are small enough then
-    /// the needle can straddle N pages. Additionally, pages aren't guaranteed
-    /// to be equal size so we can't precompute the window size.
+    /// The sliding window of page contents and nodes to search.
     window: SlidingWindow,
 
+    /// Initialize the page list search.
+    ///
+    /// The needle is not copied and must be kept alive for the duration
+    /// of the search operation.
     pub fn init(
         alloc: Allocator,
         list: *PageList,
         needle: []const u8,
-    ) !PageListSearch {
-        var window = try CircBuf.init(alloc, 0);
-        errdefer window.deinit();
+    ) Allocator.Error!PageListSearch {
+        var window = try SlidingWindow.init(alloc, needle);
+        errdefer window.deinit(alloc);
 
         return .{
-            .alloc = alloc,
             .list = list,
-            .current = list.pages.first,
-            .needle = needle,
             .window = window,
         };
     }
 
-    pub fn deinit(self: *PageListSearch) void {
-        _ = self;
+    pub fn deinit(self: *PageListSearch, alloc: Allocator) void {
+        self.window.deinit(alloc);
+    }
 
-        // TODO: deinit window
+    /// Find the next match for the needle in the pagelist. This returns
+    /// null when there are no more matches.
+    pub fn next(
+        self: *PageListSearch,
+        alloc: Allocator,
+    ) Allocator.Error!?Selection {
+        // Try to search for the needle in the window. If we find a match
+        // then we can return that and we're done.
+        if (self.window.next()) |sel| return sel;
+
+        // Get our next node. If we have a value in our window then we
+        // can determine the next node. If we don't, we've never setup the
+        // window so we use our first node.
+        var node_: ?*PageList.List.Node = if (self.window.meta.last()) |meta|
+            meta.node.next
+        else
+            self.list.pages.first;
+
+        // Add one pagelist node at a time, look for matches, and repeat
+        // until we find a match or we reach the end of the pagelist.
+        // This append then next pattern limits memory usage of the window.
+        while (node_) |node| : (node_ = node.next) {
+            try self.window.append(alloc, node);
+            if (self.window.next()) |sel| return sel;
+        }
+
+        // We've reached the end of the pagelist, no matches.
+        return null;
     }
 };
 
@@ -419,6 +437,45 @@ const SlidingWindow = struct {
         assert(self.data_offset < self.data.len());
     }
 };
+
+test "PageListSearch single page" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    try s.testWriteString("hello. boo! hello. boo!");
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+
+    var search = try PageListSearch.init(alloc, &s.pages, "boo!");
+    defer search.deinit(alloc);
+
+    // We should be able to find two matches.
+    {
+        const sel = (try search.next(alloc)).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 10,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    {
+        const sel = (try search.next(alloc)).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 19,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 22,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    try testing.expect((try search.next(alloc)) == null);
+    try testing.expect((try search.next(alloc)) == null);
+}
 
 test "SlidingWindow empty on init" {
     const testing = std.testing;
