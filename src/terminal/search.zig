@@ -212,6 +212,12 @@ const SlidingWindow = struct {
         var meta_consumed: usize = 0;
         const tl: Pin = pin(&meta_it, &meta_consumed, start);
 
+        // Store the information required to prune later. We store this
+        // now because we only want to prune up to our START so we can
+        // find overlapping matches.
+        const tl_meta_idx = meta_it.idx - 1;
+        const tl_meta_consumed = meta_consumed;
+
         // We have to seek back so that we reinspect our current
         // iterator value again in case the start and end are in the
         // same segment.
@@ -222,27 +228,27 @@ const SlidingWindow = struct {
         // Our offset into the current meta block is the start index
         // minus the amount of data fully consumed. We then add one
         // to move one past the match so we don't repeat it.
-        self.data_offset = start - meta_consumed + 1;
+        self.data_offset = start - tl_meta_consumed + 1;
 
         // meta_it.idx is br's meta index plus one (because the iterator
         // moves one past the end; we call next() one last time). So
         // we compare against one to check that the meta that we matched
         // in has prior meta blocks we can prune.
-        if (meta_it.idx > 1) {
+        if (tl_meta_idx > 0) {
             // Deinit all our memory in the meta blocks prior to our
             // match.
-            const meta_count = meta_it.idx - 1;
+            const meta_count = tl_meta_idx;
             meta_it.reset();
             for (0..meta_count) |_| meta_it.next().?.deinit();
             if (comptime std.debug.runtime_safety) {
                 assert(meta_it.idx == meta_count);
-                assert(meta_it.next().?.node == br.node);
+                assert(meta_it.next().?.node == tl.node);
             }
             self.meta.deleteOldest(meta_count);
 
             // Delete all the data up to our current index.
-            assert(meta_consumed > 0);
-            self.data.deleteOldest(meta_consumed);
+            assert(tl_meta_consumed > 0);
+            self.data.deleteOldest(tl_meta_consumed);
         }
 
         self.assertIntegrity();
@@ -483,6 +489,53 @@ test "SlidingWindow two pages" {
     }
     try testing.expect(w.next(needle) == null);
     try testing.expect(w.next(needle) == null);
+}
+
+test "SlidingWindow two pages match across boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    // Fill up the first page. The final bytes in the first page
+    // are "boo!"
+    const first_page_rows = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_rows - 1) |_| try s.testWriteString("\n");
+    for (0..s.pages.cols - 4) |_| try s.testWriteString("x");
+    try s.testWriteString("hell");
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    try s.testWriteString("o, world!");
+    try testing.expect(s.pages.pages.first != s.pages.pages.last);
+
+    // Imaginary needle for search
+    const needle = "hello, world";
+
+    // Add both pages
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node.next.?);
+
+    // Search should find a match
+    {
+        const sel = w.next(needle).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 76,
+            .y = 22,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 7,
+            .y = 23,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next(needle) == null);
+
+    // We shouldn't prune because we don't have enough space
+    try testing.expectEqual(2, w.meta.len());
 }
 
 test "SlidingWindow two pages no match prunes first page" {
