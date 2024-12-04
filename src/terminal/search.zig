@@ -1,3 +1,26 @@
+//! Search functionality for the terminal.
+//!
+//! At the time of writing this comment, this is a **work in progress**.
+//!
+//! Search at the time of writing is implemented using a simple
+//! boyer-moore-horspool algorithm. The suboptimal part of the implementation
+//! is that we need to encode each terminal page into a text buffer in order
+//! to apply BMH to it. This is because the terminal page is not laid out
+//! in a flat text form.
+//!
+//! To minimize memory usage, we use a sliding window to search for the
+//! needle. The sliding window only keeps the minimum amount of page data
+//! in memory to search for a needle (i.e. `needle.len - 1` bytes of overlap
+//! between terminal pages).
+//!
+//! Future work:
+//!
+//!   - PageListSearch on a PageList concurrently with another thread
+//!   - Handle pruned pages in a PageList to ensure we don't keep references
+//!   - Repeat search a changing active area of the screen
+//!   - Reverse search so that more recent matches are found first
+//!
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
@@ -11,6 +34,10 @@ const Selection = terminal.Selection;
 const Screen = terminal.Screen;
 
 /// Searches for a term in a PageList structure.
+///
+/// At the time of writing, this does not support searching a pagelist
+/// simultaneously as its being used by another thread. This will be resolved
+/// in the future.
 pub const PageListSearch = struct {
     /// The list we're searching.
     list: *PageList,
