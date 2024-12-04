@@ -118,12 +118,16 @@ const SlidingWindow = struct {
     /// the invariant that the window is always big enough to contain
     /// the needle.
     pub fn next(self: *SlidingWindow, needle: []const u8) ?Selection {
-        const data_len = self.data.len();
-        if (data_len == 0) return null;
-        const slices = self.data.getPtrSlice(
-            self.data_offset,
-            data_len - self.data_offset,
-        );
+        const slices = slices: {
+            // If we have less data then the needle then we can't possibly match
+            const data_len = self.data.len();
+            if (data_len < needle.len) return null;
+
+            break :slices self.data.getPtrSlice(
+                self.data_offset,
+                data_len - self.data_offset,
+            );
+        };
 
         // Search the first slice for the needle.
         if (std.mem.indexOf(u8, slices[0], needle)) |idx| {
@@ -134,7 +138,6 @@ const SlidingWindow = struct {
 
         // Search the last slice for the needle.
         if (std.mem.indexOf(u8, slices[1], needle)) |idx| {
-            if (true) @panic("TODO: test");
             return self.selection(slices[0].len + idx, needle.len);
         }
 
@@ -181,6 +184,10 @@ const SlidingWindow = struct {
             self.meta.deleteOldest(prune_count);
             self.data.deleteOldest(prune_data_len);
         }
+
+        // Our data offset now moves to needle.len - 1 from the end so
+        // that we can handle the overlap case.
+        self.data_offset = self.data.len() - needle.len + 1;
 
         self.assertIntegrity();
         return null;
@@ -614,4 +621,56 @@ test "SlidingWindow two pages no match keeps both pages" {
 
     // No pruning because both pages are needed to fit needle.
     try testing.expectEqual(2, w.meta.len());
+}
+
+test "SlidingWindow single append across circular buffer boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    try s.testWriteString("XXXXXXXXXXXXXXXXXXXboo!XXXXX");
+
+    // We are trying to break a circular buffer boundary so the way we
+    // do this is to duplicate the data then do a failing search. This
+    // will cause the first page to be pruned. The next time we append we'll
+    // put it in the middle of the circ buffer. We assert this so that if
+    // our implementation changes our test will fail.
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node);
+    {
+        // No wrap around yet
+        const slices = w.data.getPtrSlice(0, w.data.len());
+        try testing.expect(slices[0].len > 0);
+        try testing.expect(slices[1].len == 0);
+    }
+
+    // Search non-match, prunes page
+    try testing.expect(w.next("abc") == null);
+    try testing.expectEqual(1, w.meta.len());
+
+    // Add new page, now wraps
+    try w.append(alloc, node);
+    {
+        const slices = w.data.getPtrSlice(0, w.data.len());
+        try testing.expect(slices[0].len > 0);
+        try testing.expect(slices[1].len > 0);
+    }
+    {
+        const sel = w.next("boo!").?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 19,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 22,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    try testing.expect(w.next("boo!") == null);
 }
