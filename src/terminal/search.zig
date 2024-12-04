@@ -53,9 +53,22 @@ pub const PageListSearch = struct {
     }
 };
 
-/// Search pages via a sliding window. The sliding window always maintains
-/// the invariant that data isn't pruned until we've searched it and
-/// accounted for overlaps across pages.
+/// Searches page nodes via a sliding window. The sliding window maintains
+/// the invariant that data isn't pruned until (1) we've searched it and
+/// (2) we've accounted for overlaps across pages to fit the needle.
+///
+/// The sliding window is first initialized empty. Pages are then appended
+/// in the order to search them. If you're doing a reverse search then the
+/// pages should be appended in reverse order and the needle should be
+/// reversed.
+///
+/// All appends grow the window. The window is only pruned when a searc
+/// is done (positive or negative match) via `next()`.
+///
+/// To avoid unnecessary memory growth, the recommended usage is to
+/// call `next()` until it returns null and then `append` the next page
+/// and repeat the process. This will always maintain the minimum
+/// required memory to search for the needle.
 const SlidingWindow = struct {
     /// The data buffer is a circular buffer of u8 that contains the
     /// encoded page text that we can use to search for the needle.
