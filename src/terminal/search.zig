@@ -72,6 +72,14 @@ const SlidingWindow = struct {
     /// do enough to prune it.
     data_offset: usize = 0,
 
+    /// The needle we're searching for. Does not own the memory.
+    needle: []const u8,
+
+    /// A buffer to store the overlap search data. This is used to search
+    /// overlaps between pages where the match starts on one page and
+    /// ends on another. The length is always `needle.len * 2`.
+    overlap_buf: []u8,
+
     const DataBuf = CircBuf(u8, 0);
     const MetaBuf = CircBuf(Meta, undefined);
     const Meta = struct {
@@ -83,20 +91,29 @@ const SlidingWindow = struct {
         }
     };
 
-    pub fn initEmpty(alloc: Allocator) Allocator.Error!SlidingWindow {
+    pub fn init(
+        alloc: Allocator,
+        needle: []const u8,
+    ) Allocator.Error!SlidingWindow {
         var data = try DataBuf.init(alloc, 0);
         errdefer data.deinit(alloc);
 
         var meta = try MetaBuf.init(alloc, 0);
         errdefer meta.deinit(alloc);
 
+        const overlap_buf = try alloc.alloc(u8, needle.len * 2);
+        errdefer alloc.free(overlap_buf);
+
         return .{
             .data = data,
             .meta = meta,
+            .needle = needle,
+            .overlap_buf = overlap_buf,
         };
     }
 
     pub fn deinit(self: *SlidingWindow, alloc: Allocator) void {
+        alloc.free(self.overlap_buf);
         self.data.deinit(alloc);
 
         var meta_it = self.meta.iterator(.forward);
@@ -117,11 +134,11 @@ const SlidingWindow = struct {
     /// the window moves, the window will prune itself while maintaining
     /// the invariant that the window is always big enough to contain
     /// the needle.
-    pub fn next(self: *SlidingWindow, needle: []const u8) ?Selection {
+    pub fn next(self: *SlidingWindow) ?Selection {
         const slices = slices: {
             // If we have less data then the needle then we can't possibly match
             const data_len = self.data.len();
-            if (data_len < needle.len) return null;
+            if (data_len < self.needle.len) return null;
 
             break :slices self.data.getPtrSlice(
                 self.data_offset,
@@ -130,15 +147,46 @@ const SlidingWindow = struct {
         };
 
         // Search the first slice for the needle.
-        if (std.mem.indexOf(u8, slices[0], needle)) |idx| {
-            return self.selection(idx, needle.len);
+        if (std.mem.indexOf(u8, slices[0], self.needle)) |idx| {
+            return self.selection(idx, self.needle.len);
         }
 
-        // TODO: search overlap
+        // Search the overlap buffer for the needle.
+        if (slices[0].len > 0 and slices[1].len > 0) overlap: {
+            // Get up to needle.len - 1 bytes from each side (as much as
+            // we can) and store it in the overlap buffer.
+            const prefix: []const u8 = prefix: {
+                const len = @min(slices[0].len, self.needle.len - 1);
+                const idx = slices[0].len - len;
+                break :prefix slices[0][idx..];
+            };
+            const suffix: []const u8 = suffix: {
+                const len = @min(slices[1].len, self.needle.len - 1);
+                break :suffix slices[1][0..len];
+            };
+            const overlap_len = prefix.len + suffix.len;
+            assert(overlap_len <= self.overlap_buf.len);
+            @memcpy(self.overlap_buf[0..prefix.len], prefix);
+            @memcpy(self.overlap_buf[prefix.len..overlap_len], suffix);
+
+            // Search the overlap
+            const idx = std.mem.indexOf(
+                u8,
+                self.overlap_buf[0..overlap_len],
+                self.needle,
+            ) orelse break :overlap;
+
+            // We found a match in the overlap buffer. We need to map the
+            // index back to the data buffer in order to get our selection.
+            return self.selection(
+                slices[0].len - prefix.len + idx,
+                self.needle.len,
+            );
+        }
 
         // Search the last slice for the needle.
-        if (std.mem.indexOf(u8, slices[1], needle)) |idx| {
-            return self.selection(slices[0].len + idx, needle.len);
+        if (std.mem.indexOf(u8, slices[1], self.needle)) |idx| {
+            return self.selection(slices[0].len + idx, self.needle.len);
         }
 
         // No match. We keep `needle.len - 1` bytes available to
@@ -147,7 +195,7 @@ const SlidingWindow = struct {
         prune: {
             var saved: usize = 0;
             while (meta_it.next()) |meta| {
-                const needed = needle.len - 1 - saved;
+                const needed = self.needle.len - 1 - saved;
                 if (meta.cell_map.items.len >= needed) {
                     // We save up to this meta. We set our data offset
                     // to exactly where it needs to be to continue
@@ -161,7 +209,7 @@ const SlidingWindow = struct {
                 // If we exited the while loop naturally then we
                 // never got the amount we needed and so there is
                 // nothing to prune.
-                assert(saved < needle.len - 1);
+                assert(saved < self.needle.len - 1);
                 break :prune;
             }
 
@@ -187,7 +235,7 @@ const SlidingWindow = struct {
 
         // Our data offset now moves to needle.len - 1 from the end so
         // that we can handle the overlap case.
-        self.data_offset = self.data.len() - needle.len + 1;
+        self.data_offset = self.data.len() - self.needle.len + 1;
 
         self.assertIntegrity();
         return null;
@@ -363,7 +411,7 @@ test "SlidingWindow empty on init" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "boo!");
     defer w.deinit(alloc);
     try testing.expectEqual(0, w.data.len());
     try testing.expectEqual(0, w.meta.len());
@@ -373,15 +421,12 @@ test "SlidingWindow single append" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "boo!");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 0);
     defer s.deinit();
     try s.testWriteString("hello. boo! hello. boo!");
-
-    // Imaginary needle for search
-    const needle = "boo!";
 
     // We want to test single-page cases.
     try testing.expect(s.pages.pages.first == s.pages.pages.last);
@@ -390,7 +435,7 @@ test "SlidingWindow single append" {
 
     // We should be able to find two matches.
     {
-        const sel = w.next(needle).?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 7,
             .y = 0,
@@ -401,7 +446,7 @@ test "SlidingWindow single append" {
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
     {
-        const sel = w.next(needle).?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 19,
             .y = 0,
@@ -411,23 +456,20 @@ test "SlidingWindow single append" {
             .y = 0,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 }
 
 test "SlidingWindow single append no match" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "nope!");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 0);
     defer s.deinit();
     try s.testWriteString("hello. boo! hello. boo!");
-
-    // Imaginary needle for search
-    const needle = "nope!";
 
     // We want to test single-page cases.
     try testing.expect(s.pages.pages.first == s.pages.pages.last);
@@ -435,8 +477,8 @@ test "SlidingWindow single append no match" {
     try w.append(alloc, node);
 
     // No matches
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 
     // Should still keep the page
     try testing.expectEqual(1, w.meta.len());
@@ -446,7 +488,7 @@ test "SlidingWindow two pages" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "boo!");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 1000);
@@ -463,9 +505,6 @@ test "SlidingWindow two pages" {
     try testing.expect(s.pages.pages.first != s.pages.pages.last);
     try s.testWriteString("hello. boo!");
 
-    // Imaginary needle for search
-    const needle = "boo!";
-
     // Add both pages
     const node: *PageList.List.Node = s.pages.pages.first.?;
     try w.append(alloc, node);
@@ -473,7 +512,7 @@ test "SlidingWindow two pages" {
 
     // Search should find two matches
     {
-        const sel = w.next(needle).?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 76,
             .y = 22,
@@ -484,7 +523,7 @@ test "SlidingWindow two pages" {
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
     {
-        const sel = w.next(needle).?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 7,
             .y = 23,
@@ -494,15 +533,15 @@ test "SlidingWindow two pages" {
             .y = 23,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 }
 
 test "SlidingWindow two pages match across boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "hello, world");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 1000);
@@ -518,9 +557,6 @@ test "SlidingWindow two pages match across boundary" {
     try s.testWriteString("o, world!");
     try testing.expect(s.pages.pages.first != s.pages.pages.last);
 
-    // Imaginary needle for search
-    const needle = "hello, world";
-
     // Add both pages
     const node: *PageList.List.Node = s.pages.pages.first.?;
     try w.append(alloc, node);
@@ -528,7 +564,7 @@ test "SlidingWindow two pages match across boundary" {
 
     // Search should find a match
     {
-        const sel = w.next(needle).?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 76,
             .y = 22,
@@ -538,8 +574,8 @@ test "SlidingWindow two pages match across boundary" {
             .y = 23,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 
     // We shouldn't prune because we don't have enough space
     try testing.expectEqual(2, w.meta.len());
@@ -549,7 +585,7 @@ test "SlidingWindow two pages no match prunes first page" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "nope!");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 1000);
@@ -571,12 +607,9 @@ test "SlidingWindow two pages no match prunes first page" {
     try w.append(alloc, node);
     try w.append(alloc, node.next.?);
 
-    // Imaginary needle for search. Doesn't match!
-    const needle = "nope!";
-
     // Search should find nothing
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 
     // We should've pruned our page because the second page
     // has enough text to contain our needle.
@@ -587,9 +620,6 @@ test "SlidingWindow two pages no match keeps both pages" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
-    defer w.deinit(alloc);
-
     var s = try Screen.init(alloc, 80, 24, 1000);
     defer s.deinit();
 
@@ -604,20 +634,23 @@ test "SlidingWindow two pages no match keeps both pages" {
     try testing.expect(s.pages.pages.first != s.pages.pages.last);
     try s.testWriteString("hello. boo!");
 
-    // Add both pages
-    const node: *PageList.List.Node = s.pages.pages.first.?;
-    try w.append(alloc, node);
-    try w.append(alloc, node.next.?);
-
     // Imaginary needle for search. Doesn't match!
     var needle_list = std.ArrayList(u8).init(alloc);
     defer needle_list.deinit();
     try needle_list.appendNTimes('x', first_page_rows * s.pages.cols);
     const needle: []const u8 = needle_list.items;
 
+    var w = try SlidingWindow.init(alloc, needle);
+    defer w.deinit(alloc);
+
+    // Add both pages
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node.next.?);
+
     // Search should find nothing
-    try testing.expect(w.next(needle) == null);
-    try testing.expect(w.next(needle) == null);
+    try testing.expect(w.next() == null);
+    try testing.expect(w.next() == null);
 
     // No pruning because both pages are needed to fit needle.
     try testing.expectEqual(2, w.meta.len());
@@ -627,7 +660,7 @@ test "SlidingWindow single append across circular buffer boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var w = try SlidingWindow.initEmpty(alloc);
+    var w = try SlidingWindow.init(alloc, "abc");
     defer w.deinit(alloc);
 
     var s = try Screen.init(alloc, 80, 24, 0);
@@ -651,8 +684,11 @@ test "SlidingWindow single append across circular buffer boundary" {
     }
 
     // Search non-match, prunes page
-    try testing.expect(w.next("abc") == null);
+    try testing.expect(w.next() == null);
     try testing.expectEqual(1, w.meta.len());
+
+    // Change the needle, just needs to be the same length (not a real API)
+    w.needle = "boo";
 
     // Add new page, now wraps
     try w.append(alloc, node);
@@ -662,15 +698,70 @@ test "SlidingWindow single append across circular buffer boundary" {
         try testing.expect(slices[1].len > 0);
     }
     {
-        const sel = w.next("boo!").?;
+        const sel = w.next().?;
         try testing.expectEqual(point.Point{ .active = .{
             .x = 19,
             .y = 0,
         } }, s.pages.pointFromPin(.active, sel.start()).?);
         try testing.expectEqual(point.Point{ .active = .{
-            .x = 22,
+            .x = 21,
             .y = 0,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
-    try testing.expect(w.next("boo!") == null);
+    try testing.expect(w.next() == null);
+}
+
+test "SlidingWindow single append match on boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.init(alloc, "abcd");
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 0);
+    defer s.deinit();
+    try s.testWriteString("o!XXXXXXXXXXXXXXXXXXXbo");
+
+    // We are trying to break a circular buffer boundary so the way we
+    // do this is to duplicate the data then do a failing search. This
+    // will cause the first page to be pruned. The next time we append we'll
+    // put it in the middle of the circ buffer. We assert this so that if
+    // our implementation changes our test will fail.
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node);
+    try w.append(alloc, node);
+    {
+        // No wrap around yet
+        const slices = w.data.getPtrSlice(0, w.data.len());
+        try testing.expect(slices[0].len > 0);
+        try testing.expect(slices[1].len == 0);
+    }
+
+    // Search non-match, prunes page
+    try testing.expect(w.next() == null);
+    try testing.expectEqual(1, w.meta.len());
+
+    // Change the needle, just needs to be the same length (not a real API)
+    w.needle = "boo!";
+
+    // Add new page, now wraps
+    try w.append(alloc, node);
+    {
+        const slices = w.data.getPtrSlice(0, w.data.len());
+        try testing.expect(slices[0].len > 0);
+        try testing.expect(slices[1].len > 0);
+    }
+    {
+        const sel = w.next().?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 21,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    try testing.expect(w.next() == null);
 }
