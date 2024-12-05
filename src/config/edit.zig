@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const internal_os = @import("../os/main.zig");
 
@@ -6,7 +7,21 @@ const internal_os = @import("../os/main.zig");
 /// paths the main config file could be in.
 pub fn open(alloc_gpa: Allocator) !void {
     // default location
-    const config_path = try internal_os.xdg.config(alloc_gpa, .{ .subdir = "ghostty/config" });
+    var config_path = try internal_os.xdg.config(alloc_gpa, .{ .subdir = "ghostty/config" });
+
+    if (comptime builtin.os.tag == .macos) {
+        const xdg_config_exists = if (std.fs.accessAbsolute(config_path, std.fs.File.OpenFlags{})) true else |err| switch (err) {
+            error.BadPathName => false,
+            error.FileNotFound => false,
+            else => true,
+        };
+
+        if (!xdg_config_exists) {
+            alloc_gpa.free(config_path);
+            config_path = try internal_os.macos.appSupportDir(alloc_gpa, "config");
+        }
+    }
+
     defer alloc_gpa.free(config_path);
 
     // Create config directory recursively.
