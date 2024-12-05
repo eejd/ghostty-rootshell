@@ -115,8 +115,25 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // reassess...
         //
         // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+        //
+        // Specific details about values:
+        //   - "opengl" - output OpenGL debug information
+        //   - "gl-disable-gles" - disable GLES, Ghostty can't use GLES
+        //   - "vulkan-disable" - disable Vulkan, Ghostty can't use Vulkan
+        //     and initializing a Vulkan context was causing a longer delay
+        //     on some systems.
         _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable");
+
+        // Wayland-EGL on GTK 4.14 causes "Failed to create EGL context" errors.
+        // This can be fixed by forcing the backend to prefer X11. This issue
+        // appears to be fixed in GTK 4.16 but I wasn't able to bisect why.
+        // The "*" at the end says that if X11 fails, try all remaining
+        // backends.
+        _ = internal_os.setenv("GDK_BACKEND", "x11,*");
     } else {
+        // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
+        // is an environment that isn't tested well and we don't have a
+        // good understanding of what we may need to do.
         _ = internal_os.setenv("GDK_DEBUG", "vulkan-disable");
     }
 
