@@ -690,7 +690,7 @@ pub const ImageStorage = struct {
             br.x = @min(
                 // We need to sub one here because the x value is
                 // one width already. So if the image is width "1"
-                // then we add zero to X because X itelf is width 1.
+                // then we add zero to X because X itself is width 1.
                 pin.x + (grid_size.cols - 1),
                 t.cols - 1,
             );
