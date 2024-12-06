@@ -478,6 +478,18 @@ pub fn clearScreen(self: *Termio, td: *ThreadData, history: bool) !void {
                 );
             }
 
+            // Clear all Kitty graphics state for this screen. This copies
+            // Kitty's behavior when Cmd+K deletes all Kitty graphics. I
+            // didn't spend time researching whether it only deletes Kitty
+            // graphics that are placed baove the cursor or if it deletes
+            // all of them. We delete all of them for now but if this behavior
+            // isn't fully correct we should fix this later.
+            self.terminal.screen.kitty_images.delete(
+                self.terminal.screen.alloc,
+                &self.terminal,
+                .{ .all = true },
+            );
+
             return;
         }
 
