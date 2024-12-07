@@ -167,9 +167,9 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         self.savedState = savedState
 
         // We hide the dock if the window is on a screen with the dock.
-        // This is crazy but at least on macOS 15.0, you must hide the dock
-        // FIRST then hide the menu. If you do the opposite, it does not
-        // work.
+        // We must hide the dock FIRST then hide the menu:
+        // If you specify autoHideMenuBar, it must be accompanied by either hideDock or autoHideDock.
+        // https://developer.apple.com/documentation/appkit/nsapplication/presentationoptions-swift.struct
         if (savedState.dock) {
             hideDock()
         }
