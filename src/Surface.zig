@@ -1182,6 +1182,14 @@ pub fn updateConfig(
         log.warn("failed to notify renderer of config change err={}", .{err});
     };
 
+    // If we have a title set then we update our window to have the
+    // newly configured title.
+    if (config.title) |title| try self.rt_app.performAction(
+        .{ .surface = self },
+        .set_title,
+        .{ .title = title },
+    );
+
     // Notify the window
     try self.rt_app.performAction(
         .{ .surface = self },

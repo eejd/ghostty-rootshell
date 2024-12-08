@@ -679,6 +679,12 @@ fullscreen: bool = false,
 /// The title Ghostty will use for the window. This will force the title of the
 /// window to be this title at all times and Ghostty will ignore any set title
 /// escape sequences programs (such as Neovim) may send.
+///
+/// This configuration can be reloaded at runtime. If it is set, the title
+/// will update for all windows. If it is unset, the next title change escape
+/// sequence will be honored but previous changes will not retroactively
+/// be set. This latter case may require you restart programs such as neovim
+/// to get the new title.
 title: ?[:0]const u8 = null,
 
 /// The setting that will change the application class value.
