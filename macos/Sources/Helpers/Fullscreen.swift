@@ -198,6 +198,10 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // Being untitled let's our content take up the full frame.
         window.styleMask.remove(.titled)
 
+        // We dont' want the non-native fullscreen window to be resizable
+        // from the edges.
+        window.styleMask.remove(.resizable)
+
         // Focus window
         window.makeKeyAndOrderFront(nil)
 
