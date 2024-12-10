@@ -668,9 +668,6 @@ link: RepeatableLink = .{},
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
 /// new windows, not just the first one.
 ///
-/// On macOS, this always creates the window in native fullscreen. Non-native
-/// fullscreen is not currently supported with this setting.
-///
 /// On macOS, this setting does not work if window-decoration is set to
 /// "false", because native fullscreen on macOS requires window decorations
 /// to be set.
@@ -679,6 +676,12 @@ fullscreen: bool = false,
 /// The title Ghostty will use for the window. This will force the title of the
 /// window to be this title at all times and Ghostty will ignore any set title
 /// escape sequences programs (such as Neovim) may send.
+///
+/// This configuration can be reloaded at runtime. If it is set, the title
+/// will update for all windows. If it is unset, the next title change escape
+/// sequence will be honored but previous changes will not retroactively
+/// be set. This latter case may require you restart programs such as neovim
+/// to get the new title.
 title: ?[:0]const u8 = null,
 
 /// The setting that will change the application class value.
@@ -2479,7 +2482,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
             // First, we add an artificial "-e" so that if we
             // replay the inputs to rebuild the config (i.e. if
             // a theme is set) then we will get the same behavior.
-            try self._replay_steps.append(arena_alloc, .{ .arg = "-e" });
+            try self._replay_steps.append(arena_alloc, .@"-e");
 
             // Next, take all remaining args and use that to build up
             // a command to execute.
@@ -2587,6 +2590,24 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
     const cwd = std.fs.cwd();
 
+    // We need to insert all of our loaded config-file values
+    // PRIOR to the "-e" in our replay steps, since everything
+    // after "-e" becomes an "initial-command". To do this, we
+    // dupe the values if we find it.
+    var replay_suffix = std.ArrayList(Replay.Step).init(alloc_gpa);
+    defer replay_suffix.deinit();
+    for (self._replay_steps.items, 0..) |step, i| if (step == .@"-e") {
+        // We don't need to clone the steps because they should
+        // all be allocated in our arena and we're keeping our
+        // arena.
+        try replay_suffix.appendSlice(self._replay_steps.items[i..]);
+
+        // Remove our old values. Again, don't need to free any
+        // memory here because its all part of our arena.
+        self._replay_steps.shrinkRetainingCapacity(i);
+        break;
+    };
+
     // We must use a while below and not a for(items) because we
     // may add items to the list while iterating for recursive
     // config-file entries.
@@ -2637,6 +2658,14 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         var iter: Iter = .{ .r = reader, .filepath = path };
         try self.loadIter(alloc_gpa, &iter);
         try self.expandPaths(std.fs.path.dirname(path).?);
+    }
+
+    // If we have a suffix, add that back.
+    if (replay_suffix.items.len > 0) {
+        try self._replay_steps.appendSlice(
+            arena_alloc,
+            replay_suffix.items,
+        );
     }
 }
 
@@ -2765,39 +2794,46 @@ fn loadTheme(self: *Config, theme: Theme) !void {
     try new_config.loadIter(alloc_gpa, &iter);
 
     // Setup our replay to be conditional.
-    for (new_config._replay_steps.items) |*item| switch (item.*) {
-        .expand => {},
+    conditional: for (new_config._replay_steps.items) |*item| {
+        switch (item.*) {
+            .expand => {},
 
-        // Change our arg to be conditional on our theme.
-        .arg => |v| {
-            const alloc_arena = new_config._arena.?.allocator();
-            const conds = try alloc_arena.alloc(Conditional, 1);
-            conds[0] = .{
-                .key = .theme,
-                .op = .eq,
-                .value = @tagName(self._conditional_state.theme),
-            };
-            item.* = .{ .conditional_arg = .{
-                .conditions = conds,
-                .arg = v,
-            } };
-        },
+            // If we see "-e" then we do NOT make the following arguments
+            // conditional since they are supposed to be part of the
+            // initial command.
+            .@"-e" => break :conditional,
 
-        .conditional_arg => |v| {
-            const alloc_arena = new_config._arena.?.allocator();
-            const conds = try alloc_arena.alloc(Conditional, v.conditions.len + 1);
-            conds[0] = .{
-                .key = .theme,
-                .op = .eq,
-                .value = @tagName(self._conditional_state.theme),
-            };
-            @memcpy(conds[1..], v.conditions);
-            item.* = .{ .conditional_arg = .{
-                .conditions = conds,
-                .arg = v.arg,
-            } };
-        },
-    };
+            // Change our arg to be conditional on our theme.
+            .arg => |v| {
+                const alloc_arena = new_config._arena.?.allocator();
+                const conds = try alloc_arena.alloc(Conditional, 1);
+                conds[0] = .{
+                    .key = .theme,
+                    .op = .eq,
+                    .value = @tagName(self._conditional_state.theme),
+                };
+                item.* = .{ .conditional_arg = .{
+                    .conditions = conds,
+                    .arg = v,
+                } };
+            },
+
+            .conditional_arg => |v| {
+                const alloc_arena = new_config._arena.?.allocator();
+                const conds = try alloc_arena.alloc(Conditional, v.conditions.len + 1);
+                conds[0] = .{
+                    .key = .theme,
+                    .op = .eq,
+                    .value = @tagName(self._conditional_state.theme),
+                };
+                @memcpy(conds[1..], v.conditions);
+                item.* = .{ .conditional_arg = .{
+                    .conditions = conds,
+                    .arg = v.arg,
+                } };
+            },
+        }
+    }
 
     // Replay our previous inputs so that we can override values
     // from the theme.
@@ -2989,10 +3025,12 @@ pub fn parseManuallyHook(
     arg: []const u8,
     iter: anytype,
 ) !bool {
-    // Keep track of our input args no matter what..
-    try self._replay_steps.append(alloc, .{ .arg = try alloc.dupe(u8, arg) });
-
     if (std.mem.eql(u8, arg, "-e")) {
+        // Add the special -e marker. This prevents:
+        // (1) config-file from adding args to the end (see #2908)
+        // (2) dark/light theme from making this conditional
+        try self._replay_steps.append(alloc, .@"-e");
+
         // Build up the command. We don't clean this up because we take
         // ownership in our allocator.
         var command = std.ArrayList(u8).init(alloc);
@@ -3027,6 +3065,12 @@ pub fn parseManuallyHook(
         // Do not continue, we consumed everything.
         return false;
     }
+
+    // Keep track of our input args for replay
+    try self._replay_steps.append(
+        alloc,
+        .{ .arg = try alloc.dupe(u8, arg) },
+    );
 
     // If we didn't find a special case, continue parsing normally
     return true;
@@ -3295,11 +3339,22 @@ const Replay = struct {
             arg: []const u8,
         },
 
+        /// The start of a "-e" argument. This marks the end of
+        /// traditional configuration and the beginning of the
+        /// "-e" initial command magic. This is separate from "arg"
+        /// because there are some behaviors unique to this (i.e.
+        /// we want to keep this at the end for config-file).
+        ///
+        /// Note: when "-e" is used, ONLY this is present and
+        /// not an additional "arg" with "-e" value.
+        @"-e",
+
         fn clone(
             self: Step,
             alloc: Allocator,
         ) Allocator.Error!Step {
             return switch (self) {
+                .@"-e" => self,
                 .arg => |v| .{ .arg = try alloc.dupe(u8, v) },
                 .expand => |v| .{ .expand = try alloc.dupe(u8, v) },
                 .conditional_arg => |v| conditional: {
@@ -3335,10 +3390,6 @@ const Replay = struct {
                         log.warn("error expanding paths err={}", .{err});
                     },
 
-                    .arg => |arg| {
-                        return arg;
-                    },
-
                     .conditional_arg => |v| conditional: {
                         // All conditions must match.
                         for (v.conditions) |cond| {
@@ -3349,6 +3400,9 @@ const Replay = struct {
 
                         return v.arg;
                     },
+
+                    .arg => |arg| return arg,
+                    .@"-e" => return "-e",
                 }
             }
         }
