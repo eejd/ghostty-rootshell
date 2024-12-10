@@ -30,9 +30,9 @@ I invite would be mean, though!
 
 ## Reporting Issues and Contributing
 
-Please report any issues you have, including feature requests! Because we're
-in a closed beta period, there aren't really many rules -- just open 'em up
-and we'll have a discussion.
+Please report any issues you have, including feature requests!
+
+As Ghostty is nearing its public release we are tweaking the flow of contributing. The general outline is first discuss a topic (issue, bug, feature request, pull request) in a [discussion](https://github.com/ghostty-org/ghostty/discussions). The discussion can then be the basis for opening an _actionable_ issue and subsequent pull request. To get a more complete picture read [CONTRIBUTING.md](https://github.com/ghostty-org/ghostty/blob/main/CONTRIBUTING.md).
 
 That said, **feel free to contribute!** I would _love_ that. If you want
 any help, ask in Discord and I'll do my best to point you in the right direction
