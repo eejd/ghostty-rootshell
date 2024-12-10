@@ -31,6 +31,9 @@ pub const ImageStorage = struct {
 
     /// This is the next automatically assigned image ID. We start mid-way
     /// through the u32 range to avoid collisions with buggy programs.
+    /// TODO: This isn't good enough, it's perfectly legal for programs
+    ///       to use IDs in the latter half of the range and collisions
+    ///       are not gracefully handled.
     next_image_id: u32 = 2147483647,
 
     /// This is the next automatically assigned placement ID. This is never
