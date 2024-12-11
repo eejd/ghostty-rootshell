@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const mouse = @import("input/mouse.zig");
 const key = @import("input/key.zig");
+const keyboard = @import("input/keyboard.zig");
 
 pub const function_keys = @import("input/function_keys.zig");
 pub const keycodes = @import("input/keycodes.zig");
@@ -13,6 +14,7 @@ pub const Action = key.Action;
 pub const Binding = @import("input/Binding.zig");
 pub const Link = @import("input/Link.zig");
 pub const Key = key.Key;
+pub const KeyboardLayout = keyboard.Layout;
 pub const KeyEncoder = @import("input/KeyEncoder.zig");
 pub const KeyEvent = key.KeyEvent;
 pub const InspectorMode = Binding.Action.InspectorMode;

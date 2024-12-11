@@ -14,6 +14,7 @@ const Keymap = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const codes = @import("keycodes.zig").entries;
 const Key = @import("key.zig").Key;
@@ -72,6 +73,24 @@ pub fn reload(self: *Keymap) !void {
     try self.reinit();
 }
 
+/// Get the input source ID for the current keyboard layout. The input
+/// source ID is a unique identifier for the keyboard layout which is uniquely
+/// defined by Apple.
+///
+/// This is macOS-only. Other platforms don't have an equivalent of this
+/// so this isn't expected to be generally implemented.
+pub fn sourceId(self: *const Keymap, buf: []u8) Allocator.Error![]const u8 {
+    // Get the raw CFStringRef
+    const id_raw = TISGetInputSourceProperty(
+        self.source,
+        kTISPropertyInputSourceID,
+    ) orelse return error.OutOfMemory;
+
+    // Convert the CFStringRef to a C string into our buffer.
+    const id: *CFString = @ptrCast(id_raw);
+    return id.cstring(buf, .utf8) orelse error.OutOfMemory;
+}
+
 /// Reinit reinitializes the keymap. It assumes that all the memory associated
 /// with the keymap is already freed.
 fn reinit(self: *Keymap) !void {
@@ -89,6 +108,12 @@ fn reinit(self: *Keymap) !void {
         // The CFDataRef contains a UCKeyboardLayout pointer
         break :layout @ptrCast(data.getPointer());
     };
+
+    if (comptime builtin.mode == .Debug) id: {
+        var buf: [256]u8 = undefined;
+        const id = self.sourceId(&buf) catch break :id;
+        std.log.debug("keyboard layout={s}", .{id});
+    }
 }
 
 /// Translate a single key input into a utf8 sequence.
@@ -200,6 +225,7 @@ extern "c" fn LMGetKbdType() u8;
 extern "c" fn UCKeyTranslate(*const UCKeyboardLayout, u16, u16, u32, u32, u32, *u32, c_ulong, *c_ulong, [*]u16) i32;
 extern const kTISPropertyLocalizedName: *CFString;
 extern const kTISPropertyUnicodeKeyLayoutData: *CFString;
+extern const kTISPropertyInputSourceID: *CFString;
 const TISInputSource = opaque {};
 const UCKeyboardLayout = opaque {};
 const kUCKeyActionDown: u16 = 0;
