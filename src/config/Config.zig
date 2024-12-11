@@ -4234,14 +4234,9 @@ pub const Keybinds = struct {
                 }
             }
 
-            try formatter.formatEntry(
-                []const u8,
-                std.fmt.bufPrint(
-                    &buf,
-                    "{}{}",
-                    .{ k, v },
-                ) catch return error.OutOfMemory,
-            );
+            var buffer_stream = std.io.fixedBufferStream(&buf);
+            std.fmt.format(buffer_stream.writer(), "{}", .{k}) catch return error.OutOfMemory;
+            try v.formatEntries(&buffer_stream, formatter);
         }
     }
 
@@ -4274,6 +4269,56 @@ pub const Keybinds = struct {
         try list.parseCLI(alloc, "shift+a=csi:hello");
         try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = shift+a=csi:hello\n", buf.items);
+    }
+
+    // Regression test for https://github.com/ghostty-org/ghostty/issues/2734
+    test "formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "ctrl+z>1=goto_tab:1");
+        try list.parseCLI(alloc, "ctrl+z>2=goto_tab:2");
+        try list.formatEntry(formatterpkg.entryFormatter("keybind", buf.writer()));
+
+        const want =
+            \\keybind = ctrl+z>1=goto_tab:1
+            \\keybind = ctrl+z>2=goto_tab:2
+            \\
+        ;
+        try std.testing.expectEqualStrings(want, buf.items);
+    }
+
+    test "formatConfig multiple items nested" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "ctrl+a>ctrl+b>n=new_window");
+        try list.parseCLI(alloc, "ctrl+a>ctrl+b>w=close_window");
+        try list.parseCLI(alloc, "ctrl+a>ctrl+c>t=new_tab");
+        try list.parseCLI(alloc, "ctrl+b>ctrl+d>a=previous_tab");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+
+        // NB: This does not currently retain the order of the keybinds.
+        const want =
+            \\a = ctrl+a>ctrl+b>w=close_window
+            \\a = ctrl+a>ctrl+b>n=new_window
+            \\a = ctrl+a>ctrl+c>t=new_tab
+            \\a = ctrl+b>ctrl+d>a=previous_tab
+            \\
+        ;
+        try std.testing.expectEqualStrings(want, buf.items);
     }
 };
 
