@@ -105,11 +105,14 @@ pub const App = struct {
         var config_clone = try config.clone(alloc);
         errdefer config_clone.deinit();
 
+        var keymap = try input.Keymap.init();
+        errdefer keymap.deinit();
+
         return .{
             .core_app = core_app,
             .config = config_clone,
             .opts = opts,
-            .keymap = try input.Keymap.init(),
+            .keymap = keymap,
             .keymap_state = .{},
         };
     }
@@ -161,8 +164,15 @@ pub const App = struct {
         // then we strip the alt modifier from the mods for translation.
         const translate_mods = translate_mods: {
             var translate_mods = mods;
-            if (comptime builtin.target.isDarwin()) {
-                const strip = switch (self.config.@"macos-option-as-alt") {
+            if ((comptime builtin.target.isDarwin()) and translate_mods.alt) {
+                // Note: the keyboardLayout() function is not super cheap
+                // so we only want to run it if alt is already pressed hence
+                // the above condition.
+                const option_as_alt: configpkg.OptionAsAlt =
+                    self.config.@"macos-option-as-alt" orelse
+                    self.keyboardLayout().detectOptionAsAlt();
+
+                const strip = switch (option_as_alt) {
                     .false => false,
                     .true => mods.alt,
                     .left => mods.sides.alt == .left,
@@ -380,6 +390,25 @@ pub const App = struct {
         for (self.core_app.surfaces.items) |surface| {
             surface.keymap_state = .{};
         }
+    }
+
+    /// Loads the keyboard layout.
+    ///
+    /// Kind of expensive so this should be avoided if possible. When I say
+    /// "kind of expensive" I mean that its not something you probably want
+    /// to run on every keypress.
+    pub fn keyboardLayout(self: *const App) input.KeyboardLayout {
+        // We only support keyboard layout detection on macOS.
+        if (comptime builtin.os.tag != .macos) return .unknown;
+
+        // Any layout larger than this is not something we can handle.
+        var buf: [256]u8 = undefined;
+        const id = self.keymap.sourceId(&buf) catch |err| {
+            comptime assert(@TypeOf(err) == error{OutOfMemory});
+            return .unknown;
+        };
+
+        return input.KeyboardLayout.mapAppleId(id) orelse .unknown;
     }
 
     pub fn wakeup(self: *const App) void {
@@ -1551,7 +1580,8 @@ pub const CAPI = struct {
             @truncate(@as(c_uint, @bitCast(mods_raw))),
         ));
         const result = mods.translation(
-            surface.core_surface.config.macos_option_as_alt,
+            surface.core_surface.config.macos_option_as_alt orelse
+                surface.app.keyboardLayout().detectOptionAsAlt(),
         );
         return @intCast(@as(input.Mods.Backing, @bitCast(result)));
     }

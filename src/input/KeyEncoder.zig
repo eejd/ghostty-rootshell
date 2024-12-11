@@ -208,7 +208,7 @@ fn kitty(
             // Determine if the Alt modifier should be treated as an actual
             // modifier (in which case it prevents associated text) or as
             // the macOS Option key, which does not prevent associated text.
-            const alt_prevents_text = if (comptime builtin.target.isDarwin())
+            const alt_prevents_text = if (comptime builtin.os.tag == .macos)
                 switch (self.macos_option_as_alt) {
                     .left => all_mods.sides.alt == .left,
                     .right => all_mods.sides.alt == .right,
@@ -422,7 +422,7 @@ fn legacyAltPrefix(
     // On macOS, we only handle option like alt in certain
     // circumstances. Otherwise, macOS does a unicode translation
     // and we allow that to happen.
-    if (comptime builtin.target.isDarwin()) {
+    if (comptime builtin.os.tag == .macos) {
         switch (self.macos_option_as_alt) {
             .false => return null,
             .left => if (mods.sides.alt == .right) return null,
