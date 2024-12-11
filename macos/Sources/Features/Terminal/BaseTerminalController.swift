@@ -53,6 +53,10 @@ class BaseTerminalController: NSWindowController,
 
     /// Fullscreen state management.
     private(set) var fullscreenStyle: FullscreenStyle?
+    
+    var titleChangeDelay: TimeInterval = 0.075
+    
+    private var titleChangeTimer: Timer?
 
     /// Event monitor (see individual events for why)
     private var eventMonitor: Any? = nil
@@ -260,9 +264,12 @@ class BaseTerminalController: NSWindowController,
     func titleDidChange(to: String) {
         guard let window else { return }
         
-        // Set the main window title
-        window.title = to
+        titleChangeTimer?.invalidate()
 
+        // Set the main window title after a small delay to prevent flicker
+        titleChangeTimer = Timer.scheduledTimer(withTimeInterval: titleChangeDelay, repeats: false) { _ in
+            window.title = to
+        }
     }
     
     func pwdDidChange(to: URL?) {

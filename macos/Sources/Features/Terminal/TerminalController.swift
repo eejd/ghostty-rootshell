@@ -26,6 +26,8 @@ class TerminalController: BaseTerminalController {
 
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
+    
+    private var toolbarTitleChangeTimer: Timer?
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -546,7 +548,13 @@ class TerminalController: BaseTerminalController {
                 // a custom view instead, we need to re-hide it.
                 window.titleVisibility = .hidden
             }
-            toolbar.titleText = to
+            
+            toolbarTitleChangeTimer?.invalidate()
+            
+            // Set the toolbar title after a small delay to prevent flicker
+            toolbarTitleChangeTimer = Timer.scheduledTimer(withTimeInterval: titleChangeDelay, repeats: false) { _ in
+                toolbar.titleText = to
+            }
         }
     }
 
