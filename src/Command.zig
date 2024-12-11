@@ -440,9 +440,9 @@ fn isExecutable(mode: std.fs.File.Mode) bool {
     return mode & 0o0111 != 0;
 }
 
-// `hostname` is present on both *nix and windows
+// `uname -n` is the *nix equivalent of `hostname.exe` on Windows
 test "expandPath: hostname" {
-    const executable = if (builtin.os.tag == .windows) "hostname.exe" else "hostname";
+    const executable = if (builtin.os.tag == .windows) "hostname.exe" else "uname";
     const path = (try expandPath(testing.allocator, executable)).?;
     defer testing.allocator.free(path);
     try testing.expect(path.len > executable.len);
