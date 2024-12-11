@@ -30,10 +30,10 @@ pub fn genConfig(writer: anytype, cli: bool) !void {
     inline for (@typeInfo(Config).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
 
-        try writer.writeAll("`");
+        try writer.writeAll("**`");
         if (cli) try writer.writeAll("--");
         try writer.writeAll(field.name);
-        try writer.writeAll("`\n\n");
+        try writer.writeAll("`**\n\n");
         if (@hasDecl(help_strings.Config, field.name)) {
             var iter = std.mem.splitScalar(u8, @field(help_strings.Config, field.name), '\n');
             var first = true;
@@ -60,12 +60,12 @@ pub fn genActions(writer: anytype) !void {
         const action = std.meta.stringToEnum(Action, field.name).?;
 
         switch (action) {
-            .help => try writer.writeAll("`--help`\n\n"),
-            .version => try writer.writeAll("`--version`\n\n"),
+            .help => try writer.writeAll("**`--help`**\n\n"),
+            .version => try writer.writeAll("**`--version`**\n\n"),
             else => {
-                try writer.writeAll("`+");
+                try writer.writeAll("**`+");
                 try writer.writeAll(field.name);
-                try writer.writeAll("`\n\n");
+                try writer.writeAll("`**\n\n");
             },
         }
 
@@ -97,9 +97,9 @@ pub fn genKeybindActions(writer: anytype) !void {
     inline for (info.Union.fields) |field| {
         if (field.name[0] == '_') continue;
 
-        try writer.writeAll("`");
+        try writer.writeAll("**`");
         try writer.writeAll(field.name);
-        try writer.writeAll("`\n\n");
+        try writer.writeAll("`**\n\n");
 
         if (@hasDecl(help_strings.KeybindAction, field.name)) {
             var iter = std.mem.splitScalar(u8, @field(help_strings.KeybindAction, field.name), '\n');
