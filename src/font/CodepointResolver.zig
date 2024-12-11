@@ -520,7 +520,14 @@ test "getIndex box glyph" {
 
     var r: CodepointResolver = .{
         .collection = c,
-        .sprite = .{ .width = 18, .height = 36, .thickness = 2 },
+        .sprite = .{
+            .metrics = font.Metrics.calc(.{
+                .cell_width = 18.0,
+                .ascent = 30.0,
+                .descent = -6.0,
+                .line_gap = 0.0,
+            }),
+        },
     };
     defer r.deinit(alloc);
 

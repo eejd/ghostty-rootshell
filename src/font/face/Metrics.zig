@@ -6,20 +6,27 @@ const std = @import("std");
 cell_width: u32,
 cell_height: u32,
 
-/// For monospace grids, the recommended y-value from the bottom to set
-/// the baseline for font rendering. This is chosen so that things such
-/// as the bottom of a "g" or "y" do not drop below the cell.
+/// Distance in pixels from the bottom of the cell to the text baseline.
 cell_baseline: u32,
 
-/// The position of the underline from the top of the cell and the
-/// thickness in pixels.
+/// Distance in pixels from the top of the cell to the top of the underline.
 underline_position: u32,
+/// Thickness in pixels of the underline.
 underline_thickness: u32,
 
-/// The position and thickness of a strikethrough. Same units/style
-/// as the underline fields.
+/// Distance in pixels from the top of the cell to the top of the strikethrough.
 strikethrough_position: u32,
+/// Thickness in pixels of the strikethrough.
 strikethrough_thickness: u32,
+
+/// Distance in pixels from the top of the cell to the top of the overline.
+/// Can be negative to adjust the position above the top of the cell.
+overline_position: i32,
+/// Thickness in pixels of the overline.
+overline_thickness: u32,
+
+/// Thickness in pixels of box drawing characters.
+box_thickness: u32,
 
 /// The thickness in pixels of the cursor sprite. This has a default value
 /// because it is not determined by fonts but rather by user configuration.
@@ -29,6 +36,143 @@ cursor_thickness: u32 = 1,
 /// in the original cell size after modification.
 original_cell_width: ?u32 = null,
 original_cell_height: ?u32 = null,
+
+/// Minimum acceptable values for some fields to prevent modifiers
+/// from being able to, for example, cause 0-thickness underlines.
+const Minimums = struct {
+    const cell_width = 1;
+    const cell_height = 1;
+    const underline_thickness = 1;
+    const strikethrough_thickness = 1;
+    const overline_thickness = 1;
+    const box_thickness = 1;
+    const cursor_thickness = 1;
+};
+
+const CalcOpts = struct {
+    cell_width: f64,
+
+    /// The typographic ascent metric from the font.
+    /// This represents the maximum vertical position of the highest ascender.
+    ///
+    /// Relative to the baseline, in px, +Y=up
+    ascent: f64,
+
+    /// The typographic descent metric from the font.
+    /// This represents the minimum vertical position of the lowest descender.
+    ///
+    /// Relative to the baseline, in px, +Y=up
+    ///
+    /// Note:
+    /// As this value is generally below the baseline, it is typically negative.
+    descent: f64,
+
+    /// The typographic line gap (aka "leading") metric from the font.
+    /// This represents the additional space to be added between lines in
+    /// addition to the space defined by the ascent and descent metrics.
+    ///
+    /// Positive value in px
+    line_gap: f64,
+
+    /// The TOP of the underline stroke.
+    ///
+    /// Relative to the baseline, in px, +Y=up
+    underline_position: ?f64 = null,
+
+    /// The thickness of the underline stroke in px.
+    underline_thickness: ?f64 = null,
+
+    /// The TOP of the strikethrough stroke.
+    ///
+    /// Relative to the baseline, in px, +Y=up
+    strikethrough_position: ?f64 = null,
+
+    /// The thickness of the strikethrough stroke in px.
+    strikethrough_thickness: ?f64 = null,
+
+    /// The height of capital letters in the font, either derived from
+    /// a provided cap height metric or measured from the height of the
+    /// capital H glyph.
+    cap_height: ?f64 = null,
+
+    /// The height of lowercase letters in the font, either derived from
+    /// a provided ex height metric or measured from the height of the
+    /// lowercase x glyph.
+    ex_height: ?f64 = null,
+};
+
+/// Calculate our metrics based on values extracted from a font.
+///
+/// Try to pass values with as much precision as possible,
+/// do not round them before using them for this function.
+///
+/// For any nullable options that are not provided, estimates will be used.
+pub fn calc(opts: CalcOpts) Metrics {
+    // We use the ceiling of the provided cell width and height to ensure
+    // that the cell is large enough for the provided size, since we cast
+    // it to an integer later.
+    const cell_width = @ceil(opts.cell_width);
+    const cell_height = @ceil(opts.ascent - opts.descent + opts.line_gap);
+
+    // We split our line gap in two parts, and put half of it on the top
+    // of the cell and the other half on the bottom, so that our text never
+    // bumps up against either edge of the cell vertically.
+    const half_line_gap = opts.line_gap / 2;
+
+    // Unlike all our other metrics, `cell_baseline` is relative to the
+    // BOTTOM of the cell.
+    const cell_baseline = @round(half_line_gap - opts.descent);
+
+    // We calculate a top_to_baseline to make following calculations simpler.
+    const top_to_baseline = cell_height - cell_baseline;
+
+    // If we don't have a provided cap height,
+    // we estimate it as 75% of the ascent.
+    const cap_height = opts.cap_height orelse opts.ascent * 0.75;
+
+    // If we don't have a provided ex height,
+    // we estimate it as 75% of the cap height.
+    const ex_height = opts.ex_height orelse cap_height * 0.75;
+
+    // If we don't have a provided underline thickness,
+    // we estimate it as 15% of the ex height.
+    const underline_thickness = @max(1, @ceil(opts.underline_thickness orelse 0.15 * ex_height));
+
+    // If we don't have a provided strikethrough thickness
+    // then we just use the underline thickness for it.
+    const strikethrough_thickness = @max(1, @ceil(opts.strikethrough_thickness orelse underline_thickness));
+
+    // If we don't have a provided underline position then
+    // we place it 1 underline-thickness below the baseline.
+    const underline_position = @round(top_to_baseline -
+        (opts.underline_position orelse
+        -underline_thickness));
+
+    // If we don't have a provided strikethrough position
+    // then we center the strikethrough stroke at half the
+    // ex height, so that it's perfectly centered on lower
+    // case text.
+    const strikethrough_position = @round(top_to_baseline -
+        (opts.strikethrough_position orelse
+        ex_height * 0.5 + strikethrough_thickness * 0.5));
+
+    const result: Metrics = .{
+        .cell_width = @intFromFloat(cell_width),
+        .cell_height = @intFromFloat(cell_height),
+        .cell_baseline = @intFromFloat(cell_baseline),
+        .underline_position = @intFromFloat(underline_position),
+        .underline_thickness = @intFromFloat(underline_thickness),
+        .strikethrough_position = @intFromFloat(strikethrough_position),
+        .strikethrough_thickness = @intFromFloat(strikethrough_thickness),
+        .overline_position = 0,
+        .overline_thickness = @intFromFloat(underline_thickness),
+        .box_thickness = @intFromFloat(underline_thickness),
+    };
+
+    // std.log.debug("metrics={}", .{result});
+
+    return result;
+}
 
 /// Apply a set of modifiers.
 pub fn apply(self: *Metrics, mods: ModifierSet) void {
@@ -76,7 +220,13 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
             },
 
             inline else => |tag| {
-                @field(self, @tagName(tag)) = entry.value_ptr.apply(@field(self, @tagName(tag)));
+                var new = entry.value_ptr.apply(@field(self, @tagName(tag)));
+                // If we have a minimum acceptable value
+                // for this metric, clamp the new value.
+                if (@hasDecl(Minimums, @tagName(tag))) {
+                    new = @max(new, @field(Minimums, @tagName(tag)));
+                }
+                @field(self, @tagName(tag)) = new;
             },
         }
     }
@@ -152,23 +302,26 @@ pub const Modifier = union(enum) {
     }
 
     /// Apply a modifier to a numeric value.
-    pub fn apply(self: Modifier, v: u32) u32 {
+    pub fn apply(self: Modifier, v: anytype) @TypeOf(v) {
+        const T = @TypeOf(v);
+        const signed = @typeInfo(T).Int.signedness == .signed;
         return switch (self) {
             .percent => |p| percent: {
                 const p_clamped: f64 = @max(0, p);
                 const v_f64: f64 = @floatFromInt(v);
                 const applied_f64: f64 = @round(v_f64 * p_clamped);
-                const applied_u32: u32 = @intFromFloat(applied_f64);
-                break :percent applied_u32;
+                const applied_T: T = @intFromFloat(applied_f64);
+                break :percent applied_T;
             },
 
             .absolute => |abs| absolute: {
                 const v_i64: i64 = @intCast(v);
                 const abs_i64: i64 = @intCast(abs);
-                const applied_i64: i64 = @max(0, v_i64 +| abs_i64);
-                const applied_u32: u32 = std.math.cast(u32, applied_i64) orelse
-                    std.math.maxInt(u32);
-                break :absolute applied_u32;
+                const applied_i64: i64 = v_i64 +| abs_i64;
+                const clamped_i64: i64 = if (signed) applied_i64 else @max(0, applied_i64);
+                const applied_T: T = std.math.cast(T, clamped_i64) orelse
+                    std.math.maxInt(T) * @as(T, @intCast(std.math.sign(clamped_i64)));
+                break :absolute applied_T;
             },
         };
     }
@@ -215,7 +368,7 @@ pub const Key = key: {
     var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
     var count: usize = 0;
     for (field_infos, 0..) |field, i| {
-        if (field.type != u32) continue;
+        if (field.type != u32 and field.type != i32) continue;
         enumFields[i] = .{ .name = field.name, .value = i };
         count += 1;
     }
@@ -242,6 +395,9 @@ fn init() Metrics {
         .underline_thickness = 0,
         .strikethrough_position = 0,
         .strikethrough_thickness = 0,
+        .overline_position = 0,
+        .overline_thickness = 0,
+        .box_thickness = 0,
     };
 }
 
@@ -337,12 +493,12 @@ test "Modifier: percent" {
 
     {
         const m: Modifier = .{ .percent = 0.8 };
-        const v: u32 = m.apply(100);
+        const v: u32 = m.apply(@as(u32, 100));
         try testing.expectEqual(@as(u32, 80), v);
     }
     {
         const m: Modifier = .{ .percent = 1.8 };
-        const v: u32 = m.apply(100);
+        const v: u32 = m.apply(@as(u32, 100));
         try testing.expectEqual(@as(u32, 180), v);
     }
 }
@@ -352,17 +508,17 @@ test "Modifier: absolute" {
 
     {
         const m: Modifier = .{ .absolute = -100 };
-        const v: u32 = m.apply(100);
+        const v: u32 = m.apply(@as(u32, 100));
         try testing.expectEqual(@as(u32, 0), v);
     }
     {
         const m: Modifier = .{ .absolute = -120 };
-        const v: u32 = m.apply(100);
+        const v: u32 = m.apply(@as(u32, 100));
         try testing.expectEqual(@as(u32, 0), v);
     }
     {
         const m: Modifier = .{ .absolute = 100 };
-        const v: u32 = m.apply(100);
+        const v: u32 = m.apply(@as(u32, 100));
         try testing.expectEqual(@as(u32, 200), v);
     }
 }

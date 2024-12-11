@@ -122,13 +122,7 @@ fn reloadMetrics(self: *SharedGrid) !void {
     self.metrics = face.metrics;
 
     // Setup our sprite font.
-    self.resolver.sprite = .{
-        .width = self.metrics.cell_width,
-        .height = self.metrics.cell_height,
-        .thickness = self.metrics.underline_thickness,
-        .underline_position = self.metrics.underline_position,
-        .strikethrough_position = self.metrics.strikethrough_position,
-    };
+    self.resolver.sprite = .{ .metrics = self.metrics };
 }
 
 /// Returns the grid cell size.

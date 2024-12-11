@@ -215,6 +215,8 @@ pub const SfntTag = enum(c_int) {
     pub fn DataType(comptime self: SfntTag) type {
         return switch (self) {
             .os2 => c.TT_OS2,
+            .head => c.TT_Header,
+            .post => c.TT_Postscript,
             else => unreachable, // As-needed...
         };
     }

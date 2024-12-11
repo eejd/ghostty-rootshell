@@ -533,10 +533,91 @@ pub const Face = struct {
     }
 
     fn calcMetrics(ct_font: *macos.text.Font) !font.face.Metrics {
+        // Read the 'head' table out of the font data.
+        const head: opentype.Head = head: {
+            const tag = macos.text.FontTableTag.init("head");
+            const data = ct_font.copyTable(tag) orelse return error.CopyTableError;
+            defer data.release();
+            const ptr = data.getPointer();
+            const len = data.getLength();
+            break :head try opentype.Head.init(ptr[0..len]);
+        };
+
+        // Read the 'post' table out of the font data.
+        const post: opentype.Post = post: {
+            const tag = macos.text.FontTableTag.init("post");
+            const data = ct_font.copyTable(tag) orelse return error.CopyTableError;
+            defer data.release();
+            const ptr = data.getPointer();
+            const len = data.getLength();
+            break :post try opentype.Post.init(ptr[0..len]);
+        };
+
+        // Read the 'OS/2' table out of the font data.
+        const os2: opentype.OS2 = os2: {
+            const tag = macos.text.FontTableTag.init("OS/2");
+            const data = ct_font.copyTable(tag) orelse return error.CopyTableError;
+            defer data.release();
+            const ptr = data.getPointer();
+            const len = data.getLength();
+            break :os2 try opentype.OS2.init(ptr[0..len]);
+        };
+
+        const units_per_em = head.unitsPerEm;
+        const px_per_em = ct_font.getSize();
+        const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
+
+        const ascent = @as(f64, @floatFromInt(os2.sTypoAscender)) * px_per_unit;
+        const descent = @as(f64, @floatFromInt(os2.sTypoDescender)) * px_per_unit;
+        const line_gap = @as(f64, @floatFromInt(os2.sTypoLineGap)) * px_per_unit;
+
+        // Some fonts have degenerate 'post' tables where the underline
+        // thickness (and often position) are 0. We consider them null
+        // if this is the case and use our own fallbacks when we calculate.
+        const has_broken_underline = post.underlineThickness == 0;
+
+        // If the underline position isn't 0 then we do use it,
+        // even if the thickness is't properly specified.
+        const underline_position = if (has_broken_underline and post.underlinePosition == 0)
+            null
+        else
+            @as(f64, @floatFromInt(post.underlinePosition)) * px_per_unit;
+
+        const underline_thickness = if (has_broken_underline)
+            null
+        else
+            @as(f64, @floatFromInt(post.underlineThickness)) * px_per_unit;
+
+        // Similar logic to the underline above.
+        const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+
+        const strikethrough_position = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+            null
+        else
+            @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+
+        const strikethrough_thickness = if (has_broken_strikethrough)
+            null
+        else
+            @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+
+        // We fall back to whatever CoreText does if
+        // the OS/2 table doesn't specify a cap height.
+        const cap_height = if (os2.sCapHeight) |sCapHeight|
+            @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
+        else
+            ct_font.getCapHeight();
+
+        // Ditto for ex height.
+        const ex_height = if (os2.sxHeight) |sxHeight|
+            @as(f64, @floatFromInt(sxHeight)) * px_per_unit
+        else
+            ct_font.getXHeight();
+
         // Cell width is calculated by calculating the widest width of the
         // visible ASCII characters. Usually 'M' is widest but we just take
         // whatever is widest.
-        const cell_width: f32 = cell_width: {
+        const cell_width: f64 = cell_width: {
             // Build a comptime array of all the ASCII chars
             const unichars = comptime unichars: {
                 const len = 127 - 32;
@@ -564,89 +645,25 @@ pub const Face = struct {
                 max = @max(advances[i].width, max);
             }
 
-            break :cell_width @floatCast(@ceil(max));
+            break :cell_width max;
         };
 
-        // Calculate the layout metrics for height/ascent by just asking
-        // the font. I also tried Kitty's approach at one point which is to
-        // use the CoreText layout engine but this led to some glyphs being
-        // set incorrectly.
-        const layout_metrics: struct {
-            height: f32,
-            ascent: f32,
-            leading: f32,
-        } = metrics: {
-            const ascent = ct_font.getAscent();
-            const descent = ct_font.getDescent();
+        return font.face.Metrics.calc(.{
+            .cell_width = cell_width,
 
-            // Leading is the value between lines at the TOP of a line.
-            // Because we are rendering a fixed size terminal grid, we
-            // want the leading to be split equally between the top and bottom.
-            const leading = ct_font.getLeading();
+            .ascent = ascent,
+            .descent = descent,
+            .line_gap = line_gap,
 
-            // We ceil the metrics below because we don't want to cut off any
-            // potential used pixels. This tends to only make a one pixel
-            // difference but at small font sizes this can be noticeable.
-            break :metrics .{
-                .height = @floatCast(@ceil(ascent + descent + leading)),
-                .ascent = @floatCast(@ceil(ascent + (leading / 2))),
-                .leading = @floatCast(leading),
-            };
-        };
+            .underline_position = underline_position,
+            .underline_thickness = underline_thickness,
 
-        // All of these metrics are based on our layout above.
-        const cell_height = @ceil(layout_metrics.height);
-        const cell_baseline = @ceil(layout_metrics.height - layout_metrics.ascent);
+            .strikethrough_position = strikethrough_position,
+            .strikethrough_thickness = strikethrough_thickness,
 
-        const underline_thickness = @ceil(@as(f32, @floatCast(ct_font.getUnderlineThickness())));
-        const strikethrough_thickness = underline_thickness;
-
-        const strikethrough_position = strikethrough_position: {
-            // This is the height of lower case letters in our font.
-            const ex_height = ct_font.getXHeight();
-
-            // We want to position the strikethrough so that it's
-            // vertically centered on any lower case text. This is
-            // a fairly standard choice for strikethrough positioning.
-            //
-            // Because our `strikethrough_position` is relative to the
-            // top of the cell we start with the ascent metric, which
-            // is the distance from the top down to the baseline, then
-            // we subtract half of the ex height to go back up to the
-            // correct height that should evenly split lowercase text.
-            const pos = layout_metrics.ascent -
-                ex_height * 0.5 -
-                strikethrough_thickness * 0.5;
-
-            break :strikethrough_position @ceil(pos);
-        };
-
-        // Underline position reported is usually something like "-1" to
-        // represent the amount under the baseline. We add this to our real
-        // baseline to get the actual value from the bottom (+y is up).
-        // The final underline position is +y from the TOP (confusing)
-        // so we have to subtract from the cell height.
-        const underline_position = @ceil(layout_metrics.ascent -
-            @as(f32, @floatCast(ct_font.getUnderlinePosition())));
-
-        // Note: is this useful?
-        // const units_per_em = ct_font.getUnitsPerEm();
-        // const units_per_point = @intToFloat(f64, units_per_em) / ct_font.getSize();
-
-        const result = font.face.Metrics{
-            .cell_width = @intFromFloat(cell_width),
-            .cell_height = @intFromFloat(cell_height),
-            .cell_baseline = @intFromFloat(cell_baseline),
-            .underline_position = @intFromFloat(underline_position),
-            .underline_thickness = @intFromFloat(underline_thickness),
-            .strikethrough_position = @intFromFloat(strikethrough_position),
-            .strikethrough_thickness = @intFromFloat(strikethrough_thickness),
-        };
-
-        // std.log.warn("font size size={d}", .{ct_font.getSize()});
-        // std.log.warn("font metrics={}", .{result});
-
-        return result;
+            .cap_height = cap_height,
+            .ex_height = ex_height,
+        });
     }
 
     /// Copy the font table data for the given tag.

@@ -27,14 +27,8 @@ const Sprite = @import("../sprite.zig").Sprite;
 
 const log = std.log.scoped(.box_font);
 
-/// The cell width and height because the boxes are fit perfectly
-/// into a cell so that they all properly connect with zero spacing.
-width: u32,
-height: u32,
-
-/// Base thickness value for lines of the box. This is in pixels. If you
-/// want to do any DPI scaling, it is expected to be done earlier.
-thickness: u32,
+/// Grid metrics for the rendering.
+metrics: font.Metrics,
 
 /// The thickness of a line.
 const Thickness = enum {
@@ -218,8 +212,29 @@ pub fn renderGlyph(
     atlas: *font.Atlas,
     cp: u32,
 ) !font.Glyph {
+    const metrics = self.metrics;
+
+    // Some codepoints (such as a few cursors) should not
+    // grow when the cell height is adjusted to be larger.
+    // And we also will need to adjust the vertical position.
+    const height, const dy = adjust: {
+        const h = metrics.cell_height;
+        if (unadjustedCodepoint(cp)) {
+            if (metrics.original_cell_height) |original| {
+                if (h > original) {
+                    break :adjust .{ original, (h - original) / 2 };
+                }
+            }
+        }
+        break :adjust .{ h, 0 };
+    };
+
     // Create the canvas we'll use to draw
-    var canvas = try font.sprite.Canvas.init(alloc, self.width, self.height);
+    var canvas = try font.sprite.Canvas.init(
+        alloc,
+        metrics.cell_width,
+        height,
+    );
     defer canvas.deinit(alloc);
 
     // Perform the actual drawing
@@ -231,16 +246,20 @@ pub fn renderGlyph(
     // Our coordinates start at the BOTTOM for our renderers so we have to
     // specify an offset of the full height because we rendered a full size
     // cell.
-    const offset_y = @as(i32, @intCast(self.height));
+    //
+    // If we have an adjustment (see above) to the cell height that we need
+    // to account for, we subtract half the difference (dy) to keep the glyph
+    // centered.
+    const offset_y = @as(i32, @intCast(metrics.cell_height - dy));
 
     return font.Glyph{
-        .width = self.width,
-        .height = self.height,
+        .width = metrics.cell_width,
+        .height = metrics.cell_height,
         .offset_x = 0,
         .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
-        .advance_x = @floatFromInt(self.width),
+        .advance_x = @floatFromInt(metrics.cell_width),
     };
 }
 
@@ -1652,16 +1671,16 @@ fn draw_lines(
     canvas: *font.sprite.Canvas,
     lines: Lines,
 ) void {
-    const light_px = Thickness.light.height(self.thickness);
-    const heavy_px = Thickness.heavy.height(self.thickness);
+    const light_px = Thickness.light.height(self.metrics.box_thickness);
+    const heavy_px = Thickness.heavy.height(self.metrics.box_thickness);
 
     // Top of light horizontal strokes
-    const h_light_top = (self.height -| light_px) / 2;
+    const h_light_top = (self.metrics.cell_height -| light_px) / 2;
     // Bottom of light horizontal strokes
     const h_light_bottom = h_light_top +| light_px;
 
     // Top of heavy horizontal strokes
-    const h_heavy_top = (self.height -| heavy_px) / 2;
+    const h_heavy_top = (self.metrics.cell_height -| heavy_px) / 2;
     // Bottom of heavy horizontal strokes
     const h_heavy_bottom = h_heavy_top +| heavy_px;
 
@@ -1671,12 +1690,12 @@ fn draw_lines(
     const h_double_bottom = h_light_bottom +| light_px;
 
     // Left of light vertical strokes
-    const v_light_left = (self.width -| light_px) / 2;
+    const v_light_left = (self.metrics.cell_width -| light_px) / 2;
     // Right of light vertical strokes
     const v_light_right = v_light_left +| light_px;
 
     // Left of heavy vertical strokes
-    const v_heavy_left = (self.width -| heavy_px) / 2;
+    const v_heavy_left = (self.metrics.cell_width -| heavy_px) / 2;
     // Right of heavy vertical strokes
     const v_heavy_right = v_heavy_left +| heavy_px;
 
@@ -1752,27 +1771,27 @@ fn draw_lines(
 
     switch (lines.right) {
         .none => {},
-        .light => self.rect(canvas, right_left, h_light_top, self.width, h_light_bottom),
-        .heavy => self.rect(canvas, right_left, h_heavy_top, self.width, h_heavy_bottom),
+        .light => self.rect(canvas, right_left, h_light_top, self.metrics.cell_width, h_light_bottom),
+        .heavy => self.rect(canvas, right_left, h_heavy_top, self.metrics.cell_width, h_heavy_bottom),
         .double => {
             const top_left = if (lines.up == .double) v_light_right else right_left;
             const bottom_left = if (lines.down == .double) v_light_right else right_left;
 
-            self.rect(canvas, top_left, h_double_top, self.width, h_light_top);
-            self.rect(canvas, bottom_left, h_light_bottom, self.width, h_double_bottom);
+            self.rect(canvas, top_left, h_double_top, self.metrics.cell_width, h_light_top);
+            self.rect(canvas, bottom_left, h_light_bottom, self.metrics.cell_width, h_double_bottom);
         },
     }
 
     switch (lines.down) {
         .none => {},
-        .light => self.rect(canvas, v_light_left, down_top, v_light_right, self.height),
-        .heavy => self.rect(canvas, v_heavy_left, down_top, v_heavy_right, self.height),
+        .light => self.rect(canvas, v_light_left, down_top, v_light_right, self.metrics.cell_height),
+        .heavy => self.rect(canvas, v_heavy_left, down_top, v_heavy_right, self.metrics.cell_height),
         .double => {
             const left_top = if (lines.left == .double) h_light_bottom else down_top;
             const right_top = if (lines.right == .double) h_light_bottom else down_top;
 
-            self.rect(canvas, v_double_left, left_top, v_light_left, self.height);
-            self.rect(canvas, v_light_right, right_top, v_double_right, self.height);
+            self.rect(canvas, v_double_left, left_top, v_light_left, self.metrics.cell_height);
+            self.rect(canvas, v_light_right, right_top, v_double_right, self.metrics.cell_height);
         },
     }
 
@@ -1794,8 +1813,8 @@ fn draw_light_triple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) voi
     self.draw_dash_horizontal(
         canvas,
         3,
-        Thickness.light.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.light.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1803,8 +1822,8 @@ fn draw_heavy_triple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) voi
     self.draw_dash_horizontal(
         canvas,
         3,
-        Thickness.heavy.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1812,8 +1831,8 @@ fn draw_light_triple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
     self.draw_dash_vertical(
         canvas,
         3,
-        Thickness.light.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.light.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1821,8 +1840,8 @@ fn draw_heavy_triple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
     self.draw_dash_vertical(
         canvas,
         3,
-        Thickness.heavy.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1830,8 +1849,8 @@ fn draw_light_quadruple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) 
     self.draw_dash_horizontal(
         canvas,
         4,
-        Thickness.light.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.light.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1839,8 +1858,8 @@ fn draw_heavy_quadruple_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) 
     self.draw_dash_horizontal(
         canvas,
         4,
-        Thickness.heavy.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1848,8 +1867,8 @@ fn draw_light_quadruple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) vo
     self.draw_dash_vertical(
         canvas,
         4,
-        Thickness.light.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.light.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1857,8 +1876,8 @@ fn draw_heavy_quadruple_dash_vertical(self: Box, canvas: *font.sprite.Canvas) vo
     self.draw_dash_vertical(
         canvas,
         4,
-        Thickness.heavy.height(self.thickness),
-        @max(4, Thickness.light.height(self.thickness)),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        @max(4, Thickness.light.height(self.metrics.box_thickness)),
     );
 }
 
@@ -1866,8 +1885,8 @@ fn draw_light_double_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) voi
     self.draw_dash_horizontal(
         canvas,
         2,
-        Thickness.light.height(self.thickness),
-        Thickness.light.height(self.thickness),
+        Thickness.light.height(self.metrics.box_thickness),
+        Thickness.light.height(self.metrics.box_thickness),
     );
 }
 
@@ -1875,8 +1894,8 @@ fn draw_heavy_double_dash_horizontal(self: Box, canvas: *font.sprite.Canvas) voi
     self.draw_dash_horizontal(
         canvas,
         2,
-        Thickness.heavy.height(self.thickness),
-        Thickness.heavy.height(self.thickness),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        Thickness.heavy.height(self.metrics.box_thickness),
     );
 }
 
@@ -1884,8 +1903,8 @@ fn draw_light_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
     self.draw_dash_vertical(
         canvas,
         2,
-        Thickness.light.height(self.thickness),
-        Thickness.heavy.height(self.thickness),
+        Thickness.light.height(self.metrics.box_thickness),
+        Thickness.heavy.height(self.metrics.box_thickness),
     );
 }
 
@@ -1893,26 +1912,26 @@ fn draw_heavy_double_dash_vertical(self: Box, canvas: *font.sprite.Canvas) void 
     self.draw_dash_vertical(
         canvas,
         2,
-        Thickness.heavy.height(self.thickness),
-        Thickness.heavy.height(self.thickness),
+        Thickness.heavy.height(self.metrics.box_thickness),
+        Thickness.heavy.height(self.metrics.box_thickness),
     );
 }
 
 fn draw_light_diagonal_upper_right_to_lower_left(self: Box, canvas: *font.sprite.Canvas) void {
     canvas.line(.{
-        .p0 = .{ .x = @floatFromInt(self.width), .y = 0 },
-        .p1 = .{ .x = 0, .y = @floatFromInt(self.height) },
-    }, @floatFromInt(Thickness.light.height(self.thickness)), .on) catch {};
+        .p0 = .{ .x = @floatFromInt(self.metrics.cell_width), .y = 0 },
+        .p1 = .{ .x = 0, .y = @floatFromInt(self.metrics.cell_height) },
+    }, @floatFromInt(Thickness.light.height(self.metrics.box_thickness)), .on) catch {};
 }
 
 fn draw_light_diagonal_upper_left_to_lower_right(self: Box, canvas: *font.sprite.Canvas) void {
     canvas.line(.{
         .p0 = .{ .x = 0, .y = 0 },
         .p1 = .{
-            .x = @floatFromInt(self.width),
-            .y = @floatFromInt(self.height),
+            .x = @floatFromInt(self.metrics.cell_width),
+            .y = @floatFromInt(self.metrics.cell_height),
         },
-    }, @floatFromInt(Thickness.light.height(self.thickness)), .on) catch {};
+    }, @floatFromInt(Thickness.light.height(self.metrics.box_thickness)), .on) catch {};
 }
 
 fn draw_light_diagonal_cross(self: Box, canvas: *font.sprite.Canvas) void {
@@ -1938,21 +1957,21 @@ fn draw_block_shade(
     comptime height: f64,
     comptime shade: Shade,
 ) void {
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
 
     const w: u32 = @intFromFloat(@round(float_width * width));
     const h: u32 = @intFromFloat(@round(float_height * height));
 
     const x = switch (alignment.horizontal) {
         .left => 0,
-        .right => self.width - w,
-        .center => (self.width - w) / 2,
+        .right => self.metrics.cell_width - w,
+        .center => (self.metrics.cell_width - w) / 2,
     };
     const y = switch (alignment.vertical) {
         .top => 0,
-        .bottom => self.height - h,
-        .middle => (self.height - h) / 2,
+        .bottom => self.metrics.cell_height - h,
+        .middle => (self.metrics.cell_height - h) / 2,
     };
 
     canvas.rect(.{
@@ -1970,10 +1989,10 @@ fn draw_corner_triangle_shade(
     comptime shade: Shade,
 ) void {
     const x0, const y0, const x1, const y1, const x2, const y2 = switch (corner) {
-        .tl => .{ 0, 0, 0, self.height, self.width, 0 },
-        .tr => .{ 0, 0, self.width, self.height, self.width, 0 },
-        .bl => .{ 0, 0, 0, self.height, self.width, self.height },
-        .br => .{ 0, self.height, self.width, self.height, self.width, 0 },
+        .tl => .{ 0, 0, 0, self.metrics.cell_height, self.metrics.cell_width, 0 },
+        .tr => .{ 0, 0, self.metrics.cell_width, self.metrics.cell_height, self.metrics.cell_width, 0 },
+        .bl => .{ 0, 0, 0, self.metrics.cell_height, self.metrics.cell_width, self.metrics.cell_height },
+        .br => .{ 0, self.metrics.cell_height, self.metrics.cell_width, self.metrics.cell_height, self.metrics.cell_width, 0 },
     };
 
     canvas.triangle(.{
@@ -1984,26 +2003,26 @@ fn draw_corner_triangle_shade(
 }
 
 fn draw_full_block(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, 0, self.width, self.height);
+    self.rect(canvas, 0, 0, self.metrics.cell_width, self.metrics.cell_height);
 }
 
 fn draw_vertical_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
-    const x = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.width)) / 8)));
-    const w = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 8)));
-    self.rect(canvas, x, 0, x + w, self.height);
+    const x = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.metrics.cell_width)) / 8)));
+    const w = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 8)));
+    self.rect(canvas, x, 0, x + w, self.metrics.cell_height);
 }
 
 fn draw_checkerboard_fill(self: Box, canvas: *font.sprite.Canvas, parity: u1) void {
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const x_size: usize = 4;
     const y_size: usize = @intFromFloat(@round(4 * (float_height / float_width)));
     for (0..x_size) |x| {
-        const x0 = (self.width * x) / x_size;
-        const x1 = (self.width * (x + 1)) / x_size;
+        const x0 = (self.metrics.cell_width * x) / x_size;
+        const x1 = (self.metrics.cell_width * (x + 1)) / x_size;
         for (0..y_size) |y| {
-            const y0 = (self.height * y) / y_size;
-            const y1 = (self.height * (y + 1)) / y_size;
+            const y0 = (self.metrics.cell_height * y) / y_size;
+            const y1 = (self.metrics.cell_height * (y + 1)) / y_size;
             if ((x + y) % 2 == parity) {
                 canvas.rect(.{
                     .x = @intCast(x0),
@@ -2017,11 +2036,11 @@ fn draw_checkerboard_fill(self: Box, canvas: *font.sprite.Canvas, parity: u1) vo
 }
 
 fn draw_upper_left_to_lower_right_fill(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const line_count = self.width / (2 * thick_px);
+    const thick_px = Thickness.light.height(self.metrics.box_thickness);
+    const line_count = self.metrics.cell_width / (2 * thick_px);
 
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const float_thick: f64 = @floatFromInt(thick_px);
     const stride = @round(float_width / @as(f64, @floatFromInt(line_count)));
 
@@ -2037,11 +2056,11 @@ fn draw_upper_left_to_lower_right_fill(self: Box, canvas: *font.sprite.Canvas) v
 }
 
 fn draw_upper_right_to_lower_left_fill(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
-    const line_count = self.width / (2 * thick_px);
+    const thick_px = Thickness.light.height(self.metrics.box_thickness);
+    const line_count = self.metrics.cell_width / (2 * thick_px);
 
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const float_thick: f64 = @floatFromInt(thick_px);
     const stride = @round(float_width / @as(f64, @floatFromInt(line_count)));
 
@@ -2061,13 +2080,13 @@ fn draw_corner_diagonal_lines(
     canvas: *font.sprite.Canvas,
     comptime corners: Quads,
 ) void {
-    const thick_px = Thickness.light.height(self.thickness);
+    const thick_px = Thickness.light.height(self.metrics.box_thickness);
 
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const float_thick: f64 = @floatFromInt(thick_px);
-    const center_x: f64 = @floatFromInt(self.width / 2 + self.width % 2);
-    const center_y: f64 = @floatFromInt(self.height / 2 + self.height % 2);
+    const center_x: f64 = @floatFromInt(self.metrics.cell_width / 2 + self.metrics.cell_width % 2);
+    const center_y: f64 = @floatFromInt(self.metrics.cell_height / 2 + self.metrics.cell_height % 2);
 
     if (corners.tl) canvas.line(.{
         .p0 = .{ .x = center_x, .y = 0 },
@@ -2096,8 +2115,8 @@ fn draw_cell_diagonal(
     comptime from: Alignment,
     comptime to: Alignment,
 ) void {
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
 
     const x0: f64 = switch (from.horizontal) {
         .left => 0,
@@ -2134,16 +2153,16 @@ fn draw_fading_line(
     comptime to: Edge,
     comptime thickness: Thickness,
 ) void {
-    const thick_px = thickness.height(self.thickness);
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const thick_px = thickness.height(self.metrics.box_thickness);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
 
     // Top of horizontal strokes
-    const h_top = (self.height -| thick_px) / 2;
+    const h_top = (self.metrics.cell_height -| thick_px) / 2;
     // Bottom of horizontal strokes
     const h_bottom = h_top +| thick_px;
     // Left of vertical strokes
-    const v_left = (self.width -| thick_px) / 2;
+    const v_left = (self.metrics.cell_width -| thick_px) / 2;
     // Right of vertical strokes
     const v_right = v_left +| thick_px;
 
@@ -2163,7 +2182,7 @@ fn draw_fading_line(
 
     switch (to) {
         .top, .bottom => {
-            for (0..self.height) |y| {
+            for (0..self.metrics.cell_height) |y| {
                 for (v_left..v_right) |x| {
                     canvas.pixel(
                         @intCast(x),
@@ -2175,7 +2194,7 @@ fn draw_fading_line(
             }
         },
         .left, .right => {
-            for (0..self.width) |x| {
+            for (0..self.metrics.cell_width) |x| {
                 for (h_top..h_bottom) |y| {
                     canvas.pixel(
                         @intCast(x),
@@ -2195,17 +2214,17 @@ fn draw_branch_node(
     node: BranchNode,
     comptime thickness: Thickness,
 ) void {
-    const thick_px = thickness.height(self.thickness);
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const thick_px = thickness.height(self.metrics.box_thickness);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const float_thick: f64 = @floatFromInt(thick_px);
 
     // Top of horizontal strokes
-    const h_top = (self.height -| thick_px) / 2;
+    const h_top = (self.metrics.cell_height -| thick_px) / 2;
     // Bottom of horizontal strokes
     const h_bottom = h_top +| thick_px;
     // Left of vertical strokes
-    const v_left = (self.width -| thick_px) / 2;
+    const v_left = (self.metrics.cell_width -| thick_px) / 2;
     // Right of vertical strokes
     const v_right = v_left +| thick_px;
 
@@ -2240,9 +2259,9 @@ fn draw_branch_node(
     if (node.up)
         self.rect(canvas, v_left, 0, v_right, @intFromFloat(@ceil(cy - r)));
     if (node.right)
-        self.rect(canvas, @intFromFloat(@floor(cx + r)), h_top, self.width, h_bottom);
+        self.rect(canvas, @intFromFloat(@floor(cx + r)), h_top, self.metrics.cell_width, h_bottom);
     if (node.down)
-        self.rect(canvas, v_left, @intFromFloat(@floor(cy + r)), v_right, self.height);
+        self.rect(canvas, v_left, @intFromFloat(@floor(cy + r)), v_right, self.metrics.cell_height);
     if (node.left)
         self.rect(canvas, 0, h_top, @intFromFloat(@ceil(cx - r)), h_bottom);
 
@@ -2263,8 +2282,8 @@ fn draw_circle(
     comptime position: Alignment,
     comptime filled: bool,
 ) void {
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
 
     const x: f64 = switch (position.horizontal) {
         .left => 0,
@@ -2285,7 +2304,7 @@ fn draw_circle(
                 .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
             },
         },
-        .line_width = @floatFromInt(Thickness.light.height(self.thickness)),
+        .line_width = @floatFromInt(Thickness.light.height(self.metrics.box_thickness)),
     };
 
     var path = z2d.Path.init(canvas.alloc);
@@ -2311,7 +2330,7 @@ fn draw_line(
 ) !void {
     canvas.line(
         .{ .p0 = p0, .p1 = p1 },
-        @floatFromInt(thickness.height(self.thickness)),
+        @floatFromInt(thickness.height(self.metrics.box_thickness)),
         .on,
     ) catch {};
 }
@@ -2320,8 +2339,8 @@ fn draw_shade(self: Box, canvas: *font.sprite.Canvas, v: u16) void {
     canvas.rect((font.sprite.Box(u32){
         .p0 = .{ .x = 0, .y = 0 },
         .p1 = .{
-            .x = self.width,
-            .y = self.height,
+            .x = self.metrics.cell_width,
+            .y = self.metrics.cell_height,
         },
     }).rect(), @as(font.sprite.Color, @enumFromInt(v)));
 }
@@ -2339,12 +2358,12 @@ fn draw_dark_shade(self: Box, canvas: *font.sprite.Canvas) void {
 }
 
 fn draw_horizontal_one_eighth_block_n(self: Box, canvas: *font.sprite.Canvas, n: u32) void {
-    const h = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.height)) / 8)));
+    const h = @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.metrics.cell_height)) / 8)));
     const y = @min(
-        self.height -| h,
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.height)) / 8))),
+        self.metrics.cell_height -| h,
+        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(self.metrics.cell_height)) / 8))),
     );
-    self.rect(canvas, 0, y, self.width, y + h);
+    self.rect(canvas, 0, y, self.metrics.cell_width, y + h);
 }
 
 fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas) void {
@@ -2355,24 +2374,24 @@ fn draw_horizontal_one_eighth_1358_block(self: Box, canvas: *font.sprite.Canvas)
 }
 
 fn draw_quadrant(self: Box, canvas: *font.sprite.Canvas, comptime quads: Quads) void {
-    const center_x = self.width / 2 + self.width % 2;
-    const center_y = self.height / 2 + self.height % 2;
+    const center_x = self.metrics.cell_width / 2 + self.metrics.cell_width % 2;
+    const center_y = self.metrics.cell_height / 2 + self.metrics.cell_height % 2;
 
     if (quads.tl) self.rect(canvas, 0, 0, center_x, center_y);
-    if (quads.tr) self.rect(canvas, center_x, 0, self.width, center_y);
-    if (quads.bl) self.rect(canvas, 0, center_y, center_x, self.height);
-    if (quads.br) self.rect(canvas, center_x, center_y, self.width, self.height);
+    if (quads.tr) self.rect(canvas, center_x, 0, self.metrics.cell_width, center_y);
+    if (quads.bl) self.rect(canvas, 0, center_y, center_x, self.metrics.cell_height);
+    if (quads.br) self.rect(canvas, center_x, center_y, self.metrics.cell_width, self.metrics.cell_height);
 }
 
 fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
-    var w: u32 = @min(self.width / 4, self.height / 8);
-    var x_spacing: u32 = self.width / 4;
-    var y_spacing: u32 = self.height / 8;
+    var w: u32 = @min(self.metrics.cell_width / 4, self.metrics.cell_height / 8);
+    var x_spacing: u32 = self.metrics.cell_width / 4;
+    var y_spacing: u32 = self.metrics.cell_height / 8;
     var x_margin: u32 = x_spacing / 2;
     var y_margin: u32 = y_spacing / 2;
 
-    var x_px_left: u32 = self.width - 2 * x_margin - x_spacing - 2 * w;
-    var y_px_left: u32 = self.height - 2 * y_margin - 3 * y_spacing - 4 * w;
+    var x_px_left: u32 = self.metrics.cell_width - 2 * x_margin - x_spacing - 2 * w;
+    var y_px_left: u32 = self.metrics.cell_height - 2 * y_margin - 3 * y_spacing - 4 * w;
 
     // First, try hard to ensure the DOT width is non-zero
     if (x_px_left >= 2 and y_px_left >= 4 and w == 0) {
@@ -2419,8 +2438,8 @@ fn draw_braille(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     }
 
     assert(x_px_left <= 1 or y_px_left <= 1);
-    assert(2 * x_margin + 2 * w + x_spacing <= self.width);
-    assert(2 * y_margin + 4 * w + 3 * y_spacing <= self.height);
+    assert(2 * x_margin + 2 * w + x_spacing <= self.metrics.cell_width);
+    assert(2 * y_margin + 4 * w + 3 * y_spacing <= self.metrics.cell_height);
 
     const x = [2]u32{ x_margin, x_margin + w + x_spacing };
     const y = y: {
@@ -2479,25 +2498,25 @@ fn draw_sextant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const y_thirds = self.yThirds();
 
     if (sex.tl) self.rect(canvas, 0, 0, x_halfs[0], y_thirds[0]);
-    if (sex.tr) self.rect(canvas, x_halfs[1], 0, self.width, y_thirds[0]);
+    if (sex.tr) self.rect(canvas, x_halfs[1], 0, self.metrics.cell_width, y_thirds[0]);
     if (sex.ml) self.rect(canvas, 0, y_thirds[0], x_halfs[0], y_thirds[1]);
-    if (sex.mr) self.rect(canvas, x_halfs[1], y_thirds[0], self.width, y_thirds[1]);
-    if (sex.bl) self.rect(canvas, 0, y_thirds[1], x_halfs[0], self.height);
-    if (sex.br) self.rect(canvas, x_halfs[1], y_thirds[1], self.width, self.height);
+    if (sex.mr) self.rect(canvas, x_halfs[1], y_thirds[0], self.metrics.cell_width, y_thirds[1]);
+    if (sex.bl) self.rect(canvas, 0, y_thirds[1], x_halfs[0], self.metrics.cell_height);
+    if (sex.br) self.rect(canvas, x_halfs[1], y_thirds[1], self.metrics.cell_width, self.metrics.cell_height);
 }
 
 fn xHalfs(self: Box) [2]u32 {
     return .{
-        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.width)) / 2))),
-        @as(u32, @intFromFloat(@as(f64, @floatFromInt(self.width)) / 2)),
+        @as(u32, @intFromFloat(@round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2))),
+        @as(u32, @intFromFloat(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2)),
     };
 }
 
 fn yThirds(self: Box) [2]u32 {
-    return switch (@mod(self.height, 3)) {
-        0 => .{ self.height / 3, 2 * self.height / 3 },
-        1 => .{ self.height / 3, 2 * self.height / 3 + 1 },
-        2 => .{ self.height / 3 + 1, 2 * self.height / 3 },
+    return switch (@mod(self.metrics.cell_height, 3)) {
+        0 => .{ self.metrics.cell_height / 3, 2 * self.metrics.cell_height / 3 },
+        1 => .{ self.metrics.cell_height / 3, 2 * self.metrics.cell_height / 3 + 1 },
+        2 => .{ self.metrics.cell_height / 3 + 1, 2 * self.metrics.cell_height / 3 },
         else => unreachable,
     };
 }
@@ -2511,10 +2530,10 @@ fn draw_smooth_mosaic(
     const top: f64 = 0.0;
     const upper: f64 = @floatFromInt(y_thirds[0]);
     const lower: f64 = @floatFromInt(y_thirds[1]);
-    const bottom: f64 = @floatFromInt(self.height);
+    const bottom: f64 = @floatFromInt(self.metrics.cell_height);
     const left: f64 = 0.0;
-    const center: f64 = @round(@as(f64, @floatFromInt(self.width)) / 2);
-    const right: f64 = @floatFromInt(self.width);
+    const center: f64 = @round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2);
+    const right: f64 = @floatFromInt(self.metrics.cell_width);
 
     var path = z2d.Path.init(canvas.alloc);
     defer path.deinit();
@@ -2549,11 +2568,11 @@ fn draw_edge_triangle(
     comptime edge: Edge,
 ) !void {
     const upper: f64 = 0.0;
-    const middle: f64 = @round(@as(f64, @floatFromInt(self.height)) / 2);
-    const lower: f64 = @floatFromInt(self.height);
+    const middle: f64 = @round(@as(f64, @floatFromInt(self.metrics.cell_height)) / 2);
+    const lower: f64 = @floatFromInt(self.metrics.cell_height);
     const left: f64 = 0.0;
-    const center: f64 = @round(@as(f64, @floatFromInt(self.width)) / 2);
-    const right: f64 = @floatFromInt(self.width);
+    const center: f64 = @round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2);
+    const right: f64 = @floatFromInt(self.metrics.cell_width);
 
     var path = z2d.Path.init(canvas.alloc);
     defer path.deinit();
@@ -2588,12 +2607,12 @@ fn draw_arc(
     comptime corner: Corner,
     comptime thickness: Thickness,
 ) !void {
-    const thick_px = thickness.height(self.thickness);
-    const float_width: f64 = @floatFromInt(self.width);
-    const float_height: f64 = @floatFromInt(self.height);
+    const thick_px = thickness.height(self.metrics.box_thickness);
+    const float_width: f64 = @floatFromInt(self.metrics.cell_width);
+    const float_height: f64 = @floatFromInt(self.metrics.cell_height);
     const float_thick: f64 = @floatFromInt(thick_px);
-    const center_x: f64 = @as(f64, @floatFromInt((self.width -| thick_px) / 2)) + float_thick / 2;
-    const center_y: f64 = @as(f64, @floatFromInt((self.height -| thick_px) / 2)) + float_thick / 2;
+    const center_x: f64 = @as(f64, @floatFromInt((self.metrics.cell_width -| thick_px) / 2)) + float_thick / 2;
+    const center_y: f64 = @as(f64, @floatFromInt((self.metrics.cell_height -| thick_px) / 2)) + float_thick / 2;
 
     const r = @min(float_width, float_height) / 2;
 
@@ -2703,23 +2722,23 @@ fn draw_dash_horizontal(
     // We need at least 1 pixel for each gap and each dash, if we don't
     // have that then we can't draw our dashed line correctly so we just
     // draw a solid line and return.
-    if (self.width < count + gap_count) {
+    if (self.metrics.cell_width < count + gap_count) {
         self.hline_middle(canvas, .light);
         return;
     }
 
     // We never want the gaps to take up more than 50% of the space,
     // because if they do the dashes are too small and look wrong.
-    const gap_width = @min(desired_gap, self.width / (2 * count));
+    const gap_width = @min(desired_gap, self.metrics.cell_width / (2 * count));
     const total_gap_width = gap_count * gap_width;
-    const total_dash_width = self.width - total_gap_width;
+    const total_dash_width = self.metrics.cell_width - total_gap_width;
     const dash_width = total_dash_width / count;
     const remaining = total_dash_width % count;
 
-    assert(dash_width * count + gap_width * gap_count + remaining == self.width);
+    assert(dash_width * count + gap_width * gap_count + remaining == self.metrics.cell_width);
 
     // Our dashes should be centered vertically.
-    const y: u32 = (self.height -| thick_px) / 2;
+    const y: u32 = (self.metrics.cell_height -| thick_px) / 2;
 
     // We start at half a gap from the left edge, in order to center
     // our dashes properly.
@@ -2782,23 +2801,23 @@ fn draw_dash_vertical(
     // We need at least 1 pixel for each gap and each dash, if we don't
     // have that then we can't draw our dashed line correctly so we just
     // draw a solid line and return.
-    if (self.height < count + gap_count) {
+    if (self.metrics.cell_height < count + gap_count) {
         self.vline_middle(canvas, .light);
         return;
     }
 
     // We never want the gaps to take up more than 50% of the space,
     // because if they do the dashes are too small and look wrong.
-    const gap_height = @min(desired_gap, self.height / (2 * count));
+    const gap_height = @min(desired_gap, self.metrics.cell_height / (2 * count));
     const total_gap_height = gap_count * gap_height;
-    const total_dash_height = self.height - total_gap_height;
+    const total_dash_height = self.metrics.cell_height - total_gap_height;
     const dash_height = total_dash_height / count;
     const remaining = total_dash_height % count;
 
-    assert(dash_height * count + gap_height * gap_count + remaining == self.height);
+    assert(dash_height * count + gap_height * gap_count + remaining == self.metrics.cell_height);
 
     // Our dashes should be centered horizontally.
-    const x: u32 = (self.width -| thick_px) / 2;
+    const x: u32 = (self.metrics.cell_width -| thick_px) / 2;
 
     // We start at the top of the cell.
     var y: u32 = 0;
@@ -2824,32 +2843,32 @@ fn draw_dash_vertical(
 }
 
 fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, 0, self.width, self.height);
+    self.rect(canvas, 0, 0, self.metrics.cell_width, self.metrics.cell_height);
 }
 
 fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.super_light.height(self.thickness);
+    const thick_px = Thickness.super_light.height(self.metrics.cursor_thickness);
 
-    self.vline(canvas, 0, self.height, 0, thick_px);
-    self.vline(canvas, 0, self.height, self.width -| thick_px, thick_px);
-    self.hline(canvas, 0, self.width, 0, thick_px);
-    self.hline(canvas, 0, self.width, self.height -| thick_px, thick_px);
+    self.vline(canvas, 0, self.metrics.cell_height, 0, thick_px);
+    self.vline(canvas, 0, self.metrics.cell_height, self.metrics.cell_width -| thick_px, thick_px);
+    self.hline(canvas, 0, self.metrics.cell_width, 0, thick_px);
+    self.hline(canvas, 0, self.metrics.cell_width, self.metrics.cell_height -| thick_px, thick_px);
 }
 
 fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
-    const thick_px = Thickness.light.height(self.thickness);
+    const thick_px = Thickness.light.height(self.metrics.cursor_thickness);
 
-    self.vline(canvas, 0, self.height, 0, thick_px);
+    self.vline(canvas, 0, self.metrics.cell_height, 0, thick_px);
 }
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
-    const thick_px = thickness.height(self.thickness);
-    self.vline(canvas, 0, self.height, (self.width -| thick_px) / 2, thick_px);
+    const thick_px = thickness.height(self.metrics.box_thickness);
+    self.vline(canvas, 0, self.metrics.cell_height, (self.metrics.cell_width -| thick_px) / 2, thick_px);
 }
 
 fn hline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
-    const thick_px = thickness.height(self.thickness);
-    self.hline(canvas, 0, self.width, (self.height -| thick_px) / 2, thick_px);
+    const thick_px = thickness.height(self.metrics.box_thickness);
+    self.hline(canvas, 0, self.metrics.cell_width, (self.metrics.cell_height -| thick_px) / 2, thick_px);
 }
 
 fn vline(
@@ -2861,11 +2880,11 @@ fn vline(
     thickness_px: u32,
 ) void {
     canvas.rect((font.sprite.Box(u32){ .p0 = .{
-        .x = @min(@max(x, 0), self.width),
-        .y = @min(@max(y1, 0), self.height),
+        .x = @min(@max(x, 0), self.metrics.cell_width),
+        .y = @min(@max(y1, 0), self.metrics.cell_height),
     }, .p1 = .{
-        .x = @min(@max(x + thickness_px, 0), self.width),
-        .y = @min(@max(y2, 0), self.height),
+        .x = @min(@max(x + thickness_px, 0), self.metrics.cell_width),
+        .y = @min(@max(y2, 0), self.metrics.cell_height),
     } }).rect(), .on);
 }
 
@@ -2878,11 +2897,11 @@ fn hline(
     thickness_px: u32,
 ) void {
     canvas.rect((font.sprite.Box(u32){ .p0 = .{
-        .x = @min(@max(x1, 0), self.width),
-        .y = @min(@max(y, 0), self.height),
+        .x = @min(@max(x1, 0), self.metrics.cell_width),
+        .y = @min(@max(y, 0), self.metrics.cell_height),
     }, .p1 = .{
-        .x = @min(@max(x2, 0), self.width),
-        .y = @min(@max(y + thickness_px, 0), self.height),
+        .x = @min(@max(x2, 0), self.metrics.cell_width),
+        .y = @min(@max(y + thickness_px, 0), self.metrics.cell_height),
     } }).rect(), .on);
 }
 
@@ -2895,11 +2914,11 @@ fn rect(
     y2: u32,
 ) void {
     canvas.rect((font.sprite.Box(u32){ .p0 = .{
-        .x = @min(@max(x1, 0), self.width),
-        .y = @min(@max(y1, 0), self.height),
+        .x = @min(@max(x1, 0), self.metrics.cell_width),
+        .y = @min(@max(y1, 0), self.metrics.cell_height),
     }, .p1 = .{
-        .x = @min(@max(x2, 0), self.width),
-        .y = @min(@max(y2, 0), self.height),
+        .x = @min(@max(x2, 0), self.metrics.cell_width),
+        .y = @min(@max(y2, 0), self.metrics.cell_height),
     } }).rect(), .on);
 }
 
@@ -2913,14 +2932,21 @@ test "all" {
         var atlas_grayscale = try font.Atlas.init(alloc, 512, .grayscale);
         defer atlas_grayscale.deinit(alloc);
 
-        const face: Box = .{ .width = 18, .height = 36, .thickness = 2 };
+        const face: Box = .{
+            .metrics = font.Metrics.calc(.{
+                .cell_width = 18.0,
+                .ascent = 30.0,
+                .descent = -6.0,
+                .line_gap = 0.0,
+            }),
+        };
         const glyph = try face.renderGlyph(
             alloc,
             &atlas_grayscale,
             cp,
         );
-        try testing.expectEqual(@as(u32, face.width), glyph.width);
-        try testing.expectEqual(@as(u32, face.height), glyph.height);
+        try testing.expectEqual(@as(u32, face.metrics.cell_width), glyph.width);
+        try testing.expectEqual(@as(u32, face.metrics.cell_height), glyph.height);
     }
 }
 
@@ -3037,18 +3063,28 @@ test "render all sprites" {
     var atlas_grayscale = try font.Atlas.init(alloc, 1024, .grayscale);
     defer atlas_grayscale.deinit(alloc);
 
-    // Even cell size and thickness
+    // Even cell size and thickness (18 x 36)
     try (Box{
-        .width = 18,
-        .height = 36,
-        .thickness = 2,
+        .metrics = font.Metrics.calc(.{
+            .cell_width = 18.0,
+            .ascent = 30.0,
+            .descent = -6.0,
+            .line_gap = 0.0,
+            .underline_thickness = 2.0,
+            .strikethrough_thickness = 2.0,
+        }),
     }).testRenderAll(alloc, &atlas_grayscale);
 
-    // Odd cell size and thickness
+    // Odd cell size and thickness (9 x 15)
     try (Box{
-        .width = 9,
-        .height = 15,
-        .thickness = 1,
+        .metrics = font.Metrics.calc(.{
+            .cell_width = 9.0,
+            .ascent = 12.0,
+            .descent = -3.0,
+            .line_gap = 0.0,
+            .underline_thickness = 1.0,
+            .strikethrough_thickness = 1.0,
+        }),
     }).testRenderAll(alloc, &atlas_grayscale);
 
     const ground_truth = @embedFile("./testdata/Box.ppm");

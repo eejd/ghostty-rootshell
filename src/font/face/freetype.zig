@@ -16,6 +16,7 @@ const font = @import("../main.zig");
 const Glyph = font.Glyph;
 const Library = font.Library;
 const convert = @import("freetype_convert.zig");
+const opentype = @import("../opentype.zig");
 const fastmem = @import("../../fastmem.zig");
 const quirks = @import("../../quirks.zig");
 const config = @import("../../config.zig");
@@ -85,7 +86,7 @@ pub const Face = struct {
             .lib = lib.lib,
             .face = face,
             .hb_font = hb_font,
-            .metrics = calcMetrics(face, opts.metric_modifiers),
+            .metrics = try calcMetrics(face, opts.metric_modifiers),
             .load_flags = opts.freetype_load_flags,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
@@ -185,7 +186,7 @@ pub const Face = struct {
     /// for clearing any glyph caches, font atlas data, etc.
     pub fn setSize(self: *Face, opts: font.face.Options) !void {
         try setSize_(self.face, opts.size);
-        self.metrics = calcMetrics(self.face, opts.metric_modifiers);
+        self.metrics = try calcMetrics(self.face, opts.metric_modifiers);
     }
 
     fn setSize_(face: freetype.Face, size: font.face.DesiredSize) !void {
@@ -258,7 +259,7 @@ pub const Face = struct {
         try self.face.setVarDesignCoordinates(coords);
 
         // We need to recalculate font metrics which may have changed.
-        self.metrics = calcMetrics(self.face, opts.metric_modifiers);
+        self.metrics = try calcMetrics(self.face, opts.metric_modifiers);
     }
 
     /// Returns the glyph index for the given Unicode code point. If this
@@ -593,6 +594,10 @@ pub const Face = struct {
         return @floatFromInt(v >> 6);
     }
 
+    fn f26dot6ToF64(v: freetype.c.FT_F26Dot6) f64 {
+        return @as(opentype.sfnt.F26Dot6, @bitCast(@as(u32, @intCast(v)))).to(f64);
+    }
+
     /// Calculate the metrics associated with a face. This is not public because
     /// the metrics are calculated for every face and cached since they're
     /// frequently required for renderers and take up next to little memory space
@@ -605,150 +610,141 @@ pub const Face = struct {
     fn calcMetrics(
         face: freetype.Face,
         modifiers: ?*const font.face.Metrics.ModifierSet,
-    ) font.face.Metrics {
+    ) !font.face.Metrics {
         const size_metrics = face.handle.*.size.*.metrics;
 
-        // Cell width is calculated by preferring to use 'M' as the width of a
-        // cell since 'M' is generally the widest ASCII character. If loading 'M'
-        // fails then we use the max advance of the font face size metrics.
-        const cell_width: f32 = cell_width: {
-            if (face.getCharIndex('M')) |glyph_index| {
-                if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                    break :cell_width f26dot6ToFloat(face.handle.*.glyph.*.advance.x);
-                } else |_| {
-                    // Ignore the error since we just fall back to max_advance below
-                }
-            }
+        // This code relies on this assumption, and it should always be
+        // true since we don't do any non-uniform scaling on the font ever.
+        assert(size_metrics.x_ppem == size_metrics.y_ppem);
 
-            break :cell_width f26dot6ToFloat(size_metrics.max_advance);
-        };
+        // Read the 'head' table out of the font data.
+        const head = face.getSfntTable(.head) orelse return error.CannotGetTable;
 
-        // Ex height is calculated by measuring the height of the `x` glyph.
-        // If that fails then we just pretend it's 65% of the ascent height.
-        const ex_height: f32 = ex_height: {
-            if (face.getCharIndex('x')) |glyph_index| {
-                if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                    break :ex_height f26dot6ToFloat(face.handle.*.glyph.*.metrics.height);
-                } else |_| {
-                    // Ignore the error since we just fall back to 65% of the ascent below
-                }
-            }
+        // Read the 'post' table out of the font data.
+        const post = face.getSfntTable(.post) orelse return error.CannotGetTable;
 
-            break :ex_height f26dot6ToFloat(size_metrics.ascender) * 0.65;
-        };
+        // Read the 'OS/2' table out of the font data.
+        const os2 = face.getSfntTable(.os2) orelse return error.CannotGetTable;
 
-        // Cell height is calculated as the maximum of multiple things in order
-        // to handle edge cases in fonts: (1) the height as reported in metadata
-        // by the font designer (2) the maximum glyph height as measured in the
-        // font and (3) the height from the ascender to an underscore.
-        const cell_height: f32 = cell_height: {
-            // The height as reported by the font designer.
-            const face_height = f26dot6ToFloat(size_metrics.height);
+        // Some fonts don't actually have an OS/2 table, which
+        // we need in order to do the metrics calculations, in
+        // such cases FreeType sets the version to 0xFFFF
+        if (os2.version == 0xFFFF) return error.MissingTable;
 
-            // The maximum height a glyph can take in the font
-            const max_glyph_height = f26dot6ToFloat(size_metrics.ascender) -
-                f26dot6ToFloat(size_metrics.descender);
+        const units_per_em = head.Units_Per_EM;
+        const px_per_em: f64 = @floatFromInt(size_metrics.y_ppem);
+        const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
 
-            // The height of the underscore character
-            const underscore_height = underscore: {
-                if (face.getCharIndex('_')) |glyph_index| {
+        const ascent = @as(f64, @floatFromInt(os2.sTypoAscender)) * px_per_unit;
+        const descent = @as(f64, @floatFromInt(os2.sTypoDescender)) * px_per_unit;
+        const line_gap = @as(f64, @floatFromInt(os2.sTypoLineGap)) * px_per_unit;
+
+        // Some fonts have degenerate 'post' tables where the underline
+        // thickness (and often position) are 0. We consider them null
+        // if this is the case and use our own fallbacks when we calculate.
+        const has_broken_underline = post.underlineThickness == 0;
+
+        // If the underline position isn't 0 then we do use it,
+        // even if the thickness is't properly specified.
+        const underline_position = if (has_broken_underline and post.underlinePosition == 0)
+            null
+        else
+            @as(f64, @floatFromInt(post.underlinePosition)) * px_per_unit;
+
+        const underline_thickness = if (has_broken_underline)
+            null
+        else
+            @as(f64, @floatFromInt(post.underlineThickness)) * px_per_unit;
+
+        // Similar logic to the underline above.
+        const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+
+        const strikethrough_position = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+            null
+        else
+            @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+
+        const strikethrough_thickness = if (has_broken_strikethrough)
+            null
+        else
+            @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+
+        // Cell width is calculated by calculating the widest width of the
+        // visible ASCII characters. Usually 'M' is widest but we just take
+        // whatever is widest.
+        //
+        // If we fail to load any visible ASCII we just use max_advance from
+        // the metrics provided by FreeType.
+        const cell_width: f64 = cell_width: {
+            var c: u8 = ' ';
+            while (c < 127) : (c += 1) {
+                if (face.getCharIndex(c)) |glyph_index| {
                     if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                        var res: f32 = f26dot6ToFloat(size_metrics.ascender);
-                        res -= @floatFromInt(face.handle.*.glyph.*.bitmap_top);
-                        res += @floatFromInt(face.handle.*.glyph.*.bitmap.rows);
-                        break :underscore res;
+                        break :cell_width f26dot6ToF64(face.handle.*.glyph.*.advance.x);
                     } else |_| {
-                        // Ignore the error since we just fall back below
+                        // Ignore the error since we just fall back to max_advance below
                     }
                 }
+            }
 
-                break :underscore 0;
-            };
-
-            break :cell_height @max(
-                face_height,
-                @max(max_glyph_height, underscore_height),
-            );
+            break :cell_width f26dot6ToF64(size_metrics.max_advance);
         };
 
-        // The baseline is the descender amount for the font. This is the maximum
-        // that a font may go down. We switch signs because our coordinate system
-        // is reversed.
-        const cell_baseline = -1 * f26dot6ToFloat(size_metrics.descender);
+        // The OS/2 table does not include sCapHeight or sxHeight in version 1.
+        const has_os2_height_metrics = os2.version >= 2;
 
-        const underline_thickness = @max(@as(f32, 1), fontUnitsToPxY(
-            face,
-            face.handle.*.underline_thickness,
-        ));
+        // We use the cap height specified by the font if it's
+        // available, otherwise we try to measure the `H` glyph.
+        const cap_height: ?f64 = cap_height: {
+            if (has_os2_height_metrics) {
+                break :cap_height @as(f64, @floatFromInt(os2.sCapHeight)) * px_per_unit;
+            }
+            if (face.getCharIndex('H')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    break :cap_height f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
+                } else |_| {}
+            }
 
-        // The underline position. This is a value from the top where the
-        // underline should go.
-        const underline_position: f32 = underline_pos: {
-            // From the FreeType docs:
-            // > `underline_position`
-            // > The position, in font units, of the underline line for
-            // > this face. It is the center of the underlining stem.
-
-            const declared_px = @as(f32, @floatFromInt(freetype.mulFix(
-                face.handle.*.underline_position,
-                @intCast(face.handle.*.size.*.metrics.y_scale),
-            ))) / 64;
-
-            // We use the declared underline position if its available.
-            const declared = @ceil(cell_height - cell_baseline - declared_px - underline_thickness * 0.5);
-            if (declared > 0)
-                break :underline_pos declared;
-
-            // If we have no declared underline position, we go slightly under the
-            // cell height (mainly: non-scalable fonts, i.e. emoji)
-            break :underline_pos cell_height - 1;
+            break :cap_height null;
         };
 
-        // The strikethrough position. We use the position provided by the
-        // font if it exists otherwise we calculate a best guess.
-        const strikethrough: struct {
-            pos: f32,
-            thickness: f32,
-        } = if (face.getSfntTable(.os2)) |os2| st: {
-            const thickness = @max(@as(f32, 1), fontUnitsToPxY(face, os2.yStrikeoutSize));
+        // We use the ex height specified by the font if it's
+        // available, otherwise we try to measure the `x` glyph.
+        const ex_height: ?f64 = ex_height: {
+            if (has_os2_height_metrics) {
+                break :ex_height @as(f64, @floatFromInt(os2.sxHeight)) * px_per_unit;
+            }
+            if (face.getCharIndex('x')) |glyph_index| {
+                if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    break :ex_height f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
+                } else |_| {}
+            }
 
-            const pos = @as(f32, @floatFromInt(freetype.mulFix(
-                os2.yStrikeoutPosition,
-                @as(i32, @intCast(face.handle.*.size.*.metrics.y_scale)),
-            ))) / 64;
-
-            break :st .{
-                .pos = @ceil(cell_height - cell_baseline - pos),
-                .thickness = thickness,
-            };
-        } else .{
-            // Exactly 50% of the ex height so that our strikethrough is
-            // centered through lowercase text. This is a common choice.
-            .pos = @ceil(cell_height - cell_baseline - ex_height * 0.5 - underline_thickness * 0.5),
-            .thickness = underline_thickness,
+            break :ex_height null;
         };
 
-        var result = font.face.Metrics{
-            .cell_width = @intFromFloat(cell_width),
-            .cell_height = @intFromFloat(cell_height),
-            .cell_baseline = @intFromFloat(cell_baseline),
-            .underline_position = @intFromFloat(underline_position),
-            .underline_thickness = @intFromFloat(underline_thickness),
-            .strikethrough_position = @intFromFloat(strikethrough.pos),
-            .strikethrough_thickness = @intFromFloat(strikethrough.thickness),
-        };
+        var result = font.face.Metrics.calc(.{
+            .cell_width = cell_width,
+
+            .ascent = ascent,
+            .descent = descent,
+            .line_gap = line_gap,
+
+            .underline_position = underline_position,
+            .underline_thickness = underline_thickness,
+
+            .strikethrough_position = strikethrough_position,
+            .strikethrough_thickness = strikethrough_thickness,
+
+            .cap_height = cap_height,
+            .ex_height = ex_height,
+        });
+
         if (modifiers) |m| result.apply(m.*);
 
         // std.log.warn("font metrics={}", .{result});
 
         return result;
-    }
-
-    /// Convert freetype "font units" to pixels using the Y scale.
-    fn fontUnitsToPxY(face: freetype.Face, x: i32) f32 {
-        const mul = freetype.mulFix(x, @as(i32, @intCast(face.handle.*.size.*.metrics.y_scale)));
-        const div = @as(f32, @floatFromInt(mul)) / 64;
-        return @ceil(div);
     }
 
     /// Copy the font table data for the given tag.
@@ -828,6 +824,9 @@ test "color emoji" {
                 .underline_thickness = 0,
                 .strikethrough_position = 0,
                 .strikethrough_thickness = 0,
+                .overline_position = 0,
+                .overline_thickness = 0,
+                .box_thickness = 0,
             },
         });
         try testing.expectEqual(@as(u32, 24), glyph.height);
@@ -853,24 +852,42 @@ test "metrics" {
 
     try testing.expectEqual(font.face.Metrics{
         .cell_width = 8,
-        .cell_height = 1.8e1,
-        .cell_baseline = 4,
-        .underline_position = 18,
+        // The cell height is 17 px because the calculation is
+        //
+        //  ascender - descender + gap
+        //
+        // which, for inconsolata is
+        //
+        //  859 - -190 + 0
+        //
+        // font units, at 1000 units per em that works out to 1.049 em,
+        // and 1em should be the point size * dpi scale, so 12 * (96/72)
+        // which is 16, and 16 * 1.049 = 16.784, which finally is rounded
+        // to 17.
+        .cell_height = 17,
+        .cell_baseline = 3,
+        .underline_position = 17,
         .underline_thickness = 1,
         .strikethrough_position = 10,
         .strikethrough_thickness = 1,
+        .overline_position = 0,
+        .overline_thickness = 1,
+        .box_thickness = 1,
     }, ft_font.metrics);
 
     // Resize should change metrics
     try ft_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
     try testing.expectEqual(font.face.Metrics{
         .cell_width = 16,
-        .cell_height = 35,
-        .cell_baseline = 7,
-        .underline_position = 35,
+        .cell_height = 34,
+        .cell_baseline = 6,
+        .underline_position = 34,
         .underline_thickness = 2,
-        .strikethrough_position = 20,
+        .strikethrough_position = 19,
         .strikethrough_thickness = 2,
+        .overline_position = 0,
+        .overline_thickness = 2,
+        .box_thickness = 2,
     }, ft_font.metrics);
 }
 
