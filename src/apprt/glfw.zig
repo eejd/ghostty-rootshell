@@ -409,6 +409,13 @@ pub const App = struct {
         }
     }
 
+    pub fn keyboardLayout(self: *const App) input.KeyboardLayout {
+        _ = self;
+
+        // Not supported by glfw
+        return .unknown;
+    }
+
     /// Mac-specific settings. This is only enabled when the target is
     /// Mac and the artifact is a standalone exe. We don't target libs because
     /// the embedded API doesn't do windowing.
