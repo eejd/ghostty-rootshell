@@ -2,9 +2,6 @@ const std = @import("std");
 
 const Config = @import("../config/Config.zig");
 const Action = @import("../cli/action.zig").Action;
-const ListFontsOptions = @import("../cli/list_fonts.zig").Options;
-const ShowConfigOptions = @import("../cli/show_config.zig").Options;
-const ListKeybindsOptions = @import("../cli/list_keybinds.zig").Options;
 
 /// A fish completions configuration that contains all the available commands
 /// and options.
@@ -100,66 +97,35 @@ fn writeFishCompletions(writer: anytype) !void {
         try writer.writeAll("\"\n");
     }
 
-    for (@typeInfo(ListFontsOptions).Struct.fields) |field| {
-        if (field.name[0] == '_') continue;
-        try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +list-fonts\" -l ");
-        try writer.writeAll(field.name);
-        try writer.writeAll(if (field.type != bool) " -r" else " ");
-        try writer.writeAll(" -f");
-        switch (@typeInfo(field.type)) {
-            .Bool => try writer.writeAll(" -a \"true false\""),
-            .Enum => |info| {
-                try writer.writeAll(" -a \"");
-                for (info.fields, 0..) |f, i| {
-                    if (i > 0) try writer.writeAll(" ");
-                    try writer.writeAll(f.name);
-                }
-                try writer.writeAll("\"");
-            },
-            else => {},
-        }
-        try writer.writeAll("\n");
-    }
+    for (@typeInfo(Action).Enum.fields) |field| {
+        if (std.mem.eql(u8, "help", field.name)) continue;
+        if (std.mem.eql(u8, "version", field.name)) continue;
 
-    for (@typeInfo(ShowConfigOptions).Struct.fields) |field| {
-        if (field.name[0] == '_') continue;
-        try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +show-config\" -l ");
-        try writer.writeAll(field.name);
-        try writer.writeAll(if (field.type != bool) " -r" else " ");
-        try writer.writeAll(" -f");
-        switch (@typeInfo(field.type)) {
-            .Bool => try writer.writeAll(" -a \"true false\""),
-            .Enum => |info| {
-                try writer.writeAll(" -a \"");
-                for (info.fields, 0..) |f, i| {
-                    if (i > 0) try writer.writeAll(" ");
-                    try writer.writeAll(f.name);
-                }
-                try writer.writeAll("\"");
-            },
-            else => {},
-        }
-        try writer.writeAll("\n");
-    }
+        const options = @field(Action, field.name).options();
+        for (@typeInfo(options).Struct.fields) |opt| {
+            if (opt.name[0] == '_') continue;
+            try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +" ++ field.name ++ "\" -l ");
+            try writer.writeAll(opt.name);
+            try writer.writeAll(if (opt.type != bool) " -r" else "");
 
-    for (@typeInfo(ListKeybindsOptions).Struct.fields) |field| {
-        if (field.name[0] == '_') continue;
-        try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +list-keybinds\" -l ");
-        try writer.writeAll(field.name);
-        try writer.writeAll(if (field.type != bool) " -r" else " ");
-        try writer.writeAll(" -f");
-        switch (@typeInfo(field.type)) {
-            .Bool => try writer.writeAll(" -a \"true false\""),
-            .Enum => |info| {
-                try writer.writeAll(" -a \"");
-                for (info.fields, 0..) |f, i| {
-                    if (i > 0) try writer.writeAll(" ");
-                    try writer.writeAll(f.name);
-                }
-                try writer.writeAll("\"");
-            },
-            else => {},
+            // special case +validate_config --config-file
+            if (std.mem.eql(u8, "config-file", opt.name)) {
+                try writer.writeAll(" -F");
+            } else try writer.writeAll(" -f");
+
+            switch (@typeInfo(opt.type)) {
+                .Bool => try writer.writeAll(" -a \"true false\""),
+                .Enum => |info| {
+                    try writer.writeAll(" -a \"");
+                    for (info.opts, 0..) |f, i| {
+                        if (i > 0) try writer.writeAll(" ");
+                        try writer.writeAll(f.name);
+                    }
+                    try writer.writeAll("\"");
+                },
+                else => {},
+            }
+            try writer.writeAll("\n");
         }
-        try writer.writeAll("\n");
     }
 }
