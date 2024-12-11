@@ -7,7 +7,7 @@ const font = @import("../font/main.zig");
 
 const log = std.log.scoped(.list_fonts);
 
-pub const Config = struct {
+pub const Options = struct {
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
@@ -23,13 +23,13 @@ pub const Config = struct {
     bold: bool = false,
     italic: bool = false,
 
-    pub fn deinit(self: *Config) void {
+    pub fn deinit(self: *Options) void {
         if (self._arena) |arena| arena.deinit();
         self.* = undefined;
     }
 
     /// Enables "-h" and "--help" to work.
-    pub fn help(self: Config) !void {
+    pub fn help(self: Options) !void {
         _ = self;
         return Action.help_error;
     }
@@ -59,9 +59,9 @@ pub fn run(alloc: Allocator) !u8 {
 }
 
 fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
-    var config: Config = .{};
+    var config: Options = .{};
     defer config.deinit();
-    try args.parse(Config, alloc_gpa, &config, argsIter);
+    try args.parse(Options, alloc_gpa, &config, argsIter);
 
     // Use an arena for all our memory allocs
     var arena = ArenaAllocator.init(alloc_gpa);

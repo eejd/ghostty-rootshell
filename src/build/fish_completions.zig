@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Config = @import("../config/Config.zig");
 const Action = @import("../cli/action.zig").Action;
-const ListFontsConfig = @import("../cli/list_fonts.zig").Config;
+const ListFontsOptions = @import("../cli/list_fonts.zig").Options;
 const ShowConfigOptions = @import("../cli/show_config.zig").Options;
 const ListKeybindsOptions = @import("../cli/list_keybinds.zig").Options;
 
@@ -100,7 +100,7 @@ fn writeFishCompletions(writer: anytype) !void {
         try writer.writeAll("\"\n");
     }
 
-    for (@typeInfo(ListFontsConfig).Struct.fields) |field| {
+    for (@typeInfo(ListFontsOptions).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
         try writer.writeAll("complete -c ghostty -n \"__fish_seen_subcommand_from +list-fonts\" -l ");
         try writer.writeAll(field.name);
