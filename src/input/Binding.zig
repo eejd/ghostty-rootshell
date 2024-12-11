@@ -1171,7 +1171,7 @@ pub const Set = struct {
                     var iter = set.bindings.iterator();
                     while (iter.next()) |binding| {
                         buffer_stream.seekTo(pos) catch unreachable; // can't fail
-                        try std.fmt.format(buffer_stream.writer(), ">{s}", .{binding.key_ptr.*});
+                        std.fmt.format(buffer_stream.writer(), ">{s}", .{binding.key_ptr.*}) catch return error.OutOfMemory;
                         try binding.value_ptr.*.formatEntries(buffer_stream, formatter);
                     }
                 },
@@ -1179,7 +1179,7 @@ pub const Set = struct {
                 .leaf => |leaf| {
                     // When we get to the leaf, the buffer_stream contains
                     // the full sequence of keys needed to reach this action.
-                    try std.fmt.format(buffer_stream.writer(), "={s}", .{leaf.action});
+                    std.fmt.format(buffer_stream.writer(), "={s}", .{leaf.action}) catch return error.OutOfMemory;
                     try formatter.formatEntry([]const u8, buffer_stream.getWritten());
                 },
             }

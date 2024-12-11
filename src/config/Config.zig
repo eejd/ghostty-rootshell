@@ -4214,7 +4214,7 @@ pub const Keybinds = struct {
             }
 
             var buffer_stream = std.io.fixedBufferStream(&buf);
-            try std.fmt.format(buffer_stream.writer(), "{}", .{k});
+            std.fmt.format(buffer_stream.writer(), "{}", .{k}) catch return error.OutOfMemory;
             try v.formatEntries(&buffer_stream, formatter);
         }
     }
