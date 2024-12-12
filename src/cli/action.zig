@@ -163,6 +163,26 @@ pub const Action = enum {
             return "cli/" ++ filename ++ ".zig";
         }
     }
+
+    /// Returns the options of action. Supports generating shell completions
+    /// without duplicating the mapping from Action to relevant Option
+    /// @import(..) declaration.
+    pub fn options(comptime self: Action) type {
+        comptime {
+            return switch (self) {
+                .version => version.Options,
+                .help => help.Options,
+                .@"list-fonts" => list_fonts.Options,
+                .@"list-keybinds" => list_keybinds.Options,
+                .@"list-themes" => list_themes.Options,
+                .@"list-colors" => list_colors.Options,
+                .@"list-actions" => list_actions.Options,
+                .@"show-config" => show_config.Options,
+                .@"validate-config" => validate_config.Options,
+                .@"crash-report" => crash_report.Options,
+            };
+        }
+    }
 };
 
 test "parse action none" {

@@ -1051,7 +1051,7 @@ pub fn clipboardRequest(
 }
 
 pub fn setClipboardString(
-    self: *const Surface,
+    self: *Surface,
     val: [:0]const u8,
     clipboard_type: apprt.Clipboard,
     confirm: bool,
@@ -1065,7 +1065,7 @@ pub fn setClipboardString(
     ClipboardConfirmationWindow.create(
         self.app,
         val,
-        self.core_surface,
+        &self.core_surface,
         .{ .osc_52_write = clipboard_type },
     ) catch |window_err| {
         log.err("failed to create clipboard confirmation window err={}", .{window_err});
@@ -1113,7 +1113,7 @@ fn gtkClipboardRead(
             ClipboardConfirmationWindow.create(
                 self.app,
                 str,
-                self.core_surface,
+                &self.core_surface,
                 req.state,
             ) catch |window_err| {
                 log.err("failed to create clipboard confirmation window err={}", .{window_err});

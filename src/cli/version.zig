@@ -7,6 +7,8 @@ const xev = @import("xev");
 const renderer = @import("../renderer.zig");
 const gtk = if (build_config.app_runtime == .gtk) @import("../apprt/gtk/c.zig").c else void;
 
+pub const Options = struct {};
+
 /// The `version` command is used to display information about Ghostty.
 pub fn run(alloc: Allocator) !u8 {
     _ = alloc;

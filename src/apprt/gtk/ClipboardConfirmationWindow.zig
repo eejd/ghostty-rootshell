@@ -17,13 +17,13 @@ window: *c.GtkWindow,
 view: PrimaryView,
 
 data: [:0]u8,
-core_surface: CoreSurface,
+core_surface: *CoreSurface,
 pending_req: apprt.ClipboardRequest,
 
 pub fn create(
     app: *App,
     data: []const u8,
-    core_surface: CoreSurface,
+    core_surface: *CoreSurface,
     request: apprt.ClipboardRequest,
 ) !void {
     if (app.clipboard_confirmation_window != null) return error.WindowAlreadyExists;
@@ -54,7 +54,7 @@ fn init(
     self: *ClipboardConfirmation,
     app: *App,
     data: []const u8,
-    core_surface: CoreSurface,
+    core_surface: *CoreSurface,
     request: apprt.ClipboardRequest,
 ) !void {
     // Create the window

@@ -1149,6 +1149,41 @@ pub const Set = struct {
                 },
             }
         }
+
+        /// Writes the configuration entries for the binding
+        /// that this value is part of.
+        ///
+        /// The value may be part of multiple configuration entries
+        /// if they're all part of the same prefix sequence (e.g. 'a>b', 'a>c').
+        /// These will result in multiple separate entries in the configuration.
+        ///
+        /// `buffer_stream` is a FixedBufferStream used for temporary storage
+        /// that is shared between calls to nested levels of the set.
+        /// For example, 'a>b>c=x' and 'a>b>d=y' will re-use the 'a>b' written
+        /// to the buffer before flushing it to the formatter with 'c=x' and 'd=y'.
+        pub fn formatEntries(self: Value, buffer_stream: anytype, formatter: anytype) !void {
+            switch (self) {
+                .leader => |set| {
+                    // We'll rewind to this position after each sub-entry,
+                    // sharing the prefix between siblings.
+                    const pos = try buffer_stream.getPos();
+
+                    var iter = set.bindings.iterator();
+                    while (iter.next()) |binding| {
+                        buffer_stream.seekTo(pos) catch unreachable; // can't fail
+                        std.fmt.format(buffer_stream.writer(), ">{s}", .{binding.key_ptr.*}) catch return error.OutOfMemory;
+                        try binding.value_ptr.*.formatEntries(buffer_stream, formatter);
+                    }
+                },
+
+                .leaf => |leaf| {
+                    // When we get to the leaf, the buffer_stream contains
+                    // the full sequence of keys needed to reach this action.
+                    std.fmt.format(buffer_stream.writer(), "={s}", .{leaf.action}) catch return error.OutOfMemory;
+                    try formatter.formatEntry([]const u8, buffer_stream.getWritten());
+                },
+            }
+        }
     };
 
     /// Leaf node of a set is an action to trigger. This is a "leaf" compared
