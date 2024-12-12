@@ -55,12 +55,10 @@ pub const Face = struct {
         const data = try macos.foundation.Data.createWithBytesNoCopy(source);
         defer data.release();
 
-        const arr = macos.text.createFontDescriptorsFromData(data) orelse
+        const desc = macos.text.createFontDescriptorFromData(data) orelse
             return error.FontInitFailure;
-        defer arr.release();
-        if (arr.getCount() == 0) return error.FontInitFailure;
+        defer desc.release();
 
-        const desc = arr.getValueAtIndex(macos.text.FontDescriptor, 0);
         const ct_font = try macos.text.Font.createWithFontDescriptor(desc, 12);
         defer ct_font.release();
 
@@ -923,4 +921,59 @@ test "glyphIndex colored vs text" {
         try testing.expectEqual(11482, glyph);
         try testing.expect(face.isColorGlyph(glyph));
     }
+}
+
+test "coretext: metrics" {
+    const testFont = font.embedded.inconsolata;
+    const alloc = std.testing.allocator;
+
+    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
+    defer atlas.deinit(alloc);
+
+    var ct_font = try Face.init(
+        undefined,
+        testFont,
+        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
+    );
+    defer ct_font.deinit();
+
+    try std.testing.expectEqual(font.face.Metrics{
+        .cell_width = 8,
+        // The cell height is 17 px because the calculation is
+        //
+        //  ascender - descender + gap
+        //
+        // which, for inconsolata is
+        //
+        //  859 - -190 + 0
+        //
+        // font units, at 1000 units per em that works out to 1.049 em,
+        // and 1em should be the point size * dpi scale, so 12 * (96/72)
+        // which is 16, and 16 * 1.049 = 16.784, which finally is rounded
+        // to 17.
+        .cell_height = 17,
+        .cell_baseline = 3,
+        .underline_position = 17,
+        .underline_thickness = 1,
+        .strikethrough_position = 10,
+        .strikethrough_thickness = 1,
+        .overline_position = 0,
+        .overline_thickness = 1,
+        .box_thickness = 1,
+    }, ct_font.metrics);
+
+    // Resize should change metrics
+    try ct_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
+    try std.testing.expectEqual(font.face.Metrics{
+        .cell_width = 16,
+        .cell_height = 34,
+        .cell_baseline = 6,
+        .underline_position = 34,
+        .underline_thickness = 2,
+        .strikethrough_position = 19,
+        .strikethrough_thickness = 2,
+        .overline_position = 0,
+        .overline_thickness = 2,
+        .box_thickness = 2,
+    }, ct_font.metrics);
 }
