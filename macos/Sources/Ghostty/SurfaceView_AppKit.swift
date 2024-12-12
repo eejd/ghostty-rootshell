@@ -13,6 +13,10 @@ extension Ghostty {
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
         @Published var title: String = "👻"
+        
+        // A small delay that is introduced before a title change to avoid flickers
+        var titleChangeDelay: TimeInterval = 0.075
+        var titleChangeTimer: Timer?
 
         // The current pwd of the surface as defined by the pty. This can be
         // changed with escape codes.

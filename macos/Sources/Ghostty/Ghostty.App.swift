@@ -947,14 +947,20 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let title = String(cString: v.title!, encoding: .utf8) else { return }
-
-                // We must set this in a dispatchqueue to avoid a deadlock on startup on some
-                // versions of macOS. I unfortunately didn't document the exact versions so
-                // I don't know when its safe to remove this.
-                DispatchQueue.main.async {
-                    surfaceView.title = title
+                
+                surfaceView.titleChangeTimer?.invalidate()
+                
+                surfaceView.titleChangeTimer = Timer.scheduledTimer(
+                    withTimeInterval: surfaceView.titleChangeDelay,
+                    repeats: false
+                ) { _ in
+                    // We must set this in a dispatchqueue to avoid a deadlock on startup on some
+                    // versions of macOS. I unfortunately didn't document the exact versions so
+                    // I don't know when its safe to remove this.
+                    DispatchQueue.main.async {
+                        surfaceView.title = title
+                    }
                 }
-
 
             default:
                 assertionFailure()
