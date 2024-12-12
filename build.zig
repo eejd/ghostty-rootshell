@@ -1120,8 +1120,7 @@ fn addDeps(
     });
     step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
     if (b.systemIntegrationOption("oniguruma", .{})) {
-        // Oniguruma is compiled and distributed as libonig.so
-        step.linkSystemLibrary2("onig", dynamic_link_opts);
+        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
     } else {
         step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
         try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
