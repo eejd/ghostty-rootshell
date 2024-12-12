@@ -342,7 +342,7 @@ pub fn print(self: *Terminal, c: u21) !void {
             if (c == 0xFE0F or c == 0xFE0E) {
                 // This only applies to emoji
                 const prev_props = unicode.getProperties(prev.cell.content.codepoint);
-                const emoji = prev_props.grapheme_boundary_class == .extended_pictographic;
+                const emoji = prev_props.grapheme_boundary_class.isExtendedPictographic();
                 if (!emoji) return;
 
                 switch (c) {
@@ -3190,6 +3190,51 @@ test "Terminal: print multicodepoint grapheme, mode 2027" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
+    }
+}
+
+test "Terminal: Fitzpatrick skin tone next to non-base" {
+    var t = try init(testing.allocator, .{ .cols = 80, .rows = 80 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering
+    t.modes.set(.grapheme_cluster, true);
+
+    // This is: "🏿" (which may not render correctly in your editor!)
+    try t.print(0x22); // "
+    try t.print(0x1F3FF); // Dark skin tone
+    try t.print(0x22); // "
+
+    // We should have 4 cells taken up. Importantly, the skin tone
+    // should not join with the quotes.
+    try testing.expectEqual(@as(usize, 0), t.screen.cursor.y);
+    try testing.expectEqual(@as(usize, 4), t.screen.cursor.x);
+
+    // Row should be dirty
+    try testing.expect(t.isDirty(.{ .screen = .{ .x = 0, .y = 0 } }));
+
+    // Assert various properties about our screen to verify
+    // we have all expected cells.
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 0, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x22), cell.content.codepoint);
+        try testing.expect(!cell.hasGrapheme());
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 1, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x1F3FF), cell.content.codepoint);
+        try testing.expect(!cell.hasGrapheme());
+        try testing.expectEqual(Cell.Wide.wide, cell.wide);
+    }
+    {
+        const list_cell = t.screen.pages.getCell(.{ .screen = .{ .x = 3, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0x22), cell.content.codepoint);
+        try testing.expect(!cell.hasGrapheme());
+        try testing.expectEqual(Cell.Wide.narrow, cell.wide);
     }
 }
 

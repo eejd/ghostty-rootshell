@@ -1,5 +1,6 @@
 const props = @This();
 const std = @import("std");
+const assert = std.debug.assert;
 const ziglyph = @import("ziglyph");
 const lut = @import("lut.zig");
 
@@ -73,12 +74,21 @@ pub const GraphemeBoundaryClass = enum(u4) {
     spacing_mark,
     regional_indicator,
     extended_pictographic,
+    extended_pictographic_base, // \p{Extended_Pictographic} & \p{Emoji_Modifier_Base}
+    emoji_modifier, // \p{Emoji_Modifier}
 
     /// Gets the grapheme boundary class for a codepoint. This is VERY
     /// SLOW. The use case for this is only in generating lookup tables.
     pub fn init(cp: u21) GraphemeBoundaryClass {
+        // We special-case modifier bases because we should not break
+        // if a modifier isn't next to a base.
+        if (ziglyph.emoji.isEmojiModifierBase(cp)) {
+            assert(ziglyph.emoji.isExtendedPictographic(cp));
+            return .extended_pictographic_base;
+        }
+
+        if (ziglyph.emoji.isEmojiModifier(cp)) return .emoji_modifier;
         if (ziglyph.emoji.isExtendedPictographic(cp)) return .extended_pictographic;
-        if (ziglyph.emoji.isEmojiModifier(cp)) return .extend;
         if (ziglyph.grapheme_break.isL(cp)) return .L;
         if (ziglyph.grapheme_break.isV(cp)) return .V;
         if (ziglyph.grapheme_break.isT(cp)) return .T;
@@ -94,6 +104,19 @@ pub const GraphemeBoundaryClass = enum(u4) {
         // boundary class for every codepoint. But we don't care about
         // anything that doesn't fit into the above categories.
         return .invalid;
+    }
+
+    /// Returns true if this is an extended pictographic type. This
+    /// should be used instead of comparing the enum value directly
+    /// because we classify multiple.
+    pub fn isExtendedPictographic(self: GraphemeBoundaryClass) bool {
+        return switch (self) {
+            .extended_pictographic,
+            .extended_pictographic_base,
+            => true,
+
+            else => false,
+        };
     }
 };
 
