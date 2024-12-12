@@ -3803,10 +3803,18 @@ test "PageList pointFromPin active from prior page" {
 
     var s = try init(alloc, 80, 24, null);
     defer s.deinit();
+    // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     {
         try testing.expectEqual(point.Point{
@@ -3837,10 +3845,19 @@ test "PageList pointFromPin traverse pages" {
 
     var s = try init(alloc, 80, 24, null);
     defer s.deinit();
+
+    // Grow so we take up at least 2 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 2) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     {
         const pages = s.totalPages();
@@ -4530,9 +4547,11 @@ test "PageList pageIterator two pages" {
     // Grow to capacity
     const page1_node = s.pages.last.?;
     const page1 = page1_node.data;
+    page1_node.data.pauseIntegrityChecks(true);
     for (0..page1.capacity.rows - page1.size.rows) |_| {
         try testing.expect(try s.grow() == null);
     }
+    page1_node.data.pauseIntegrityChecks(false);
     try testing.expect(try s.grow() != null);
 
     // Iterate the active area
@@ -4564,9 +4583,11 @@ test "PageList pageIterator history two pages" {
     // Grow to capacity
     const page1_node = s.pages.last.?;
     const page1 = page1_node.data;
+    page1_node.data.pauseIntegrityChecks(true);
     for (0..page1.capacity.rows - page1.size.rows) |_| {
         try testing.expect(try s.grow() == null);
     }
+    page1_node.data.pauseIntegrityChecks(false);
     try testing.expect(try s.grow() != null);
 
     // Iterate the active area
@@ -4615,9 +4636,11 @@ test "PageList pageIterator reverse two pages" {
     // Grow to capacity
     const page1_node = s.pages.last.?;
     const page1 = page1_node.data;
+    page1_node.data.pauseIntegrityChecks(true);
     for (0..page1.capacity.rows - page1.size.rows) |_| {
         try testing.expect(try s.grow() == null);
     }
+    page1_node.data.pauseIntegrityChecks(false);
     try testing.expect(try s.grow() != null);
 
     // Iterate the active area
@@ -4653,9 +4676,11 @@ test "PageList pageIterator reverse history two pages" {
     // Grow to capacity
     const page1_node = s.pages.last.?;
     const page1 = page1_node.data;
+    page1_node.data.pauseIntegrityChecks(true);
     for (0..page1.capacity.rows - page1.size.rows) |_| {
         try testing.expect(try s.grow() == null);
     }
+    page1_node.data.pauseIntegrityChecks(false);
     try testing.expect(try s.grow() != null);
 
     // Iterate the active area
@@ -4781,9 +4806,16 @@ test "PageList erase" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
     try testing.expectEqual(@as(usize, 6), s.totalPages());
 
     // Our total rows should be large
@@ -4808,9 +4840,16 @@ test "PageList erase reaccounts page size" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
     try testing.expect(s.page_size > start_size);
 
     // Erase the entire history, we should be back to just our active set.
@@ -4827,9 +4866,16 @@ test "PageList erase row with tracked pin resets to top-left" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     // Our total rows should be large
     try testing.expect(s.totalRows() > s.rows);
@@ -4899,9 +4945,16 @@ test "PageList erase resets viewport to active if moves within active" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     // Move our viewport to the top
     s.scroll(.{ .delta_row = -@as(isize, @intCast(s.totalRows())) });
@@ -4922,9 +4975,16 @@ test "PageList erase resets viewport if inside erased page but not active" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     // Move our viewport to the top
     s.scroll(.{ .delta_row = -@as(isize, @intCast(s.totalRows())) });
@@ -4946,9 +5006,16 @@ test "PageList erase resets viewport to active if top is inside active" {
 
     // Grow so we take up at least 5 pages.
     const page = &s.pages.last.?.data;
+    var cur_page = s.pages.last.?;
+    cur_page.data.pauseIntegrityChecks(true);
     for (0..page.capacity.rows * 5) |_| {
-        _ = try s.grow();
+        if (try s.grow()) |new_page| {
+            cur_page.data.pauseIntegrityChecks(false);
+            cur_page = new_page;
+            cur_page.data.pauseIntegrityChecks(true);
+        }
     }
+    cur_page.data.pauseIntegrityChecks(false);
 
     // Move our viewport to the top
     s.scroll(.{ .top = {} });
@@ -5106,7 +5173,9 @@ test "PageList eraseRowBounded full rows two pages" {
     // Grow to two pages so our active area straddles
     {
         const page = &s.pages.last.?.data;
+        page.pauseIntegrityChecks(true);
         for (0..page.capacity.rows - page.size.rows) |_| _ = try s.grow();
+        page.pauseIntegrityChecks(false);
         try s.growRows(5);
         try testing.expectEqual(@as(usize, 2), s.totalPages());
         try testing.expectEqual(@as(usize, 5), s.pages.last.?.data.size.rows);
@@ -6435,9 +6504,11 @@ test "PageList resize reflow more cols wrap across page boundary" {
     // Grow to the capacity of the first page.
     {
         const page = &s.pages.first.?.data;
+        page.pauseIntegrityChecks(true);
         for (page.size.rows..page.capacity.rows) |_| {
             _ = try s.grow();
         }
+        page.pauseIntegrityChecks(false);
         try testing.expectEqual(@as(usize, 1), s.totalPages());
         try s.growRows(1);
         try testing.expectEqual(@as(usize, 2), s.totalPages());
@@ -6564,9 +6635,11 @@ test "PageList resize reflow more cols wrap across page boundary cursor in secon
     // Grow to the capacity of the first page.
     {
         const page = &s.pages.first.?.data;
+        page.pauseIntegrityChecks(true);
         for (page.size.rows..page.capacity.rows) |_| {
             _ = try s.grow();
         }
+        page.pauseIntegrityChecks(false);
         try testing.expectEqual(@as(usize, 1), s.totalPages());
         try s.growRows(1);
         try testing.expectEqual(@as(usize, 2), s.totalPages());
@@ -6648,9 +6721,11 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
     // Grow to the capacity of the first page.
     {
         const page = &s.pages.first.?.data;
+        page.pauseIntegrityChecks(true);
         for (page.size.rows..page.capacity.rows) |_| {
             _ = try s.grow();
         }
+        page.pauseIntegrityChecks(false);
         try testing.expectEqual(@as(usize, 1), s.totalPages());
         try s.growRows(5);
         try testing.expectEqual(@as(usize, 2), s.totalPages());
