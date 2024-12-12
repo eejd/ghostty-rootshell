@@ -155,7 +155,7 @@ fn transmit(
         assert(!load.more);
         var d_copy = d;
         d_copy.image_id = load.image.id;
-        return display(alloc, terminal, &.{
+        result = display(alloc, terminal, &.{
             .control = .{ .display = d_copy },
             .quiet = cmd.quiet,
         });
@@ -545,6 +545,24 @@ test "kittygfx no response with no image ID or number" {
         const cmd = try command.Parser.parseString(
             alloc,
             "a=t,f=24,t=d,s=1,v=2,c=10,r=1,i=0,I=0;////////",
+        );
+        defer cmd.deinit(alloc);
+        const resp = execute(alloc, &t, &cmd);
+        try testing.expect(resp == null);
+    }
+}
+
+test "kittygfx no response with no image ID or number load and display" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try Terminal.init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    {
+        const cmd = try command.Parser.parseString(
+            alloc,
+            "a=T,f=24,t=d,s=1,v=2,c=10,r=1,i=0,I=0;////////",
         );
         defer cmd.deinit(alloc);
         const resp = execute(alloc, &t, &cmd);
