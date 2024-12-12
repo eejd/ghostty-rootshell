@@ -7299,6 +7299,7 @@ test "Screen: selectWord with character boundary" {
         " }abc} \n123",
         " <abc< \n123",
         " >abc> \n123",
+        " $abc$ \n123",
     };
 
     for (cases) |case| {
