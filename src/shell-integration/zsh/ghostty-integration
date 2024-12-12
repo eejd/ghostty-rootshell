@@ -25,9 +25,7 @@
 # Ghostty in all shells should add the following lines to their .zshrc:
 #
 #   if [[ -n $GHOSTTY_RESOURCES_DIR ]]; then
-#     autoload -Uz -- "$GHOSTTY_RESOURCES_DIR"/shell-integration/zsh/ghostty-integration
-#     ghostty-integration
-#     unfunction ghostty-integration
+#     "$GHOSTTY_RESOURCES_DIR"/shell-integration/zsh/ghostty-integration
 #   fi
 #
 # Implementation note: We can assume that alias expansion is disabled in this
@@ -35,49 +33,53 @@
 # builtins with `builtin` to avoid accidentally invoking user-defined functions.
 # We avoid `function` reserved word as an additional defensive measure.
 
-builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+# Note that updating options with `builtin emulate -L zsh` affects the global options
+# if it's called outside of a function. So nearly all code has to be in functions.
+_entrypoint() {
+    builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
-[[ -o interactive ]]              || builtin return 0  # non-interactive shell
-(( ! $+_ghostty_state ))          || builtin return 0  # already initialized
+    [[ -o interactive ]]              || builtin return 0  # non-interactive shell
+    (( ! $+_ghostty_state ))          || builtin return 0  # already initialized
 
-# 0: no OSC 133 [AC] marks have been written yet.
-# 1: the last written OSC 133 C has not been closed with D yet.
-# 2: none of the above.
-builtin typeset -gi _ghostty_state
+    # 0: no OSC 133 [AC] marks have been written yet.
+    # 1: the last written OSC 133 C has not been closed with D yet.
+    # 2: none of the above.
+    builtin typeset -gi _ghostty_state
 
-# Attempt to create a writable file descriptor to the TTY so that we can print
-# to the TTY later even when STDOUT is redirected. This code is fairly subtle.
-#
-# - It's tempting to do `[[ -t 1 ]] && exec {_ghostty_state}>&1` but we cannot do this
-#   because it'll create a file descriptor >= 10 without O_CLOEXEC. This file
-#   descriptor will leak to child processes.
-# - If we do `exec {3}>&1`, the file descriptor won't leak to the child processes
-#   but it'll still leak if the current process is replaced with another. In
-#   addition, it'll break user code that relies on fd 3 being available.
-# - Zsh doesn't expose dup3, which would have allowed us to copy STDOUT with
-#   O_CLOEXEC. The only way to create a file descriptor with O_CLOEXEC is via
-#   sysopen.
-# - `zmodload zsh/system` and `sysopen -o cloexec -wu _ghostty_fd -- /dev/tty` can
-#   fail with an error message to STDERR (the latter can happen even if /dev/tty
-#   is writable), hence the redirection of STDERR. We do it for the whole block
-#   for performance reasons (redirections are slow).
-# - We must open the file descriptor right here rather than in _ghostty_deferred_init
-#   because there are broken zsh plugins out there that run `exec {fd}< <(cmd)`
-#   and then close the file descriptor more than once while suppressing errors.
-#   This could end up closing our file descriptor if we opened it in
-#   _ghostty_deferred_init.
-typeset -gi _ghostty_fd
-{
-    builtin zmodload zsh/system && (( $+builtins[sysopen] )) && {
-        { [[ -w     $TTY ]] && builtin sysopen -o cloexec -wu _ghostty_fd --     $TTY } ||
-        { [[ -w /dev/tty ]] && builtin sysopen -o cloexec -wu _ghostty_fd -- /dev/tty }
-    }
-} 2>/dev/null || (( _ghostty_fd = 1 ))
+    # Attempt to create a writable file descriptor to the TTY so that we can print
+    # to the TTY later even when STDOUT is redirected. This code is fairly subtle.
+    #
+    # - It's tempting to do `[[ -t 1 ]] && exec {_ghostty_state}>&1` but we cannot do this
+    #   because it'll create a file descriptor >= 10 without O_CLOEXEC. This file
+    #   descriptor will leak to child processes.
+    # - If we do `exec {3}>&1`, the file descriptor won't leak to the child processes
+    #   but it'll still leak if the current process is replaced with another. In
+    #   addition, it'll break user code that relies on fd 3 being available.
+    # - Zsh doesn't expose dup3, which would have allowed us to copy STDOUT with
+    #   O_CLOEXEC. The only way to create a file descriptor with O_CLOEXEC is via
+    #   sysopen.
+    # - `zmodload zsh/system` and `sysopen -o cloexec -wu _ghostty_fd -- /dev/tty` can
+    #   fail with an error message to STDERR (the latter can happen even if /dev/tty
+    #   is writable), hence the redirection of STDERR. We do it for the whole block
+    #   for performance reasons (redirections are slow).
+    # - We must open the file descriptor right here rather than in _ghostty_deferred_init
+    #   because there are broken zsh plugins out there that run `exec {fd}< <(cmd)`
+    #   and then close the file descriptor more than once while suppressing errors.
+    #   This could end up closing our file descriptor if we opened it in
+    #   _ghostty_deferred_init.
+    typeset -gi _ghostty_fd
+    {
+        builtin zmodload zsh/system && (( $+builtins[sysopen] )) && {
+            { [[ -w     $TTY ]] && builtin sysopen -o cloexec -wu _ghostty_fd --     $TTY } ||
+            { [[ -w /dev/tty ]] && builtin sysopen -o cloexec -wu _ghostty_fd -- /dev/tty }
+        }
+    } 2>/dev/null || (( _ghostty_fd = 1 ))
 
-# Defer initialization so that other zsh init files can be configure
-# the integration.
-builtin typeset -ag precmd_functions
-precmd_functions+=(_ghostty_deferred_init)
+    # Defer initialization so that other zsh init files can be configure
+    # the integration.
+    builtin typeset -ag precmd_functions
+    precmd_functions+=(_ghostty_deferred_init)
+}
 
 _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
@@ -310,3 +312,5 @@ _ghostty_deferred_init() {
     # to unfunction themselves when invoked. Unfunctioning is done by calling code.
     builtin unfunction _ghostty_deferred_init
 }
+
+_entrypoint
