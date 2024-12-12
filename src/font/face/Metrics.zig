@@ -156,7 +156,7 @@ pub fn calc(opts: CalcOpts) Metrics {
         (opts.strikethrough_position orelse
         ex_height * 0.5 + strikethrough_thickness * 0.5));
 
-    const result: Metrics = .{
+    var result: Metrics = .{
         .cell_width = @intFromFloat(cell_width),
         .cell_height = @intFromFloat(cell_height),
         .cell_baseline = @intFromFloat(cell_baseline),
@@ -168,6 +168,9 @@ pub fn calc(opts: CalcOpts) Metrics {
         .overline_thickness = @intFromFloat(underline_thickness),
         .box_thickness = @intFromFloat(underline_thickness),
     };
+
+    // Ensure all metrics are within their allowable range.
+    result.clamp();
 
     // std.log.debug("metrics={}", .{result});
 
@@ -220,14 +223,23 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
             },
 
             inline else => |tag| {
-                var new = entry.value_ptr.apply(@field(self, @tagName(tag)));
-                // If we have a minimum acceptable value
-                // for this metric, clamp the new value.
-                if (@hasDecl(Minimums, @tagName(tag))) {
-                    new = @max(new, @field(Minimums, @tagName(tag)));
-                }
-                @field(self, @tagName(tag)) = new;
+                @field(self, @tagName(tag)) = entry.value_ptr.apply(@field(self, @tagName(tag)));
             },
+        }
+    }
+
+    // Prevent modifiers from pushing metrics out of their allowable range.
+    self.clamp();
+}
+
+/// Clamp all metrics to their allowable range.
+fn clamp(self: *Metrics) void {
+    inline for (std.meta.fields(Metrics)) |field| {
+        if (@hasDecl(Minimums, field.name)) {
+            @field(self, field.name) = @max(
+                @field(self, field.name),
+                @field(Minimums, field.name),
+            );
         }
     }
 }
