@@ -2763,9 +2763,15 @@ test "Terminal: input glitch text" {
     var t = try init(alloc, .{ .cols = 30, .rows = 30 });
     defer t.deinit(alloc);
 
-    for (0..100) |_| {
+    const page = t.screen.pages.pages.first.?;
+    const grapheme_cap = page.data.capacity.grapheme_bytes;
+
+    while (page.data.capacity.grapheme_bytes == grapheme_cap) {
         try t.printString(glitch);
     }
+
+    // We're testing to make sure that grapheme capacity gets increased.
+    try testing.expect(page.data.capacity.grapheme_bytes > grapheme_cap);
 }
 
 test "Terminal: zero-width character at start" {

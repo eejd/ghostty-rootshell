@@ -1795,7 +1795,7 @@ pub const std_capacity: Capacity = .{
     .cols = 215,
     .rows = 215,
     .styles = 128,
-    .grapheme_bytes = 8192,
+    .grapheme_bytes = if (builtin.is_test) 512 else 8192,
 };
 
 /// The size of this page.
