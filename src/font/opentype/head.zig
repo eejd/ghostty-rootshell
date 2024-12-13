@@ -135,10 +135,9 @@ pub const Head = extern struct {
     glyphDataFormat: sfnt.int16 align(1),
 
     /// Parse the table from raw data.
-    pub fn init(data: []const u8) !Head {
+    pub fn init(data: []const u8) error{EndOfStream}!Head {
         var fbs = std.io.fixedBufferStream(data);
         const reader = fbs.reader();
-
         return try reader.readStructEndian(Head, .big);
     }
 };

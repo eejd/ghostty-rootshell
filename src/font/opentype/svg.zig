@@ -22,7 +22,10 @@ pub const SVG = struct {
     /// All records in the table.
     records: []const [12]u8,
 
-    pub fn init(data: []const u8) !SVG {
+    pub fn init(data: []const u8) error{
+        EndOfStream,
+        SVGVersionNotSupported,
+    }!SVG {
         var fbs = std.io.fixedBufferStream(data);
         const reader = fbs.reader();
 

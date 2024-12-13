@@ -349,7 +349,10 @@ pub const OS2 = struct {
     usUpperOpticalPointSize: ?u16 = null,
 
     /// Parse the table from raw data.
-    pub fn init(data: []const u8) !OS2 {
+    pub fn init(data: []const u8) error{
+        EndOfStream,
+        OS2VersionNotSupported,
+    }!OS2 {
         var fbs = std.io.fixedBufferStream(data);
         const reader = fbs.reader();
 

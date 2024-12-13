@@ -598,6 +598,11 @@ pub const Face = struct {
         return @as(opentype.sfnt.F26Dot6, @bitCast(@as(u32, @intCast(v)))).to(f64);
     }
 
+    const CalcMetricsError = error{
+        CopyTableError,
+        MissingOS2Table,
+    };
+
     /// Calculate the metrics associated with a face. This is not public because
     /// the metrics are calculated for every face and cached since they're
     /// frequently required for renderers and take up next to little memory space
@@ -610,7 +615,7 @@ pub const Face = struct {
     fn calcMetrics(
         face: freetype.Face,
         modifiers: ?*const font.face.Metrics.ModifierSet,
-    ) !font.face.Metrics {
+    ) CalcMetricsError!font.face.Metrics {
         const size_metrics = face.handle.*.size.*.metrics;
 
         // This code relies on this assumption, and it should always be
@@ -618,18 +623,18 @@ pub const Face = struct {
         assert(size_metrics.x_ppem == size_metrics.y_ppem);
 
         // Read the 'head' table out of the font data.
-        const head = face.getSfntTable(.head) orelse return error.CannotGetTable;
+        const head = face.getSfntTable(.head) orelse return error.CopyTableError;
 
         // Read the 'post' table out of the font data.
-        const post = face.getSfntTable(.post) orelse return error.CannotGetTable;
+        const post = face.getSfntTable(.post) orelse return error.CopyTableError;
 
         // Read the 'OS/2' table out of the font data.
-        const os2 = face.getSfntTable(.os2) orelse return error.CannotGetTable;
+        const os2 = face.getSfntTable(.os2) orelse return error.CopyTableError;
 
         // Some fonts don't actually have an OS/2 table, which
         // we need in order to do the metrics calculations, in
         // such cases FreeType sets the version to 0xFFFF
-        if (os2.version == 0xFFFF) return error.MissingTable;
+        if (os2.version == 0xFFFF) return error.MissingOS2Table;
 
         const units_per_em = head.Units_Per_EM;
         const px_per_em: f64 = @floatFromInt(size_metrics.y_ppem);

@@ -530,7 +530,15 @@ pub const Face = struct {
         };
     }
 
-    fn calcMetrics(ct_font: *macos.text.Font) !font.face.Metrics {
+    const CalcMetricsError = error{
+        CopyTableError,
+        InvalidHeadTable,
+        InvalidPostTable,
+        InvalidOS2Table,
+        OS2VersionNotSupported,
+    };
+
+    fn calcMetrics(ct_font: *macos.text.Font) CalcMetricsError!font.face.Metrics {
         // Read the 'head' table out of the font data.
         const head: opentype.Head = head: {
             const tag = macos.text.FontTableTag.init("head");
@@ -538,7 +546,12 @@ pub const Face = struct {
             defer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
-            break :head try opentype.Head.init(ptr[0..len]);
+            break :head opentype.Head.init(ptr[0..len]) catch |err| {
+                return switch (err) {
+                    error.EndOfStream,
+                    => error.InvalidHeadTable,
+                };
+            };
         };
 
         // Read the 'post' table out of the font data.
@@ -548,7 +561,11 @@ pub const Face = struct {
             defer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
-            break :post try opentype.Post.init(ptr[0..len]);
+            break :post opentype.Post.init(ptr[0..len]) catch |err| {
+                return switch (err) {
+                    error.EndOfStream => error.InvalidOS2Table,
+                };
+            };
         };
 
         // Read the 'OS/2' table out of the font data.
@@ -558,12 +575,17 @@ pub const Face = struct {
             defer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
-            break :os2 try opentype.OS2.init(ptr[0..len]);
+            break :os2 opentype.OS2.init(ptr[0..len]) catch |err| {
+                return switch (err) {
+                    error.EndOfStream => error.InvalidOS2Table,
+                    error.OS2VersionNotSupported => error.OS2VersionNotSupported,
+                };
+            };
         };
 
-        const units_per_em = head.unitsPerEm;
-        const px_per_em = ct_font.getSize();
-        const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
+        const units_per_em: f64 = @floatFromInt(head.unitsPerEm);
+        const px_per_em: f64 = ct_font.getSize();
+        const px_per_unit: f64 = px_per_em / units_per_em;
 
         const ascent = @as(f64, @floatFromInt(os2.sTypoAscender)) * px_per_unit;
         const descent = @as(f64, @floatFromInt(os2.sTypoDescender)) * px_per_unit;
@@ -576,7 +598,7 @@ pub const Face = struct {
 
         // If the underline position isn't 0 then we do use it,
         // even if the thickness is't properly specified.
-        const underline_position = if (has_broken_underline and post.underlinePosition == 0)
+        const underline_position: ?f64 = if (has_broken_underline and post.underlinePosition == 0)
             null
         else
             @as(f64, @floatFromInt(post.underlinePosition)) * px_per_unit;
@@ -589,25 +611,25 @@ pub const Face = struct {
         // Similar logic to the underline above.
         const has_broken_strikethrough = os2.yStrikeoutSize == 0;
 
-        const strikethrough_position = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+        const strikethrough_position: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
             null
         else
             @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
 
-        const strikethrough_thickness = if (has_broken_strikethrough)
+        const strikethrough_thickness: ?f64 = if (has_broken_strikethrough)
             null
         else
             @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
 
         // We fall back to whatever CoreText does if
         // the OS/2 table doesn't specify a cap height.
-        const cap_height = if (os2.sCapHeight) |sCapHeight|
+        const cap_height: f64 = if (os2.sCapHeight) |sCapHeight|
             @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
         else
             ct_font.getCapHeight();
 
         // Ditto for ex height.
-        const ex_height = if (os2.sxHeight) |sxHeight|
+        const ex_height: f64 = if (os2.sxHeight) |sxHeight|
             @as(f64, @floatFromInt(sxHeight)) * px_per_unit
         else
             ct_font.getXHeight();
@@ -648,24 +670,24 @@ pub const Face = struct {
 
         return font.face.Metrics.calc(.{
             .cell_width = cell_width,
-
             .ascent = ascent,
             .descent = descent,
             .line_gap = line_gap,
-
             .underline_position = underline_position,
             .underline_thickness = underline_thickness,
-
             .strikethrough_position = strikethrough_position,
             .strikethrough_thickness = strikethrough_thickness,
-
             .cap_height = cap_height,
             .ex_height = ex_height,
         });
     }
 
     /// Copy the font table data for the given tag.
-    pub fn copyTable(self: Face, alloc: Allocator, tag: *const [4]u8) !?[]u8 {
+    pub fn copyTable(
+        self: Face,
+        alloc: Allocator,
+        tag: *const [4]u8,
+    ) Allocator.Error!?[]u8 {
         const data = self.font.copyTable(macos.text.FontTableTag.init(tag)) orelse
             return null;
         defer data.release();
@@ -693,7 +715,9 @@ const ColorState = struct {
     svg: ?opentype.SVG,
     svg_data: ?*macos.foundation.Data,
 
-    pub fn init(f: *macos.text.Font) !ColorState {
+    pub const Error = error{InvalidSVGTable};
+
+    pub fn init(f: *macos.text.Font) Error!ColorState {
         // sbix is true if the table exists in the font data at all.
         // In the future we probably want to actually parse it and
         // check for glyphs.
@@ -714,8 +738,16 @@ const ColorState = struct {
             errdefer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
+            const svg = opentype.SVG.init(ptr[0..len]) catch |err| {
+                return switch (err) {
+                    error.EndOfStream,
+                    error.SVGVersionNotSupported,
+                    => error.InvalidSVGTable,
+                };
+            };
+
             break :svg .{
-                .svg = try opentype.SVG.init(ptr[0..len]),
+                .svg = svg,
                 .data = data,
             };
         };
