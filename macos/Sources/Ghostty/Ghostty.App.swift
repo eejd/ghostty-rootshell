@@ -947,14 +947,7 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let title = String(cString: v.title!, encoding: .utf8) else { return }
-
-                // We must set this in a dispatchqueue to avoid a deadlock on startup on some
-                // versions of macOS. I unfortunately didn't document the exact versions so
-                // I don't know when its safe to remove this.
-                DispatchQueue.main.async {
-                    surfaceView.title = title
-                }
-
+                surfaceView.setTitle(title)
 
             default:
                 assertionFailure()
@@ -1089,7 +1082,10 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 let backingSize = NSSize(width: Double(v.width), height: Double(v.height))
-                surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
+                DispatchQueue.main.async { [weak surfaceView] in
+                    guard let surfaceView else { return }
+                    surfaceView.cellSize = surfaceView.convertFromBacking(backingSize)
+                }
 
             default:
                 assertionFailure()
