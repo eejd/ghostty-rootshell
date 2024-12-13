@@ -9,6 +9,8 @@ const sfnt = @import("sfnt.zig");
 ///
 /// References:
 /// - https://learn.microsoft.com/en-us/typography/opentype/spec/post
+///
+/// Field names are in camelCase to match names in spec.
 pub const Post = extern struct {
     version: sfnt.Version16Dot16 align(1),
 

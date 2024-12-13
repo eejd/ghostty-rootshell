@@ -43,6 +43,8 @@ pub const FSSelection = packed struct(sfnt.uint16) {
 ///
 /// References:
 /// - https://learn.microsoft.com/en-us/typography/opentype/spec/os2
+///
+/// Field names are in camelCase to match names in spec.
 pub const OS2v5 = extern struct {
     version: sfnt.uint16 align(1),
     xAvgCharWidth: sfnt.FWORD align(1),
@@ -198,6 +200,8 @@ pub const OS2v0 = extern struct {
 ///
 /// References:
 /// - https://learn.microsoft.com/en-us/typography/opentype/spec/os2
+///
+/// Field names are in camelCase to match names in spec.
 pub const OS2 = struct {
     /// The version number for the OS/2 table: 0x0000 to 0x0005.
     ///

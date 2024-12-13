@@ -6,6 +6,8 @@ const sfnt = @import("sfnt.zig");
 ///
 /// References:
 /// - https://learn.microsoft.com/en-us/typography/opentype/spec/hhea
+///
+/// Field names are in camelCase to match names in spec.
 pub const Hhea = extern struct {
     /// Major version number of the horizontal header table — set to 1.
     majorVersion: sfnt.uint16 align(1),

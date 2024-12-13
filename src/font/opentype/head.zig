@@ -6,6 +6,8 @@ const sfnt = @import("sfnt.zig");
 ///
 /// References:
 /// - https://learn.microsoft.com/en-us/typography/opentype/spec/head
+///
+/// Field names are in camelCase to match names in spec.
 pub const Head = extern struct {
     /// Major version number of the font header table — set to 1.
     majorVersion: sfnt.uint16 align(1),
