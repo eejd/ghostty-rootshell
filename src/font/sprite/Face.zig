@@ -24,22 +24,8 @@ const underline = @import("underline.zig");
 
 const log = std.log.scoped(.font_sprite);
 
-/// The cell width and height.
-width: u32,
-height: u32,
-
-/// Base thickness value for lines of sprites. This is in pixels. If you
-/// want to do any DPI scaling, it is expected to be done earlier.
-thickness: u32 = 1,
-
-/// The position of the underline.
-underline_position: u32 = 0,
-
-/// The position of the strikethrough.
-// NOTE(mitchellh): We don't use a dedicated strikethrough thickness
-// setting yet but fonts can in theory set this. If this becomes an
-// issue in practice we can add it here.
-strikethrough_position: u32 = 0,
+/// Grid metrics for rendering sprites.
+metrics: font.Metrics,
 
 /// Returns true if the codepoint exists in our sprite font.
 pub fn hasCodepoint(self: Face, cp: u32, p: ?font.Presentation) bool {
@@ -65,10 +51,12 @@ pub fn renderGlyph(
         }
     }
 
+    const metrics = opts.grid_metrics orelse self.metrics;
+
     // We adjust our sprite width based on the cell width.
     const width = switch (opts.cell_width orelse 1) {
-        0, 1 => self.width,
-        else => |width| self.width * width,
+        0, 1 => metrics.cell_width,
+        else => |width| metrics.cell_width * width,
     };
 
     // It should be impossible for this to be null and we assert that
@@ -86,58 +74,16 @@ pub fn renderGlyph(
 
     // Safe to ".?" because of the above assertion.
     return switch (kind) {
-        .box => box: {
-            const thickness = switch (cp) {
-                @intFromEnum(Sprite.cursor_rect),
-                @intFromEnum(Sprite.cursor_hollow_rect),
-                @intFromEnum(Sprite.cursor_bar),
-                => if (opts.grid_metrics) |m| m.cursor_thickness else self.thickness,
-                else => self.thickness,
-            };
-
-            const f: Box, const y_offset: u32 = face: {
-                // Expected, usual values.
-                var f: Box = .{
-                    .width = width,
-                    .height = self.height,
-                    .thickness = thickness,
-                };
-
-                // If the codepoint is unadjusted then we want to adjust
-                // (heh) the width/height to the proper size and also record
-                // an offset to apply to our final glyph so it renders in the
-                // correct place because renderGlyph assumes full size.
-                var y_offset: u32 = 0;
-                if (Box.unadjustedCodepoint(cp)) unadjust: {
-                    const metrics = opts.grid_metrics orelse break :unadjust;
-                    const height = metrics.original_cell_height orelse break :unadjust;
-
-                    // If our height shrunk, then we use the original adjusted
-                    // height because we don't want to overflow the cell.
-                    if (height >= self.height) break :unadjust;
-
-                    // The offset is divided by two because it is vertically
-                    // centered.
-                    y_offset = (self.height - height) / 2;
-                    f.height = height;
-                }
-
-                break :face .{ f, y_offset };
-            };
-
-            var g = try f.renderGlyph(alloc, atlas, cp);
-            g.offset_y += @intCast(y_offset);
-            break :box g;
-        },
+        .box => (Box{ .metrics = metrics }).renderGlyph(alloc, atlas, cp),
 
         .underline => try underline.renderGlyph(
             alloc,
             atlas,
             @enumFromInt(cp),
             width,
-            self.height,
-            self.underline_position,
-            self.thickness,
+            metrics.cell_height,
+            metrics.underline_position,
+            metrics.underline_thickness,
         ),
 
         .strikethrough => try underline.renderGlyph(
@@ -145,26 +91,34 @@ pub fn renderGlyph(
             atlas,
             @enumFromInt(cp),
             width,
-            self.height,
-            self.strikethrough_position,
-            self.thickness,
+            metrics.cell_height,
+            metrics.strikethrough_position,
+            metrics.strikethrough_thickness,
         ),
 
-        .overline => try underline.renderGlyph(
-            alloc,
-            atlas,
-            @enumFromInt(cp),
-            width,
-            self.height,
-            0,
-            self.thickness,
-        ),
+        .overline => overline: {
+            var g = try underline.renderGlyph(
+                alloc,
+                atlas,
+                @enumFromInt(cp),
+                width,
+                metrics.cell_height,
+                0,
+                metrics.overline_thickness,
+            );
+
+            // We have to manually subtract the overline position
+            // on the rendered glyph since it can be negative.
+            g.offset_y -= metrics.overline_position;
+
+            break :overline g;
+        },
 
         .powerline => powerline: {
             const f: Powerline = .{
-                .width = width,
-                .height = self.height,
-                .thickness = self.thickness,
+                .width = metrics.cell_width,
+                .height = metrics.cell_height,
+                .thickness = metrics.box_thickness,
             };
 
             break :powerline try f.renderGlyph(alloc, atlas, cp);
