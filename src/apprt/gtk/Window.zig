@@ -178,7 +178,7 @@ pub fn init(self: *Window, app: *App) !void {
                 switch (app.config.@"gtk-tabs-location") {
                     .top, .bottom, .left, .right => {
                         const btn = c.gtk_toggle_button_new();
-                        c.gtk_widget_set_tooltip_text(btn, "Show Open Tabs");
+                        c.gtk_widget_set_tooltip_text(btn, "View Open Tabs");
                         c.gtk_button_set_icon_name(@ptrCast(btn), "view-grid-symbolic");
                         _ = c.g_object_bind_property(
                             btn,
