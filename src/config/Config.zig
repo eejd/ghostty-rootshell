@@ -314,7 +314,7 @@ const c = @cImport({
 
 /// A theme to use. This can be a built-in theme name, a custom theme
 /// name, or an absolute path to a custom theme file. Ghostty also supports
-/// specifying a different them to use for light and dark mode. Each
+/// specifying a different theme to use for light and dark mode. Each
 /// option is documented below.
 ///
 /// If the theme is an absolute pathname, Ghostty will attempt to load that
