@@ -631,6 +631,9 @@ pub const Face = struct {
         // Read the 'OS/2' table out of the font data.
         const os2 = face.getSfntTable(.os2) orelse return error.CopyTableError;
 
+        // Read the 'hhea' table out of the font data.
+        const hhea = face.getSfntTable(.hhea) orelse return error.CopyTableError;
+
         // Some fonts don't actually have an OS/2 table, which
         // we need in order to do the metrics calculations, in
         // such cases FreeType sets the version to 0xFFFF
@@ -640,9 +643,56 @@ pub const Face = struct {
         const px_per_em: f64 = @floatFromInt(size_metrics.y_ppem);
         const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
 
-        const ascent = @as(f64, @floatFromInt(os2.sTypoAscender)) * px_per_unit;
-        const descent = @as(f64, @floatFromInt(os2.sTypoDescender)) * px_per_unit;
-        const line_gap = @as(f64, @floatFromInt(os2.sTypoLineGap)) * px_per_unit;
+        const ascent: f64, const descent: f64, const line_gap: f64 = vertical_metrics: {
+            const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
+            const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
+            const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
+
+            // If the font says to use typo metrics, trust it.
+            // (The USE_TYPO_METRICS bit is bit 7)
+            if (os2.fsSelection & (1 << 7) != 0) {
+                break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
+            }
+
+            // Otherwise we prefer the height metrics from 'hhea' if they
+            // are available, or else OS/2 sTypo* metrics, and if all else
+            // fails then we use OS/2 usWin* metrics.
+            //
+            // This is not "standard" behavior, but it's our best bet to
+            // account for fonts being... just weird. It's pretty much what
+            // FreeType does to get its generic ascent and descent metrics.
+
+            if (hhea.Ascender != 0 or hhea.Descender != 0) {
+                const hhea_ascent: f64 = @floatFromInt(hhea.Ascender);
+                const hhea_descent: f64 = @floatFromInt(hhea.Descender);
+                const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
+                break :vertical_metrics .{
+                    hhea_ascent * px_per_unit,
+                    hhea_descent * px_per_unit,
+                    hhea_line_gap * px_per_unit,
+                };
+            }
+
+            if (os2_ascent != 0 or os2_descent != 0) {
+                break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
+            }
+
+            const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
+            const win_descent: f64 = @floatFromInt(os2.usWinDescent);
+            break :vertical_metrics .{
+                win_ascent * px_per_unit,
+                win_descent * px_per_unit,
+                0.0,
+            };
+        };
 
         // Some fonts have degenerate 'post' tables where the underline
         // thickness (and often position) are 0. We consider them null
