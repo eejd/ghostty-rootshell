@@ -21,6 +21,7 @@ const Sprite = font.sprite.Sprite;
 const Box = @import("Box.zig");
 const Powerline = @import("Powerline.zig");
 const underline = @import("underline.zig");
+const cursor = @import("cursor.zig");
 
 const log = std.log.scoped(.font_sprite);
 
@@ -123,6 +124,35 @@ pub fn renderGlyph(
 
             break :powerline try f.renderGlyph(alloc, atlas, cp);
         },
+
+        .cursor => cursor: {
+            // Cursors should be drawn with the original cell height if
+            // it has been adjusted larger, so they don't get stretched.
+            const height, const dy = adjust: {
+                const h = metrics.cell_height;
+                if (metrics.original_cell_height) |original| {
+                    if (h > original) {
+                        break :adjust .{ original, (h - original) / 2 };
+                    }
+                }
+                break :adjust .{ h, 0 };
+            };
+
+            var g = try cursor.renderGlyph(
+                alloc,
+                atlas,
+                @enumFromInt(cp),
+                width,
+                height,
+                metrics.cursor_thickness,
+            );
+
+            // Keep the cursor centered in the cell if it's shorter.
+            g.offset_y += @intCast(dy);
+
+            break :cursor g;
+        },
+
     };
 }
 
@@ -133,6 +163,7 @@ const Kind = enum {
     overline,
     strikethrough,
     powerline,
+    cursor,
 
     pub fn init(cp: u32) ?Kind {
         return switch (cp) {
@@ -153,7 +184,7 @@ const Kind = enum {
                 .cursor_rect,
                 .cursor_hollow_rect,
                 .cursor_bar,
-                => .box,
+                => .cursor,
             },
 
             // == Box fonts ==
