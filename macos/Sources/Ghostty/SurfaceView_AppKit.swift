@@ -12,11 +12,7 @@ extension Ghostty {
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
-        @Published var title: String = "👻"
-        
-        // A small delay that is introduced before a title change to avoid flickers
-        var titleChangeDelay: TimeInterval = 0.075
-        var titleChangeTimer: Timer?
+        @Published private(set) var title: String = "👻"
 
         // The current pwd of the surface as defined by the pty. This can be
         // changed with escape codes.
@@ -113,6 +109,9 @@ extension Ghostty {
 
         // This is set to non-null during keyDown to accumulate insertText contents
         private var keyTextAccumulator: [String]? = nil
+
+        // A small delay that is introduced before a title change to avoid flickers
+        private var titleChangeTimer: Timer?
 
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
@@ -341,6 +340,20 @@ extension Ghostty {
             // mouse-hide-while-typing is the only use case so this is the
             // preferred method.
             NSCursor.setHiddenUntilMouseMoves(!visible)
+        }
+
+        func setTitle(_ title: String) {
+            // This fixes an issue where very quick changes to the title could
+            // cause an unpleasant flickering. We set a timer so that we can
+            // coalesce rapid changes. The timer is short enough that it still
+            // feels "instant".
+            titleChangeTimer?.invalidate()
+            titleChangeTimer = Timer.scheduledTimer(
+                withTimeInterval: 0.075,
+                repeats: false
+            ) { [weak self] _ in
+                self?.title = title
+            }
         }
 
         // MARK: - Notifications
