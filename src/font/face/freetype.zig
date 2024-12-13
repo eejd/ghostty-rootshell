@@ -676,18 +676,25 @@ pub const Face = struct {
         // If we fail to load any visible ASCII we just use max_advance from
         // the metrics provided by FreeType.
         const cell_width: f64 = cell_width: {
+            var max: f64 = 0.0;
             var c: u8 = ' ';
             while (c < 127) : (c += 1) {
                 if (face.getCharIndex(c)) |glyph_index| {
                     if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                        break :cell_width f26dot6ToF64(face.handle.*.glyph.*.advance.x);
-                    } else |_| {
-                        // Ignore the error since we just fall back to max_advance below
-                    }
+                        max = @max(
+                            f26dot6ToF64(face.handle.*.glyph.*.advance.x),
+                            max,
+                        );
+                    } else |_| {}
                 }
             }
 
-            break :cell_width f26dot6ToF64(size_metrics.max_advance);
+            // If we couldn't get any widths, just use FreeType's max_advance.
+            if (max == 0.0) {
+                break :cell_width f26dot6ToF64(size_metrics.max_advance);
+            }
+
+            break :cell_width max;
         };
 
         // The OS/2 table does not include sCapHeight or sxHeight in version 1.
