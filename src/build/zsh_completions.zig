@@ -9,7 +9,7 @@ pub const zsh_completions = comptimeGenerateZshCompletions();
 
 fn comptimeGenerateZshCompletions() []const u8 {
     comptime {
-        @setEvalBranchQuota(19000);
+        @setEvalBranchQuota(50000);
         var counter = std.io.countingWriter(std.io.null_writer);
         try writeZshCompletions(&counter.writer());
 
