@@ -689,7 +689,9 @@ pub const Face = struct {
             const win_descent: f64 = @floatFromInt(os2.usWinDescent);
             break :vertical_metrics .{
                 win_ascent * px_per_unit,
-                win_descent * px_per_unit,
+                // usWinDescent is *positive* -> down unlike sTypoDescender
+                // and hhea.Descender, so we flip its sign to fix this.
+                -win_descent * px_per_unit,
                 0.0,
             };
         };
