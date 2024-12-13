@@ -254,7 +254,7 @@ pub fn renderGlyph(
 
     return font.Glyph{
         .width = metrics.cell_width,
-        .height = metrics.cell_height,
+        .height = height,
         .offset_x = 0,
         .offset_y = offset_y,
         .atlas_x = region.x,
@@ -2843,22 +2843,39 @@ fn draw_dash_vertical(
 }
 
 fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    self.rect(canvas, 0, 0, self.metrics.cell_width, self.metrics.cell_height);
+    // The cursor should fit itself to the canvas it's given, since if
+    // the cell height is adjusted upwards it will be given a canvas
+    // with the original un-adjusted height, so we can't use the height
+    // from the metrics.
+    const height: u32 = @intCast(canvas.sfc.getHeight());
+    self.rect(canvas, 0, 0, self.metrics.cell_width, height);
 }
 
 fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
+    // The cursor should fit itself to the canvas it's given, since if
+    // the cell height is adjusted upwards it will be given a canvas
+    // with the original un-adjusted height, so we can't use the height
+    // from the metrics.
+    const height: u32 = @intCast(canvas.sfc.getHeight());
+
     const thick_px = Thickness.super_light.height(self.metrics.cursor_thickness);
 
-    self.vline(canvas, 0, self.metrics.cell_height, 0, thick_px);
-    self.vline(canvas, 0, self.metrics.cell_height, self.metrics.cell_width -| thick_px, thick_px);
-    self.hline(canvas, 0, self.metrics.cell_width, 0, thick_px);
-    self.hline(canvas, 0, self.metrics.cell_width, self.metrics.cell_height -| thick_px, thick_px);
+    self.rect(canvas, 0, 0, self.metrics.cell_width, thick_px);
+    self.rect(canvas, 0, 0, thick_px, height);
+    self.rect(canvas, self.metrics.cell_width -| thick_px, 0, self.metrics.cell_width, height);
+    self.rect(canvas, 0, height -| thick_px, self.metrics.cell_width, height);
 }
 
 fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
+    // The cursor should fit itself to the canvas it's given, since if
+    // the cell height is adjusted upwards it will be given a canvas
+    // with the original un-adjusted height, so we can't use the height
+    // from the metrics.
+    const height: u32 = @intCast(canvas.sfc.getHeight());
+
     const thick_px = Thickness.light.height(self.metrics.cursor_thickness);
 
-    self.vline(canvas, 0, self.metrics.cell_height, 0, thick_px);
+    self.rect(canvas, 0, 0, thick_px, height);
 }
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
