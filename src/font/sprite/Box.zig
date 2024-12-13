@@ -214,26 +214,11 @@ pub fn renderGlyph(
 ) !font.Glyph {
     const metrics = self.metrics;
 
-    // Some codepoints (such as a few cursors) should not
-    // grow when the cell height is adjusted to be larger.
-    // And we also will need to adjust the vertical position.
-    const height, const dy = adjust: {
-        const h = metrics.cell_height;
-        if (unadjustedCodepoint(cp)) {
-            if (metrics.original_cell_height) |original| {
-                if (h > original) {
-                    break :adjust .{ original, (h - original) / 2 };
-                }
-            }
-        }
-        break :adjust .{ h, 0 };
-    };
-
     // Create the canvas we'll use to draw
     var canvas = try font.sprite.Canvas.init(
         alloc,
         metrics.cell_width,
-        height,
+        metrics.cell_height,
     );
     defer canvas.deinit(alloc);
 
@@ -246,33 +231,16 @@ pub fn renderGlyph(
     // Our coordinates start at the BOTTOM for our renderers so we have to
     // specify an offset of the full height because we rendered a full size
     // cell.
-    //
-    // If we have an adjustment (see above) to the cell height that we need
-    // to account for, we subtract half the difference (dy) to keep the glyph
-    // centered.
-    const offset_y = @as(i32, @intCast(metrics.cell_height - dy));
+    const offset_y = @as(i32, @intCast(metrics.cell_height));
 
     return font.Glyph{
         .width = metrics.cell_width,
-        .height = height,
+        .height = metrics.cell_height,
         .offset_x = 0,
         .offset_y = offset_y,
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(metrics.cell_width),
-    };
-}
-
-/// Returns true if this codepoint should be rendered with the
-/// width/height set to unadjusted values.
-pub fn unadjustedCodepoint(cp: u32) bool {
-    return switch (cp) {
-        @intFromEnum(Sprite.cursor_rect),
-        @intFromEnum(Sprite.cursor_hollow_rect),
-        @intFromEnum(Sprite.cursor_bar),
-        => true,
-
-        else => false,
     };
 }
 
@@ -1656,12 +1624,6 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
             .right = true,
         }, .light),
 
-        // Not official box characters but special characters we hide
-        // in the high bits of a unicode codepoint.
-        @intFromEnum(Sprite.cursor_rect) => self.draw_cursor_rect(canvas),
-        @intFromEnum(Sprite.cursor_hollow_rect) => self.draw_cursor_hollow_rect(canvas),
-        @intFromEnum(Sprite.cursor_bar) => self.draw_cursor_bar(canvas),
-
         else => return error.InvalidCodepoint,
     }
 }
@@ -2840,42 +2802,6 @@ fn draw_dash_vertical(
         // of a gap to get the the start of the next dash.
         y = y1 + gap_height;
     }
-}
-
-fn draw_cursor_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    // The cursor should fit itself to the canvas it's given, since if
-    // the cell height is adjusted upwards it will be given a canvas
-    // with the original un-adjusted height, so we can't use the height
-    // from the metrics.
-    const height: u32 = @intCast(canvas.sfc.getHeight());
-    self.rect(canvas, 0, 0, self.metrics.cell_width, height);
-}
-
-fn draw_cursor_hollow_rect(self: Box, canvas: *font.sprite.Canvas) void {
-    // The cursor should fit itself to the canvas it's given, since if
-    // the cell height is adjusted upwards it will be given a canvas
-    // with the original un-adjusted height, so we can't use the height
-    // from the metrics.
-    const height: u32 = @intCast(canvas.sfc.getHeight());
-
-    const thick_px = Thickness.super_light.height(self.metrics.cursor_thickness);
-
-    self.rect(canvas, 0, 0, self.metrics.cell_width, thick_px);
-    self.rect(canvas, 0, 0, thick_px, height);
-    self.rect(canvas, self.metrics.cell_width -| thick_px, 0, self.metrics.cell_width, height);
-    self.rect(canvas, 0, height -| thick_px, self.metrics.cell_width, height);
-}
-
-fn draw_cursor_bar(self: Box, canvas: *font.sprite.Canvas) void {
-    // The cursor should fit itself to the canvas it's given, since if
-    // the cell height is adjusted upwards it will be given a canvas
-    // with the original un-adjusted height, so we can't use the height
-    // from the metrics.
-    const height: u32 = @intCast(canvas.sfc.getHeight());
-
-    const thick_px = Thickness.light.height(self.metrics.cursor_thickness);
-
-    self.rect(canvas, 0, 0, thick_px, height);
 }
 
 fn vline_middle(self: Box, canvas: *font.sprite.Canvas, thickness: Thickness) void {
