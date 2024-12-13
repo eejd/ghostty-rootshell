@@ -2428,6 +2428,7 @@ pub fn selectWord(self: *Screen, pin: Pin) ?Selection {
         '}',
         '<',
         '>',
+        '$',
     };
 
     // If our cell is empty we can't select a word, because we can't select
@@ -7318,6 +7319,7 @@ test "Screen: selectWord with character boundary" {
         " }abc} \n123",
         " <abc< \n123",
         " >abc> \n123",
+        " $abc$ \n123",
     };
 
     for (cases) |case| {
