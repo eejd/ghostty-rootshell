@@ -427,7 +427,10 @@ pub const DerivedConfig = struct {
     @"adjust-underline-thickness": ?Metrics.Modifier,
     @"adjust-strikethrough-position": ?Metrics.Modifier,
     @"adjust-strikethrough-thickness": ?Metrics.Modifier,
+    @"adjust-overline-position": ?Metrics.Modifier,
+    @"adjust-overline-thickness": ?Metrics.Modifier,
     @"adjust-cursor-thickness": ?Metrics.Modifier,
+    @"adjust-box-thickness": ?Metrics.Modifier,
     @"freetype-load-flags": font.face.FreetypeLoadFlags,
 
     /// Initialize a DerivedConfig. The config should be either a
@@ -462,7 +465,10 @@ pub const DerivedConfig = struct {
             .@"adjust-underline-thickness" = config.@"adjust-underline-thickness",
             .@"adjust-strikethrough-position" = config.@"adjust-strikethrough-position",
             .@"adjust-strikethrough-thickness" = config.@"adjust-strikethrough-thickness",
+            .@"adjust-overline-position" = config.@"adjust-overline-position",
+            .@"adjust-overline-thickness" = config.@"adjust-overline-thickness",
             .@"adjust-cursor-thickness" = config.@"adjust-cursor-thickness",
+            .@"adjust-box-thickness" = config.@"adjust-box-thickness",
             .@"freetype-load-flags" = if (font.face.FreetypeLoadFlags != void) config.@"freetype-load-flags" else {},
 
             // This must be last so the arena contains all our allocations
@@ -604,7 +610,10 @@ pub const Key = struct {
             if (config.@"adjust-underline-thickness") |m| try set.put(alloc, .underline_thickness, m);
             if (config.@"adjust-strikethrough-position") |m| try set.put(alloc, .strikethrough_position, m);
             if (config.@"adjust-strikethrough-thickness") |m| try set.put(alloc, .strikethrough_thickness, m);
+            if (config.@"adjust-overline-position") |m| try set.put(alloc, .overline_position, m);
+            if (config.@"adjust-overline-thickness") |m| try set.put(alloc, .overline_thickness, m);
             if (config.@"adjust-cursor-thickness") |m| try set.put(alloc, .cursor_thickness, m);
+            if (config.@"adjust-box-thickness") |m| try set.put(alloc, .box_thickness, m);
             break :set set;
         };
 

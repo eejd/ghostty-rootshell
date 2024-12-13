@@ -255,12 +255,28 @@ const c = @cImport({
 ///     that things like status lines continue to look aligned.
 @"adjust-cell-width": ?MetricModifier = null,
 @"adjust-cell-height": ?MetricModifier = null,
+/// Distance in pixels from the bottom of the cell to the text baseline.
+/// Increase to move baseline UP, decrease to move baseline DOWN.
 @"adjust-font-baseline": ?MetricModifier = null,
+/// Distance in pixels from the top of the cell to the top of the underline.
+/// Increase to move underline DOWN, decrease to move underline UP.
 @"adjust-underline-position": ?MetricModifier = null,
+/// Thickness in pixels of the underline.
 @"adjust-underline-thickness": ?MetricModifier = null,
+/// Distance in pixels from the top of the cell to the top of the strikethrough.
+/// Increase to move strikethrough DOWN, decrease to move underline UP.
 @"adjust-strikethrough-position": ?MetricModifier = null,
+/// Thickness in pixels of the strikethrough.
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
+/// Distance in pixels from the top of the cell to the top of the overline.
+/// Increase to move overline DOWN, decrease to move underline UP.
+@"adjust-overline-position": ?MetricModifier = null,
+/// Thickness in pixels of the overline.
+@"adjust-overline-thickness": ?MetricModifier = null,
+/// Thickness in pixels of the bar cursor and outlined rect cursor.
 @"adjust-cursor-thickness": ?MetricModifier = null,
+/// Thickness in pixels of box drawing characters.
+@"adjust-box-thickness": ?MetricModifier = null,
 
 /// The method to use for calculating the cell width of a grapheme cluster.
 /// The default value is `unicode` which uses the Unicode standard to determine
