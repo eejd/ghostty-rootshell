@@ -98,6 +98,13 @@ class AppDelegate: NSObject,
     /// The observer for the app appearance.
     private var appearanceObserver: NSKeyValueObservation? = nil
 
+    /// The custom app icon image that is currently in use.
+    @Published private(set) var appIcon: NSImage? = nil {
+        didSet {
+            NSApplication.shared.applicationIconImage = appIcon
+        }
+    }
+
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
@@ -524,7 +531,9 @@ class AppDelegate: NSObject,
             screenColors: [.purple, .blue],
             ghostColor: .yellow
         ).makeImage() {
-            NSApplication.shared.applicationIconImage = colorizedIcon
+            self.appIcon = colorizedIcon
+        } else {
+            self.appIcon = nil
         }
     }
 

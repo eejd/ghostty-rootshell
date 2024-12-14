@@ -44,7 +44,7 @@ struct AboutView: View {
 
     var body: some View {
         VStack(alignment: .center) {
-            Image("AppIconImage")
+            ghosttyIconImage()
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(height: 128)
