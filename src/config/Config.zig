@@ -16,6 +16,7 @@ const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const build_config = @import("../build_config.zig");
 const global_state = &@import("../global.zig").state;
 const fontpkg = @import("../font/main.zig");
 const inputpkg = @import("../input.zig");
@@ -1674,6 +1675,40 @@ keybind: Keybinds = .{},
 /// always have secure input enabled, the indication can be distracting and
 /// you may want to disable it.
 @"macos-secure-input-indication": bool = true,
+
+/// Customize the macOS app icon.
+///
+/// This only affects the icon that appears in the dock, application
+/// switcher, Activity Monitor, etc. This does not affect the icon
+/// in Finder because that is controlled by a hardcoded value in the
+/// signed application bundle and can't be changed at runtime.
+///
+/// Valid values:
+///
+///  * `official` - Use the official Ghostty icon.
+///  * `custom-color` - Use the official Ghostty icon but with custom
+///    colors applied to various layers. The custom colors must be
+///    specified using `macos-icon-layer-color`.
+///
+@"macos-icon": MacAppIcon = .official,
+
+/// The color of the ghost in the macOS app icon.
+///
+/// The format of the color is the same as the `background` configuration;
+/// see that for more information.
+///
+/// This only has an effect when `macos-icon` is set to `custom-color`.
+@"macos-icon-ghost-color": ?Color = null,
+
+/// The color of the screen in the macOS app icon.
+///
+/// The screen is a gradient so you can specify multiple colors that
+/// make up the gradient. Colors should be separated by commas. The
+/// format of the color is the same as the `background` configuration;
+/// see that for more information.
+///
+/// This only has an effect when `macos-icon` is set to `custom-color`.
+@"macos-icon-screen-color": ?ColorList = null,
 
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///
@@ -3577,12 +3612,17 @@ pub const Color = struct {
         var buf: [128]u8 = undefined;
         try formatter.formatEntry(
             []const u8,
-            std.fmt.bufPrint(
-                &buf,
-                "#{x:0>2}{x:0>2}{x:0>2}",
-                .{ self.r, self.g, self.b },
-            ) catch return error.OutOfMemory,
+            try self.formatBuf(&buf),
         );
+    }
+
+    /// Format the color as a string.
+    pub fn formatBuf(self: Color, buf: []u8) ![]const u8 {
+        return std.fmt.bufPrint(
+            buf,
+            "#{x:0>2}{x:0>2}{x:0>2}",
+            .{ self.r, self.g, self.b },
+        ) catch error.OutOfMemory;
     }
 
     /// fromHex parses a color from a hex value such as #RRGGBB. The "#"
@@ -3634,6 +3674,130 @@ pub const Color = struct {
         var color: Color = .{ .r = 10, .g = 11, .b = 12 };
         try color.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = #0a0b0c\n", buf.items);
+    }
+};
+
+pub const ColorList = struct {
+    const Self = @This();
+
+    colors: std.ArrayListUnmanaged(Color) = .{},
+    colors_c: std.ArrayListUnmanaged(Color.C) = .{},
+
+    /// ghostty_config_color_list_s
+    pub const C = extern struct {
+        colors: [*]Color.C,
+        len: usize,
+    };
+
+    pub fn cval(self: *const Self) C {
+        return .{
+            .colors = self.colors_c.items.ptr,
+            .len = self.colors_c.items.len,
+        };
+    }
+
+    pub fn parseCLI(
+        self: *Self,
+        alloc: Allocator,
+        input_: ?[]const u8,
+    ) !void {
+        const input = input_ orelse return error.ValueRequired;
+        if (input.len == 0) return error.ValueRequired;
+
+        // Whenever a color list is set, we reset the list
+        self.colors.clearRetainingCapacity();
+
+        // Split the input by commas and parse each color
+        var it = std.mem.tokenizeScalar(u8, input, ',');
+        var count: usize = 0;
+        while (it.next()) |raw| {
+            count += 1;
+            if (count > 64) return error.InvalidValue;
+
+            const color = try Color.parseCLI(raw);
+            try self.colors.append(alloc, color);
+            try self.colors_c.append(alloc, color.cval());
+        }
+
+        // If no colors were parsed, we need to return an error
+        if (self.colors.items.len == 0) return error.InvalidValue;
+
+        assert(self.colors.items.len == self.colors_c.items.len);
+    }
+
+    pub fn clone(
+        self: *const Self,
+        alloc: Allocator,
+    ) Allocator.Error!Self {
+        return .{
+            .colors = try self.colors.clone(alloc),
+        };
+    }
+
+    /// Compare if two of our value are requal. Required by Config.
+    pub fn equal(self: Self, other: Self) bool {
+        const itemsA = self.colors.items;
+        const itemsB = other.colors.items;
+        if (itemsA.len != itemsB.len) return false;
+        for (itemsA, itemsB) |a, b| {
+            if (!a.equal(b)) return false;
+        } else return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: Self, formatter: anytype) !void {
+        // If no items, we want to render an empty field.
+        if (self.colors.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        // Build up the value of our config. Our buffer size should be
+        // sized to contain all possible maximum values.
+        var buf: [1024]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        var writer = fbs.writer();
+        for (self.colors.items, 0..) |color, i| {
+            var color_buf: [128]u8 = undefined;
+            const color_str = try color.formatBuf(&color_buf);
+            if (i != 0) try writer.writeByte(',');
+            try writer.writeAll(color_str);
+        }
+
+        try formatter.formatEntry(
+            []const u8,
+            fbs.getWritten(),
+        );
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{};
+        try p.parseCLI(alloc, "black,white");
+        try testing.expectEqual(2, p.colors.items.len);
+
+        // Error cases
+        try testing.expectError(error.ValueRequired, p.parseCLI(alloc, null));
+        try testing.expectError(error.InvalidValue, p.parseCLI(alloc, " "));
+    }
+
+    test "format" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var p: Self = .{};
+        try p.parseCLI(alloc, "black,white");
+        try p.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = #000000,#ffffff\n", buf.items);
     }
 };
 
@@ -3753,7 +3917,7 @@ pub const RepeatableString = struct {
         return .{ .list = list };
     }
 
-    /// The number of itemsin the list
+    /// The number of items in the list
     pub fn count(self: Self) usize {
         return self.list.items.len;
     }
@@ -4920,6 +5084,16 @@ pub const MacTitlebarStyle = enum {
 pub const MacTitlebarProxyIcon = enum {
     visible,
     hidden,
+};
+
+/// See macos-icon
+///
+/// Note: future versions of Ghostty can support a custom icon with
+/// path by changing this to a tagged union, which doesn't change our
+/// format at all.
+pub const MacAppIcon = enum {
+    official,
+    @"custom-color",
 };
 
 /// See gtk-single-instance

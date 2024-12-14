@@ -47,6 +47,37 @@ extension OSColor {
 #endif
     }
 
+    /// Create an OSColor from a hex string.
+    convenience init?(hex: String) {
+        var cleanedHex = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Remove `#` if present
+        if cleanedHex.hasPrefix("#") {
+            cleanedHex.removeFirst()
+        }
+
+        guard cleanedHex.count == 6 || cleanedHex.count == 8 else { return nil }
+
+        let scanner = Scanner(string: cleanedHex)
+        var hexNumber: UInt64 = 0
+        guard scanner.scanHexInt64(&hexNumber) else { return nil }
+
+        let red, green, blue, alpha: CGFloat
+        if cleanedHex.count == 8 {
+            alpha = CGFloat((hexNumber & 0xFF000000) >> 24) / 255
+            red   = CGFloat((hexNumber & 0x00FF0000) >> 16) / 255
+            green = CGFloat((hexNumber & 0x0000FF00) >> 8) / 255
+            blue  = CGFloat(hexNumber & 0x000000FF) / 255
+        } else { // 6 characters
+            alpha = 1.0
+            red   = CGFloat((hexNumber & 0xFF0000) >> 16) / 255
+            green = CGFloat((hexNumber & 0x00FF00) >> 8) / 255
+            blue  = CGFloat(hexNumber & 0x0000FF) / 255
+        }
+
+        self.init(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
     func darken(by amount: CGFloat) -> OSColor {
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         self.getHue(&h, saturation: &s, brightness: &b, alpha: &a)

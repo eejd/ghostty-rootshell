@@ -342,6 +342,7 @@ typedef struct {
   uint8_t b;
 } ghostty_config_color_s;
 
+// config.ColorList
 typedef struct {
   const ghostty_config_color_s* colors;
   size_t len;

@@ -528,7 +528,7 @@ class AppDelegate: NSObject,
         }
 
         if let colorizedIcon = ColorizedGhosttyIcon(
-            screenColors: [.purple, .blue],
+            screenColors: [],
             ghostColor: .yellow
         ).makeImage() {
             self.appIcon = colorizedIcon
