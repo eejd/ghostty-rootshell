@@ -9,7 +9,7 @@ pub const fish_completions = comptimeGenerateFishCompletions();
 
 fn comptimeGenerateFishCompletions() []const u8 {
     comptime {
-        @setEvalBranchQuota(18000);
+        @setEvalBranchQuota(50000);
         var counter = std.io.countingWriter(std.io.null_writer);
         try writeFishCompletions(&counter.writer());
 
@@ -38,7 +38,7 @@ fn writeFishCompletions(writer: anytype) !void {
 
     try writer.writeAll("complete -c ghostty -f\n");
 
-    try writer.writeAll("complete -c ghostty -l help -f\n");
+    try writer.writeAll("complete -c ghostty -s e -l help -f\n");
     try writer.writeAll("complete -c ghostty -n \"not __fish_seen_subcommand_from $commands\" -l version -f\n");
 
     for (@typeInfo(Config).Struct.fields) |field| {
