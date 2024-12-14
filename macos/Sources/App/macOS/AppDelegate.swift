@@ -519,6 +519,13 @@ class AppDelegate: NSObject,
         } else {
             GlobalEventTap.shared.disable()
         }
+
+        if let colorizedIcon = ColorizedGhosttyIcon(
+            screenColors: [.purple, .blue],
+            ghostColor: .yellow
+        ).makeImage() {
+            NSApplication.shared.applicationIconImage = colorizedIcon
+        }
     }
 
     /// Sync the appearance of our app with the theme specified in the config.
