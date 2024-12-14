@@ -32,7 +32,7 @@ fn writeZshCompletions(writer: anytype) !void {
         \\}
         \\
         \\_themes() {
-        \\  local theme_list=$(ghostty +list-themes | sed -E 's/^(.*) \(.*\$/\0/')
+        \\  local theme_list=$(ghostty +list-themes | sed -E 's/^(.*) \(.*$/\1/')
         \\  local themes=(${(f)theme_list})
         \\  _describe -t themes 'themes' themes
         \\}
@@ -101,13 +101,13 @@ fn writeZshCompletions(writer: anytype) !void {
         \\_ghostty() {
         \\  typeset -A opt_args
         \\  local context state line
-        \\  local opt=('--help' '--version')
+        \\  local opt=('-e' '--help' '--version')
         \\
         \\  _arguments -C \
         \\    '1:actions:->actions' \
         \\    '*:: :->rest' \
         \\
-        \\  if [[ "$line[1]" == "--help" || "$line[1]" == "--version" ]]; then
+        \\  if [[ "$line[1]" == "--help" || "$line[1]" == "--version" || "$line[1]" == "-e" ]]; then
         \\    return
         \\  fi
         \\
@@ -127,6 +127,9 @@ fn writeZshCompletions(writer: anytype) !void {
         var count: usize = 0;
         const padding = "        ";
         for (@typeInfo(Action).Enum.fields) |field| {
+            if (std.mem.eql(u8, "help", field.name)) continue;
+            if (std.mem.eql(u8, "version", field.name)) continue;
+
             try writer.writeAll(padding ++ "'+");
             try writer.writeAll(field.name);
             try writer.writeAll("'\n");
