@@ -333,6 +333,20 @@ typedef struct {
   uint32_t cell_height_px;
 } ghostty_surface_size_s;
 
+// Config types
+
+// config.Color
+typedef struct {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+} ghostty_config_color_s;
+
+typedef struct {
+  const ghostty_config_color_s* colors;
+  size_t len;
+} ghostty_config_color_list_s;
+
 // apprt.Target.Key
 typedef enum {
   GHOSTTY_TARGET_APP,

@@ -3529,10 +3529,21 @@ pub const WindowPaddingColor = enum {
 ///
 /// This is a packed struct so that the C API to read color values just
 /// works by setting it to a C integer.
-pub const Color = packed struct(u24) {
+pub const Color = struct {
     r: u8,
     g: u8,
     b: u8,
+
+    /// ghostty_config_color_s
+    pub const C = extern struct {
+        r: u8,
+        g: u8,
+        b: u8,
+    };
+
+    pub fn cval(self: Color) Color.C {
+        return .{ .r = self.r, .g = self.g, .b = self.b };
+    }
 
     /// Convert this to the terminal RGB struct
     pub fn toTerminalRGB(self: Color) terminal.color.RGB {
@@ -4906,7 +4917,7 @@ pub const MacTitlebarStyle = enum {
 };
 
 /// See macos-titlebar-proxy-icon
-pub const MacTitlebarProxyIcon: type = enum {
+pub const MacTitlebarProxyIcon = enum {
     visible,
     hidden,
 };
@@ -5246,9 +5257,8 @@ pub const Duration = struct {
         }
     }
 
-    pub fn c_get(self: Duration, ptr_raw: *anyopaque) void {
-        const ptr: *usize = @ptrCast(@alignCast(ptr_raw));
-        ptr.* = @intCast(self.asMilliseconds());
+    pub fn cval(self: Duration) usize {
+        return @intCast(self.asMilliseconds());
     }
 
     /// Convenience function to convert to milliseconds since many OS and

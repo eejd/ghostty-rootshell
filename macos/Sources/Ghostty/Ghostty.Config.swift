@@ -261,9 +261,9 @@ extension Ghostty {
         }
 
         var backgroundColor: Color {
-            var rgb: UInt32 = 0
+            var color: ghostty_config_color_s = .init();
             let bg_key = "background"
-            if (!ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count))) {
+            if (!ghostty_config_get(config, &color, bg_key, UInt(bg_key.count))) {
 #if os(macOS)
                 return Color(NSColor.windowBackgroundColor)
 #elseif os(iOS)
@@ -273,14 +273,10 @@ extension Ghostty {
 #endif
             }
 
-            let red = Double(rgb & 0xff)
-            let green = Double((rgb >> 8) & 0xff)
-            let blue = Double((rgb >> 16) & 0xff)
-
-            return Color(
-                red: red / 255,
-                green: green / 255,
-                blue: blue / 255
+            return .init(
+                red: Double(color.r) / 255,
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
             )
         }
 
@@ -311,21 +307,17 @@ extension Ghostty {
         var unfocusedSplitFill: Color {
             guard let config = self.config else { return .white }
 
-            var rgb: UInt32 = 16777215  // white default
+            var color: ghostty_config_color_s = .init();
             let key = "unfocused-split-fill"
-            if (!ghostty_config_get(config, &rgb, key, UInt(key.count))) {
+            if (!ghostty_config_get(config, &color, key, UInt(key.count))) {
                 let bg_key = "background"
-                _ = ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count));
+                _ = ghostty_config_get(config, &color, bg_key, UInt(bg_key.count));
             }
 
-            let red = Double(rgb & 0xff)
-            let green = Double((rgb >> 8) & 0xff)
-            let blue = Double((rgb >> 16) & 0xff)
-
-            return Color(
-                red: red / 255,
-                green: green / 255,
-                blue: blue / 255
+            return .init(
+                red: Double(color.r),
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
             )
         }
 
