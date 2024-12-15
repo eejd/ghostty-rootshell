@@ -173,31 +173,28 @@ pub fn init(self: *Window, app: *App) !void {
         if (self.tab_overview) |tab_overview| {
             if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
             assert(self.isAdwWindow());
+            const btn = switch (app.config.@"gtk-tabs-location") {
+                .top, .bottom, .left, .right => btn: {
+                    const btn = c.gtk_toggle_button_new();
+                    c.gtk_widget_set_tooltip_text(btn, "View Open Tabs");
+                    c.gtk_button_set_icon_name(@ptrCast(btn), "view-grid-symbolic");
+                    _ = c.g_object_bind_property(
+                        btn,
+                        "active",
+                        tab_overview,
+                        "open",
+                        c.G_BINDING_BIDIRECTIONAL | c.G_BINDING_SYNC_CREATE,
+                    );
 
-            const btn = btn: {
-                switch (app.config.@"gtk-tabs-location") {
-                    .top, .bottom, .left, .right => {
-                        const btn = c.gtk_toggle_button_new();
-                        c.gtk_widget_set_tooltip_text(btn, "View Open Tabs");
-                        c.gtk_button_set_icon_name(@ptrCast(btn), "view-grid-symbolic");
-                        _ = c.g_object_bind_property(
-                            btn,
-                            "active",
-                            tab_overview,
-                            "open",
-                            c.G_BINDING_BIDIRECTIONAL | c.G_BINDING_SYNC_CREATE,
-                        );
+                    break :btn btn;
+                },
 
-                        break :btn btn;
-                    },
-                    .hidden => {
-                        const btn = c.adw_tab_button_new();
-                        c.adw_tab_button_set_view(@ptrCast(btn), self.notebook.adw_tab_view);
-                        c.gtk_actionable_set_action_name(@ptrCast(btn), "overview.open");
-
-                        break :btn btn;
-                    },
-                }
+                .hidden => btn: {
+                    const btn = c.adw_tab_button_new();
+                    c.adw_tab_button_set_view(@ptrCast(btn), self.notebook.adw_tab_view);
+                    c.gtk_actionable_set_action_name(@ptrCast(btn), "overview.open");
+                    break :btn btn;
+                },
             };
 
             c.gtk_widget_set_focus_on_click(btn, c.FALSE);
