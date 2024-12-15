@@ -2921,61 +2921,46 @@ fn draw_separated_block_quadrant(self: Box, canvas: *font.sprite.Canvas, comptim
         },
     };
 
-    const left: f64 = 0.5;
-    const right = @as(f64, @floatFromInt(self.metrics.cell_width)) - 0.5;
-    const top: f64 = 0.5;
-    const bottom = @as(f64, @floatFromInt(self.metrics.cell_height)) - 0.5;
+    const gap: f64 = @max(1.0, @as(f64, @floatFromInt(self.metrics.cell_width)) * 0.10) / 2.0;
+    const left: f64 = gap;
+    const right = @as(f64, @floatFromInt(self.metrics.cell_width)) - gap;
+    const top: f64 = gap;
+    const bottom = @as(f64, @floatFromInt(self.metrics.cell_height)) - gap;
     const center_x = @as(f64, @floatFromInt(self.metrics.cell_width)) / 2.0;
-    const center_left = center_x - 0.5;
-    const center_right = center_x + 0.5;
+    const center_left = center_x - gap;
+    const center_right = center_x + gap;
     const center_y = @as(f64, @floatFromInt(self.metrics.cell_height)) / 2.0;
-    const center_top = center_y - 0.5;
-    const center_bottom = center_y + 0.5;
+    const center_top = center_y - gap;
+    const center_bottom = center_y + gap;
 
     inline for (fmt) |c| {
-        switch (c) {
-            '1' => {
-                var path = z2d.Path.init(canvas.alloc);
-                defer path.deinit();
-                try path.moveTo(left, top);
-                try path.lineTo(center_left, top);
-                try path.lineTo(center_left, center_top);
-                try path.lineTo(left, center_top);
-                try path.close();
-                try ctx.fill(canvas.alloc, path);
+        const x1, const y1, const x2, const y2 = switch (c) {
+            '1' => .{
+                left,        top,
+                center_left, center_top,
             },
-            '2' => {
-                var path = z2d.Path.init(canvas.alloc);
-                defer path.deinit();
-                try path.moveTo(center_right, top);
-                try path.lineTo(right, top);
-                try path.lineTo(right, center_top);
-                try path.lineTo(center_right, center_top);
-                try path.close();
-                try ctx.fill(canvas.alloc, path);
+            '2' => .{
+                center_right, top,
+                right,        center_top,
             },
-            '3' => {
-                var path = z2d.Path.init(canvas.alloc);
-                defer path.deinit();
-                try path.moveTo(left, center_bottom);
-                try path.lineTo(center_left, center_bottom);
-                try path.lineTo(center_left, bottom);
-                try path.lineTo(left, bottom);
-                try path.close();
-                try ctx.fill(canvas.alloc, path);
+            '3' => .{
+                left,        center_bottom,
+                center_left, bottom,
             },
-            '4' => {
-                var path = z2d.Path.init(canvas.alloc);
-                defer path.deinit();
-                try path.moveTo(center_right, center_bottom);
-                try path.lineTo(right, center_bottom);
-                try path.lineTo(right, bottom);
-                try path.lineTo(center_right, bottom);
-                try path.close();
-                try ctx.fill(canvas.alloc, path);
+            '4' => .{
+                center_right, center_bottom,
+                right,        bottom,
             },
             else => unreachable,
-        }
+        };
+        var path = z2d.Path.init(canvas.alloc);
+        defer path.deinit();
+        try path.moveTo(x1, y1);
+        try path.lineTo(x2, y1);
+        try path.lineTo(x2, y2);
+        try path.lineTo(x1, y2);
+        try path.close();
+        try ctx.fill(canvas.alloc, path);
     }
 }
 
