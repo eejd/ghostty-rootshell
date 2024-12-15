@@ -52,7 +52,10 @@ fn writeBashCompletions(writer: anytype) !void {
 
     for (@typeInfo(Config).Struct.fields) |field| {
         if (field.name[0] == '_') continue;
-        try writer.writeAll("config+=\" --" ++ field.name ++ "=\"\n");
+        switch (field.type) {
+            bool, ?bool => try writer.writeAll("config+=\" '--" ++ field.name ++ " '\"\n"),
+            else => try writer.writeAll("config+=\" --" ++ field.name ++ "=\"\n"),
+        }
     }
 
     try writer.writeAll(
@@ -78,7 +81,7 @@ fn writeBashCompletions(writer: anytype) !void {
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
             const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
             switch (@typeInfo(field.type)) {
-                .Bool => try writer.writeAll(compgenPrefix ++ "true false" ++ compgenSuffix),
+                .Bool => try writer.writeAll("return ;;"),
                 .Enum => |info| {
                     try writer.writeAll(compgenPrefix);
                     for (info.fields, 0..) |f, i| {
@@ -136,7 +139,10 @@ fn writeBashCompletions(writer: anytype) !void {
             for (@typeInfo(options).Struct.fields) |opt| {
                 if (opt.name[0] == '_') continue;
                 if (count > 0) try writer.writeAll(" ");
-                try writer.writeAll("--" ++ opt.name ++ "=");
+                switch (opt.type) {
+                    bool, ?bool => try writer.writeAll("'--" ++ opt.name ++ " '"),
+                    else => try writer.writeAll("--" ++ opt.name ++ "="),
+                }
                 count += 1;
             }
         }
@@ -172,7 +178,7 @@ fn writeBashCompletions(writer: anytype) !void {
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
             const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
             switch (@typeInfo(opt.type)) {
-                .Bool => try writer.writeAll(compgenPrefix ++ "true false" ++ compgenSuffix),
+                .Bool => try writer.writeAll("return ;;"),
                 .Enum => |info| {
                     try writer.writeAll(compgenPrefix);
                     for (info.opts, 0..) |f, i| {
