@@ -1624,6 +1624,37 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
             .right = true,
         }, .light),
 
+        // '𜰡' - SEPARATED BLOCK QUADRANT-1
+        0x1cc21 => try self.draw_separated_block_quadrant(canvas, "1"),
+        // '𜰢' - SEPARATED BLOCK QUADRANT-2
+        0x1cc22 => try self.draw_separated_block_quadrant(canvas, "2"),
+        // '𜰣' - SEPARATED BLOCK QUADRANT-12
+        0x1cc23 => try self.draw_separated_block_quadrant(canvas, "12"),
+        // '𜰤' - SEPARATED BLOCK QUADRANT-3
+        0x1cc24 => try self.draw_separated_block_quadrant(canvas, "3"),
+        // '𜰥' - SEPARATED BLOCK QUADRANT-13
+        0x1cc25 => try self.draw_separated_block_quadrant(canvas, "13"),
+        // '𜰦' - SEPARATED BLOCK QUADRANT-23
+        0x1cc26 => try self.draw_separated_block_quadrant(canvas, "23"),
+        // '𜰧' - SEPARATED BLOCK QUADRANT-123
+        0x1cc27 => try self.draw_separated_block_quadrant(canvas, "123"),
+        // '𜰨' - SEPARATED BLOCK QUADRANT-4
+        0x1cc28 => try self.draw_separated_block_quadrant(canvas, "4"),
+        // '𜰩' - SEPARATED BLOCK QUADRANT-14
+        0x1cc29 => try self.draw_separated_block_quadrant(canvas, "14"),
+        // '𜰪' - SEPARATED BLOCK QUADRANT-24
+        0x1cc2a => try self.draw_separated_block_quadrant(canvas, "24"),
+        // '𜰫' - SEPARATED BLOCK QUADRANT-124
+        0x1cc2b => try self.draw_separated_block_quadrant(canvas, "124"),
+        // '𜰬' - SEPARATED BLOCK QUADRANT-34
+        0x1cc2c => try self.draw_separated_block_quadrant(canvas, "34"),
+        // '𜰭' - SEPARATED BLOCK QUADRANT-134
+        0x1cc2d => try self.draw_separated_block_quadrant(canvas, "134"),
+        // '𜰮' - SEPARATED BLOCK QUADRANT-234
+        0x1cc2e => try self.draw_separated_block_quadrant(canvas, "234"),
+        // '𜰯' - SEPARATED BLOCK QUADRANT-1234
+        0x1cc2f => try self.draw_separated_block_quadrant(canvas, "1234"),
+
         else => return error.InvalidCodepoint,
     }
 }
@@ -2865,6 +2896,89 @@ fn rect(
     } }).rect(), .on);
 }
 
+// Separated Block Quadrants from Symbols for Legacy Computing Supplement
+// 𜰡 𜰢 𜰣 𜰤 𜰥 𜰦 𜰧 𜰨 𜰩 𜰪 𜰫 𜰬 𜰭 𜰮 𜰯
+fn draw_separated_block_quadrant(self: Box, canvas: *font.sprite.Canvas, comptime fmt: []const u8) !void {
+    comptime {
+        if (fmt.len > 4) @compileError("cannot have more than four quadrants");
+        var seen = [_]bool{false} ** (std.math.maxInt(u8) + 1);
+        for (fmt) |c| {
+            if (seen[c]) @compileError("repeated quadrants not allowed");
+            seen[c] = true;
+            switch (c) {
+                '1'...'4' => {},
+                else => @compileError("invalid quadrant"),
+            }
+        }
+    }
+
+    var ctx: z2d.Context = .{
+        .surface = canvas.sfc,
+        .pattern = .{
+            .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+            },
+        },
+    };
+
+    const left: f64 = 0.5;
+    const right = @as(f64, @floatFromInt(self.metrics.cell_width)) - 0.5;
+    const top: f64 = 0.5;
+    const bottom = @as(f64, @floatFromInt(self.metrics.cell_height)) - 0.5;
+    const center_x = @as(f64, @floatFromInt(self.metrics.cell_width)) / 2.0;
+    const center_left = center_x - 0.5;
+    const center_right = center_x + 0.5;
+    const center_y = @as(f64, @floatFromInt(self.metrics.cell_height)) / 2.0;
+    const center_top = center_y - 0.5;
+    const center_bottom = center_y + 0.5;
+
+    inline for (fmt) |c| {
+        switch (c) {
+            '1' => {
+                var path = z2d.Path.init(canvas.alloc);
+                defer path.deinit();
+                try path.moveTo(left, top);
+                try path.lineTo(center_left, top);
+                try path.lineTo(center_left, center_top);
+                try path.lineTo(left, center_top);
+                try path.close();
+                try ctx.fill(canvas.alloc, path);
+            },
+            '2' => {
+                var path = z2d.Path.init(canvas.alloc);
+                defer path.deinit();
+                try path.moveTo(center_right, top);
+                try path.lineTo(right, top);
+                try path.lineTo(right, center_top);
+                try path.lineTo(center_right, center_top);
+                try path.close();
+                try ctx.fill(canvas.alloc, path);
+            },
+            '3' => {
+                var path = z2d.Path.init(canvas.alloc);
+                defer path.deinit();
+                try path.moveTo(left, center_bottom);
+                try path.lineTo(center_left, center_bottom);
+                try path.lineTo(center_left, bottom);
+                try path.lineTo(left, bottom);
+                try path.close();
+                try ctx.fill(canvas.alloc, path);
+            },
+            '4' => {
+                var path = z2d.Path.init(canvas.alloc);
+                defer path.deinit();
+                try path.moveTo(center_right, center_bottom);
+                try path.lineTo(right, center_bottom);
+                try path.lineTo(right, bottom);
+                try path.lineTo(center_right, bottom);
+                try path.close();
+                try ctx.fill(canvas.alloc, path);
+            },
+            else => unreachable,
+        }
+    }
+}
+
 test "all" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -2993,6 +3107,20 @@ fn testRenderAll(self: Box, alloc: Allocator, atlas: *font.Atlas) !void {
             atlas,
             cp,
         );
+    }
+
+    // Symbols for Legacy Computing Supplement.
+    // 𜰡 𜰢 𜰣 𜰤 𜰥 𜰦 𜰧 𜰨 𜰩 𜰪 𜰫 𜰬 𜰭 𜰮 𜰯
+    cp = 0x1cc21;
+    while (cp <= 0x1cc2f) : (cp += 1) {
+        switch (cp) {
+            0x1cc21...0x1cc2f => _ = try self.renderGlyph(
+                alloc,
+                atlas,
+                cp,
+            ),
+            else => {},
+        }
     }
 }
 
