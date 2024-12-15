@@ -154,7 +154,7 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header = HeaderBar.create(self);
+        const header = HeaderBar.init(self);
 
         {
             const btn = c.gtk_menu_button_new();
