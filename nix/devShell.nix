@@ -31,7 +31,7 @@
   glslang,
   gtk4,
   libadwaita,
-  gnome,
+  adwaita-icon-theme,
   hicolor-icon-theme,
   harfbuzz,
   libpng,
@@ -165,7 +165,7 @@ in
         # is available (namely icons).
 
         # Minimal subset of env set by wrapGAppsHook4 for icons and global settings
-        export XDG_DATA_DIRS=$XDG_DATA_DIRS:${hicolor-icon-theme}/share:${gnome.adwaita-icon-theme}/share
+        export XDG_DATA_DIRS=$XDG_DATA_DIRS:${hicolor-icon-theme}/share:${adwaita-icon-theme}/share
         export XDG_DATA_DIRS=$XDG_DATA_DIRS:$GSETTINGS_SCHEMAS_PATH # from glib setup hook
       '')
       + (lib.optionalString stdenv.hostPlatform.isDarwin ''
