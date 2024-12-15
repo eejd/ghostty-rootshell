@@ -231,8 +231,12 @@ function fine within Ghostty with the above mentioned shell integration features
 inoperative. **If you want to disable automatic shell integration,** set
 `shell-integration = none` in your configuration file.
 
-Automatic `bash` shell integration requires Bash version 4 or later and must be
-explicitly enabled by setting `shell-integration = bash`.
+> [!NOTE]
+>
+> The version of Bash distributed with macOS (`/bin/bash`) does not support
+> automatic shell integration. You'll need to manually source the shell
+> integration script (as shown below). You can also install a standard
+> version of Bash from Homebrew or elsewhere and set it as your shell.
 
 **For the automatic shell integration to work,** Ghostty must either be run
 from the macOS app bundle or be installed in a location where the contents of

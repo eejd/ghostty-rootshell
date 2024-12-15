@@ -18,9 +18,6 @@ our integration script (`bash/ghostty.bash`). This prevents Bash from loading
 its normal startup files, which becomes our script's responsibility (along with
 disabling POSIX mode).
 
-Because automatic Bash shell integration requires Bash version 4 or later, it
-must be explicitly enabled (`shell-integration = bash`).
-
 Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
 This also works for older versions of Bash.
 
@@ -30,6 +27,13 @@ if [ -n "${GHOSTTY_RESOURCES_DIR}" ]; then
     builtin source "${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash"
 fi
 ```
+
+> [!NOTE]
+>
+> The version of Bash distributed with macOS (`/bin/bash`) does not support
+> automatic shell integration. You'll need to manually source the shell
+> integration script (as shown above). You can also install a standard
+> version of Bash from Homebrew or elsewhere and set it as your shell.
 
 ### Elvish
 
