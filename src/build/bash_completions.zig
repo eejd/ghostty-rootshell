@@ -69,7 +69,7 @@ fn writeBashCompletions(writer: anytype) !void {
 
     try writer.writeAll(
         \\
-        \\_handleConfig () {
+        \\_handleConfig() {
         \\  case "$prev" in
         \\
     );
@@ -232,23 +232,23 @@ fn writeBashCompletions(writer: anytype) !void {
     try writer.writeAll(
         \\
         \\_ghostty () {
-        \\  COMPREPLY=()
+        \\  cur=""; prev=""; prevWasEq=false; COMPREPLY=()
+        \\
         \\  if [ "$2" = "=" ]; then cur=""
         \\  else                    cur="$2"
         \\  fi
         \\
-        \\  if [ "$3" = "=" ]; then prev="${COMP_WORDS[COMP_CWORD-2]}"
+        \\  if [ "$3" = "=" ]; then prev="${COMP_WORDS[COMP_CWORD-2]}"; prevWasEq=true;
         \\  else                    prev="${COMP_WORDS[COMP_CWORD-1]}"
         \\  fi
         \\
+        \\  # current completion is double quoted add a space so the curor progresses
         \\  if [[ "$2" == \"*\" ]]; then
         \\    COMPREPLY=( "$cur " );
         \\    return;
         \\  fi
         \\
-        \\  cword=$COMP_CWORD
-        \\
-        \\  case "$cword" in
+        \\  case "$COMP_CWORD" in
         \\    1)
         \\      case "${COMP_WORDS[1]}" in
         \\        -e | --help | --version) return 0 ;;
@@ -260,6 +260,12 @@ fn writeBashCompletions(writer: anytype) !void {
         \\      case "$prev" in
         \\        -e | --help | --version) return 0 ;;
         \\        *)
+        \\          if [[ "=" != "${COMP_WORDS[COMP_CWORD]}" && $prevWasEq != true ]]; then
+        \\            # must be completing with a space after the key eg: '--<key> '
+        \\            # clear out prev so we don't run any of the key specific completions
+        \\            prev=""
+        \\          fi
+        \\        
         \\          case "${COMP_WORDS[1]}" in
         \\            --*) _handleConfig ;;
         \\            +*) _handleActions ;;
