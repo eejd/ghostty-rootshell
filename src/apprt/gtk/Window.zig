@@ -23,6 +23,7 @@ const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
 const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
+const HeaderBar = @import("headerbar.zig").HeaderBar;
 const version = @import("version.zig");
 
 const log = std.log.scoped(.gtk);
@@ -35,7 +36,7 @@ window: *c.GtkWindow,
 /// The header bar for the window. This is possibly null since it can be
 /// disabled using gtk-titlebar. This is either an AdwHeaderBar or
 /// GtkHeaderBar depending on if adw is enabled and linked.
-header: ?*c.GtkWidget,
+header: ?HeaderBar,
 
 /// The tab overview for the window. This is possibly null since there is no
 /// taboverview without a AdwApplicationWindow (libadwaita >= 1.4.0).
@@ -153,20 +154,14 @@ pub fn init(self: *Window, app: *App) !void {
     // are decorated or not because we can have a keybind to toggle the
     // decorations.
     if (app.config.@"gtk-titlebar") {
-        const header: *c.GtkWidget = if (self.isAdwWindow())
-            @ptrCast(c.adw_header_bar_new())
-        else
-            @ptrCast(c.gtk_header_bar_new());
+        const header = HeaderBar.init(self);
 
         {
             const btn = c.gtk_menu_button_new();
             c.gtk_widget_set_tooltip_text(btn, "Main Menu");
             c.gtk_menu_button_set_icon_name(@ptrCast(btn), "open-menu-symbolic");
             c.gtk_menu_button_set_menu_model(@ptrCast(btn), @ptrCast(@alignCast(app.menu)));
-            if (self.isAdwWindow()) {
-                if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
-                c.adw_header_bar_pack_end(@ptrCast(header), btn);
-            } else c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+            header.packEnd(btn);
         }
 
         // If we're using an AdwWindow then we can support the tab overview.
@@ -198,17 +193,14 @@ pub fn init(self: *Window, app: *App) !void {
             };
 
             c.gtk_widget_set_focus_on_click(btn, c.FALSE);
-            c.adw_header_bar_pack_end(@ptrCast(header), btn);
+            header.packEnd(btn);
         }
 
         {
             const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
             c.gtk_widget_set_tooltip_text(btn, "New Tab");
             _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
-            if (self.isAdwWindow())
-                c.adw_header_bar_pack_end(@ptrCast(header), btn)
-            else
-                c.gtk_header_bar_pack_end(@ptrCast(header), btn);
+            header.packEnd(btn);
         }
 
         self.header = header;
@@ -291,7 +283,7 @@ pub fn init(self: *Window, app: *App) !void {
         if (comptime !adwaita.versionAtLeast(1, 4, 0)) unreachable;
         const toolbar_view: *c.AdwToolbarView = @ptrCast(c.adw_toolbar_view_new());
 
-        const header_widget: *c.GtkWidget = @ptrCast(@alignCast(self.header.?));
+        const header_widget: *c.GtkWidget = self.header.?.asWidget();
         c.adw_toolbar_view_add_top_bar(toolbar_view, header_widget);
 
         if (self.app.config.@"gtk-tabs-location" != .hidden) {
@@ -374,7 +366,7 @@ pub fn init(self: *Window, app: *App) !void {
 
         // The box is our main child
         c.gtk_window_set_child(gtk_window, box);
-        if (self.header) |h| c.gtk_window_set_titlebar(gtk_window, @ptrCast(@alignCast(h)));
+        if (self.header) |h| c.gtk_window_set_titlebar(gtk_window, h.asWidget());
     }
 
     // Show the window
@@ -525,7 +517,7 @@ pub fn toggleWindowDecorations(self: *Window) void {
     // and hides it with decorations, but libadwaita doesn't. This makes it
     // explicit.
     if (self.header) |v| {
-        const widget: *c.GtkWidget = @alignCast(@ptrCast(v));
+        const widget = v.asWidget();
         c.gtk_widget_set_visible(widget, @intFromBool(new_decorated));
     }
 }
