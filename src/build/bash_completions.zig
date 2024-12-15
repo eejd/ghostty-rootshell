@@ -56,6 +56,30 @@ fn writeBashCompletions(writer: anytype) !void {
         \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$($ghostty +list-themes | sed -E 's/^(.*) \(.*$/\1/')" -- "$cur")
         \\}
         \\
+        \\_files() {
+        \\  mapfile -t COMPREPLY < <( compgen -o filenames -f -- "$cur" )
+        \\  for i in "${!COMPREPLY[@]}"; do
+        \\    if [[ -d "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]}/";
+        \\    fi
+        \\    if [[ -f "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]} ";
+        \\    fi
+        \\  done
+        \\}
+        \\
+        \\_dirs() {
+        \\  mapfile -t COMPREPLY < <( compgen -o dirnames -d -- "$cur" )
+        \\  for i in "${!COMPREPLY[@]}"; do
+        \\    if [[ -d "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]}/";
+        \\    fi
+        \\  done
+        \\  if [[ "${#COMPREPLY[@]}" == 0 && -d "$cur" ]]; then
+        \\    COMPREPLY=( "$cur " )
+        \\  fi
+        \\}
+        \\
         \\config="--help"
         \\config+=" --version"
         \\
@@ -82,9 +106,9 @@ fn writeBashCompletions(writer: anytype) !void {
         else if (std.mem.eql(u8, "theme", field.name))
             try writer.writeAll("_themes ;;")
         else if (std.mem.eql(u8, "working-directory", field.name))
-            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -d -- \"$cur\" ); addSpaces ;;")
+            try writer.writeAll("_dirs ;;")
         else if (field.type == Config.RepeatablePath)
-            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); addSpaces ;;")
+            try writer.writeAll("_files ;;")
         else {
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
             const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
@@ -194,7 +218,7 @@ fn writeBashCompletions(writer: anytype) !void {
                 },
                 else => {
                     if (std.mem.eql(u8, "config-file", opt.name)) {
-                        try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); addSpaces ;;");
+                        try writer.writeAll("_files ;;");
                     } else try writer.writeAll("return;;");
                 },
             }
