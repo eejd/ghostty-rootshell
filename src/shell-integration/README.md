@@ -24,6 +24,13 @@ must be explicitly enabled (`shell-integration = bash`).
 Bash shell integration can also be sourced manually from `bash/ghostty.bash`.
 This also works for older versions of Bash.
 
+```bash
+# Ghostty shell integration for Bash. This must be at the top of your bashrc!
+if [ -n "${GHOSTTY_RESOURCES_DIR}" ]; then
+    builtin source "${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash"
+fi
+```
+
 ### Elvish
 
 For [Elvish](https://elv.sh), `$GHOSTTY_RESOURCES_DIR/src/shell-integration`
@@ -59,3 +66,9 @@ For `zsh`, Ghostty sets `ZDOTDIR` so that it loads our configuration
 from the `zsh` directory. The existing `ZDOTDIR` is retained so that
 after loading the Ghostty shell integration the normal Zsh loading
 sequence occurs.
+
+```bash
+if [[ -n $GHOSTTY_RESOURCES_DIR ]]; then
+  "$GHOSTTY_RESOURCES_DIR"/shell-integration/zsh/ghostty-integration
+fi
+```

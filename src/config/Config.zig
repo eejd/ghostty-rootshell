@@ -314,7 +314,7 @@ const c = @cImport({
 
 /// A theme to use. This can be a built-in theme name, a custom theme
 /// name, or an absolute path to a custom theme file. Ghostty also supports
-/// specifying a different them to use for light and dark mode. Each
+/// specifying a different theme to use for light and dark mode. Each
 /// option is documented below.
 ///
 /// If the theme is an absolute pathname, Ghostty will attempt to load that
@@ -1574,20 +1574,41 @@ keybind: Keybinds = .{},
 /// editor, etc.
 @"macos-titlebar-proxy-icon": MacTitlebarProxyIcon = .visible,
 
-/// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
-/// sequences expecting *Alt* to work properly, but will break Unicode input
-/// sequences on macOS if you use them via the *Alt* key. You may set this to
-/// `false` to restore the macOS *Alt* key unicode sequences but this will break
-/// terminal sequences expecting *Alt* to work.
+/// macOS doesn't have a distinct "alt" key and instead has the "option"
+/// key which behaves slightly differently. On macOS by default, the
+/// option key plus a character will sometimes produces a Unicode character.
+/// For example, on US standard layouts option-b produces "∫". This may be
+/// undesirable if you want to use "option" as an "alt" key for keybindings
+/// in terminal programs or shells.
 ///
-/// The values `left` or `right` enable this for the left or right *Option*
-/// key, respectively.
+/// This configuration lets you change the behavior so that option is treated
+/// as alt.
+///
+/// The default behavior (unset) will depend on your active keyboard
+/// layout. If your keyboard layout is one of the keyboard layouts listed
+/// below, then the default value is "true". Otherwise, the default
+/// value is "false". Keyboard layouts with a default value of "true" are:
+///
+///   - U.S. Standard
+///   - U.S. International
 ///
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
 /// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
 ///
+/// Explicit values that can be set:
+///
+/// If `true`, the *Option* key will be treated as *Alt*. This makes terminal
+/// sequences expecting *Alt* to work properly, but will break Unicode input
+/// sequences on macOS if you use them via the *Alt* key.
+///
+/// You may set this to `false` to restore the macOS *Alt* key unicode
+/// sequences but this will break terminal sequences expecting *Alt* to work.
+///
+/// The values `left` or `right` enable this for the left or right *Option*
+/// key, respectively.
+///
 /// This does not work with GLFW builds.
-@"macos-option-as-alt": OptionAsAlt = .false,
+@"macos-option-as-alt": ?OptionAsAlt = null,
 
 /// Whether to enable the macOS window shadow. The default value is true.
 /// With some window managers and window transparency settings, you may
@@ -4227,14 +4248,9 @@ pub const Keybinds = struct {
                 }
             }
 
-            try formatter.formatEntry(
-                []const u8,
-                std.fmt.bufPrint(
-                    &buf,
-                    "{}{}",
-                    .{ k, v },
-                ) catch return error.OutOfMemory,
-            );
+            var buffer_stream = std.io.fixedBufferStream(&buf);
+            std.fmt.format(buffer_stream.writer(), "{}", .{k}) catch return error.OutOfMemory;
+            try v.formatEntries(&buffer_stream, formatter);
         }
     }
 
@@ -4267,6 +4283,56 @@ pub const Keybinds = struct {
         try list.parseCLI(alloc, "shift+a=csi:hello");
         try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = shift+a=csi:hello\n", buf.items);
+    }
+
+    // Regression test for https://github.com/ghostty-org/ghostty/issues/2734
+    test "formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "ctrl+z>1=goto_tab:1");
+        try list.parseCLI(alloc, "ctrl+z>2=goto_tab:2");
+        try list.formatEntry(formatterpkg.entryFormatter("keybind", buf.writer()));
+
+        const want =
+            \\keybind = ctrl+z>1=goto_tab:1
+            \\keybind = ctrl+z>2=goto_tab:2
+            \\
+        ;
+        try std.testing.expectEqualStrings(want, buf.items);
+    }
+
+    test "formatConfig multiple items nested" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "ctrl+a>ctrl+b>n=new_window");
+        try list.parseCLI(alloc, "ctrl+a>ctrl+b>w=close_window");
+        try list.parseCLI(alloc, "ctrl+a>ctrl+c>t=new_tab");
+        try list.parseCLI(alloc, "ctrl+b>ctrl+d>a=previous_tab");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+
+        // NB: This does not currently retain the order of the keybinds.
+        const want =
+            \\a = ctrl+a>ctrl+b>w=close_window
+            \\a = ctrl+a>ctrl+b>n=new_window
+            \\a = ctrl+a>ctrl+c>t=new_tab
+            \\a = ctrl+b>ctrl+d>a=previous_tab
+            \\
+        ;
+        try std.testing.expectEqualStrings(want, buf.items);
     }
 };
 

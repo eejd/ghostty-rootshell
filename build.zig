@@ -12,6 +12,7 @@ const terminfo = @import("src/terminfo/main.zig");
 const config_vim = @import("src/config/vim.zig");
 const config_sublime_syntax = @import("src/config/sublime_syntax.zig");
 const fish_completions = @import("src/build/fish_completions.zig");
+const zsh_completions = @import("src/build/zsh_completions.zig");
 const build_config = @import("src/build_config.zig");
 const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
@@ -501,6 +502,18 @@ pub fn build(b: *std.Build) !void {
             .source_dir = wf.getDirectory(),
             .install_dir = .prefix,
             .install_subdir = "share/fish/vendor_completions.d",
+        });
+    }
+
+    // zsh shell completions
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("_ghostty", zsh_completions.zsh_completions);
+
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/zsh/site-functions",
         });
     }
 
@@ -1107,8 +1120,7 @@ fn addDeps(
     });
     step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
     if (b.systemIntegrationOption("oniguruma", .{})) {
-        // Oniguruma is compiled and distributed as libonig.so
-        step.linkSystemLibrary2("onig", dynamic_link_opts);
+        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
     } else {
         step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
         try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());

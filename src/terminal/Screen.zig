@@ -2428,6 +2428,7 @@ pub fn selectWord(self: *Screen, pin: Pin) ?Selection {
         '}',
         '<',
         '>',
+        '$',
     };
 
     // If our cell is empty we can't select a word, because we can't select
@@ -3048,9 +3049,11 @@ test "Screen cursorCopy style deref new page" {
 
     // Fill the scrollback with blank lines until
     // there are only 5 rows left on the first page.
+    s2.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 5) |_| {
         try s2.testWriteString("\n");
     }
+    s2.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s2.testWriteString("1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
 
@@ -3157,9 +3160,11 @@ test "Screen cursorCopy hyperlink deref new page" {
 
     // Fill the scrollback with blank lines until
     // there are only 5 rows left on the first page.
+    s2.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 5) |_| {
         try s2.testWriteString("\n");
     }
+    s2.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s2.testWriteString("1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
 
@@ -3588,7 +3593,9 @@ test "Screen: cursorDown across pages preserves style" {
     // Scroll down enough to go to another page
     const start_page = &s.pages.pages.last.?.data;
     const rem = start_page.capacity.rows;
+    start_page.pauseIntegrityChecks(true);
     for (0..rem) |_| try s.cursorDownOrScroll();
+    start_page.pauseIntegrityChecks(false);
 
     // We need our page to change for this test o make sense. If this
     // assertion fails then the bug is in the test: we should be scrolling
@@ -3638,7 +3645,9 @@ test "Screen: cursorUp across pages preserves style" {
     // Scroll down enough to go to another page
     const start_page = &s.pages.pages.last.?.data;
     const rem = start_page.capacity.rows;
+    start_page.pauseIntegrityChecks(true);
     for (0..rem) |_| try s.cursorDownOrScroll();
+    start_page.pauseIntegrityChecks(false);
 
     // We need our page to change for this test o make sense. If this
     // assertion fails then the bug is in the test: we should be scrolling
@@ -3683,7 +3692,9 @@ test "Screen: cursorAbsolute across pages preserves style" {
     // Scroll down enough to go to another page
     const start_page = &s.pages.pages.last.?.data;
     const rem = start_page.capacity.rows;
+    start_page.pauseIntegrityChecks(true);
     for (0..rem) |_| try s.cursorDownOrScroll();
+    start_page.pauseIntegrityChecks(false);
 
     // We need our page to change for this test o make sense. If this
     // assertion fails then the bug is in the test: we should be scrolling
@@ -3822,7 +3833,9 @@ test "Screen: scrolling across pages preserves style" {
 
     // Scroll down enough to go to another page
     const rem = start_page.capacity.rows - start_page.size.rows + 1;
-    for (0..rem) |_| try s.cursorDownScroll();
+    start_page.pauseIntegrityChecks(true);
+    for (0..rem) |_| try s.cursorDownOrScroll();
+    start_page.pauseIntegrityChecks(false);
 
     // We need our page to change for this test o make sense. If this
     // assertion fails then the bug is in the test: we should be scrolling
@@ -4303,7 +4316,9 @@ test "Screen: scroll above same page but cursor on previous page" {
 
     // We need to get the cursor to a new page
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    s.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 3) |_| try s.testWriteString("\n");
+    s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
     try s.testWriteString("1A\n2B\n3C\n4D\n5E");
@@ -4361,7 +4376,9 @@ test "Screen: scroll above same page but cursor on previous page last row" {
 
     // We need to get the cursor to a new page
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    s.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 2) |_| try s.testWriteString("\n");
+    s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
     try s.testWriteString("1A\n2B\n3C\n4D\n5E");
@@ -4436,7 +4453,9 @@ test "Screen: scroll above creates new page" {
 
     // We need to get the cursor to a new page
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    s.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 3) |_| try s.testWriteString("\n");
+    s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
@@ -4477,7 +4496,9 @@ test "Screen: scroll above no scrollback bottom of page" {
     defer s.deinit();
 
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
+    s.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 3) |_| try s.testWriteString("\n");
+    s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s.setAttribute(.{ .direct_color_bg = .{ .r = 155 } });
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
@@ -7298,6 +7319,7 @@ test "Screen: selectWord with character boundary" {
         " }abc} \n123",
         " <abc< \n123",
         " >abc> \n123",
+        " $abc$ \n123",
     };
 
     for (cases) |case| {
@@ -8254,9 +8276,11 @@ test "Screen: selectionString multi-page" {
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
 
     // Lazy way to seek to the first page boundary.
+    s.pages.pages.first.?.data.pauseIntegrityChecks(true);
     for (0..first_page_size - 1) |_| {
         try s.testWriteString("\n");
     }
+    s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
     try s.testWriteString("y\ny\ny");
 

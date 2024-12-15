@@ -51,7 +51,7 @@ const Precompute = struct {
     const data = precompute: {
         var result: [std.math.maxInt(u10)]Value = undefined;
 
-        @setEvalBranchQuota(2_000);
+        @setEvalBranchQuota(3_000);
         const info = @typeInfo(GraphemeBoundaryClass).Enum;
         for (0..std.math.maxInt(u2) + 1) |state_init| {
             for (info.fields) |field1| {
@@ -80,7 +80,7 @@ fn graphemeBreakClass(
     state: *BreakState,
 ) bool {
     // GB11: Emoji Extend* ZWJ x Emoji
-    if (!state.extended_pictographic and gbc1 == .extended_pictographic) {
+    if (!state.extended_pictographic and gbc1.isExtendedPictographic()) {
         state.extended_pictographic = true;
     }
 
@@ -131,9 +131,18 @@ fn graphemeBreakClass(
     // GB11: Emoji Extend* ZWJ x Emoji
     if (state.extended_pictographic and
         gbc1 == .zwj and
-        gbc2 == .extended_pictographic)
+        gbc2.isExtendedPictographic())
     {
         state.extended_pictographic = false;
+        return false;
+    }
+
+    // UTS #51. This isn't covered by UAX #29 as far as I can tell (but
+    // I'm probably wrong). This is a special case for emoji modifiers
+    // which only do not break if they're next to a base.
+    //
+    // emoji_modifier_sequence := emoji_modifier_base emoji_modifier
+    if (gbc2 == .emoji_modifier and gbc1 == .extended_pictographic_base) {
         return false;
     }
 
@@ -181,3 +190,19 @@ pub fn main() !void {
 pub const std_options = struct {
     pub const log_level: std.log.Level = .info;
 };
+
+test "grapheme break: emoji modifier" {
+    const testing = std.testing;
+
+    // Emoji and modifier
+    {
+        var state: BreakState = .{};
+        try testing.expect(!graphemeBreak(0x261D, 0x1F3FF, &state));
+    }
+
+    // Non-emoji and emoji modifier
+    {
+        var state: BreakState = .{};
+        try testing.expect(graphemeBreak(0x22, 0x1F3FF, &state));
+    }
+}

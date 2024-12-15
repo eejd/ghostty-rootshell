@@ -245,7 +245,7 @@ const DerivedConfig = struct {
     mouse_scroll_multiplier: f64,
     mouse_shift_capture: configpkg.MouseShiftCapture,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
-    macos_option_as_alt: configpkg.OptionAsAlt,
+    macos_option_as_alt: ?configpkg.OptionAsAlt,
     vt_kam_allowed: bool,
     window_padding_top: u32,
     window_padding_bottom: u32,
@@ -1990,12 +1990,26 @@ fn encodeKey(
     // inputs there are many keybindings that result in no encoding
     // whatsoever.
     const enc: input.KeyEncoder = enc: {
+        const option_as_alt: configpkg.OptionAsAlt = self.config.macos_option_as_alt orelse detect: {
+            // Non-macOS doesn't use this value so ignore.
+            if (comptime builtin.os.tag != .macos) break :detect .false;
+
+            // If we don't have alt pressed, it doesn't matter what this
+            // config is so we can just say "false" and break out and avoid
+            // more expensive checks below.
+            if (!event.mods.alt) break :detect .false;
+
+            // Alt is pressed, we're on macOS. We break some encapsulation
+            // here and assume libghostty for ease...
+            break :detect self.rt_app.keyboardLayout().detectOptionAsAlt();
+        };
+
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         const t = &self.io.terminal;
         break :enc .{
             .event = event,
-            .macos_option_as_alt = self.config.macos_option_as_alt,
+            .macos_option_as_alt = option_as_alt,
             .alt_esc_prefix = t.modes.get(.alt_esc_prefix),
             .cursor_key_application = t.modes.get(.cursor_keys),
             .keypad_key_application = t.modes.get(.keypad_keys),

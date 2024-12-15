@@ -286,13 +286,16 @@ if [ -n "${GHOSTTY_RESOURCES_DIR}" ]; then
 fi
 ```
 
+For details see <a href="https://github.com/ghostty-org/ghostty/blob/main/src/shell-integration/README.md">shell-integration/README.md</a>.
+
 Each shell integration's installation instructions are documented inline:
 
-| Shell  | Integration                                                                                    |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| `bash` | `${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash`                                 |
-| `fish` | `${GHOSTTY_RESOURCES_DIR}/shell-integration/fish/vendor_conf.d/ghostty-shell-integration.fish` |
-| `zsh`  | `${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration`                           |
+| Shell    | Integration                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| `bash`   | `${GHOSTTY_RESOURCES_DIR}/shell-integration/bash/ghostty.bash`                                 |
+| `fish`   | `${GHOSTTY_RESOURCES_DIR}/shell-integration/fish/vendor_conf.d/ghostty-shell-integration.fish` |
+| `zsh`    | `${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration`                           |
+| `elvish` | `${GHOSTTY_RESOURCES_DIR}/shell-integration/elvish/lib/ghostty-integration.elv`                |
 
 ### Terminfo
 
