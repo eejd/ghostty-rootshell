@@ -37,24 +37,23 @@ fn writeBashCompletions(writer: anytype) !void {
     const pad4 = pad3 ++ pad1;
 
     try writer.writeAll(
-        \\#!/usr/bin/env bash
         \\
         \\# -o nospace requires we add back a space when a completion is finished
         \\# and not part of a --key= completion
-        \\appendSpaces () {
+        \\addSpaces() {
         \\  for idx in "${!COMPREPLY[@]}"; do
         \\    [ -n "${COMPREPLY[idx]}" ] && COMPREPLY[idx]="${COMPREPLY[idx]} ";
         \\  done
         \\}
         \\
-        \\_fonts () {
+        \\_fonts() {
         \\  local IFS=$'\n'
-        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$(ghostty +list-fonts | grep '^[A-Z]' )" -- "$cur")
+        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$($ghostty +list-fonts | grep '^[A-Z]' )" -- "$cur")
         \\}
         \\
         \\_themes() {
         \\  local IFS=$'\n'
-        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$(ghostty +list-themes | sed -E 's/^(.*) \(.*$/\1/')" -- "$cur")
+        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$($ghostty +list-themes | sed -E 's/^(.*) \(.*$/\1/')" -- "$cur")
         \\}
         \\
         \\config="--help"
@@ -83,12 +82,12 @@ fn writeBashCompletions(writer: anytype) !void {
         else if (std.mem.eql(u8, "theme", field.name))
             try writer.writeAll("_themes ;;")
         else if (std.mem.eql(u8, "working-directory", field.name))
-            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -d -- \"$cur\" ); appendSpaces ;;")
+            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -d -- \"$cur\" ); addSpaces ;;")
         else if (field.type == Config.RepeatablePath)
-            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); appendSpaces ;;")
+            try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); addSpaces ;;")
         else {
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
-            const compgenSuffix = "\" -- \"$cur\" ); appendSpaces ;;";
+            const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
             switch (@typeInfo(field.type)) {
                 .Bool => try writer.writeAll(compgenPrefix ++ "true false" ++ compgenSuffix),
                 .Enum => |info| {
@@ -137,11 +136,11 @@ fn writeBashCompletions(writer: anytype) !void {
         if (@typeInfo(options).Struct.fields.len == 0) continue;
 
         var buffer: [field.name.len]u8 = undefined;
-        const safeName: []u8 = buffer[0..field.name.len];
-        @memcpy(safeName, field.name);
+        const bashName: []u8 = buffer[0..field.name.len];
+        @memcpy(bashName, field.name);
 
-        std.mem.replaceScalar(u8, safeName, '-', '_');
-        try writer.writeAll(safeName ++ "=\"");
+        std.mem.replaceScalar(u8, bashName, '-', '_');
+        try writer.writeAll(bashName ++ "=\"");
 
         {
             var count = 0;
@@ -157,7 +156,7 @@ fn writeBashCompletions(writer: anytype) !void {
 
     try writer.writeAll(
         \\
-        \\_handleActions () {
+        \\_handleActions() {
         \\  case "${COMP_WORDS[1]}" in
         \\
     );
@@ -171,8 +170,8 @@ fn writeBashCompletions(writer: anytype) !void {
 
         // bash doesn't allow variable names containing '-' so replace them
         var buffer: [field.name.len]u8 = undefined;
-        const safeName: []u8 = buffer[0..field.name.len];
-        _ = std.mem.replace(u8, field.name, "-", "_", safeName);
+        const bashName: []u8 = buffer[0..field.name.len];
+        _ = std.mem.replace(u8, field.name, "-", "_", bashName);
 
         try writer.writeAll(pad2 ++ "+" ++ field.name ++ ")\n");
         try writer.writeAll(pad3 ++ "case $prev in\n");
@@ -182,7 +181,7 @@ fn writeBashCompletions(writer: anytype) !void {
             try writer.writeAll(pad4 ++ "--" ++ opt.name ++ ") ");
 
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
-            const compgenSuffix = "\" -- \"$cur\" ); appendSpaces ;;";
+            const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
             switch (@typeInfo(opt.type)) {
                 .Bool => try writer.writeAll(compgenPrefix ++ "true false" ++ compgenSuffix),
                 .Enum => |info| {
@@ -195,13 +194,13 @@ fn writeBashCompletions(writer: anytype) !void {
                 },
                 else => {
                     if (std.mem.eql(u8, "config-file", opt.name)) {
-                        try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); appendSpaces ;;");
+                        try writer.writeAll("mapfile -t COMPREPLY < <( compgen -f -- \"$cur\" ); addSpaces ;;");
                     } else try writer.writeAll("return;;");
                 },
             }
             try writer.writeAll("\n");
         }
-        try writer.writeAll(pad4 ++ "*) mapfile -t COMPREPLY < <( compgen -W \"$" ++ safeName ++ "\" -- \"$cur\" ) ;;\n");
+        try writer.writeAll(pad4 ++ "*) mapfile -t COMPREPLY < <( compgen -W \"$" ++ bashName ++ "\" -- \"$cur\" ) ;;\n");
         try writer.writeAll(
             \\      esac
             \\    ;;
@@ -231,8 +230,9 @@ fn writeBashCompletions(writer: anytype) !void {
 
     try writer.writeAll(
         \\
-        \\_ghostty () {
+        \\_ghostty() {
         \\  cur=""; prev=""; prevWasEq=false; COMPREPLY=()
+        \\  ghostty="$1"
         \\
         \\  if [ "$2" = "=" ]; then cur=""
         \\  else                    cur="$2"
@@ -253,7 +253,7 @@ fn writeBashCompletions(writer: anytype) !void {
         \\      case "${COMP_WORDS[1]}" in
         \\        -e | --help | --version) return 0 ;;
         \\        --*) _handleConfig ;;
-        \\        *) mapfile -t COMPREPLY < <( compgen -W "${topLevel}" -- "$cur" ); appendSpaces ;;
+        \\        *) mapfile -t COMPREPLY < <( compgen -W "${topLevel}" -- "$cur" ); addSpaces ;;
         \\      esac
         \\      ;;
         \\    *)
