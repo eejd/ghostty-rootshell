@@ -13,6 +13,7 @@ const config_vim = @import("src/config/vim.zig");
 const config_sublime_syntax = @import("src/config/sublime_syntax.zig");
 const fish_completions = @import("src/build/fish_completions.zig");
 const zsh_completions = @import("src/build/zsh_completions.zig");
+const bash_completions = @import("src/build/bash_completions.zig");
 const build_config = @import("src/build_config.zig");
 const BuildConfig = build_config.BuildConfig;
 const WasmTarget = @import("src/os/wasm/target.zig").Target;
@@ -514,6 +515,18 @@ pub fn build(b: *std.Build) !void {
             .source_dir = wf.getDirectory(),
             .install_dir = .prefix,
             .install_subdir = "share/zsh/site-functions",
+        });
+    }
+
+    // bash shell completions
+    {
+        const wf = b.addWriteFiles();
+        _ = wf.add("ghostty.bash", bash_completions.bash_completions);
+
+        b.installDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "share/bash-completion/completions",
         });
     }
 
