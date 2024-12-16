@@ -194,7 +194,13 @@ extension Ghostty {
             }
         }
     }
-    
+
+    /// macos-icon
+    enum MacOSIcon: String {
+        case official
+        case customColor = "custom-color"
+    }
+
     /// Enum for the macos-titlebar-proxy-icon config option
     enum MacOSTitlebarProxyIcon: String {
         case visible

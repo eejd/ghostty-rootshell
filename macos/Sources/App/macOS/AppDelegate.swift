@@ -527,13 +527,19 @@ class AppDelegate: NSObject,
             GlobalEventTap.shared.disable()
         }
 
-        if let colorizedIcon = ColorizedGhosttyIcon(
-            screenColors: [],
-            ghostColor: .yellow
-        ).makeImage() {
-            self.appIcon = colorizedIcon
-        } else {
+        switch (config.macosIcon) {
+        case .official:
             self.appIcon = nil
+            break
+
+        case .customColor:
+            guard let ghostColor = config.macosIconGhostColor else { break }
+            guard let screenColors = config.macosIconScreenColor else { break }
+            guard let icon = ColorizedGhosttyIcon(
+                screenColors: screenColors,
+                ghostColor: ghostColor
+            ).makeImage() else { break }
+            self.appIcon = icon
         }
     }
 

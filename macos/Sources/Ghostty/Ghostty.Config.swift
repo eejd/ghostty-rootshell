@@ -252,6 +252,35 @@ extension Ghostty {
             return v
         }
 
+        var macosIcon: MacOSIcon {
+            let defaultValue = MacOSIcon.official
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-icon"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacOSIcon(rawValue: str) ?? defaultValue
+        }
+
+        var macosIconGhostColor: OSColor? {
+            guard let config = self.config else { return nil }
+            var v: ghostty_config_color_s = .init()
+            let key = "macos-icon-ghost-color"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            return .init(ghostty: v)
+        }
+
+        var macosIconScreenColor: [OSColor]? {
+            guard let config = self.config else { return nil }
+            var v: ghostty_config_color_list_s = .init()
+            let key = "macos-icon-screen-color"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard v.len > 0 else { return nil }
+            let buffer = UnsafeBufferPointer(start: v.colors, count: v.len)
+            return buffer.map { .init(ghostty: $0) }
+        }
+
         var focusFollowsMouse : Bool {
             guard let config = self.config else { return false }
             var v = false;

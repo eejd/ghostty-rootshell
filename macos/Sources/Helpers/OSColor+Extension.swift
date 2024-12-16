@@ -1,4 +1,5 @@
 import Foundation
+import GhosttyKit
 
 extension OSColor {
     var isLightColor: Bool {
@@ -87,5 +88,17 @@ extension OSColor {
             brightness: min(b * (1 - amount), 1),
             alpha: a
         )
+    }
+}
+
+// MARK: Ghostty Types
+
+extension OSColor {
+    /// Create a color from a Ghostty color.
+    convenience init(ghostty: ghostty_config_color_s) {
+        let red = Double(ghostty.r) / 255
+        let green = Double(ghostty.g) / 255
+        let blue = Double(ghostty.b) / 255
+        self.init(red: red, green: green, blue: blue, alpha: 1)
     }
 }

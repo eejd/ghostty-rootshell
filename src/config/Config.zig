@@ -3704,8 +3704,8 @@ pub const ColorList = struct {
         const input = input_ orelse return error.ValueRequired;
         if (input.len == 0) return error.ValueRequired;
 
-        // Whenever a color list is set, we reset the list
-        self.colors.clearRetainingCapacity();
+        // Always reset on parse
+        self.* = .{};
 
         // Split the input by commas and parse each color
         var it = std.mem.tokenizeScalar(u8, input, ',');
