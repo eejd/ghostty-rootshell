@@ -1679,16 +1679,27 @@ keybind: Keybinds = .{},
 /// Customize the macOS app icon.
 ///
 /// This only affects the icon that appears in the dock, application
-/// switcher, Activity Monitor, etc. This does not affect the icon
-/// in Finder because that is controlled by a hardcoded value in the
-/// signed application bundle and can't be changed at runtime.
+/// switcher, etc. This does not affect the icon in Finder because
+/// that is controlled by a hardcoded value in the signed application
+/// bundle and can't be changed at runtime. For more details on what
+/// exactly is affected, see the `NSApplication.icon` Apple documentation;
+/// that is the API that is being used to set the icon.
 ///
 /// Valid values:
 ///
 ///  * `official` - Use the official Ghostty icon.
 ///  * `custom-color` - Use the official Ghostty icon but with custom
 ///    colors applied to various layers. The custom colors must be
-///    specified using `macos-icon-layer-color`.
+///    specified using the additional `macos-icon-x-color` configurations.
+///    Note that all colors are required. If any are missing, the icon
+///    will not be changed.
+///
+/// Other caveats:
+///
+///   * The icon in the update dialog will always be the official icon.
+///     This is because the update dialog is managed through a
+///     separate framework and cannot be customized without significant
+///     effort.
 ///
 @"macos-icon": MacAppIcon = .official,
 
