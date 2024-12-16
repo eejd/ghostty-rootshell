@@ -534,8 +534,6 @@ pub const Face = struct {
         CopyTableError,
         InvalidHeadTable,
         InvalidPostTable,
-        InvalidOS2Table,
-        OS2VersionNotSupported,
         InvalidHheaTable,
     };
 
@@ -569,18 +567,16 @@ pub const Face = struct {
             };
         };
 
-        // Read the 'OS/2' table out of the font data.
-        const os2: opentype.OS2 = os2: {
+        // Read the 'OS/2' table out of the font data if it's available.
+        const maybe_os2: ?opentype.OS2 = os2: {
             const tag = macos.text.FontTableTag.init("OS/2");
-            const data = ct_font.copyTable(tag) orelse return error.CopyTableError;
+            const data = ct_font.copyTable(tag) orelse break :os2 null;
             defer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
             break :os2 opentype.OS2.init(ptr[0..len]) catch |err| {
-                return switch (err) {
-                    error.EndOfStream => error.InvalidOS2Table,
-                    error.OS2VersionNotSupported => error.OS2VersionNotSupported,
-                };
+                log.warn("Error parsing OS/2 table: {any}", .{err});
+                break :os2 null;
             };
         };
 
@@ -603,54 +599,65 @@ pub const Face = struct {
         const px_per_unit: f64 = px_per_em / units_per_em;
 
         const ascent: f64, const descent: f64, const line_gap: f64 = vertical_metrics: {
-            const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
-            const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
-            const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
+            const hhea_ascent: f64 = @floatFromInt(hhea.ascender);
+            const hhea_descent: f64 = @floatFromInt(hhea.descender);
+            const hhea_line_gap: f64 = @floatFromInt(hhea.lineGap);
 
-            // If the font says to use typo metrics, trust it.
-            if (os2.fsSelection.use_typo_metrics) {
+            if (maybe_os2) |os2| {
+                const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
+                const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
+                const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
+
+                // If the font says to use typo metrics, trust it.
+                if (os2.fsSelection.use_typo_metrics) {
+                    break :vertical_metrics .{
+                        os2_ascent * px_per_unit,
+                        os2_descent * px_per_unit,
+                        os2_line_gap * px_per_unit,
+                    };
+                }
+
+                // Otherwise we prefer the height metrics from 'hhea' if they
+                // are available, or else OS/2 sTypo* metrics, and if all else
+                // fails then we use OS/2 usWin* metrics.
+                //
+                // This is not "standard" behavior, but it's our best bet to
+                // account for fonts being... just weird. It's pretty much what
+                // FreeType does to get its generic ascent and descent metrics.
+
+                if (hhea.ascender != 0 or hhea.descender != 0) {
+                    break :vertical_metrics .{
+                        hhea_ascent * px_per_unit,
+                        hhea_descent * px_per_unit,
+                        hhea_line_gap * px_per_unit,
+                    };
+                }
+
+                if (os2_ascent != 0 or os2_descent != 0) {
+                    break :vertical_metrics .{
+                        os2_ascent * px_per_unit,
+                        os2_descent * px_per_unit,
+                        os2_line_gap * px_per_unit,
+                    };
+                }
+
+                const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
+                const win_descent: f64 = @floatFromInt(os2.usWinDescent);
                 break :vertical_metrics .{
-                    os2_ascent * px_per_unit,
-                    os2_descent * px_per_unit,
-                    os2_line_gap * px_per_unit,
+                    win_ascent * px_per_unit,
+                    // usWinDescent is *positive* -> down unlike sTypoDescender
+                    // and hhea.Descender, so we flip its sign to fix this.
+                    -win_descent * px_per_unit,
+                    0.0,
                 };
             }
 
-            // Otherwise we prefer the height metrics from 'hhea' if they
-            // are available, or else OS/2 sTypo* metrics, and if all else
-            // fails then we use OS/2 usWin* metrics.
-            //
-            // This is not "standard" behavior, but it's our best bet to
-            // account for fonts being... just weird. It's pretty much what
-            // FreeType does to get its generic ascent and descent metrics.
-
-            if (hhea.ascender != 0 or hhea.descender != 0) {
-                const hhea_ascent: f64 = @floatFromInt(hhea.ascender);
-                const hhea_descent: f64 = @floatFromInt(hhea.descender);
-                const hhea_line_gap: f64 = @floatFromInt(hhea.lineGap);
-                break :vertical_metrics .{
-                    hhea_ascent * px_per_unit,
-                    hhea_descent * px_per_unit,
-                    hhea_line_gap * px_per_unit,
-                };
-            }
-
-            if (os2_ascent != 0 or os2_descent != 0) {
-                break :vertical_metrics .{
-                    os2_ascent * px_per_unit,
-                    os2_descent * px_per_unit,
-                    os2_line_gap * px_per_unit,
-                };
-            }
-
-            const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
-            const win_descent: f64 = @floatFromInt(os2.usWinDescent);
+            // If our font has no OS/2 table, then we just
+            // blindly use the metrics from the hhea table.
             break :vertical_metrics .{
-                win_ascent * px_per_unit,
-                // usWinDescent is *positive* -> down unlike sTypoDescender
-                // and hhea.Descender, so we flip its sign to fix this.
-                -win_descent * px_per_unit,
-                0.0,
+                hhea_ascent * px_per_unit,
+                hhea_descent * px_per_unit,
+                hhea_line_gap * px_per_unit,
             };
         };
 
@@ -672,30 +679,46 @@ pub const Face = struct {
             @as(f64, @floatFromInt(post.underlineThickness)) * px_per_unit;
 
         // Similar logic to the underline above.
-        const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+        const strikethrough_position, const strikethrough_thickness = st: {
+            if (maybe_os2) |os2| {
+                const has_broken_strikethrough = os2.yStrikeoutSize == 0;
 
-        const strikethrough_position: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
-            null
-        else
-            @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+                const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+                    null
+                else
+                    @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
 
-        const strikethrough_thickness: ?f64 = if (has_broken_strikethrough)
-            null
-        else
-            @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+                const thick: ?f64 = if (has_broken_strikethrough)
+                    null
+                else
+                    @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
 
-        // We fall back to whatever CoreText does if
-        // the OS/2 table doesn't specify a cap height.
-        const cap_height: f64 = if (os2.sCapHeight) |sCapHeight|
-            @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
-        else
-            ct_font.getCapHeight();
+                break :st .{ pos, thick };
+            }
 
-        // Ditto for ex height.
-        const ex_height: f64 = if (os2.sxHeight) |sxHeight|
-            @as(f64, @floatFromInt(sxHeight)) * px_per_unit
-        else
-            ct_font.getXHeight();
+            break :st .{ null, null };
+        };
+
+        // We fall back to whatever CoreText does if the
+        // OS/2 table doesn't specify a cap or ex height.
+        const cap_height: f64, const ex_height: f64 = heights: {
+            if (maybe_os2) |os2| {
+                break :heights .{
+                    if (os2.sCapHeight) |sCapHeight|
+                        @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
+                    else
+                        ct_font.getCapHeight(),
+                    if (os2.sxHeight) |sxHeight|
+                        @as(f64, @floatFromInt(sxHeight)) * px_per_unit
+                    else
+                        ct_font.getXHeight(),
+                };
+            }
+            break :heights .{
+                ct_font.getCapHeight(),
+                ct_font.getXHeight(),
+            };
+        };
 
         // Cell width is calculated by calculating the widest width of the
         // visible ASCII characters. Usually 'M' is widest but we just take
