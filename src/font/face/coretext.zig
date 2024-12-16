@@ -568,14 +568,14 @@ pub const Face = struct {
         };
 
         // Read the 'OS/2' table out of the font data if it's available.
-        const maybe_os2: ?opentype.OS2 = os2: {
+        const os2_: ?opentype.OS2 = os2: {
             const tag = macos.text.FontTableTag.init("OS/2");
             const data = ct_font.copyTable(tag) orelse break :os2 null;
             defer data.release();
             const ptr = data.getPointer();
             const len = data.getLength();
             break :os2 opentype.OS2.init(ptr[0..len]) catch |err| {
-                log.warn("Error parsing OS/2 table: {any}", .{err});
+                log.warn("error parsing OS/2 table: {}", .{err});
                 break :os2 null;
             };
         };
@@ -603,19 +603,17 @@ pub const Face = struct {
             const hhea_descent: f64 = @floatFromInt(hhea.descender);
             const hhea_line_gap: f64 = @floatFromInt(hhea.lineGap);
 
-            if (maybe_os2) |os2| {
+            if (os2_) |os2| {
                 const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
                 const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
                 const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
 
                 // If the font says to use typo metrics, trust it.
-                if (os2.fsSelection.use_typo_metrics) {
-                    break :vertical_metrics .{
-                        os2_ascent * px_per_unit,
-                        os2_descent * px_per_unit,
-                        os2_line_gap * px_per_unit,
-                    };
-                }
+                if (os2.fsSelection.use_typo_metrics) break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
 
                 // Otherwise we prefer the height metrics from 'hhea' if they
                 // are available, or else OS/2 sTypo* metrics, and if all else
@@ -625,21 +623,17 @@ pub const Face = struct {
                 // account for fonts being... just weird. It's pretty much what
                 // FreeType does to get its generic ascent and descent metrics.
 
-                if (hhea.ascender != 0 or hhea.descender != 0) {
-                    break :vertical_metrics .{
-                        hhea_ascent * px_per_unit,
-                        hhea_descent * px_per_unit,
-                        hhea_line_gap * px_per_unit,
-                    };
-                }
+                if (hhea.ascender != 0 or hhea.descender != 0) break :vertical_metrics .{
+                    hhea_ascent * px_per_unit,
+                    hhea_descent * px_per_unit,
+                    hhea_line_gap * px_per_unit,
+                };
 
-                if (os2_ascent != 0 or os2_descent != 0) {
-                    break :vertical_metrics .{
-                        os2_ascent * px_per_unit,
-                        os2_descent * px_per_unit,
-                        os2_line_gap * px_per_unit,
-                    };
-                }
+                if (os2_ascent != 0 or os2_descent != 0) break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
 
                 const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
                 const win_descent: f64 = @floatFromInt(os2.usWinDescent);
@@ -680,43 +674,41 @@ pub const Face = struct {
 
         // Similar logic to the underline above.
         const strikethrough_position, const strikethrough_thickness = st: {
-            if (maybe_os2) |os2| {
-                const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+            const os2 = os2_ orelse break :st .{ null, null };
 
-                const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
-                    null
-                else
-                    @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+            const has_broken_strikethrough = os2.yStrikeoutSize == 0;
 
-                const thick: ?f64 = if (has_broken_strikethrough)
-                    null
-                else
-                    @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+            const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
 
-                break :st .{ pos, thick };
-            }
+            const thick: ?f64 = if (has_broken_strikethrough)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
 
-            break :st .{ null, null };
+            break :st .{ pos, thick };
         };
 
         // We fall back to whatever CoreText does if the
         // OS/2 table doesn't specify a cap or ex height.
         const cap_height: f64, const ex_height: f64 = heights: {
-            if (maybe_os2) |os2| {
-                break :heights .{
-                    if (os2.sCapHeight) |sCapHeight|
-                        @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
-                    else
-                        ct_font.getCapHeight(),
-                    if (os2.sxHeight) |sxHeight|
-                        @as(f64, @floatFromInt(sxHeight)) * px_per_unit
-                    else
-                        ct_font.getXHeight(),
-                };
-            }
-            break :heights .{
+            const os2 = os2_ orelse break :heights .{
                 ct_font.getCapHeight(),
                 ct_font.getXHeight(),
+            };
+
+            break :heights .{
+                if (os2.sCapHeight) |sCapHeight|
+                    @as(f64, @floatFromInt(sCapHeight)) * px_per_unit
+                else
+                    ct_font.getCapHeight(),
+
+                if (os2.sxHeight) |sxHeight|
+                    @as(f64, @floatFromInt(sxHeight)) * px_per_unit
+                else
+                    ct_font.getXHeight(),
             };
         };
 

@@ -628,7 +628,7 @@ pub const Face = struct {
         const post = face.getSfntTable(.post) orelse return error.CopyTableError;
 
         // Read the 'OS/2' table out of the font data.
-        const maybe_os2: ?*freetype.c.TT_OS2 = os2: {
+        const os2_: ?*freetype.c.TT_OS2 = os2: {
             const os2 = face.getSfntTable(.os2) orelse break :os2 null;
             if (os2.version == 0xFFFF) break :os2 null;
             break :os2 os2;
@@ -646,7 +646,7 @@ pub const Face = struct {
             const hhea_descent: f64 = @floatFromInt(hhea.Descender);
             const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
 
-            if (maybe_os2) |os2| {
+            if (os2_) |os2| {
                 const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
                 const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
                 const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
@@ -724,23 +724,21 @@ pub const Face = struct {
 
         // Similar logic to the underline above.
         const strikethrough_position, const strikethrough_thickness = st: {
-            if (maybe_os2) |os2| {
-                const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+            const os2 = os2_ orelse break :st .{ null, null };
 
-                const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
-                    null
-                else
-                    @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+            const has_broken_strikethrough = os2.yStrikeoutSize == 0;
 
-                const thick: ?f64 = if (has_broken_strikethrough)
-                    null
-                else
-                    @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+            const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
 
-                break :st .{ pos, thick };
-            }
+            const thick: ?f64 = if (has_broken_strikethrough)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
 
-            break :st .{ null, null };
+            break :st .{ pos, thick };
         };
 
         // Cell width is calculated by calculating the widest width of the
@@ -774,7 +772,7 @@ pub const Face = struct {
         // We use the cap and ex heights specified by the font if they're
         // available, otherwise we try to measure the `H` and `x` glyphs.
         const cap_height: ?f64, const ex_height: ?f64 = heights: {
-            if (maybe_os2) |os2| {
+            if (os2_) |os2| {
                 // The OS/2 table does not include these metrics in version 1.
                 if (os2.version >= 2) {
                     break :heights .{
@@ -783,6 +781,7 @@ pub const Face = struct {
                     };
                 }
             }
+
             break :heights .{
                 cap: {
                     if (face.getCharIndex('H')) |glyph_index| {
