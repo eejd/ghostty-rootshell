@@ -27,6 +27,7 @@ pub const CFReleaseThread = @import("cf_release_thread.zig");
 pub const TempDir = @import("TempDir.zig");
 pub const appendEnv = env.appendEnv;
 pub const appendEnvAlways = env.appendEnvAlways;
+pub const prependEnv = env.prependEnv;
 pub const getenv = env.getenv;
 pub const setenv = env.setenv;
 pub const unsetenv = env.unsetenv;

@@ -34,6 +34,23 @@ pub fn appendEnvAlways(
     });
 }
 
+/// Prepend a value to an environment variable such as PATH.
+/// The returned value is always allocated so it must be freed.
+pub fn prependEnv(
+    alloc: Allocator,
+    current: []const u8,
+    value: []const u8,
+) ![]u8 {
+    // If there is no prior value, we return it as-is
+    if (current.len == 0) return try alloc.dupe(u8, value);
+
+    return try std.fmt.allocPrint(alloc, "{s}{c}{s}", .{
+        value,
+        std.fs.path.delimiter,
+        current,
+    });
+}
+
 /// The result of getenv, with a shared deinit to properly handle allocation
 /// on Windows.
 pub const GetEnvResult = struct {
@@ -108,5 +125,27 @@ test "appendEnv existing" {
         try testing.expectEqualStrings(result, "a:b;foo");
     } else {
         try testing.expectEqualStrings(result, "a:b:foo");
+    }
+}
+
+test "prependEnv empty" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const result = try prependEnv(alloc, "", "foo");
+    defer alloc.free(result);
+    try testing.expectEqualStrings(result, "foo");
+}
+
+test "prependEnv existing" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const result = try prependEnv(alloc, "a:b", "foo");
+    defer alloc.free(result);
+    if (builtin.os.tag == .windows) {
+        try testing.expectEqualStrings(result, "foo;a:b");
+    } else {
+        try testing.expectEqualStrings(result, "foo:a:b");
     }
 }
