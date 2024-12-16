@@ -775,10 +775,13 @@ pub const Face = struct {
         // available, otherwise we try to measure the `H` and `x` glyphs.
         const cap_height: ?f64, const ex_height: ?f64 = heights: {
             if (maybe_os2) |os2| {
-                break :heights .{
-                    @as(f64, @floatFromInt(os2.sCapHeight)) * px_per_unit,
-                    @as(f64, @floatFromInt(os2.sxHeight)) * px_per_unit,
-                };
+                // The OS/2 table does not include these metrics in version 1.
+                if (os2.version >= 2) {
+                    break :heights .{
+                        @as(f64, @floatFromInt(os2.sCapHeight)) * px_per_unit,
+                        @as(f64, @floatFromInt(os2.sxHeight)) * px_per_unit,
+                    };
+                }
             }
             break :heights .{
                 cap: {
