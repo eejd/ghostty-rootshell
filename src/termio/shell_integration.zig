@@ -5,6 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const EnvMap = std.process.EnvMap;
 const config = @import("../config.zig");
 const homedir = @import("../os/homedir.zig");
+const internal_os = @import("../os/main.zig");
 
 const log = std.log.scoped(.shell_integration);
 
@@ -435,8 +436,8 @@ test "bash: preserve ENV" {
 /// Setup automatic shell integration for shells that include
 /// their modules from paths in `XDG_DATA_DIRS` env variable.
 ///
-/// Path of shell-integration dir is prepended to `XDG_DATA_DIRS`.
-/// It is also saved in `GHOSTTY_SHELL_INTEGRATION_XDG_DIR` variable
+/// The shell-integration path is prepended to `XDG_DATA_DIRS`.
+/// It is also saved in the `GHOSTTY_SHELL_INTEGRATION_XDG_DIR` variable
 /// so that the shell can refer to it and safely remove this directory
 /// from `XDG_DATA_DIRS` when integration is complete.
 fn setupXdgDataDirs(
@@ -458,32 +459,60 @@ fn setupXdgDataDirs(
     // so that our modifications don't interfere with other commands.
     try env.put("GHOSTTY_SHELL_INTEGRATION_XDG_DIR", integ_dir);
 
-    {
-        const xdg_data_dir_key = "XDG_DATA_DIRS";
+    // We attempt to avoid allocating by using the stack up to 4K.
+    // Max stack size is considerably larger on mac
+    // 4K is a reasonable size for this for most cases. However, env
+    // vars can be significantly larger so if we have to we fall
+    // back to a heap allocated value.
+    var stack_alloc_state = std.heap.stackFallback(4096, alloc_arena);
+    const stack_alloc = stack_alloc_state.get();
 
-        // We attempt to avoid allocating by using the stack up to 4K.
-        // Max stack size is considerably larger on macOS and Linux but
-        // 4K is a reasonable size for this for most cases. However, env
-        // vars can be significantly larger so if we have to we fall
-        // back to a heap allocated value.
-        var stack_alloc_state = std.heap.stackFallback(4096, alloc_arena);
-        const stack_alloc = stack_alloc_state.get();
-
-        // If no XDG_DATA_DIRS set use the default value as specified.
-        // This ensures that the default directories aren't lost by setting
-        // our desired integration dir directly. See #2711.
-        // <https://specifications.freedesktop.org/basedir-spec/0.6/#variables>
-        const old = env.get(xdg_data_dir_key) orelse "/usr/local/share:/usr/share";
-
-        const prepended = try std.fmt.allocPrint(stack_alloc, "{s}{c}{s}", .{
+    // If no XDG_DATA_DIRS set use the default value as specified.
+    // This ensures that the default directories aren't lost by setting
+    // our desired integration dir directly. See #2711.
+    // <https://specifications.freedesktop.org/basedir-spec/0.6/#variables>
+    const xdg_data_dirs_key = "XDG_DATA_DIRS";
+    try env.put(
+        xdg_data_dirs_key,
+        try internal_os.prependEnv(
+            stack_alloc,
+            env.get(xdg_data_dirs_key) orelse "/usr/local/share:/usr/share",
             integ_dir,
-            std.fs.path.delimiter,
-            old,
-        });
-        defer stack_alloc.free(prepended);
+        ),
+    );
+}
 
-        try env.put(xdg_data_dir_key, prepended);
-    }
+test "xdg: empty XDG_DATA_DIRS" {
+    const testing = std.testing;
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    try setupXdgDataDirs(alloc, ".", &env);
+
+    try testing.expectEqualStrings("./shell-integration", env.get("GHOSTTY_SHELL_INTEGRATION_XDG_DIR").?);
+    try testing.expectEqualStrings("./shell-integration:/usr/local/share:/usr/share", env.get("XDG_DATA_DIRS").?);
+}
+
+test "xdg: existing XDG_DATA_DIRS" {
+    const testing = std.testing;
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    try env.put("XDG_DATA_DIRS", "/opt/share");
+    try setupXdgDataDirs(alloc, ".", &env);
+
+    try testing.expectEqualStrings("./shell-integration", env.get("GHOSTTY_SHELL_INTEGRATION_XDG_DIR").?);
+    try testing.expectEqualStrings("./shell-integration:/opt/share", env.get("XDG_DATA_DIRS").?);
 }
 
 /// Setup the zsh automatic shell integration. This works by setting
