@@ -93,7 +93,9 @@ interest/acceptance for it before opening up some huge PR.
 
 There are also non-core help we can use: docs, website work, Discord bots,
 etc. etc. For example, a web UI to generate a configuration file would be
-cool. Or a web UI to preview your color settings.
+cool. Or a web UI to preview your color settings. There is currently one
+[community project](https://github.com/zerebos/ghostty-config) attempting
+to tackle both of these.
 
 ### Is Ghostty Open Source?
 
