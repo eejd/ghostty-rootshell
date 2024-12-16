@@ -3617,7 +3617,7 @@ pub const Color = struct {
     }
 
     /// Format the color as a string.
-    pub fn formatBuf(self: Color, buf: []u8) ![]const u8 {
+    pub fn formatBuf(self: Color, buf: []u8) Allocator.Error![]const u8 {
         return std.fmt.bufPrint(
             buf,
             "#{x:0>2}{x:0>2}{x:0>2}",
@@ -3745,7 +3745,10 @@ pub const ColorList = struct {
     }
 
     /// Used by Formatter
-    pub fn formatEntry(self: Self, formatter: anytype) !void {
+    pub fn formatEntry(
+        self: Self,
+        formatter: anytype,
+    ) !void {
         // If no items, we want to render an empty field.
         if (self.colors.items.len == 0) {
             try formatter.formatEntry(void, {});
@@ -3760,8 +3763,8 @@ pub const ColorList = struct {
         for (self.colors.items, 0..) |color, i| {
             var color_buf: [128]u8 = undefined;
             const color_str = try color.formatBuf(&color_buf);
-            if (i != 0) try writer.writeByte(',');
-            try writer.writeAll(color_str);
+            if (i != 0) writer.writeByte(',') catch return error.OutOfMemory;
+            writer.writeAll(color_str) catch return error.OutOfMemory;
         }
 
         try formatter.formatEntry(
