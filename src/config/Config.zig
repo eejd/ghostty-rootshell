@@ -1208,7 +1208,7 @@ keybind: Keybinds = .{},
 @"clipboard-paste-bracketed-safe": bool = true,
 
 /// The total amount of bytes that can be used for image data (i.e. the Kitty
-/// image protocol) per terminal scren. The maximum value is 4,294,967,295
+/// image protocol) per terminal screen. The maximum value is 4,294,967,295
 /// (4GiB). The default is 320MB. If this is set to zero, then all image
 /// protocols will be disabled.
 ///
