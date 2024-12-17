@@ -58,7 +58,8 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
         #  Arch, Debian, Ubuntu use /etc/bash.bashrc
         #  Fedora uses /etc/bashrc sourced from ~/.bashrc instead of SYS_BASHRC
         #  Void Linux uses /etc/bash/bashrc
-        for rcfile in /etc/bash.bashrc /etc/bash/bashrc ; do
+        #  Nixos uses /etc/bashrc
+        for rcfile in /etc/bash.bashrc /etc/bash/bashrc /etc/bashrc; do
           [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
         done
         if [[ -z "$GHOSTTY_BASH_RCFILE" ]]; then GHOSTTY_BASH_RCFILE="$HOME/.bashrc"; fi
