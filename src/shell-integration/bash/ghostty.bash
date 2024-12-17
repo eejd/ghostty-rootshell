@@ -100,15 +100,11 @@ function __ghostty_precmd() {
       PS1=$PS1'\[\e]133;B\a\]'
       PS2=$PS2'\[\e]133;B\a\]'
 
+      # bash doesn't redraw the leading lines in a multiline prompt so
+      # mark the last line as a secondary prompt (k=s) to prevent the
+      # preceding lines from being erased by ghostty after a resize.
       if [[ "${PS1}" == *"\n"* || "${PS1}" == *$'\n'* ]]; then
-        # bash doesn't redraw the leading lines in a multiline prompt so
-        # mark the last line as a secondary prompt (k=s) to prevent the
-        # preceding lines from being erased by ghostty after a resize.
-        builtin local oldval
-        oldval=$(builtin shopt -p extglob)
-        builtin shopt -s extglob
-        PS1=${PS1%@('\n'|$'\n')*}'\n\[\e]133;A;k=s\a\]'${PS1##*@('\n'|$'\n')}
-        builtin eval "$oldval"
+        PS1=$PS1'\[\e]133;A;k=s\a\]'
       fi
 
       # Cursor
