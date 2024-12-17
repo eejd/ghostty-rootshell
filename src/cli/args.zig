@@ -319,6 +319,7 @@ pub fn parseIntoField(
 
                 inline u8,
                 u16,
+                u21,
                 u32,
                 u64,
                 usize,
