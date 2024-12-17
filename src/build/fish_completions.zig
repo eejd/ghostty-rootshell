@@ -117,11 +117,24 @@ fn writeFishCompletions(writer: anytype) !void {
                 .Bool => try writer.writeAll(" -a \"true false\""),
                 .Enum => |info| {
                     try writer.writeAll(" -a \"");
-                    for (info.opts, 0..) |f, i| {
+                    for (info.fields, 0..) |f, i| {
                         if (i > 0) try writer.writeAll(" ");
                         try writer.writeAll(f.name);
                     }
                     try writer.writeAll("\"");
+                },
+                .Optional => |optional| {
+                    switch (@typeInfo(optional.child)) {
+                        .Enum => |info| {
+                            try writer.writeAll(" -a \"");
+                            for (info.fields, 0..) |f, i| {
+                                if (i > 0) try writer.writeAll(" ");
+                                try writer.writeAll(f.name);
+                            }
+                            try writer.writeAll("\"");
+                        },
+                        else => {},
+                    }
                 },
                 else => {},
             }
