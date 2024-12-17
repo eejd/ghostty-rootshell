@@ -181,11 +181,28 @@ fn writeBashCompletions(writer: anytype) !void {
                 .Bool => try writer.writeAll("return ;;"),
                 .Enum => |info| {
                     try writer.writeAll(compgenPrefix);
-                    for (info.opts, 0..) |f, i| {
+                    for (info.fields, 0..) |f, i| {
                         if (i > 0) try writer.writeAll(" ");
                         try writer.writeAll(f.name);
                     }
                     try writer.writeAll(compgenSuffix);
+                },
+                .Optional => |optional| {
+                    switch (@typeInfo(optional.child)) {
+                        .Enum => |info| {
+                            try writer.writeAll(compgenPrefix);
+                            for (info.fields, 0..) |f, i| {
+                                if (i > 0) try writer.writeAll(" ");
+                                try writer.writeAll(f.name);
+                            }
+                            try writer.writeAll(compgenSuffix);
+                        },
+                        else => {
+                            if (std.mem.eql(u8, "config-file", opt.name)) {
+                                try writer.writeAll("return ;;");
+                            } else try writer.writeAll("return;;");
+                        },
+                    }
                 },
                 else => {
                     if (std.mem.eql(u8, "config-file", opt.name)) {

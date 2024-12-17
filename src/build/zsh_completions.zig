@@ -175,11 +175,28 @@ fn writeZshCompletions(writer: anytype) !void {
                     .Bool => try writer.writeAll("(true false)"),
                     .Enum => |info| {
                         try writer.writeAll("(");
-                        for (info.opts, 0..) |f, i| {
+                        for (info.fields, 0..) |f, i| {
                             if (i > 0) try writer.writeAll(" ");
                             try writer.writeAll(f.name);
                         }
                         try writer.writeAll(")");
+                    },
+                    .Optional => |optional| {
+                        switch (@typeInfo(optional.child)) {
+                            .Enum => |info| {
+                                try writer.writeAll("(");
+                                for (info.fields, 0..) |f, i| {
+                                    if (i > 0) try writer.writeAll(" ");
+                                    try writer.writeAll(f.name);
+                                }
+                                try writer.writeAll(")");
+                            },
+                            else => {
+                                if (std.mem.eql(u8, "config-file", opt.name)) {
+                                    try writer.writeAll("_files");
+                                } else try writer.writeAll("( )");
+                            },
+                        }
                     },
                     else => {
                         if (std.mem.eql(u8, "config-file", opt.name)) {
