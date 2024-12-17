@@ -618,6 +618,16 @@ command: ?[]const u8 = null,
 ///     process will exit when the command exits. Additionally, the
 ///     `quit-after-last-window-closed-delay` is unset.
 ///
+///   * `shell-integration=detect` (if not `none`) - This prevents forcibly
+///     injecting any configured shell integration into the command's
+///     environment. With `-e` its highly unlikely that you're executing a
+///     shell and forced shell integration is likely to cause problems
+///     (i.e. by wrapping your command in a shell, setting env vars, etc.).
+///     This is a safety measure to prevent unexpected behavior. If you want
+///     shell integration with a `-e`-executed command, you must either
+///     name your binary appopriately or source the shell integration script
+///     manually.
+///
 @"initial-command": ?[]const u8 = null,
 
 /// If true, keep the terminal open after the command exits. Normally, the
@@ -3091,6 +3101,9 @@ pub fn parseManuallyHook(
         self.@"gtk-single-instance" = .false;
         self.@"quit-after-last-window-closed" = true;
         self.@"quit-after-last-window-closed-delay" = null;
+        if (self.@"shell-integration" != .none) {
+            self.@"shell-integration" = .detect;
+        }
 
         // Do not continue, we consumed everything.
         return false;
