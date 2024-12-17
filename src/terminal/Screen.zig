@@ -1315,8 +1315,13 @@ pub fn clearPrompt(self: *Screen) void {
         switch (row.semantic_prompt) {
             // We are at a prompt but we're not at the start of the prompt.
             // We mark our found value and continue because the prompt
-            // may be multi-line.
-            .input => found = p,
+            // may be multi-line, unless this is the second time we've
+            // seen an .input marker, in which case we've run into an
+            // earlier prompt.
+            .input => {
+                if (found != null) break;
+                found = p;
+            },
 
             // If we find the prompt then we're done. We are also done
             // if we find any prompt continuation, because the shells
@@ -3553,6 +3558,32 @@ test "Screen: clearPrompt continuation" {
         s.cursorAbsolute(0, 2);
         s.cursor.page_row.semantic_prompt = .prompt_continuation;
         s.cursorAbsolute(0, 3);
+        s.cursor.page_row.semantic_prompt = .input;
+    }
+
+    s.clearPrompt();
+
+    {
+        const contents = try s.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer alloc.free(contents);
+        try testing.expectEqualStrings("1ABCD\n2EFGH", contents);
+    }
+}
+
+test "Screen: clearPrompt consecutive prompts" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 5, 3, 0);
+    defer s.deinit();
+    const str = "1ABCD\n2EFGH\n3IJKL";
+    try s.testWriteString(str);
+
+    // Set both rows to be prompts
+    {
+        s.cursorAbsolute(0, 1);
+        s.cursor.page_row.semantic_prompt = .input;
+        s.cursorAbsolute(0, 2);
         s.cursor.page_row.semantic_prompt = .input;
     }
 
