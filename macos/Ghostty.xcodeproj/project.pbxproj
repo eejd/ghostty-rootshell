@@ -94,6 +94,7 @@
 		C159E89D2B69A2EF00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
 		C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F26EA62B738B9900404083 /* NSView+Extension.swift */; };
 		C1F26EE92B76CBFC00404083 /* VibrantLayer.m in Sources */ = {isa = PBXBuildFile; fileRef = C1F26EE82B76CBFC00404083 /* VibrantLayer.m */; };
+		FC5218FA2D10FFCE004C93E0 /* zsh in Resources */ = {isa = PBXBuildFile; fileRef = FC5218F92D10FFC7004C93E0 /* zsh */; };
 		FC9ABA9C2D0F53F80020D4C8 /* bash-completion in Resources */ = {isa = PBXBuildFile; fileRef = FC9ABA9B2D0F538D0020D4C8 /* bash-completion */; };
 /* End PBXBuildFile section */
 
@@ -181,7 +182,8 @@
 		C1F26EE72B76CBFC00404083 /* VibrantLayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VibrantLayer.h; sourceTree = "<group>"; };
 		C1F26EE82B76CBFC00404083 /* VibrantLayer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = VibrantLayer.m; sourceTree = "<group>"; };
 		C1F26EEA2B76CC2400404083 /* ghostty-bridging-header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "ghostty-bridging-header.h"; sourceTree = "<group>"; };
-		FC9ABA9B2D0F538D0020D4C8 /* bash-completion */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bash-completion; path = "../zig-out/share/bash-completion"; sourceTree = "<group>"; };
+		FC5218F92D10FFC7004C93E0 /* zsh */ = {isa = PBXFileReference; lastKnownFileType = folder; name = zsh; path = "../zig-out/share/zsh"; sourceTree = "<group>"; };
+		FC9ABA9B2D0F538D0020D4C8 /* bash-completion */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "bash-completion"; path = "../zig-out/share/bash-completion"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -380,6 +382,7 @@
 				A586167B2B7703CC009BDB1D /* fish */,
 				A5985CE52C33060F00C57AD3 /* man */,
 				A5A1F8842A489D6800D1E8BC /* terminfo */,
+				FC5218F92D10FFC7004C93E0 /* zsh */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -551,6 +554,7 @@
 				29C15B1D2CDC3B2900520DD4 /* bat in Resources */,
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
 				A586167C2B7703CC009BDB1D /* fish in Resources */,
+				FC5218FA2D10FFCE004C93E0 /* zsh in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
 				A5985CE62C33060F00C57AD3 /* man in Resources */,
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
