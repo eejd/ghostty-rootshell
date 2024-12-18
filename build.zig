@@ -153,6 +153,12 @@ pub fn build(b: *std.Build) !void {
         break :emit_docs path != null;
     };
 
+    const emit_webdata = b.option(
+        bool,
+        "emit-webdata",
+        "Build the website data for the website.",
+    ) orelse false;
+
     const emit_xcframework = b.option(
         bool,
         "emit-xcframework",
@@ -586,6 +592,11 @@ pub fn build(b: *std.Build) !void {
         const path = "share/man/.placeholder";
         const placeholder = wf.add(path, "emit-docs not true so no man pages");
         b.getInstallStep().dependOn(&b.addInstallFile(placeholder, path).step);
+    }
+
+    // Web data
+    if (emit_webdata) {
+        try buildWebData(b, config);
     }
 
     // App (Linux)
@@ -1576,6 +1587,41 @@ fn buildDocumentation(
             "share/man/man" ++ manpage.section ++ "/" ++ manpage.name ++ "." ++ manpage.section,
         ).step);
     }
+}
+
+/// Generate the website reference data that we merge into the
+/// official Ghostty website. This isn't meant to be part of any
+/// actual build.
+fn buildWebData(
+    b: *std.Build,
+    config: BuildConfig,
+) !void {
+    const webgen_config = b.addExecutable(.{
+        .name = "webgen_config",
+        .root_source_file = b.path("src/main.zig"),
+        .target = b.host,
+    });
+    try addHelp(b, webgen_config, config);
+
+    {
+        const buildconfig = config: {
+            var copy = config;
+            copy.exe_entrypoint = .webgen_config;
+            break :config copy;
+        };
+
+        const options = b.addOptions();
+        try buildconfig.addOptions(options);
+        webgen_config.root_module.addOptions("build_options", options);
+    }
+
+    const webgen_config_step = b.addRunArtifact(webgen_config);
+    const webgen_config_out = webgen_config_step.captureStdOut();
+
+    b.getInstallStep().dependOn(&b.addInstallFile(
+        webgen_config_out,
+        "share/ghostty/webdata/config.mdx",
+    ).step);
 }
 
 fn benchSteps(
