@@ -2067,7 +2067,7 @@ test "legacy: f1" {
     {
         enc.event.key = .f3;
         const actual = try enc.legacy(&buf);
-        try testing.expectEqualStrings("\x1b[1;5R", actual);
+        try testing.expectEqualStrings("\x1b[13;5~", actual);
     }
 
     // F4
