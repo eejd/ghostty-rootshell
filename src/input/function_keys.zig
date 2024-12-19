@@ -13,7 +13,7 @@ pub const CursorMode = enum { any, normal, application };
 pub const KeypadMode = enum { any, normal, application };
 
 /// A bit confusing so I'll document this one: this is the "modify other keys"
-/// setting. We only change behavior for "set_other" which is ESC [ 4; 2 m.
+/// setting. We only change behavior for "set_other" which is ESC [ > 4; 2 m.
 /// So this can be "any" which means we don't care what's going on. Or it
 /// can be "set" which means modify keys must be set EXCEPT FOR "other keys"
 /// mode, and "set_other" which means modify keys must be set to "other keys"
