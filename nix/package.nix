@@ -157,7 +157,7 @@ in
       chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
     '';
 
-    outputs = ["out" "terminfo" "shell_integration"];
+    outputs = ["out" "terminfo" "shell_integration" "vim"];
 
     postInstall = ''
       terminfo_src=${
@@ -177,6 +177,8 @@ in
       mv "$out/share/ghostty/shell-integration" "$shell_integration/shell-integration"
       ln -sf "$shell_integration/shell-integration" "$out/share/ghostty/shell-integration"
       echo "$shell_integration" >> "$out/nix-support/propagated-user-env-packages"
+
+      cp -r $out/share/vim/vimfiles "$vim"
     '';
 
     postFixup = ''
