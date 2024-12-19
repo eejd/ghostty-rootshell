@@ -292,31 +292,45 @@ pub const Face = struct {
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
         // Get the bounding rect for rendering this glyph.
-        const rect = self.font.getBoundingRectsForGlyphs(.horizontal, &glyphs, null);
+        // This is in a coordinate space with (0.0, 0.0)
+        // in the bottom left and +Y pointing up.
+        var rect = self.font.getBoundingRectsForGlyphs(.horizontal, &glyphs, null);
 
-        // The x/y that we render the glyph at. The Y value has to be flipped
-        // because our coordinates in 3D space are (0, 0) bottom left with
-        // +y being up.
-        const render_x = @floor(rect.origin.x);
-        const render_y = @ceil(-rect.origin.y);
+        // If we're rendering a synthetic bold then we will gain 50% of
+        // the line width on every edge, which means we should increase
+        // our width and height by the line width and subtract half from
+        // our origin points.
+        if (self.synthetic_bold) |line_width| {
+            rect.size.width += line_width;
+            rect.size.height += line_width;
+            rect.origin.x -= line_width / 2;
+            rect.origin.y -= line_width / 2;
+        }
 
-        // The ascent is the amount of pixels above the baseline this glyph
-        // is rendered. The ascent can be calculated by adding the full
-        // glyph height to the origin.
-        const glyph_ascent = @ceil(rect.size.height + rect.origin.y);
+        // We make an assumption that font smoothing ("thicken")
+        // adds no more than 1 extra pixel to any edge. We don't
+        // add extra size if it's a sbix color font though, since
+        // bitmaps aren't affected by smoothing.
+        const sbix = self.color != null and self.color.?.sbix;
+        if (opts.thicken and !sbix) {
+            rect.size.width += 2.0;
+            rect.size.height += 2.0;
+            rect.origin.x -= 1.0;
+            rect.origin.y -= 1.0;
+        }
 
-        // The glyph height is basically rect.size.height but we do the
-        // ascent plus the descent because both are rounded elements that
-        // will make us more accurate.
-        const height: u32 = @intFromFloat(glyph_ascent + render_y);
-
-        // The glyph width is our advertised bounding with plus the rounding
-        // difference from our rendering X.
-        const width: u32 = @intFromFloat(@ceil(rect.size.width + (rect.origin.x - render_x)));
+        // We compute the minimum and maximum x and y values.
+        // We round our min points down and max points up.
+        const x0: i32, const x1: i32, const y0: i32, const y1: i32 = .{
+            @intFromFloat(@floor(rect.origin.x)),
+            @intFromFloat(@ceil(rect.origin.x) + @ceil(rect.size.width)),
+            @intFromFloat(@floor(rect.origin.y)),
+            @intFromFloat(@ceil(rect.origin.y) + @ceil(rect.size.height)),
+        };
 
         // This bitmap is blank. I've seen it happen in a font, I don't know why.
         // If it is empty, we just return a valid glyph struct that does nothing.
-        if (width == 0 or height == 0) return font.Glyph{
+        if (x1 <= x0 or y1 <= y0) return font.Glyph{
             .width = 0,
             .height = 0,
             .offset_x = 0,
@@ -326,25 +340,8 @@ pub const Face = struct {
             .advance_x = 0,
         };
 
-        // Additional padding we need to add to the bitmap context itself
-        // due to the glyph being larger than standard.
-        const padding_ctx: u32 = padding_ctx: {
-            // If we're doing thicken, then getBoundsForGlyphs does not take
-            // into account the anti-aliasing that will be added to the glyph.
-            // We need to add some padding to allow that to happen. A padding of
-            // 2 is usually enough for anti-aliasing.
-            var result: u32 = if (opts.thicken) 2 else 0;
-
-            // If we have a synthetic bold, add padding for the stroke width
-            if (self.synthetic_bold) |line_width| {
-                // x2 for top and bottom padding
-                result += @intFromFloat(@ceil(line_width) * 2);
-            }
-
-            break :padding_ctx result;
-        };
-        const padded_width: u32 = width + (padding_ctx * 2);
-        const padded_height: u32 = height + (padding_ctx * 2);
+        const width: u32 = @intCast(x1 - x0);
+        const height: u32 = @intCast(y1 - y0);
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
@@ -380,17 +377,17 @@ pub const Face = struct {
         // usually stabilizes pretty quickly and is very infrequent so I think
         // the allocation overhead is acceptable compared to the cost of
         // caching it forever or having to deal with a cache lifetime.
-        const buf = try alloc.alloc(u8, padded_width * padded_height * color.depth);
+        const buf = try alloc.alloc(u8, width * height * color.depth);
         defer alloc.free(buf);
         @memset(buf, 0);
 
         const context = macos.graphics.BitmapContext.context;
         const ctx = try macos.graphics.BitmapContext.create(
             buf,
-            padded_width,
-            padded_height,
+            width,
+            height,
             8,
-            padded_width * color.depth,
+            width * color.depth,
             color.space,
             color.context_opts,
         );
@@ -405,8 +402,8 @@ pub const Face = struct {
         context.fillRect(ctx, .{
             .origin = .{ .x = 0, .y = 0 },
             .size = .{
-                .width = @floatFromInt(padded_width),
-                .height = @floatFromInt(padded_height),
+                .width = @floatFromInt(width),
+                .height = @floatFromInt(height),
             },
         });
 
@@ -437,67 +434,57 @@ pub const Face = struct {
 
         // We want to render the glyphs at (0,0), but the glyphs themselves
         // are offset by bearings, so we have to undo those bearings in order
-        // to get them to 0,0. We also add the padding so that they render
-        // slightly off the edge of the bitmap.
-        const padding_ctx_f64: f64 = @floatFromInt(padding_ctx);
+        // to get them to 0,0.
         self.font.drawGlyphs(&glyphs, &.{
             .{
-                .x = -1 * (render_x - padding_ctx_f64),
-                .y = render_y + padding_ctx_f64,
+                .x = @floatFromInt(-x0),
+                .y = @floatFromInt(-y0),
             },
         }, ctx);
 
         const region = region: {
-            // We need to add a 1px padding to the font so that we don't
-            // get fuzzy issues when blending textures.
-            const padding = 1;
-
-            // Get the full padded region
+            // We reserve a region that's 1px wider and taller than we need
+            // in order to create a 1px separation between adjacent glyphs
+            // to prevent interpolation with adjacent glyphs while sampling
+            // from the atlas.
             var region = try atlas.reserve(
                 alloc,
-                padded_width + (padding * 2), // * 2 because left+right
-                padded_height + (padding * 2), // * 2 because top+bottom
+                width + 1,
+                height + 1,
             );
 
-            // Modify the region so that we remove the padding so that
-            // we write to the non-zero location. The data in an Altlas
-            // is always initialized to zero (Atlas.clear) so we don't
-            // need to worry about zero-ing that.
-            region.x += padding;
-            region.y += padding;
-            region.width -= padding * 2;
-            region.height -= padding * 2;
+            // We adjust the region width and height back down since we
+            // don't need the extra pixel, we just needed to reserve it
+            // so that it isn't used for other glyphs in the future.
+            region.width -= 1;
+            region.height -= 1;
             break :region region;
         };
         atlas.set(region, buf);
 
         const metrics = opts.grid_metrics orelse self.metrics;
-        const offset_y: i32 = offset_y: {
-            // Our Y coordinate in 3D is (0, 0) bottom left, +y is UP.
-            // We need to calculate our baseline from the bottom of a cell.
-            const baseline_from_bottom: f64 = @floatFromInt(metrics.cell_baseline);
 
-            // Next we offset our baseline by the bearing in the font. We
-            // ADD here because CoreText y is UP.
-            const baseline_with_offset = baseline_from_bottom + glyph_ascent;
+        // This should be the distance from the bottom of
+        // the cell to the top of the glyph's bounding box.
+        //
+        // The calculation is distance from bottom of cell to
+        // baseline plus distance from baseline to top of glyph.
+        const offset_y: i32 = @as(i32, @intCast(metrics.cell_baseline)) + y1;
 
-            // Add our context padding we may have created.
-            const baseline_with_padding = baseline_with_offset + padding_ctx_f64;
-
-            break :offset_y @intFromFloat(@ceil(baseline_with_padding));
-        };
-
+        // This should be the distance from the left of
+        // the cell to the left of the glyph's bounding box.
         const offset_x: i32 = offset_x: {
-            // Don't forget to apply our context padding if we have one
-            var result: i32 = @intFromFloat(render_x - padding_ctx_f64);
+            var result: i32 = x0;
 
-            // If our cell was resized to be wider then we center our
-            // glyph in the cell.
+            // If our cell was resized then we adjust our glyph's
+            // position relative to the new center. This keeps glyphs
+            // centered in the cell whether it was made wider or narrower.
             if (metrics.original_cell_width) |original_width| {
-                if (original_width < metrics.cell_width) {
-                    const diff = (metrics.cell_width - original_width) / 2;
-                    result += @intCast(diff);
-                }
+                const before: i32 = @intCast(original_width);
+                const after: i32 = @intCast(metrics.cell_width);
+                // Increase the offset by half of the difference
+                // between the widths to keep things centered.
+                result += @divTrunc(after - before, 2);
             }
 
             break :offset_x result;
@@ -507,21 +494,9 @@ pub const Face = struct {
         var advances: [glyphs.len]macos.graphics.Size = undefined;
         _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
 
-        // std.log.warn("renderGlyph rect={} width={} height={} render_x={} render_y={} offset_y={} ascent={} cell_height={} cell_baseline={}", .{
-        //     rect,
-        //     width,
-        //     height,
-        //     render_x,
-        //     render_y,
-        //     offset_y,
-        //     glyph_ascent,
-        //     self.metrics.cell_height,
-        //     self.metrics.cell_baseline,
-        // });
-
         return .{
-            .width = padded_width,
-            .height = padded_height,
+            .width = width,
+            .height = height,
             .offset_x = offset_x,
             .offset_y = offset_y,
             .atlas_x = region.x,
