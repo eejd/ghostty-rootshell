@@ -256,9 +256,7 @@ vertex CellTextVertexOut cell_text_vertex(
   offset.y = uniforms.cell_size.y - offset.y;
 
   // If we're constrained then we need to scale the glyph.
-  // We also always constrain colored glyphs since we should have
-  // their scaled cell size exactly correct.
-  if (in.mode == MODE_TEXT_CONSTRAINED || in.mode == MODE_TEXT_COLOR) {
+  if (in.mode == MODE_TEXT_CONSTRAINED) {
     float max_width = uniforms.cell_size.x * in.constraint_width;
     if (size.x > max_width) {
       float new_y = size.y * (max_width / size.x);

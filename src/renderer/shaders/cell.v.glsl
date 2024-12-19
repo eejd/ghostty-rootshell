@@ -208,10 +208,8 @@ void main() {
         glyph_offset_calc.y = cell_size_scaled.y - glyph_offset_calc.y;
 
         // If this is a constrained mode, we need to constrain it!
-        // We also always constrain colored glyphs since we should have
-        // their scaled cell size exactly correct.
         vec2 glyph_size_calc = glyph_size;
-        if (mode == MODE_FG_CONSTRAINED || mode == MODE_FG_COLOR) {
+        if (mode == MODE_FG_CONSTRAINED) {
             if (glyph_size.x > cell_size_scaled.x) {
                 float new_y = glyph_size.y * (cell_size_scaled.x / glyph_size.x);
                 glyph_offset_calc.y = glyph_offset_calc.y + ((glyph_size.y - new_y) / 2);
