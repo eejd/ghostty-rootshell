@@ -22,7 +22,7 @@
             .hash = "12205a66d423259567764fa0fc60c82be35365c21aeb76c5a7dc99698401f4f6fefc",
         },
         .ziglyph = .{
-            .url = "https://deps.files.ghostty.dev/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz",
+            .url = "https://deps.files.ghostty.org/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz",
             .hash = "12207831bce7d4abce57b5a98e8f3635811cfefd160bca022eb91fe905d36a02cf25",
         },
 

@@ -7,7 +7,7 @@ class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         // channels but we probably don't want some appcasts in the same file (i.e.
         // tip) so this would be the place to change that. For now, we hardcode the
         // tip appcast URL since it is all we support.
-        return "https://tip.files.ghostty.dev/appcast.xml"
+        return "https://tip.files.ghostty.org/appcast.xml"
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
