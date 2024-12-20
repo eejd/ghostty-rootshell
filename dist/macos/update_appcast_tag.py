@@ -79,20 +79,20 @@ elem.text = now.strftime(pubdate_format)
 elem = ET.SubElement(item, "sparkle:version")
 elem.text = build
 elem = ET.SubElement(item, "sparkle:shortVersionString")
-elem.text = f"{commit} ({now.strftime('%Y-%m-%d')})"
+elem.text = f"{version}"
 elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "13.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
 <h1>Ghostty v{version}</h1>
 <p>
+This release was built from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
+on {now.strftime('%Y-%m-%d')}.
+</p>
+<p>
 We don't currently generate release notes for auto-updates.
 You can view the complete changelog and release notes on
 the <a href="https://ghostty.org">Ghostty website</a>.
-</p>
-<p>
-This release was built from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
-on {now.strftime('%Y-%m-%d')}.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
