@@ -27,7 +27,7 @@ pub fn genConfig(writer: anytype) !void {
         \\
     );
 
-    @setEvalBranchQuota(3000);
+    @setEvalBranchQuota(50_000);
     const fields = @typeInfo(Config).Struct.fields;
     inline for (fields, 0..) |field, i| {
         if (field.name[0] == '_') continue;
@@ -70,15 +70,17 @@ pub fn genConfig(writer: anytype) !void {
             /// code blocks in our comments but the website parser only
             /// supports triple backticks.
             code,
+
+            /// Callouts. We detect these based on paragraphs starting
+            /// with "Note:", "Warning:", etc. (case-insensitive).
+            callout_note,
+            callout_warning,
         } = null;
 
         while (iter.next()) |s| {
             // Empty line resets our block
             if (std.mem.eql(u8, s, "")) {
-                if (block) |v| switch (v) {
-                    .text => {},
-                    .code => try writer.writeAll("```\n"),
-                };
+                try endBlock(writer, block);
                 block = null;
 
                 try writer.writeAll("\n");
@@ -86,10 +88,17 @@ pub fn genConfig(writer: anytype) !void {
             }
 
             // If we don't have a block figure out our type.
+            const first: bool = block == null;
             if (block == null) {
                 if (std.mem.startsWith(u8, s, "    ")) {
                     block = .code;
                     try writer.writeAll("```\n");
+                } else if (std.ascii.startsWithIgnoreCase(s, "note:")) {
+                    block = .callout_note;
+                    try writer.writeAll("<Note>\n");
+                } else if (std.ascii.startsWithIgnoreCase(s, "warning:")) {
+                    block = .callout_warning;
+                    try writer.writeAll("<Warning>\n");
                 } else {
                     block = .text;
                 }
@@ -97,6 +106,9 @@ pub fn genConfig(writer: anytype) !void {
 
             try writer.writeAll(switch (block.?) {
                 .text => s,
+                .callout_note => if (first) s["note:".len..] else s,
+                .callout_warning => if (first) s["warning:".len..] else s,
+
                 .code => if (std.mem.startsWith(u8, s, "    "))
                     s[4..]
                 else
@@ -104,6 +116,16 @@ pub fn genConfig(writer: anytype) !void {
             });
             try writer.writeAll("\n");
         }
+        try endBlock(writer, block);
         try writer.writeAll("\n");
     }
+}
+
+fn endBlock(writer: anytype, block: anytype) !void {
+    if (block) |v| switch (v) {
+        .text => {},
+        .code => try writer.writeAll("```\n"),
+        .callout_note => try writer.writeAll("</Note>\n"),
+        .callout_warning => try writer.writeAll("</Warning>\n"),
+    };
 }
