@@ -1135,7 +1135,7 @@ const Subprocess = struct {
         // This is important because our cwd can be set by the shell (OSC 7)
         // and we don't want to break new windows.
         const cwd: ?[]const u8 = if (self.cwd) |proposed| cwd: {
-            if (std.fs.accessAbsolute(proposed, .{})) {
+            if (std.fs.cwd().access(proposed, .{})) {
                 break :cwd proposed;
             } else |err| {
                 log.warn("cannot access cwd, ignoring: {}", .{err});
