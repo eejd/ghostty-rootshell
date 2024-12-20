@@ -1,7 +1,6 @@
 """
-This script is used to update the appcast.xml file for Ghostty releases.
-The script is currently hardcoded to only work for tip releases and therefore
-doesn't have rich release notes, hardcodes the URL to the tip bucket, etc.
+This script is used to update the appcast.xml file for tagged
+Ghostty releases.
 
 This expects the following files in the current directory:
     - sign_update.txt - contains the output from "sign_update" in the Sparkle
@@ -9,6 +8,7 @@ This expects the following files in the current directory:
     - appcast.xml - the existing appcast file.
 
 And the following environment variables to be set:
+    - GHOSTTY_VERSION - the version number (X.Y.Z format)
     - GHOSTTY_BUILD - the build number
     - GHOSTTY_COMMIT - the commit hash
 
@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 now = datetime.now(timezone.utc)
+version = os.environ["GHOSTTY_VERSION"]
 build = os.environ["GHOSTTY_BUILD"]
 commit = os.environ["GHOSTTY_COMMIT"]
 commit_long = os.environ["GHOSTTY_COMMIT_LONG"]
@@ -83,18 +84,19 @@ elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "13.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
+<h1>Ghostty v{version}</h1>
 <p>
-Automated build from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
-on {now.strftime('%Y-%m-%d')}.
+We don't currently generate release notes for auto-updates.
+You can view the complete changelog and release notes on
+the <a href="https://ghostty.org">Ghostty website</a>.
 </p>
 <p>
-These are automatic per-commit builds generated from the main Git branch.
-We do not generate any release notes for these builds. You can view the full
-commit history <a href="{repo}">on GitHub</a> for all changes.
+This release was built from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
+on {now.strftime('%Y-%m-%d')}.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
-elem.set("url", f"https://tip.files.ghostty.org/{commit_long}/ghostty-macos-universal.zip")
+elem.set("url", f"https://release.files.ghostty.org/{version}/ghostty-macos-universal.zip")
 elem.set("type", "application/octet-stream")
 for key, value in attrs.items():
     elem.set(key, value)
