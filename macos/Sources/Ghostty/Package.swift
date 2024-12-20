@@ -200,7 +200,12 @@ extension Ghostty {
         case visible
         case hidden
     }
-    
+
+    /// Enum for auto-update-channel config option
+    enum AutoUpdateChannel: String {
+        case tip
+        case stable
+    }
 }
 
 // MARK: Surface Notification

@@ -408,6 +408,17 @@ extension Ghostty {
             return AutoUpdate(rawValue: str) ?? defaultValue
         }
 
+        var autoUpdateChannel: AutoUpdateChannel {
+            let defaultValue = AutoUpdateChannel.stable
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "auto-update-channel"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return AutoUpdateChannel(rawValue: str) ?? defaultValue
+        }
+
         var autoSecureInput: Bool {
             guard let config = self.config else { return true }
             var v = false;

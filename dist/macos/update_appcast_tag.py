@@ -52,8 +52,8 @@ channel = et.find("channel")
 # the same version, Sparkle will report invalid signatures if it picks
 # the wrong one when updating.
 for item in channel.findall("item"):
-    version = item.find("sparkle:version", namespaces)
-    if version is not None and version.text == build:
+    sparkle_version = item.find("sparkle:version", namespaces)
+    if sparkle_version is not None and sparkle_version.text == build:
         channel.remove(item)
 
     # We also remove any item that doesn't have a pubDate. This should
