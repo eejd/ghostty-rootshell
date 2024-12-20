@@ -138,7 +138,7 @@ const c = @cImport({
 /// requested style, then the font will be used as-is since the style is
 /// not synthetic.
 ///
-/// Warning! An easy mistake is to disable `bold` or `italic` but not
+/// Warning: An easy mistake is to disable `bold` or `italic` but not
 /// `bold-italic`. Disabling only `bold` or `italic` will NOT disable either
 /// in the `bold-italic` style. If you want to disable `bold-italic`, you must
 /// explicitly disable it. You cannot partially disable `bold-italic`.
@@ -780,7 +780,7 @@ class: ?[:0]const u8 = null,
 /// or the alias. When debugging keybinds, the non-aliased modifier will always
 /// be used in output.
 ///
-/// Note that the fn or "globe" key on keyboards are not supported as a
+/// Note: The fn or "globe" key on keyboards are not supported as a
 /// modifier. This is a limitation of the operating systems and GUI toolkits
 /// that Ghostty uses.
 ///
@@ -791,7 +791,7 @@ class: ?[:0]const u8 = null,
 /// is sometimes called a leader key, a key chord, a key table, etc. There
 /// is no hardcoded limit on the number of parts in a sequence.
 ///
-/// Warning: if you define a sequence as a CLI argument to `ghostty`,
+/// Warning: If you define a sequence as a CLI argument to `ghostty`,
 /// you probably have to quote the keybind since `>` is a special character
 /// in most shells. Example: ghostty --keybind='ctrl+a>n=new_window'
 ///
@@ -880,7 +880,7 @@ class: ?[:0]const u8 = null,
 ///     Since they are not associated with a specific terminal surface,
 ///     they're never encoded.
 ///
-/// Keybind trigger are not unique per prefix combination. For example,
+/// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
 /// set later will overwrite the keybind set earlier. In this case, the
 /// `global:` keybind will be used.
@@ -889,7 +889,7 @@ class: ?[:0]const u8 = null,
 /// `global:unconsumed:ctrl+a=reload_config` will make the keybind global
 /// and not consume the input to reload the config.
 ///
-/// A note on `global:`: this feature is only supported on macOS. On macOS,
+/// Note: `global:` is only supported on macOS. On macOS,
 /// this feature requires accessibility permissions to be granted to Ghostty.
 /// When a `global:` keybind is specified and Ghostty is launched or reloaded,
 /// Ghostty will attempt to request these permissions. If the permissions are
@@ -1471,7 +1471,7 @@ keybind: Keybinds = .{},
 /// Custom shaders to run after the default shaders. This is a file path
 /// to a GLSL-syntax shader for all platforms.
 ///
-/// WARNING: Invalid shaders can cause Ghostty to become unusable such as by
+/// Warning: Invalid shaders can cause Ghostty to become unusable such as by
 /// causing the window to be completely black. If this happens, you can
 /// unset this configuration to disable the shader.
 ///
@@ -1722,7 +1722,7 @@ keybind: Keybinds = .{},
 /// If this is true, then any cgroup initialization failure will cause
 /// Ghostty to exit or new surfaces to not be created.
 ///
-/// Note: this currently only affects cgroup initialization. Subprocesses
+/// Note: This currently only affects cgroup initialization. Subprocesses
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 

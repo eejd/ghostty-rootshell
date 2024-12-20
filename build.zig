@@ -1596,32 +1596,63 @@ fn buildWebData(
     b: *std.Build,
     config: BuildConfig,
 ) !void {
-    const webgen_config = b.addExecutable(.{
-        .name = "webgen_config",
-        .root_source_file = b.path("src/main.zig"),
-        .target = b.host,
-    });
-    try addHelp(b, webgen_config, config);
-
     {
-        const buildconfig = config: {
-            var copy = config;
-            copy.exe_entrypoint = .webgen_config;
-            break :config copy;
-        };
+        const webgen_config = b.addExecutable(.{
+            .name = "webgen_config",
+            .root_source_file = b.path("src/main.zig"),
+            .target = b.host,
+        });
+        try addHelp(b, webgen_config, config);
 
-        const options = b.addOptions();
-        try buildconfig.addOptions(options);
-        webgen_config.root_module.addOptions("build_options", options);
+        {
+            const buildconfig = config: {
+                var copy = config;
+                copy.exe_entrypoint = .webgen_config;
+                break :config copy;
+            };
+
+            const options = b.addOptions();
+            try buildconfig.addOptions(options);
+            webgen_config.root_module.addOptions("build_options", options);
+        }
+
+        const webgen_config_step = b.addRunArtifact(webgen_config);
+        const webgen_config_out = webgen_config_step.captureStdOut();
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            webgen_config_out,
+            "share/ghostty/webdata/config.mdx",
+        ).step);
     }
 
-    const webgen_config_step = b.addRunArtifact(webgen_config);
-    const webgen_config_out = webgen_config_step.captureStdOut();
+    {
+        const webgen_actions = b.addExecutable(.{
+            .name = "webgen_actions",
+            .root_source_file = b.path("src/main.zig"),
+            .target = b.host,
+        });
+        try addHelp(b, webgen_actions, config);
 
-    b.getInstallStep().dependOn(&b.addInstallFile(
-        webgen_config_out,
-        "share/ghostty/webdata/config.mdx",
-    ).step);
+        {
+            const buildconfig = config: {
+                var copy = config;
+                copy.exe_entrypoint = .webgen_actions;
+                break :config copy;
+            };
+
+            const options = b.addOptions();
+            try buildconfig.addOptions(options);
+            webgen_actions.root_module.addOptions("build_options", options);
+        }
+
+        const webgen_actions_step = b.addRunArtifact(webgen_actions);
+        const webgen_actions_out = webgen_actions_step.captureStdOut();
+
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            webgen_actions_out,
+            "share/ghostty/webdata/actions.mdx",
+        ).step);
+    }
 }
 
 fn benchSteps(
