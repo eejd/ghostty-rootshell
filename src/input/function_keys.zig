@@ -89,7 +89,7 @@ pub const keys = keys: {
     // Function Keys. todo: f13-f35 but we need to add to input.Key
     result.set(.f1, pcStyle("\x1b[1;{}P") ++ .{.{ .sequence = "\x1BOP" }});
     result.set(.f2, pcStyle("\x1b[1;{}Q") ++ .{.{ .sequence = "\x1BOQ" }});
-    result.set(.f3, pcStyle("\x1b[1;{}R") ++ .{.{ .sequence = "\x1BOR" }});
+    result.set(.f3, pcStyle("\x1b[13;{}~") ++ .{.{ .sequence = "\x1BOR" }});
     result.set(.f4, pcStyle("\x1b[1;{}S") ++ .{.{ .sequence = "\x1BOS" }});
     result.set(.f5, pcStyle("\x1b[15;{}~") ++ .{.{ .sequence = "\x1B[15~" }});
     result.set(.f6, pcStyle("\x1b[17;{}~") ++ .{.{ .sequence = "\x1B[17~" }});
