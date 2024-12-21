@@ -45,6 +45,10 @@ For more details, see [About Ghostty](https://ghostty.org/docs/about).
 
 See the [download page](https://ghostty.org/download) on the Ghostty website.
 
+## Documentation
+
+See the [documentation](https://ghostty.org/docs) on the Ghostty website.
+
 ## Roadmap and Status
 
 The high-level ambitious plan for the project, in order:
@@ -104,8 +108,6 @@ feature rich.
 
 > [!NOTE]
 > Despite being _very fast_, there is a lot of room for improvement here.
-> We still consider some aspects of our performance a "bug" and plan on
-> taking a dedicated pass to improve performance before public release.
 
 #### Richer Windowing Features
 
