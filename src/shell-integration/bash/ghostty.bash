@@ -148,7 +148,7 @@ function __ghostty_precmd() {
 
     if test "$_ghostty_executing" != ""; then
       # End of current command. Report its status.
-      builtin printf "\033]133;D;%s;aid=%s\007" "$ret" "$BASHPID"
+      builtin printf "\e]133;D;%s;aid=%s\a" "$ret" "$BASHPID"
     fi
 
     # unfortunately bash provides no hooks to detect cwd changes
@@ -160,7 +160,7 @@ function __ghostty_precmd() {
     fi
 
     # Fresh line and start of prompt.
-    builtin printf "\033]133;A;aid=%s\007" "$BASHPID"
+    builtin printf "\e]133;A;aid=%s\a" "$BASHPID"
     _ghostty_executing=0
 }
 
@@ -168,7 +168,7 @@ function __ghostty_preexec() {
     PS0="$_GHOSTTY_SAVE_PS0"
     PS1="$_GHOSTTY_SAVE_PS1"
     PS2="$_GHOSTTY_SAVE_PS2"
-    builtin printf "\033]133;C;\007"
+    builtin printf "\e]133;C;\a"
     _ghostty_executing=1
 }
 
