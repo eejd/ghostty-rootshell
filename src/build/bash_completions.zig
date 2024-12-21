@@ -45,6 +45,40 @@ fn writeBashCompletions(writer: anytype) !void {
         \\  done
         \\}
         \\
+        \\_fonts() {
+        \\  local IFS=$'\n'
+        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$($ghostty +list-fonts | grep '^[A-Z]' )" -- "$cur")
+        \\}
+        \\
+        \\_themes() {
+        \\  local IFS=$'\n'
+        \\  mapfile -t COMPREPLY < <( compgen -P '"' -S '"' -W "$($ghostty +list-themes | sed -E 's/^(.*) \(.*$/\1/')" -- "$cur")
+        \\}
+        \\
+        \\_files() {
+        \\  mapfile -t COMPREPLY < <( compgen -o filenames -f -- "$cur" )
+        \\  for i in "${!COMPREPLY[@]}"; do
+        \\    if [[ -d "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]}/";
+        \\    fi
+        \\    if [[ -f "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]} ";
+        \\    fi
+        \\  done
+        \\}
+        \\
+        \\_dirs() {
+        \\  mapfile -t COMPREPLY < <( compgen -o dirnames -d -- "$cur" )
+        \\  for i in "${!COMPREPLY[@]}"; do
+        \\    if [[ -d "${COMPREPLY[i]}" ]]; then
+        \\      COMPREPLY[i]="${COMPREPLY[i]}/";
+        \\    fi
+        \\  done
+        \\  if [[ "${#COMPREPLY[@]}" == 0 && -d "$cur" ]]; then
+        \\    COMPREPLY=( "$cur " )
+        \\  fi
+        \\}
+        \\
         \\config="--help"
         \\config+=" --version"
         \\
@@ -70,13 +104,13 @@ fn writeBashCompletions(writer: anytype) !void {
         try writer.writeAll(pad2 ++ "--" ++ field.name ++ ") ");
 
         if (std.mem.startsWith(u8, field.name, "font-family"))
-            try writer.writeAll("return ;;")
+            try writer.writeAll("_fonts ;;")
         else if (std.mem.eql(u8, "theme", field.name))
-            try writer.writeAll("return ;;")
+            try writer.writeAll("_themes ;;")
         else if (std.mem.eql(u8, "working-directory", field.name))
-            try writer.writeAll("return ;;")
+            try writer.writeAll("_dirs ;;")
         else if (field.type == Config.RepeatablePath)
-            try writer.writeAll("return ;;")
+            try writer.writeAll("_files ;;")
         else {
             const compgenPrefix = "mapfile -t COMPREPLY < <( compgen -W \"";
             const compgenSuffix = "\" -- \"$cur\" ); addSpaces ;;";
@@ -206,7 +240,7 @@ fn writeBashCompletions(writer: anytype) !void {
                 },
                 else => {
                     if (std.mem.eql(u8, "config-file", opt.name)) {
-                        try writer.writeAll("return ;;");
+                        try writer.writeAll("_files ;;");
                     } else try writer.writeAll("return;;");
                 },
             }
@@ -246,12 +280,23 @@ fn writeBashCompletions(writer: anytype) !void {
         \\  cur=""; prev=""; prevWasEq=false; COMPREPLY=()
         \\  ghostty="$1"
         \\
+        \\  # script assumes default COMP_WORDBREAKS of roughly $' \t\n"\'><=;|&(:'
+        \\  # if = is missing this script will degrade to matching on keys only.
+        \\  # eg: --key=
+        \\  # this can be improved if needed see: https://github.com/ghostty-org/ghostty/discussions/2994
+        \\
         \\  if [ "$2" = "=" ]; then cur=""
         \\  else                    cur="$2"
         \\  fi
         \\
         \\  if [ "$3" = "=" ]; then prev="${COMP_WORDS[COMP_CWORD-2]}"; prevWasEq=true;
         \\  else                    prev="${COMP_WORDS[COMP_CWORD-1]}"
+        \\  fi
+        \\
+        \\  # current completion is double quoted add a space so the curor progresses
+        \\  if [[ "$2" == \"*\" ]]; then
+        \\    COMPREPLY=( "$cur " );
+        \\    return;
         \\  fi
         \\
         \\  case "$COMP_CWORD" in
@@ -266,6 +311,12 @@ fn writeBashCompletions(writer: anytype) !void {
         \\      case "$prev" in
         \\        -e | --help | --version) return 0 ;;
         \\        *)
+        \\          if [[ "=" != "${COMP_WORDS[COMP_CWORD]}" && $prevWasEq != true ]]; then
+        \\            # must be completing with a space after the key eg: '--<key> '
+        \\            # clear out prev so we don't run any of the key specific completions
+        \\            prev=""
+        \\          fi
+        \\        
         \\          case "${COMP_WORDS[1]}" in
         \\            --*) _handleConfig ;;
         \\            +*) _handleActions ;;
