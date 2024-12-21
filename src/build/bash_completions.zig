@@ -37,7 +37,6 @@ fn writeBashCompletions(writer: anytype) !void {
     const pad4 = pad3 ++ pad1;
 
     try writer.writeAll(
-        \\
         \\# -o nospace requires we add back a space when a completion is finished
         \\# and not part of a --key= completion
         \\addSpaces() {
@@ -280,6 +279,11 @@ fn writeBashCompletions(writer: anytype) !void {
         \\_ghostty() {
         \\  cur=""; prev=""; prevWasEq=false; COMPREPLY=()
         \\  ghostty="$1"
+        \\
+        \\  # script assumes default COMP_WORDBREAKS of roughly $' \t\n"\'><=;|&(:'
+        \\  # if = is missing this script will degrade to matching on keys only.
+        \\  # eg: --key=
+        \\  # this can be improved if needed see: https://github.com/ghostty-org/ghostty/discussions/2994
         \\
         \\  if [ "$2" = "=" ]; then cur=""
         \\  else                    cur="$2"
