@@ -704,6 +704,11 @@ fullscreen: bool = false,
 /// window to be this title at all times and Ghostty will ignore any set title
 /// escape sequences programs (such as Neovim) may send.
 ///
+/// If you want a blank title, set this to one or more spaces by quoting
+/// the value. For example, `title = " "`. This effectively hides the title.
+/// This is necessary because setting a blank value resets the title to the
+/// default value of the running program.
+///
 /// This configuration can be reloaded at runtime. If it is set, the title
 /// will update for all windows. If it is unset, the next title change escape
 /// sequence will be honored but previous changes will not retroactively
