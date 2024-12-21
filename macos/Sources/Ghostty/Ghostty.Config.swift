@@ -232,7 +232,7 @@ extension Ghostty {
             guard let ptr = v else { return defaultValue }
             return String(cString: ptr)
         }
-        
+
         var macosTitlebarProxyIcon: MacOSTitlebarProxyIcon {
             let defaultValue = MacOSTitlebarProxyIcon.visible
             guard let config = self.config else { return defaultValue }
@@ -363,6 +363,14 @@ extension Ghostty {
             guard let config = self.config else { return 0.2 }
             var v: Double = 0.2
             let key = "quick-terminal-animation-duration"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
+
+        var quickTerminalAutoHide: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "quick-terminal-autohide"
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }

@@ -1404,6 +1404,10 @@ keybind: Keybinds = .{},
 /// runtime.
 @"quick-terminal-animation-duration": f64 = 0.2,
 
+/// Automatically hide the quick terminal when focus shifts to another window.
+/// Set it to false for the quick terminal to remain open even when it loses focus.
+@"quick-terminal-autohide": bool = true,
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
