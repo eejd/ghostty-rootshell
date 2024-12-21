@@ -96,7 +96,7 @@ the <a href="https://ghostty.org">Ghostty website</a>.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
-elem.set("url", f"https://release.files.ghostty.org/{version}/ghostty-macos-universal.zip")
+elem.set("url", f"https://release.files.ghostty.org/{version}/Ghostty.dmg")
 elem.set("type", "application/octet-stream")
 for key, value in attrs.items():
     elem.set(key, value)
