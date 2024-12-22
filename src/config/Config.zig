@@ -1693,6 +1693,10 @@ keybind: Keybinds = .{},
 ///    The `macos-icon-ghost-color` and `macos-icon-screen-color`
 ///    configurations are required for this style.
 ///
+/// WARNING: The `custom-style` option is _experimental_. We may change
+/// the format of the custom styles in the future. We're still finalizing
+/// the exact layers and customization options that will be available.
+///
 /// Other caveats:
 ///
 ///   * The icon in the update dialog will always be the official icon.
