@@ -152,7 +152,6 @@ pub fn renderGlyph(
 
             break :cursor g;
         },
-
     };
 }
 
@@ -262,6 +261,10 @@ const Kind = enum {
             //                    
             //            
             0xF5D0...0xF60D => .box,
+
+            // Separated Block Quadrants from Symbols for Legacy Computing Supplement
+            // 𜰡 𜰢 𜰣 𜰤 𜰥 𜰦 𜰧 𜰨 𜰩 𜰪 𜰫 𜰬 𜰭 𜰮 𜰯
+            0x1CC21...0x1CC2F => .box,
 
             // Powerline fonts
             0xE0B0,
