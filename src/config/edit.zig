@@ -11,6 +11,7 @@ pub fn open(alloc_gpa: Allocator) !void {
         const xdg_config_path = try internal_os.xdg.config(alloc_gpa, .{ .subdir = "ghostty/config" });
 
         if (comptime builtin.os.tag == .macos) macos: {
+            // On macOS, use the application support path if the XDG path doesn't exists.
             if (std.fs.accessAbsolute(xdg_config_path, .{})) {
                 break :macos;
             } else |err| switch (err) {
