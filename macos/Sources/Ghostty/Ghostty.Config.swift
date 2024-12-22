@@ -355,7 +355,7 @@ extension Ghostty {
             }
 
             return .init(
-                red: Double(color.r),
+                red: Double(color.r) / 255,
                 green: Double(color.g) / 255,
                 blue: Double(color.b) / 255
             )
