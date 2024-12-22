@@ -263,6 +263,17 @@ extension Ghostty {
             return MacOSIcon(rawValue: str) ?? defaultValue
         }
 
+        var macosIconFrame: MacOSIconFrame {
+            let defaultValue = MacOSIconFrame.aluminum
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-icon-frame"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacOSIconFrame(rawValue: str) ?? defaultValue
+        }
+
         var macosIconGhostColor: OSColor? {
             guard let config = self.config else { return nil }
             var v: ghostty_config_color_s = .init()

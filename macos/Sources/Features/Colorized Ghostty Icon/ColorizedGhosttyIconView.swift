@@ -6,7 +6,8 @@ struct ColorizedGhosttyIconView: View {
     var body: some View {
         Image(nsImage: ColorizedGhosttyIcon(
             screenColors: [.purple, .blue],
-            ghostColor: .yellow
+            ghostColor: .yellow,
+            frame: .aluminum
         ).makeImage()!)
     }
 }

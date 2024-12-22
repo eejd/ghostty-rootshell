@@ -16,7 +16,6 @@ const build_config = @import("../build_config.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const build_config = @import("../build_config.zig");
 const global_state = &@import("../global.zig").state;
 const fontpkg = @import("../font/main.zig");
 const inputpkg = @import("../input.zig");
@@ -1688,11 +1687,11 @@ keybind: Keybinds = .{},
 /// Valid values:
 ///
 ///  * `official` - Use the official Ghostty icon.
-///  * `custom-color` - Use the official Ghostty icon but with custom
-///    colors applied to various layers. The custom colors must be
-///    specified using the additional `macos-icon-x-color` configurations.
-///    Note that all colors are required. If any are missing, the icon
-///    will not be changed.
+///  * `custom-style` - Use the official Ghostty icon but with custom
+///    styles applied to various layers. The custom styles must be
+///    specified using the additional `macos-icon`-prefixed configurations.
+///    The `macos-icon-ghost-color` and `macos-icon-screen-color`
+///    configurations are required for this style.
 ///
 /// Other caveats:
 ///
@@ -1703,12 +1702,27 @@ keybind: Keybinds = .{},
 ///
 @"macos-icon": MacAppIcon = .official,
 
+/// The material to use for the frame of the macOS app icon.
+///
+/// Valid values:
+///
+///  * `aluminum` - A brushed aluminum frame. This is the default.
+///  * `beige` - A classic 90's computer beige frame.
+///  * `plastic` - A glossy, dark plastic frame.
+///  * `chrome` - A shiny chrome frame.
+///
+/// This only has an effect when `macos-icon` is set to `custom-style`.
+@"macos-icon-frame": MacAppIconFrame = .aluminum,
+
 /// The color of the ghost in the macOS app icon.
 ///
 /// The format of the color is the same as the `background` configuration;
 /// see that for more information.
 ///
-/// This only has an effect when `macos-icon` is set to `custom-color`.
+/// Note: This configuration is required when `macos-icon` is set to
+/// `custom-style`.
+///
+/// This only has an effect when `macos-icon` is set to `custom-style`.
 @"macos-icon-ghost-color": ?Color = null,
 
 /// The color of the screen in the macOS app icon.
@@ -1718,7 +1732,10 @@ keybind: Keybinds = .{},
 /// format of the color is the same as the `background` configuration;
 /// see that for more information.
 ///
-/// This only has an effect when `macos-icon` is set to `custom-color`.
+/// Note: This configuration is required when `macos-icon` is set to
+/// `custom-style`.
+///
+/// This only has an effect when `macos-icon` is set to `custom-style`.
 @"macos-icon-screen-color": ?ColorList = null,
 
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
@@ -5107,7 +5124,15 @@ pub const MacTitlebarProxyIcon = enum {
 /// format at all.
 pub const MacAppIcon = enum {
     official,
-    @"custom-color",
+    @"custom-style",
+};
+
+/// See macos-icon-frame
+pub const MacAppIconFrame = enum {
+    aluminum,
+    beige,
+    plastic,
+    chrome,
 };
 
 /// See gtk-single-instance

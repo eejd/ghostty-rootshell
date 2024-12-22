@@ -532,12 +532,13 @@ class AppDelegate: NSObject,
             self.appIcon = nil
             break
 
-        case .customColor:
+        case .customStyle:
             guard let ghostColor = config.macosIconGhostColor else { break }
             guard let screenColors = config.macosIconScreenColor else { break }
             guard let icon = ColorizedGhosttyIcon(
                 screenColors: screenColors,
-                ghostColor: ghostColor
+                ghostColor: ghostColor,
+                frame: config.macosIconFrame
             ).makeImage() else { break }
             self.appIcon = icon
         }
