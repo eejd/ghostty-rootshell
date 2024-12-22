@@ -252,6 +252,46 @@ extension Ghostty {
             return v
         }
 
+        var macosIcon: MacOSIcon {
+            let defaultValue = MacOSIcon.official
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-icon"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacOSIcon(rawValue: str) ?? defaultValue
+        }
+
+        var macosIconFrame: MacOSIconFrame {
+            let defaultValue = MacOSIconFrame.aluminum
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-icon-frame"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacOSIconFrame(rawValue: str) ?? defaultValue
+        }
+
+        var macosIconGhostColor: OSColor? {
+            guard let config = self.config else { return nil }
+            var v: ghostty_config_color_s = .init()
+            let key = "macos-icon-ghost-color"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            return .init(ghostty: v)
+        }
+
+        var macosIconScreenColor: [OSColor]? {
+            guard let config = self.config else { return nil }
+            var v: ghostty_config_color_list_s = .init()
+            let key = "macos-icon-screen-color"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard v.len > 0 else { return nil }
+            let buffer = UnsafeBufferPointer(start: v.colors, count: v.len)
+            return buffer.map { .init(ghostty: $0) }
+        }
+
         var focusFollowsMouse : Bool {
             guard let config = self.config else { return false }
             var v = false;
@@ -261,9 +301,9 @@ extension Ghostty {
         }
 
         var backgroundColor: Color {
-            var rgb: UInt32 = 0
+            var color: ghostty_config_color_s = .init();
             let bg_key = "background"
-            if (!ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count))) {
+            if (!ghostty_config_get(config, &color, bg_key, UInt(bg_key.count))) {
 #if os(macOS)
                 return Color(NSColor.windowBackgroundColor)
 #elseif os(iOS)
@@ -273,14 +313,10 @@ extension Ghostty {
 #endif
             }
 
-            let red = Double(rgb & 0xff)
-            let green = Double((rgb >> 8) & 0xff)
-            let blue = Double((rgb >> 16) & 0xff)
-
-            return Color(
-                red: red / 255,
-                green: green / 255,
-                blue: blue / 255
+            return .init(
+                red: Double(color.r) / 255,
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
             )
         }
 
@@ -311,21 +347,17 @@ extension Ghostty {
         var unfocusedSplitFill: Color {
             guard let config = self.config else { return .white }
 
-            var rgb: UInt32 = 16777215  // white default
+            var color: ghostty_config_color_s = .init();
             let key = "unfocused-split-fill"
-            if (!ghostty_config_get(config, &rgb, key, UInt(key.count))) {
+            if (!ghostty_config_get(config, &color, key, UInt(key.count))) {
                 let bg_key = "background"
-                _ = ghostty_config_get(config, &rgb, bg_key, UInt(bg_key.count));
+                _ = ghostty_config_get(config, &color, bg_key, UInt(bg_key.count));
             }
 
-            let red = Double(rgb & 0xff)
-            let green = Double((rgb >> 8) & 0xff)
-            let blue = Double((rgb >> 16) & 0xff)
-
-            return Color(
-                red: red / 255,
-                green: green / 255,
-                blue: blue / 255
+            return .init(
+                red: Double(color.r),
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
             )
         }
 
@@ -406,6 +438,17 @@ extension Ghostty {
             guard let ptr = v else { return defaultValue }
             let str = String(cString: ptr)
             return AutoUpdate(rawValue: str) ?? defaultValue
+        }
+
+        var autoUpdateChannel: AutoUpdateChannel {
+            let defaultValue = AutoUpdateChannel.stable
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "auto-update-channel"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return AutoUpdateChannel(rawValue: str) ?? defaultValue
         }
 
         var autoSecureInput: Bool {

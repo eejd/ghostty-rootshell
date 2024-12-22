@@ -600,7 +600,6 @@ pub const Face = struct {
 
     const CalcMetricsError = error{
         CopyTableError,
-        MissingOS2Table,
     };
 
     /// Calculate the metrics associated with a face. This is not public because
@@ -629,70 +628,80 @@ pub const Face = struct {
         const post = face.getSfntTable(.post) orelse return error.CopyTableError;
 
         // Read the 'OS/2' table out of the font data.
-        const os2 = face.getSfntTable(.os2) orelse return error.CopyTableError;
+        const os2_: ?*freetype.c.TT_OS2 = os2: {
+            const os2 = face.getSfntTable(.os2) orelse break :os2 null;
+            if (os2.version == 0xFFFF) break :os2 null;
+            break :os2 os2;
+        };
 
         // Read the 'hhea' table out of the font data.
         const hhea = face.getSfntTable(.hhea) orelse return error.CopyTableError;
-
-        // Some fonts don't actually have an OS/2 table, which
-        // we need in order to do the metrics calculations, in
-        // such cases FreeType sets the version to 0xFFFF
-        if (os2.version == 0xFFFF) return error.MissingOS2Table;
 
         const units_per_em = head.Units_Per_EM;
         const px_per_em: f64 = @floatFromInt(size_metrics.y_ppem);
         const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
 
         const ascent: f64, const descent: f64, const line_gap: f64 = vertical_metrics: {
-            const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
-            const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
-            const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
+            const hhea_ascent: f64 = @floatFromInt(hhea.Ascender);
+            const hhea_descent: f64 = @floatFromInt(hhea.Descender);
+            const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
 
-            // If the font says to use typo metrics, trust it.
-            // (The USE_TYPO_METRICS bit is bit 7)
-            if (os2.fsSelection & (1 << 7) != 0) {
+            if (os2_) |os2| {
+                const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
+                const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
+                const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
+
+                // If the font says to use typo metrics, trust it.
+                // (The USE_TYPO_METRICS bit is bit 7)
+                if (os2.fsSelection & (1 << 7) != 0) {
+                    break :vertical_metrics .{
+                        os2_ascent * px_per_unit,
+                        os2_descent * px_per_unit,
+                        os2_line_gap * px_per_unit,
+                    };
+                }
+
+                // Otherwise we prefer the height metrics from 'hhea' if they
+                // are available, or else OS/2 sTypo* metrics, and if all else
+                // fails then we use OS/2 usWin* metrics.
+                //
+                // This is not "standard" behavior, but it's our best bet to
+                // account for fonts being... just weird. It's pretty much what
+                // FreeType does to get its generic ascent and descent metrics.
+
+                if (hhea.Ascender != 0 or hhea.Descender != 0) {
+                    break :vertical_metrics .{
+                        hhea_ascent * px_per_unit,
+                        hhea_descent * px_per_unit,
+                        hhea_line_gap * px_per_unit,
+                    };
+                }
+
+                if (os2_ascent != 0 or os2_descent != 0) {
+                    break :vertical_metrics .{
+                        os2_ascent * px_per_unit,
+                        os2_descent * px_per_unit,
+                        os2_line_gap * px_per_unit,
+                    };
+                }
+
+                const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
+                const win_descent: f64 = @floatFromInt(os2.usWinDescent);
                 break :vertical_metrics .{
-                    os2_ascent * px_per_unit,
-                    os2_descent * px_per_unit,
-                    os2_line_gap * px_per_unit,
+                    win_ascent * px_per_unit,
+                    // usWinDescent is *positive* -> down unlike sTypoDescender
+                    // and hhea.Descender, so we flip its sign to fix this.
+                    -win_descent * px_per_unit,
+                    0.0,
                 };
             }
 
-            // Otherwise we prefer the height metrics from 'hhea' if they
-            // are available, or else OS/2 sTypo* metrics, and if all else
-            // fails then we use OS/2 usWin* metrics.
-            //
-            // This is not "standard" behavior, but it's our best bet to
-            // account for fonts being... just weird. It's pretty much what
-            // FreeType does to get its generic ascent and descent metrics.
-
-            if (hhea.Ascender != 0 or hhea.Descender != 0) {
-                const hhea_ascent: f64 = @floatFromInt(hhea.Ascender);
-                const hhea_descent: f64 = @floatFromInt(hhea.Descender);
-                const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
-                break :vertical_metrics .{
-                    hhea_ascent * px_per_unit,
-                    hhea_descent * px_per_unit,
-                    hhea_line_gap * px_per_unit,
-                };
-            }
-
-            if (os2_ascent != 0 or os2_descent != 0) {
-                break :vertical_metrics .{
-                    os2_ascent * px_per_unit,
-                    os2_descent * px_per_unit,
-                    os2_line_gap * px_per_unit,
-                };
-            }
-
-            const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
-            const win_descent: f64 = @floatFromInt(os2.usWinDescent);
+            // If our font has no OS/2 table, then we just
+            // blindly use the metrics from the hhea table.
             break :vertical_metrics .{
-                win_ascent * px_per_unit,
-                // usWinDescent is *positive* -> down unlike sTypoDescender
-                // and hhea.Descender, so we flip its sign to fix this.
-                -win_descent * px_per_unit,
-                0.0,
+                hhea_ascent * px_per_unit,
+                hhea_descent * px_per_unit,
+                hhea_line_gap * px_per_unit,
             };
         };
 
@@ -714,17 +723,23 @@ pub const Face = struct {
             @as(f64, @floatFromInt(post.underlineThickness)) * px_per_unit;
 
         // Similar logic to the underline above.
-        const has_broken_strikethrough = os2.yStrikeoutSize == 0;
+        const strikethrough_position, const strikethrough_thickness = st: {
+            const os2 = os2_ orelse break :st .{ null, null };
 
-        const strikethrough_position = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
-            null
-        else
-            @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+            const has_broken_strikethrough = os2.yStrikeoutSize == 0;
 
-        const strikethrough_thickness = if (has_broken_strikethrough)
-            null
-        else
-            @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+            const pos: ?f64 = if (has_broken_strikethrough and os2.yStrikeoutPosition == 0)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutPosition)) * px_per_unit;
+
+            const thick: ?f64 = if (has_broken_strikethrough)
+                null
+            else
+                @as(f64, @floatFromInt(os2.yStrikeoutSize)) * px_per_unit;
+
+            break :st .{ pos, thick };
+        };
 
         // Cell width is calculated by calculating the widest width of the
         // visible ASCII characters. Usually 'M' is widest but we just take
@@ -754,37 +769,37 @@ pub const Face = struct {
             break :cell_width max;
         };
 
-        // The OS/2 table does not include sCapHeight or sxHeight in version 1.
-        const has_os2_height_metrics = os2.version >= 2;
-
-        // We use the cap height specified by the font if it's
-        // available, otherwise we try to measure the `H` glyph.
-        const cap_height: ?f64 = cap_height: {
-            if (has_os2_height_metrics) {
-                break :cap_height @as(f64, @floatFromInt(os2.sCapHeight)) * px_per_unit;
-            }
-            if (face.getCharIndex('H')) |glyph_index| {
-                if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                    break :cap_height f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
-                } else |_| {}
+        // We use the cap and ex heights specified by the font if they're
+        // available, otherwise we try to measure the `H` and `x` glyphs.
+        const cap_height: ?f64, const ex_height: ?f64 = heights: {
+            if (os2_) |os2| {
+                // The OS/2 table does not include these metrics in version 1.
+                if (os2.version >= 2) {
+                    break :heights .{
+                        @as(f64, @floatFromInt(os2.sCapHeight)) * px_per_unit,
+                        @as(f64, @floatFromInt(os2.sxHeight)) * px_per_unit,
+                    };
+                }
             }
 
-            break :cap_height null;
-        };
-
-        // We use the ex height specified by the font if it's
-        // available, otherwise we try to measure the `x` glyph.
-        const ex_height: ?f64 = ex_height: {
-            if (has_os2_height_metrics) {
-                break :ex_height @as(f64, @floatFromInt(os2.sxHeight)) * px_per_unit;
-            }
-            if (face.getCharIndex('x')) |glyph_index| {
-                if (face.loadGlyph(glyph_index, .{ .render = true })) {
-                    break :ex_height f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
-                } else |_| {}
-            }
-
-            break :ex_height null;
+            break :heights .{
+                cap: {
+                    if (face.getCharIndex('H')) |glyph_index| {
+                        if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                            break :cap f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
+                        } else |_| {}
+                    }
+                    break :cap null;
+                },
+                ex: {
+                    if (face.getCharIndex('x')) |glyph_index| {
+                        if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                            break :ex f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
+                        } else |_| {}
+                    }
+                    break :ex null;
+                },
+            };
         };
 
         var result = font.face.Metrics.calc(.{

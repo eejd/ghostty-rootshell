@@ -80,7 +80,7 @@ elem.text = build
 elem = ET.SubElement(item, "sparkle:shortVersionString")
 elem.text = f"{commit} ({now.strftime('%Y-%m-%d')})"
 elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
-elem.text = "12.0.0"
+elem.text = "13.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
 <p>
@@ -94,7 +94,7 @@ commit history <a href="{repo}">on GitHub</a> for all changes.
 </p>
 """
 elem = ET.SubElement(item, "enclosure")
-elem.set("url", f"https://tip.files.ghostty.dev/{commit_long}/ghostty-macos-universal.zip")
+elem.set("url", f"https://tip.files.ghostty.org/{commit_long}/Ghostty.dmg")
 elem.set("type", "application/octet-stream")
 for key, value in attrs.items():
     elem.set(key, value)

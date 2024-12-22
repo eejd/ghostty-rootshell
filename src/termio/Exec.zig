@@ -794,26 +794,42 @@ const Subprocess = struct {
             }
         }
 
-        // Add the man pages from our application bundle to MANPATH.
-        if (comptime builtin.target.isDarwin()) {
-            if (cfg.resources_dir) |resources_dir| man: {
-                var buf: [std.fs.max_path_bytes]u8 = undefined;
-                const dir = std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir}) catch |err| {
-                    log.warn("error building manpath, man pages may not be available err={}", .{err});
-                    break :man;
-                };
+        // On macOS, export additional data directories from our
+        // application bundle.
+        if (comptime builtin.target.isDarwin()) darwin: {
+            const resources_dir = cfg.resources_dir orelse break :darwin;
 
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+
+            const xdg_data_dir_key = "XDG_DATA_DIRS";
+            if (std.fmt.bufPrint(&buf, "{s}/..", .{resources_dir})) |data_dir| {
+                try env.put(
+                    xdg_data_dir_key,
+                    try internal_os.appendEnv(
+                        alloc,
+                        env.get(xdg_data_dir_key) orelse "/usr/local/share:/usr/share",
+                        data_dir,
+                    ),
+                );
+            } else |err| {
+                log.warn("error building {s}; err={}", .{ xdg_data_dir_key, err });
+            }
+
+            const manpath_key = "MANPATH";
+            if (std.fmt.bufPrint(&buf, "{s}/../man", .{resources_dir})) |man_dir| {
                 // Always append with colon in front, as it mean that if
                 // `MANPATH` is empty, then it should be treated as an extra
                 // path instead of overriding all paths set by OS.
                 try env.put(
-                    "MANPATH",
+                    manpath_key,
                     try internal_os.appendEnvAlways(
                         alloc,
-                        env.get("MATHPATH") orelse "",
-                        dir,
+                        env.get(manpath_key) orelse "",
+                        man_dir,
                     ),
                 );
+            } else |err| {
+                log.warn("error building {s}; man pages may not be available; err={}", .{ manpath_key, err });
             }
         }
 
@@ -1119,7 +1135,7 @@ const Subprocess = struct {
         // This is important because our cwd can be set by the shell (OSC 7)
         // and we don't want to break new windows.
         const cwd: ?[]const u8 = if (self.cwd) |proposed| cwd: {
-            if (std.fs.accessAbsolute(proposed, .{})) {
+            if (std.fs.cwd().access(proposed, .{})) {
                 break :cwd proposed;
             } else |err| {
                 log.warn("cannot access cwd, ignoring: {}", .{err});

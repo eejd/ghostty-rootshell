@@ -3,11 +3,17 @@ import Cocoa
 
 class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String? {
-        // Eventually w want to support multiple channels. Sparkle itself supports
-        // channels but we probably don't want some appcasts in the same file (i.e.
-        // tip) so this would be the place to change that. For now, we hardcode the
-        // tip appcast URL since it is all we support.
-        return "https://tip.files.ghostty.dev/appcast.xml"
+        guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else {
+            return nil
+        }
+
+        // Sparkle supports a native concept of "channels" but it requires that
+        // you share a single appcast file. We don't want to do that so we
+        // do this instead.
+        switch (appDelegate.ghostty.config.autoUpdateChannel) {
+        case .tip: return "https://tip.files.ghostty.org/appcast.xml"
+        case .stable: return "https://release.files.ghostty.org/appcast.xml"
+        }
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {

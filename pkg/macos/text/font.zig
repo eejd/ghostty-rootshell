@@ -217,6 +217,10 @@ pub const FontOrientation = enum(c_uint) {
 
 pub const FontTableTag = enum(u32) {
     svg = c.kCTFontTableSVG,
+    os2 = c.kCTFontTableOS2,
+    head = c.kCTFontTableHead,
+    hhea = c.kCTFontTableHhea,
+    post = c.kCTFontTablePost,
     _,
 
     pub fn init(v: *const [4]u8) FontTableTag {

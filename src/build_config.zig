@@ -58,6 +58,15 @@ pub const BuildConfig = struct {
             "{}",
             .{self.version},
         ));
+        step.addOption(
+            ReleaseChannel,
+            "release_channel",
+            channel: {
+                const pre = self.version.pre orelse break :channel .stable;
+                if (pre.len == 0) break :channel .stable;
+                break :channel .tip;
+            },
+        );
     }
 
     /// Rehydrate our BuildConfig from the comptime options. Note that not all
@@ -81,6 +90,9 @@ pub const BuildConfig = struct {
 /// The semantic version of this build.
 pub const version = options.app_version;
 pub const version_string = options.app_version_string;
+
+/// The release channel for this build.
+pub const release_channel = std.meta.stringToEnum(ReleaseChannel, @tagName(options.release_channel)).?;
 
 /// The optimization mode as a string.
 pub const mode_string = mode: {
@@ -172,9 +184,20 @@ pub const ExeEntrypoint = enum {
     helpgen,
     mdgen_ghostty_1,
     mdgen_ghostty_5,
+    webgen_config,
+    webgen_actions,
     bench_parser,
     bench_stream,
     bench_codepoint_width,
     bench_grapheme_break,
     bench_page_init,
+};
+
+/// The release channel for the build.
+pub const ReleaseChannel = enum {
+    /// Unstable builds on every commit.
+    tip,
+
+    /// Stable tagged releases.
+    stable,
 };

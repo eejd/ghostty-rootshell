@@ -3298,9 +3298,10 @@ pub fn cursorPosCallback(
 
         // No mouse point so we don't highlight links
         self.renderer_state.mouse.point = null;
-        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
 
-        return;
+        // Mark the link's row as dirty, but continue with updating the
+        // mouse state below so we can scroll when our position is negative.
+        self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
     }
 
     // Always show the mouse again if it is hidden

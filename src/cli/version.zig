@@ -25,6 +25,10 @@ pub fn run(alloc: Allocator) !u8 {
     try stdout.print("Ghostty {s}\n\n", .{build_config.version_string});
     if (tty) try stdout.print("\x1b]8;;\x1b\\", .{});
 
+    try stdout.print("Version\n", .{});
+    try stdout.print("  - version: {s}\n", .{build_config.version_string});
+    try stdout.print("  - channel: {s}\n", .{@tagName(build_config.release_channel)});
+
     try stdout.print("Build Config\n", .{});
     try stdout.print("  - Zig version: {s}\n", .{builtin.zig_version_string});
     try stdout.print("  - build mode : {}\n", .{builtin.mode});

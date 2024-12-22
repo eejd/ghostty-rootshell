@@ -42,6 +42,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>GhosttyBuild</key>
+	<string></string>
 	<key>GhosttyCommit</key>
 	<string></string>
 	<key>LSEnvironment</key>

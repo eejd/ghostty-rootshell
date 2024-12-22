@@ -58,7 +58,8 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
         #  Arch, Debian, Ubuntu use /etc/bash.bashrc
         #  Fedora uses /etc/bashrc sourced from ~/.bashrc instead of SYS_BASHRC
         #  Void Linux uses /etc/bash/bashrc
-        for rcfile in /etc/bash.bashrc /etc/bash/bashrc ; do
+        #  Nixos uses /etc/bashrc
+        for rcfile in /etc/bash.bashrc /etc/bash/bashrc /etc/bashrc; do
           [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
         done
         if [[ -z "$GHOSTTY_BASH_RCFILE" ]]; then GHOSTTY_BASH_RCFILE="$HOME/.bashrc"; fi
@@ -99,15 +100,11 @@ function __ghostty_precmd() {
       PS1=$PS1'\[\e]133;B\a\]'
       PS2=$PS2'\[\e]133;B\a\]'
 
+      # bash doesn't redraw the leading lines in a multiline prompt so
+      # mark the last line as a secondary prompt (k=s) to prevent the
+      # preceding lines from being erased by ghostty after a resize.
       if [[ "${PS1}" == *"\n"* || "${PS1}" == *$'\n'* ]]; then
-        # bash doesn't redraw the leading lines in a multiline prompt so
-        # mark the last line as a secondary prompt (k=s) to prevent the
-        # preceding lines from being erased by ghostty after a resize.
-        builtin local oldval
-        oldval=$(builtin shopt -p extglob)
-        builtin shopt -s extglob
-        PS1=${PS1%@('\n'|$'\n')*}'\n\[\e]133;A;k=s\a\]'${PS1##*@('\n'|$'\n')}
-        builtin eval "$oldval"
+        PS1=$PS1'\[\e]133;A;k=s\a\]'
       fi
 
       # Cursor
@@ -151,7 +148,7 @@ function __ghostty_precmd() {
 
     if test "$_ghostty_executing" != ""; then
       # End of current command. Report its status.
-      builtin printf "\033]133;D;%s;aid=%s\007" "$ret" "$BASHPID"
+      builtin printf "\e]133;D;%s;aid=%s\a" "$ret" "$BASHPID"
     fi
 
     # unfortunately bash provides no hooks to detect cwd changes
@@ -163,7 +160,7 @@ function __ghostty_precmd() {
     fi
 
     # Fresh line and start of prompt.
-    builtin printf "\033]133;A;aid=%s\007" "$BASHPID"
+    builtin printf "\e]133;A;aid=%s\a" "$BASHPID"
     _ghostty_executing=0
 }
 
@@ -171,7 +168,7 @@ function __ghostty_preexec() {
     PS0="$_GHOSTTY_SAVE_PS0"
     PS1="$_GHOSTTY_SAVE_PS1"
     PS2="$_GHOSTTY_SAVE_PS2"
-    builtin printf "\033]133;C;\007"
+    builtin printf "\e]133;C;\a"
     _ghostty_executing=1
 }
 

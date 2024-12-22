@@ -60,9 +60,11 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
             },
 
             .Struct => |info| {
-                // If the struct implements c_get then we call that
-                if (@hasDecl(@TypeOf(value), "c_get")) {
-                    value.c_get(ptr_raw);
+                // If the struct implements cval then we call then.
+                if (@hasDecl(T, "cval")) {
+                    const PtrT = @typeInfo(@TypeOf(T.cval)).Fn.return_type.?;
+                    const ptr: *PtrT = @ptrCast(@alignCast(ptr_raw));
+                    ptr.* = value.cval();
                     return true;
                 }
 
@@ -100,7 +102,7 @@ fn fieldByKey(self: *const Config, comptime k: Key) Value(k) {
     return @field(self, field.name);
 }
 
-test "u8" {
+test "c_get: u8" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -113,7 +115,7 @@ test "u8" {
     try testing.expectEqual(@as(f32, 24), cval);
 }
 
-test "enum" {
+test "c_get: enum" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -128,7 +130,7 @@ test "enum" {
     try testing.expectEqualStrings("dark", str);
 }
 
-test "color" {
+test "c_get: color" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -136,12 +138,14 @@ test "color" {
     defer c.deinit();
     c.background = .{ .r = 255, .g = 0, .b = 0 };
 
-    var cval: c_uint = undefined;
+    var cval: Color.C = undefined;
     try testing.expect(get(&c, .background, @ptrCast(&cval)));
-    try testing.expectEqual(@as(c_uint, 255), cval);
+    try testing.expectEqual(255, cval.r);
+    try testing.expectEqual(0, cval.g);
+    try testing.expectEqual(0, cval.b);
 }
 
-test "optional" {
+test "c_get: optional" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -150,14 +154,16 @@ test "optional" {
 
     {
         c.@"unfocused-split-fill" = null;
-        var cval: c_uint = undefined;
+        var cval: Color.C = undefined;
         try testing.expect(!get(&c, .@"unfocused-split-fill", @ptrCast(&cval)));
     }
 
     {
         c.@"unfocused-split-fill" = .{ .r = 255, .g = 0, .b = 0 };
-        var cval: c_uint = undefined;
+        var cval: Color.C = undefined;
         try testing.expect(get(&c, .@"unfocused-split-fill", @ptrCast(&cval)));
-        try testing.expectEqual(@as(c_uint, 255), cval);
+        try testing.expectEqual(255, cval.r);
+        try testing.expectEqual(0, cval.g);
+        try testing.expectEqual(0, cval.b);
     }
 }

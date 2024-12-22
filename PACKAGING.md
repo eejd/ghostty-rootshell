@@ -14,16 +14,28 @@ package Ghostty for distribution.
 
 ## Source Tarballs
 
-Source tarballs with stable checksums are available on the
-[GitHub releases page](https://github.com/ghostty-org/ghostty/releases).
-Use the `ghostty-source.tar.gz` asset and _not the GitHub auto-generated
-source tarball_.
+Source tarballs with stable checksums are available for tagged releases
+at `release.files.ghostty.org` in the following URL format where
+`VERSION` is the version number with no prefix such as `1.0.0`:
 
-Signature files are signed with [minisign](https://jedisct1.github.io/minisign/) using the following public key:
+```
+https://release.files.ghostty.org/VERSION/ghostty-source.tar.gz
+https://release.files.ghostty.org/VERSION/ghostty-source.tar.gz.minisig
+```
+
+Signature files are signed with
+[minisign](https://jedisct1.github.io/minisign/)
+using the following public key:
 
 ```
 RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV
 ```
+
+**Tip source tarballs** are available on the
+[GitHub releases page](https://github.com/ghostty-org/ghostty/releases/tag/tip).
+Use the `ghostty-source.tar.gz` asset and _not the GitHub auto-generated
+source tarball_. These tarballs are generated for every commit to
+the `main` branch and are not associated with a specific version.
 
 ## Zig Version
 

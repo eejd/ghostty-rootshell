@@ -13,7 +13,7 @@ pub const CursorMode = enum { any, normal, application };
 pub const KeypadMode = enum { any, normal, application };
 
 /// A bit confusing so I'll document this one: this is the "modify other keys"
-/// setting. We only change behavior for "set_other" which is ESC [ 4; 2 m.
+/// setting. We only change behavior for "set_other" which is ESC [ > 4; 2 m.
 /// So this can be "any" which means we don't care what's going on. Or it
 /// can be "set" which means modify keys must be set EXCEPT FOR "other keys"
 /// mode, and "set_other" which means modify keys must be set to "other keys"
@@ -89,7 +89,7 @@ pub const keys = keys: {
     // Function Keys. todo: f13-f35 but we need to add to input.Key
     result.set(.f1, pcStyle("\x1b[1;{}P") ++ .{.{ .sequence = "\x1BOP" }});
     result.set(.f2, pcStyle("\x1b[1;{}Q") ++ .{.{ .sequence = "\x1BOQ" }});
-    result.set(.f3, pcStyle("\x1b[1;{}R") ++ .{.{ .sequence = "\x1BOR" }});
+    result.set(.f3, pcStyle("\x1b[13;{}~") ++ .{.{ .sequence = "\x1BOR" }});
     result.set(.f4, pcStyle("\x1b[1;{}S") ++ .{.{ .sequence = "\x1BOS" }});
     result.set(.f5, pcStyle("\x1b[15;{}~") ++ .{.{ .sequence = "\x1B[15~" }});
     result.set(.f6, pcStyle("\x1b[17;{}~") ++ .{.{ .sequence = "\x1B[17~" }});

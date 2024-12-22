@@ -4,6 +4,7 @@ struct AboutView: View {
     @Environment(\.openURL) var openURL
 
     private let githubURL = URL(string: "https://github.com/ghostty-org/ghostty")
+    private let docsURL = URL(string: "https://ghostty.org/docs")
 
     /// Read the commit from the bundle.
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
@@ -43,7 +44,7 @@ struct AboutView: View {
 
     var body: some View {
         VStack(alignment: .center) {
-            Image("AppIconImage")
+            ghosttyIconImage()
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(height: 128)
@@ -77,12 +78,16 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
+                    if let url = docsURL {
+                        Button("Docs") {
+                            openURL(url)
+                        }
+                    }
                     if let url = githubURL {
                         Button("GitHub") {
                             openURL(url)
                         }
                     }
-
                 }
 
                 if let copy = self.copyright {
