@@ -39,6 +39,10 @@
 		A53D0C952B53B4D800305CE6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5B30538299BEAAB0047F10C /* Assets.xcassets */; };
 		A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
 		A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
+		A54B0CE92D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CE82D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift */; };
+		A54B0CEB2D0CFB4C00CBEFF8 /* NSImage+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CEA2D0CFB4A00CBEFF8 /* NSImage+Extension.swift */; };
+		A54B0CED2D0CFB7700CBEFF8 /* ColorizedGhosttyIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CEC2D0CFB7300CBEFF8 /* ColorizedGhosttyIcon.swift */; };
+		A54B0CEF2D0D2E2800CBEFF8 /* ColorizedGhosttyIconImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CEE2D0D2E2400CBEFF8 /* ColorizedGhosttyIconImage.swift */; };
 		A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */; };
 		A55685E029A03A9F004303CE /* AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55685DF29A03A9F004303CE /* AppError.swift */; };
 		A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
@@ -124,6 +128,10 @@
 		A53A6C022CCC1B7D00943E98 /* Ghostty.Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Action.swift; sourceTree = "<group>"; };
 		A53D0C932B53B43700305CE6 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
 		A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.App.swift; sourceTree = "<group>"; };
+		A54B0CE82D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorizedGhosttyIconView.swift; sourceTree = "<group>"; };
+		A54B0CEA2D0CFB4A00CBEFF8 /* NSImage+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImage+Extension.swift"; sourceTree = "<group>"; };
+		A54B0CEC2D0CFB7300CBEFF8 /* ColorizedGhosttyIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorizedGhosttyIcon.swift; sourceTree = "<group>"; };
+		A54B0CEE2D0D2E2400CBEFF8 /* ColorizedGhosttyIconImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorizedGhosttyIconImage.swift; sourceTree = "<group>"; };
 		A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseTerminalController.swift; sourceTree = "<group>"; };
 		A55685DF29A03A9F004303CE /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
 		A55B7BB729B6F53A0055DE60 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
@@ -237,6 +245,7 @@
 				A57D79252C9C8782001D522E /* Secure Input */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 				A51BFC1C2B2FB5AB00E92F16 /* About */,
+				A54B0CE72D0CEC9800CBEFF8 /* Colorized Ghostty Icon */,
 				A51BFC292B30F69F00E92F16 /* Update */,
 			);
 			path = Features;
@@ -256,6 +265,7 @@
 				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */,
 				A599CDAF2CF103F20049FA26 /* NSAppearance+Extension.swift */,
+				A54B0CEA2D0CFB4A00CBEFF8 /* NSImage+Extension.swift */,
 				A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */,
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
@@ -305,6 +315,16 @@
 				C1F26EEA2B76CC2400404083 /* ghostty-bridging-header.h */,
 			);
 			path = macOS;
+			sourceTree = "<group>";
+		};
+		A54B0CE72D0CEC9800CBEFF8 /* Colorized Ghostty Icon */ = {
+			isa = PBXGroup;
+			children = (
+				A54B0CEC2D0CFB7300CBEFF8 /* ColorizedGhosttyIcon.swift */,
+				A54B0CEE2D0D2E2400CBEFF8 /* ColorizedGhosttyIconImage.swift */,
+				A54B0CE82D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift */,
+			);
+			path = "Colorized Ghostty Icon";
 			sourceTree = "<group>";
 		};
 		A54CD6ED299BEB14008C95BB /* Sources */ = {
@@ -580,8 +600,10 @@
 			files = (
 				A59630A42AF059BB00D64628 /* Ghostty.SplitNode.swift in Sources */,
 				A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */,
+				A54B0CEB2D0CFB4C00CBEFF8 /* NSImage+Extension.swift in Sources */,
 				A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */,
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
+				A54B0CE92D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift in Sources */,
 				A5D0AF3D2B37804400D21823 /* CodableBridge.swift in Sources */,
 				A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */,
 				C1F26EA72B738B9900404083 /* NSView+Extension.swift in Sources */,
@@ -620,6 +642,8 @@
 				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
 				A5CDF1932AAF9E0800513312 /* ConfigurationErrorsController.swift in Sources */,
 				A53A6C032CCC1B7F00943E98 /* Ghostty.Action.swift in Sources */,
+				A54B0CED2D0CFB7700CBEFF8 /* ColorizedGhosttyIcon.swift in Sources */,
+				A54B0CEF2D0D2E2800CBEFF8 /* ColorizedGhosttyIconImage.swift in Sources */,
 				A59FB5D12AE0DEA7009128F3 /* MetalView.swift in Sources */,
 				A55685E029A03A9F004303CE /* AppError.swift in Sources */,
 				A599CDB02CF103F60049FA26 /* NSAppearance+Extension.swift in Sources */,

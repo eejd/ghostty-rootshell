@@ -98,6 +98,13 @@ class AppDelegate: NSObject,
     /// The observer for the app appearance.
     private var appearanceObserver: NSKeyValueObservation? = nil
 
+    /// The custom app icon image that is currently in use.
+    @Published private(set) var appIcon: NSImage? = nil {
+        didSet {
+            NSApplication.shared.applicationIconImage = appIcon
+        }
+    }
+
     override init() {
         terminalManager = TerminalManager(ghostty)
         updaterController = SPUStandardUpdaterController(
@@ -518,6 +525,22 @@ class AppDelegate: NSObject,
             }
         } else {
             GlobalEventTap.shared.disable()
+        }
+
+        switch (config.macosIcon) {
+        case .official:
+            self.appIcon = nil
+            break
+
+        case .customStyle:
+            guard let ghostColor = config.macosIconGhostColor else { break }
+            guard let screenColors = config.macosIconScreenColor else { break }
+            guard let icon = ColorizedGhosttyIcon(
+                screenColors: screenColors,
+                ghostColor: ghostColor,
+                frame: config.macosIconFrame
+            ).makeImage() else { break }
+            self.appIcon = icon
         }
     }
 
