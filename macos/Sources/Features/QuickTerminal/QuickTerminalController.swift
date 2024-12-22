@@ -107,7 +107,9 @@ class QuickTerminalController: BaseTerminalController {
             self.previousApp = nil
         }
 
-        animateOut()
+        if (derivedConfig.quickTerminalAutoHide) {
+            animateOut()
+        }
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -395,15 +397,18 @@ class QuickTerminalController: BaseTerminalController {
     private struct DerivedConfig {
         let quickTerminalScreen: QuickTerminalScreen
         let quickTerminalAnimationDuration: Double
+        let quickTerminalAutoHide: Bool
 
         init() {
             self.quickTerminalScreen = .main
             self.quickTerminalAnimationDuration = 0.2
+            self.quickTerminalAutoHide = true
         }
 
         init(_ config: Ghostty.Config) {
             self.quickTerminalScreen = config.quickTerminalScreen
             self.quickTerminalAnimationDuration = config.quickTerminalAnimationDuration
+            self.quickTerminalAutoHide = config.quickTerminalAutoHide
         }
     }
 }
