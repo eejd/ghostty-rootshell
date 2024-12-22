@@ -38,7 +38,7 @@ pub fn renderGlyph(
         .strikethrough => try drawSingle(alloc, width, line_thickness),
         else => unreachable,
     };
-    defer canvas.deinit(alloc);
+    defer canvas.deinit();
 
     // Write the drawing to the atlas
     const region = try canvas.writeAtlas(alloc, atlas);

@@ -74,6 +74,9 @@ pub const Color = enum(u8) {
     _,
 };
 
+/// This is a managed struct, it keeps a reference to the allocator that is
+/// used to initialize it, and the same allocator is used for any further
+/// necessary allocations when drawing.
 pub const Canvas = struct {
     /// The underlying z2d surface.
     sfc: z2d.Surface,
@@ -88,16 +91,13 @@ pub const Canvas = struct {
             @intCast(width),
             @intCast(height),
         );
+        errdefer sfc.deinit(alloc);
 
-        return .{
-            .sfc = sfc,
-            .alloc = alloc,
-        };
+        return .{ .sfc = sfc, .alloc = alloc };
     }
 
-    pub fn deinit(self: *Canvas, alloc: Allocator) void {
-        _ = alloc;
-        self.sfc.deinit();
+    pub fn deinit(self: *Canvas) void {
+        self.sfc.deinit(self.alloc);
         self.* = undefined;
     }
 
@@ -148,27 +148,18 @@ pub const Canvas = struct {
         return region;
     }
 
+    /// Acquires a z2d drawing context, caller MUST deinit context.
+    pub fn getContext(self: *Canvas) Allocator.Error!z2d.Context {
+        return try z2d.Context.init(self.alloc, &self.sfc);
+    }
+
     /// Draw and fill a single pixel
     pub fn pixel(self: *Canvas, x: u32, y: u32, color: Color) void {
         self.sfc.putPixel(
             @intCast(x),
             @intCast(y),
             .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-        ) catch |e| switch (e) {
-            error.OutOfRange => {
-                // If we try to set out of range this will fail. We just silently
-                // ignore it, so that this method (and `rect` which uses it) have
-                // implicit bounds clipping.
-            },
-
-            error.InvalidHeight,
-            error.InvalidWidth,
-            error.InvalidPixelFormat,
-            => {
-                std.log.err("unexpected (considered impossible) error err={}", .{e});
-                unreachable; // This shouldn't be possible.
-            },
-        };
+        );
     }
 
     /// Draw and fill a rectangle. This is the main primitive for drawing
@@ -192,94 +183,89 @@ pub const Canvas = struct {
 
     /// Draw and fill a quad.
     pub fn quad(self: *Canvas, q: Quad(f64), color: Color) !void {
-        var ctx: z2d.Context = .{
-            .surface = self.sfc,
-            .pattern = .{
-                .opaque_pattern = .{
-                    .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-                },
-            },
-        };
+        var path: z2d.StaticPath(6) = .{};
+        path.init();
 
-        var path = z2d.Path.init(self.alloc);
-        defer path.deinit();
+        path.moveTo(q.p0.x, q.p0.y);
+        path.lineTo(q.p1.x, q.p1.y);
+        path.lineTo(q.p2.x, q.p2.y);
+        path.lineTo(q.p3.x, q.p3.y);
+        path.close();
 
-        try path.moveTo(q.p0.x, q.p0.y);
-        try path.lineTo(q.p1.x, q.p1.y);
-        try path.lineTo(q.p2.x, q.p2.y);
-        try path.lineTo(q.p3.x, q.p3.y);
-        try path.close();
-
-        try ctx.fill(self.alloc, path);
+        try z2d.painter.fill(
+            self.alloc,
+            &self.sfc,
+            &.{ .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
+            } },
+            &path.nodes,
+            .{},
+        );
     }
 
     /// Draw and fill a triangle.
     pub fn triangle(self: *Canvas, t: Triangle(f64), color: Color) !void {
-        var ctx: z2d.Context = .{
-            .surface = self.sfc,
-            .pattern = .{
-                .opaque_pattern = .{
-                    .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-                },
-            },
-        };
+        var path: z2d.StaticPath(5) = .{};
+        path.init();
 
-        var path = z2d.Path.init(self.alloc);
-        defer path.deinit();
+        path.moveTo(t.p0.x, t.p0.y);
+        path.lineTo(t.p1.x, t.p1.y);
+        path.lineTo(t.p2.x, t.p2.y);
+        path.close();
 
-        try path.moveTo(t.p0.x, t.p0.y);
-        try path.lineTo(t.p1.x, t.p1.y);
-        try path.lineTo(t.p2.x, t.p2.y);
-        try path.close();
-    
-        try ctx.fill(self.alloc, path);
+        try z2d.painter.fill(
+            self.alloc,
+            &self.sfc,
+            &.{ .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
+            } },
+            &path.nodes,
+            .{},
+        );
     }
 
     pub fn triangle_outline(self: *Canvas, t: Triangle(f64), thickness: f64, color: Color) !void {
-        var ctx: z2d.Context = .{
-            .surface = self.sfc,
-            .pattern = .{
-                .opaque_pattern = .{
-                    .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-                },
+        var path: z2d.StaticPath(5) = .{};
+        path.init();
+
+        path.moveTo(t.p0.x, t.p0.y);
+        path.lineTo(t.p1.x, t.p1.y);
+        path.lineTo(t.p2.x, t.p2.y);
+
+        try z2d.painter.stroke(
+            self.alloc,
+            &self.sfc,
+            &.{ .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
+            } },
+            &path.nodes,
+            .{
+                .line_cap_mode = .round,
+                .line_width = thickness,
             },
-            .line_width = thickness,
-            .line_cap_mode = .round,
-        };
-
-        var path = z2d.Path.init(self.alloc);
-        defer path.deinit();
-
-        try path.moveTo(t.p0.x, t.p0.y);
-        try path.lineTo(t.p1.x, t.p1.y);
-        try path.lineTo(t.p2.x, t.p2.y);
-        // try path.close();
-
-        try ctx.stroke(self.alloc, path);
-        // try ctx.fill(self.alloc, path);
-
+        );
     }
 
     /// Stroke a line.
     pub fn line(self: *Canvas, l: Line(f64), thickness: f64, color: Color) !void {
-        var ctx: z2d.Context = .{
-            .surface = self.sfc,
-            .pattern = .{
-                .opaque_pattern = .{
-                    .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
-                },
+        var path: z2d.StaticPath(3) = .{};
+        path.init();
+
+        path.moveTo(l.p0.x, l.p0.y);
+        path.lineTo(l.p1.x, l.p1.y);
+
+        try z2d.painter.stroke(
+            self.alloc,
+            &self.sfc,
+            &.{ .opaque_pattern = .{
+                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
+            } },
+            &path.nodes,
+            .{
+                .line_cap_mode = .round,
+                .line_width = thickness,
             },
-            .line_width = thickness,
-            .line_cap_mode = .round,
-        };
-
-        var path = z2d.Path.init(self.alloc);
-        defer path.deinit();
-
-        try path.moveTo(l.p0.x, l.p0.y);
-        try path.lineTo(l.p1.x, l.p1.y);
-
-        try ctx.stroke(self.alloc, path);
+        );
     }
 
     pub fn invert(self: *Canvas) void {

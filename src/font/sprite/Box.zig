@@ -220,7 +220,7 @@ pub fn renderGlyph(
         metrics.cell_width,
         metrics.cell_height,
     );
-    defer canvas.deinit(alloc);
+    defer canvas.deinit();
 
     // Perform the actual drawing
     try self.draw(alloc, &canvas, cp);
@@ -2233,18 +2233,10 @@ fn draw_branch_node(
         @min(float_width - cx, float_height - cy),
     );
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-        .line_width = float_thick,
-    };
-
-    var path = z2d.Path.init(canvas.alloc);
-    defer path.deinit();
+    var ctx = canvas.getContext() catch return;
+    defer ctx.deinit();
+    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setLineWidth(float_thick);
 
     // These @intFromFloat casts shouldn't ever fail since r can never
     // be greater than cx or cy, so when subtracting it from them the
@@ -2259,13 +2251,13 @@ fn draw_branch_node(
         self.rect(canvas, 0, h_top, @intFromFloat(@ceil(cx - r)), h_bottom);
 
     if (node.filled) {
-        path.arc(cx, cy, r, 0, std.math.pi * 2, false, null) catch return;
-        path.close() catch return;
-        ctx.fill(canvas.alloc, path) catch return;
+        ctx.arc(cx, cy, r, 0, std.math.pi * 2) catch return;
+        ctx.closePath() catch return;
+        ctx.fill() catch return;
     } else {
-        path.arc(cx, cy, r - float_thick / 2, 0, std.math.pi * 2, false, null) catch return;
-        path.close() catch return;
-        ctx.stroke(canvas.alloc, path) catch return;
+        ctx.arc(cx, cy, r - float_thick / 2, 0, std.math.pi * 2) catch return;
+        ctx.closePath() catch return;
+        ctx.stroke() catch return;
     }
 }
 
@@ -2290,27 +2282,21 @@ fn draw_circle(
     };
     const r: f64 = 0.5 * @min(float_width, float_height);
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-        .line_width = @floatFromInt(Thickness.light.height(self.metrics.box_thickness)),
-    };
-
-    var path = z2d.Path.init(canvas.alloc);
-    defer path.deinit();
+    var ctx = canvas.getContext() catch return;
+    defer ctx.deinit();
+    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setLineWidth(
+        @floatFromInt(Thickness.light.height(self.metrics.box_thickness)),
+    );
 
     if (filled) {
-        path.arc(x, y, r, 0, std.math.pi * 2, false, null) catch return;
-        path.close() catch return;
-        ctx.fill(canvas.alloc, path) catch return;
+        ctx.arc(x, y, r, 0, std.math.pi * 2) catch return;
+        ctx.closePath() catch return;
+        ctx.fill() catch return;
     } else {
-        path.arc(x, y, r - ctx.line_width / 2, 0, std.math.pi * 2, false, null) catch return;
-        path.close() catch return;
-        ctx.stroke(canvas.alloc, path) catch return;
+        ctx.arc(x, y, r - ctx.line_width / 2, 0, std.math.pi * 2) catch return;
+        ctx.closePath() catch return;
+        ctx.stroke() catch return;
     }
 }
 
@@ -2528,31 +2514,30 @@ fn draw_smooth_mosaic(
     const center: f64 = @round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2);
     const right: f64 = @floatFromInt(self.metrics.cell_width);
 
-    var path = z2d.Path.init(canvas.alloc);
-    defer path.deinit();
+    var path: z2d.StaticPath(12) = .{};
+    path.init();
 
-    if (mosaic.tl) try path.lineTo(left, top);
-    if (mosaic.ul) try path.lineTo(left, upper);
-    if (mosaic.ll) try path.lineTo(left, lower);
-    if (mosaic.bl) try path.lineTo(left, bottom);
-    if (mosaic.bc) try path.lineTo(center, bottom);
-    if (mosaic.br) try path.lineTo(right, bottom);
-    if (mosaic.lr) try path.lineTo(right, lower);
-    if (mosaic.ur) try path.lineTo(right, upper);
-    if (mosaic.tr) try path.lineTo(right, top);
-    if (mosaic.tc) try path.lineTo(center, top);
-    try path.close();
+    if (mosaic.tl) path.lineTo(left, top);
+    if (mosaic.ul) path.lineTo(left, upper);
+    if (mosaic.ll) path.lineTo(left, lower);
+    if (mosaic.bl) path.lineTo(left, bottom);
+    if (mosaic.bc) path.lineTo(center, bottom);
+    if (mosaic.br) path.lineTo(right, bottom);
+    if (mosaic.lr) path.lineTo(right, lower);
+    if (mosaic.ur) path.lineTo(right, upper);
+    if (mosaic.tr) path.lineTo(right, top);
+    if (mosaic.tc) path.lineTo(center, top);
+    path.close();
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-    };
-
-    try ctx.fill(canvas.alloc, path);
+    try z2d.painter.fill(
+        canvas.alloc,
+        &canvas.sfc,
+        &.{ .opaque_pattern = .{
+            .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+        } },
+        &path.nodes,
+        .{},
+    );
 }
 
 fn draw_edge_triangle(
@@ -2567,9 +2552,6 @@ fn draw_edge_triangle(
     const center: f64 = @round(@as(f64, @floatFromInt(self.metrics.cell_width)) / 2);
     const right: f64 = @floatFromInt(self.metrics.cell_width);
 
-    var path = z2d.Path.init(canvas.alloc);
-    defer path.deinit();
-
     const x0, const y0, const x1, const y1 = switch (edge) {
         .top => .{ right, upper, left, upper },
         .left => .{ left, upper, left, lower },
@@ -2577,21 +2559,23 @@ fn draw_edge_triangle(
         .right => .{ right, lower, right, upper },
     };
 
-    try path.moveTo(center, middle);
-    try path.lineTo(x0, y0);
-    try path.lineTo(x1, y1);
-    try path.close();
+    var path: z2d.StaticPath(5) = .{};
+    path.init();
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-    };
+    path.moveTo(center, middle);
+    path.lineTo(x0, y0);
+    path.lineTo(x1, y1);
+    path.close();
 
-    try ctx.fill(canvas.alloc, path);
+    try z2d.painter.fill(
+        canvas.alloc,
+        &canvas.sfc,
+        &.{ .opaque_pattern = .{
+            .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+        } },
+        &path.nodes,
+        .{},
+    );
 }
 
 fn draw_arc(
@@ -2612,25 +2596,17 @@ fn draw_arc(
     // Fraction away from the center to place the middle control points,
     const s: f64 = 0.25;
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-        .line_width = float_thick,
-        .line_cap_mode = .round,
-    };
-
-    var path = z2d.Path.init(canvas.alloc);
-    defer path.deinit();
+    var ctx = try canvas.getContext();
+    defer ctx.deinit();
+    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setLineWidth(float_thick);
+    ctx.setLineCapMode(.round);
 
     switch (corner) {
         .tl => {
-            try path.moveTo(center_x, 0);
-            try path.lineTo(center_x, center_y - r);
-            try path.curveTo(
+            try ctx.moveTo(center_x, 0);
+            try ctx.lineTo(center_x, center_y - r);
+            try ctx.curveTo(
                 center_x,
                 center_y - s * r,
                 center_x - s * r,
@@ -2638,12 +2614,12 @@ fn draw_arc(
                 center_x - r,
                 center_y,
             );
-            try path.lineTo(0, center_y);
+            try ctx.lineTo(0, center_y);
         },
         .tr => {
-            try path.moveTo(center_x, 0);
-            try path.lineTo(center_x, center_y - r);
-            try path.curveTo(
+            try ctx.moveTo(center_x, 0);
+            try ctx.lineTo(center_x, center_y - r);
+            try ctx.curveTo(
                 center_x,
                 center_y - s * r,
                 center_x + s * r,
@@ -2651,12 +2627,12 @@ fn draw_arc(
                 center_x + r,
                 center_y,
             );
-            try path.lineTo(float_width, center_y);
+            try ctx.lineTo(float_width, center_y);
         },
         .bl => {
-            try path.moveTo(center_x, float_height);
-            try path.lineTo(center_x, center_y + r);
-            try path.curveTo(
+            try ctx.moveTo(center_x, float_height);
+            try ctx.lineTo(center_x, center_y + r);
+            try ctx.curveTo(
                 center_x,
                 center_y + s * r,
                 center_x - s * r,
@@ -2664,12 +2640,12 @@ fn draw_arc(
                 center_x - r,
                 center_y,
             );
-            try path.lineTo(0, center_y);
+            try ctx.lineTo(0, center_y);
         },
         .br => {
-            try path.moveTo(center_x, float_height);
-            try path.lineTo(center_x, center_y + r);
-            try path.curveTo(
+            try ctx.moveTo(center_x, float_height);
+            try ctx.lineTo(center_x, center_y + r);
+            try ctx.curveTo(
                 center_x,
                 center_y + s * r,
                 center_x + s * r,
@@ -2677,10 +2653,10 @@ fn draw_arc(
                 center_x + r,
                 center_y,
             );
-            try path.lineTo(float_width, center_y);
+            try ctx.lineTo(float_width, center_y);
         },
     }
-    try ctx.stroke(canvas.alloc, path);
+    try ctx.stroke();
 }
 
 fn draw_dash_horizontal(
@@ -2912,14 +2888,9 @@ fn draw_separated_block_quadrant(self: Box, canvas: *font.sprite.Canvas, comptim
         }
     }
 
-    var ctx: z2d.Context = .{
-        .surface = canvas.sfc,
-        .pattern = .{
-            .opaque_pattern = .{
-                .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
-            },
-        },
-    };
+    var ctx = try canvas.getContext();
+    defer ctx.deinit();
+    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
 
     const gap: f64 = @max(1.0, @as(f64, @floatFromInt(self.metrics.cell_width)) * 0.10) / 2.0;
     const left: f64 = gap;
@@ -2953,15 +2924,14 @@ fn draw_separated_block_quadrant(self: Box, canvas: *font.sprite.Canvas, comptim
             },
             else => unreachable,
         };
-        var path = z2d.Path.init(canvas.alloc);
-        defer path.deinit();
-        try path.moveTo(x1, y1);
-        try path.lineTo(x2, y1);
-        try path.lineTo(x2, y2);
-        try path.lineTo(x1, y2);
-        try path.close();
-        try ctx.fill(canvas.alloc, path);
+        try ctx.moveTo(x1, y1);
+        try ctx.lineTo(x2, y1);
+        try ctx.lineTo(x2, y2);
+        try ctx.lineTo(x1, y2);
+        try ctx.closePath();
     }
+
+    try ctx.fill();
 }
 
 test "all" {

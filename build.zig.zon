@@ -61,8 +61,8 @@
             .hash = "1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8",
         },
         .z2d = .{
-            .url = "git+https://github.com/vancluever/z2d?ref=main#285a796eb9c25a2389f087d008f0e60faf0b8eda",
-            .hash = "12206445aa45bcf0170ace371905f705aec1d8d4f61e7dd77839c6621b8c407680a5",
+            .url = "git+https://github.com/vancluever/z2d?ref=v0.4.0#4638bb02a9dc41cc2fb811f092811f6a951c752a",
+            .hash = "12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a",
         },
     },
 }
