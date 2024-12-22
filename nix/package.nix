@@ -178,7 +178,9 @@ in
       ln -sf "$shell_integration/shell-integration" "$out/share/ghostty/shell-integration"
       echo "$shell_integration" >> "$out/nix-support/propagated-user-env-packages"
 
-      cp -r $out/share/vim/vimfiles "$vim"
+      mv $out/share/vim/vimfiles "$vim"
+      ln -sf "$vim" "$out/share/vim/vimfiles"
+      echo "$vim" >> "$out/nix-support/propagated-user-env-packages"
     '';
 
     postFixup = ''
