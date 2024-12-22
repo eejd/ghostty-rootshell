@@ -906,6 +906,7 @@ test "color emoji" {
                 .overline_position = 0,
                 .overline_thickness = 0,
                 .box_thickness = 0,
+                .cursor_height = 0,
             },
         });
         try testing.expectEqual(@as(u32, 24), glyph.height);
@@ -952,6 +953,7 @@ test "metrics" {
         .overline_position = 0,
         .overline_thickness = 1,
         .box_thickness = 1,
+        .cursor_height = 17,
     }, ft_font.metrics);
 
     // Resize should change metrics
@@ -967,6 +969,7 @@ test "metrics" {
         .overline_position = 0,
         .overline_thickness = 2,
         .box_thickness = 2,
+        .cursor_height = 34,
     }, ft_font.metrics);
 }
 
