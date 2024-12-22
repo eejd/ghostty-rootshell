@@ -444,11 +444,13 @@ test "Metrics: adjust cell height smaller" {
     m.underline_position = 55;
     m.strikethrough_position = 30;
     m.cell_height = 100;
+    m.cursor_height = 100;
     m.apply(set);
     try testing.expectEqual(@as(u32, 50), m.cell_height);
     try testing.expectEqual(@as(u32, 25), m.cell_baseline);
     try testing.expectEqual(@as(u32, 30), m.underline_position);
     try testing.expectEqual(@as(u32, 5), m.strikethrough_position);
+    // Cursor height is separate from cell height and does not follow it.
     try testing.expectEqual(@as(u32, 100), m.cursor_height);
 }
 
@@ -465,11 +467,13 @@ test "Metrics: adjust cell height larger" {
     m.underline_position = 55;
     m.strikethrough_position = 30;
     m.cell_height = 100;
+    m.cursor_height = 100;
     m.apply(set);
     try testing.expectEqual(@as(u32, 200), m.cell_height);
     try testing.expectEqual(@as(u32, 100), m.cell_baseline);
     try testing.expectEqual(@as(u32, 105), m.underline_position);
     try testing.expectEqual(@as(u32, 80), m.strikethrough_position);
+    // Cursor height is separate from cell height and does not follow it.
     try testing.expectEqual(@as(u32, 100), m.cursor_height);
 }
 
