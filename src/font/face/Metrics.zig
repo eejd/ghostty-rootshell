@@ -32,10 +32,12 @@ box_thickness: u32,
 /// because it is not determined by fonts but rather by user configuration.
 cursor_thickness: u32 = 1,
 
-/// Original cell width and height. These are used to render the cursor
-/// in the original cell size after modification.
+/// The height in pixels of the cursor sprite.
+cursor_height: u32,
+
+/// Original cell width in pixels. This is used to keep
+/// glyphs centered if the cell width is adjusted wider.
 original_cell_width: ?u32 = null,
-original_cell_height: ?u32 = null,
 
 /// Minimum acceptable values for some fields to prevent modifiers
 /// from being able to, for example, cause 0-thickness underlines.
@@ -47,6 +49,7 @@ const Minimums = struct {
     const overline_thickness = 1;
     const box_thickness = 1;
     const cursor_thickness = 1;
+    const cursor_height = 1;
 };
 
 const CalcOpts = struct {
@@ -167,6 +170,7 @@ pub fn calc(opts: CalcOpts) Metrics {
         .overline_position = 0,
         .overline_thickness = @intFromFloat(underline_thickness),
         .box_thickness = @intFromFloat(underline_thickness),
+        .cursor_height = @intFromFloat(cell_height),
     };
 
     // Ensure all metrics are within their allowable range.
@@ -192,10 +196,9 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
                 const new = @max(entry.value_ptr.apply(original), 1);
                 if (new == original) continue;
 
-                // Preserve the original cell width and height if not set.
+                // Preserve the original cell width if not set.
                 if (self.original_cell_width == null) {
                     self.original_cell_width = self.cell_width;
-                    self.original_cell_height = self.cell_height;
                 }
 
                 // Set the new value
@@ -410,6 +413,7 @@ fn init() Metrics {
         .overline_position = 0,
         .overline_thickness = 0,
         .box_thickness = 0,
+        .cursor_height = 0,
     };
 }
 
@@ -445,7 +449,7 @@ test "Metrics: adjust cell height smaller" {
     try testing.expectEqual(@as(u32, 25), m.cell_baseline);
     try testing.expectEqual(@as(u32, 30), m.underline_position);
     try testing.expectEqual(@as(u32, 5), m.strikethrough_position);
-    try testing.expectEqual(@as(u32, 100), m.original_cell_height.?);
+    try testing.expectEqual(@as(u32, 100), m.cursor_height);
 }
 
 test "Metrics: adjust cell height larger" {
@@ -466,7 +470,7 @@ test "Metrics: adjust cell height larger" {
     try testing.expectEqual(@as(u32, 100), m.cell_baseline);
     try testing.expectEqual(@as(u32, 105), m.underline_position);
     try testing.expectEqual(@as(u32, 80), m.strikethrough_position);
-    try testing.expectEqual(@as(u32, 100), m.original_cell_height.?);
+    try testing.expectEqual(@as(u32, 100), m.cursor_height);
 }
 
 test "Modifier: parse absolute" {

@@ -126,29 +126,20 @@ pub fn renderGlyph(
         },
 
         .cursor => cursor: {
-            // Cursors should be drawn with the original cell height if
-            // it has been adjusted larger, so they don't get stretched.
-            const height, const dy = adjust: {
-                const h = metrics.cell_height;
-                if (metrics.original_cell_height) |original| {
-                    if (h > original) {
-                        break :adjust .{ original, (h - original) / 2 };
-                    }
-                }
-                break :adjust .{ h, 0 };
-            };
-
             var g = try cursor.renderGlyph(
                 alloc,
                 atlas,
                 @enumFromInt(cp),
                 width,
-                height,
+                metrics.cursor_height,
                 metrics.cursor_thickness,
             );
 
-            // Keep the cursor centered in the cell if it's shorter.
-            g.offset_y += @intCast(dy);
+            // Cursors are drawn at their specified height
+            // and are centered vertically within the cell.
+            const cursor_height: i32 = @intCast(metrics.cursor_height);
+            const cell_height: i32 = @intCast(metrics.cell_height);
+            g.offset_y += @divTrunc(cell_height - cursor_height, 2);
 
             break :cursor g;
         },

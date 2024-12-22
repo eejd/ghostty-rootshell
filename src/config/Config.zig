@@ -241,16 +241,15 @@ const c = @cImport({
 /// `-100%`) can cause the terminal to be unusable. Use with caution and reason.
 ///
 /// Some values are clamped to minimum or maximum values. This can make it
-/// appear that certain values are ignored. For example, the underline position
-/// is clamped to the height of a cell. If you set the underline position so
-/// high that it extends beyond the bottom of the cell size, it will be clamped
-/// to the bottom of the cell.
+/// appear that certain values are ignored. For example, many `*-thickness`
+/// adjustments cannot go below 1px.
 ///
 /// `adjust-cell-height` has some additional behaviors to describe:
 ///
 ///   * The font will be centered vertically in the cell.
 ///
-///   * The cursor will remain the same size as the font.
+///   * The cursor will remain the same size as the font, but may be
+///     adjusted separately with `adjust-cursor-height`.
 ///
 ///   * Powerline glyphs will be adjusted along with the cell height so
 ///     that things like status lines continue to look aligned.
@@ -276,6 +275,9 @@ const c = @cImport({
 @"adjust-overline-thickness": ?MetricModifier = null,
 /// Thickness in pixels of the bar cursor and outlined rect cursor.
 @"adjust-cursor-thickness": ?MetricModifier = null,
+/// Height in pixels of the cursor. Currently applies to all cursor types:
+/// bar, rect, and outlined rect.
+@"adjust-cursor-height": ?MetricModifier = null,
 /// Thickness in pixels of box drawing characters.
 @"adjust-box-thickness": ?MetricModifier = null,
 

@@ -430,6 +430,7 @@ pub const DerivedConfig = struct {
     @"adjust-overline-position": ?Metrics.Modifier,
     @"adjust-overline-thickness": ?Metrics.Modifier,
     @"adjust-cursor-thickness": ?Metrics.Modifier,
+    @"adjust-cursor-height": ?Metrics.Modifier,
     @"adjust-box-thickness": ?Metrics.Modifier,
     @"freetype-load-flags": font.face.FreetypeLoadFlags,
 
@@ -468,6 +469,7 @@ pub const DerivedConfig = struct {
             .@"adjust-overline-position" = config.@"adjust-overline-position",
             .@"adjust-overline-thickness" = config.@"adjust-overline-thickness",
             .@"adjust-cursor-thickness" = config.@"adjust-cursor-thickness",
+            .@"adjust-cursor-height" = config.@"adjust-cursor-height",
             .@"adjust-box-thickness" = config.@"adjust-box-thickness",
             .@"freetype-load-flags" = if (font.face.FreetypeLoadFlags != void) config.@"freetype-load-flags" else {},
 
@@ -613,6 +615,7 @@ pub const Key = struct {
             if (config.@"adjust-overline-position") |m| try set.put(alloc, .overline_position, m);
             if (config.@"adjust-overline-thickness") |m| try set.put(alloc, .overline_thickness, m);
             if (config.@"adjust-cursor-thickness") |m| try set.put(alloc, .cursor_thickness, m);
+            if (config.@"adjust-cursor-height") |m| try set.put(alloc, .cursor_height, m);
             if (config.@"adjust-box-thickness") |m| try set.put(alloc, .box_thickness, m);
             break :set set;
         };
