@@ -115,14 +115,13 @@ fn draw(self: Powerline, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32)
 fn draw_chevron(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
     const width = self.width;
     const height = self.height;
-    
+
     var p1_x: u32 = 0;
     var p1_y: u32 = 0;
     var p2_x: u32 = 0;
     var p2_y: u32 = 0;
     var p3_x: u32 = 0;
     var p3_y: u32 = 0;
-
 
     switch (cp) {
         0xE0B1 => {
@@ -141,19 +140,15 @@ fn draw_chevron(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
             p3_x = width;
             p3_y = height;
         },
-        
-        else => unreachable,
 
+        else => unreachable,
     }
 
     try canvas.triangle_outline(.{
         .p0 = .{ .x = @floatFromInt(p1_x), .y = @floatFromInt(p1_y) },
         .p1 = .{ .x = @floatFromInt(p2_x), .y = @floatFromInt(p2_y) },
         .p2 = .{ .x = @floatFromInt(p3_x), .y = @floatFromInt(p3_y) },
-    }, 
-    @floatFromInt(Thickness.light.height(self.thickness)),
-    .on);
-
+    }, @floatFromInt(Thickness.light.height(self.thickness)), .on);
 }
 
 fn draw_wedge_triangle(self: Powerline, canvas: *font.sprite.Canvas, cp: u32) !void {
