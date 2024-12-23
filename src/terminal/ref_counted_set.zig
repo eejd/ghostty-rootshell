@@ -103,6 +103,12 @@ pub fn RefCountedSet(
         /// unlikely. Roughly a (1/table_cap)^32 -- with any normal
         /// table capacity that is so unlikely that it's not worth
         /// handling.
+        ///
+        /// However, that assumes a uniform hash function, which
+        /// is not guaranteed and can be subverted with a crafted
+        /// input. We handle this gracefully by returning an error
+        /// anywhere where we're about to insert if there's any
+        /// item with a PSL in the last slot of the stats array.
         psl_stats: [32]Id = [_]Id{0} ** 32,
 
         /// The backing store of items
@@ -237,6 +243,16 @@ pub fn RefCountedSet(
                 return id;
             }
 
+            // While it should be statistically impossible to exceed the
+            // bounds of `psl_stats`, the hash function is not perfect and
+            // in such a case we want to remain stable. If we're about to
+            // insert an item and there's something with a PSL of `len - 1`,
+            // we may end up with a PSL of `len` which would exceed the bounds.
+            // In such a case, we claim to be out of memory.
+            if (self.psl_stats[self.psl_stats.len - 1] > 0) {
+                return AddError.OutOfMemory;
+            }
+
             // If the item doesn't exist, we need an available ID.
             if (self.next_id >= self.layout.cap) {
                 // Arbitrarily chosen, threshold for rehashing.
@@ -284,6 +300,11 @@ pub fn RefCountedSet(
 
             if (id < self.next_id) {
                 if (items[id].meta.ref == 0) {
+                    // See comment in `addContext` for details.
+                    if (self.psl_stats[self.psl_stats.len - 1] > 0) {
+                        return AddError.OutOfMemory;
+                    }
+
                     self.deleteItem(base, id, ctx);
 
                     const added_id = self.upsert(base, value, id, ctx);
