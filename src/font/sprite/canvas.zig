@@ -184,13 +184,13 @@ pub const Canvas = struct {
     /// Draw and fill a quad.
     pub fn quad(self: *Canvas, q: Quad(f64), color: Color) !void {
         var path: z2d.StaticPath(6) = .{};
-        path.init();
+        path.init(); // nodes.len = 0
 
-        path.moveTo(q.p0.x, q.p0.y);
-        path.lineTo(q.p1.x, q.p1.y);
-        path.lineTo(q.p2.x, q.p2.y);
-        path.lineTo(q.p3.x, q.p3.y);
-        path.close();
+        path.moveTo(q.p0.x, q.p0.y); // +1, nodes.len = 1
+        path.lineTo(q.p1.x, q.p1.y); // +1, nodes.len = 2
+        path.lineTo(q.p2.x, q.p2.y); // +1, nodes.len = 3
+        path.lineTo(q.p3.x, q.p3.y); // +1, nodes.len = 4
+        path.close(); // +2, nodes.len = 6
 
         try z2d.painter.fill(
             self.alloc,
@@ -198,7 +198,7 @@ pub const Canvas = struct {
             &.{ .opaque_pattern = .{
                 .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
             } },
-            &path.nodes,
+            path.wrapped_path.nodes.items,
             .{},
         );
     }
@@ -206,12 +206,12 @@ pub const Canvas = struct {
     /// Draw and fill a triangle.
     pub fn triangle(self: *Canvas, t: Triangle(f64), color: Color) !void {
         var path: z2d.StaticPath(5) = .{};
-        path.init();
+        path.init(); // nodes.len = 0
 
-        path.moveTo(t.p0.x, t.p0.y);
-        path.lineTo(t.p1.x, t.p1.y);
-        path.lineTo(t.p2.x, t.p2.y);
-        path.close();
+        path.moveTo(t.p0.x, t.p0.y); // +1, nodes.len = 1
+        path.lineTo(t.p1.x, t.p1.y); // +1, nodes.len = 2
+        path.lineTo(t.p2.x, t.p2.y); // +1, nodes.len = 3
+        path.close(); // +2, nodes.len = 5
 
         try z2d.painter.fill(
             self.alloc,
@@ -219,18 +219,18 @@ pub const Canvas = struct {
             &.{ .opaque_pattern = .{
                 .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
             } },
-            &path.nodes,
+            path.wrapped_path.nodes.items,
             .{},
         );
     }
 
     pub fn triangle_outline(self: *Canvas, t: Triangle(f64), thickness: f64, color: Color) !void {
-        var path: z2d.StaticPath(5) = .{};
-        path.init();
+        var path: z2d.StaticPath(3) = .{};
+        path.init(); // nodes.len = 0
 
-        path.moveTo(t.p0.x, t.p0.y);
-        path.lineTo(t.p1.x, t.p1.y);
-        path.lineTo(t.p2.x, t.p2.y);
+        path.moveTo(t.p0.x, t.p0.y); // +1, nodes.len = 1
+        path.lineTo(t.p1.x, t.p1.y); // +1, nodes.len = 2
+        path.lineTo(t.p2.x, t.p2.y); // +1, nodes.len = 3
 
         try z2d.painter.stroke(
             self.alloc,
@@ -238,7 +238,7 @@ pub const Canvas = struct {
             &.{ .opaque_pattern = .{
                 .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
             } },
-            &path.nodes,
+            path.wrapped_path.nodes.items,
             .{
                 .line_cap_mode = .round,
                 .line_width = thickness,
@@ -248,11 +248,11 @@ pub const Canvas = struct {
 
     /// Stroke a line.
     pub fn line(self: *Canvas, l: Line(f64), thickness: f64, color: Color) !void {
-        var path: z2d.StaticPath(3) = .{};
-        path.init();
+        var path: z2d.StaticPath(2) = .{};
+        path.init(); // nodes.len = 0
 
-        path.moveTo(l.p0.x, l.p0.y);
-        path.lineTo(l.p1.x, l.p1.y);
+        path.moveTo(l.p0.x, l.p0.y); // +1, nodes.len = 1
+        path.lineTo(l.p1.x, l.p1.y); // +1, nodes.len = 2
 
         try z2d.painter.stroke(
             self.alloc,
@@ -260,7 +260,7 @@ pub const Canvas = struct {
             &.{ .opaque_pattern = .{
                 .pixel = .{ .alpha8 = .{ .a = @intFromEnum(color) } },
             } },
-            &path.nodes,
+            path.wrapped_path.nodes.items,
             .{
                 .line_cap_mode = .round,
                 .line_width = thickness,
