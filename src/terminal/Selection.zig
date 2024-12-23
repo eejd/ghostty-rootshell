@@ -451,7 +451,7 @@ pub fn adjust(
 
 test "Selection: adjust right" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A1234\nB5678\nC1234\nD5678");
 
@@ -518,7 +518,7 @@ test "Selection: adjust right" {
 
 test "Selection: adjust left" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A1234\nB5678\nC1234\nD5678");
 
@@ -567,7 +567,7 @@ test "Selection: adjust left" {
 
 test "Selection: adjust left skips blanks" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A1234\nB5678\nC12\nD56");
 
@@ -616,7 +616,7 @@ test "Selection: adjust left skips blanks" {
 
 test "Selection: adjust up" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A\nB\nC\nD\nE");
 
@@ -663,7 +663,7 @@ test "Selection: adjust up" {
 
 test "Selection: adjust down" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A\nB\nC\nD\nE");
 
@@ -702,7 +702,7 @@ test "Selection: adjust down" {
             .y = 1,
         } }, s.pages.pointFromPin(.screen, sel.start()).?);
         try testing.expectEqual(point.Point{ .screen = .{
-            .x = 4,
+            .x = 9,
             .y = 4,
         } }, s.pages.pointFromPin(.screen, sel.end()).?);
     }
@@ -710,7 +710,7 @@ test "Selection: adjust down" {
 
 test "Selection: adjust down with not full screen" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A\nB\nC");
 
@@ -730,7 +730,7 @@ test "Selection: adjust down with not full screen" {
             .y = 1,
         } }, s.pages.pointFromPin(.screen, sel.start()).?);
         try testing.expectEqual(point.Point{ .screen = .{
-            .x = 4,
+            .x = 9,
             .y = 2,
         } }, s.pages.pointFromPin(.screen, sel.end()).?);
     }
@@ -738,7 +738,7 @@ test "Selection: adjust down with not full screen" {
 
 test "Selection: adjust home" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A\nB\nC");
 
@@ -766,7 +766,7 @@ test "Selection: adjust home" {
 
 test "Selection: adjust end with not full screen" {
     const testing = std.testing;
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     try s.testWriteString("A\nB\nC");
 
@@ -786,7 +786,7 @@ test "Selection: adjust end with not full screen" {
             .y = 0,
         } }, s.pages.pointFromPin(.screen, sel.start()).?);
         try testing.expectEqual(point.Point{ .screen = .{
-            .x = 4,
+            .x = 9,
             .y = 2,
         } }, s.pages.pointFromPin(.screen, sel.end()).?);
     }
@@ -1110,7 +1110,7 @@ test "Selection: order, rectangle" {
 test "topLeft" {
     const testing = std.testing;
 
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     {
         // forward
@@ -1173,7 +1173,7 @@ test "topLeft" {
 test "bottomRight" {
     const testing = std.testing;
 
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     {
         // forward
@@ -1236,7 +1236,7 @@ test "bottomRight" {
 test "ordered" {
     const testing = std.testing;
 
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     {
         // forward
@@ -1317,7 +1317,7 @@ test "ordered" {
 test "Selection: contains" {
     const testing = std.testing;
 
-    var s = try Screen.init(testing.allocator, 5, 10, 0);
+    var s = try Screen.init(testing.allocator, 10, 10, 0);
     defer s.deinit();
     {
         const sel = Selection.init(
@@ -1350,13 +1350,13 @@ test "Selection: contains" {
     {
         const sel = Selection.init(
             s.pages.pin(.{ .screen = .{ .x = 5, .y = 1 } }).?,
-            s.pages.pin(.{ .screen = .{ .x = 10, .y = 1 } }).?,
+            s.pages.pin(.{ .screen = .{ .x = 8, .y = 1 } }).?,
             false,
         );
 
         try testing.expect(sel.contains(&s, s.pages.pin(.{ .screen = .{ .x = 6, .y = 1 } }).?));
         try testing.expect(!sel.contains(&s, s.pages.pin(.{ .screen = .{ .x = 2, .y = 1 } }).?));
-        try testing.expect(!sel.contains(&s, s.pages.pin(.{ .screen = .{ .x = 12, .y = 1 } }).?));
+        try testing.expect(!sel.contains(&s, s.pages.pin(.{ .screen = .{ .x = 9, .y = 1 } }).?));
     }
 }
 

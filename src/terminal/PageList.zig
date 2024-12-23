@@ -2406,9 +2406,19 @@ fn erasePage(self: *PageList, node: *List.Node) void {
 
 /// Returns the pin for the given point. The pin is NOT tracked so it
 /// is only valid as long as the pagelist isn't modified.
+///
+/// This will return null if the point is out of bounds. The caller
+/// should clamp the point to the bounds of the coordinate space if
+/// necessary.
 pub fn pin(self: *const PageList, pt: point.Point) ?Pin {
+    // getTopLeft is much more expensive than checking the cols bounds
+    // so we do this first.
+    const x = pt.coord().x;
+    if (x >= self.cols) return null;
+
+    // Grab the top left and move to the point.
     var p = self.getTopLeft(pt).down(pt.coord().y) orelse return null;
-    p.x = pt.coord().x;
+    p.x = x;
     return p;
 }
 
