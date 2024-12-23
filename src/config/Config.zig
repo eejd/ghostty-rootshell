@@ -2548,8 +2548,20 @@ pub fn loadIter(
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     assert(std.fs.path.isAbsolute(path));
 
-    var file = try std.fs.cwd().openFile(path, .{});
+    var file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
+
+    const stat = try file.stat();
+    switch (stat.kind) {
+        .file => {},
+        else => |kind| {
+            log.warn("config-file {s}: not reading because file type is {s}", .{
+                path,
+                @tagName(kind),
+            });
+            return;
+        },
+    }
 
     std.log.info("reading configuration file path={s}", .{path});
 
@@ -2729,8 +2741,6 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     var loaded = std.StringHashMap(void).init(alloc_gpa);
     defer loaded.deinit();
 
-    const cwd = std.fs.cwd();
-
     // We need to insert all of our loaded config-file values
     // PRIOR to the "-e" in our replay steps, since everything
     // after "-e" becomes an "initial-command". To do this, we
@@ -2778,7 +2788,7 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
             continue;
         }
 
-        var file = cwd.openFile(path, .{}) catch |err| {
+        var file = std.fs.openFileAbsolute(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
                 try self._diagnostics.append(arena_alloc, .{
                     .message = try std.fmt.allocPrintZ(
@@ -2791,6 +2801,21 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
             continue;
         };
         defer file.close();
+
+        const stat = try file.stat();
+        switch (stat.kind) {
+            .file => {},
+            else => |kind| {
+                try self._diagnostics.append(arena_alloc, .{
+                    .message = try std.fmt.allocPrintZ(
+                        arena_alloc,
+                        "config-file {s}: not reading because file type is {s}",
+                        .{ path, @tagName(kind) },
+                    ),
+                });
+                continue;
+            },
+        }
 
         log.info("loading config-file path={s}", .{path});
         var buf_reader = std.io.bufferedReader(file.reader());
