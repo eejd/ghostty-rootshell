@@ -2515,19 +2515,19 @@ fn draw_smooth_mosaic(
     const right: f64 = @floatFromInt(self.metrics.cell_width);
 
     var path: z2d.StaticPath(12) = .{};
-    path.init();
+    path.init(); // nodes.len = 0
 
-    if (mosaic.tl) path.lineTo(left, top);
-    if (mosaic.ul) path.lineTo(left, upper);
-    if (mosaic.ll) path.lineTo(left, lower);
-    if (mosaic.bl) path.lineTo(left, bottom);
-    if (mosaic.bc) path.lineTo(center, bottom);
-    if (mosaic.br) path.lineTo(right, bottom);
-    if (mosaic.lr) path.lineTo(right, lower);
-    if (mosaic.ur) path.lineTo(right, upper);
-    if (mosaic.tr) path.lineTo(right, top);
-    if (mosaic.tc) path.lineTo(center, top);
-    path.close();
+    if (mosaic.tl) path.lineTo(left, top); // +1, nodes.len = 1
+    if (mosaic.ul) path.lineTo(left, upper); // +1, nodes.len = 2
+    if (mosaic.ll) path.lineTo(left, lower); // +1, nodes.len = 3
+    if (mosaic.bl) path.lineTo(left, bottom); // +1, nodes.len = 4
+    if (mosaic.bc) path.lineTo(center, bottom); // +1, nodes.len = 5
+    if (mosaic.br) path.lineTo(right, bottom); // +1, nodes.len = 6
+    if (mosaic.lr) path.lineTo(right, lower); // +1, nodes.len = 7
+    if (mosaic.ur) path.lineTo(right, upper); // +1, nodes.len = 8
+    if (mosaic.tr) path.lineTo(right, top); // +1, nodes.len = 9
+    if (mosaic.tc) path.lineTo(center, top); // +1, nodes.len = 10
+    path.close(); // +2, nodes.len = 12
 
     try z2d.painter.fill(
         canvas.alloc,
@@ -2535,7 +2535,7 @@ fn draw_smooth_mosaic(
         &.{ .opaque_pattern = .{
             .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
         } },
-        &path.nodes,
+        path.wrapped_path.nodes.items,
         .{},
     );
 }
@@ -2560,12 +2560,12 @@ fn draw_edge_triangle(
     };
 
     var path: z2d.StaticPath(5) = .{};
-    path.init();
+    path.init(); // nodes.len = 0
 
-    path.moveTo(center, middle);
-    path.lineTo(x0, y0);
-    path.lineTo(x1, y1);
-    path.close();
+    path.moveTo(center, middle); // +1, nodes.len = 1
+    path.lineTo(x0, y0); // +1, nodes.len = 2
+    path.lineTo(x1, y1); // +1, nodes.len = 3
+    path.close(); // +2, nodes.len = 5
 
     try z2d.painter.fill(
         canvas.alloc,
@@ -2573,7 +2573,7 @@ fn draw_edge_triangle(
         &.{ .opaque_pattern = .{
             .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
         } },
-        &path.nodes,
+        path.wrapped_path.nodes.items,
         .{},
     );
 }
