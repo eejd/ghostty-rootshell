@@ -70,6 +70,27 @@ pub fn init(
     sibling: *Surface,
     direction: apprt.action.SplitDirection,
 ) !void {
+    // If our sibling is too small to be split in half then we don't
+    // allow the split to happen. This avoids a situation where the
+    // split becomes too small.
+    //
+    // This is kind of a hack. Ideally we'd use gtk_widget_set_size_request
+    // properly along the path to ensure minimum sizes. I don't know if
+    // GTK even respects that all but any way GTK does this for us seems
+    // better than this.
+    {
+        // This is the min size of the sibling split. This means the
+        // smallest split is half of this.
+        const multiplier = 4;
+
+        const size = &sibling.core_surface.size;
+        const small = switch (direction) {
+            .right, .left => size.screen.width < size.cell.width * multiplier,
+            .down, .up => size.screen.height < size.cell.height * multiplier,
+        };
+        if (small) return error.SplitTooSmall;
+    }
+
     // Create the new child surface for the other direction.
     const alloc = sibling.app.core_app.alloc;
     var surface = try Surface.create(alloc, sibling.app, .{
