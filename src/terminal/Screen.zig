@@ -2073,17 +2073,18 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
     };
 
     var page_it = sel_start.pageIterator(.right_down, sel_end);
-    var row_count: usize = 0;
     while (page_it.next()) |chunk| {
         const rows = chunk.rows();
-        for (rows, chunk.start..) |row, y| {
+        for (rows, chunk.start.., 0..) |row, y, row_i| {
             const cells_ptr = row.cells.ptr(chunk.node.data.memory);
 
-            const start_x = if (row_count == 0 or sel_ordered.rectangle)
+            const start_x = if ((row_i == 0 or sel_ordered.rectangle) and
+                sel_start.node == chunk.node)
                 sel_start.x
             else
                 0;
-            const end_x = if (row_count == rows.len - 1 or sel_ordered.rectangle)
+            const end_x = if ((row_i == rows.len - 1 or sel_ordered.rectangle) and
+                sel_end.node == chunk.node)
                 sel_end.x + 1
             else
                 self.pages.cols;
@@ -2138,8 +2139,6 @@ pub fn selectionString(self: *Screen, alloc: Allocator, opts: SelectionString) !
                     .x = chunk.node.data.size.cols - 1,
                 });
             }
-
-            row_count += 1;
         }
     }
 
@@ -8306,7 +8305,7 @@ test "Screen: selectionString multi-page" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var s = try init(alloc, 1, 3, 2048);
+    var s = try init(alloc, 10, 3, 2048);
     defer s.deinit();
 
     const first_page_size = s.pages.pages.first.?.data.capacity.rows;
@@ -8318,20 +8317,20 @@ test "Screen: selectionString multi-page" {
     }
     s.pages.pages.first.?.data.pauseIntegrityChecks(false);
 
-    try s.testWriteString("y\ny\ny");
+    try s.testWriteString("123456789\n!@#$%^&*(\n123456789");
 
     {
         const sel = Selection.init(
             s.pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
-            s.pages.pin(.{ .active = .{ .x = 0, .y = 2 } }).?,
+            s.pages.pin(.{ .active = .{ .x = 2, .y = 2 } }).?,
             false,
         );
         const contents = try s.selectionString(alloc, .{
             .sel = sel,
-            .trim = false,
+            .trim = true,
         });
         defer alloc.free(contents);
-        const expected = "y\ny\ny";
+        const expected = "123456789\n!@#$%^&*(\n123";
         try testing.expectEqualStrings(expected, contents);
     }
 }
