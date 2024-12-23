@@ -58,7 +58,7 @@ pub fn renderGlyph(
 ) !font.Glyph {
     // Create the canvas we'll use to draw
     var canvas = try font.sprite.Canvas.init(alloc, self.width, self.height);
-    defer canvas.deinit(alloc);
+    defer canvas.deinit();
 
     // Perform the actual drawing
     try self.draw(alloc, &canvas, cp);

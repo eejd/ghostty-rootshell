@@ -17,7 +17,7 @@ pub fn renderGlyph(
 ) !font.Glyph {
     // Make a canvas of the desired size
     var canvas = try font.sprite.Canvas.init(alloc, width, height);
-    defer canvas.deinit(alloc);
+    defer canvas.deinit();
 
     // Draw the appropriate sprite
     switch (sprite) {
