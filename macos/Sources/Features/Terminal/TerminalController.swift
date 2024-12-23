@@ -201,6 +201,9 @@ class TerminalController: BaseTerminalController {
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         guard let window = self.window as? TerminalWindow else { return }
 
+        // Set our explicit appearance if we need to based on the configuration.
+        window.appearance = surfaceConfig.windowAppearance
+
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.
