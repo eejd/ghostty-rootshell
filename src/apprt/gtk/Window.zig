@@ -200,7 +200,7 @@ pub fn init(self: *Window, app: *App) !void {
             const btn = c.gtk_button_new_from_icon_name("tab-new-symbolic");
             c.gtk_widget_set_tooltip_text(btn, "New Tab");
             _ = c.g_signal_connect_data(btn, "clicked", c.G_CALLBACK(&gtkTabNewClick), self, null, c.G_CONNECT_DEFAULT);
-            header.packEnd(btn);
+            header.packStart(btn);
         }
 
         self.header = header;
