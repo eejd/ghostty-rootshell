@@ -546,24 +546,7 @@ class AppDelegate: NSObject,
 
     /// Sync the appearance of our app with the theme specified in the config.
     private func syncAppearance(config: Ghostty.Config) {
-        guard let theme = config.windowTheme else { return }
-        switch (theme) {
-        case "dark":
-            let appearance = NSAppearance(named: .darkAqua)
-            NSApplication.shared.appearance = appearance
-
-        case "light":
-            let appearance = NSAppearance(named: .aqua)
-            NSApplication.shared.appearance = appearance
-
-        case "auto":
-            let color = OSColor(config.backgroundColor)
-            let appearance = NSAppearance(named: color.isLightColor ? .aqua : .darkAqua)
-            NSApplication.shared.appearance = appearance
-
-        default:
-            NSApplication.shared.appearance = nil
-        }
+        NSApplication.shared.appearance = .init(ghosttyConfig: config)
     }
 
     //MARK: - Restorable State

@@ -1097,12 +1097,14 @@ extension Ghostty {
             let backgroundOpacity: Double
             let macosWindowShadow: Bool
             let windowTitleFontFamily: String?
+            let windowAppearance: NSAppearance?
 
             init() {
                 self.backgroundColor = Color(NSColor.windowBackgroundColor)
                 self.backgroundOpacity = 1
                 self.macosWindowShadow = true
                 self.windowTitleFontFamily = nil
+                self.windowAppearance = nil
             }
 
             init(_ config: Ghostty.Config) {
@@ -1110,6 +1112,7 @@ extension Ghostty {
                 self.backgroundOpacity = config.backgroundOpacity
                 self.macosWindowShadow = config.macosWindowShadow
                 self.windowTitleFontFamily = config.windowTitleFontFamily
+                self.windowAppearance = .init(ghosttyConfig: config)
             }
         }
     }
