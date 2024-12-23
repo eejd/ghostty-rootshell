@@ -409,6 +409,11 @@ extension Ghostty {
             // ID. If vsync is enabled, this will be used with the CVDisplayLink to ensure
             // the proper refresh rate is going.
             ghostty_surface_set_display_id(surface, screen.displayID ?? 0)
+
+            // We also just trigger a backing property change. Just in case the screen has
+            // a different scaling factor, this ensures that we update our content scale.
+            // Issue: https://github.com/ghostty-org/ghostty/issues/2731
+            viewDidChangeBackingProperties()
         }
 
         // MARK: - NSView
