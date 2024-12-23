@@ -103,6 +103,12 @@ pub fn RefCountedSet(
         /// unlikely. Roughly a (1/table_cap)^32 -- with any normal
         /// table capacity that is so unlikely that it's not worth
         /// handling.
+        ///
+        /// However, that assumes a uniform hash function, which
+        /// is not guaranteed and can be subverted with a crafted
+        /// input. We handle this gracefully by returning an error
+        /// anywhere where we're about to insert if there's any
+        /// item with a PSL in the last slot of the stats array.
         psl_stats: [32]Id = [_]Id{0} ** 32,
 
         /// The backing store of items
@@ -237,6 +243,16 @@ pub fn RefCountedSet(
                 return id;
             }
 
+            // While it should be statistically impossible to exceed the
+            // bounds of `psl_stats`, the hash function is not perfect and
+            // in such a case we want to remain stable. If we're about to
+            // insert an item and there's something with a PSL of `len - 1`,
+            // we may end up with a PSL of `len` which would exceed the bounds.
+            // In such a case, we claim to be out of memory.
+            if (self.psl_stats[self.psl_stats.len - 1] > 0) {
+                return AddError.OutOfMemory;
+            }
+
             // If the item doesn't exist, we need an available ID.
             if (self.next_id >= self.layout.cap) {
                 // Arbitrarily chosen, threshold for rehashing.
@@ -284,6 +300,11 @@ pub fn RefCountedSet(
 
             if (id < self.next_id) {
                 if (items[id].meta.ref == 0) {
+                    // See comment in `addContext` for details.
+                    if (self.psl_stats[self.psl_stats.len - 1] > 0) {
+                        return AddError.OutOfMemory;
+                    }
+
                     self.deleteItem(base, id, ctx);
 
                     const added_id = self.upsert(base, value, id, ctx);
@@ -419,7 +440,7 @@ pub fn RefCountedSet(
 
             if (item.meta.bucket > self.layout.table_cap) return;
 
-            if (table[item.meta.bucket] != id) return;
+            assert(table[item.meta.bucket] == id);
 
             if (comptime @hasDecl(Context, "deleted")) {
                 // Inform the context struct that we're
@@ -449,6 +470,8 @@ pub fn RefCountedSet(
             }
 
             table[p] = 0;
+
+            self.assertIntegrity(base, ctx);
         }
 
         /// Find an item in the table and return its ID.
@@ -463,7 +486,7 @@ pub fn RefCountedSet(
             const hash: u64 = ctx.hash(value);
 
             for (0..self.max_psl + 1) |i| {
-                const p: usize = @intCast((hash + i) & self.layout.table_mask);
+                const p: usize = @intCast((hash +% i) & self.layout.table_mask);
                 const id = table[p];
 
                 // Empty bucket, our item cannot have probed to
@@ -538,11 +561,10 @@ pub fn RefCountedSet(
             var held_id: Id = new_id;
             var held_item: *Item = &new_item;
 
-            var chosen_p: ?Id = null;
             var chosen_id: Id = new_id;
 
             for (0..self.layout.table_cap - 1) |i| {
-                const p: Id = @intCast((hash + i) & self.layout.table_mask);
+                const p: Id = @intCast((hash +% i) & self.layout.table_mask);
                 const id = table[p];
 
                 // Empty bucket, put our held item in to it and break.
@@ -557,7 +579,9 @@ pub fn RefCountedSet(
                 const item = &items[id];
 
                 // If there's a dead item then we resurrect it
-                // for our value so that we can re-use its ID.
+                // for our value so that we can re-use its ID,
+                // unless its ID is greater than the one we're
+                // given (i.e. prefer smaller IDs).
                 if (item.meta.ref == 0) {
                     if (comptime @hasDecl(Context, "deleted")) {
                         // Inform the context struct that we're
@@ -565,40 +589,33 @@ pub fn RefCountedSet(
                         ctx.deleted(item.value);
                     }
 
-                    chosen_id = id;
-
-                    held_item.meta.bucket = p;
+                    // Reap the dead item.
                     self.psl_stats[item.meta.psl] -= 1;
+                    item.* = .{};
+
+                    // Only resurrect this item if it has a
+                    // smaller id than the one we were given.
+                    if (id < new_id) chosen_id = id;
+
+                    // Put the currently held item in to the
+                    // bucket of the item that we just reaped.
+                    table[p] = held_id;
+                    held_item.meta.bucket = p;
                     self.psl_stats[held_item.meta.psl] += 1;
                     self.max_psl = @max(self.max_psl, held_item.meta.psl);
-
-                    // If we're not still holding our new item then we
-                    // need to make sure that we put the re-used ID in
-                    // the right place, where we previously put new_id.
-                    if (chosen_p) |c| {
-                        table[c] = id;
-                        table[p] = held_id;
-                    } else {
-                        // If we're still holding our new item then we
-                        // don't actually have to do anything, because
-                        // the table already has the correct ID here.
-                    }
 
                     break;
                 }
 
                 // This item has a lower PSL, swap it out with our held item.
                 if (item.meta.psl < held_item.meta.psl) {
-                    if (held_id == new_id) {
-                        chosen_p = p;
-                        new_item.meta.bucket = p;
-                    }
-
+                    // Put our held item in the bucket.
                     table[p] = held_id;
-                    items[held_id].meta.bucket = p;
+                    held_item.meta.bucket = p;
                     self.psl_stats[held_item.meta.psl] += 1;
                     self.max_psl = @max(self.max_psl, held_item.meta.psl);
 
+                    // Pick up the item that has a lower PSL.
                     held_id = id;
                     held_item = item;
                     self.psl_stats[item.meta.psl] -= 1;
@@ -608,8 +625,60 @@ pub fn RefCountedSet(
                 held_item.meta.psl += 1;
             }
 
+            // Our chosen ID may have changed if we decided
+            // to re-use a dead item's ID, so we make sure
+            // the chosen bucket contains the correct ID.
+            table[new_item.meta.bucket] = chosen_id;
+
+            // Finally place our new item in to our array.
             items[chosen_id] = new_item;
+
+            self.assertIntegrity(base, ctx);
+
             return chosen_id;
+        }
+
+        fn assertIntegrity(
+            self: *const Self,
+            base: anytype,
+            ctx: Context,
+        ) void {
+            // Disabled because this is excessively slow, only enable
+            // if debugging a RefCountedSet issue or modifying its logic.
+            if (false and std.debug.runtime_safety) {
+                const table = self.table.ptr(base);
+                const items = self.items.ptr(base);
+
+                var psl_stats: [32]Id = [_]Id{0} ** 32;
+
+                for (items[0..self.layout.cap], 0..) |item, id| {
+                    if (item.meta.bucket < std.math.maxInt(Id)) {
+                        assert(table[item.meta.bucket] == id);
+                        psl_stats[item.meta.psl] += 1;
+                    }
+                }
+
+                std.testing.expectEqualSlices(Id, &psl_stats, &self.psl_stats) catch assert(false);
+
+                assert(std.mem.eql(Id, &psl_stats, &self.psl_stats));
+
+                psl_stats = [_]Id{0} ** 32;
+
+                for (table[0..self.layout.table_cap], 0..) |id, bucket| {
+                    const item = items[id];
+                    if (item.meta.bucket < std.math.maxInt(Id)) {
+                        assert(item.meta.bucket == bucket);
+
+                        const hash: u64 = ctx.hash(item.value);
+                        const p: usize = @intCast((hash +% item.meta.psl) & self.layout.table_mask);
+                        assert(p == bucket);
+
+                        psl_stats[item.meta.psl] += 1;
+                    }
+                }
+
+                std.testing.expectEqualSlices(Id, &psl_stats, &self.psl_stats) catch assert(false);
+            }
         }
     };
 }

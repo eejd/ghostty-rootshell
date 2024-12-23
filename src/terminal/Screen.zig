@@ -1763,9 +1763,14 @@ pub fn manualStyleUpdate(self: *Screen) !void {
 
     // If our new style is the default, just reset to that
     if (self.cursor.style.default()) {
-        self.cursor.style_id = 0;
+        self.cursor.style_id = style.default_id;
         return;
     }
+
+    // Clear the cursor style ID to prevent weird things from happening
+    // if the page capacity has to be adjusted which would end up calling
+    // manualStyleUpdate again.
+    self.cursor.style_id = style.default_id;
 
     // After setting the style, we need to update our style map.
     // Note that we COULD lazily do this in print. We should look into
