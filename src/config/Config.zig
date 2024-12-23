@@ -2503,8 +2503,20 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
-            .{ .key = .{ .translated = .equal }, .mods = .{ .shift = true, .alt = true } },
+            .{ .key = .{ .translated = .equal }, .mods = .{ .super = true, .ctrl = true } },
             .{ .equalize_splits = {} },
+        );
+
+        // Jump to prompt, matches Terminal.app
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .up }, .mods = .{ .super = true } },
+            .{ .jump_to_prompt = -1 },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .down }, .mods = .{ .super = true } },
+            .{ .jump_to_prompt = 1 },
         );
 
         // Inspector, matching Chromium
