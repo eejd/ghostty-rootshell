@@ -952,21 +952,22 @@ fn prepKittyGraphics(
         }.lessThan,
     );
 
-    // Find our indices
-    self.image_bg_end = 0;
-    self.image_text_end = 0;
+    // Find our indices. The values are sorted by z so we can find the
+    // first placement out of bounds to find the limits.
+    var bg_end: ?u32 = null;
+    var text_end: ?u32 = null;
     const bg_limit = std.math.minInt(i32) / 2;
     for (self.image_placements.items, 0..) |p, i| {
-        if (self.image_bg_end == 0 and p.z >= bg_limit) {
-            self.image_bg_end = @intCast(i);
+        if (bg_end == null and p.z >= bg_limit) {
+            bg_end = @intCast(i);
         }
-        if (self.image_text_end == 0 and p.z >= 0) {
-            self.image_text_end = @intCast(i);
+        if (text_end == null and p.z >= 0) {
+            text_end = @intCast(i);
         }
     }
-    if (self.image_text_end == 0) {
-        self.image_text_end = @intCast(self.image_placements.items.len);
-    }
+
+    self.image_bg_end = bg_end orelse 0;
+    self.image_text_end = text_end orelse self.image_bg_end;
 }
 
 fn prepKittyVirtualPlacement(
