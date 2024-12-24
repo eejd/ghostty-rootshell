@@ -27,7 +27,9 @@ pub const Style = struct {
 
     /// On/off attributes that don't require much bit width so we use
     /// a packed struct to make this take up significantly less space.
-    flags: packed struct {
+    flags: Flags = .{},
+
+    const Flags = packed struct(u16) {
         bold: bool = false,
         italic: bool = false,
         faint: bool = false,
@@ -37,15 +39,22 @@ pub const Style = struct {
         strikethrough: bool = false,
         overline: bool = false,
         underline: sgr.Attribute.Underline = .none,
-    } = .{},
+        _padding: u5 = 0,
+    };
 
     /// The color for an SGR attribute. A color can come from multiple
     /// sources so we use this to track the source plus color value so that
     /// we can properly react to things like palette changes.
-    pub const Color = union(enum) {
+    pub const Color = union(Tag) {
         none: void,
         palette: u8,
         rgb: color.RGB,
+
+        const Tag = enum(u8) {
+            none,
+            palette,
+            rgb,
+        };
 
         /// Formatting to make debug logs easier to read
         /// by only including non-default attributes.
@@ -230,16 +239,68 @@ pub const Style = struct {
         _ = try writer.write(" }");
     }
 
+    const PackedStyle = packed struct(u128) {
+        tags: packed struct {
+            fg: Color.Tag,
+            bg: Color.Tag,
+            underline: Color.Tag,
+        },
+        data: packed struct {
+            fg: Data,
+            bg: Data,
+            underline: Data,
+        },
+        flags: Flags,
+        _padding: u16 = 0,
+
+        const Data = packed union {
+            none: u24,
+            palette: packed struct(u24) {
+                idx: u8,
+                _padding: u16 = 0,
+            },
+            rgb: color.RGB,
+
+            fn fromColor(c: Color) Data {
+                return switch (c) {
+                    inline else => |v, t| @unionInit(
+                        Data,
+                        @tagName(t),
+                        switch (t) {
+                            .none => 0,
+                            .palette => .{ .idx = v },
+                            .rgb => v,
+                        },
+                    ),
+                };
+            }
+        };
+
+        fn fromStyle(style: Style) PackedStyle {
+            return .{
+                .tags = .{
+                    .fg = std.meta.activeTag(style.fg_color),
+                    .bg = std.meta.activeTag(style.bg_color),
+                    .underline = std.meta.activeTag(style.underline_color),
+                },
+                .data = .{
+                    .fg = Data.fromColor(style.fg_color),
+                    .bg = Data.fromColor(style.bg_color),
+                    .underline = Data.fromColor(style.underline_color),
+                },
+                .flags = style.flags,
+            };
+        }
+    };
+
     pub fn hash(self: *const Style) u64 {
-        var hasher = XxHash3.init(0);
-        autoHash(&hasher, self.*);
-        return hasher.final();
+        const packed_style = PackedStyle.fromStyle(self.*);
+        return XxHash3.hash(0, std.mem.asBytes(&packed_style));
     }
 
-    test {
-        // The size of the struct so we can be aware of changes.
-        const testing = std.testing;
-        try testing.expectEqual(@as(usize, 14), @sizeOf(Style));
+    comptime {
+        assert(@sizeOf(PackedStyle) == 16);
+        assert(std.meta.hasUniqueRepresentation(PackedStyle));
     }
 };
 

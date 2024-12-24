@@ -95,7 +95,7 @@ pub const Name = enum(u8) {
 };
 
 /// RGB
-pub const RGB = struct {
+pub const RGB = packed struct(u24) {
     r: u8 = 0,
     g: u8 = 0,
     b: u8 = 0,
@@ -155,9 +155,9 @@ pub const RGB = struct {
         return 0.299 * (r_f64 / 255) + 0.587 * (g_f64 / 255) + 0.114 * (b_f64 / 255);
     }
 
-    test "size" {
-        try std.testing.expectEqual(@as(usize, 24), @bitSizeOf(RGB));
-        try std.testing.expectEqual(@as(usize, 3), @sizeOf(RGB));
+    comptime {
+        assert(@bitSizeOf(RGB) == 24);
+        assert(@sizeOf(RGB) == 4);
     }
 
     /// Parse a color from a floating point intensity value.
