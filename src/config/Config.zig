@@ -1377,6 +1377,7 @@ keybind: Keybinds = .{},
 ///   * `bottom` - Terminal appears at the bottom of the screen.
 ///   * `left` - Terminal appears at the left of the screen.
 ///   * `right` - Terminal appears at the right of the screen.
+///   * `center` - Terminal appears at the center of the screen.
 ///
 /// Changing this configuration requires restarting Ghostty completely.
 @"quick-terminal-position": QuickTerminalPosition = .top,
@@ -5257,7 +5258,7 @@ pub const QuickTerminalPosition = enum {
     bottom,
     left,
     right,
-    middle,
+    center,
 };
 
 /// See quick-terminal-screen
