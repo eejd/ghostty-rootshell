@@ -221,6 +221,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                 switch (config.@"window-theme") {
                     .system, .light => {},
                     .dark => {
+                        const settings = c.gtk_settings_get_default();
+                        c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
+
                         c.gtk_css_provider_load_from_resource(
                             provider,
                             "/com/mitchellh/ghostty/style-dark.css",
@@ -234,6 +237,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                     .auto, .ghostty => {
                         const lum = config.background.toTerminalRGB().perceivedLuminance();
                         if (lum <= 0.5) {
+                            const settings = c.gtk_settings_get_default();
+                            c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
+
                             c.gtk_css_provider_load_from_resource(
                                 provider,
                                 "/com/mitchellh/ghostty/style-dark.css",
