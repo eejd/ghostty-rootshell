@@ -5257,6 +5257,7 @@ pub const QuickTerminalPosition = enum {
     bottom,
     left,
     right,
+    middle,
 };
 
 /// See quick-terminal-screen
