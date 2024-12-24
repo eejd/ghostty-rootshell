@@ -607,8 +607,16 @@ pub fn RefCountedSet(
                     break;
                 }
 
-                // This item has a lower PSL, swap it out with our held item.
-                if (item.meta.psl < held_item.meta.psl) {
+                // If this item has a lower PSL, or has equal PSL and lower ref
+                // count, then we swap it out with our held item. By doing this,
+                // items with high reference counts are prioritized for earlier
+                // placement. The assumption is that an item which has a higher
+                // reference count will be accessed more frequently, so we want
+                // to minimize the time it takes to find it.
+                if (item.meta.psl < held_item.meta.psl or
+                    item.meta.psl == held_item.meta.psl and
+                    item.meta.ref < held_item.meta.ref)
+                {
                     // Put our held item in the bucket.
                     table[p] = held_id;
                     held_item.meta.bucket = p;
