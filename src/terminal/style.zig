@@ -8,8 +8,7 @@ const Offset = size.Offset;
 const OffsetBuf = size.OffsetBuf;
 const RefCountedSet = @import("ref_counted_set.zig").RefCountedSet;
 
-const Wyhash = std.hash.Wyhash;
-const autoHash = std.hash.autoHash;
+const XxHash3 = std.hash.XxHash3;
 
 /// The unique identifier for a style. This is at most the number of cells
 /// that can fit into a terminal page.
@@ -230,10 +229,13 @@ pub const Style = struct {
         _ = try writer.write(" }");
     }
 
+    /// Hash the raw bytes of the struct with XxHash3
+    ///
+    /// NOTE: Because the struct does not have a guaranteed in-memory layout
+    ///       this hash is NOT suitable for serialization. If used for a hash
+    ///       table that is then serialized, it MUST be re-hashed when read.
     pub fn hash(self: *const Style) u64 {
-        var hasher = Wyhash.init(0);
-        autoHash(&hasher, self.*);
-        return hasher.final();
+        return XxHash3.hash(0, @as(*const [@sizeOf(Style)]u8, @ptrCast(self)));
     }
 
     test {
