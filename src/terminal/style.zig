@@ -239,6 +239,14 @@ pub const Style = struct {
         _ = try writer.write(" }");
     }
 
+    /// `PackedStyle` represents the same data as `Style` but without padding,
+    /// which is necassary for hashing via re-interpretation of the underlying bytes.
+    ///
+    /// `Style` is still prefered for everything else as it has type-safety when using
+    /// the `Color` tagged union.
+    ///
+    /// Empirical testing shows that storing all of the tags first and then the datas
+    /// provides a better layout for serializing into and is faster on benchmarks.
     const PackedStyle = packed struct(u128) {
         tags: packed struct {
             fg: Color.Tag,
@@ -253,6 +261,10 @@ pub const Style = struct {
         flags: Flags,
         _padding: u16 = 0,
 
+        /// After https://github.com/ziglang/zig/issues/19754 is implemented, it
+        /// will be an compiler-error to have packed union fields of differing size.
+        ///
+        /// For now we just need to be careful not to accidentally introduce padding.
         const Data = packed union {
             none: u24,
             palette: packed struct(u24) {
