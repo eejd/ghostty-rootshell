@@ -601,30 +601,37 @@ pub fn Stream(comptime Handler: type) type {
                 // Cursor Tabulation Control
                 'W' => {
                     switch (input.params.len) {
-                        0 => if (input.intermediates.len == 1 and input.intermediates[0] == '?') {
-                            if (@hasDecl(T, "tabReset"))
-                                try self.handler.tabReset()
-                            else
-                                log.warn("unimplemented tab reset callback: {}", .{input});
-                        },
+                        0 => if (@hasDecl(T, "tabSet"))
+                            try self.handler.tabSet()
+                        else
+                            log.warn("unimplemented tab set callback: {}", .{input}),
 
-                        1 => switch (input.params[0]) {
-                            0 => if (@hasDecl(T, "tabSet"))
-                                try self.handler.tabSet()
-                            else
-                                log.warn("unimplemented tab set callback: {}", .{input}),
+                        1 => if (input.intermediates.len == 1 and input.intermediates[0] == '?') {
+                            if (input.params[0] == 5) {
+                                if (@hasDecl(T, "tabReset"))
+                                    try self.handler.tabReset()
+                                else
+                                    log.warn("unimplemented tab reset callback: {}", .{input});
+                            } else log.warn("invalid cursor tabulation control: {}", .{input});
+                        } else {
+                            switch (input.params[0]) {
+                                0 => if (@hasDecl(T, "tabSet"))
+                                    try self.handler.tabSet()
+                                else
+                                    log.warn("unimplemented tab set callback: {}", .{input}),
 
-                            2 => if (@hasDecl(T, "tabClear"))
-                                try self.handler.tabClear(.current)
-                            else
-                                log.warn("unimplemented tab clear callback: {}", .{input}),
+                                2 => if (@hasDecl(T, "tabClear"))
+                                    try self.handler.tabClear(.current)
+                                else
+                                    log.warn("unimplemented tab clear callback: {}", .{input}),
 
-                            5 => if (@hasDecl(T, "tabClear"))
-                                try self.handler.tabClear(.all)
-                            else
-                                log.warn("unimplemented tab clear callback: {}", .{input}),
+                                5 => if (@hasDecl(T, "tabClear"))
+                                    try self.handler.tabClear(.all)
+                                else
+                                    log.warn("unimplemented tab clear callback: {}", .{input}),
 
-                            else => {},
+                                else => {},
+                            }
                         },
 
                         else => {},
@@ -2330,4 +2337,59 @@ test "stream: CSI t pop title with index" {
         .op = .pop,
         .index = 5,
     }, s.handler.op.?);
+}
+
+test "stream CSI W clear tab stops" {
+    const H = struct {
+        op: ?csi.TabClear = null,
+
+        pub fn tabClear(self: *@This(), op: csi.TabClear) !void {
+            self.op = op;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+
+    try s.nextSlice("\x1b[2W");
+    try testing.expectEqual(csi.TabClear.current, s.handler.op.?);
+
+    try s.nextSlice("\x1b[5W");
+    try testing.expectEqual(csi.TabClear.all, s.handler.op.?);
+}
+
+test "stream CSI W tab set" {
+    const H = struct {
+        called: bool = false,
+
+        pub fn tabSet(self: *@This()) !void {
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+
+    try s.nextSlice("\x1b[W");
+    try testing.expect(s.handler.called);
+
+    s.handler.called = false;
+    try s.nextSlice("\x1b[0W");
+    try testing.expect(s.handler.called);
+}
+
+test "stream CSI ? W reset tab stops" {
+    const H = struct {
+        reset: bool = false,
+
+        pub fn tabReset(self: *@This()) !void {
+            self.reset = true;
+        }
+    };
+
+    var s: Stream(H) = .{ .handler = .{} };
+
+    try s.nextSlice("\x1b[?2W");
+    try testing.expect(!s.handler.reset);
+
+    try s.nextSlice("\x1b[?5W");
+    try testing.expect(s.handler.reset);
 }
