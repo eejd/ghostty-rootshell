@@ -2542,12 +2542,12 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .right }, .mods = .{ .super = true } },
-            .{ .text = "\x05" },
+            .{ .text = "\\x05" },
         );
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .left }, .mods = .{ .super = true } },
-            .{ .text = "\x01" },
+            .{ .text = "\\x01" },
         );
         try result.keybind.set.put(
             alloc,
