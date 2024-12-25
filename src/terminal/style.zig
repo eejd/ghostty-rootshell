@@ -87,7 +87,10 @@ pub const Style = struct {
 
     /// True if the style is equal to another style.
     pub fn eql(self: Style, other: Style) bool {
-        return std.meta.eql(self, other);
+        const packed_self = PackedStyle.fromStyle(self);
+        const packed_other = PackedStyle.fromStyle(other);
+        // TODO: in Zig 0.14, equating packed structs is allowed. Remove this work around.
+        return @as(u128, @bitCast(packed_self)) == @as(u128, @bitCast(packed_other));
     }
 
     /// Returns the bg color for a cell with this style given the cell
