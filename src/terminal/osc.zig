@@ -158,6 +158,12 @@ pub const Command = union(enum) {
     /// End a hyperlink (OSC 8)
     hyperlink_end: void,
 
+    /// Set progress state (OSC 9;4)
+    progress: struct {
+        state: ProgressState,
+        progress: ?u8 = null,
+    },
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -172,6 +178,14 @@ pub const Command = union(enum) {
                 .cursor => "12",
             };
         }
+    };
+
+    pub const ProgressState = enum {
+        remove,
+        set,
+        @"error",
+        indeterminate,
+        pause,
     };
 };
 
@@ -322,6 +336,27 @@ pub const Parser = struct {
         // https://sw.kovidgoyal.net/kitty/color-stack/#id1
         kitty_color_protocol_key,
         kitty_color_protocol_value,
+
+        // OSC 9 is used by ConEmu and iTerm2 for different things.
+        // iTerm2 uses it to post a notification[1].
+        // ConEmu uses it to implement many custom functions[2].
+        //
+        // Some Linux applications (namely systemd and flatpak) have
+        // adopted the ConEmu implementation but this causes bogus
+        // notifications on iTerm2 compatible terminal emulators.
+        //
+        // Ghostty supports both by disallowing ConEmu-specific commands
+        // from being shown as desktop notifications.
+        //
+        // [1]: https://iterm2.com/documentation-escape-codes.html
+        // [2]: https://conemu.github.io/en/AnsiEscapeCodes.html#OSC_Operating_system_commands
+        osc_9,
+
+        // ConEmu specific substates
+        conemu_progress_prestate,
+        conemu_progress_state,
+        conemu_progress_prevalue,
+        conemu_progress_value,
     };
 
     /// This must be called to clean up any allocated memory.
@@ -735,16 +770,97 @@ pub const Parser = struct {
 
             .@"9" => switch (c) {
                 ';' => {
-                    self.command = .{ .show_desktop_notification = .{
-                        .title = "",
-                        .body = undefined,
-                    } };
-
-                    self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
                     self.buf_start = self.buf_idx;
-                    self.state = .string;
+                    self.state = .osc_9;
                 },
                 else => self.state = .invalid,
+            },
+
+            .osc_9 => switch (c) {
+                '4' => {
+                    self.state = .conemu_progress_prestate;
+                },
+
+                // Todo: parse out other ConEmu operating system commands.
+                // Even if we don't support them we probably don't want
+                // them showing up as desktop notifications.
+
+                else => self.showDesktopNotification(),
+            },
+
+            .conemu_progress_prestate => switch (c) {
+                ';' => {
+                    self.command = .{ .progress = .{
+                        .state = undefined,
+                    } };
+                    self.state = .conemu_progress_state;
+                },
+                else => self.showDesktopNotification(),
+            },
+
+            .conemu_progress_state => switch (c) {
+                '0' => {
+                    self.command.progress.state = .remove;
+                    self.state = .conemu_progress_prevalue;
+                    self.complete = true;
+                },
+                '1' => {
+                    self.command.progress.state = .set;
+                    self.command.progress.progress = 0;
+                    self.state = .conemu_progress_prevalue;
+                },
+                '2' => {
+                    self.command.progress.state = .@"error";
+                    self.complete = true;
+                    self.state = .conemu_progress_prevalue;
+                },
+                '3' => {
+                    self.command.progress.state = .indeterminate;
+                    self.complete = true;
+                    self.state = .conemu_progress_prevalue;
+                },
+                '4' => {
+                    self.command.progress.state = .pause;
+                    self.complete = true;
+                    self.state = .conemu_progress_prevalue;
+                },
+                else => self.showDesktopNotification(),
+            },
+
+            .conemu_progress_prevalue => switch (c) {
+                ';' => {
+                    self.state = .conemu_progress_value;
+                },
+
+                else => self.showDesktopNotification(),
+            },
+
+            .conemu_progress_value => switch (c) {
+                '0'...'9' => value: {
+                    // No matter what substate we're in, a number indicates
+                    // a completed ConEmu progress command.
+                    self.complete = true;
+
+                    // If we aren't a set substate, then we don't care
+                    // about the value.
+                    const p = &self.command.progress;
+                    if (p.state != .set) break :value;
+                    assert(p.progress != null);
+
+                    // If we're over 100% we're done.
+                    if (p.progress.? >= 100) break :value;
+
+                    // If we're over 10 then any new digit forces us to
+                    // be 100.
+                    if (p.progress.? >= 10)
+                        p.progress = 100
+                    else {
+                        const d = std.fmt.charToDigit(c, 10) catch 0;
+                        p.progress = @min(100, (p.progress.? * 10) + d);
+                    }
+                },
+
+                else => self.showDesktopNotification(),
             },
 
             .query_fg_color => switch (c) {
@@ -899,6 +1015,16 @@ pub const Parser = struct {
 
             .string => self.complete = true,
         }
+    }
+
+    fn showDesktopNotification(self: *Parser) void {
+        self.command = .{ .show_desktop_notification = .{
+            .title = "",
+            .body = undefined,
+        } };
+
+        self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
+        self.state = .string;
     }
 
     fn prepAllocableString(self: *Parser) void {
@@ -1530,6 +1656,118 @@ test "OSC: show desktop notification with title" {
     try testing.expect(cmd == .show_desktop_notification);
     try testing.expectEqualStrings(cmd.show_desktop_notification.title, "Title");
     try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
+}
+
+test "OSC: OSC9 progress set" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;1;100";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .set);
+    try testing.expect(cmd.progress.progress == 100);
+}
+
+test "OSC: OSC9 progress set overflow" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;1;900";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .set);
+    try testing.expect(cmd.progress.progress == 100);
+}
+
+test "OSC: OSC9 progress set single digit" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;1;9";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .set);
+    try testing.expect(cmd.progress.progress == 9);
+}
+
+test "OSC: OSC9 progress set double digit" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;1;94";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .set);
+    try testing.expect(cmd.progress.progress == 94);
+}
+
+test "OSC: OSC9 progress set extra semicolon triggers desktop notification" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;1;100;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings(cmd.show_desktop_notification.title, "");
+    try testing.expectEqualStrings(cmd.show_desktop_notification.body, "4;1;100;");
+}
+
+test "OSC: OSC9 progress remove with no progress" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;0;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .remove);
+    try testing.expect(cmd.progress.progress == null);
+}
+
+test "OSC: OSC9 progress remove ignores progress" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;0;100";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .progress);
+    try testing.expect(cmd.progress.state == .remove);
+    try testing.expect(cmd.progress.progress == null);
+}
+
+test "OSC: OSC9 progress remove extra semicolon" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;4;0;100;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings(cmd.show_desktop_notification.title, "");
+    try testing.expectEqualStrings(cmd.show_desktop_notification.body, "4;0;100;");
 }
 
 test "OSC: empty param" {
