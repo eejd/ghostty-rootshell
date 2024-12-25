@@ -2532,6 +2532,32 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .{ .translated = .f }, .mods = .{ .super = true, .ctrl = true } },
             .{ .toggle_fullscreen = {} },
         );
+
+        // "Natural text editing" keybinds. This forces these keys to go back
+        // to legacy encoding (not fixterms). It seems macOS users more than
+        // others are used to these keys so we set them as defaults. If
+        // people want to get back to the fixterm encoding they can set
+        // the keybinds to `unbind`.
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .right }, .mods = .{ .super = true } },
+            .{ .text = "\x05" },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .left }, .mods = .{ .super = true } },
+            .{ .text = "\x01" },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .left }, .mods = .{ .alt = true } },
+            .{ .esc = "b" },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .right }, .mods = .{ .alt = true } },
+            .{ .esc = "f" },
+        );
     }
 
     // Add our default link for URL detection
