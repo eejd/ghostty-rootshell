@@ -575,6 +575,20 @@ extension Ghostty {
             super.rightMouseUp(with: event)
         }
 
+        override func mouseEntered(with event: NSEvent) {
+            super.mouseEntered(with: event)
+
+            guard let surface = self.surface else { return }
+
+            // On mouse enter we need to reset our cursor position. This is
+            // super important because we set it to -1/-1 on mouseExit and
+            // lots of mouse logic (i.e. whether to send mouse reports) depend
+            // on the position being in the viewport if it is.
+            let pos = self.convert(event.locationInWindow, from: nil)
+            let mods = Ghostty.ghosttyMods(event.modifierFlags)
+            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
+        }
+
         override func mouseExited(with event: NSEvent) {
             guard let surface = self.surface else { return }
 
