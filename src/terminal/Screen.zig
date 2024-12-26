@@ -779,9 +779,15 @@ pub fn cursorDownScroll(self: *Screen) !void {
     }
 }
 
-/// This scrolls the active area at and above the cursor. The lines below
-/// the cursor are not scrolled.
+/// This scrolls the active area at and above the cursor.
+/// The lines below the cursor are not scrolled.
 pub fn cursorScrollAbove(self: *Screen) !void {
+    // We unconditionally mark the cursor row as dirty here because
+    // the cursor always changes page rows inside this function, and
+    // when that happens it can mean the text in the old row needs to
+    // be re-shaped because the cursor splits runs to break ligatures.
+    self.cursor.page_pin.markDirty();
+
     // If the cursor is on the bottom of the screen, its faster to use
     // our specialized function for that case.
     if (self.cursor.y == self.pages.rows - 1) {
@@ -793,6 +799,14 @@ pub fn cursorScrollAbove(self: *Screen) !void {
     // Logic below assumes we always have at least one row that isn't moving
     assert(self.cursor.y < self.pages.rows - 1);
 
+    // Explanation:
+    //  We don't actually move everything that's at or above the cursor row,
+    //  since this would require us to shift up our ENTIRE scrollback, which
+    //  would be ridiculously expensive. Instead, we insert a new row at the
+    //  end of the pagelist (`grow()`), and move everything BELOW the cursor
+    //  DOWN by one row. This has the same practical result but it's a whole
+    //  lot cheaper in 99% of cases.
+
     const old_pin = self.cursor.page_pin.*;
     if (try self.pages.grow()) |_| {
         try self.cursorScrollAboveRotate();
@@ -803,6 +817,9 @@ pub fn cursorScrollAbove(self: *Screen) !void {
             // If we're on the last page we can do a very fast path because
             // all the rows we need to move around are within a single page.
 
+            // Note: we don't need to call cursorChangePin here because
+            // the pin page is the same so there is no accounting to do
+            // for styles or any of that.
             assert(old_pin.node == self.cursor.page_pin.node);
             self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
 
@@ -823,10 +840,6 @@ pub fn cursorScrollAbove(self: *Screen) !void {
             const page_rac = self.cursor.page_pin.rowAndCell();
             self.cursor.page_row = page_rac.row;
             self.cursor.page_cell = page_rac.cell;
-
-            // Note: we don't need to call cursorChangePin here because
-            // the pin page is the same so there is no accounting to do for
-            // styles or any of that.
         } else {
             // We didn't grow pages but our cursor isn't on the last page.
             // In this case we need to do more work because we need to copy
@@ -863,7 +876,7 @@ pub fn cursorScrollAbove(self: *Screen) !void {
 }
 
 fn cursorScrollAboveRotate(self: *Screen) !void {
-    self.cursor.page_pin.* = self.cursor.page_pin.down(1).?;
+    self.cursorChangePin(self.cursor.page_pin.down(1).?);
 
     // Go through each of the pages following our pin, shift all rows
     // down by one, and copy the last row of the previous page.
@@ -4392,7 +4405,30 @@ test "Screen: scroll above same page" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     s.cursorAbsolute(0, 1);
     s.pages.clearDirty();
+
+    // At this point:
+    //  +-------------+ ACTIVE
+    //   +----------+ : = PAGE 0
+    // 0 |1ABCD00000| | 0
+    // 1 |2EFGH00000| | 1
+    //   :^         : : = PIN 0
+    // 2 |3IJKL00000| | 2
+    //   +----------+ :
+    //  +-------------+
+
     try s.cursorScrollAbove();
+
+    //   +----------+ = PAGE 0
+    // 0 |1ABCD00000|
+    //  +-------------+ ACTIVE
+    // 1 |2EFGH00000| | 0
+    // 2 |          | | 1
+    //   :^         : : = PIN 0
+    // 3 |3IJKL00000| | 2
+    //   +----------+ :
+    //  +-------------+
+
+    // try s.pages.diagram(std.io.getStdErr().writer());
 
     {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
@@ -4410,10 +4446,11 @@ test "Screen: scroll above same page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1,2 are dirty because they are the ones that CHANGED contents
-    // (not just scroll).
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 1 (active row 0) is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 2 (active row 1) is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 0 row 3 (active row 2) is dirty because it's new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
@@ -4443,8 +4480,25 @@ test "Screen: scroll above same page but cursor on previous page" {
     //      +----------+ = PAGE 0
     //  ... :          :
     //     +-------------+ ACTIVE
-    // 4303 |1A00000000| | 0
-    // 4304 |2B00000000| | 1
+    // 4305 |1A00000000| | 0
+    // 4306 |2B00000000| | 1
+    //      :^         : : = PIN 0
+    // 4307 |3C00000000| | 2
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |4D00000000| | 3
+    //    1 |5E00000000| | 4
+    //      +----------+ :
+    //     +-------------+
+
+    try s.cursorScrollAbove();
+
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    // 4305 |1A00000000|
+    //     +-------------+ ACTIVE
+    // 4306 |2B00000000| | 0
+    // 4307 |          | | 1
     //      :^         : : = PIN 0
     //      +----------+ :
     //      +----------+ : = PAGE 1
@@ -4454,7 +4508,7 @@ test "Screen: scroll above same page but cursor on previous page" {
     //      +----------+ :
     //     +-------------+
 
-    try s.cursorScrollAbove();
+    // try s.pages.diagram(std.io.getStdErr().writer());
 
     {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
@@ -4472,9 +4526,13 @@ test "Screen: scroll above same page but cursor on previous page" {
         }, cell.content.color_rgb);
     }
 
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's penultimate row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // The rest of the rows are dirty because they've been modified or are new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 }
 
 test "Screen: scroll above same page but cursor on previous page last row" {
@@ -4503,8 +4561,8 @@ test "Screen: scroll above same page but cursor on previous page last row" {
     //      +----------+ = PAGE 0
     //  ... :          :
     //     +-------------+ ACTIVE
-    // 4303 |1A00000000| | 0
-    // 4304 |2B00000000| | 1
+    // 4306 |1A00000000| | 0
+    // 4307 |2B00000000| | 1
     //      :^         : : = PIN 0
     //      +----------+ :
     //      +----------+ : = PAGE 1
@@ -4518,9 +4576,9 @@ test "Screen: scroll above same page but cursor on previous page last row" {
 
     //      +----------+ = PAGE 0
     //  ... :          :
-    // 4303 |1A00000000|
+    // 4306 |1A00000000|
     //     +-------------+ ACTIVE
-    // 4304 |2B00000000| | 0
+    // 4307 |2B00000000| | 0
     //      +----------+ :
     //      +----------+ : = PAGE 1
     //    0 |          | | 1
@@ -4549,9 +4607,22 @@ test "Screen: scroll above same page but cursor on previous page last row" {
         }, cell.content.color_rgb);
     }
 
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's final row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 1's rows are all dirty because every row was moved.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
+
+    // Attempt to clear the style from the cursor and
+    // then assert the integrity of both of our pages.
+    //
+    // This catches a case of memory corruption where the cursor
+    // is moved between pages without accounting for style refs.
+    try s.setAttribute(.{ .reset_bg = {} });
+    s.pages.pages.first.?.data.assertIntegrity();
+    s.pages.pages.last.?.data.assertIntegrity();
 }
 
 test "Screen: scroll above creates new page" {
@@ -4574,7 +4645,33 @@ test "Screen: scroll above creates new page" {
 
     // Ensure we're still on the first page
     try testing.expect(s.cursor.page_pin.node == s.pages.pages.first.?);
+
+    // At this point:
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    //     +-------------+ ACTIVE
+    // 4305 |1ABCD00000| | 0
+    // 4306 |2EFGH00000| | 1
+    //      :^         : : = PIN 0
+    // 4307 |3IJKL00000| | 2
+    //      +----------+ :
+    //     +-------------+
     try s.cursorScrollAbove();
+
+    //      +----------+ = PAGE 0
+    //  ... :          :
+    // 4305 |1ABCD00000|
+    //     +-------------+ ACTIVE
+    // 4306 |2EFGH00000| | 0
+    // 4307 |          | | 1
+    //      :^         : : = PIN 0
+    //      +----------+ :
+    //      +----------+ : = PAGE 1
+    //    0 |3IJKL00000| | 2
+    //      +----------+ :
+    //     +-------------+
+
+    // try s.pages.diagram(std.io.getStdErr().writer());
 
     {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
@@ -4592,9 +4689,11 @@ test "Screen: scroll above creates new page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1 is dirty because they are the ones that CHANGED contents
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's penultimate row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's final row is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 1's row is dirty because it's new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
@@ -4614,7 +4713,30 @@ test "Screen: scroll above no scrollback bottom of page" {
     try s.testWriteString("1ABCD\n2EFGH\n3IJKL");
     s.cursorAbsolute(0, 1);
     s.pages.clearDirty();
+
+    // At this point:
+    //  +-------------+ ACTIVE
+    //   +----------+ : = PAGE 0
+    // 0 |1ABCD00000| | 0
+    // 1 |2EFGH00000| | 1
+    //   :^         : : = PIN 0
+    // 2 |3IJKL00000| | 2
+    //   +----------+ :
+    //  +-------------+
+
     try s.cursorScrollAbove();
+
+    //   +----------+ = PAGE 0
+    // 0 |1ABCD00000|
+    //  +-------------+ ACTIVE
+    // 1 |2EFGH00000| | 0
+    // 2 |          | | 1
+    //   :^         : : = PIN 0
+    // 3 |3IJKL00000| | 2
+    //   +----------+ :
+    //  +-------------+
+
+    //try s.pages.diagram(std.io.getStdErr().writer());
 
     {
         const contents = try s.dumpStringAlloc(alloc, .{ .viewport = .{} });
@@ -4632,10 +4754,11 @@ test "Screen: scroll above no scrollback bottom of page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1,2 are dirty because they are the ones that CHANGED contents
-    // (not just scroll).
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 1 (active row 0) is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 2 (active row 1) is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 0 row 3 (active row 2) is dirty because it is new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
