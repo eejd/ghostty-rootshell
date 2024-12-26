@@ -620,7 +620,7 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     self.cursor.x = x; // Must be set before cursorChangePin
     self.cursor.y = y;
     self.cursorChangePin(page_pin);
-    const page_rac = page_pin.rowAndCell();
+    const page_rac = self.cursor.page_pin.rowAndCell();
     self.cursor.page_row = page_rac.row;
     self.cursor.page_cell = page_rac.cell;
 }
@@ -3762,6 +3762,81 @@ test "Screen: cursorAbsolute across pages preserves style" {
         );
         try testing.expect(styleval.flags.bold);
     }
+}
+
+test "Screen: cursorAbsolute to page with insufficient capacity" {
+    // This test checks for a very specific edge case
+    // which previously resulted in memory corruption.
+    //
+    // The conditions for this edge case are as such:
+    // - The cursor has an associated style or other managed memory.
+    // - The cursor moves to a different page.
+    // - The new page is at capacity and must have its capacity adjusted.
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 10, 3, 1);
+    defer s.deinit();
+
+    // Scroll down enough to go to another page
+    const start_page = &s.pages.pages.last.?.data;
+    const rem = start_page.capacity.rows;
+    start_page.pauseIntegrityChecks(true);
+    for (0..rem) |_| try s.cursorDownOrScroll();
+    start_page.pauseIntegrityChecks(false);
+
+    const new_page = &s.cursor.page_pin.node.data;
+
+    // We need our page to change for this test to make sense. If this
+    // assertion fails then the bug is in the test: we should be scrolling
+    // above enough for a new page to show up.
+    try testing.expect(start_page != new_page);
+
+    // Add styles to the start page until it reaches capacity.
+    {
+        // Pause integrity checks because they're slow and
+        // we're not testing this, this is just setup.
+        start_page.pauseIntegrityChecks(true);
+        defer start_page.pauseIntegrityChecks(false);
+        defer start_page.assertIntegrity();
+
+        var n: u24 = 1;
+        while (start_page.styles.add(
+            start_page.memory,
+            .{ .bg_color = .{ .rgb = @bitCast(n) } },
+        )) |_| n += 1 else |_| {}
+    }
+
+    // Set a style on the cursor.
+    try s.setAttribute(.{ .bold = {} });
+    {
+        const styleval = new_page.styles.get(
+            new_page.memory,
+            s.cursor.style_id,
+        );
+        try testing.expect(styleval.flags.bold);
+    }
+
+    // Go back up into the start page and we should still have that style.
+    s.cursorAbsolute(1, 1);
+    {
+        const cur_page = &s.cursor.page_pin.node.data;
+        // The page we're on now should NOT equal start_page, since its
+        // capacity should have been adjusted, which invalidates our ptr.
+        try testing.expect(start_page != cur_page);
+        // To make sure we DID change pages we check we're not on new_page.
+        try testing.expect(new_page != cur_page);
+
+        const styleval = cur_page.styles.get(
+            cur_page.memory,
+            s.cursor.style_id,
+        );
+        try testing.expect(styleval.flags.bold);
+    }
+
+    s.cursor.page_pin.node.data.assertIntegrity();
+    new_page.assertIntegrity();
 }
 
 test "Screen: scrolling" {
