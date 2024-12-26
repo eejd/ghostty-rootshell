@@ -423,7 +423,9 @@ extension Ghostty {
             // We also just trigger a backing property change. Just in case the screen has
             // a different scaling factor, this ensures that we update our content scale.
             // Issue: https://github.com/ghostty-org/ghostty/issues/2731
-            viewDidChangeBackingProperties()
+            DispatchQueue.main.async { [weak self] in
+                self?.viewDidChangeBackingProperties()
+            }
         }
 
         // MARK: - NSView
