@@ -4477,6 +4477,15 @@ test "Screen: scroll above same page but cursor on previous page last row" {
     try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+
+    // Attempt to clear the style from the cursor and
+    // then assert the integrity of both of our pages.
+    //
+    // This catches a case of memory corruption where the cursor
+    // is moved between pages without accounting for style refs.
+    try s.setAttribute(.{ .reset_bg = {} });
+    s.pages.pages.first.?.data.assertIntegrity();
+    s.pages.pages.last.?.data.assertIntegrity();
 }
 
 test "Screen: scroll above creates new page" {
