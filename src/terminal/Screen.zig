@@ -4365,10 +4365,11 @@ test "Screen: scroll above same page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1,2 are dirty because they are the ones that CHANGED contents
-    // (not just scroll).
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 1 (active row 0) is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 2 (active row 1) is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 0 row 3 (active row 2) is dirty because it's new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
@@ -4444,9 +4445,13 @@ test "Screen: scroll above same page but cursor on previous page" {
         }, cell.content.color_rgb);
     }
 
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's penultimate row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // The rest of the rows are dirty because they've been modified or are new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 }
 
 test "Screen: scroll above same page but cursor on previous page last row" {
@@ -4521,9 +4526,13 @@ test "Screen: scroll above same page but cursor on previous page last row" {
         }, cell.content.color_rgb);
     }
 
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's final row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 1's rows are all dirty because every row was moved.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 3 } }));
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 4 } }));
 
     // Attempt to clear the style from the cursor and
     // then assert the integrity of both of our pages.
@@ -4599,9 +4608,11 @@ test "Screen: scroll above creates new page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1 is dirty because they are the ones that CHANGED contents
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's penultimate row is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0's final row is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 1's row is dirty because it's new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
@@ -4662,10 +4673,11 @@ test "Screen: scroll above no scrollback bottom of page" {
         }, cell.content.color_rgb);
     }
 
-    // Only y=1,2 are dirty because they are the ones that CHANGED contents
-    // (not just scroll).
-    try testing.expect(!s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 1 (active row 0) is dirty because the cursor moved off of it.
+    try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 0 } }));
+    // Page 0 row 2 (active row 1) is dirty because it was cleared.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 1 } }));
+    // Page 0 row 3 (active row 2) is dirty because it is new.
     try testing.expect(s.pages.isDirty(.{ .active = .{ .x = 0, .y = 2 } }));
 }
 
