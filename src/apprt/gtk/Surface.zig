@@ -1341,8 +1341,9 @@ fn gtkMouseDown(
     y: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture)) orelse return;
+
     const self = userdataSelf(ud.?);
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture));
     const gtk_mods = c.gdk_event_get_modifier_state(event);
 
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
@@ -1374,7 +1375,8 @@ fn gtkMouseUp(
     _: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture));
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(gesture)) orelse return;
+
     const gtk_mods = c.gdk_event_get_modifier_state(event);
 
     const button = translateMouseButton(c.gtk_gesture_single_get_current_button(@ptrCast(gesture)));
@@ -1393,6 +1395,8 @@ fn gtkMouseMotion(
     y: c.gdouble,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec)) orelse return;
+
     const self = userdataSelf(ud.?);
     const scaled = self.scaledCoordinates(x, y);
 
@@ -1400,13 +1404,6 @@ fn gtkMouseMotion(
         .x = @floatCast(@max(0, scaled.x)),
         .y = @floatCast(scaled.y),
     };
-
-    // GTK can send spurious mouse movement events. Ignore them
-    // because this can cause actual issues:
-    // https://github.com/ghostty-org/ghostty/issues/2022
-    if (pos.x == self.cursor_pos.x and pos.y == self.cursor_pos.y) {
-        return;
-    }
 
     // Our pos changed, update
     self.cursor_pos = pos;
@@ -1418,7 +1415,6 @@ fn gtkMouseMotion(
     }
 
     // Get our modifiers
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
     const gtk_mods = c.gdk_event_get_modifier_state(event);
     const mods = gtk_key.translateMods(gtk_mods);
 
@@ -1432,10 +1428,11 @@ fn gtkMouseLeave(
     ec: *c.GtkEventControllerMotion,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec)) orelse return;
+
     const self = userdataSelf(ud.?);
 
     // Get our modifiers
-    const event = c.gtk_event_controller_get_current_event(@ptrCast(ec));
     const gtk_mods = c.gdk_event_get_modifier_state(event);
     const mods = gtk_key.translateMods(gtk_mods);
     self.core_surface.cursorPosCallback(.{ .x = -1, .y = -1 }, mods) catch |err| {
@@ -1536,10 +1533,11 @@ pub fn keyEvent(
     keycode: c.guint,
     gtk_mods: c.GdkModifierType,
 ) bool {
-    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
     const event = c.gtk_event_controller_get_current_event(
         @ptrCast(ec_key),
     ) orelse return false;
+
+    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
 
     // Get the unshifted unicode value of the keyval. This is used
     // by the Kitty keyboard protocol.
