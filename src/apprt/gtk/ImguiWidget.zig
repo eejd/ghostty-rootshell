@@ -386,7 +386,8 @@ fn keyEvent(
 
     // Try to process the event as text
     const event = c.gtk_event_controller_get_current_event(@ptrCast(ec_key));
-    _ = c.gtk_im_context_filter_keypress(self.im_context, event);
+    if (event != null)
+        _ = c.gtk_im_context_filter_keypress(self.im_context, event);
 
     return true;
 }
