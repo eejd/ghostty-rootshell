@@ -782,6 +782,12 @@ pub fn cursorDownScroll(self: *Screen) !void {
 /// This scrolls the active area at and above the cursor.
 /// The lines below the cursor are not scrolled.
 pub fn cursorScrollAbove(self: *Screen) !void {
+    // We unconditionally mark the cursor row as dirty here because
+    // the cursor always changes page rows inside this function, and
+    // when that happens it can mean the text in the old row needs to
+    // be re-shaped because the cursor splits runs to break ligatures.
+    self.cursor.page_pin.markDirty();
+
     // If the cursor is on the bottom of the screen, its faster to use
     // our specialized function for that case.
     if (self.cursor.y == self.pages.rows - 1) {
