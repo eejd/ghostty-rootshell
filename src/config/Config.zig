@@ -2202,12 +2202,12 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .up }, .mods = .{ .ctrl = true, .alt = true } },
-            .{ .goto_split = .top },
+            .{ .goto_split = .up },
         );
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .down }, .mods = .{ .ctrl = true, .alt = true } },
-            .{ .goto_split = .bottom },
+            .{ .goto_split = .down },
         );
         try result.keybind.set.put(
             alloc,
@@ -2465,12 +2465,12 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .up }, .mods = .{ .super = true, .alt = true } },
-            .{ .goto_split = .top },
+            .{ .goto_split = .up },
         );
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .down }, .mods = .{ .super = true, .alt = true } },
-            .{ .goto_split = .bottom },
+            .{ .goto_split = .down },
         );
         try result.keybind.set.put(
             alloc,

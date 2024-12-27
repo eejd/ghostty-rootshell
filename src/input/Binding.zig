@@ -469,9 +469,9 @@ pub const Action = union(enum) {
         previous,
         next,
 
-        top,
+        up,
         left,
-        bottom,
+        down,
         right,
     };
 
