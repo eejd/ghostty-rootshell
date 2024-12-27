@@ -9,6 +9,12 @@
     # system glibc that the user is building for.
     nixpkgs-stable.url = "github:nixos/nixpkgs/release-24.11";
 
+    # Used for shell.nix
+    flake-compat = {
+      url = "github:edolstra/flake-compat";
+      flake = false;
+    };
+
     zig = {
       url = "github:mitchellh/zig-overlay";
       inputs = {
