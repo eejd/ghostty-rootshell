@@ -604,11 +604,7 @@ pub fn build(b: *std.Build) !void {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        if (config.flatpak) {
-            b.installFile("dist/linux/app-flatpak.desktop", "share/applications/com.mitchellh.ghostty.desktop");
-        } else {
-            b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
-        }
+        b.installFile("dist/linux/app.desktop", "share/applications/com.mitchellh.ghostty.desktop");
 
         // Right click menu action for Plasma desktop
         b.installFile("dist/linux/ghostty_dolphin.desktop", "share/kio/servicemenus/com.mitchellh.ghostty.desktop");
