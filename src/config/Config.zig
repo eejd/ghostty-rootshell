@@ -628,7 +628,7 @@ command: ?[]const u8 = null,
 ///     (i.e. by wrapping your command in a shell, setting env vars, etc.).
 ///     This is a safety measure to prevent unexpected behavior. If you want
 ///     shell integration with a `-e`-executed command, you must either
-///     name your binary appopriately or source the shell integration script
+///     name your binary appropriately or source the shell integration script
 ///     manually.
 ///
 @"initial-command": ?[]const u8 = null,
