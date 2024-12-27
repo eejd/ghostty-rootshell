@@ -36,6 +36,7 @@ pub const fixMaxFiles = file.fixMaxFiles;
 pub const allocTmpDir = file.allocTmpDir;
 pub const freeTmpDir = file.freeTmpDir;
 pub const isFlatpak = flatpak.isFlatpak;
+pub const FlatpakHostCommand = flatpak.FlatpakHostCommand;
 pub const home = homedir.home;
 pub const ensureLocale = locale.ensureLocale;
 pub const clickInterval = mouse.clickInterval;

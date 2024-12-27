@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
+const posix = std.posix;
 
 const log = std.log.scoped(.flatpak);
 
@@ -26,7 +27,7 @@ pub fn isFlatpak() bool {
 ///
 /// Requires GIO, GLib to be available and linked.
 pub const FlatpakHostCommand = struct {
-    const fd_t = std.os.fd_t;
+    const fd_t = posix.fd_t;
     const EnvMap = std.process.EnvMap;
     const c = @cImport({
         @cInclude("gio/gio.h");
