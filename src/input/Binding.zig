@@ -393,6 +393,8 @@ pub const Action = union(enum) {
     ///
     /// See the various configurations for the quick terminal in the
     /// configuration file to customize its behavior.
+    ///
+    /// This currently only works on macOS.
     toggle_quick_terminal: void,
 
     /// Show/hide all windows. If all windows become shown, we also ensure
