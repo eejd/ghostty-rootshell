@@ -27,6 +27,7 @@ pub fn genKeybindActions(writer: anytype) !void {
     inline for (fields) |field| {
         if (field.name[0] == '_') continue;
 
+        // Write previously stored doc comment below all related actions
         if (@hasDecl(help_strings.KeybindAction, field.name)) {
             try writer.writeAll(buffer.items);
             try writer.writeAll("\n");
