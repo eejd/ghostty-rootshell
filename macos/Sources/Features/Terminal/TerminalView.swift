@@ -69,7 +69,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // The pwd of the focused surface as a URL
     private var pwdURL: URL? {
-        guard let surfacePwd else { return nil }
+        guard let surfacePwd, surfacePwd != "" else { return nil }
         return URL(fileURLWithPath: surfacePwd)
     }
     
