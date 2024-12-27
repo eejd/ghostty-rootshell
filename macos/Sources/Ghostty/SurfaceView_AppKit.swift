@@ -361,17 +361,23 @@ extension Ghostty {
         @objc private func onUpdateRendererHealth(notification: SwiftUI.Notification) {
             guard let healthAny = notification.userInfo?["health"] else { return }
             guard let health = healthAny as? ghostty_action_renderer_health_e else { return }
-            healthy = health == GHOSTTY_RENDERER_HEALTH_OK
+            DispatchQueue.main.async { [weak self] in
+                self?.healthy = health == GHOSTTY_RENDERER_HEALTH_OK
+            }
         }
 
         @objc private func ghosttyDidContinueKeySequence(notification: SwiftUI.Notification) {
             guard let keyAny = notification.userInfo?[Ghostty.Notification.KeySequenceKey] else { return }
             guard let key = keyAny as? Ghostty.KeyEquivalent else { return }
-            keySequence.append(key)
+            DispatchQueue.main.async { [weak self] in
+                self?.keySequence.append(key)
+            }
         }
 
         @objc private func ghosttyDidEndKeySequence(notification: SwiftUI.Notification) {
-            keySequence = []
+            DispatchQueue.main.async { [weak self] in
+                self?.keySequence = []
+            }
         }
 
         @objc private func ghosttyConfigDidChange(_ notification: SwiftUI.Notification) {
@@ -381,7 +387,9 @@ extension Ghostty {
             ] as? Ghostty.Config else { return }
 
             // Update our derived config
-            self.derivedConfig = DerivedConfig(config)
+            DispatchQueue.main.async { [weak self] in
+                self?.derivedConfig = DerivedConfig(config)
+            }
         }
 
         @objc private func ghosttyColorDidChange(_ notification: SwiftUI.Notification) {
@@ -391,7 +399,9 @@ extension Ghostty {
 
             switch (change.kind) {
             case .background:
-                self.backgroundColor = change.color
+                DispatchQueue.main.async { [weak self] in
+                    self?.backgroundColor = change.color
+                }
 
             default:
                 // We don't do anything for the other colors yet.
@@ -413,7 +423,9 @@ extension Ghostty {
             // We also just trigger a backing property change. Just in case the screen has
             // a different scaling factor, this ensures that we update our content scale.
             // Issue: https://github.com/ghostty-org/ghostty/issues/2731
-            viewDidChangeBackingProperties()
+            DispatchQueue.main.async { [weak self] in
+                self?.viewDidChangeBackingProperties()
+            }
         }
 
         // MARK: - NSView
