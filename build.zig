@@ -481,19 +481,25 @@ pub fn build(b: *std.Build) !void {
             run_step.step.dependOn(&src_install.step);
 
             {
+                // Use cp -R instead of Step.InstallDir because we need to preserve
+                // symlinks in the terminfo database. Zig's InstallDir step doesn't
+                // handle symlinks correctly yet.
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
                 copy_step.addFileArg(path);
-                copy_step.addArg(b.fmt("{s}/share", .{b.install_prefix}));
+                copy_step.addArg(b.fmt("{s}/share", .{b.install_path}));
                 b.getInstallStep().dependOn(&copy_step.step);
             }
 
             if (target.result.os.tag == .macos and exe_ != null) {
+                // Use cp -R instead of Step.InstallDir because we need to preserve
+                // symlinks in the terminfo database. Zig's InstallDir step doesn't
+                // handle symlinks correctly yet.
                 const copy_step = RunStep.create(b, "copy terminfo db");
                 copy_step.addArgs(&.{ "cp", "-R" });
                 copy_step.addFileArg(path);
                 copy_step.addArg(
-                    b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_prefix}),
+                    b.fmt("{s}/Ghostty.app/Contents/Resources", .{b.install_path}),
                 );
                 b.getInstallStep().dependOn(&copy_step.step);
             }
