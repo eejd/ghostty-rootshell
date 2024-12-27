@@ -22,8 +22,17 @@ pub fn genKeybindActions(writer: anytype) !void {
 
     @setEvalBranchQuota(5_000);
     const fields = @typeInfo(KeybindAction).Union.fields;
+
+    var buffer = std.ArrayList(u8).init(std.heap.page_allocator);
     inline for (fields) |field| {
         if (field.name[0] == '_') continue;
+
+        if (@hasDecl(help_strings.KeybindAction, field.name)) {
+            try writer.writeAll(buffer.items);
+            try writer.writeAll("\n");
+
+            buffer.clearRetainingCapacity();
+        }
 
         // Write the field name.
         try writer.writeAll("## `");
@@ -37,10 +46,9 @@ pub fn genKeybindActions(writer: anytype) !void {
                 '\n',
             );
             while (iter.next()) |s| {
-                try writer.writeAll(s);
-                try writer.writeAll("\n");
+                try buffer.appendSlice(s);
+                try buffer.appendSlice("\n");
             }
-            try writer.writeAll("\n\n");
         }
     }
 }
