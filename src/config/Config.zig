@@ -1189,12 +1189,12 @@ keybind: Keybinds = .{},
 /// value larger than this will be clamped to the maximum value.
 @"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
 
-// If true, when there are multiple split panes, the mouse selects the pane
-// that is focused. This only applies to the currently focused window; i.e.
-// mousing over a split in an unfocused window will now focus that split
-// and bring the window to front.
-//
-// Default is false.
+/// If true, when there are multiple split panes, the mouse selects the pane
+/// that is focused. This only applies to the currently focused window; i.e.
+/// mousing over a split in an unfocused window will now focus that split
+/// and bring the window to front.
+///
+/// Default is false.
 @"focus-follows-mouse": bool = false,
 
 /// Whether to allow programs running in the terminal to read/write to the
