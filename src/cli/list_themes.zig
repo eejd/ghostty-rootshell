@@ -127,6 +127,8 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
         while (try walker.next()) |entry| {
             switch (entry.kind) {
                 .file, .sym_link => {
+                    if (std.mem.eql(u8, entry.name, ".DS_Store"))
+                        continue;
                     count += 1;
                     try themes.append(.{
                         .location = loc.location,
