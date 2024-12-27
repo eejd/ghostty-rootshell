@@ -308,7 +308,7 @@ pub const Key = enum(c_int) {
     equal,
     left_bracket, // [
     right_bracket, // ]
-    backslash, // /
+    backslash, // \
 
     // control
     up,
