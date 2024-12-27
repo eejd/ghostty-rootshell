@@ -351,10 +351,10 @@ const c = @cImport({
 ///
 /// The second directory is the `themes` subdirectory of the Ghostty resources
 /// directory. Ghostty ships with a multitude of themes that will be installed
-/// into this directory. On macOS, this list is in the `Ghostty.app/Contents/
-/// Resources/ghostty/themes` directory. On Linux, this list is in the `share/
-/// ghostty/themes` directory (wherever you installed the Ghostty "share"
-/// directory.
+/// into this directory. On macOS, this list is in the
+/// `Ghostty.app/Contents/Resources/ghostty/themes` directory. On Linux, this
+/// list is in the `share/ghostty/themes` directory (wherever you installed the
+/// Ghostty "share" directory.
 ///
 /// To see a list of available themes, run `ghostty +list-themes`.
 ///
