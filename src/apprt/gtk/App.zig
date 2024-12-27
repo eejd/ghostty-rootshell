@@ -988,6 +988,8 @@ fn loadRuntimeCss(
                 \\  --headerbar-fg-color: rgb({d},{d},{d});
                 \\  --headerbar-bg-color: rgb({d},{d},{d});
                 \\  --headerbar-backdrop-color: oklab(from var(--headerbar-bg-color) calc(l * 0.9) a b / alpha);
+                \\  --popover-fg-color: rgb({d},{d},{d});
+                \\  --popover-bg-color: rgb({d},{d},{d});
                 \\}}
                 \\windowhandle {{
                 \\  background-color: var(--headerbar-bg-color);
@@ -997,6 +999,12 @@ fn loadRuntimeCss(
                 \\ background-color: var(--headerbar-backdrop-color);
                 \\}}
             , .{
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
                 headerbar_foreground.r,
                 headerbar_foreground.g,
                 headerbar_foreground.b,
