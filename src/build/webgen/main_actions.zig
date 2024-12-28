@@ -13,6 +13,7 @@ pub fn genKeybindActions(writer: anytype) !void {
         \\---
         \\title: Keybinding Action Reference
         \\description: Reference of all Ghostty keybinding actions.
+        \\editOnGithubLink: https://github.com/ghostty-org/ghostty/edit/main/src/input/Binding.zig
         \\---
         \\
         \\This is a reference of all Ghostty keybinding actions.
