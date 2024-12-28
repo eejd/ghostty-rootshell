@@ -2557,6 +2557,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
+            .{ .key = .{ .translated = .backspace }, .mods = .{ .super = true } },
+            .{ .esc = "w" },
+        );
+        try result.keybind.set.put(
+            alloc,
             .{ .key = .{ .translated = .left }, .mods = .{ .alt = true } },
             .{ .esc = "b" },
         );
