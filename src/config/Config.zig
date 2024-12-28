@@ -4363,6 +4363,33 @@ pub const RepeatablePath = struct {
             var buf: [std.fs.max_path_bytes]u8 = undefined;
             const abs = dir.realpath(path, &buf) catch |err| abs: {
                 if (err == error.FileNotFound) {
+                    // Check if the path starts with a tilde and expand it to the home directory on linux/mac
+                    if (path[0] == '~') {
+                        const home_env_var = switch (builtin.os.tag) {
+                            .linux, .macos => std.posix.getenv("HOME"),
+                            .windows => null,
+                            else => null,
+                        };
+                        if (home_env_var) |home_dir| {
+                            const rest = path[1..]; // Skip the ~
+                            const expanded_len = home_dir.len + rest.len;
+                            if (expanded_len > buf.len) {
+                                try diags.append(alloc, .{
+                                    .message = try std.fmt.allocPrintZ(
+                                        alloc,
+                                        "error resolving file path {s}: path too long after expanding home directory",
+                                        .{path},
+                                    ),
+                                });
+                                self.value.items[i] = .{ .required = "" };
+                                continue;
+                            }
+                            @memcpy(buf[0..home_dir.len], home_dir);
+                            @memcpy(buf[home_dir.len..expanded_len], rest);
+                            break :abs buf[0..expanded_len];
+                        }
+                    }
+
                     // The file doesn't exist. Try to resolve the relative path
                     // another way.
                     const resolved = try std.fs.path.resolve(alloc, &.{ base, path });
