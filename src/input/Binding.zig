@@ -473,6 +473,38 @@ pub const Action = union(enum) {
         left,
         down,
         right,
+
+        pub fn parse(input: []const u8) !SplitFocusDirection {
+            return std.meta.stringToEnum(SplitFocusDirection, input) orelse {
+                // For backwards compatibility we map "top" and "bottom" onto the enum
+                // values "up" and "down"
+                if (std.mem.eql(u8, input, "top")) {
+                    return .up;
+                } else if (std.mem.eql(u8, input, "bottom")) {
+                    return .down;
+                } else {
+                    return Error.InvalidFormat;
+                }
+            };
+        }
+
+        test "parse" {
+            const testing = std.testing;
+
+            try testing.expectEqual(.previous, try SplitFocusDirection.parse("previous"));
+            try testing.expectEqual(.next, try SplitFocusDirection.parse("next"));
+
+            try testing.expectEqual(.up, try SplitFocusDirection.parse("up"));
+            try testing.expectEqual(.left, try SplitFocusDirection.parse("left"));
+            try testing.expectEqual(.down, try SplitFocusDirection.parse("down"));
+            try testing.expectEqual(.right, try SplitFocusDirection.parse("right"));
+
+            try testing.expectEqual(.up, try SplitFocusDirection.parse("top"));
+            try testing.expectEqual(.down, try SplitFocusDirection.parse("bottom"));
+
+            try testing.expectError(error.InvalidFormat, SplitFocusDirection.parse(""));
+            try testing.expectError(error.InvalidFormat, SplitFocusDirection.parse("green"));
+        }
     };
 
     pub const SplitResizeDirection = enum {
@@ -515,7 +547,16 @@ pub const Action = union(enum) {
         comptime field: std.builtin.Type.UnionField,
         param: []const u8,
     ) !field.type {
-        return switch (@typeInfo(field.type)) {
+        const field_info = @typeInfo(field.type);
+
+        // Fields can provide a custom "parse" function
+        if (field_info == .Struct or field_info == .Union or field_info == .Enum) {
+            if (@hasDecl(field.type, "parse") and @typeInfo(@TypeOf(field.type.parse)) == .Fn) {
+                return field.type.parse(param);
+            }
+        }
+
+        return switch (field_info) {
             .Enum => try parseEnum(field.type, param),
             .Int => try parseInt(field.type, param),
             .Float => try parseFloat(field.type, param),
