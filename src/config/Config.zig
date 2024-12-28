@@ -2303,18 +2303,18 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
     }
     {
+        // On macOS we default to super but everywhere else
+        // is alt.
+        const mods: inputpkg.Mods = if (builtin.target.isDarwin())
+            .{ .super = true }
+        else
+            .{ .alt = true };
+
         // Cmd+N for goto tab N
         const start = @intFromEnum(inputpkg.Key.one);
-        const end = @intFromEnum(inputpkg.Key.nine);
+        const end = @intFromEnum(inputpkg.Key.eight);
         var i: usize = start;
         while (i <= end) : (i += 1) {
-            // On macOS we default to super but everywhere else
-            // is alt.
-            const mods: inputpkg.Mods = if (builtin.target.isDarwin())
-                .{ .super = true }
-            else
-                .{ .alt = true };
-
             try result.keybind.set.put(
                 alloc,
                 .{
@@ -2333,6 +2333,17 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
                 .{ .goto_tab = (i - start) + 1 },
             );
         }
+        try result.keybind.set.put(
+            alloc,
+            .{
+                .key = if (comptime builtin.target.isDarwin())
+                    .{ .physical = .nine }
+                else
+                    .{ .translated = .nine },
+                .mods = mods,
+            },
+            .{ .last_tab = {} },
+        );
     }
 
     // Toggle fullscreen
@@ -2436,11 +2447,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .{ .translated = .right_bracket }, .mods = .{ .super = true, .shift = true } },
             .{ .next_tab = {} },
-        );
-        try result.keybind.set.put(
-            alloc,
-            .{ .key = .{ .physical = inputpkg.Key.zero }, .mods = .{ .super = true } },
-            .{ .last_tab = {} },
         );
         try result.keybind.set.put(
             alloc,
