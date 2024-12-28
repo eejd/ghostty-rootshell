@@ -4361,35 +4361,61 @@ pub const RepeatablePath = struct {
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
             var buf: [std.fs.max_path_bytes]u8 = undefined;
-            const abs = dir.realpath(path, &buf) catch |err| abs: {
-                if (err == error.FileNotFound) {
-                    // Check if the path starts with a tilde and expand it to the home directory on linux/mac
-                    if (path[0] == '~') {
-                        const home_env_var = switch (builtin.os.tag) {
-                            .linux, .macos => std.posix.getenv("HOME"),
-                            .windows => null,
-                            else => null,
-                        };
-                        if (home_env_var) |home_dir| {
-                            const rest = path[1..]; // Skip the ~
-                            const expanded_len = home_dir.len + rest.len;
-                            if (expanded_len > buf.len) {
-                                try diags.append(alloc, .{
-                                    .message = try std.fmt.allocPrintZ(
-                                        alloc,
-                                        "error resolving file path {s}: path too long after expanding home directory",
-                                        .{path},
-                                    ),
-                                });
-                                self.value.items[i] = .{ .required = "" };
-                                continue;
-                            }
-                            @memcpy(buf[0..home_dir.len], home_dir);
-                            @memcpy(buf[home_dir.len..expanded_len], rest);
-                            break :abs buf[0..expanded_len];
-                        }
+
+            // Check if the path starts with a tilde and expand it to the home directory on linux/mac
+            if (path[0] == '~') {
+                const home_env_var = switch (builtin.os.tag) {
+                    .linux, .macos => std.posix.getenv("HOME"),
+                    .windows => null,
+                    else => null,
+                };
+
+                if (home_env_var) |home_dir| {
+                    // very unlikely to happen
+                    if (!std.fs.path.isAbsolute(home_dir)) {
+                        try diags.append(alloc, .{
+                            .message = try std.fmt.allocPrintZ(
+                                alloc,
+                                "error resolving file path {s}: HOME environment variable is not an absolute path",
+                                .{path},
+                            ),
+                        });
+                        self.value.items[i] = .{ .required = "" };
+                        continue;
                     }
 
+                    const rest = path[1..]; // Skip the ~
+                    const expanded_len = home_dir.len + rest.len;
+                    if (expanded_len > buf.len) {
+                        try diags.append(alloc, .{
+                            .message = try std.fmt.allocPrintZ(
+                                alloc,
+                                "error resolving file path {s}: path too long after expanding home directory",
+                                .{path},
+                            ),
+                        });
+                        self.value.items[i] = .{ .required = "" };
+                        continue;
+                    }
+
+                    @memcpy(buf[0..home_dir.len], home_dir);
+                    @memcpy(buf[home_dir.len..expanded_len], rest);
+
+                    log.debug(
+                        "expanding file path from home directory: path={s}",
+                        .{buf[0..expanded_len]},
+                    );
+
+                    switch (self.value.items[i]) {
+                        .optional, .required => |*p| p.* = try alloc.dupeZ(u8, buf[0..expanded_len]),
+                    }
+
+                    continue;
+                }
+            }
+
+            const abs = dir.realpath(path, &buf) catch |err| abs: {
+                if (err == error.FileNotFound) {
                     // The file doesn't exist. Try to resolve the relative path
                     // another way.
                     const resolved = try std.fs.path.resolve(alloc, &.{ base, path });
