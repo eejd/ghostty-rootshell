@@ -110,7 +110,7 @@ fn trimSpace(input: []const u8) []const u8 {
     return std.mem.trim(u8, input, " \n\t");
 }
 
-/// Expands a path that starts with a tilde (~) to the home directory of the user.
+/// Expands a path that starts with a tilde (~) to the home directory of the current user.
 ///
 /// Errors if `home` fails or if the size of the expanded path is larger than `buf.len`.
 ///
@@ -133,6 +133,35 @@ fn expandHomeUnix(path: []const u8, buf: []u8) !?[]u8 {
     @memcpy(buf[home_dir.len..expanded_len], rest);
 
     return buf[0..expanded_len];
+}
+
+test "expandHomeUnix" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const home_dir = (try expandHomeUnix("~/", &buf)).?;
+    // Joining the home directory `~` with the path `/`
+    // the result should end with a separator here. (e.g. `/home/user/`)
+    try testing.expect(home_dir[home_dir.len - 1] == std.fs.path.sep);
+
+    const downloads = (try expandHomeUnix("~/Downloads/shader.glsl", &buf)).?;
+    const expected_downloads = try std.mem.concat(allocator, u8, &[_][]const u8{ home_dir, "Downloads/shader.glsl" });
+    defer allocator.free(expected_downloads);
+    try testing.expectEqualStrings(expected_downloads, downloads);
+
+    try testing.expect(try expandHomeUnix("~", &buf) == null);
+    try testing.expect(try expandHomeUnix("~abc/", &buf) == null);
+    try testing.expect(try expandHomeUnix("/home/user", &buf) == null);
+    try testing.expect(try expandHomeUnix("", &buf) == null);
+
+    // Expect an error if the buffer is large enough to hold the home directory,
+    // but not the expanded path
+    var small_buf = try allocator.alloc(u8, home_dir.len);
+    defer allocator.free(small_buf);
+    try testing.expectError(error.BufferTooSmall, expandHomeUnix(
+        "~/Downloads",
+        small_buf[0..],
+    ));
 }
 
 test {
