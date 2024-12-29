@@ -1426,14 +1426,22 @@ fn gtkMouseMotion(
         .y = @floatCast(scaled.y),
     };
 
-    // Our pos changed, update
-    self.cursor_pos = pos;
+    // When the GLArea is resized under the mouse, GTK issues a mouse motion
+    // event. This has the unfortunate side effect of causing focus to potentially
+    // change when `focus-follows-mouse` is enabled. To prevent this, we check
+    // if the cursor is still in the same place as the last event and only grab
+    // focus if it has moved.
+    const is_cursor_still = @abs(self.cursor_pos.x - pos.x) < 1 and
+        @abs(self.cursor_pos.y - pos.y) < 1;
 
     // If we don't have focus, and we want it, grab it.
     const gl_widget = @as(*c.GtkWidget, @ptrCast(self.gl_area));
-    if (c.gtk_widget_has_focus(gl_widget) == 0 and self.app.config.@"focus-follows-mouse") {
+    if (!is_cursor_still and c.gtk_widget_has_focus(gl_widget) == 0 and self.app.config.@"focus-follows-mouse") {
         self.grabFocus();
     }
+
+    // Our pos changed, update
+    self.cursor_pos = pos;
 
     // Get our modifiers
     const gtk_mods = c.gdk_event_get_modifier_state(event);
