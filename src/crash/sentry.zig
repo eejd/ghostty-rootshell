@@ -3,7 +3,8 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
-const sentry = @import("sentry");
+const build_options = @import("build_options");
+const sentry = if (build_options.sentry) @import("sentry");
 const internal_os = @import("../os/main.zig");
 const crash = @import("main.zig");
 const state = &@import("../global.zig").state;
@@ -47,6 +48,8 @@ pub threadlocal var thread_state: ?ThreadState = null;
 /// It is up to the user to grab the logs and manually send them to us
 /// (or they own Sentry instance) if they want to.
 pub fn init(gpa: Allocator) !void {
+    if (comptime !build_options.sentry) return;
+
     // Not supported on Windows currently, doesn't build.
     if (comptime builtin.os.tag == .windows) return;
 
@@ -76,6 +79,8 @@ pub fn init(gpa: Allocator) !void {
 }
 
 fn initThread(gpa: Allocator) !void {
+    if (comptime !build_options.sentry) return;
+
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -145,6 +150,8 @@ fn initThread(gpa: Allocator) !void {
 /// Process-wide deinitialization of our Sentry client. This ensures all
 /// our data is flushed.
 pub fn deinit() void {
+    if (comptime !build_options.sentry) return;
+
     if (comptime builtin.os.tag == .windows) return;
 
     // If we're still initializing then wait for init to finish. This

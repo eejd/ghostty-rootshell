@@ -152,6 +152,17 @@ pub fn build(b: *std.Build) !void {
         }
     };
 
+    config.sentry = b.option(
+        bool,
+        "sentry",
+        "Build with Sentry crash reporting. Default for macOS is true, false for any other system.",
+    ) orelse sentry: {
+        switch (target.result.os.tag) {
+            .macos, .ios => break :sentry true,
+            else => break :sentry false,
+        }
+    };
+
     const pie = b.option(
         bool,
         "pie",
@@ -1245,13 +1256,17 @@ fn addDeps(
     }
 
     // Sentry
-    const sentry_dep = b.dependency("sentry", .{
-        .target = target,
-        .optimize = optimize,
-        .backend = .breakpad,
-    });
-    step.root_module.addImport("sentry", sentry_dep.module("sentry"));
-    if (target.result.os.tag != .windows) {
+    if (config.sentry) sentry: {
+        if (target.result.os.tag == .windows) break :sentry;
+
+        const sentry_dep = b.dependency("sentry", .{
+            .target = target,
+            .optimize = optimize,
+            .backend = .breakpad,
+        });
+
+        step.root_module.addImport("sentry", sentry_dep.module("sentry"));
+
         // Sentry
         step.linkLibrary(sentry_dep.artifact("sentry"));
         try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
