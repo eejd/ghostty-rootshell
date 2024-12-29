@@ -115,7 +115,16 @@ fn trimSpace(input: []const u8) []const u8 {
 /// Errors if `home` fails or if the size of the expanded path is larger than `buf.len`.
 ///
 /// Returns null if the value returned from `home` is null, otherwise returns a slice to the expanded path.
-pub fn expandHome(path: []const u8, buf: []u8) !?[]u8 {
+pub inline fn expandHome(path: []const u8, buf: []u8) !?[]u8 {
+    return switch (builtin.os.tag) {
+        inline .linux, .macos => expandHomeUnix(path, buf),
+        .ios => return null,
+        else => @compileError("unimplemented"),
+    };
+}
+
+fn expandHomeUnix(path: []const u8, buf: []u8) !?[]u8 {
+    if (!std.mem.startsWith(u8, path, "~/")) return null;
     const home_dir = try home(buf) orelse return null;
     const rest = path[1..]; // Skip the ~
     const expanded_len = home_dir.len + rest.len;

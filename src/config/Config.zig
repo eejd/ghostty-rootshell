@@ -4364,26 +4364,21 @@ pub const RepeatablePath = struct {
 
             // Check if the path starts with a tilde and expand it to the home directory on linux/mac
             if (std.mem.startsWith(u8, path, "~/")) {
-                if (try internal_os.expandHome(path, &buf)) |expanded_path| {
-                    log.debug(
-                        "expanding file path from home directory: path={s}",
-                        .{expanded_path},
-                    );
-                    switch (self.value.items[i]) {
-                        .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded_path),
-                    }
-                    continue;
-                } else {
-                    try diags.append(alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            alloc,
-                            "error expanding home path {s}",
-                            .{path},
-                        ),
-                    });
+                const expanded: []u8 = try internal_os.expandHome(path, &buf) orelse {
+                    // Blank this path so that we don't attempt to resolve it again
                     self.value.items[i] = .{ .required = "" };
                     continue;
+                };
+
+                log.debug(
+                    "expanding file path from home directory: path={s}",
+                    .{expanded},
+                );
+
+                switch (self.value.items[i]) {
+                    .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded),
                 }
+                continue;
             }
 
             const abs = dir.realpath(path, &buf) catch |err| abs: {
