@@ -4363,27 +4363,9 @@ pub const RepeatablePath = struct {
             var buf: [std.fs.max_path_bytes]u8 = undefined;
 
             // Check if the path starts with a tilde and expand it to the home directory on linux/mac
-            if (path[0] == '~') {
-                const home_env_var = switch (builtin.os.tag) {
-                    .linux, .macos => std.posix.getenv("HOME"),
-                    .windows => null,
-                    else => null,
-                };
-
-                if (home_env_var) |home_dir| {
-                    // very unlikely to happen
-                    if (!std.fs.path.isAbsolute(home_dir)) {
-                        try diags.append(alloc, .{
-                            .message = try std.fmt.allocPrintZ(
-                                alloc,
-                                "error resolving file path {s}: HOME environment variable is not an absolute path",
-                                .{path},
-                            ),
-                        });
-                        self.value.items[i] = .{ .required = "" };
-                        continue;
-                    }
-
+            if (std.mem.startsWith(u8, path, "~/")) {
+                const home_var = try internal_os.home(&buf); // cache this?
+                if (home_var) |home_dir| {
                     const rest = path[1..]; // Skip the ~
                     const expanded_len = home_dir.len + rest.len;
                     if (expanded_len > buf.len) {
@@ -4398,7 +4380,6 @@ pub const RepeatablePath = struct {
                         continue;
                     }
 
-                    @memcpy(buf[0..home_dir.len], home_dir);
                     @memcpy(buf[home_dir.len..expanded_len], rest);
 
                     log.debug(
