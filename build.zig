@@ -158,6 +158,12 @@ pub fn build(b: *std.Build) !void {
         "Build a Position Independent Executable. Default true for system packages.",
     ) orelse system_package;
 
+    const strip = b.option(
+        bool,
+        "strip",
+        "Build the website data for the website.",
+    ) orelse null;
+
     const conformance = b.option(
         []const u8,
         "conformance",
@@ -342,7 +348,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = switch (optimize) {
+        .strip = strip orelse switch (optimize) {
             .Debug => false,
             .ReleaseSafe => false,
             .ReleaseFast, .ReleaseSmall => true,
