@@ -180,7 +180,7 @@ pub const App = struct {
 
             .initial_position => switch (target) {
                 .app => {},
-                .surface => |surface| surface.rt_surface.setInitialWindowPosition(
+                .surface => |surface| try surface.rt_surface.setInitialWindowPosition(
                     value.x,
                     value.y,
                 ),
@@ -674,7 +674,7 @@ pub const Surface = struct {
     /// Set the initial window position. This is called exactly once at
     /// surface initialization time. This may be called before "self"
     /// is fully initialized.
-    fn setInitialWindowPosition(self: *const Surface, x: i32, y: i32) void {
+    fn setInitialWindowPosition(self: *const Surface, x: i32, y: i32) !void {
         log.debug("setting initial window position ({},{})", .{ x, y });
 
         self.window.setPos(.{ .x = x, .y = y });

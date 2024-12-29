@@ -474,6 +474,7 @@ pub fn performAction(
         .pwd => try self.setPwd(target, value),
         .present_terminal => self.presentTerminal(target),
         .initial_size => try self.setInitialSize(target, value),
+        .initial_position => self.setInitialPosition(target, value),
         .mouse_visibility => self.setMouseVisibility(target, value),
         .mouse_shape => try self.setMouseShape(target, value),
         .mouse_over_link => self.setMouseOverLink(target, value),
@@ -794,7 +795,7 @@ fn setInitialPosition(
 ) void {
     switch (target) {
         .app => {},
-        .surface => |v| v.rt_surface.setInitialWindowPosition(
+        .surface => |v| try v.rt_surface.setInitialWindowPosition(
             value.x,
             value.y,
         ),
