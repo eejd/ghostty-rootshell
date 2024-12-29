@@ -514,6 +514,12 @@ typedef struct {
   uint32_t height;
 } ghostty_action_initial_size_s;
 
+// apprt.action.InitialPosition
+typedef struct {
+  int32_t x;
+  int32_t y;
+} ghostty_action_initial_position_s;
+
 // apprt.action.CellSize
 typedef struct {
   uint32_t width;
@@ -606,6 +612,7 @@ typedef union {
   ghostty_action_resize_split_s resize_split;
   ghostty_action_size_limit_s size_limit;
   ghostty_action_initial_size_s initial_size;
+  ghostty_action_initial_position_s initial_position;
   ghostty_action_cell_size_s cell_size;
   ghostty_action_inspector_e inspector;
   ghostty_action_desktop_notification_s desktop_notification;
