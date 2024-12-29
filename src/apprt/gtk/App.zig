@@ -786,6 +786,21 @@ fn setInitialSize(
         ),
     }
 }
+
+fn setInitialPosition(
+    _: *App,
+    target: apprt.Target,
+    value: apprt.action.InitialPosition,
+) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| v.rt_surface.setInitialWindowPosition(
+            value.x,
+            value.y,
+        ),
+    }
+}
+
 fn showDesktopNotification(
     self: *App,
     target: apprt.Target,

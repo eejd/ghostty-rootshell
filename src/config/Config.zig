@@ -1108,6 +1108,19 @@ keybind: Keybinds = .{},
 @"window-height": u32 = 0,
 @"window-width": u32 = 0,
 
+/// The initial window position. This position is in pixels and is relative
+/// to the top-left corner of the screen. Both values must be set to take
+/// effect. If only one value is set, it is ignored.
+///
+/// Note that the window manager may put limits on the position or override
+/// the position. For example, a tiling window manager may force the window
+/// to be a certain position to fit within the grid. There is nothing Ghostty
+/// will do about this, but it will make an effort.
+///
+/// This will default to the top-left corner of the screen if not set (0, 0).
+@"window-position-x": i32 = 0,
+@"window-position-y": i32 = 0,
+
 /// Whether to enable saving and restoring window state. Window state includes
 /// their position, size, tabs, splits, etc. Some window state requires shell
 /// integration, such as preserving working directories. See `shell-integration`

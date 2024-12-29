@@ -178,6 +178,14 @@ pub const App = struct {
                 ),
             },
 
+            .initial_position => switch (target) {
+                .app => {},
+                .surface => |surface| surface.rt_surface.setInitialWindowPosition(
+                    value.x,
+                    value.y,
+                ),
+            },
+
             .toggle_fullscreen => self.toggleFullscreen(target),
 
             .open_config => try configpkg.edit.open(self.app.alloc),
@@ -661,6 +669,15 @@ pub const Surface = struct {
             .width = @min(width, workarea.width),
             .height = @min(height, workarea.height),
         });
+    }
+
+    /// Set the initial window position. This is called exactly once at
+    /// surface initialization time. This may be called before "self"
+    /// is fully initialized.
+    fn setInitialWindowPosition(self: *const Surface, x: i32, y: i32) void {
+        log.debug("setting initial window position ({},{})", .{ x, y });
+
+        self.window.setPos(.{ .x = x, .y = y });
     }
 
     /// Set the size limits of the window.

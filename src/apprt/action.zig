@@ -136,6 +136,11 @@ pub const Action = union(Key) {
     /// after the surface is initialized it should be ignored.
     initial_size: InitialSize,
 
+    // Specifies the initial position of the target terminal. This will be
+    // sent only during the initialization of a surface. If it is received
+    // after the surface is initialized it should be ignored.
+    initial_position: InitialPosition,
+
     /// The cell size has changed to the given dimensions in pixels.
     cell_size: CellSize,
 
@@ -237,6 +242,7 @@ pub const Action = union(Key) {
         present_terminal,
         size_limit,
         initial_size,
+        initial_position,
         cell_size,
         inspector,
         render_inspector,
@@ -425,6 +431,11 @@ pub const SizeLimit = extern struct {
 pub const InitialSize = extern struct {
     width: u32,
     height: u32,
+};
+
+pub const InitialPosition = extern struct {
+    x: i32,
+    y: i32,
 };
 
 pub const CellSize = extern struct {
