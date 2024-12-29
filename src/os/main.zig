@@ -38,6 +38,7 @@ pub const freeTmpDir = file.freeTmpDir;
 pub const isFlatpak = flatpak.isFlatpak;
 pub const FlatpakHostCommand = flatpak.FlatpakHostCommand;
 pub const home = homedir.home;
+pub const expandHome = homedir.expandHome;
 pub const ensureLocale = locale.ensureLocale;
 pub const clickInterval = mouse.clickInterval;
 pub const open = openpkg.open;

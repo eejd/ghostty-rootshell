@@ -110,6 +110,22 @@ fn trimSpace(input: []const u8) []const u8 {
     return std.mem.trim(u8, input, " \n\t");
 }
 
+/// Expands a path that starts with a tilde (~) to the home directory of the user.
+///
+/// Errors if `home` fails or if the size of the expanded path is larger than `buf.len`.
+///
+/// Returns null if the value returned from `home` is null, otherwise returns a slice to the expanded path.
+pub fn expandHome(path: []const u8, buf: []u8) !?[]u8 {
+    const home_dir = try home(buf) orelse return null;
+    const rest = path[1..]; // Skip the ~
+    const expanded_len = home_dir.len + rest.len;
+
+    if (expanded_len > buf.len) return Error.BufferTooSmall;
+    @memcpy(buf[home_dir.len..expanded_len], rest);
+
+    return buf[0..expanded_len];
+}
+
 test {
     const testing = std.testing;
 

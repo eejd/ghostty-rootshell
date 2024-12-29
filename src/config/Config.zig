@@ -4364,33 +4364,24 @@ pub const RepeatablePath = struct {
 
             // Check if the path starts with a tilde and expand it to the home directory on linux/mac
             if (std.mem.startsWith(u8, path, "~/")) {
-                const home_var = try internal_os.home(&buf); // cache this?
-                if (home_var) |home_dir| {
-                    const rest = path[1..]; // Skip the ~
-                    const expanded_len = home_dir.len + rest.len;
-                    if (expanded_len > buf.len) {
-                        try diags.append(alloc, .{
-                            .message = try std.fmt.allocPrintZ(
-                                alloc,
-                                "error resolving file path {s}: path too long after expanding home directory",
-                                .{path},
-                            ),
-                        });
-                        self.value.items[i] = .{ .required = "" };
-                        continue;
-                    }
-
-                    @memcpy(buf[home_dir.len..expanded_len], rest);
-
+                if (try internal_os.expandHome(path, &buf)) |expanded_path| {
                     log.debug(
                         "expanding file path from home directory: path={s}",
-                        .{buf[0..expanded_len]},
+                        .{expanded_path},
                     );
-
                     switch (self.value.items[i]) {
-                        .optional, .required => |*p| p.* = try alloc.dupeZ(u8, buf[0..expanded_len]),
+                        .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded_path),
                     }
-
+                    continue;
+                } else {
+                    try diags.append(alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            alloc,
+                            "error expanding home path {s}",
+                            .{path},
+                        ),
+                    });
+                    self.value.items[i] = .{ .required = "" };
                     continue;
                 }
             }
