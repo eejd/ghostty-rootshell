@@ -149,10 +149,14 @@ pub const App = struct {
         value: apprt.Action.Value(action),
     ) !void {
         switch (action) {
-            .new_window => _ = try self.newSurface(switch (target) {
-                .app => null,
-                .surface => |v| v,
-            }),
+            .new_window => {
+                var surface = try self.newSurface(switch (target) {
+                    .app => null,
+                    .surface => |v| v,
+                });
+
+                try surface.setInitialWindowPosition(self.config.@"window-position-x", self.config.@"window-position-y");
+            },
 
             .new_tab => try self.newTab(switch (target) {
                 .app => null,
@@ -175,14 +179,6 @@ pub const App = struct {
                 .surface => |surface| try surface.rt_surface.setInitialWindowSize(
                     value.width,
                     value.height,
-                ),
-            },
-
-            .initial_position => switch (target) {
-                .app => {},
-                .surface => |surface| try surface.rt_surface.setInitialWindowPosition(
-                    value.x,
-                    value.y,
                 ),
             },
 
@@ -674,10 +670,12 @@ pub const Surface = struct {
     /// Set the initial window position. This is called exactly once at
     /// surface initialization time. This may be called before "self"
     /// is fully initialized.
-    fn setInitialWindowPosition(self: *const Surface, x: i32, y: i32) !void {
-        log.debug("setting initial window position ({},{})", .{ x, y });
+    fn setInitialWindowPosition(self: *const Surface, x: ?i16, y: ?i16) !void {
+        const start_position_x = x orelse return;
+        const start_position_y = y orelse return;
 
-        self.window.setPos(.{ .x = x, .y = y });
+        log.debug("setting initial window position ({},{})", .{ start_position_x, start_position_y });
+        self.window.setPos(.{ .x = start_position_x, .y = start_position_y });
     }
 
     /// Set the size limits of the window.

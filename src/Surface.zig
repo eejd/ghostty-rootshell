@@ -621,8 +621,6 @@ pub fn init(
         const width = @max(config.@"window-width" * cell_size.width, 640);
         const width_f32: f32 = @floatFromInt(width);
         const height_f32: f32 = @floatFromInt(height);
-        const position_x = config.@"window-position-x";
-        const position_y = config.@"window-position-y";
 
         // The final values are affected by content scale and we need to
         // account for the padding so we get the exact correct grid size.
@@ -643,14 +641,6 @@ pub fn init(
             // We don't treat this as a fatal error because not setting
             // an initial size shouldn't stop our terminal from working.
             log.warn("unable to set initial window size: {s}", .{err});
-        };
-
-        rt_app.performAction(
-            .{ .surface = self },
-            .initial_position,
-            .{ .x = position_x, .y = position_y },
-        ) catch |err| {
-            log.warn("unable to set initial window position: {s}", .{err});
         };
     }
 
