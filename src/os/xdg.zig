@@ -30,18 +30,9 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
 
 /// Get the XDG cache directory. The returned value is allocated.
 pub fn cache(alloc: Allocator, opts: Options) ![]u8 {
-    // On macOS we should use ~/Library/Caches instead of ~/.cache
-    if (builtin.os.tag == .macos) {
-        // Get our home dir if not provided
-        const home = if (opts.home) |h| h else blk: {
-            var buf: [1024]u8 = undefined;
-            break :blk try homedir.home(&buf) orelse return error.NoHomeDir;
-        };
-
+    if (posix.getenv("XDG_CACHE_HOME")) |env| {
         return try std.fs.path.join(alloc, &[_][]const u8{
-            home,
-            "Library",
-            "Caches",
+            env,
             opts.subdir orelse "",
         });
     }
@@ -164,28 +155,8 @@ test "cache directory paths" {
     const alloc = testing.allocator;
     const mock_home = "/Users/test";
 
-    // Test macOS path
-    if (builtin.os.tag == .macos) {
-        // Test base path
-        {
-            const cache_path = try cache(alloc, .{ .home = mock_home });
-            defer alloc.free(cache_path);
-            try testing.expectEqualStrings("/Users/test/Library/Caches", cache_path);
-        }
-
-        // Test with subdir
-        {
-            const cache_path = try cache(alloc, .{
-                .home = mock_home,
-                .subdir = "ghostty",
-            });
-            defer alloc.free(cache_path);
-            try testing.expectEqualStrings("/Users/test/Library/Caches/ghostty", cache_path);
-        }
-    }
-
-    // Test Linux path (when XDG_CACHE_HOME is not set)
-    if (builtin.os.tag == .linux) {
+    // Test when XDG_CACHE_HOME is not set
+    {
         // Test base path
         {
             const cache_path = try cache(alloc, .{ .home = mock_home });

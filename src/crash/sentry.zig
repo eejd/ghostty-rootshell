@@ -101,7 +101,10 @@ fn initThread(gpa: Allocator) !void {
     sentry.c.sentry_options_set_before_send(opts, beforeSend, null);
 
     // Determine the Sentry cache directory.
-    const cache_dir = try internal_os.xdg.cache(alloc, .{ .subdir = "ghostty/sentry" });
+    const cache_dir = if (builtin.os.tag == .macos)
+        try internal_os.macos.cacheDir(alloc, "ghostty/sentry")
+    else
+        try internal_os.xdg.cache(alloc, .{ .subdir = "ghostty/sentry" });
     sentry.c.sentry_options_set_database_path_n(
         opts,
         cache_dir.ptr,
