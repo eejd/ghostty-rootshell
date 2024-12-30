@@ -840,12 +840,6 @@ pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void
     );
 }
 
-pub fn setInitialWindowPosition(self: *const Surface, x: i32, y: i32) !void {
-    // We need the surface's window to set the position.
-    const window = self.container.window() orelse return;
-    c.gtk_window_move(@ptrCast(window.window), x, y);
-}
-
 pub fn grabFocus(self: *Surface) void {
     if (self.container.tab()) |tab| {
         // If any other surface was focused and zoomed in, set it to non zoomed in
