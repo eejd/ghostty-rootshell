@@ -1117,7 +1117,7 @@ keybind: Keybinds = .{},
 /// to be a certain position to fit within the grid. There is nothing Ghostty
 /// will do about this, but it will make an effort.
 ///
-/// Important note: Setting this value will only work on macOs and glfw builds
+/// Important note: Setting this value will only work on macOS and glfw builds
 /// on Linux. GTK 4.0 does not support setting the window position.
 ///
 /// This will default to the top-left corner of the screen if not set (0, 0).
