@@ -39,7 +39,10 @@ pub fn cacheDir(
     alloc: Allocator,
     sub_path: []const u8,
 ) CacheDirError![]const u8 {
-    return try makeCommonPath(alloc, .NSCachesDirectory, &.{sub_path});
+    return try makeCommonPath(alloc, .NSCachesDirectory, &.{
+        build_config.bundle_id,
+        sub_path,
+    });
 }
 
 pub const SetQosClassError = error{
@@ -150,14 +153,19 @@ test "cacheDir paths" {
     {
         const cache_path = try cacheDir(alloc, "");
         defer alloc.free(cache_path);
-        // We don't test the exact path since it comes from NSFileManager
         try testing.expect(std.mem.indexOf(u8, cache_path, "Caches") != null);
+        try testing.expect(std.mem.indexOf(u8, cache_path, build_config.bundle_id) != null);
     }
 
     // Test with subdir
     {
-        const cache_path = try cacheDir(alloc, "ghostty");
+        const cache_path = try cacheDir(alloc, "test");
         defer alloc.free(cache_path);
-        try testing.expect(std.mem.indexOf(u8, cache_path, "Caches/ghostty") != null);
+        try testing.expect(std.mem.indexOf(u8, cache_path, "Caches") != null);
+        try testing.expect(std.mem.indexOf(u8, cache_path, build_config.bundle_id) != null);
+
+        const bundle_path = try std.fmt.allocPrint(alloc, "{s}/test", .{build_config.bundle_id});
+        defer alloc.free(bundle_path);
+        try testing.expect(std.mem.indexOf(u8, cache_path, bundle_path) != null);
     }
 }
