@@ -161,7 +161,7 @@ pub fn build(b: *std.Build) !void {
     const strip = b.option(
         bool,
         "strip",
-        "Build the website data for the website.",
+        "Strip the final executable. Default true for fast and small releases",
     ) orelse null;
 
     const conformance = b.option(
