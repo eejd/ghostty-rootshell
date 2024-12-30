@@ -621,8 +621,8 @@ pub fn init(
         const width = @max(config.@"window-width" * cell_size.width, 640);
         const width_f32: f32 = @floatFromInt(width);
         const height_f32: f32 = @floatFromInt(height);
-        const position_x = config.@"start-position-x";
-        const position_y = config.@"start-position-y";
+        const position_x = config.@"window-position-x";
+        const position_y = config.@"window-position-y";
 
         // The final values are affected by content scale and we need to
         // account for the padding so we get the exact correct grid size.
