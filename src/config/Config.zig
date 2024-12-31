@@ -1276,6 +1276,9 @@ keybind: Keybinds = .{},
 @"clipboard-read": ClipboardAccess = .ask,
 @"clipboard-write": ClipboardAccess = .allow,
 
+/// Enables or disables the toast message on a clipboard copy action.
+@"toast-on-clipboard-copy": bool = true,
+
 /// Trims trailing whitespace on data that is copied to the clipboard. This does
 /// not affect data sent to the clipboard via `clipboard-write`.
 @"clipboard-trim-trailing-spaces": bool = true,
