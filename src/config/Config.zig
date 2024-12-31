@@ -1109,7 +1109,7 @@ keybind: Keybinds = .{},
 @"window-width": u32 = 0,
 
 /// The initial window position. This position is in pixels and is relative
-/// to the top-left corner of the screen. Both values must be set to take
+/// to the top-left corner of the primary monitor. Both values must be set to take
 /// effect. If only one value is set, it is ignored.
 ///
 /// Note that the window manager may put limits on the position or override
@@ -1119,8 +1119,6 @@ keybind: Keybinds = .{},
 ///
 /// Important note: Setting this value will only work on macOS and glfw builds
 /// on Linux. GTK 4.0 does not support setting the window position.
-///
-/// This will default to the top-left corner of the screen if not set (0, 0).
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
