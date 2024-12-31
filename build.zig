@@ -690,6 +690,7 @@ pub fn build(b: *std.Build) !void {
                 .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
+                .strip = strip,
             });
             _ = try addDeps(b, lib, config);
 
@@ -707,6 +708,7 @@ pub fn build(b: *std.Build) !void {
                 .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
+                .strip = strip,
             });
             _ = try addDeps(b, lib, config);
 
