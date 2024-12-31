@@ -4242,7 +4242,13 @@ fn writeScreenFile(
     const filename = try std.fmt.bufPrint(&filename_buf, "{s}.txt", .{@tagName(loc)});
 
     // Open our scrollback file
-    var file = try tmp_dir.dir.createFile(filename, .{ .mode = 0o600 });
+    var file = try tmp_dir.dir.createFile(
+        filename,
+        switch (builtin.os.tag) {
+            .windows => .{},
+            else => .{ .mode = 0o600 },
+        },
+    );
     defer file.close();
 
     // Screen.dumpString writes byte-by-byte, so buffer it
