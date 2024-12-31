@@ -43,7 +43,7 @@ comptime {
 }
 
 /// The version of the next release.
-const app_version = std.SemanticVersion{ .major = 1, .minor = 0, .patch = 1 };
+const app_version = std.SemanticVersion{ .major = 1, .minor = 0, .patch = 2 };
 
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
