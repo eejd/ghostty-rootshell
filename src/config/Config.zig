@@ -1568,11 +1568,10 @@ keybind: Keybinds = .{},
 @"quick-terminal-autohide": bool = true,
 
 /// This configuration option determines the behavior of the quick terminal
-/// when switching between spaces. If set to `move`, the quick terminal
-/// will stay only in the space where it was originally opened and will not
-/// follow when switching to another space. If set to `remain`, the quick terminal
-/// will remain open and visible across all spaces, including after moving to
-/// a different space.
+/// when switching between spaces. If set to `move`, the quick terminal will
+/// be moved to the space where the focused window is. If set to `remain`,
+/// the quick terminal will stay only in the space where it was originally opened and
+/// will not follow when switching to another space.
 @"quick-terminal-space-behavior": QuickTerminalSpaceBehavior = .move,
 
 /// Whether to enable shell integration auto-injection or not. Shell integration

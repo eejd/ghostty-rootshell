@@ -26,10 +26,10 @@ enum QuickTerminalSpaceBehavior {
 
         switch (self) {
             case .move:
-                // We want this to be part of every space because it is a singleton.
+                // We want this to move the window to the active space.
                 return NSWindow.CollectionBehavior([.canJoinAllSpaces] + commonBehavior)
             case .remain:
-                // We want this to move the window to the active space.
+                // We want this to remain the window in the current space.
                 return NSWindow.CollectionBehavior([.moveToActiveSpace] + commonBehavior)
         }
     }
