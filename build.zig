@@ -162,7 +162,11 @@ pub fn build(b: *std.Build) !void {
         bool,
         "strip",
         "Strip the final executable. Default true for fast and small releases",
-    ) orelse null;
+    ) orelse switch (optimize) {
+        .Debug => false,
+        .ReleaseSafe => false,
+        .ReleaseFast, .ReleaseSmall => true,
+    };
 
     const conformance = b.option(
         []const u8,
@@ -348,11 +352,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = strip orelse switch (optimize) {
-            .Debug => false,
-            .ReleaseSafe => false,
-            .ReleaseFast, .ReleaseSmall => true,
-        },
+        .strip = strip,
     }) else null;
 
     // Exe
