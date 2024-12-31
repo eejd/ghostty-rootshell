@@ -131,6 +131,7 @@ const PrimaryView = struct {
         c.gtk_text_view_set_bottom_margin(@ptrCast(text), 8);
         c.gtk_text_view_set_left_margin(@ptrCast(text), 8);
         c.gtk_text_view_set_right_margin(@ptrCast(text), 8);
+        c.gtk_text_view_set_monospace(@ptrCast(text), 1);
 
         return .{ .root = view.root, .text = @ptrCast(text) };
     }
