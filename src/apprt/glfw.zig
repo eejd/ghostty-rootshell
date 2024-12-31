@@ -239,6 +239,7 @@ pub const App = struct {
             .pwd,
             .config_change,
             .toggle_maximize,
+            .prompt_title,
             => {
                 log.info("unimplemented action={}", .{action});
                 return false;

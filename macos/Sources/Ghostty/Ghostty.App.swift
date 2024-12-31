@@ -484,6 +484,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_SET_TITLE:
                 setTitle(app, target: target, v: action.action.set_title)
 
+            case GHOSTTY_ACTION_PROMPT_TITLE:
+                return promptTitle(app, target: target)
+
             case GHOSTTY_ACTION_PWD:
                 pwdChanged(app, target: target, v: action.action.pwd)
 
@@ -1005,6 +1008,26 @@ extension Ghostty {
             default:
                 assertionFailure()
             }
+        }
+
+        private static func promptTitle(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) -> Bool {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("set title prompt does nothing with an app target")
+                return false
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return false }
+                guard let surfaceView = self.surfaceView(from: surface) else { return false }
+                surfaceView.promptTitle()
+
+            default:
+                assertionFailure()
+            }
+
+            return true
         }
 
         private static func pwdChanged(

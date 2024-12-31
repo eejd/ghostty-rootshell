@@ -14,6 +14,7 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
+                <outlet property="menuChangeTitle" destination="24I-xg-qIq" id="kg6-kT-jNL"/>
                 <outlet property="menuCheckForUpdates" destination="GEA-5y-yzH" id="0nV-Tf-nJQ"/>
                 <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
                 <outlet property="menuCloseAllWindows" destination="yKr-Vi-Yqw" id="Zet-Ir-zbm"/>
@@ -232,6 +233,13 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="L3L-I8-sqk"/>
+                            <menuItem title="Change Title..." id="24I-xg-qIq">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="changeTitle:" target="-1" id="XuL-QB-Q9l"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="Vkj-tP-dMZ"/>
                             <menuItem title="Quick Terminal" id="1pv-LF-NBJ">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
