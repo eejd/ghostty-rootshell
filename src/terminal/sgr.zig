@@ -189,26 +189,39 @@ pub const Parser = struct {
                 .@"8_fg" = @enumFromInt(slice[0] - 30),
             },
 
-            38 => if (slice.len >= 5 and slice[1] == 2) {
-                self.idx += 4;
+            38 => if (slice.len >= 2) switch (slice[1]) {
+                // `2` indicates direct-color (r, g, b).
+                // We need at least 3 more params for this to make sense.
+                2 => if (slice.len >= 5) {
+                    self.idx += 4;
+                    // When a colon separator is used, there may or may not be
+                    // a color space identifier as the third param, which we
+                    // need to ignore (it has no standardized behavior).
+                    const rgb = if (slice.len == 5 or !self.colon)
+                        slice[2..5]
+                    else rgb: {
+                        self.idx += 1;
+                        break :rgb slice[3..6];
+                    };
 
-                // In the 6-len form, ignore the 3rd param.
-                const rgb = slice[2..5];
-
-                // We use @truncate because the value should be 0 to 255. If
-                // it isn't, the behavior is undefined so we just... truncate it.
-                return Attribute{
-                    .direct_color_fg = .{
-                        .r = @truncate(rgb[0]),
-                        .g = @truncate(rgb[1]),
-                        .b = @truncate(rgb[2]),
-                    },
-                };
-            } else if (slice.len >= 3 and slice[1] == 5) {
-                self.idx += 2;
-                return Attribute{
-                    .@"256_fg" = @truncate(slice[2]),
-                };
+                    // We use @truncate because the value should be 0 to 255. If
+                    // it isn't, the behavior is undefined so we just... truncate it.
+                    return Attribute{
+                        .direct_color_fg = .{
+                            .r = @truncate(rgb[0]),
+                            .g = @truncate(rgb[1]),
+                            .b = @truncate(rgb[2]),
+                        },
+                    };
+                },
+                // `5` indicates indexed color.
+                5 => if (slice.len >= 3) {
+                    self.idx += 2;
+                    return Attribute{
+                        .@"256_fg" = @truncate(slice[2]),
+                    };
+                },
+                else => {},
             },
 
             39 => return Attribute{ .reset_fg = {} },
@@ -217,26 +230,39 @@ pub const Parser = struct {
                 .@"8_bg" = @enumFromInt(slice[0] - 40),
             },
 
-            48 => if (slice.len >= 5 and slice[1] == 2) {
-                self.idx += 4;
+            48 => if (slice.len >= 2) switch (slice[1]) {
+                // `2` indicates direct-color (r, g, b).
+                // We need at least 3 more params for this to make sense.
+                2 => if (slice.len >= 5) {
+                    self.idx += 4;
+                    // When a colon separator is used, there may or may not be
+                    // a color space identifier as the third param, which we
+                    // need to ignore (it has no standardized behavior).
+                    const rgb = if (slice.len == 5 or !self.colon)
+                        slice[2..5]
+                    else rgb: {
+                        self.idx += 1;
+                        break :rgb slice[3..6];
+                    };
 
-                // We only support the 5-len form.
-                const rgb = slice[2..5];
-
-                // We use @truncate because the value should be 0 to 255. If
-                // it isn't, the behavior is undefined so we just... truncate it.
-                return Attribute{
-                    .direct_color_bg = .{
-                        .r = @truncate(rgb[0]),
-                        .g = @truncate(rgb[1]),
-                        .b = @truncate(rgb[2]),
-                    },
-                };
-            } else if (slice.len >= 3 and slice[1] == 5) {
-                self.idx += 2;
-                return Attribute{
-                    .@"256_bg" = @truncate(slice[2]),
-                };
+                    // We use @truncate because the value should be 0 to 255. If
+                    // it isn't, the behavior is undefined so we just... truncate it.
+                    return Attribute{
+                        .direct_color_bg = .{
+                            .r = @truncate(rgb[0]),
+                            .g = @truncate(rgb[1]),
+                            .b = @truncate(rgb[2]),
+                        },
+                    };
+                },
+                // `5` indicates indexed color.
+                5 => if (slice.len >= 3) {
+                    self.idx += 2;
+                    return Attribute{
+                        .@"256_bg" = @truncate(slice[2]),
+                    };
+                },
+                else => {},
             },
 
             49 => return Attribute{ .reset_bg = {} },
@@ -244,30 +270,39 @@ pub const Parser = struct {
             53 => return Attribute{ .overline = {} },
             55 => return Attribute{ .reset_overline = {} },
 
-            58 => if (slice.len >= 5 and slice[1] == 2) {
-                self.idx += 4;
+            58 => if (slice.len >= 2) switch (slice[1]) {
+                // `2` indicates direct-color (r, g, b).
+                // We need at least 3 more params for this to make sense.
+                2 => if (slice.len >= 5) {
+                    self.idx += 4;
+                    // When a colon separator is used, there may or may not be
+                    // a color space identifier as the third param, which we
+                    // need to ignore (it has no standardized behavior).
+                    const rgb = if (slice.len == 5 or !self.colon)
+                        slice[2..5]
+                    else rgb: {
+                        self.idx += 1;
+                        break :rgb slice[3..6];
+                    };
 
-                // In the 6-len form, ignore the 3rd param. Otherwise, use it.
-                const rgb = if (slice.len == 5) slice[2..5] else rgb: {
-                    // Consume one more element
-                    self.idx += 1;
-                    break :rgb slice[3..6];
-                };
-
-                // We use @truncate because the value should be 0 to 255. If
-                // it isn't, the behavior is undefined so we just... truncate it.
-                return Attribute{
-                    .underline_color = .{
-                        .r = @truncate(rgb[0]),
-                        .g = @truncate(rgb[1]),
-                        .b = @truncate(rgb[2]),
-                    },
-                };
-            } else if (slice.len >= 3 and slice[1] == 5) {
-                self.idx += 2;
-                return Attribute{
-                    .@"256_underline_color" = @truncate(slice[2]),
-                };
+                    // We use @truncate because the value should be 0 to 255. If
+                    // it isn't, the behavior is undefined so we just... truncate it.
+                    return Attribute{
+                        .underline_color = .{
+                            .r = @truncate(rgb[0]),
+                            .g = @truncate(rgb[1]),
+                            .b = @truncate(rgb[2]),
+                        },
+                    };
+                },
+                // `5` indicates indexed color.
+                5 => if (slice.len >= 3) {
+                    self.idx += 2;
+                    return Attribute{
+                        .@"256_underline_color" = @truncate(slice[2]),
+                    };
+                },
+                else => {},
             },
 
             59 => return Attribute{ .reset_underline_color = {} },
@@ -565,4 +600,60 @@ test "sgr: direct color bg missing color" {
     // This used to crash
     var p: Parser = .{ .params = &[_]u16{ 48, 5 }, .colon = false };
     while (p.next()) |_| {}
+}
+
+test "sgr: direct fg/bg/underline ignore optional color space" {
+    // These behaviors have been verified against xterm.
+
+    // Colon version should skip the optional color space identifier
+    {
+        // 3 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 38, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_fg);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_fg.r);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_fg.g);
+        try testing.expectEqual(@as(u8, 3), v.direct_color_fg.b);
+    }
+    {
+        // 4 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 48, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 3), v.direct_color_bg.b);
+    }
+    {
+        // 5 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 58, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 3), v.underline_color.b);
+    }
+
+    // Semicolon version should not parse optional color space identifier
+    {
+        // 3 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 38, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_fg);
+        try testing.expectEqual(@as(u8, 0), v.direct_color_fg.r);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_fg.g);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_fg.b);
+    }
+    {
+        // 4 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 48, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 0), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_bg.b);
+    }
+    {
+        // 5 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 58, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 0), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.b);
+    }
 }
