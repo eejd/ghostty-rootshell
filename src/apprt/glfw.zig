@@ -155,7 +155,7 @@ pub const App = struct {
                     .surface => |v| v,
                 });
 
-                try surface.setInitialWindowPosition(self.config.@"window-position-x", self.config.@"window-position-y");
+                try surface.setInitialWindowPosition(self.config.@"window-initial-position-x", self.config.@"window-initial-position-y");
             },
 
             .new_tab => try self.newTab(switch (target) {

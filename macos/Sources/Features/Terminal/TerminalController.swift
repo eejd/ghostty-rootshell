@@ -370,7 +370,7 @@ class TerminalController: BaseTerminalController {
 
         // Set our window positioning to coordinates if config value exists, otherwise
         // fallback to original centering behavior
-        setInitialWindowPosition(window, x: config.windowPositionX, y: config.windowPositionY, windowDecorations: config.windowDecorations)
+        setInitialWindowPosition(window, x: config.windowInitialPositionX, y: config.windowInitialPositionY, windowDecorations: config.windowDecorations)
         
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = config.windowTheme {

@@ -1119,8 +1119,8 @@ keybind: Keybinds = .{},
 ///
 /// Important note: Setting this value will only work on macOS and glfw builds
 /// on Linux. GTK 4.0 does not support setting the window position.
-@"window-position-x": ?i16 = null,
-@"window-position-y": ?i16 = null,
+@"window-initial-position-x": ?i16 = null,
+@"window-initial-position-y": ?i16 = null,
 
 /// Whether to enable saving and restoring window state. Window state includes
 /// their position, size, tabs, splits, etc. Some window state requires shell
