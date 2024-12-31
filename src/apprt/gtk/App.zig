@@ -82,7 +82,7 @@ transient_cgroup_base: ?[]const u8 = null,
 css_provider: *c.GtkCssProvider,
 
 /// Providers for loading custom stylesheets defined by user
-custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider),
+custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider) = .{},
 
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
@@ -428,7 +428,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // our "activate" call above will open a window.
         .running = c.g_application_get_is_remote(gapp) == 0,
         .css_provider = css_provider,
-        .custom_css_providers = .{},
     };
 }
 
@@ -909,8 +908,33 @@ fn syncConfigChanges(self: *App) !void {
             .{},
         ),
     };
-    self.loadCustomCss() catch |err| {
-        log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
+    self.loadCustomCss() catch |err| switch (err) {
+        error.OutOfMemory => log.warn(
+            "out of memory loading custom CSS, no custom CSS applied",
+            .{},
+        ),
+        error.StreamTooLong => log.warn(
+            "failed to load custom CSS, no custom CSS applied - encountered stream too long error: {}",
+            .{err},
+        ),
+        error.Unexpected => log.warn(
+            "failed to load custom CSS, no custom CSS applied - encountered unexpected error: {}",
+            .{err},
+        ),
+        std.fs.File.Reader.Error.InputOutput,
+        std.fs.File.Reader.Error.SystemResources,
+        std.fs.File.Reader.Error.IsDir,
+        std.fs.File.Reader.Error.OperationAborted,
+        std.fs.File.Reader.Error.BrokenPipe,
+        std.fs.File.Reader.Error.ConnectionResetByPeer,
+        std.fs.File.Reader.Error.ConnectionTimedOut,
+        std.fs.File.Reader.Error.NotOpenForReading,
+        std.fs.File.Reader.Error.SocketNotConnected,
+        std.fs.File.Reader.Error.WouldBlock,
+        std.fs.File.Reader.Error.AccessDenied => log.warn(
+            "failed to load custom CSS, no custom CSS applied - encountered error while reading file: {}",
+            .{err},
+        ),
     };
 }
 
@@ -1075,8 +1099,7 @@ fn loadCustomCss(self: *App) !void {
         defer file.close();
 
         log.info("loading gtk-custom-css path={s}", .{path});
-        var buf_reader = std.io.bufferedReader(file.reader());
-        const contents = try buf_reader.reader().readAllAlloc(
+        const contents = try file.reader().readAllAlloc(
             self.core_app.alloc,
             5 * 1024 * 1024 // 5MB
         );
@@ -1100,10 +1123,7 @@ fn loadCssProviderFromData(provider: *c.GtkCssProvider, data: []const u8) void {
         const g_bytes = c.g_bytes_new(data.ptr, data.len);
         defer c.g_bytes_unref(g_bytes);
 
-        c.gtk_css_provider_load_from_bytes(
-            provider,
-            g_bytes
-        );
+        c.gtk_css_provider_load_from_bytes(provider, g_bytes);
     } else {
         c.gtk_css_provider_load_from_data(
             provider,
