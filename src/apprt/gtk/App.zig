@@ -82,7 +82,7 @@ transient_cgroup_base: ?[]const u8 = null,
 css_provider: *c.GtkCssProvider,
 
 /// Providers for loading custom stylesheets defined by user
-custom_css_providers: std.ArrayList(*c.GtkCssProvider),
+custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider),
 
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
@@ -428,7 +428,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // our "activate" call above will open a window.
         .running = c.g_application_get_is_remote(gapp) == 0,
         .css_provider = css_provider,
-        .custom_css_providers = std.ArrayList(*c.GtkCssProvider).init(core_app.alloc),
+        .custom_css_providers = .{},
     };
 }
 
@@ -448,7 +448,7 @@ pub fn terminate(self: *App) void {
     for (self.custom_css_providers.items) |provider| {
         c.g_object_unref(provider);
     }
-    self.custom_css_providers.deinit();
+    self.custom_css_providers.deinit(self.core_app.alloc);
 
     self.config.deinit();
 }
@@ -909,11 +909,8 @@ fn syncConfigChanges(self: *App) !void {
             .{},
         ),
     };
-    self.loadCustomCss() catch |err| switch (err) {
-        error.OutOfMemory => log.warn(
-            "out of memory loading custom CSS, no custom CSS applied",
-            .{},
-        ),
+    self.loadCustomCss() catch |err| {
+        log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
     };
 }
 
@@ -1048,14 +1045,10 @@ fn loadRuntimeCss(
     }
 
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_data(
-        self.css_provider,
-        buf.items.ptr,
-        @intCast(buf.items.len),
-    );
+    loadCssProviderFromData(self.css_provider, buf.items);
 }
 
-fn loadCustomCss(self: *App) Allocator.Error!void {
+fn loadCustomCss(self: *App) !void {
     const display = c.gdk_display_get_default();
 
     // unload the previously loaded style providers
@@ -1073,23 +1066,50 @@ fn loadCustomCss(self: *App) Allocator.Error!void {
             .optional => |path| .{ path, true },
             .required => |path| .{ path, false },
         };
-        std.fs.accessAbsolute(path, .{}) catch |err| {
+        const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
                 log.err("error opening gtk-custom-css file {s}: {}", .{ path, err });
             }
             continue;
         };
+        defer file.close();
+
+        log.info("loading gtk-custom-css path={s}", .{path});
+        var buf_reader = std.io.bufferedReader(file.reader());
+        const contents = try buf_reader.reader().readAllAlloc(
+            self.core_app.alloc,
+            5 * 1024 * 1024 // 5MB
+        );
+        defer self.core_app.alloc.free(contents);
 
         const provider = c.gtk_css_provider_new();
-
         c.gtk_style_context_add_provider_for_display(
             display,
             @ptrCast(provider),
             c.GTK_STYLE_PROVIDER_PRIORITY_USER,
         );
-        c.gtk_css_provider_load_from_path(provider, path);
 
-        try self.custom_css_providers.append(provider);
+        loadCssProviderFromData(provider, contents);
+
+        try self.custom_css_providers.append(self.core_app.alloc, provider);
+    }
+}
+
+fn loadCssProviderFromData(provider: *c.GtkCssProvider, data: []const u8) void {
+    if (version.atLeast(4, 12, 0)) {
+        const g_bytes = c.g_bytes_new(data.ptr, data.len);
+        defer c.g_bytes_unref(g_bytes);
+
+        c.gtk_css_provider_load_from_bytes(
+            provider,
+            g_bytes
+        );
+    } else {
+        c.gtk_css_provider_load_from_data(
+            provider,
+            data.ptr,
+            @intCast(data.len),
+        );
     }
 }
 
