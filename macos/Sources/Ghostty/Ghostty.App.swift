@@ -517,9 +517,6 @@ extension Ghostty {
             case GHOSTTY_ACTION_INITIAL_SIZE:
                 setInitialSize(app, target: target, v: action.action.initial_size)
 
-            case GHOSTTY_ACTION_INITIAL_POSITION:
-                setInitialPosition(app, target: target, v: action.action.initial_position)
-
             case GHOSTTY_ACTION_CELL_SIZE:
                 setCellSize(app, target: target, v: action.action.cell_size)
 
@@ -1065,26 +1062,6 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 surfaceView.initialSize = NSMakeSize(Double(v.width), Double(v.height))
-
-
-            default:
-                assertionFailure()
-            }
-        }
-
-        private static func setInitialPosition(
-            _ app: ghostty_app_t,
-            target: ghostty_target_s,
-            v: ghostty_action_initial_position_s) {
-            switch (target.tag) {
-            case GHOSTTY_TARGET_APP:
-                Ghostty.logger.warning("mouse over link does nothing with an app target")
-                return
-
-            case GHOSTTY_TARGET_SURFACE:
-                guard let surface = target.target.surface else { return }
-                guard let surfaceView = self.surfaceView(from: surface) else { return }
-                surfaceView.initialPosition = NSMakePoint(Double(v.x), Double(v.y))
 
 
             default:

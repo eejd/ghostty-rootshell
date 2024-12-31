@@ -368,10 +368,10 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        // Center the window to start, we'll move the window frame automatically
-        // when cascading.
-        window.center()
-
+        // Set our window positioning to coordinates if config value exists, otherwise
+        // fallback to original centering behavior
+        setInitialWindowPosition(window, x: config.windowPositionX, y: config.windowPositionY, windowDecorations: config.windowDecorations)
+        
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = config.windowTheme {
             window.windowTheme = .init(rawValue: windowTheme)
@@ -467,6 +467,31 @@ class TerminalController: BaseTerminalController {
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
         let data = TerminalRestorableState(from: self)
         data.encode(with: state)
+    }
+    
+    func setInitialWindowPosition(_ window: NSWindow, x: Int16?, y: Int16?, windowDecorations: Bool) {
+        if let primaryScreen = NSScreen.screens.first {
+            let frame = primaryScreen.visibleFrame
+
+            if let windowPositionX = x, let windowPositionY = y {
+                // Offset titlebar if needed, otherwise use default padding of 12
+                // NOTE: Not 100% certain where this extra padding comes from but I'd love
+                // to calculate it dynamically if possible
+                let titlebarHeight = windowDecorations ? window.frame.height - (window.contentView?.frame.height ?? 0) : 12
+                
+                // Orient based on the top left of the primary monitor
+                let startPositionX = frame.origin.x + CGFloat(windowPositionX)
+                let startPositionY = (frame.origin.y + frame.height) - (CGFloat(windowPositionY) + window.frame.height) + titlebarHeight
+                
+                window.setFrameOrigin(NSPoint(x: startPositionX, y: startPositionY))
+            } else {
+                // Fallback to original centering behavior
+                window.center()
+            }
+        } else {
+            // Fallback to original centering behavior
+            window.center()
+        }
     }
 
     // MARK: First Responder
