@@ -423,10 +423,10 @@ class QuickTerminalController: BaseTerminalController {
         // Update our derived config
         self.derivedConfig = DerivedConfig(config)
 
-        syncAppearance()
-
         // Update window.collectionBehavior
         self.window?.collectionBehavior = derivedConfig.quickTerminalSpaceBehavior.collectionBehavior
+
+        syncAppearance()
     }
 
     private struct DerivedConfig {
