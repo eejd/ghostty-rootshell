@@ -81,6 +81,9 @@ transient_cgroup_base: ?[]const u8 = null,
 /// CSS Provider for any styles based on ghostty configuration values
 css_provider: *c.GtkCssProvider,
 
+/// Providers for loading custom stylesheets defined by user
+custom_css_providers: std.ArrayList(*c.GtkCssProvider),
+
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
     off: void,
@@ -425,6 +428,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // our "activate" call above will open a window.
         .running = c.g_application_get_is_remote(gapp) == 0,
         .css_provider = css_provider,
+        .custom_css_providers = std.ArrayList(*c.GtkCssProvider).init(core_app.alloc),
     };
 }
 
@@ -440,6 +444,11 @@ pub fn terminate(self: *App) void {
     if (self.menu) |menu| c.g_object_unref(menu);
     if (self.context_menu) |context_menu| c.g_object_unref(context_menu);
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
+
+    for (self.custom_css_providers.items) |provider| {
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.deinit();
 
     self.config.deinit();
 }
@@ -892,11 +901,17 @@ fn syncConfigChanges(self: *App) !void {
     try self.updateConfigErrors();
     try self.syncActionAccelerators();
 
-    // Load our runtime CSS. If this fails then our window is just stuck
+    // Load our runtime and custom CSS. If this fails then our window is just stuck
     // with the old CSS but we don't want to fail the entire sync operation.
     self.loadRuntimeCss() catch |err| switch (err) {
         error.OutOfMemory => log.warn(
             "out of memory loading runtime CSS, no runtime CSS applied",
+            .{},
+        ),
+    };
+    self.loadCustomCss() catch |err| switch (err) {
+        error.OutOfMemory => log.warn(
+            "out of memory loading custom CSS, no custom CSS applied",
             .{},
         ),
     };
@@ -1038,6 +1053,44 @@ fn loadRuntimeCss(
         buf.items.ptr,
         @intCast(buf.items.len),
     );
+}
+
+fn loadCustomCss(self: *App) Allocator.Error!void {
+    const display = c.gdk_display_get_default();
+
+    // unload the previously loaded style providers
+    for (self.custom_css_providers.items) |provider| {
+        c.gtk_style_context_remove_provider_for_display(
+            display,
+            @ptrCast(provider),
+        );
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.clearRetainingCapacity();
+
+    for (self.config.@"gtk-custom-css".value.items) |p| {
+        const path, const optional = switch (p) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
+        };
+        std.fs.accessAbsolute(path, .{}) catch |err| {
+            if (err != error.FileNotFound or !optional) {
+                log.err("error opening gtk-custom-css file {s}: {}", .{ path, err });
+            }
+            continue;
+        };
+
+        const provider = c.gtk_css_provider_new();
+
+        c.gtk_style_context_add_provider_for_display(
+            display,
+            @ptrCast(provider),
+            c.GTK_STYLE_PROVIDER_PRIORITY_USER,
+        );
+        c.gtk_css_provider_load_from_path(provider, path);
+
+        try self.custom_css_providers.append(provider);
+    }
 }
 
 /// Called by CoreApp to wake up the event loop.

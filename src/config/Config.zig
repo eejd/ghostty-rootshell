@@ -1925,6 +1925,14 @@ keybind: Keybinds = .{},
 /// Adwaita support.
 @"gtk-adwaita": bool = true,
 
+/// Custom CSS files to be loaded.
+///
+/// This configuration can be repeated multiple times to load multiple files.
+/// Prepend a ? character to the file path to suppress errors if the file does
+/// not exist. If you want to include a file that begins with a literal ?
+/// character, surround the file path in double quotes (").
+@"gtk-custom-css": RepeatablePath = .{},
+
 /// If `true` (default), applications running in the terminal can show desktop
 /// notifications using certain escape sequences such as OSC 9 or OSC 777.
 @"desktop-notifications": bool = true,
