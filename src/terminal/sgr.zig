@@ -566,3 +566,59 @@ test "sgr: direct color bg missing color" {
     var p: Parser = .{ .params = &[_]u16{ 48, 5 }, .colon = false };
     while (p.next()) |_| {}
 }
+
+test "sgr: direct fg/bg/underline ignore optional color space" {
+    // These behaviors have been verified against xterm.
+
+    // Colon version should skip the optional color space identifier
+    {
+        // 3 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 38, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_fg);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_fg.r);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_fg.g);
+        try testing.expectEqual(@as(u8, 3), v.direct_color_fg.b);
+    }
+    {
+        // 4 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 48, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 3), v.direct_color_bg.b);
+    }
+    {
+        // 5 8 : 2 : Pi : Pr : Pg : Pb
+        const v = testParseColon(&[_]u16{ 58, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 3), v.underline_color.b);
+    }
+
+    // Semicolon version should not parse optional color space identifier
+    {
+        // 3 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 38, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_fg);
+        try testing.expectEqual(@as(u8, 0), v.direct_color_fg.r);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_fg.g);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_fg.b);
+    }
+    {
+        // 4 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 48, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .direct_color_bg);
+        try testing.expectEqual(@as(u8, 0), v.direct_color_bg.r);
+        try testing.expectEqual(@as(u8, 1), v.direct_color_bg.g);
+        try testing.expectEqual(@as(u8, 2), v.direct_color_bg.b);
+    }
+    {
+        // 5 8 ; 2 ; Pr ; Pg ; Pb
+        const v = testParse(&[_]u16{ 58, 2, 0, 1, 2, 3, 4 });
+        try testing.expect(v == .underline_color);
+        try testing.expectEqual(@as(u8, 0), v.underline_color.r);
+        try testing.expectEqual(@as(u8, 1), v.underline_color.g);
+        try testing.expectEqual(@as(u8, 2), v.underline_color.b);
+    }
+}
