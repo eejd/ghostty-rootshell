@@ -2695,6 +2695,9 @@ pub fn loadOptionalFile(
 
 fn writeConfigTemplate(path: []const u8) !void {
     log.info("creating template config file: path={s}", .{path});
+    if (std.fs.path.dirname(path)) |dir_path| {
+        try std.fs.makeDirAbsolute(dir_path);
+    }
     const file = try std.fs.createFileAbsolute(path, .{});
     defer file.close();
     try std.fmt.format(
