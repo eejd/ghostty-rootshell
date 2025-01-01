@@ -122,14 +122,12 @@ pub fn remove(self: *Tab) void {
 }
 
 /// Helper function to check if any surface in the split hierarchy needs close confirmation
-const needsConfirm = struct {
-    fn check(elem: Surface.Container.Elem) bool {
-        return switch (elem) {
-            .surface => |s| s.core_surface.needsConfirmQuit(),
-            .split => |s| check(s.top_left) or check(s.bottom_right),
-        };
-    }
-}.check;
+fn needsConfirm(elem: Surface.Container.Elem) bool {
+    return switch (elem) {
+        .surface => |s| s.core_surface.needsConfirmQuit(),
+        .split => |s| needsConfirm(s.top_left) or needsConfirm(s.bottom_right),
+    };
+}
 
 /// Close the tab, asking for confirmation if any surface requests it.
 fn closeWithConfirmation(tab: *Tab) void {
