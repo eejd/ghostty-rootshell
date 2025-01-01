@@ -158,8 +158,10 @@ pub const Command = union(enum) {
     /// End a hyperlink (OSC 8)
     hyperlink_end: void,
 
-    /// Sleep (OSC 9;1) in ms
-    sleep: u16,
+    /// Sleep (OSC 9;1)
+    sleep: struct {
+        duration_ms: u16,
+    },
 
     /// Set progress state (OSC 9;4)
     progress: struct {
@@ -798,7 +800,7 @@ pub const Parser = struct {
 
             .conemu_sleep => switch (c) {
                 ';' => {
-                    self.command = .{ .sleep = 100 };
+                    self.command = .{ .sleep = .{ .duration_ms = 100 } };
                     self.buf_start = self.buf_idx;
                     self.complete = true;
                     self.state = .conemu_sleep_value;
@@ -1176,9 +1178,9 @@ pub const Parser = struct {
                 const str = self.buf[self.buf_start..self.buf_idx];
                 if (str.len != 0) {
                     if (std.fmt.parseUnsigned(u16, str, 10)) |num| {
-                        v.* = @min(num, 10000);
+                        v.duration_ms = @min(num, 10_000);
                     } else |_| {
-                        v.* = 10000;
+                        v.duration_ms = 10_000;
                     }
                 }
             },
@@ -1685,7 +1687,7 @@ test "OSC: conemu sleep" {
     const cmd = p.end('\x1b').?;
 
     try testing.expect(cmd == .sleep);
-    try testing.expectEqual(420, cmd.sleep);
+    try testing.expectEqual(420, cmd.sleep.duration_ms);
 }
 
 test "OSC: conemu sleep with no value default to 100ms" {
@@ -1699,7 +1701,7 @@ test "OSC: conemu sleep with no value default to 100ms" {
     const cmd = p.end('\x1b').?;
 
     try testing.expect(cmd == .sleep);
-    try testing.expectEqual(100, cmd.sleep);
+    try testing.expectEqual(100, cmd.sleep.duration_ms);
 }
 
 test "OSC: conemu sleep cannot exceed 10000ms" {
@@ -1713,7 +1715,20 @@ test "OSC: conemu sleep cannot exceed 10000ms" {
     const cmd = p.end('\x1b').?;
 
     try testing.expect(cmd == .sleep);
-    try testing.expectEqual(10000, cmd.sleep);
+    try testing.expectEqual(10000, cmd.sleep.duration_ms);
+}
+
+test "OSC: conemu sleep invalid input" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;1;foo";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b');
+
+    try testing.expect(cmd == null);
 }
 
 test "OSC: show desktop notification" {
