@@ -1455,7 +1455,7 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .progress => {
+                .progress, .sleep => {
                     log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
             }

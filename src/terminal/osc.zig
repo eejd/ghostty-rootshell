@@ -67,7 +67,7 @@ pub const Command = union(enum) {
 
     /// End of current command.
     ///
-    /// The exit-code need not be specified if  if there are no options,
+    /// The exit-code need not be specified if there are no options,
     /// or if the command was cancelled (no OSC "133;C"), such as by typing
     /// an interrupt/cancel character (typically ctrl-C) during line-editing.
     /// Otherwise, it must be an integer code, where 0 means the command
@@ -157,6 +157,9 @@ pub const Command = union(enum) {
 
     /// End a hyperlink (OSC 8)
     hyperlink_end: void,
+
+    /// Sleep (OSC 9;1) in ms
+    sleep: u16,
 
     /// Set progress state (OSC 9;4)
     progress: struct {
@@ -353,6 +356,8 @@ pub const Parser = struct {
         osc_9,
 
         // ConEmu specific substates
+        conemu_sleep,
+        conemu_sleep_value,
         conemu_progress_prestate,
         conemu_progress_state,
         conemu_progress_prevalue,
@@ -777,6 +782,9 @@ pub const Parser = struct {
             },
 
             .osc_9 => switch (c) {
+                '1' => {
+                    self.state = .conemu_sleep;
+                },
                 '4' => {
                     self.state = .conemu_progress_prestate;
                 },
@@ -786,6 +794,21 @@ pub const Parser = struct {
                 // them showing up as desktop notifications.
 
                 else => self.showDesktopNotification(),
+            },
+
+            .conemu_sleep => switch (c) {
+                ';' => {
+                    self.command = .{ .sleep = 100 };
+                    self.buf_start = self.buf_idx;
+                    self.complete = true;
+                    self.state = .conemu_sleep_value;
+                },
+                else => self.state = .invalid,
+            },
+
+            .conemu_sleep_value => switch (c) {
+                '0'...'9' => {},
+                else => self.state = .invalid,
             },
 
             .conemu_progress_prestate => switch (c) {
@@ -1147,6 +1170,22 @@ pub const Parser = struct {
         self.temp_state.str.* = self.buf[self.buf_start..self.buf_idx];
     }
 
+    fn endConEmuSleepValue(self: *Parser) void {
+        switch (self.command) {
+            .sleep => |*v| {
+                const str = self.buf[self.buf_start..self.buf_idx];
+                if (str.len != 0) {
+                    if (std.fmt.parseUnsigned(u16, str, 10)) |num| {
+                        v.* = @min(num, 10000);
+                    } else |_| {
+                        v.* = 10000;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
     fn endKittyColorProtocolOption(self: *Parser, kind: enum { key_only, key_and_value }, final: bool) void {
         if (self.temp_state.key.len == 0) {
             log.warn("zero length key in kitty color protocol", .{});
@@ -1225,6 +1264,7 @@ pub const Parser = struct {
             .semantic_option_value => self.endSemanticOptionValue(),
             .hyperlink_uri => self.endHyperlink(),
             .string => self.endString(),
+            .conemu_sleep_value => self.endConEmuSleepValue(),
             .allocable_string => self.endAllocableString(),
             .kitty_color_protocol_key => self.endKittyColorProtocolOption(.key_only, true),
             .kitty_color_protocol_value => self.endKittyColorProtocolOption(.key_and_value, true),
@@ -1632,6 +1672,48 @@ test "OSC: set palette color" {
     try testing.expect(cmd == .set_color);
     try testing.expectEqual(Command.ColorKind{ .palette = 17 }, cmd.set_color.kind);
     try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
+}
+
+test "OSC: conemu sleep" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;1;420";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+
+    try testing.expect(cmd == .sleep);
+    try testing.expectEqual(420, cmd.sleep);
+}
+
+test "OSC: conemu sleep with no value default to 100ms" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;1;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+
+    try testing.expect(cmd == .sleep);
+    try testing.expectEqual(100, cmd.sleep);
+}
+
+test "OSC: conemu sleep cannot exceed 10000ms" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;1;12345";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+
+    try testing.expect(cmd == .sleep);
+    try testing.expectEqual(10000, cmd.sleep);
 }
 
 test "OSC: show desktop notification" {
