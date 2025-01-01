@@ -108,7 +108,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
         // For the remainder of "why" see the 4.14 comment below.
         _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
-        _ = internal_os.setenv("GDK_DEBUG", "opengl");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-no-fractional");
     } else if (version.atLeast(4, 14, 0)) {
         // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
         // Older versions of GTK do not support these values so it is safe
@@ -123,7 +123,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         //   - "vulkan-disable" - disable Vulkan, Ghostty can't use Vulkan
         //     and initializing a Vulkan context was causing a longer delay
         //     on some systems.
-        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable,gl-no-fractional");
     } else {
         // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
         // is an environment that isn't tested well and we don't have a
