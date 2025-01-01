@@ -27,6 +27,12 @@ pub const GlobalState = struct {
     alloc: std.mem.Allocator,
     action: ?cli.Action,
     logging: Logging,
+    /// If we change any resource limits for our own purposes, we save the
+    /// old limits so that they can be restored before we execute any child
+    /// processes.
+    rlimits: struct {
+        nofile: ?internal_os.rlimit = null,
+    } = .{},
 
     /// The app resources directory, equivalent to zig-out/share when we build
     /// from source. This is null if we can't detect it.
@@ -56,6 +62,7 @@ pub const GlobalState = struct {
             .alloc = undefined,
             .action = null,
             .logging = .{ .stderr = {} },
+            .rlimits = .{},
             .resources_dir = null,
         };
         errdefer self.deinit();
@@ -124,7 +131,7 @@ pub const GlobalState = struct {
         std.log.info("libxev backend={}", .{xev.backend});
 
         // First things first, we fix our file descriptors
-        internal_os.fixMaxFiles();
+        self.rlimits.nofile = internal_os.fixMaxFiles();
 
         // Initialize our crash reporting.
         crash.init(self.alloc) catch |err| {
