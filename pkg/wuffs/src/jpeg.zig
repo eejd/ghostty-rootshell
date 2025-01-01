@@ -4,9 +4,9 @@ const c = @import("c.zig").c;
 const Error = @import("error.zig").Error;
 const check = @import("error.zig").check;
 
-const log = std.log.scoped(.wuffs_png);
+const log = std.log.scoped(.wuffs_jpeg);
 
-/// Decode a PNG image.
+/// Decode a JPEG image.
 pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     width: u32,
     height: u32,
@@ -19,14 +19,14 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     // gets around that by using the Zig allocator to allocate enough memory for
     // the struct and then casts it to the appropriate pointer.
 
-    const decoder_buf = try alloc.alloc(u8, c.sizeof__wuffs_png__decoder());
+    const decoder_buf = try alloc.alloc(u8, c.sizeof__wuffs_jpeg__decoder());
     defer alloc.free(decoder_buf);
 
-    const decoder: ?*c.wuffs_png__decoder = @ptrCast(decoder_buf);
+    const decoder: ?*c.wuffs_jpeg__decoder = @ptrCast(decoder_buf);
     {
-        const status = c.wuffs_png__decoder__initialize(
+        const status = c.wuffs_jpeg__decoder__initialize(
             decoder,
-            c.sizeof__wuffs_png__decoder(),
+            c.sizeof__wuffs_jpeg__decoder(),
             c.WUFFS_VERSION,
             0,
         );
@@ -45,7 +45,7 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
 
     var image_config: c.wuffs_base__image_config = undefined;
     {
-        const status = c.wuffs_png__decoder__decode_image_config(
+        const status = c.wuffs_jpeg__decoder__decode_image_config(
             decoder,
             &image_config,
             &source_buffer,
@@ -78,7 +78,7 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
         // uses a usize which is a u32 on 32-bit systems.
         std.math.cast(
             usize,
-            c.wuffs_png__decoder__workbuf_len(decoder).max_incl,
+            c.wuffs_jpeg__decoder__workbuf_len(decoder).max_incl,
         ) orelse return error.OutOfMemory,
     );
     defer alloc.free(work_buffer);
@@ -100,7 +100,7 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
 
     var frame_config: c.wuffs_base__frame_config = undefined;
     {
-        const status = c.wuffs_png__decoder__decode_frame_config(
+        const status = c.wuffs_jpeg__decoder__decode_frame_config(
             decoder,
             &frame_config,
             &source_buffer,
@@ -109,7 +109,7 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     }
 
     {
-        const status = c.wuffs_png__decoder__decode_frame(
+        const status = c.wuffs_jpeg__decoder__decode_frame(
             decoder,
             &pixel_buffer,
             &source_buffer,
@@ -127,8 +127,8 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
     };
 }
 
-test "png_decode_000000" {
-    const data = try decode(std.testing.allocator, @embedFile("1x1#000000.png"));
+test "jpeg_decode_000000" {
+    const data = try decode(std.testing.allocator, @embedFile("1x1#000000.jpg"));
     defer std.testing.allocator.free(data.data);
 
     try std.testing.expectEqual(1, data.width);
@@ -136,8 +136,8 @@ test "png_decode_000000" {
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 255 }, data.data);
 }
 
-test "png_decode_FFFFFF" {
-    const data = try decode(std.testing.allocator, @embedFile("1x1#FFFFFF.png"));
+test "jpeg_decode_FFFFFF" {
+    const data = try decode(std.testing.allocator, @embedFile("1x1#FFFFFF.jpg"));
     defer std.testing.allocator.free(data.data);
 
     try std.testing.expectEqual(1, data.width);
