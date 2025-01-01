@@ -908,33 +908,8 @@ fn syncConfigChanges(self: *App) !void {
             .{},
         ),
     };
-    self.loadCustomCss() catch |err| switch (err) {
-        error.OutOfMemory => log.warn(
-            "out of memory loading custom CSS, no custom CSS applied",
-            .{},
-        ),
-        error.StreamTooLong => log.warn(
-            "failed to load custom CSS, no custom CSS applied - encountered stream too long error: {}",
-            .{err},
-        ),
-        error.Unexpected => log.warn(
-            "failed to load custom CSS, no custom CSS applied - encountered unexpected error: {}",
-            .{err},
-        ),
-        std.fs.File.Reader.Error.InputOutput,
-        std.fs.File.Reader.Error.SystemResources,
-        std.fs.File.Reader.Error.IsDir,
-        std.fs.File.Reader.Error.OperationAborted,
-        std.fs.File.Reader.Error.BrokenPipe,
-        std.fs.File.Reader.Error.ConnectionResetByPeer,
-        std.fs.File.Reader.Error.ConnectionTimedOut,
-        std.fs.File.Reader.Error.NotOpenForReading,
-        std.fs.File.Reader.Error.SocketNotConnected,
-        std.fs.File.Reader.Error.WouldBlock,
-        std.fs.File.Reader.Error.AccessDenied => log.warn(
-            "failed to load custom CSS, no custom CSS applied - encountered error while reading file: {}",
-            .{err},
-        ),
+    self.loadCustomCss() catch |err| {
+        log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
     };
 }
 
