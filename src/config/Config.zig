@@ -320,7 +320,7 @@ const c = @cImport({
 
 /// FreeType load flags to enable. The format of this is a list of flags to
 /// enable separated by commas. If you prefix a flag with `no-` then it is
-/// disabled. If you omit a flag, it's default value is used, so you must
+/// disabled. If you omit a flag, its default value is used, so you must
 /// explicitly disable flags you don't want. You can also use `true` or `false`
 /// to turn all flags on or off.
 ///
