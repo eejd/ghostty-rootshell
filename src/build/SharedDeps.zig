@@ -500,6 +500,35 @@ pub fn add(
         try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
     }
 
+    // Fonts
+    {
+        // JetBrains Mono
+        const jb_mono = b.dependency("jetbrains_mono", .{});
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_regular",
+            .{ .root_source_file = jb_mono.path("fonts/ttf/JetBrainsMono-Regular.ttf") },
+        );
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_bold",
+            .{ .root_source_file = jb_mono.path("fonts/ttf/JetBrainsMono-Bold.ttf") },
+        );
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_italic",
+            .{ .root_source_file = jb_mono.path("fonts/ttf/JetBrainsMono-Italic.ttf") },
+        );
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_bold_italic",
+            .{ .root_source_file = jb_mono.path("fonts/ttf/JetBrainsMono-BoldItalic.ttf") },
+        );
+
+        // Symbols-only nerd font
+        const nf_symbols = b.dependency("nerd_fonts_symbols_only", .{});
+        step.root_module.addAnonymousImport(
+            "nerd_fonts_symbols_only",
+            .{ .root_source_file = nf_symbols.path("SymbolsNerdFontMono-Regular.ttf") },
+        );
+    }
+
     // If we're building an exe then we have additional dependencies.
     if (step.kind != .lib) {
         // We always statically compile glad

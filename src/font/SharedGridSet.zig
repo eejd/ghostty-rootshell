@@ -292,6 +292,17 @@ fn collection(
         ) },
     );
 
+    // Nerd-font symbols fallback.
+    _ = try c.add(
+        self.alloc,
+        .regular,
+        .{ .fallback_loaded = try Face.init(
+            self.font_lib,
+            font.embedded.symbols_nerd_font,
+            load_options.faceOptions(),
+        ) },
+    );
+
     // On macOS, always search for and add the Apple Emoji font
     // as our preferred emoji font for fallback. We do this in case
     // people add other emoji fonts to their system, we always want to

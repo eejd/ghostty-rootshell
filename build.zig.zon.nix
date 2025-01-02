@@ -178,6 +178,14 @@ in
       };
     }
     {
+      name = "N-V-__8AADWVlwASf7XCdCqpjVW5Jv_7oogANJ_H4_dIoEp6";
+      path = fetchZigArtifact {
+        name = "jetbrains_mono";
+        url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip";
+        hash = "sha256-b2N2xu0pYOqKljzXOH7J124/YpElvDPR/c1+twEve78=";
+      };
+    }
+    {
       name = "N-V-__8AAJrvXQCqAT8Mg9o_tk6m0yf5Fz-gCNEOKLyTSerD";
       path = fetchZigArtifact {
         name = "libpng";
@@ -199,6 +207,14 @@ in
         name = "libxml2";
         url = "https://deps.files.ghostty.org/libxml2-2.11.5.tar.gz";
         hash = "sha256-bCgFni4+60K1tLFkieORamNGwQladP7jvGXNxdiaYhU=";
+      };
+    }
+    {
+      name = "N-V-__8AAI9HTABr_zPUAKuMp_GR5p_z-kjPIX_e3EtLjOqI";
+      path = fetchZigArtifact {
+        name = "nerd_fonts_symbols_only";
+        url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz";
+        hash = "sha256-f4wJDaOw6qcQhka/NMu7btE9U1inJGBSIQiwbH7NcWo=";
       };
     }
     {
