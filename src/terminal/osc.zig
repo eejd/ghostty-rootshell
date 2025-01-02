@@ -158,6 +158,11 @@ pub const Command = union(enum) {
     /// End a hyperlink (OSC 8)
     hyperlink_end: void,
 
+    /// Show GUI message Box (OSC 9;2)
+    show_message_box: struct {
+        content: []const u8,
+    },
+
     /// Set progress state (OSC 9;4)
     progress: struct {
         state: ProgressState,
@@ -353,6 +358,7 @@ pub const Parser = struct {
         osc_9,
 
         // ConEmu specific substates
+        conemu_message_box,
         conemu_progress_prestate,
         conemu_progress_state,
         conemu_progress_prevalue,
@@ -777,6 +783,9 @@ pub const Parser = struct {
             },
 
             .osc_9 => switch (c) {
+                '2' => {
+                    self.state = .conemu_message_box;
+                },
                 '4' => {
                     self.state = .conemu_progress_prestate;
                 },
@@ -786,6 +795,16 @@ pub const Parser = struct {
                 // them showing up as desktop notifications.
 
                 else => self.showDesktopNotification(),
+            },
+
+            .conemu_message_box => switch (c) {
+                ';' => {
+                    self.command = .{ .show_message_box = .{ .content = undefined } };
+                    self.temp_state = .{ .str = &self.command.show_message_box.content };
+                    self.buf_start = self.buf_idx;
+                    self.prepAllocableString();
+                },
+                else => self.state = .invalid,
             },
 
             .conemu_progress_prestate => switch (c) {
@@ -1660,6 +1679,19 @@ test "OSC: show desktop notification with title" {
     try testing.expect(cmd == .show_desktop_notification);
     try testing.expectEqualStrings(cmd.show_desktop_notification.title, "Title");
     try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
+}
+
+test "OSC: OSC9;2 conemu message box" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;2;hello world";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_message_box);
+    try testing.expectEqualStrings("hello world", cmd.show_message_box.content);
 }
 
 test "OSC: OSC9 progress set" {
