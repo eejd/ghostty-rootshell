@@ -158,6 +158,16 @@ pub fn build(b: *std.Build) !void {
         "Build a Position Independent Executable. Default true for system packages.",
     ) orelse system_package;
 
+    const strip = b.option(
+        bool,
+        "strip",
+        "Strip the final executable. Default true for fast and small releases",
+    ) orelse switch (optimize) {
+        .Debug => false,
+        .ReleaseSafe => false,
+        .ReleaseFast, .ReleaseSmall => true,
+    };
+
     const conformance = b.option(
         []const u8,
         "conformance",
@@ -342,11 +352,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = switch (optimize) {
-            .Debug => false,
-            .ReleaseSafe => false,
-            .ReleaseFast, .ReleaseSmall => true,
-        },
+        .strip = strip,
     }) else null;
 
     // Exe
@@ -690,6 +696,7 @@ pub fn build(b: *std.Build) !void {
                 .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
+                .strip = strip,
             });
             _ = try addDeps(b, lib, config);
 
@@ -707,6 +714,7 @@ pub fn build(b: *std.Build) !void {
                 .root_source_file = b.path("src/main_c.zig"),
                 .optimize = optimize,
                 .target = target,
+                .strip = strip,
             });
             _ = try addDeps(b, lib, config);
 
