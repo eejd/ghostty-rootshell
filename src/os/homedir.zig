@@ -12,7 +12,7 @@ const Error = error{
 
 /// Determine the home directory for the currently executing user. This
 /// is generally an expensive process so the value should be cached.
-pub inline fn home(buf: []u8) !?[]u8 {
+pub inline fn home(buf: []u8) !?[]const u8 {
     return switch (builtin.os.tag) {
         inline .linux, .macos => try homeUnix(buf),
         .windows => try homeWindows(buf),
@@ -24,7 +24,7 @@ pub inline fn home(buf: []u8) !?[]u8 {
     };
 }
 
-fn homeUnix(buf: []u8) !?[]u8 {
+fn homeUnix(buf: []u8) !?[]const u8 {
     // First: if we have a HOME env var, then we use that.
     if (posix.getenv("HOME")) |result| {
         if (buf.len < result.len) return Error.BufferTooSmall;
@@ -77,7 +77,7 @@ fn homeUnix(buf: []u8) !?[]u8 {
     return null;
 }
 
-fn homeWindows(buf: []u8) !?[]u8 {
+fn homeWindows(buf: []u8) !?[]const u8 {
     const drive_len = blk: {
         var fba_instance = std.heap.FixedBufferAllocator.init(buf);
         const fba = fba_instance.allocator();
@@ -110,22 +110,30 @@ fn trimSpace(input: []const u8) []const u8 {
     return std.mem.trim(u8, input, " \n\t");
 }
 
-/// Expands a path that starts with a tilde (~) to the home directory of the current user.
+pub const ExpandError = error{
+    HomeDetectionFailed,
+    BufferTooSmall,
+};
+
+/// Expands a path that starts with a tilde (~) to the home directory of
+/// the current user.
 ///
-/// Errors if `home` fails or if the size of the expanded path is larger than `buf.len`.
-///
-/// Returns null if the value returned from `home` is null, otherwise returns a slice to the expanded path.
-pub inline fn expandHome(path: []const u8, buf: []u8) !?[]u8 {
+/// Errors if `home` fails or if the size of the expanded path is larger
+/// than `buf.len`.
+pub fn expandHome(path: []const u8, buf: []u8) ExpandError![]const u8 {
     return switch (builtin.os.tag) {
-        inline .linux, .macos => expandHomeUnix(path, buf),
-        .ios => return null,
+        .linux, .macos => try expandHomeUnix(path, buf),
+        .ios => return path,
         else => @compileError("unimplemented"),
     };
 }
 
-fn expandHomeUnix(path: []const u8, buf: []u8) !?[]u8 {
-    if (!std.mem.startsWith(u8, path, "~/")) return null;
-    const home_dir = try home(buf) orelse return null;
+fn expandHomeUnix(path: []const u8, buf: []u8) ExpandError![]const u8 {
+    if (!std.mem.startsWith(u8, path, "~/")) return path;
+    const home_dir: []const u8 = if (home(buf)) |home_|
+        home_ orelse return error.HomeDetectionFailed
+    else |_|
+        return error.HomeDetectionFailed;
     const rest = path[1..]; // Skip the ~
     const expanded_len = home_dir.len + rest.len;
 
@@ -139,20 +147,20 @@ test "expandHomeUnix" {
     const testing = std.testing;
     const allocator = testing.allocator;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const home_dir = (try expandHomeUnix("~/", &buf)).?;
+    const home_dir = try expandHomeUnix("~/", &buf);
     // Joining the home directory `~` with the path `/`
     // the result should end with a separator here. (e.g. `/home/user/`)
     try testing.expect(home_dir[home_dir.len - 1] == std.fs.path.sep);
 
-    const downloads = (try expandHomeUnix("~/Downloads/shader.glsl", &buf)).?;
+    const downloads = try expandHomeUnix("~/Downloads/shader.glsl", &buf);
     const expected_downloads = try std.mem.concat(allocator, u8, &[_][]const u8{ home_dir, "Downloads/shader.glsl" });
     defer allocator.free(expected_downloads);
     try testing.expectEqualStrings(expected_downloads, downloads);
 
-    try testing.expect(try expandHomeUnix("~", &buf) == null);
-    try testing.expect(try expandHomeUnix("~abc/", &buf) == null);
-    try testing.expect(try expandHomeUnix("/home/user", &buf) == null);
-    try testing.expect(try expandHomeUnix("", &buf) == null);
+    try testing.expectEqualStrings("~", try expandHomeUnix("~", &buf));
+    try testing.expectEqualStrings("~abc/", try expandHomeUnix("~abc/", &buf));
+    try testing.expectEqualStrings("/home/user", try expandHomeUnix("/home/user", &buf));
+    try testing.expectEqualStrings("", try expandHomeUnix("", &buf));
 
     // Expect an error if the buffer is large enough to hold the home directory,
     // but not the expanded path

@@ -4362,11 +4362,26 @@ pub const RepeatablePath = struct {
             // to the base.
             var buf: [std.fs.max_path_bytes]u8 = undefined;
 
-            // Check if the path starts with a tilde and expand it to the home directory on linux/mac
+            // Check if the path starts with a tilde and expand it to the
+            // home directory on Linux/macOS. We explicitly look for "~/"
+            // because we don't support alternate users such as "~alice/"
             if (std.mem.startsWith(u8, path, "~/")) {
-                const expanded: []u8 = try internal_os.expandHome(path, &buf) orelse {
-                    // Blank this path so that we don't attempt to resolve it again
+                const expanded: []const u8 = internal_os.expandHome(
+                    path,
+                    &buf,
+                ) catch |err| {
+                    try diags.append(alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            alloc,
+                            "error expanding home directory for path {s}: {}",
+                            .{ path, err },
+                        ),
+                    });
+
+                    // Blank this path so that we don't attempt to resolve it
+                    // again
                     self.value.items[i] = .{ .required = "" };
+
                     continue;
                 };
 
@@ -4378,6 +4393,7 @@ pub const RepeatablePath = struct {
                 switch (self.value.items[i]) {
                     .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded),
                 }
+
                 continue;
             }
 
