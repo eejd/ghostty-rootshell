@@ -894,7 +894,7 @@ fn gtkActionCopy(
         return;
     };
 
-    if (self.app.config.@"toast-on-clipboard-copy") {
+    if (self.app.config.@"adw-toast".@"clipboard-copy") {
         self.sendToast("Copied to clipboard");
     }
 }

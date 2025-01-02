@@ -1276,9 +1276,6 @@ keybind: Keybinds = .{},
 @"clipboard-read": ClipboardAccess = .ask,
 @"clipboard-write": ClipboardAccess = .allow,
 
-/// Enables or disables the toast message on a clipboard copy action.
-@"toast-on-clipboard-copy": bool = true,
-
 /// Trims trailing whitespace on data that is copied to the clipboard. This does
 /// not affect data sent to the clipboard via `clipboard-write`.
 @"clipboard-trim-trailing-spaces": bool = true,
@@ -1944,6 +1941,22 @@ keybind: Keybinds = .{},
 ///
 /// Changing this value at runtime will only affect new windows.
 @"adw-toolbar-style": AdwToolbarStyle = .raised,
+
+/// Control the toasts that Ghostty shows. Toasts are small notifications
+/// that appear overlaid on top of the terminal window. They are used to
+/// show information that is not critical but may be important.
+///
+/// Valid values are:
+///
+///   - `clipboard-copy` (default: true) - Show a toast when text is copied
+///     to the clipboard.
+///
+/// You can prefix any value with `no-` to disable it. For example,
+/// `no-clipboard-copy` will disable the clipboard copy toast. Multiple
+/// values can be set by separating them with commas.
+///
+/// This configuration only applies to GTK with Adwaita enabled.
+@"adw-toast": AdwToast = .{},
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
@@ -5443,6 +5456,11 @@ pub const AdwToolbarStyle = enum {
     flat,
     raised,
     @"raised-border",
+};
+
+/// See adw-toast
+pub const AdwToast = packed struct {
+    @"clipboard-copy": bool = true,
 };
 
 /// See mouse-shift-capture
