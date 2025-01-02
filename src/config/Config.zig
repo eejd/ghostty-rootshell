@@ -569,6 +569,8 @@ palette: Palette = .{},
 /// On macOS, background opacity is disabled when the terminal enters native
 /// fullscreen. This is because the background becomes gray and it can cause
 /// widgets to show through which isn't generally desirable.
+///
+/// On macOS, changing this configuration requires restarting Ghostty completely.
 @"background-opacity": f64 = 1.0,
 
 /// A positive value enables blurring of the background when background-opacity
