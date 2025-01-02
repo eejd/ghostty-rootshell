@@ -75,6 +75,7 @@ pub fn desktopEnvironment() DesktopEnvironment {
         .macos => .macos,
         .windows => .windows,
         .linux => de: {
+            if (@inComptime()) @compileError("Checking for the desktop environment on Linux must be done at runtime.");
             // use $XDG_SESSION_DESKTOP to determine what DE we are using on Linux
             // https://www.freedesktop.org/software/systemd/man/latest/pam_systemd.html#desktop=
             const de = posix.getenv("XDG_SESSION_DESKTOP") orelse break :de .other;
