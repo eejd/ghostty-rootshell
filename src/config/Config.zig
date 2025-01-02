@@ -177,6 +177,10 @@ const c = @cImport({
 /// depending on your `window-inherit-font-size` setting. If that setting is
 /// true, only the first window will be affected by this change since all
 /// subsequent windows will inherit the font size of the previous window.
+///
+/// On Linux with GTK, font size is scaled according to both display-wide and
+/// text-specific scaling factors, which are often managed by your desktop
+/// environment (e.g. the GNOME display scale and large text settings).
 @"font-size": f32 = switch (builtin.os.tag) {
     // On macOS we default a little bigger since this tends to look better. This
     // is purely subjective but this is easy to modify.
