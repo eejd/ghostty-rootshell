@@ -809,8 +809,7 @@ pub const Parser = struct {
             },
 
             .conemu_sleep_value => switch (c) {
-                '0'...'9' => {},
-                else => self.state = .invalid,
+                else => self.complete = true,
             },
 
             .conemu_progress_prestate => switch (c) {
@@ -1174,14 +1173,14 @@ pub const Parser = struct {
 
     fn endConEmuSleepValue(self: *Parser) void {
         switch (self.command) {
-            .sleep => |*v| {
+            .sleep => |*v| v.duration_ms = value: {
                 const str = self.buf[self.buf_start..self.buf_idx];
-                if (str.len != 0) {
-                    if (std.fmt.parseUnsigned(u16, str, 10)) |num| {
-                        v.duration_ms = @min(num, 10_000);
-                    } else |_| {
-                        v.duration_ms = 10_000;
-                    }
+                if (str.len == 0) break :value 100;
+
+                if (std.fmt.parseUnsigned(u16, str, 10)) |num| {
+                    break :value @min(num, 10_000);
+                } else |_| {
+                    break :value 100;
                 }
             },
             else => {},
@@ -1726,9 +1725,10 @@ test "OSC: conemu sleep invalid input" {
     const input = "9;1;foo";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end('\x1b');
+    const cmd = p.end('\x1b').?;
 
-    try testing.expect(cmd == null);
+    try testing.expect(cmd == .sleep);
+    try testing.expectEqual(100, cmd.sleep.duration_ms);
 }
 
 test "OSC: show desktop notification" {
