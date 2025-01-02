@@ -25,10 +25,11 @@ pub fn appSupportDir(
     alloc: Allocator,
     sub_path: []const u8,
 ) AppSupportDirError![]const u8 {
-    return try makeCommonPath(alloc, .NSApplicationSupportDirectory, &.{
-        build_config.bundle_id,
-        sub_path,
-    });
+    return try commonDir(
+        alloc,
+        .NSApplicationSupportDirectory,
+        &.{ build_config.bundle_id, sub_path },
+    );
 }
 
 pub const CacheDirError = Allocator.Error || error{AppleAPIFailed};
@@ -39,10 +40,11 @@ pub fn cacheDir(
     alloc: Allocator,
     sub_path: []const u8,
 ) CacheDirError![]const u8 {
-    return try makeCommonPath(alloc, .NSCachesDirectory, &.{
-        build_config.bundle_id,
-        sub_path,
-    });
+    return try commonDir(
+        alloc,
+        .NSCachesDirectory,
+        &.{ build_config.bundle_id, sub_path },
+    );
 }
 
 pub const SetQosClassError = error{
@@ -101,7 +103,7 @@ pub const NSSearchPathDomainMask = enum(c_ulong) {
     NSUserDomainMask = 1,
 };
 
-fn makeCommonPath(
+fn commonDir(
     alloc: Allocator,
     directory: NSSearchPathDirectory,
     sub_paths: []const []const u8,
