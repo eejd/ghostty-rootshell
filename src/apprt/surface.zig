@@ -79,6 +79,9 @@ pub const Message = union(enum) {
         color: terminal.color.RGB,
     },
 
+    // Tell the surface to perform selection scrolling.
+    selection_scroll: bool,
+
     /// The terminal has reported a change in the working directory.
     pwd_change: WriteReq,
 
