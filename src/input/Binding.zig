@@ -311,7 +311,7 @@ pub const Action = union(enum) {
     toggle_tab_overview: void,
 
     /// Create a new split in the given direction. The new split will appear in
-    /// the direction given.
+    /// the direction given. For example `new_split:up`. Valid values are left, right, up, down and auto.
     new_split: SplitDirection,
 
     /// Focus on a split in a given direction. For example `goto_split:top`. Valid values are top, bottom, left, right, previous and next.
