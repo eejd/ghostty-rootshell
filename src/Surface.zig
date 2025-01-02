@@ -3889,7 +3889,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                     log.err("error setting clipboard string err={}", .{err});
                     return true;
                 };
+
+                return true;
             }
+
+            return false;
         },
 
         .paste_from_clipboard => try self.startClipboardRequest(
