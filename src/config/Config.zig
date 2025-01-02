@@ -1108,6 +1108,32 @@ keybind: Keybinds = .{},
 @"window-height": u32 = 0,
 @"window-width": u32 = 0,
 
+/// The starting window position. This position is in pixels and is relative
+/// to the top-left corner of the primary monitor. Both values must be set to take
+/// effect. If only one value is set, it is ignored.
+///
+/// Note that the window manager may put limits on the position or override
+/// the position. For example, a tiling window manager may force the window
+/// to be a certain position to fit within the grid. There is nothing Ghostty
+/// will do about this, but it will make an effort.
+///
+/// Also note that negative values are also up to the operating system and
+/// window manager. Some window managers may not allow windows to be placed
+/// off-screen.
+///
+/// Invalid positions are runtime-specific, but generally the positions are
+/// clamped to the nearest valid position.
+///
+/// On macOS, the window position is relative to the top-left corner of
+/// the visible screen area. This means that if the menu bar is visible, the
+/// window will be placed below the menu bar.
+///
+/// Note: this is only supported on macOS and Linux GLFW builds. The GTK
+/// runtime does not support setting the window position (this is a limitation
+/// of GTK 4.0).
+@"window-position-x": ?i16 = null,
+@"window-position-y": ?i16 = null,
+
 /// Whether to enable saving and restoring window state. Window state includes
 /// their position, size, tabs, splits, etc. Some window state requires shell
 /// integration, such as preserving working directories. See `shell-integration`

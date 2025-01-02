@@ -273,6 +273,28 @@ class TerminalController: BaseTerminalController {
         }
     }
 
+    private func setInitialWindowPosition(x: Int16?, y: Int16?, windowDecorations: Bool) {
+        guard let window else { return }
+
+        // If we don't have both an X and Y we center.
+        guard let x, let y else {
+            window.center()
+            return
+        }
+
+        // Prefer the screen our window is being placed on otherwise our primary screen.
+        guard let screen = window.screen ?? NSScreen.screens.first else {
+            window.center()
+            return
+        }
+
+        // Orient based on the top left of the primary monitor
+        let frame = screen.visibleFrame
+        window.setFrameOrigin(.init(
+            x: frame.minX + CGFloat(x),
+            y: frame.maxY - (CGFloat(y) + window.frame.height)))
+    }
+
     //MARK: - NSWindowController
 
     override func windowWillLoad() {
@@ -368,9 +390,12 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        // Center the window to start, we'll move the window frame automatically
-        // when cascading.
-        window.center()
+        // Set our window positioning to coordinates if config value exists, otherwise
+        // fallback to original centering behavior
+        setInitialWindowPosition(
+            x: config.windowPositionX,
+            y: config.windowPositionY,
+            windowDecorations: config.windowDecorations)
 
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = config.windowTheme {

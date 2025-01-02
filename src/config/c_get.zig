@@ -42,6 +42,11 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
             ptr.* = @intCast(value);
         },
 
+        i16 => {
+            const ptr: *c_short = @ptrCast(@alignCast(ptr_raw));
+            ptr.* = @intCast(value);
+        },
+
         f32, f64 => |Float| {
             const ptr: *Float = @ptrCast(@alignCast(ptr_raw));
             ptr.* = @floatCast(value);

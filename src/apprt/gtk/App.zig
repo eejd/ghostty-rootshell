@@ -786,6 +786,7 @@ fn setInitialSize(
         ),
     }
 }
+
 fn showDesktopNotification(
     self: *App,
     target: apprt.Target,
