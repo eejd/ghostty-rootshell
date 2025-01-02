@@ -4361,6 +4361,45 @@ pub const RepeatablePath = struct {
             // If it isn't absolute, we need to make it absolute relative
             // to the base.
             var buf: [std.fs.max_path_bytes]u8 = undefined;
+
+            // Check if the path starts with a tilde and expand it to the
+            // home directory on Linux/macOS. We explicitly look for "~/"
+            // because we don't support alternate users such as "~alice/"
+            if (std.mem.startsWith(u8, path, "~/")) expand: {
+                // Windows isn't supported yet
+                if (comptime builtin.os.tag == .windows) break :expand;
+
+                const expanded: []const u8 = internal_os.expandHome(
+                    path,
+                    &buf,
+                ) catch |err| {
+                    try diags.append(alloc, .{
+                        .message = try std.fmt.allocPrintZ(
+                            alloc,
+                            "error expanding home directory for path {s}: {}",
+                            .{ path, err },
+                        ),
+                    });
+
+                    // Blank this path so that we don't attempt to resolve it
+                    // again
+                    self.value.items[i] = .{ .required = "" };
+
+                    continue;
+                };
+
+                log.debug(
+                    "expanding file path from home directory: path={s}",
+                    .{expanded},
+                );
+
+                switch (self.value.items[i]) {
+                    .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded),
+                }
+
+                continue;
+            }
+
             const abs = dir.realpath(path, &buf) catch |err| abs: {
                 if (err == error.FileNotFound) {
                     // The file doesn't exist. Try to resolve the relative path
