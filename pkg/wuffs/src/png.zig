@@ -3,15 +3,12 @@ const Allocator = std.mem.Allocator;
 const c = @import("c.zig").c;
 const Error = @import("error.zig").Error;
 const check = @import("error.zig").check;
+const ImageData = @import("main.zig").ImageData;
 
 const log = std.log.scoped(.wuffs_png);
 
 /// Decode a PNG image.
-pub fn decode(alloc: Allocator, data: []const u8) Error!struct {
-    width: u32,
-    height: u32,
-    data: []const u8,
-} {
+pub fn decode(alloc: Allocator, data: []const u8) Error!ImageData {
     // Work around some weirdness in WUFFS/Zig, there are some structs that
     // are defined as "extern" by the Zig compiler which means that Zig won't
     // allocate them on the stack at compile time. WUFFS has functions for
