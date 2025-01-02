@@ -159,6 +159,9 @@ pub fn build(b: *std.Build) !void {
     ) orelse sentry: {
         switch (target.result.os.tag) {
             .macos, .ios => break :sentry true,
+
+            // Note its false for linux because the crash reports on Linux
+            // don't have much useful information.
             else => break :sentry false,
         }
     };
@@ -1256,9 +1259,7 @@ fn addDeps(
     }
 
     // Sentry
-    if (config.sentry) sentry: {
-        if (target.result.os.tag == .windows) break :sentry;
-
+    if (config.sentry) {
         const sentry_dep = b.dependency("sentry", .{
             .target = target,
             .optimize = optimize,
