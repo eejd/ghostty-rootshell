@@ -36,6 +36,10 @@ pub const Flags = packed struct {
     /// and not just while Ghostty is focused. This may not work on all platforms.
     /// See the keybind config documentation for more information.
     global: bool = false,
+
+    /// True if this binding can be performed then the action is
+    /// triggered otherwise it acts as if it doesn't exist.
+    performable: bool = false,
 };
 
 /// Full binding parser. The binding parser is implemented as an iterator
@@ -90,6 +94,9 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, prefix, "unconsumed")) {
                 if (!flags.consumed) return Error.InvalidFormat;
                 flags.consumed = false;
+            } else if (std.mem.eql(u8, prefix, "performable")) {
+                if (flags.performable) return Error.InvalidFormat;
+                flags.performable = true;
             } else {
                 // If we don't recognize the prefix then we're done.
                 // There are trigger-specific prefixes like "physical:" so
