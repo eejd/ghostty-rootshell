@@ -119,11 +119,6 @@ pub fn init(self: *Window, app: *App) !void {
         c.gtk_widget_add_css_class(@ptrCast(gtk_window), "window-theme-ghostty");
     }
 
-    // Remove the window's background if any of the widgets need to be transparent
-    if (app.config.@"background-opacity" < 1) {
-        c.gtk_widget_remove_css_class(@ptrCast(window), "background");
-    }
-
     // Create our box which will hold our widgets in the main content area.
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
@@ -398,6 +393,12 @@ pub fn init(self: *Window, app: *App) !void {
 /// TODO: Many of the initial style settings in `create` could possibly be made
 /// reactive by moving them here.
 pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
+    if (config.@"background-opacity" < 1) {
+        c.gtk_widget_remove_css_class(@ptrCast(self.window), "background");
+    } else {
+        c.gtk_widget_add_css_class(@ptrCast(self.window), "background");
+    }
+
     if (self.wayland) |*wl| {
         try wl.setBlur(config.@"background-blur-radius" > 0);
     }
