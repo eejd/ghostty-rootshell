@@ -847,9 +847,11 @@ fn configChange(
     new_config: *const Config,
 ) void {
     switch (target) {
-        // We don't do anything for surface config change events. There
-        // is nothing to sync with regards to a surface today.
-        .surface => {},
+        .surface => |surface| {
+            if (surface.rt_surface.container.window()) |window| window.syncAppearance(new_config) catch |err| {
+                log.warn("error syncing appearance changes to window err={}", .{err});
+            };
+        },
 
         .app => {
             // We clone (to take ownership) and update our configuration.

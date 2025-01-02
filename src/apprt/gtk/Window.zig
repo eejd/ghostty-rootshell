@@ -392,6 +392,17 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_show(window);
 }
 
+/// Updates appearance based on config settings. Will be called once upon window
+/// realization, and every time the config is reloaded.
+///
+/// TODO: Many of the initial style settings in `create` could possibly be made
+/// reactive by moving them here.
+pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
+    if (self.wayland) |*wl| {
+        try wl.setBlur(config.@"background-blur-radius" > 0);
+    }
+}
+
 /// Sets up the GTK actions for the window scope. Actions are how GTK handles
 /// menus and such. The menu is defined in App.zig but the action is defined
 /// here. The string name binds them.
@@ -564,6 +575,10 @@ fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     if (self.app.wayland) |*wl| {
         self.wayland = wayland.SurfaceState.init(v, wl);
     }
+
+    self.syncAppearance(&self.app.config) catch |err| {
+        log.err("failed to initialize appearance={}", .{err});
+    };
 
     return true;
 }
