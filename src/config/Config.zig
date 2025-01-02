@@ -147,23 +147,28 @@ const c = @cImport({
 /// By default, synthetic styles are enabled.
 @"font-synthetic-style": FontSyntheticStyle = .{},
 
-/// Apply a font feature. This can be repeated multiple times to enable multiple
-/// font features. You can NOT set multiple font features with a single value
-/// (yet).
+/// Apply a font feature. To enable multiple font features you can repeat
+/// this multiple times or use a comma-separated list of feature settings.
+///
+/// The syntax for feature settings is as follows, where `feat` is a feature:
+///
+///   * Enable features with e.g. `feat`, `+feat`, `feat on`, `feat=1`.
+///   * Disabled features with e.g. `-feat`, `feat off`, `feat=0`.
+///   * Set a feature value with e.g. `feat=2`, `feat = 3`, `feat 4`.
+///   * Feature names may be wrapped in quotes, meaning this config should be
+///     syntactically compatible with the `font-feature-settings` CSS property.
+///
+/// The syntax is fairly loose, but invalid settings will be silently ignored.
 ///
 /// The font feature will apply to all fonts rendered by Ghostty. A future
 /// enhancement will allow targeting specific faces.
-///
-/// A valid value is the name of a feature. Prefix the feature with a `-` to
-/// explicitly disable it. Example: `ss20` or `-ss20`.
 ///
 /// To disable programming ligatures, use `-calt` since this is the typical
 /// feature name for programming ligatures. To look into what font features
 /// your font has and what they do, use a font inspection tool such as
 /// [fontdrop.info](https://fontdrop.info).
 ///
-/// To generally disable most ligatures, use `-calt`, `-liga`, and `-dlig` (as
-/// separate repetitive entries in your config).
+/// To generally disable most ligatures, use `-calt, -liga, -dlig`.
 @"font-feature": RepeatableString = .{},
 
 /// Font size in points. This value can be a non-integer and the nearest integer
