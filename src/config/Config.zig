@@ -4365,7 +4365,10 @@ pub const RepeatablePath = struct {
             // Check if the path starts with a tilde and expand it to the
             // home directory on Linux/macOS. We explicitly look for "~/"
             // because we don't support alternate users such as "~alice/"
-            if (std.mem.startsWith(u8, path, "~/")) {
+            if (std.mem.startsWith(u8, path, "~/")) expand: {
+                // Windows isn't supported yet
+                if (comptime builtin.os.tag == .windows) break :expand;
+
                 const expanded: []const u8 = internal_os.expandHome(
                     path,
                     &buf,
