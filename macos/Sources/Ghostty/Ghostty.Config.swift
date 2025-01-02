@@ -150,17 +150,17 @@ extension Ghostty {
             return String(cString: ptr)
         }
         
-        var windowInitialPositionX: Int16? {
+        var windowPositionX: Int16? {
             guard let config = self.config else { return nil }
             var v: Int16 = 0
-            let key = "window-initial-position-x"
+            let key = "window-position-x"
             return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
         }
         
-        var windowInitialPositionY: Int16? {
+        var windowPositionY: Int16? {
             guard let config = self.config else { return nil }
             var v: Int16 = 0
-            let key = "window-initial-position-y"
+            let key = "window-position-y"
             return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
         }
 
