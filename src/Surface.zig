@@ -1941,10 +1941,16 @@ fn maybeHandleBinding(
         return .closed;
     }
 
+    // If we have the performable flag and the
+    // action was not performed do nothing at all
+    if (leaf.flags.performable and !performed) {
+        return null;
+    }
+
     // If we consume this event, then we are done. If we don't consume
     // it, we processed the action but we still want to process our
     // encodings, too.
-    if (performed and consumed) {
+    if (consumed) {
         // If we had queued events, we deinit them since we consumed
         self.endKeySequence(.drop, .retain);
 
