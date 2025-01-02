@@ -407,14 +407,17 @@ const c = @cImport({
 theme: ?Theme = null,
 
 /// Background color for the window.
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 
 /// Foreground color for the window.
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"selection-foreground": ?Color = null,
 @"selection-background": ?Color = null,
 
@@ -440,15 +443,16 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 @"minimum-contrast": f64 = 1,
 
 /// Color palette for the 256 color form that many terminal applications use.
-/// The syntax of this configuration is `N=HEXCODE` where `N` is 0 to 255 (for
-/// the 256 colors in the terminal color table) and `HEXCODE` is a typical RGB
-/// color code such as `#AABBCC`.
+/// The syntax of this configuration is `N=COLOR` where `N` is 0 to 255 (for
+/// the 256 colors in the terminal color table) and `COLOR` is a typical RGB
+/// color code such as `#AABBCC` or `AABBCC`, or a named X11 color.
 ///
-/// For definitions on all the codes [see this cheat
-/// sheet](https://www.ditig.com/256-colors-cheat-sheet).
+/// For definitions on the color indices and what they canonically map to,
+/// [see this cheat sheet](https://www.ditig.com/256-colors-cheat-sheet).
 palette: Palette = .{},
 
 /// The color of the cursor. If this is not set, a default will be chosen.
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"cursor-color": ?Color = null,
 
 /// Swap the foreground and background colors of the cell under the cursor. This
@@ -502,6 +506,7 @@ palette: Palette = .{},
 
 /// The color of the text under the cursor. If this is not set, a default will
 /// be chosen.
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"cursor-text": ?Color = null,
 
 /// Enables the ability to move the cursor at prompts by using `alt+click` on
@@ -597,6 +602,8 @@ palette: Palette = .{},
 /// that rectangle and can be used to carefully control the dimming effect.
 ///
 /// This will default to the background color.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"unfocused-split-fill": ?Color = null,
 
 /// The command to run, usually a shell. If this is not an absolute path, it'll
@@ -1189,11 +1196,15 @@ keybind: Keybinds = .{},
 /// Background color for the window titlebar. This only takes effect if
 /// window-theme is set to ghostty. Currently only supported in the GTK app
 /// runtime.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"window-titlebar-background": ?Color = null,
 
 /// Foreground color for the window titlebar. This only takes effect if
 /// window-theme is set to ghostty. Currently only supported in the GTK app
 /// runtime.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"window-titlebar-foreground": ?Color = null,
 
 /// This controls when resize overlays are shown. Resize overlays are a
@@ -1809,21 +1820,19 @@ keybind: Keybinds = .{},
 
 /// The color of the ghost in the macOS app icon.
 ///
-/// The format of the color is the same as the `background` configuration;
-/// see that for more information.
-///
 /// Note: This configuration is required when `macos-icon` is set to
 /// `custom-style`.
 ///
 /// This only has an effect when `macos-icon` is set to `custom-style`.
+///
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"macos-icon-ghost-color": ?Color = null,
 
 /// The color of the screen in the macOS app icon.
 ///
 /// The screen is a gradient so you can specify multiple colors that
-/// make up the gradient. Colors should be separated by commas. The
-/// format of the color is the same as the `background` configuration;
-/// see that for more information.
+/// make up the gradient. Comma-separated colors may be specified as
+/// as either hex (`#RRGGBB` or `RRGGBB`) or as named X11 colors.
 ///
 /// Note: This configuration is required when `macos-icon` is set to
 /// `custom-style`.
