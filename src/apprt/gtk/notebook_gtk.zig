@@ -20,6 +20,8 @@ pub const NotebookGtk = struct {
 
         // Create a notebook to hold our tabs.
         const notebook_widget: *c.GtkWidget = c.gtk_notebook_new();
+        c.gtk_widget_add_css_class(notebook_widget, "notebook");
+
         const gtk_notebook: *c.GtkNotebook = @ptrCast(notebook_widget);
         const notebook_tab_pos: c_uint = switch (app.config.@"gtk-tabs-location") {
             .top, .hidden => c.GTK_POS_TOP,
