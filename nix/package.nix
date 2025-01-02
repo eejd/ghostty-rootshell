@@ -10,10 +10,6 @@
   oniguruma,
   zlib,
   libGL,
-  libX11,
-  libXcursor,
-  libXi,
-  libXrandr,
   glib,
   gtk4,
   libadwaita,
@@ -26,7 +22,17 @@
   pandoc,
   revision ? "dirty",
   optimize ? "Debug",
-  x11 ? true,
+
+  enableX11 ? true,
+  libX11,
+  libXcursor,
+  libXi,
+  libXrandr,
+
+  enableWayland ? true,
+  wayland,
+  wayland-protocols,
+  wayland-scanner,
 }: let
   # The Zig hook has no way to select the release type without actual
   # overriding of the default flags.
@@ -114,14 +120,19 @@ in
     version = "1.0.2";
     inherit src;
 
-    nativeBuildInputs = [
-      git
-      ncurses
-      pandoc
-      pkg-config
-      zig_hook
-      wrapGAppsHook4
-    ];
+    nativeBuildInputs =
+      [
+        git
+        ncurses
+        pandoc
+        pkg-config
+        zig_hook
+        wrapGAppsHook4
+      ]
+      ++ lib.optionals enableWayland [
+        wayland-scanner
+        wayland-protocols
+      ];
 
     buildInputs =
       [
@@ -142,16 +153,19 @@ in
         glib
         gsettings-desktop-schemas
       ]
-      ++ lib.optionals x11 [
+      ++ lib.optionals enableX11 [
         libX11
         libXcursor
         libXi
         libXrandr
+      ]
+      ++ lib.optionals enableWayland [
+        wayland
       ];
 
     dontConfigure = true;
 
-    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}-nix -Dgtk-x11=${lib.boolToString x11}";
+    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}-nix -Dgtk-x11=${lib.boolToString enableX11} -Dgtk-wayland=${lib.boolToString enableWayland}";
 
     preBuild = ''
       rm -rf $ZIG_GLOBAL_CACHE_DIR

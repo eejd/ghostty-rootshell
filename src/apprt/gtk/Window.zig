@@ -25,6 +25,7 @@ const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
 const HeaderBar = @import("headerbar.zig").HeaderBar;
 const version = @import("version.zig");
+const wayland = @import("wayland.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -55,6 +56,8 @@ toast_overlay: ?*c.GtkWidget,
 /// See adwTabOverviewOpen for why we have this.
 adw_tab_overview_focus_timer: ?c.guint = null,
 
+wayland: ?wayland.SurfaceState,
+
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -79,6 +82,7 @@ pub fn init(self: *Window, app: *App) !void {
         .notebook = undefined,
         .context_menu = undefined,
         .toast_overlay = undefined,
+        .wayland = null,
     };
 
     // Create the window
@@ -290,6 +294,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // All of our events
     _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(window, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
@@ -424,6 +429,8 @@ fn initActions(self: *Window) void {
 pub fn deinit(self: *Window) void {
     c.gtk_widget_unparent(@ptrCast(self.context_menu));
 
+    if (self.wayland) |*wl| wl.deinit();
+
     if (self.adw_tab_overview_focus_timer) |timer| {
         _ = c.g_source_remove(timer);
     }
@@ -549,6 +556,16 @@ pub fn sendToast(self: *Window, title: [:0]const u8) void {
     const toast = c.adw_toast_new(title);
     c.adw_toast_set_timeout(toast, 3);
     c.adw_toast_overlay_add_toast(@ptrCast(toast_overlay), toast);
+}
+
+fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+    const self = userdataSelf(ud.?);
+
+    if (self.app.wayland) |*wl| {
+        self.wayland = wayland.SurfaceState.init(v, wl);
+    }
+
+    return true;
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab

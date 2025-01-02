@@ -37,6 +37,7 @@ const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const x11 = @import("x11.zig");
+const wayland = @import("wayland.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -72,6 +73,9 @@ running: bool = true,
 
 /// Xkb state (X11 only). Will be null on Wayland.
 x11_xkb: ?x11.Xkb = null,
+
+/// Wayland app state. Will be null on X11.
+wayland: ?wayland.AppState = null,
 
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
@@ -397,6 +401,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         break :x11_xkb try x11.Xkb.init(display);
     };
 
+    // Initialize Wayland state
+    var wl = wayland.AppState.init(display);
+    if (wl) |*w| try w.register();
+
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
     // for launching Ghostty in the "background" without immediately opening
@@ -422,6 +430,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .ctx = ctx,
         .cursor_none = cursor_none,
         .x11_xkb = x11_xkb,
+        .wayland = wl,
         .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
