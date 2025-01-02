@@ -32,6 +32,7 @@ pub const getenv = env.getenv;
 pub const setenv = env.setenv;
 pub const unsetenv = env.unsetenv;
 pub const launchedFromDesktop = desktop.launchedFromDesktop;
+pub const desktopEnvironment = desktop.desktopEnvironment;
 pub const rlimit = file.rlimit;
 pub const fixMaxFiles = file.fixMaxFiles;
 pub const restoreMaxFiles = file.restoreMaxFiles;
