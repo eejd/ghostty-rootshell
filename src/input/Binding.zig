@@ -321,7 +321,7 @@ pub const Action = union(enum) {
     toggle_split_zoom: void,
 
     /// Resize the current split by moving the split divider in the given
-    /// direction
+    /// direction. For example `resize_split:left,10`. The valid directions are up, down, left and right.
     resize_split: SplitResizeParameter,
 
     /// Equalize all splits in the current window
