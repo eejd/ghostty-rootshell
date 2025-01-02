@@ -23,9 +23,8 @@ pub fn fixMaxFiles() ?rlimit {
         return old;
     }
 
-    var lim = old;
-
     // Do a binary search for the limit.
+    var lim = old;
     var min: posix.rlim_t = lim.cur;
     var max: posix.rlim_t = 1 << 20;
     // But if there's a defined upper bound, don't search, just set it.
