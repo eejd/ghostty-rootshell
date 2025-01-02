@@ -5782,6 +5782,14 @@ pub const BackgroundBlur = union(enum) {
             ) catch return error.InvalidValue };
     }
 
+    pub fn enabled(self: BackgroundBlur) bool {
+        return switch (self) {
+            .false => false,
+            .true => true,
+            .radius => |v| v > 0,
+        };
+    }
+
     pub fn cval(self: BackgroundBlur) u8 {
         return switch (self) {
             .false => 0,
