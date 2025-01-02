@@ -907,6 +907,15 @@ class: ?[:0]const u8 = null,
 ///     Since they are not associated with a specific terminal surface,
 ///     they're never encoded.
 ///
+///   * `performable:` - Only consume the input if the action is able to be
+///     performed. For example, the `copy_to_clipboard` action will only
+///     consume the input if there is a selection to copy. If there is no
+///     selection, Ghostty behaves as if the keybind was not set. This has
+///     no effect with `global:` or `all:`-prefixed keybinds. For key
+///     sequences, this will reset the sequence if the action is not
+///     performable (acting identically to not having a keybind set at
+///     all).
+///
 /// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
 /// set later will overwrite the keybind set earlier. In this case, the

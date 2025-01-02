@@ -37,8 +37,9 @@ pub const Flags = packed struct {
     /// See the keybind config documentation for more information.
     global: bool = false,
 
-    /// True if this binding can be performed then the action is
-    /// triggered otherwise it acts as if it doesn't exist.
+    /// True if this binding should only be triggered if the action can be
+    /// performed. If the action can't be performed then the binding acts as
+    /// if it doesn't exist.
     performable: bool = false,
 };
 
@@ -1653,6 +1654,16 @@ test "parse: triggers" {
         .action = .{ .ignore = {} },
         .flags = .{ .consumed = false },
     }, try parseSingle("unconsumed:physical:a+shift=ignore"));
+
+    // performable keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .flags = .{ .performable = true },
+    }, try parseSingle("performable:shift+a=ignore"));
 
     // invalid key
     try testing.expectError(Error.InvalidFormat, parseSingle("foo=ignore"));

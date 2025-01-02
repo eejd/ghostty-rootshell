@@ -1941,16 +1941,24 @@ fn maybeHandleBinding(
         return .closed;
     }
 
-    // If we have the performable flag and the
-    // action was not performed do nothing at all
+    // If we have the performable flag and the action was not performed,
+    // then we act as though a binding didn't exist.
     if (leaf.flags.performable and !performed) {
+        // If we're in a sequence, we treat this as if we pressed a key
+        // that doesn't exist in the sequence. Reset our sequence and flush
+        // any queued events.
+        if (self.keyboard.bindings != null) {
+            self.keyboard.bindings = null;
+            self.endKeySequence(.flush, .retain);
+        }
+
         return null;
     }
 
     // If we consume this event, then we are done. If we don't consume
     // it, we processed the action but we still want to process our
     // encodings, too.
-    if (consumed) {
+    if (performed and consumed) {
         // If we had queued events, we deinit them since we consumed
         self.endKeySequence(.drop, .retain);
 
