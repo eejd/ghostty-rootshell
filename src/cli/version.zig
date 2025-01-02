@@ -37,8 +37,8 @@ pub fn run(alloc: Allocator) !u8 {
     try stdout.print("  - font engine: {}\n", .{build_config.font_backend});
     try stdout.print("  - renderer   : {}\n", .{renderer.Renderer});
     try stdout.print("  - libxev     : {}\n", .{xev.backend});
-    try stdout.print("  - desktop env: {s}\n", .{@tagName(internal_os.desktopEnvironment())});
     if (comptime build_config.app_runtime == .gtk) {
+        try stdout.print("  - desktop env: {s}\n", .{@tagName(internal_os.desktopEnvironment())});
         try stdout.print("  - GTK version:\n", .{});
         try stdout.print("    build      : {d}.{d}.{d}\n", .{
             gtk.GTK_MAJOR_VERSION,
