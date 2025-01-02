@@ -30,13 +30,6 @@ pub fn config(alloc: Allocator, opts: Options) ![]u8 {
 
 /// Get the XDG cache directory. The returned value is allocated.
 pub fn cache(alloc: Allocator, opts: Options) ![]u8 {
-    if (posix.getenv("XDG_CACHE_HOME")) |env| {
-        return try std.fs.path.join(alloc, &[_][]const u8{
-            env,
-            opts.subdir orelse "",
-        });
-    }
-
     return try dir(alloc, opts, .{
         .env = "XDG_CACHE_HOME",
         .windows_env = "LOCALAPPDATA",
