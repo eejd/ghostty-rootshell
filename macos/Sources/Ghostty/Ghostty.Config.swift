@@ -451,15 +451,14 @@ extension Ghostty {
             return v;
         }
 
-        var autoUpdate: AutoUpdate {
-            let defaultValue = AutoUpdate.check
-            guard let config = self.config else { return defaultValue }
+        var autoUpdate: AutoUpdate? {
+            guard let config = self.config else { return nil }
             var v: UnsafePointer<Int8>? = nil
             let key = "auto-update"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
-            guard let ptr = v else { return defaultValue }
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard let ptr = v else { return nil }
             let str = String(cString: ptr)
-            return AutoUpdate(rawValue: str) ?? defaultValue
+            return AutoUpdate(rawValue: str)
         }
 
         var autoUpdateChannel: AutoUpdateChannel {
