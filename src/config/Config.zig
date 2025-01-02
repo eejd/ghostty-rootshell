@@ -2133,45 +2133,53 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     );
 
     // Expand Selection
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .left }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .left },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .right }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .right },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .up }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .up },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .down }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .down },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .page_up }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .page_up },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .page_down }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .page_down },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .home }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .home },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .end }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .end },
+        .{ .performable = true },
     );
 
     // Tabs common to all platforms
@@ -2421,10 +2429,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .{ .translated = .q }, .mods = .{ .super = true } },
             .{ .quit = {} },
         );
-        try result.keybind.set.put(
+        try result.keybind.set.putFlags(
             alloc,
             .{ .key = .{ .translated = .k }, .mods = .{ .super = true } },
             .{ .clear_screen = {} },
+            .{ .performable = true },
         );
         try result.keybind.set.put(
             alloc,

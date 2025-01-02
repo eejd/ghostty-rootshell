@@ -1156,7 +1156,6 @@ pub fn updateConfig(
     }
 
     // If we are in the middle of a key sequence, clear it.
-    self.keyboard.bindings = null;
     self.endKeySequence(.drop, .free);
 
     // Before sending any other config changes, we give the renderer a new font
@@ -1853,9 +1852,6 @@ fn maybeHandleBinding(
         if (self.keyboard.bindings != null and
             !event.key.modifier())
         {
-            // Reset to the root set
-            self.keyboard.bindings = null;
-
             // Encode everything up to this point
             self.endKeySequence(.flush, .retain);
         }
@@ -1947,10 +1943,7 @@ fn maybeHandleBinding(
         // If we're in a sequence, we treat this as if we pressed a key
         // that doesn't exist in the sequence. Reset our sequence and flush
         // any queued events.
-        if (self.keyboard.bindings != null) {
-            self.keyboard.bindings = null;
-            self.endKeySequence(.flush, .retain);
-        }
+        self.endKeySequence(.flush, .retain);
 
         return null;
     }
@@ -1958,7 +1951,7 @@ fn maybeHandleBinding(
     // If we consume this event, then we are done. If we don't consume
     // it, we processed the action but we still want to process our
     // encodings, too.
-    if (performed and consumed) {
+    if (consumed) {
         // If we had queued events, we deinit them since we consumed
         self.endKeySequence(.drop, .retain);
 
@@ -1999,6 +1992,10 @@ fn endKeySequence(
             .{err},
         );
     };
+
+    // No matter what we clear our current binding set. This restores
+    // the set we look at to the root set.
+    self.keyboard.bindings = null;
 
     if (self.keyboard.queued.items.len > 0) {
         switch (action) {
