@@ -341,7 +341,7 @@ pub const Action = union(enum) {
     /// the direction given. For example `new_split:up`. Valid values are left, right, up, down and auto.
     new_split: SplitDirection,
 
-    /// Focus on a split in a given direction. For example `goto_split:top`. Valid values are top, bottom, left, right, previous and next.
+    /// Focus on a split in a given direction. For example `goto_split:up`. Valid values are left, right, up, down, previous and next.
     goto_split: SplitFocusDirection,
 
     /// zoom/unzoom the current split.
