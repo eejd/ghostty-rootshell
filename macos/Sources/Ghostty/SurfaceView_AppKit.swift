@@ -810,6 +810,8 @@ extension Ghostty {
                 return false
             }
 
+            // If this event as-is would result in a key event then
+
             // Only process keys when Control is active. All known issues we're
             // resolving happen only in this scenario. This probably isn't fully robust
             // but we can broaden the scope as we find more cases.
@@ -903,23 +905,14 @@ extension Ghostty {
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
             guard let surface = self.surface else { return }
 
-            var key_ev = ghostty_input_key_s()
-            key_ev.action = action
-            key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-            key_ev.keycode = UInt32(event.keyCode)
-            key_ev.text = nil
-            key_ev.composing = false
-            ghostty_surface_key(surface, key_ev)
+            ghostty_surface_key(surface, event.ghosttyKeyEvent(action))
         }
 
         private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, preedit: String) {
             guard let surface = self.surface else { return }
 
             preedit.withCString { ptr in
-                var key_ev = ghostty_input_key_s()
-                key_ev.action = action
-                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-                key_ev.keycode = UInt32(event.keyCode)
+                var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
                 key_ev.composing = true
                 ghostty_surface_key(surface, key_ev)
@@ -930,10 +923,7 @@ extension Ghostty {
             guard let surface = self.surface else { return }
 
             text.withCString { ptr in
-                var key_ev = ghostty_input_key_s()
-                key_ev.action = action
-                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-                key_ev.keycode = UInt32(event.keyCode)
+                var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
                 ghostty_surface_key(surface, key_ev)
             }

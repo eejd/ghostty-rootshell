@@ -438,13 +438,7 @@ class AppDelegate: NSObject,
         guard let ghostty = self.ghostty.app else { return event }
 
         // Build our event input and call ghostty
-        var key_ev = ghostty_input_key_s()
-        key_ev.action = GHOSTTY_ACTION_PRESS
-        key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-        key_ev.keycode = UInt32(event.keyCode)
-        key_ev.text = nil
-        key_ev.composing = false
-        if (ghostty_app_key(ghostty, key_ev)) {
+        if (ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
             // The key was used so we want to stop it from going to our Mac app
             Ghostty.logger.debug("local key event handled event=\(event)")
             return nil
