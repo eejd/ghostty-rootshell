@@ -686,7 +686,7 @@ test "image load: rgb, zlib compressed, direct, chunked with zero initial chunk"
     try testing.expect(img.compression == .none);
 }
 
-test "image load: rgb, not compressed, temporary file" {
+test "image load: temporary file without correct path" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -700,6 +700,39 @@ test "image load: rgb, not compressed, temporary file" {
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try tmp_dir.dir.realpath("image.data", &buf);
+
+    var cmd: command.Command = .{
+        .control = .{ .transmit = .{
+            .format = .rgb,
+            .medium = .temporary_file,
+            .compression = .none,
+            .width = 20,
+            .height = 15,
+            .image_id = 31,
+        } },
+        .data = try alloc.dupe(u8, path),
+    };
+    defer cmd.deinit(alloc);
+    try testing.expectError(error.TemporaryFileNotNamedCorrectly, LoadingImage.init(alloc, &cmd));
+
+    // Temporary file should still be there
+    try tmp_dir.dir.access(path, .{});
+}
+
+test "image load: rgb, not compressed, temporary file" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var tmp_dir = try internal_os.TempDir.init();
+    defer tmp_dir.deinit();
+    const data = @embedFile("testdata/image-rgb-none-20x15-2147483647-raw.data");
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "tty-graphics-protocol-image.data",
+        .data = data,
+    });
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try tmp_dir.dir.realpath("tty-graphics-protocol-image.data", &buf);
 
     var cmd: command.Command = .{
         .control = .{ .transmit = .{
@@ -766,12 +799,12 @@ test "image load: png, not compressed, regular file" {
     defer tmp_dir.deinit();
     const data = @embedFile("testdata/image-png-none-50x76-2147483647-raw.data");
     try tmp_dir.dir.writeFile(.{
-        .sub_path = "image.data",
+        .sub_path = "tty-graphics-protocol-image.data",
         .data = data,
     });
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = try tmp_dir.dir.realpath("image.data", &buf);
+    const path = try tmp_dir.dir.realpath("tty-graphics-protocol-image.data", &buf);
 
     var cmd: command.Command = .{
         .control = .{ .transmit = .{
