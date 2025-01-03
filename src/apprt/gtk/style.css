@@ -33,11 +33,15 @@ label.size-overlay.hidden {
   opacity: 0;
 }
 
+window.without-window-decoration-and-with-titlebar {
+  border-radius: 0 0;
+}
+
 .transparent {
   background-color: transparent;
 }
 
-separator {
+.terminal-window .notebook separator {
   background-color: rgba(250, 250, 250, 1);
   background-clip: content-box;
 }

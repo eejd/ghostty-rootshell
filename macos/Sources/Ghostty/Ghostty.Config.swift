@@ -149,6 +149,20 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
+        
+        var windowPositionX: Int16? {
+            guard let config = self.config else { return nil }
+            var v: Int16 = 0
+            let key = "window-position-x"
+            return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
+        }
+        
+        var windowPositionY: Int16? {
+            guard let config = self.config else { return nil }
+            var v: Int16 = 0
+            let key = "window-position-y"
+            return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
+        }
 
         var windowNewTabPosition: String {
             guard let config = self.config else { return "" }
@@ -437,15 +451,14 @@ extension Ghostty {
             return v;
         }
 
-        var autoUpdate: AutoUpdate {
-            let defaultValue = AutoUpdate.check
-            guard let config = self.config else { return defaultValue }
+        var autoUpdate: AutoUpdate? {
+            guard let config = self.config else { return nil }
             var v: UnsafePointer<Int8>? = nil
             let key = "auto-update"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
-            guard let ptr = v else { return defaultValue }
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard let ptr = v else { return nil }
             let str = String(cString: ptr)
-            return AutoUpdate(rawValue: str) ?? defaultValue
+            return AutoUpdate(rawValue: str)
         }
 
         var autoUpdateChannel: AutoUpdateChannel {

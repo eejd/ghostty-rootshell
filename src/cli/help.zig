@@ -63,7 +63,7 @@ pub fn run(alloc: Allocator) !u8 {
     try stdout.writeAll(
         \\
         \\Specify `+<action> --help` to see the help for a specific action,
-        \\where `<action>` is one of actions listed below.
+        \\where `<action>` is one of actions listed above.
         \\
     );
 

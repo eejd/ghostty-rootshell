@@ -19,8 +19,9 @@ pub inline fn atLeast(
     // compiling against unknown symbols and makes runtime checks
     // very slightly faster.
     if (comptime c.GTK_MAJOR_VERSION < major or
-        c.GTK_MINOR_VERSION < minor or
-        c.GTK_MICRO_VERSION < micro) return false;
+        (c.GTK_MAJOR_VERSION == major and c.GTK_MINOR_VERSION < minor) or
+        (c.GTK_MAJOR_VERSION == major and c.GTK_MINOR_VERSION == minor and c.GTK_MICRO_VERSION < micro))
+        return false;
 
     // If we're in comptime then we can't check the runtime version.
     if (@inComptime()) return true;
@@ -37,4 +38,21 @@ pub inline fn atLeast(
     }
 
     return false;
+}
+
+test "atLeast" {
+    const std = @import("std");
+    const testing = std.testing;
+
+    try testing.expect(atLeast(c.GTK_MAJOR_VERSION, c.GTK_MINOR_VERSION, c.GTK_MICRO_VERSION));
+
+    try testing.expect(!atLeast(c.GTK_MAJOR_VERSION, c.GTK_MINOR_VERSION, c.GTK_MICRO_VERSION + 1));
+    try testing.expect(!atLeast(c.GTK_MAJOR_VERSION, c.GTK_MINOR_VERSION + 1, c.GTK_MICRO_VERSION));
+    try testing.expect(!atLeast(c.GTK_MAJOR_VERSION + 1, c.GTK_MINOR_VERSION, c.GTK_MICRO_VERSION));
+
+    try testing.expect(atLeast(c.GTK_MAJOR_VERSION - 1, c.GTK_MINOR_VERSION, c.GTK_MICRO_VERSION));
+    try testing.expect(atLeast(c.GTK_MAJOR_VERSION - 1, c.GTK_MINOR_VERSION + 1, c.GTK_MICRO_VERSION));
+    try testing.expect(atLeast(c.GTK_MAJOR_VERSION - 1, c.GTK_MINOR_VERSION, c.GTK_MICRO_VERSION + 1));
+
+    try testing.expect(atLeast(c.GTK_MAJOR_VERSION, c.GTK_MINOR_VERSION - 1, c.GTK_MICRO_VERSION + 1));
 }

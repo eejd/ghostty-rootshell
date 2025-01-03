@@ -56,7 +56,7 @@ fn writeFishCompletions(writer: anytype) !void {
         else {
             try writer.writeAll(if (field.type != Config.RepeatablePath) " -f" else " -F");
             switch (@typeInfo(field.type)) {
-                .Bool => try writer.writeAll(" -a \"true false\""),
+                .Bool => {},
                 .Enum => |info| {
                     try writer.writeAll(" -a \"");
                     for (info.fields, 0..) |f, i| {
@@ -114,7 +114,7 @@ fn writeFishCompletions(writer: anytype) !void {
             } else try writer.writeAll(" -f");
 
             switch (@typeInfo(opt.type)) {
-                .Bool => try writer.writeAll(" -a \"true false\""),
+                .Bool => {},
                 .Enum => |info| {
                     try writer.writeAll(" -a \"");
                     for (info.fields, 0..) |f, i| {

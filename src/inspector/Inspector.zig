@@ -728,7 +728,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "%d pt",
+                    "%.2f pt",
                     self.surface.font_size.points,
                 );
             }

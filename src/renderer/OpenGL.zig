@@ -146,7 +146,7 @@ image_bg_end: u32 = 0,
 image_text_end: u32 = 0,
 image_virtual: bool = false,
 
-/// Defererred OpenGL operation to update the screen size.
+/// Deferred OpenGL operation to update the screen size.
 const SetScreenSize = struct {
     size: renderer.Size,
 

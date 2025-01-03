@@ -131,6 +131,7 @@ const PrimaryView = struct {
         c.gtk_text_view_set_bottom_margin(@ptrCast(text), 8);
         c.gtk_text_view_set_left_margin(@ptrCast(text), 8);
         c.gtk_text_view_set_right_margin(@ptrCast(text), 8);
+        c.gtk_text_view_set_monospace(@ptrCast(text), 1);
 
         return .{ .root = view.root, .text = @ptrCast(text) };
     }
@@ -238,7 +239,7 @@ fn promptText(req: apprt.ClipboardRequest) [:0]const u8 {
         \\Pasting this text into the terminal may be dangerous as it looks like some commands may be executed.
         ,
         .osc_52_read =>
-        \\An appliclication is attempting to read from the clipboard.
+        \\An application is attempting to read from the clipboard.
         \\The current clipboard contents are shown below.
         ,
         .osc_52_write =>

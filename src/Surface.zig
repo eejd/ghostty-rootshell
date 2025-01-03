@@ -853,11 +853,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .color_change => |change| {
-            // On any color change, we have to report for mode 2031
-            // if it is enabled.
-            self.reportColorScheme(false);
-
-            // Notify our apprt
+            // Notify our apprt, but don't send a mode 2031 DSR report
+            // because VT sequences were used to change the color.
             try self.rt_app.performAction(
                 .{ .surface = self },
                 .color_change,
@@ -1159,7 +1156,6 @@ pub fn updateConfig(
     }
 
     // If we are in the middle of a key sequence, clear it.
-    self.keyboard.bindings = null;
     self.endKeySequence(.drop, .free);
 
     // Before sending any other config changes, we give the renderer a new font
@@ -1710,16 +1706,37 @@ pub fn keyCallback(
         // Update our modifiers, this will update mouse mods too
         self.modsChanged(event.mods);
 
-        // Refresh our link state
-        const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
-        self.mouseRefreshLinks(
-            pos,
-            self.posToViewport(pos.x, pos.y),
-            self.mouse.over_link,
-        ) catch |err| {
-            log.warn("failed to refresh links err={}", .{err});
-            break :mouse_mods;
-        };
+        // We only refresh links if
+        // 1. mouse reporting is off
+        // OR
+        // 2. mouse reporting is on and we are not reporting shift to the terminal
+        if (self.io.terminal.flags.mouse_event == .none or
+            (self.mouse.mods.shift and !self.mouseShiftCapture(false)))
+        {
+            // Refresh our link state
+            const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
+            self.mouseRefreshLinks(
+                pos,
+                self.posToViewport(pos.x, pos.y),
+                self.mouse.over_link,
+            ) catch |err| {
+                log.warn("failed to refresh links err={}", .{err});
+                break :mouse_mods;
+            };
+        } else if (self.io.terminal.flags.mouse_event != .none and !self.mouse.mods.shift) {
+            // If we have mouse reports on and we don't have shift pressed, we reset state
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_shape,
+                self.io.terminal.mouse_shape,
+            );
+            try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_over_link,
+                .{ .url = "" },
+            );
+            try self.queueRender();
+        }
     }
 
     // Process the cursor state logic. This will update the cursor shape if
@@ -1835,9 +1852,6 @@ fn maybeHandleBinding(
         if (self.keyboard.bindings != null and
             !event.key.modifier())
         {
-            // Reset to the root set
-            self.keyboard.bindings = null;
-
             // Encode everything up to this point
             self.endKeySequence(.flush, .retain);
         }
@@ -1923,10 +1937,21 @@ fn maybeHandleBinding(
         return .closed;
     }
 
+    // If we have the performable flag and the action was not performed,
+    // then we act as though a binding didn't exist.
+    if (leaf.flags.performable and !performed) {
+        // If we're in a sequence, we treat this as if we pressed a key
+        // that doesn't exist in the sequence. Reset our sequence and flush
+        // any queued events.
+        self.endKeySequence(.flush, .retain);
+
+        return null;
+    }
+
     // If we consume this event, then we are done. If we don't consume
     // it, we processed the action but we still want to process our
     // encodings, too.
-    if (performed and consumed) {
+    if (consumed) {
         // If we had queued events, we deinit them since we consumed
         self.endKeySequence(.drop, .retain);
 
@@ -1967,6 +1992,10 @@ fn endKeySequence(
             .{err},
         );
     };
+
+    // No matter what we clear our current binding set. This restores
+    // the set we look at to the root set.
+    self.keyboard.bindings = null;
 
     if (self.keyboard.queued.items.len > 0) {
         switch (action) {
@@ -3195,7 +3224,7 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
                 .trim = false,
             });
             defer self.alloc.free(str);
-            try internal_os.open(self.alloc, str);
+            try internal_os.open(self.alloc, .unknown, str);
         },
 
         ._open_osc8 => {
@@ -3203,7 +3232,7 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
                 log.warn("failed to get URI for OSC8 hyperlink", .{});
                 return false;
             };
-            try internal_os.open(self.alloc, uri);
+            try internal_os.open(self.alloc, .unknown, uri);
         },
     }
 
@@ -3350,6 +3379,27 @@ pub fn cursorPosCallback(
         try self.queueRender();
     }
 
+    // Handle link hovering
+    // We refresh links when
+    // 1. we were previously over a link
+    // OR
+    // 2. the cursor position has changed (either we have no previous state, or the state has
+    //    changed)
+    // AND
+    // 1. mouse reporting is off
+    // OR
+    // 2. mouse reporting is on and we are not reporting shift to the terminal
+    if ((over_link or
+        self.mouse.link_point == null or
+        (self.mouse.link_point != null and !self.mouse.link_point.?.eql(pos_vp))) and
+        (self.io.terminal.flags.mouse_event == .none or
+        (self.mouse.mods.shift and !self.mouseShiftCapture(false))))
+    {
+        // If we were previously over a link, we always update. We do this so that if the text
+        // changed underneath us, even if the mouse didn't move, we update the URL hints and state
+        try self.mouseRefreshLinks(pos, pos_vp, over_link);
+    }
+
     // Do a mouse report
     if (self.io.terminal.flags.mouse_event != .none) report: {
         // Shift overrides mouse "grabbing" in the window, taken from Kitty.
@@ -3369,18 +3419,6 @@ pub fn cursorPosCallback(
         } else null;
 
         try self.mouseReport(button, .motion, self.mouse.mods, pos);
-
-        // If we were previously over a link, we need to undo the link state.
-        // We also queue a render so the renderer can undo the rendered link
-        // state.
-        if (over_link) {
-            try self.rt_app.performAction(
-                .{ .surface = self },
-                .mouse_over_link,
-                .{ .url = "" },
-            );
-            try self.queueRender();
-        }
 
         // If we're doing mouse motion tracking, we do not support text
         // selection.
@@ -3437,30 +3475,6 @@ pub fn cursorPosCallback(
 
         return;
     }
-
-    // Handle link hovering
-    if (self.mouse.link_point) |last_vp| {
-        // Mark the link's row as dirty.
-        if (over_link) {
-            self.renderer_state.terminal.screen.dirty.hyperlink_hover = true;
-        }
-
-        // If our last link viewport point is unchanged, then don't process
-        // links. This avoids constantly reprocessing regular expressions
-        // for every pixel change.
-        if (last_vp.eql(pos_vp)) {
-            // We have to restore old values that are always cleared
-            if (over_link) {
-                self.mouse.over_link = over_link;
-                self.renderer_state.mouse.point = pos_vp;
-            }
-
-            return;
-        }
-    }
-
-    // We can process new links.
-    try self.mouseRefreshLinks(pos, pos_vp, over_link);
 }
 
 /// Double-click dragging moves the selection one "word" at a time.
@@ -3886,7 +3900,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                     log.err("error setting clipboard string err={}", .{err});
                     return true;
                 };
+
+                return true;
             }
+
+            return false;
         },
 
         .paste_from_clipboard => try self.startClipboardRequest(
@@ -4239,7 +4257,13 @@ fn writeScreenFile(
     const filename = try std.fmt.bufPrint(&filename_buf, "{s}.txt", .{@tagName(loc)});
 
     // Open our scrollback file
-    var file = try tmp_dir.dir.createFile(filename, .{});
+    var file = try tmp_dir.dir.createFile(
+        filename,
+        switch (builtin.os.tag) {
+            .windows => .{},
+            else => .{ .mode = 0o600 },
+        },
+    );
     defer file.close();
 
     // Screen.dumpString writes byte-by-byte, so buffer it
@@ -4287,11 +4311,16 @@ fn writeScreenFile(
             tmp_dir.deinit();
             return;
         };
+
+        // Use topLeft and bottomRight to ensure correct coordinate ordering
+        const tl = sel.topLeft(&self.io.terminal.screen);
+        const br = sel.bottomRight(&self.io.terminal.screen);
+
         try self.io.terminal.screen.dumpString(
             buf_writer.writer(),
             .{
-                .tl = sel.start(),
-                .br = sel.end(),
+                .tl = tl,
+                .br = br,
                 .unwrap = true,
             },
         );
@@ -4303,7 +4332,7 @@ fn writeScreenFile(
     const path = try tmp_dir.dir.realpath(filename, &path_buf);
 
     switch (write_action) {
-        .open => try internal_os.open(self.alloc, path),
+        .open => try internal_os.open(self.alloc, .text, path),
         .paste => self.io.queueMessage(try termio.Message.writeReq(
             self.alloc,
             path,

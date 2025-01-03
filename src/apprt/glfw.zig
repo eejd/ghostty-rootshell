@@ -510,6 +510,13 @@ pub const Surface = struct {
         ) orelse return glfw.mustGetErrorCode();
         errdefer win.destroy();
 
+        // Setup our
+        setInitialWindowPosition(
+            win,
+            app.config.@"window-position-x",
+            app.config.@"window-position-y",
+        );
+
         // Get our physical DPI - debug only because we don't have a use for
         // this but the logging of it may be useful
         if (builtin.mode == .Debug) {
@@ -661,6 +668,17 @@ pub const Surface = struct {
             .width = @min(width, workarea.width),
             .height = @min(height, workarea.height),
         });
+    }
+
+    /// Set the initial window position. This is called exactly once at
+    /// surface initialization time. This may be called before "self"
+    /// is fully initialized.
+    fn setInitialWindowPosition(win: glfw.Window, x: ?i16, y: ?i16) void {
+        const start_position_x = x orelse return;
+        const start_position_y = y orelse return;
+
+        log.debug("setting initial window position ({},{})", .{ start_position_x, start_position_y });
+        win.setPos(.{ .x = start_position_x, .y = start_position_y });
     }
 
     /// Set the size limits of the window.

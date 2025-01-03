@@ -111,16 +111,6 @@ pub fn init(
     // Keep a long-lived reference, which we unref in destroy.
     _ = c.g_object_ref(paned);
 
-    // Clicks
-    const gesture_click = c.gtk_gesture_click_new();
-    errdefer c.g_object_unref(gesture_click);
-    c.gtk_event_controller_set_propagation_phase(@ptrCast(gesture_click), c.GTK_PHASE_CAPTURE);
-    c.gtk_gesture_single_set_button(@ptrCast(gesture_click), 1);
-    c.gtk_widget_add_controller(paned, @ptrCast(gesture_click));
-
-    // Signals
-    _ = c.g_signal_connect_data(gesture_click, "pressed", c.G_CALLBACK(&gtkMouseDown), self, null, c.G_CONNECT_DEFAULT);
-
     // Update all of our containers to point to the right place.
     // The split has to point to where the sibling pointed to because
     // we're inheriting its parent. The sibling points to its location
@@ -246,19 +236,6 @@ pub fn equalize(self: *Split) f64 {
     return weight;
 }
 
-fn gtkMouseDown(
-    _: *c.GtkGestureClick,
-    n_press: c.gint,
-    _: c.gdouble,
-    _: c.gdouble,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    if (n_press == 2) {
-        const self: *Split = @ptrCast(@alignCast(ud));
-        _ = equalize(self);
-    }
-}
-
 // maxPosition returns the maximum position of the GtkPaned, which is the
 // "max-position" attribute.
 fn maxPosition(self: *Split) f64 {
@@ -339,7 +316,7 @@ pub fn directionMap(self: *const Split, from: Side) DirectionMap {
             // This behavior matches the behavior of macOS at the time of writing
             // this. There is an open issue (#524) to make this depend on the
             // actual physical location of the current split.
-            result.put(.top, prev.surface);
+            result.put(.up, prev.surface);
             result.put(.left, prev.surface);
         }
     }
@@ -347,7 +324,7 @@ pub fn directionMap(self: *const Split, from: Side) DirectionMap {
     if (self.directionNext(from)) |next| {
         result.put(.next, next.surface);
         if (!next.wrapped) {
-            result.put(.bottom, next.surface);
+            result.put(.down, next.surface);
             result.put(.right, next.surface);
         }
     }
