@@ -220,6 +220,9 @@ pub const LoadingImage = struct {
         // Temporary file logic
         if (medium == .temporary_file) {
             if (!isPathInTempDir(path)) return error.TemporaryFileNotInTempDir;
+            if (std.mem.indexOf(u8, path, "tty-graphics-protocol") == null) {
+                return error.TemporaryFileNotNamedCorrectly;
+            }
         }
         defer if (medium == .temporary_file) {
             posix.unlink(path) catch |err| {
@@ -469,6 +472,7 @@ pub const Image = struct {
         DimensionsTooLarge,
         FilePathTooLong,
         TemporaryFileNotInTempDir,
+        TemporaryFileNotNamedCorrectly,
         UnsupportedFormat,
         UnsupportedMedium,
         UnsupportedDepth,
