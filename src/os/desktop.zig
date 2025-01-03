@@ -59,3 +59,29 @@ pub fn launchedFromDesktop() bool {
         else => @compileError("unsupported platform"),
     };
 }
+
+pub const DesktopEnvironment = enum {
+    gnome,
+    macos,
+    other,
+    windows,
+};
+
+/// Detect what desktop environment we are running under. This is mainly used on
+/// Linux to enable or disable GTK client-side decorations but there may be more
+/// uses in the future.
+pub fn desktopEnvironment() DesktopEnvironment {
+    return switch (comptime builtin.os.tag) {
+        .macos => .macos,
+        .windows => .windows,
+        .linux => de: {
+            if (@inComptime()) @compileError("Checking for the desktop environment on Linux must be done at runtime.");
+            // use $XDG_SESSION_DESKTOP to determine what DE we are using on Linux
+            // https://www.freedesktop.org/software/systemd/man/latest/pam_systemd.html#desktop=
+            const de = posix.getenv("XDG_SESSION_DESKTOP") orelse break :de .other;
+            if (std.ascii.eqlIgnoreCase("gnome", de)) break :de .gnome;
+            break :de .other;
+        },
+        else => .other,
+    };
+}
