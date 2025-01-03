@@ -23,6 +23,7 @@ pub const NotebookAdw = struct {
         assert(adwaita.enabled(&app.config));
 
         const tab_view: *c.AdwTabView = c.adw_tab_view_new().?;
+        c.gtk_widget_add_css_class(@ptrCast(@alignCast(tab_view)), "notebook");
 
         if (comptime adwaita.versionAtLeast(1, 2, 0) and adwaita.versionAtLeast(1, 2, 0)) {
             // Adwaita enables all of the shortcuts by default.
