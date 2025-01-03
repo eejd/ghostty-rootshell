@@ -193,10 +193,29 @@ pub fn lessThan(_: void, lhs: Binding, rhs: Binding) bool {
         if (rhs.trigger.mods.alt) count += 1;
         break :blk count;
     };
-    if (lhs_count == rhs_count)
+
+    if (lhs_count != rhs_count)
+        return lhs_count > rhs_count;
+
+    if (lhs.trigger.mods.int() != rhs.trigger.mods.int())
         return lhs.trigger.mods.int() > rhs.trigger.mods.int();
 
-    return lhs_count > rhs_count;
+    const lhs_key: c_int = blk: {
+        switch (lhs.trigger.key) {
+            .translated => break :blk @intFromEnum(lhs.trigger.key.translated),
+            .physical => break :blk @intFromEnum(lhs.trigger.key.physical),
+            .unicode => break :blk @intCast(lhs.trigger.key.unicode),
+        }
+    };
+    const rhs_key: c_int = blk: {
+        switch (rhs.trigger.key) {
+            .translated => break :blk @intFromEnum(rhs.trigger.key.translated),
+            .physical => break :blk @intFromEnum(rhs.trigger.key.physical),
+            .unicode => break :blk @intCast(rhs.trigger.key.unicode),
+        }
+    };
+
+    return lhs_key < rhs_key;
 }
 
 /// The set of actions that a keybinding can take.
