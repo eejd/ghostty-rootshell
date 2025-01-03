@@ -159,9 +159,7 @@ pub const Command = union(enum) {
     hyperlink_end: void,
 
     /// Show GUI message Box (OSC 9;2)
-    show_message_box: struct {
-        content: []const u8,
-    },
+    show_message_box: []const u8,
 
     /// Set progress state (OSC 9;4)
     progress: struct {
@@ -799,9 +797,10 @@ pub const Parser = struct {
 
             .conemu_message_box => switch (c) {
                 ';' => {
-                    self.command = .{ .show_message_box = .{ .content = undefined } };
-                    self.temp_state = .{ .str = &self.command.show_message_box.content };
+                    self.command = .{ .show_message_box = undefined };
+                    self.temp_state = .{ .str = &self.command.show_message_box };
                     self.buf_start = self.buf_idx;
+                    self.complete = true;
                     self.prepAllocableString();
                 },
                 else => self.state = .invalid,
@@ -1681,7 +1680,7 @@ test "OSC: show desktop notification with title" {
     try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
 }
 
-test "OSC: OSC9;2 conemu message box" {
+test "OSC: conemu message box" {
     const testing = std.testing;
 
     var p: Parser = .{};
@@ -1691,7 +1690,45 @@ test "OSC: OSC9;2 conemu message box" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .show_message_box);
-    try testing.expectEqualStrings("hello world", cmd.show_message_box.content);
+    try testing.expectEqualStrings("hello world", cmd.show_message_box);
+}
+
+test "OSC: conemu message box invalid input" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;2";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b');
+    try testing.expect(cmd == null);
+}
+
+test "OSC: conemu message box empty message" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;2;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_message_box);
+    try testing.expectEqualStrings("", cmd.show_message_box);
+}
+
+test "OSC: conemu message box spaces only message" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;2;   ";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_message_box);
+    try testing.expectEqualStrings("   ", cmd.show_message_box);
 }
 
 test "OSC: OSC9 progress set" {
