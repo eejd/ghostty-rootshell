@@ -1959,14 +1959,21 @@ keybind: Keybinds = .{},
 /// that appear overlaid on top of the terminal window. They are used to
 /// show information that is not critical but may be important.
 ///
-/// Valid values are:
+/// Possible toasts are:
 ///
 ///   - `clipboard-copy` (default: true) - Show a toast when text is copied
 ///     to the clipboard.
 ///
-/// You can prefix any value with `no-` to disable it. For example,
-/// `no-clipboard-copy` will disable the clipboard copy toast. Multiple
-/// values can be set by separating them with commas.
+/// To specify a toast to enable, specify the name of the toast. To specify
+/// a toast to disable, prefix the name with `no-`. For example, to disable
+/// the clipboard-copy toast, set this configuration to `no-clipboard-copy`.
+/// To enable the clipboard-copy toast, set this configuration to
+/// `clipboard-copy`.
+///
+/// Multiple toasts can be enabled or disabled by separating them with a comma.
+///
+/// A value of "false" will disable all toasts. A value of "true" will
+/// enable all toasts.
 ///
 /// This configuration only applies to GTK with Adwaita enabled.
 @"adw-toast": AdwToast = .{},
