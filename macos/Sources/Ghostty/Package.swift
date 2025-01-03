@@ -236,6 +236,9 @@ extension Notification.Name {
     /// Goto tab. Has tab index in the userinfo.
     static let ghosttyMoveTab = Notification.Name("com.mitchellh.ghostty.moveTab")
     static let GhosttyMoveTabKey = ghosttyMoveTab.rawValue
+
+    /// Close tab
+    static let ghosttyCloseTab = Notification.Name("com.mitchellh.ghostty.closeTab")
 }
 
 // NOTE: I am moving all of these to Notification.Name extensions over time. This

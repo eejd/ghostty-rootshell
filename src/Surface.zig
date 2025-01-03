@@ -4266,6 +4266,7 @@ fn closingAction(action: input.Binding.Action) bool {
     return switch (action) {
         .close_surface,
         .close_window,
+        .close_tab,
         => true,
 
         else => false,
