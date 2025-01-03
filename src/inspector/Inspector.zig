@@ -14,6 +14,7 @@ const input = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const inspector = @import("main.zig");
+const utils = @import("utils.zig");
 
 /// The window names. These are used with docking so we need to have access.
 const window_cell = "Cell";
@@ -285,10 +286,6 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     cimgui.c.igDockBuilderFinish(dock_id_main);
 }
 
-fn bytesToKb(bytes: usize) usize {
-    return bytes / 1024;
-}
-
 fn renderScreenWindow(self: *Inspector) void {
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.igEnd();
@@ -444,7 +441,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_bytes, bytesToKb(kitty_images.total_bytes));
+                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_bytes, utils.toKiloBytes(kitty_images.total_bytes));
                 }
             }
 
@@ -456,7 +453,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_limit, bytesToKb(kitty_images.total_limit));
+                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_limit, utils.toKiloBytes(kitty_images.total_limit));
                 }
             }
 
@@ -522,7 +519,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", pages.page_size, bytesToKb(pages.page_size));
+                    cimgui.c.igText("%d bytes (%d KB)", pages.page_size, utils.toKiloBytes(pages.page_size));
                 }
             }
 
@@ -534,7 +531,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", pages.maxSize(), bytesToKb(pages.maxSize()));
+                    cimgui.c.igText("%d bytes (%d KB)", pages.maxSize(), utils.toKiloBytes(pages.maxSize()));
                 }
             }
 
@@ -728,7 +725,7 @@ fn renderSizeWindow(self: *Inspector) void {
             {
                 _ = cimgui.c.igTableSetColumnIndex(1);
                 cimgui.c.igText(
-                    "%d pt",
+                    "%.2f pt",
                     self.surface.font_size.points,
                 );
             }

@@ -466,6 +466,9 @@ pub fn clearScreen(self: *Termio, td: *ThreadData, history: bool) !void {
         // for alt screen, we do nothing.
         if (self.terminal.active_screen == .alternate) return;
 
+        // Clear our selection
+        self.terminal.screen.clearSelection();
+
         // Clear our scrollback
         if (history) self.terminal.eraseDisplay(.scrollback, false);
 

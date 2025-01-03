@@ -101,6 +101,12 @@ class TerminalController: BaseTerminalController {
         // When our fullscreen state changes, we resync our appearance because some
         // properties change when fullscreen or not.
         guard let focusedSurface else { return }
+        if (!(fullscreenStyle?.isFullscreen ?? false) &&
+           ghostty.config.macosTitlebarStyle == "hidden")
+        {
+            applyHiddenTitlebarStyle()
+        }
+
         syncAppearance(focusedSurface.derivedConfig)
     }
 
@@ -116,9 +122,6 @@ class TerminalController: BaseTerminalController {
         if (notification.object == nil) {
             // Update our derived config
             self.derivedConfig = DerivedConfig(config)
-
-            guard let window = window as? TerminalWindow else { return }
-            window.focusFollowsMouse = config.focusFollowsMouse
 
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
@@ -247,7 +250,9 @@ class TerminalController: BaseTerminalController {
         let backgroundColor: OSColor
         if let surfaceTree {
             if let focusedSurface, surfaceTree.doesBorderTop(view: focusedSurface) {
-                backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor)
+                // Similar to above, an alpha component of "0" causes compositor issues, so
+                // we use 0.001. See: https://github.com/ghostty-org/ghostty/pull/4308
+                backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor).withAlphaComponent(0.001)
             } else {
                 // We don't have a focused surface or our surface doesn't border the
                 // top. We choose to match the color of the top-left most surface.
@@ -270,6 +275,28 @@ class TerminalController: BaseTerminalController {
         }
     }
 
+    private func setInitialWindowPosition(x: Int16?, y: Int16?, windowDecorations: Bool) {
+        guard let window else { return }
+
+        // If we don't have both an X and Y we center.
+        guard let x, let y else {
+            window.center()
+            return
+        }
+
+        // Prefer the screen our window is being placed on otherwise our primary screen.
+        guard let screen = window.screen ?? NSScreen.screens.first else {
+            window.center()
+            return
+        }
+
+        // Orient based on the top left of the primary monitor
+        let frame = screen.visibleFrame
+        window.setFrameOrigin(.init(
+            x: frame.minX + CGFloat(x),
+            y: frame.maxY - (CGFloat(y) + window.frame.height)))
+    }
+
     //MARK: - NSWindowController
 
     override func windowWillLoad() {
@@ -277,6 +304,43 @@ class TerminalController: BaseTerminalController {
         shouldCascadeWindows = false
     }
 
+    fileprivate func applyHiddenTitlebarStyle() {
+        guard let window else { return }
+
+        window.styleMask = [
+            // We need `titled` in the mask to get the normal window frame
+            .titled,
+            
+            // Full size content view so we can extend
+            // content in to the hidden titlebar's area
+                .fullSizeContentView,
+            
+                .resizable,
+            .closable,
+            .miniaturizable,
+        ]
+        
+        // Hide the title
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        
+        // Hide the traffic lights (window control buttons)
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        
+        // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
+        window.tabbingMode = .disallowed
+        
+        // Nuke it from orbit -- hide the titlebar container entirely, just in case. There are
+        // some operations that appear to bring back the titlebar visibility so this ensures
+        // it is gone forever.
+        if let themeFrame = window.contentView?.superview,
+           let titleBarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView") {
+            titleBarContainer.isHidden = true
+        }
+    }
+    
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window = window as? TerminalWindow else { return }
@@ -328,9 +392,12 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        // Center the window to start, we'll move the window frame automatically
-        // when cascading.
-        window.center()
+        // Set our window positioning to coordinates if config value exists, otherwise
+        // fallback to original centering behavior
+        setInitialWindowPosition(
+            x: config.windowPositionX,
+            y: config.windowPositionY,
+            windowDecorations: config.windowDecorations)
 
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = config.windowTheme {
@@ -368,38 +435,7 @@ class TerminalController: BaseTerminalController {
 
         // If our titlebar style is "hidden" we adjust the style appropriately
         if (config.macosTitlebarStyle == "hidden") {
-            window.styleMask = [
-                // We need `titled` in the mask to get the normal window frame
-                .titled,
-
-                // Full size content view so we can extend
-                // content in to the hidden titlebar's area
-                .fullSizeContentView,
-
-                .resizable,
-                .closable,
-                .miniaturizable,
-            ]
-
-            // Hide the title
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-
-            // Hide the traffic lights (window control buttons)
-            window.standardWindowButton(.closeButton)?.isHidden = true
-            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            window.standardWindowButton(.zoomButton)?.isHidden = true
-
-            // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
-            window.tabbingMode = .disallowed
-
-            // Nuke it from orbit -- hide the titlebar container entirely, just in case. There are
-            // some operations that appear to bring back the titlebar visibility so this ensures
-            // it is gone forever.
-            if let themeFrame = window.contentView?.superview,
-               let titleBarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView") {
-                titleBarContainer.isHidden = true
-            }
+            applyHiddenTitlebarStyle()
         }
 
         // In various situations, macOS automatically tabs new windows. Ghostty handles
@@ -421,8 +457,6 @@ class TerminalController: BaseTerminalController {
                 window.tabGroup?.removeWindow(window)
             }
         }
-
-        window.focusFollowsMouse = config.focusFollowsMouse
 
         // Apply any additional appearance-related properties to the new window. We
         // apply this based on the root config but change it later based on surface

@@ -45,6 +45,11 @@ class BaseTerminalController: NSWindowController,
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
+    /// Whether the terminal surface should focus when the mouse is over it.
+    var focusFollowsMouse: Bool {
+        self.derivedConfig.focusFollowsMouse
+    }
+
     /// Non-nil when an alert is active so we don't overlap multiple.
     private var alert: NSAlert? = nil
 
@@ -106,8 +111,8 @@ class BaseTerminalController: NSWindowController,
         // Listen for local events that we need to know of outside of
         // single surface handlers.
         self.eventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.flagsChanged],
-            handler: localEventHandler)
+            matching: [.flagsChanged]
+        ) { [weak self] event in self?.localEventHandler(event) }
     }
 
     deinit {
@@ -155,7 +160,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     // MARK: Notifications
-    
+
     @objc private func didChangeScreenParametersNotification(_ notification: Notification) {
         // If we have a window that is visible and it is outside the bounds of the
         // screen then we clamp it back to within the screen.
@@ -262,7 +267,6 @@ class BaseTerminalController: NSWindowController,
         
         // Set the main window title
         window.title = to
-
     }
     
     func pwdDidChange(to: URL?) {
@@ -309,11 +313,11 @@ class BaseTerminalController: NSWindowController,
             // We consider our mode changed if the types change (obvious) but
             // also if its nil (not obvious) because nil means that the style has
             // likely changed but we don't support it.
-            if newStyle == nil || type(of: newStyle) != type(of: oldStyle) {
+            if newStyle == nil || type(of: newStyle!) != type(of: oldStyle) {
                 // Our mode changed. Exit fullscreen (since we're toggling anyways)
-                // and then unset the style so that we replace it next time.
+                // and then set the new style for future use
                 oldStyle.exit()
-                self.fullscreenStyle = nil
+                self.fullscreenStyle = newStyle
 
                 // We're done
                 return
@@ -536,11 +540,11 @@ class BaseTerminalController: NSWindowController,
     }
 
     @IBAction func splitMoveFocusAbove(_ sender: Any) {
-        splitMoveFocus(direction: .top)
+        splitMoveFocus(direction: .up)
     }
 
     @IBAction func splitMoveFocusBelow(_ sender: Any) {
-        splitMoveFocus(direction: .bottom)
+        splitMoveFocus(direction: .down)
     }
 
     @IBAction func splitMoveFocusLeft(_ sender: Any) {
@@ -604,15 +608,18 @@ class BaseTerminalController: NSWindowController,
     private struct DerivedConfig {
         let macosTitlebarProxyIcon: Ghostty.MacOSTitlebarProxyIcon
         let windowStepResize: Bool
+        let focusFollowsMouse: Bool
 
         init() {
             self.macosTitlebarProxyIcon = .visible
             self.windowStepResize = false
+            self.focusFollowsMouse = false
         }
 
         init(_ config: Ghostty.Config) {
             self.macosTitlebarProxyIcon = config.macosTitlebarProxyIcon
             self.windowStepResize = config.windowStepResize
+            self.focusFollowsMouse = config.focusFollowsMouse
         }
     }
 }

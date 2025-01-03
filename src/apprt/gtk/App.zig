@@ -81,6 +81,9 @@ transient_cgroup_base: ?[]const u8 = null,
 /// CSS Provider for any styles based on ghostty configuration values
 css_provider: *c.GtkCssProvider,
 
+/// Providers for loading custom stylesheets defined by user
+custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider) = .{},
+
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
     off: void,
@@ -108,7 +111,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
         // For the remainder of "why" see the 4.14 comment below.
         _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
-        _ = internal_os.setenv("GDK_DEBUG", "opengl");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-no-fractional");
     } else if (version.atLeast(4, 14, 0)) {
         // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
         // Older versions of GTK do not support these values so it is safe
@@ -123,7 +126,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         //   - "vulkan-disable" - disable Vulkan, Ghostty can't use Vulkan
         //     and initializing a Vulkan context was causing a longer delay
         //     on some systems.
-        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable,gl-no-fractional");
     } else {
         // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
         // is an environment that isn't tested well and we don't have a
@@ -440,6 +443,11 @@ pub fn terminate(self: *App) void {
     if (self.menu) |menu| c.g_object_unref(menu);
     if (self.context_menu) |context_menu| c.g_object_unref(context_menu);
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
+
+    for (self.custom_css_providers.items) |provider| {
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.deinit(self.core_app.alloc);
 
     self.config.deinit();
 }
@@ -786,6 +794,7 @@ fn setInitialSize(
         ),
     }
 }
+
 fn showDesktopNotification(
     self: *App,
     target: apprt.Target,
@@ -892,13 +901,16 @@ fn syncConfigChanges(self: *App) !void {
     try self.updateConfigErrors();
     try self.syncActionAccelerators();
 
-    // Load our runtime CSS. If this fails then our window is just stuck
+    // Load our runtime and custom CSS. If this fails then our window is just stuck
     // with the old CSS but we don't want to fail the entire sync operation.
     self.loadRuntimeCss() catch |err| switch (err) {
         error.OutOfMemory => log.warn(
             "out of memory loading runtime CSS, no runtime CSS applied",
             .{},
         ),
+    };
+    self.loadCustomCss() catch |err| {
+        log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
     };
 }
 
@@ -972,9 +984,6 @@ fn loadRuntimeCss(
     const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
 
     try writer.print(
-        \\window.without-window-decoration-and-with-titlebar {{
-        \\  border-radius: 0 0;
-        \\}}
         \\widget.unfocused-split {{
         \\ opacity: {d:.2};
         \\ background-color: rgb({d},{d},{d});
@@ -1036,11 +1045,68 @@ fn loadRuntimeCss(
     }
 
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_data(
-        self.css_provider,
-        buf.items.ptr,
-        @intCast(buf.items.len),
-    );
+    loadCssProviderFromData(self.css_provider, buf.items);
+}
+
+fn loadCustomCss(self: *App) !void {
+    const display = c.gdk_display_get_default();
+
+    // unload the previously loaded style providers
+    for (self.custom_css_providers.items) |provider| {
+        c.gtk_style_context_remove_provider_for_display(
+            display,
+            @ptrCast(provider),
+        );
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.clearRetainingCapacity();
+
+    for (self.config.@"gtk-custom-css".value.items) |p| {
+        const path, const optional = switch (p) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
+        };
+        const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+            if (err != error.FileNotFound or !optional) {
+                log.err("error opening gtk-custom-css file {s}: {}", .{ path, err });
+            }
+            continue;
+        };
+        defer file.close();
+
+        log.info("loading gtk-custom-css path={s}", .{path});
+        const contents = try file.reader().readAllAlloc(
+            self.core_app.alloc,
+            5 * 1024 * 1024 // 5MB
+        );
+        defer self.core_app.alloc.free(contents);
+
+        const provider = c.gtk_css_provider_new();
+        c.gtk_style_context_add_provider_for_display(
+            display,
+            @ptrCast(provider),
+            c.GTK_STYLE_PROVIDER_PRIORITY_USER,
+        );
+
+        loadCssProviderFromData(provider, contents);
+
+        try self.custom_css_providers.append(self.core_app.alloc, provider);
+    }
+}
+
+fn loadCssProviderFromData(provider: *c.GtkCssProvider, data: []const u8) void {
+    if (version.atLeast(4, 12, 0)) {
+        const g_bytes = c.g_bytes_new(data.ptr, data.len);
+        defer c.g_bytes_unref(g_bytes);
+
+        c.gtk_css_provider_load_from_bytes(provider, g_bytes);
+    } else {
+        c.gtk_css_provider_load_from_data(
+            provider,
+            data.ptr,
+            @intCast(data.len),
+        );
+    }
 }
 
 /// Called by CoreApp to wake up the event loop.
@@ -1403,7 +1469,15 @@ pub fn getColorScheme(self: *App) apprt.ColorScheme {
         null,
         &err,
     ) orelse {
-        if (err) |e| log.err("unable to get current color scheme: {s}", .{e.message});
+        if (err) |e| {
+            // If ReadOne is not yet implemented, fall back to deprecated "Read" method
+            // Error code: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: No such method “ReadOne”
+            if (e.code == 19) {
+                return self.getColorSchemeDeprecated();
+            }
+            // Otherwise, log the error and return .light
+            log.err("unable to get current color scheme: {s}", .{e.message});
+        }
         return .light;
     };
     defer c.g_variant_unref(value);
@@ -1417,6 +1491,49 @@ pub fn getColorScheme(self: *App) apprt.ColorScheme {
         }
     }
 
+    return .light;
+}
+
+/// Call the deprecated D-Bus "Read" method to determine the current color scheme. If
+/// there is any error at any point we'll log the error and return "light"
+fn getColorSchemeDeprecated(self: *App) apprt.ColorScheme {
+    const dbus_connection = c.g_application_get_dbus_connection(@ptrCast(self.app));
+    var err: ?*c.GError = null;
+    defer if (err) |e| c.g_error_free(e);
+
+    const value = c.g_dbus_connection_call_sync(
+        dbus_connection,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+        "Read",
+        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+        c.G_VARIANT_TYPE("(v)"),
+        c.G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        null,
+        &err,
+    ) orelse {
+        if (err) |e| log.err("Read method failed: {s}", .{e.message});
+        return .light;
+    };
+    defer c.g_variant_unref(value);
+
+    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
+        var inner: ?*c.GVariant = null;
+        c.g_variant_get(value, "(v)", &inner);
+        defer if (inner) |i| c.g_variant_unref(i);
+
+        if (inner) |i| {
+            const child = c.g_variant_get_child_value(i, 0) orelse {
+                return .light;
+            };
+            defer c.g_variant_unref(child);
+
+            const val = c.g_variant_get_uint32(child);
+            return if (val == 1) .dark else .light;
+        }
+    }
     return .light;
 }
 
