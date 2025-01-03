@@ -929,6 +929,15 @@ class: ?[:0]const u8 = null,
 ///     Since they are not associated with a specific terminal surface,
 ///     they're never encoded.
 ///
+///   * `performable:` - Only consume the input if the action is able to be
+///     performed. For example, the `copy_to_clipboard` action will only
+///     consume the input if there is a selection to copy. If there is no
+///     selection, Ghostty behaves as if the keybind was not set. This has
+///     no effect with `global:` or `all:`-prefixed keybinds. For key
+///     sequences, this will reset the sequence if the action is not
+///     performable (acting identically to not having a keybind set at
+///     all).
+///
 /// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
 /// set later will overwrite the keybind set earlier. In this case, the
@@ -2221,45 +2230,53 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     );
 
     // Expand Selection
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .left }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .left },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .right }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .right },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .up }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .up },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .down }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .down },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .page_up }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .page_up },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .page_down }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .page_down },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .home }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .home },
+        .{ .performable = true },
     );
-    try result.keybind.set.put(
+    try result.keybind.set.putFlags(
         alloc,
         .{ .key = .{ .translated = .end }, .mods = .{ .shift = true } },
         .{ .adjust_selection = .end },
+        .{ .performable = true },
     );
 
     // Tabs common to all platforms
@@ -2509,10 +2526,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .{ .translated = .q }, .mods = .{ .super = true } },
             .{ .quit = {} },
         );
-        try result.keybind.set.put(
+        try result.keybind.set.putFlags(
             alloc,
             .{ .key = .{ .translated = .k }, .mods = .{ .super = true } },
             .{ .clear_screen = {} },
+            .{ .performable = true },
         );
         try result.keybind.set.put(
             alloc,
