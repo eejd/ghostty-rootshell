@@ -810,7 +810,14 @@ extension Ghostty {
                 return false
             }
 
-            // If this event as-is would result in a key event then
+            // If this event as-is would result in a key binding then we send it.
+            if let surface,
+               ghostty_surface_key_is_binding(
+                  surface,
+                  event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
+                self.keyDown(with: event)
+                return true
+            }
 
             // Only process keys when Control is active. All known issues we're
             // resolving happen only in this scenario. This probably isn't fully robust
