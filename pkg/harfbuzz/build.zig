@@ -43,7 +43,11 @@ pub fn build(b: *std.Build) !void {
     {
         var it = module.import_table.iterator();
         while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
-        test_exe.linkLibrary(freetype.artifact("freetype"));
+        if (b.systemIntegrationOption("freetype", .{})) {
+            test_exe.linkSystemLibrary2("freetype2", dynamic_link_opts);
+        } else {
+            test_exe.linkLibrary(freetype.artifact("freetype"));
+        }
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");
         test_step.dependOn(&tests_run.step);
