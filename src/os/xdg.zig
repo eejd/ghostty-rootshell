@@ -58,6 +58,15 @@ fn dir(
     opts: Options,
     internal_opts: InternalOptions,
 ) ![]u8 {
+    // If we have a cached home dir, use that.
+    if (opts.home) |home| {
+        return try std.fs.path.join(alloc, &[_][]const u8{
+            home,
+            internal_opts.default_subdir,
+            opts.subdir orelse "",
+        });
+    }
+
     // First check the env var. On Windows we have to allocate so this tracks
     // both whether we have the env var and whether we own it.
     // on Windows we treat `LOCALAPPDATA` as a fallback for `XDG_CONFIG_HOME`
@@ -91,15 +100,6 @@ fn dir(
         }
 
         return try alloc.dupe(u8, env);
-    }
-
-    // If we have a cached home dir, use that.
-    if (opts.home) |home| {
-        return try std.fs.path.join(alloc, &[_][]const u8{
-            home,
-            internal_opts.default_subdir,
-            opts.subdir orelse "",
-        });
     }
 
     // Get our home dir
