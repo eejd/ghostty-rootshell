@@ -143,7 +143,7 @@ pub fn build(b: *std.Build) !void {
                     break :x11 false;
                 }
                 std.log.warn("pkg-config: {s} with code {d}", .{ @tagName(term), code });
-                return error.Unexpected;
+                break :x11 false;
             },
             inline else => |code| {
                 std.log.warn("pkg-config: {s} with code {d}", .{ @tagName(term), code });
