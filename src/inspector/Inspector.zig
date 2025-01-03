@@ -285,6 +285,10 @@ fn setupLayout(self: *Inspector, dock_id_main: cimgui.c.ImGuiID) void {
     cimgui.c.igDockBuilderFinish(dock_id_main);
 }
 
+fn bytesToKb(bytes: usize) usize {
+    return bytes / 1024;
+}
+
 fn renderScreenWindow(self: *Inspector) void {
     // Start our window. If we're collapsed we do nothing.
     defer cimgui.c.igEnd();
@@ -440,7 +444,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes", kitty_images.total_bytes);
+                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_bytes, bytesToKb(kitty_images.total_bytes));
                 }
             }
 
@@ -452,7 +456,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes", kitty_images.total_limit);
+                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_limit, bytesToKb(kitty_images.total_limit));
                 }
             }
 
@@ -518,7 +522,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes", pages.page_size);
+                    cimgui.c.igText("%d bytes (%d KB)", pages.page_size, bytesToKb(pages.page_size));
                 }
             }
 
@@ -530,7 +534,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes", pages.maxSize());
+                    cimgui.c.igText("%d bytes (%d KB)", pages.maxSize(), bytesToKb(pages.maxSize()));
                 }
             }
 
