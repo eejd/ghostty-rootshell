@@ -425,6 +425,15 @@ class AppDelegate: NSObject,
         // because we let it capture and propagate.
         guard NSApp.mainWindow == nil else { return event }
 
+        // If this event as-is would result in a key binding then we send it.
+        if let app = ghostty.app,
+           ghostty_app_key_is_binding(
+              app,
+              event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
+            ghostty_app_key(app, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))
+            return nil
+        }
+
         // If this event would be handled by our menu then we do nothing.
         if let mainMenu = NSApp.mainMenu,
            mainMenu.performKeyEquivalent(with: event) {

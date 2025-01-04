@@ -1386,6 +1386,28 @@ pub const CAPI = struct {
         };
     }
 
+    /// Returns true if the given key event would trigger a binding
+    /// if it were sent to the surface right now. The "right now"
+    /// is important because things like trigger sequences are only
+    /// valid until the next key event.
+    export fn ghostty_app_key_is_binding(
+        app: *App,
+        event: KeyEvent,
+    ) bool {
+        const core_event = app.coreKeyEvent(
+            .app,
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        } orelse {
+            log.warn("error processing key event", .{});
+            return false;
+        };
+
+        return app.core_app.keyEventIsBinding(app, core_event);
+    }
+
     /// Notify the app that the keyboard was changed. This causes the
     /// keyboard layout to be reloaded from the OS.
     export fn ghostty_app_keyboard_changed(v: *App) void {
