@@ -582,29 +582,38 @@ palette: Palette = .{},
 /// On macOS, changing this configuration requires restarting Ghostty completely.
 @"background-opacity": f64 = 1.0,
 
-/// A positive value enables blurring of the background when background-opacity
-/// is less than 1.
+/// Whether to blur the background when `background-opacity` is less than 1.
 ///
-/// On macOS, the value is the blur radius to apply. A value of 20
-/// is reasonable for a good looking blur. Higher values will cause strange
-/// rendering issues as well as performance issues.
+/// Valid values are:
 ///
-/// On KDE Plasma under Wayland, the exact value is _ignored_ —  the reason is
-/// that KWin, the window compositor powering Plasma, only has one global blur
-/// setting and does not allow applications to have individual blur settings.
+///   * a nonnegative integer specifying the *blur intensity*
+///   * `false`, equivalent to a blur intensity of 0
+///   * `true`, equivalent to the default blur intensity of 20, which is
+///     reasonable for a good looking blur. Higher blur intensities may
+///     cause strange rendering and performance issues.
+///
+/// Supported on macOS and on some Linux desktop environments, including:
+///
+///   * KDE Plasma (Wayland only)
+///
+/// Warning: the exact blur intensity is _ignored_ under KDE Plasma, and setting
+/// this setting to either `true` or any positive blur intensity value would
+/// achieve the same effect. The reason is that KWin, the window compositor
+/// powering Plasma, only has one global blur setting and does not allow
+/// applications to specify individual blur settings.
 ///
 /// To configure KWin's global blur setting, open System Settings and go to
 /// "Apps & Windows" > "Window Management" > "Desktop Effects" and select the
 /// "Blur" plugin. If disabled, enable it by ticking the checkbox to the left.
 /// Then click on the "Configure" button and there will be two sliders that
-/// allow you to set background blur and noise strengths for all apps,
+/// allow you to set background blur and noise intensities for all apps,
 /// including Ghostty.
 ///
 /// All other Linux desktop environments are as of now unsupported. Users may
 /// need to set environment-specific settings and/or install third-party plugins
 /// in order to support background blur, as there isn't a unified interface for
 /// doing so.
-@"background-blur-radius": u8 = 0,
+@"background-blur-radius": BackgroundBlur = .false,
 
 /// The opacity level (opposite of transparency) of an unfocused split.
 /// Unfocused splits by default are slightly faded out to make it easier to see
@@ -5651,6 +5660,68 @@ pub const AutoUpdate = enum {
     off,
     check,
     download,
+};
+
+/// See background-blur-radius
+pub const BackgroundBlur = union(enum) {
+    false,
+    true,
+    value: u8,
+
+    pub fn parseCLI(self: *BackgroundBlur, input: ?[]const u8) !void {
+        const input_ = input orelse {
+            // Emulate behavior for bools
+            self.* = .true;
+            return;
+        };
+
+        if (cli.args.parseBool(input_)) |b| {
+            self.* = if (b) .true else .false;
+        } else |_| {
+            const value = std.fmt.parseInt(u8, input_, 0) catch return error.InvalidValue;
+            self.* = .{ .value = value };
+        }
+    }
+
+    pub fn cval(self: BackgroundBlur) u8 {
+        return switch (self) {
+            .false => 0,
+            .true => 20,
+            .value => |v| v,
+        };
+    }
+
+    pub fn formatEntry(
+        self: BackgroundBlur,
+        formatter: anytype,
+    ) !void {
+        switch (self) {
+            .false => try formatter.formatEntry(bool, false),
+            .true => try formatter.formatEntry(bool, true),
+            .value => |v| try formatter.formatEntry(u8, v),
+        }
+    }
+
+    test "parse BackgroundBlur" {
+        const testing = std.testing;
+        var v: BackgroundBlur = undefined;
+
+        try v.parseCLI(null);
+        try testing.expectEqual(.true, v);
+
+        try v.parseCLI("true");
+        try testing.expectEqual(.true, v);
+
+        try v.parseCLI("false");
+        try testing.expectEqual(.false, v);
+
+        try v.parseCLI("42");
+        try testing.expectEqual(42, v.value);
+
+        try testing.expectError(error.InvalidValue, v.parseCLI(""));
+        try testing.expectError(error.InvalidValue, v.parseCLI("aaaa"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("420"));
+    }
 };
 
 /// See theme

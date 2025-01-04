@@ -533,7 +533,7 @@ fn parsePackedStruct(comptime T: type, v: []const u8) !T {
     return result;
 }
 
-fn parseBool(v: []const u8) !bool {
+pub fn parseBool(v: []const u8) !bool {
     const t = &[_][]const u8{ "1", "t", "T", "true" };
     const f = &[_][]const u8{ "0", "f", "F", "false" };
 

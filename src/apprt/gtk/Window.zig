@@ -400,7 +400,12 @@ pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
     }
 
     if (self.wayland) |*wl| {
-        try wl.setBlur(config.@"background-blur-radius" > 0);
+        const blurred = switch (config.@"background-blur-radius") {
+            .false => false,
+            .true => true,
+            .value => |v| v > 0,
+        };
+        try wl.setBlur(blurred);
     }
 }
 
