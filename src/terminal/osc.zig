@@ -161,6 +161,12 @@ pub const Command = union(enum) {
     /// Show GUI message Box (OSC 9;2)
     show_message_box: []const u8,
 
+    /// Change ConEmu tab (OSC 9;3)
+    change_conemu_tab_title: union(enum) {
+        reset: void,
+        value: []const u8,
+    },
+
     /// Set progress state (OSC 9;4)
     progress: struct {
         state: ProgressState,
@@ -357,6 +363,8 @@ pub const Parser = struct {
 
         // ConEmu specific substates
         conemu_message_box,
+        conemu_tab,
+        conemu_tab_txt,
         conemu_progress_prestate,
         conemu_progress_state,
         conemu_progress_prevalue,
@@ -784,6 +792,9 @@ pub const Parser = struct {
                 '2' => {
                     self.state = .conemu_message_box;
                 },
+                '3' => {
+                    self.state = .conemu_tab;
+                },
                 '4' => {
                     self.state = .conemu_progress_prestate;
                 },
@@ -804,6 +815,23 @@ pub const Parser = struct {
                     self.prepAllocableString();
                 },
                 else => self.state = .invalid,
+            },
+
+            .conemu_tab => switch (c) {
+                ';' => {
+                    self.state = .conemu_tab_txt;
+                    self.command = .{ .change_conemu_tab_title = .{ .reset = {} } };
+                    self.buf_start = self.buf_idx;
+                    self.complete = true;
+                },
+                else => self.state = .invalid,
+            },
+
+            .conemu_tab_txt => {
+                self.command = .{ .change_conemu_tab_title = .{ .value = undefined } };
+                self.temp_state = .{ .str = &self.command.change_conemu_tab_title.value };
+                self.complete = true;
+                self.prepAllocableString();
             },
 
             .conemu_progress_prestate => switch (c) {
@@ -1729,6 +1757,59 @@ test "OSC: conemu message box spaces only message" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .show_message_box);
     try testing.expectEqualStrings("   ", cmd.show_message_box);
+}
+
+test "OSC: conemu change tab title" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;3;foo bar";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .change_conemu_tab_title);
+    try testing.expectEqualStrings("foo bar", cmd.change_conemu_tab_title.value);
+}
+
+test "OSC: conemu change tab reset title" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;3;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+
+    const expected_command: Command = .{ .change_conemu_tab_title = .{ .reset = {} } };
+    try testing.expectEqual(expected_command, cmd);
+}
+
+test "OSC: conemu change tab spaces only title" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;3;   ";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+
+    try testing.expect(cmd == .change_conemu_tab_title);
+    try testing.expectEqualStrings("   ", cmd.change_conemu_tab_title.value);
+}
+
+test "OSC: conemu change tab invalid input" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;3";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b');
+    try testing.expect(cmd == null);
 }
 
 test "OSC: OSC9 progress set" {
