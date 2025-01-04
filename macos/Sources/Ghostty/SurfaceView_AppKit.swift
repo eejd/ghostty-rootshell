@@ -113,6 +113,9 @@ extension Ghostty {
         // A small delay that is introduced before a title change to avoid flickers
         private var titleChangeTimer: Timer?
 
+        /// Event monitor (see individual events for why)
+        private var eventMonitor: Any? = nil
+
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
 
@@ -170,6 +173,15 @@ extension Ghostty {
                 name: NSWindow.didChangeScreenNotification,
                 object: nil)
 
+            // Listen for local events that we need to know of outside of
+            // single surface handlers.
+            self.eventMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [
+                    // We need keyUp because command+key events don't trigger keyUp.
+                    .keyUp
+                ]
+            ) { [weak self] event in self?.localEventHandler(event) }
+
             // Setup our surface. This will also initialize all the terminal IO.
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
             var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
@@ -211,6 +223,11 @@ extension Ghostty {
             // Remove all of our notificationcenter subscriptions
             let center = NotificationCenter.default
             center.removeObserver(self)
+
+            // Remove our event monitor
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+            }
 
             // Whenever the surface is removed, we need to note that our restorable
             // state is invalid to prevent the surface from being restored.
@@ -354,6 +371,30 @@ extension Ghostty {
             ) { [weak self] _ in
                 self?.title = title
             }
+        }
+
+        // MARK: Local Events
+
+        private func localEventHandler(_ event: NSEvent) -> NSEvent? {
+            return switch event.type {
+            case .keyUp:
+                localEventKeyUp(event)
+
+            default:
+                event
+            }
+        }
+
+        private func localEventKeyUp(_ event: NSEvent) -> NSEvent? {
+            // We only care about events with "command" because all others will
+            // trigger the normal responder chain.
+            if (!event.modifierFlags.contains(.command)) { return event }
+
+            // Command keyUp events are never sent to the normal responder chain
+            // so we send them here.
+            guard focused else { return event }
+            self.keyUp(with: event)
+            return nil
         }
 
         // MARK: - Notifications
