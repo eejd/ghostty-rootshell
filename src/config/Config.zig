@@ -1077,7 +1077,10 @@ keybind: Keybinds = .{},
 
 /// The font that will be used for the application's window and tab titles.
 ///
-/// This is currently only supported on macOS.
+/// If this setting is left unset, the system default font will be used.
+///
+/// Note: any font available on the system may be used, this font is not
+/// required to be a fixed-width font.
 @"window-title-font-family": ?[:0]const u8 = null,
 
 /// The theme to use for the windows. Valid values:

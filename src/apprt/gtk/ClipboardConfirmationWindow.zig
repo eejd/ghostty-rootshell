@@ -64,6 +64,7 @@ fn init(
     c.gtk_window_set_title(gtk_window, titleText(request));
     c.gtk_window_set_default_size(gtk_window, 550, 275);
     c.gtk_window_set_resizable(gtk_window, 0);
+    c.gtk_widget_add_css_class(@ptrCast(@alignCast(gtk_window)), "window");
     c.gtk_widget_add_css_class(@ptrCast(@alignCast(gtk_window)), "clipboard-confirmation-window");
     _ = c.g_signal_connect_data(
         window,

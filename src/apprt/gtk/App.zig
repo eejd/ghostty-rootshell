@@ -1002,13 +1002,19 @@ fn loadRuntimeCss(
             \\  color: rgb({[r]d},{[g]d},{[b]d});
             \\  background: rgb({[r]d},{[g]d},{[b]d});
             \\}}
-        ,
-            .{
-                .r = color.r,
-                .g = color.g,
-                .b = color.b,
-            },
-        );
+        , .{
+            .r = color.r,
+            .g = color.g,
+            .b = color.b,
+        });
+    }
+
+    if (config.@"window-title-font-family") |font_family| {
+        try writer.print(
+            \\.window headerbar {{
+            \\  font-family: "{[font_family]s}";
+            \\}}
+        , .{ .font_family = font_family });
     }
 
     if (version.atLeast(4, 16, 0)) {
