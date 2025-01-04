@@ -329,7 +329,7 @@ pub const Action = union(enum) {
     goto_tab: usize,
 
     /// Moves a tab by a relative offset.
-    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
+    /// Adjusts the tab position based on `offset`. For example `move_tab:-1` for left, `move_tab:1` for right.
     /// If the new position is out of bounds, it wraps around cyclically within the tab range.
     move_tab: isize,
 
@@ -341,7 +341,8 @@ pub const Action = union(enum) {
     /// the direction given. For example `new_split:up`. Valid values are left, right, up, down and auto.
     new_split: SplitDirection,
 
-    /// Focus on a split in a given direction. For example `goto_split:up`. Valid values are left, right, up, down, previous and next.
+    /// Focus on a split in a given direction. For example `goto_split:up`.
+    /// Valid values are left, right, up, down, previous and next.
     goto_split: SplitFocusDirection,
 
     /// zoom/unzoom the current split.
