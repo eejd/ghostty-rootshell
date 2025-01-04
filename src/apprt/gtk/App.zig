@@ -460,6 +460,7 @@ pub fn performAction(
     value: apprt.Action.Value(action),
 ) !void {
     switch (action) {
+        .quit => self.quit(),
         .new_window => _ = try self.newWindow(switch (target) {
             .app => null,
             .surface => |v| v,
@@ -1075,9 +1076,7 @@ fn loadCustomCss(self: *App) !void {
         defer file.close();
 
         log.info("loading gtk-custom-css path={s}", .{path});
-        const contents = try file.reader().readAllAlloc(
-            self.core_app.alloc,
-            5 * 1024 * 1024 // 5MB
+        const contents = try file.reader().readAllAlloc(self.core_app.alloc, 5 * 1024 * 1024 // 5MB
         );
         defer self.core_app.alloc.free(contents);
 
@@ -1174,14 +1173,10 @@ pub fn run(self: *App) !void {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
         // Tick the terminal app and see if we should quit.
-        const should_quit = try self.core_app.tick(self);
+        try self.core_app.tick(self);
 
         // Check if we must quit based on the current state.
         const must_quit = q: {
-            // If we've been told by GTK that we should quit, do so regardless
-            // of any other setting.
-            if (should_quit) break :q true;
-
             // If we are configured to always stay running, don't quit.
             if (!self.config.@"quit-after-last-window-closed") break :q false;
 
@@ -1285,6 +1280,9 @@ fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
 }
 
 fn quit(self: *App) void {
+    // If we're already not running, do nothing.
+    if (!self.running) return;
+
     // If we have no toplevel windows, then we're done.
     const list = c.gtk_window_list_toplevels();
     if (list == null) {
@@ -1625,7 +1623,9 @@ fn gtkActionQuit(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
-    self.core_app.setQuit();
+    self.core_app.performAction(self, .quit) catch |err| {
+        log.err("error quitting err={}", .{err});
+    };
 }
 
 /// Action sent by the window manager asking us to present a specific surface to

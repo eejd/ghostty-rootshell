@@ -35,6 +35,10 @@ pub const App = struct {
     app: *CoreApp,
     config: Config,
 
+    /// Flips to true to quit on the next event loop tick. This
+    /// never goes false and forces the event loop to exit.
+    quit: bool = false,
+
     /// Mac-specific state.
     darwin: if (Darwin.enabled) Darwin else void,
 
@@ -124,8 +128,10 @@ pub const App = struct {
             glfw.waitEvents();
 
             // Tick the terminal app
-            const should_quit = try self.app.tick(self);
-            if (should_quit or self.app.surfaces.items.len == 0) {
+            try self.app.tick(self);
+
+            // If the tick caused us to quit, then we're done.
+            if (self.quit or self.app.surfaces.items.len == 0) {
                 for (self.app.surfaces.items) |surface| {
                     surface.close(false);
                 }
@@ -149,6 +155,8 @@ pub const App = struct {
         value: apprt.Action.Value(action),
     ) !void {
         switch (action) {
+            .quit => self.quit = true,
+
             .new_window => _ = try self.newSurface(switch (target) {
                 .app => null,
                 .surface => |v| v,
