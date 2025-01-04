@@ -1,3 +1,3 @@
-pub fn toKiloBytes(bytes: usize) usize {
+pub fn toKibiBytes(bytes: usize) usize {
     return bytes / 1024;
 }

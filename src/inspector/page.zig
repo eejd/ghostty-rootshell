@@ -27,7 +27,7 @@ pub fn render(page: *const terminal.Page) void {
         }
         {
             _ = cimgui.c.igTableSetColumnIndex(1);
-            cimgui.c.igText("%d bytes (%d Kb)", page.memory.len, utils.toKiloBytes(page.memory.len));
+            cimgui.c.igText("%d bytes (%d KiB)", page.memory.len, utils.toKibiBytes(page.memory.len));
             cimgui.c.igText("%d VM pages", page.memory.len / std.mem.page_size);
         }
     }

@@ -441,7 +441,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_bytes, utils.toKiloBytes(kitty_images.total_bytes));
+                    cimgui.c.igText("%d bytes (%d KiB)", kitty_images.total_bytes, utils.toKibiBytes(kitty_images.total_bytes));
                 }
             }
 
@@ -453,7 +453,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", kitty_images.total_limit, utils.toKiloBytes(kitty_images.total_limit));
+                    cimgui.c.igText("%d bytes (%d KiB)", kitty_images.total_limit, utils.toKibiBytes(kitty_images.total_limit));
                 }
             }
 
@@ -519,7 +519,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", pages.page_size, utils.toKiloBytes(pages.page_size));
+                    cimgui.c.igText("%d bytes (%d KiB)", pages.page_size, utils.toKibiBytes(pages.page_size));
                 }
             }
 
@@ -531,7 +531,7 @@ fn renderScreenWindow(self: *Inspector) void {
                 }
                 {
                     _ = cimgui.c.igTableSetColumnIndex(1);
-                    cimgui.c.igText("%d bytes (%d KB)", pages.maxSize(), utils.toKiloBytes(pages.maxSize()));
+                    cimgui.c.igText("%d bytes (%d KiB)", pages.maxSize(), utils.toKibiBytes(pages.maxSize()));
                 }
             }
 
