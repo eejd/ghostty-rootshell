@@ -381,7 +381,20 @@ extension Ghostty {
             let backgroundColor = OSColor(backgroundColor)
             let isLightBackground = backgroundColor.isLightColor
             let newColor = isLightBackground ? backgroundColor.darken(by: 0.08) : backgroundColor.darken(by: 0.4)
-            return Color(newColor)
+
+            guard let config = self.config else { return Color(newColor) }
+
+            var color: ghostty_config_color_s = .init();
+            let key = "split-divider-color"
+            if (!ghostty_config_get(config, &color, key, UInt(key.count))) {
+                return Color(newColor)
+            }
+
+            return .init(
+                red: Double(color.r) / 255,
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
+            )
         }
 
         #if canImport(AppKit)
