@@ -559,6 +559,7 @@ typedef struct {
 
 // apprt.Action.Key
 typedef enum {
+  GHOSTTY_ACTION_QUIT,
   GHOSTTY_ACTION_NEW_WINDOW,
   GHOSTTY_ACTION_NEW_TAB,
   GHOSTTY_ACTION_NEW_SPLIT,
@@ -681,7 +682,7 @@ void ghostty_config_open();
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s*,
                               ghostty_config_t);
 void ghostty_app_free(ghostty_app_t);
-bool ghostty_app_tick(ghostty_app_t);
+void ghostty_app_tick(ghostty_app_t);
 void* ghostty_app_userdata(ghostty_app_t);
 void ghostty_app_set_focus(ghostty_app_t, bool);
 bool ghostty_app_key(ghostty_app_t, ghostty_input_key_s);

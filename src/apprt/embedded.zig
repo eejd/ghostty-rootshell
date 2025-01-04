@@ -1332,10 +1332,9 @@ pub const CAPI = struct {
 
     /// Tick the event loop. This should be called whenever the "wakeup"
     /// callback is invoked for the runtime.
-    export fn ghostty_app_tick(v: *App) bool {
-        return v.core_app.tick(v) catch |err| err: {
+    export fn ghostty_app_tick(v: *App) void {
+        v.core_app.tick(v) catch |err| {
             log.err("error app tick err={}", .{err});
-            break :err false;
         };
     }
 

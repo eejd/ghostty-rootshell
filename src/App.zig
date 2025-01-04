@@ -54,9 +54,6 @@ focused_surface: ?*Surface = null,
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: Mailbox.Queue,
 
-/// Set to true once we're quitting. This never goes false again.
-quit: bool,
-
 /// The set of font GroupCache instances shared by surfaces with the
 /// same font configuration.
 font_grid_set: font.SharedGridSet,
@@ -98,7 +95,6 @@ pub fn create(
         .alloc = alloc,
         .surfaces = .{},
         .mailbox = .{},
-        .quit = false,
         .font_grid_set = font_grid_set,
         .config_conditional_state = .{},
     };
@@ -125,9 +121,7 @@ pub fn destroy(self: *App) void {
 /// Tick ticks the app loop. This will drain our mailbox and process those
 /// events. This should be called by the application runtime on every loop
 /// tick.
-///
-/// This returns whether the app should quit or not.
-pub fn tick(self: *App, rt_app: *apprt.App) !bool {
+pub fn tick(self: *App, rt_app: *apprt.App) !void {
     // If any surfaces are closing, destroy them
     var i: usize = 0;
     while (i < self.surfaces.items.len) {
@@ -142,13 +136,6 @@ pub fn tick(self: *App, rt_app: *apprt.App) !bool {
 
     // Drain our mailbox
     try self.drainMailbox(rt_app);
-
-    // No matter what, we reset the quit flag after a tick. If the apprt
-    // doesn't want to quit, then we can't force it to.
-    defer self.quit = false;
-
-    // We quit if our quit flag is on
-    return self.quit;
 }
 
 /// Update the configuration associated with the app. This can only be
@@ -272,7 +259,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             // can try to quit as quickly as possible.
             .quit => {
                 log.info("quit message received, short circuiting mailbox drain", .{});
-                self.setQuit();
+                try self.performAction(rt_app, .quit);
                 return;
             },
         }
@@ -312,12 +299,6 @@ pub fn newWindow(self: *App, rt_app: *apprt.App, msg: Message.NewWindow) !void {
         .new_window,
         {},
     );
-}
-
-/// Start quitting
-pub fn setQuit(self: *App) void {
-    if (self.quit) return;
-    self.quit = true;
 }
 
 /// Handle an app-level focus event. This should be called whenever
@@ -437,7 +418,7 @@ pub fn performAction(
     switch (action) {
         .unbind => unreachable,
         .ignore => {},
-        .quit => self.setQuit(),
+        .quit => try rt_app.performAction(.app, .quit, {}),
         .new_window => try self.newWindow(rt_app, .{ .parent = null }),
         .open_config => try rt_app.performAction(.app, .open_config, {}),
         .reload_config => try rt_app.performAction(.app, .reload_config, .{}),
