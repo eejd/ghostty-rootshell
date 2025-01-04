@@ -230,7 +230,7 @@ pub const Action = union(enum) {
     unbind: void,
 
     /// Send a CSI sequence. The value should be the CSI sequence without the
-    /// CSI header (`ESC ]` or `\x1b]`).
+    /// CSI header (`ESC [` or `\x1b[`).
     csi: []const u8,
 
     /// Send an `ESC` sequence.
