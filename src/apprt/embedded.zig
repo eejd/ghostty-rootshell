@@ -1606,13 +1606,13 @@ pub const CAPI = struct {
     export fn ghostty_surface_key(
         surface: *Surface,
         event: KeyEvent,
-    ) void {
-        _ = surface.app.keyEvent(
+    ) bool {
+        return surface.app.keyEvent(
             .{ .surface = surface },
             event.keyEvent(),
         ) catch |err| {
             log.warn("error processing key event err={}", .{err});
-            return;
+            return false;
         };
     }
 

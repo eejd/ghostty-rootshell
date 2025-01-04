@@ -773,7 +773,7 @@ extension Ghostty {
             if let list = keyTextAccumulator, list.count > 0 {
                 handled = true
                 for text in list {
-                    keyAction(action, event: event, text: text)
+                    _ = keyAction(action, event: event, text: text)
                 }
             }
 
@@ -783,29 +783,38 @@ extension Ghostty {
             // the preedit.
             if (markedText.length > 0 || markedTextBefore) {
                 handled = true
-                keyAction(action, event: event, preedit: markedText.string)
+                _ = keyAction(action, event: event, preedit: markedText.string)
             }
 
             if (!handled) {
                 // No text or anything, we want to handle this manually.
-                keyAction(action, event: event)
+                _ = keyAction(action, event: event)
             }
         }
 
         override func keyUp(with event: NSEvent) {
-            keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+            _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
         }
 
         /// Special case handling for some control keys
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            // Only process key down events
-            if (event.type != .keyDown) {
+            switch (event.type) {
+            case .keyDown:
+                // Continue, we care about key down events
+                break
+
+            default:
+                // Any other key event we don't care about. I don't think its even
+                // possible to receive any other event type.
                 return false
             }
 
             // Only process events if we're focused. Some key events like C-/ macOS
             // appears to send to the first view in the hierarchy rather than the
             // the first responder (I don't know why). This prevents us from handling it.
+            // Besides C-/, its important we don't process key equivalents if unfocused
+            // because there are other event listeners for that (i.e. AppDelegate's
+            // local event handler).
             if (!focused) {
                 return false
             }
@@ -817,13 +826,6 @@ extension Ghostty {
                   event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
                 self.keyDown(with: event)
                 return true
-            }
-
-            // Only process keys when Control is active. All known issues we're
-            // resolving happen only in this scenario. This probably isn't fully robust
-            // but we can broaden the scope as we find more cases.
-            if (!event.modifierFlags.contains(.control)) {
-                return false
             }
 
             let equivalent: String
@@ -841,14 +843,25 @@ extension Ghostty {
             case "\r":
                 // Pass C-<return> through verbatim
                 // (prevent the default context menu equivalent)
+                if (!event.modifierFlags.contains(.control)) {
+                    return false
+                }
+
                 equivalent = "\r"
+
+            case ".":
+                if (!event.modifierFlags.contains(.command)) {
+                    return false
+                }
+
+                equivalent = "."
 
             default:
                 // Ignore other events
                 return false
             }
 
-            let newEvent = NSEvent.keyEvent(
+            let finalEvent = NSEvent.keyEvent(
                 with: .keyDown,
                 location: event.locationInWindow,
                 modifierFlags: event.modifierFlags,
@@ -861,7 +874,7 @@ extension Ghostty {
                 keyCode: event.keyCode
             )
 
-            self.keyDown(with: newEvent!)
+            self.keyDown(with: finalEvent!)
             return true
         }
 
@@ -906,33 +919,38 @@ extension Ghostty {
                 }
             }
 
-            keyAction(action, event: event)
+            _ = keyAction(action, event: event)
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
-            guard let surface = self.surface else { return }
-
-            ghostty_surface_key(surface, event.ghosttyKeyEvent(action))
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) -> Bool {
+            guard let surface = self.surface else { return false }
+            return ghostty_surface_key(surface, event.ghosttyKeyEvent(action))
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, preedit: String) {
-            guard let surface = self.surface else { return }
+        private func keyAction(
+            _ action: ghostty_input_action_e,
+            event: NSEvent, preedit: String
+        ) -> Bool {
+            guard let surface = self.surface else { return false }
 
-            preedit.withCString { ptr in
+            return preedit.withCString { ptr in
                 var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
                 key_ev.composing = true
-                ghostty_surface_key(surface, key_ev)
+                return ghostty_surface_key(surface, key_ev)
             }
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, text: String) {
-            guard let surface = self.surface else { return }
+        private func keyAction(
+            _ action: ghostty_input_action_e,
+            event: NSEvent, text: String
+        ) -> Bool {
+            guard let surface = self.surface else { return false }
 
-            text.withCString { ptr in
+            return text.withCString { ptr in
                 var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
-                ghostty_surface_key(surface, key_ev)
+                return ghostty_surface_key(surface, key_ev)
             }
         }
 
