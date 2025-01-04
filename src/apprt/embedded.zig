@@ -147,12 +147,12 @@ pub const App = struct {
         self.core_app.focusEvent(focused);
     }
 
-    /// See CoreApp.keyEvent.
-    pub fn keyEvent(
+    /// Convert a C key event into a Zig key event.
+    fn coreKeyEvent(
         self: *App,
         target: KeyTarget,
         event: KeyEvent,
-    ) !bool {
+    ) !?input.KeyEvent {
         const action = event.action;
         const keycode = event.keycode;
         const mods = event.mods;
@@ -243,7 +243,7 @@ pub const App = struct {
                         result.text,
                     ) catch |err| {
                         log.err("error in preedit callback err={}", .{err});
-                        return false;
+                        return null;
                     },
                 }
             } else {
@@ -251,7 +251,7 @@ pub const App = struct {
                     .app => {},
                     .surface => |surface| surface.core_surface.preeditCallback(null) catch |err| {
                         log.err("error in preedit callback err={}", .{err});
-                        return false;
+                        return null;
                     },
                 }
 
@@ -335,7 +335,7 @@ pub const App = struct {
         } else .invalid;
 
         // Build our final key event
-        const input_event: input.KeyEvent = .{
+        return .{
             .action = action,
             .key = key,
             .physical_key = physical_key,
@@ -345,24 +345,39 @@ pub const App = struct {
             .utf8 = result.text,
             .unshifted_codepoint = unshifted_codepoint,
         };
+    }
+
+    /// See CoreApp.keyEvent.
+    pub fn keyEvent(
+        self: *App,
+        target: KeyTarget,
+        event: KeyEvent,
+    ) !bool {
+        // Convert our C key event into a Zig one.
+        const input_event: input.KeyEvent = (try self.coreKeyEvent(
+            target,
+            event,
+        )) orelse return false;
 
         // Invoke the core Ghostty logic to handle this input.
         const effect: CoreSurface.InputEffect = switch (target) {
             .app => if (self.core_app.keyEvent(
                 self,
                 input_event,
-            ))
-                .consumed
-            else
-                .ignored,
+            )) .consumed else .ignored,
 
-            .surface => |surface| try surface.core_surface.keyCallback(input_event),
+            .surface => |surface| try surface.core_surface.keyCallback(
+                input_event,
+            ),
         };
 
         return switch (effect) {
             .closed => true,
             .ignored => false,
             .consumed => consumed: {
+                const is_down = input_event.action == .press or
+                    input_event.action == .repeat;
+
                 if (is_down) {
                     // If we consume the key then we want to reset the dead
                     // key state.
@@ -1371,6 +1386,28 @@ pub const CAPI = struct {
         };
     }
 
+    /// Returns true if the given key event would trigger a binding
+    /// if it were sent to the surface right now. The "right now"
+    /// is important because things like trigger sequences are only
+    /// valid until the next key event.
+    export fn ghostty_app_key_is_binding(
+        app: *App,
+        event: KeyEvent,
+    ) bool {
+        const core_event = app.coreKeyEvent(
+            .app,
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        } orelse {
+            log.warn("error processing key event", .{});
+            return false;
+        };
+
+        return app.core_app.keyEventIsBinding(app, core_event);
+    }
+
     /// Notify the app that the keyboard was changed. This causes the
     /// keyboard layout to be reloaded from the OS.
     export fn ghostty_app_keyboard_changed(v: *App) void {
@@ -1591,14 +1628,36 @@ pub const CAPI = struct {
     export fn ghostty_surface_key(
         surface: *Surface,
         event: KeyEvent,
-    ) void {
-        _ = surface.app.keyEvent(
+    ) bool {
+        return surface.app.keyEvent(
             .{ .surface = surface },
             event.keyEvent(),
         ) catch |err| {
             log.warn("error processing key event err={}", .{err});
-            return;
+            return false;
         };
+    }
+
+    /// Returns true if the given key event would trigger a binding
+    /// if it were sent to the surface right now. The "right now"
+    /// is important because things like trigger sequences are only
+    /// valid until the next key event.
+    export fn ghostty_surface_key_is_binding(
+        surface: *Surface,
+        event: KeyEvent,
+    ) bool {
+        const core_event = surface.app.coreKeyEvent(
+            .{ .surface = surface },
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        } orelse {
+            log.warn("error processing key event", .{});
+            return false;
+        };
+
+        return surface.core_surface.keyEventIsBinding(core_event);
     }
 
     /// Send raw text to the terminal. This is treated like a paste

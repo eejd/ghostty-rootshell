@@ -1637,6 +1637,31 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     try self.queueRender();
 }
 
+/// Returns true if the given key event would trigger a keybinding
+/// if it were to be processed. This is useful for determining if
+/// a key event should be sent to the terminal or not.
+///
+/// Note that this function does not check if the binding itself
+/// is performable, only if the key event would trigger a binding.
+/// If a performable binding is found and the event is not performable,
+/// then Ghosty will act as though the binding does not exist.
+pub fn keyEventIsBinding(
+    self: *Surface,
+    event: input.KeyEvent,
+) bool {
+    switch (event.action) {
+        .release => return false,
+        .press, .repeat => {},
+    }
+
+    // Our keybinding set is either our current nested set (for
+    // sequences) or the root set.
+    const set = self.keyboard.bindings orelse &self.config.keybind.set;
+
+    // If we have a keybinding for this event then we return true.
+    return set.getEvent(event) != null;
+}
+
 /// Called for any key events. This handles keybindings, encoding and
 /// sending to the terminal, etc.
 pub fn keyCallback(
