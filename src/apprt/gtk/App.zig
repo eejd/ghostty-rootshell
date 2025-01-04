@@ -1623,7 +1623,9 @@ fn gtkActionQuit(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
-    self.core_app.setQuit();
+    self.core_app.performAction(self, .quit) catch |err| {
+        log.err("error quitting err={}", .{err});
+    };
 }
 
 /// Action sent by the window manager asking us to present a specific surface to
