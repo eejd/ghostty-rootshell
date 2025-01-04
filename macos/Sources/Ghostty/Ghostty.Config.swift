@@ -375,8 +375,6 @@ extension Ghostty {
             )
         }
 
-        // This isn't actually a configurable value currently but it could be done day.
-        // We put it here because it is a color that changes depending on the configuration.
         var splitDividerColor: Color {
             let backgroundColor = OSColor(backgroundColor)
             let isLightBackground = backgroundColor.isLightColor
