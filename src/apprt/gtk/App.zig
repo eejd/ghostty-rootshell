@@ -996,6 +996,21 @@ fn loadRuntimeCss(
         unfocused_fill.b,
     });
 
+    if (config.@"split-divider-color") |color| {
+        try writer.print(
+            \\.terminal-window .notebook separator {{
+            \\  color: rgb({[r]d},{[g]d},{[b]d});
+            \\  background: rgb({[r]d},{[g]d},{[b]d});
+            \\}}
+        ,
+            .{
+                .r = color.r,
+                .g = color.g,
+                .b = color.b,
+            },
+        );
+    }
+
     if (version.atLeast(4, 16, 0)) {
         switch (window_theme) {
             .ghostty => try writer.print(

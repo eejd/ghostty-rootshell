@@ -610,6 +610,10 @@ palette: Palette = .{},
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"unfocused-split-fill": ?Color = null,
 
+/// The color of the divider between splits. If unset the default system color
+/// will be used. GTK only.
+@"split-divider-color": ?Color = null,
+
 /// The command to run, usually a shell. If this is not an absolute path, it'll
 /// be looked up in the `PATH`. If this is not set, a default will be looked up
 /// from your system. The rules for the default lookup are:
