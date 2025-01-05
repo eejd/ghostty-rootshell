@@ -63,9 +63,12 @@
             makeVM = (
               path:
                 nixpkgs-stable.lib.nixosSystem {
-                  inherit system;
+                  system = builtins.replaceStrings ["darwin"] ["linux"] system;
                   modules = [
                     {
+                      virtualisation.vmVariant = {
+                        virtualisation.host.pkgs = pkgs-stable;
+                      };
                       nixpkgs.overlays = [
                         self.overlays.releasefast
                       ];
