@@ -113,6 +113,9 @@ extension Ghostty {
         // A small delay that is introduced before a title change to avoid flickers
         private var titleChangeTimer: Timer?
 
+        /// Event monitor (see individual events for why)
+        private var eventMonitor: Any? = nil
+
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
 
@@ -170,6 +173,15 @@ extension Ghostty {
                 name: NSWindow.didChangeScreenNotification,
                 object: nil)
 
+            // Listen for local events that we need to know of outside of
+            // single surface handlers.
+            self.eventMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [
+                    // We need keyUp because command+key events don't trigger keyUp.
+                    .keyUp
+                ]
+            ) { [weak self] event in self?.localEventHandler(event) }
+
             // Setup our surface. This will also initialize all the terminal IO.
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
             var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
@@ -211,6 +223,11 @@ extension Ghostty {
             // Remove all of our notificationcenter subscriptions
             let center = NotificationCenter.default
             center.removeObserver(self)
+
+            // Remove our event monitor
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+            }
 
             // Whenever the surface is removed, we need to note that our restorable
             // state is invalid to prevent the surface from being restored.
@@ -354,6 +371,30 @@ extension Ghostty {
             ) { [weak self] _ in
                 self?.title = title
             }
+        }
+
+        // MARK: Local Events
+
+        private func localEventHandler(_ event: NSEvent) -> NSEvent? {
+            return switch event.type {
+            case .keyUp:
+                localEventKeyUp(event)
+
+            default:
+                event
+            }
+        }
+
+        private func localEventKeyUp(_ event: NSEvent) -> NSEvent? {
+            // We only care about events with "command" because all others will
+            // trigger the normal responder chain.
+            if (!event.modifierFlags.contains(.command)) { return event }
+
+            // Command keyUp events are never sent to the normal responder chain
+            // so we send them here.
+            guard focused else { return event }
+            self.keyUp(with: event)
+            return nil
         }
 
         // MARK: - Notifications
@@ -764,7 +805,22 @@ extension Ghostty {
             // know if these events cleared it.
             let markedTextBefore = markedText.length > 0
 
+            // We need to know the keyboard layout before below because some keyboard
+            // input events will change our keyboard layout and we don't want those
+            // going to the terminal.
+            let keyboardIdBefore: String? = if (!markedTextBefore) {
+                KeyboardLayout.id
+            } else {
+                nil
+            }
+
             self.interpretKeyEvents([translationEvent])
+
+            // If our keyboard changed from this we just assume an input method
+            // grabbed it and do nothing.
+            if (!markedTextBefore && keyboardIdBefore != KeyboardLayout.id) {
+                return
+            }
 
             // If we have text, then we've composed a character, send that down. We do this
             // first because if we completed a preedit, the text will be available here
@@ -773,7 +829,7 @@ extension Ghostty {
             if let list = keyTextAccumulator, list.count > 0 {
                 handled = true
                 for text in list {
-                    keyAction(action, event: event, text: text)
+                    _ = keyAction(action, event: event, text: text)
                 }
             }
 
@@ -783,38 +839,49 @@ extension Ghostty {
             // the preedit.
             if (markedText.length > 0 || markedTextBefore) {
                 handled = true
-                keyAction(action, event: event, preedit: markedText.string)
+                _ = keyAction(action, event: event, preedit: markedText.string)
             }
 
             if (!handled) {
                 // No text or anything, we want to handle this manually.
-                keyAction(action, event: event)
+                _ = keyAction(action, event: event)
             }
         }
 
         override func keyUp(with event: NSEvent) {
-            keyAction(GHOSTTY_ACTION_RELEASE, event: event)
+            _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
         }
 
         /// Special case handling for some control keys
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            // Only process key down events
-            if (event.type != .keyDown) {
+            switch (event.type) {
+            case .keyDown:
+                // Continue, we care about key down events
+                break
+
+            default:
+                // Any other key event we don't care about. I don't think its even
+                // possible to receive any other event type.
                 return false
             }
 
             // Only process events if we're focused. Some key events like C-/ macOS
             // appears to send to the first view in the hierarchy rather than the
             // the first responder (I don't know why). This prevents us from handling it.
+            // Besides C-/, its important we don't process key equivalents if unfocused
+            // because there are other event listeners for that (i.e. AppDelegate's
+            // local event handler).
             if (!focused) {
                 return false
             }
 
-            // Only process keys when Control is active. All known issues we're
-            // resolving happen only in this scenario. This probably isn't fully robust
-            // but we can broaden the scope as we find more cases.
-            if (!event.modifierFlags.contains(.control)) {
-                return false
+            // If this event as-is would result in a key binding then we send it.
+            if let surface,
+               ghostty_surface_key_is_binding(
+                  surface,
+                  event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
+                self.keyDown(with: event)
+                return true
             }
 
             let equivalent: String
@@ -832,14 +899,25 @@ extension Ghostty {
             case "\r":
                 // Pass C-<return> through verbatim
                 // (prevent the default context menu equivalent)
+                if (!event.modifierFlags.contains(.control)) {
+                    return false
+                }
+
                 equivalent = "\r"
+
+            case ".":
+                if (!event.modifierFlags.contains(.command)) {
+                    return false
+                }
+
+                equivalent = "."
 
             default:
                 // Ignore other events
                 return false
             }
 
-            let newEvent = NSEvent.keyEvent(
+            let finalEvent = NSEvent.keyEvent(
                 with: .keyDown,
                 location: event.locationInWindow,
                 modifierFlags: event.modifierFlags,
@@ -852,7 +930,7 @@ extension Ghostty {
                 keyCode: event.keyCode
             )
 
-            self.keyDown(with: newEvent!)
+            self.keyDown(with: finalEvent!)
             return true
         }
 
@@ -897,45 +975,38 @@ extension Ghostty {
                 }
             }
 
-            keyAction(action, event: event)
+            _ = keyAction(action, event: event)
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) {
-            guard let surface = self.surface else { return }
-
-            var key_ev = ghostty_input_key_s()
-            key_ev.action = action
-            key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-            key_ev.keycode = UInt32(event.keyCode)
-            key_ev.text = nil
-            key_ev.composing = false
-            ghostty_surface_key(surface, key_ev)
+        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) -> Bool {
+            guard let surface = self.surface else { return false }
+            return ghostty_surface_key(surface, event.ghosttyKeyEvent(action))
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, preedit: String) {
-            guard let surface = self.surface else { return }
+        private func keyAction(
+            _ action: ghostty_input_action_e,
+            event: NSEvent, preedit: String
+        ) -> Bool {
+            guard let surface = self.surface else { return false }
 
-            preedit.withCString { ptr in
-                var key_ev = ghostty_input_key_s()
-                key_ev.action = action
-                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-                key_ev.keycode = UInt32(event.keyCode)
+            return preedit.withCString { ptr in
+                var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
                 key_ev.composing = true
-                ghostty_surface_key(surface, key_ev)
+                return ghostty_surface_key(surface, key_ev)
             }
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, text: String) {
-            guard let surface = self.surface else { return }
+        private func keyAction(
+            _ action: ghostty_input_action_e,
+            event: NSEvent, text: String
+        ) -> Bool {
+            guard let surface = self.surface else { return false }
 
-            text.withCString { ptr in
-                var key_ev = ghostty_input_key_s()
-                key_ev.action = action
-                key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-                key_ev.keycode = UInt32(event.keyCode)
+            return text.withCString { ptr in
+                var key_ev = event.ghosttyKeyEvent(action)
                 key_ev.text = ptr
-                ghostty_surface_key(surface, key_ev)
+                return ghostty_surface_key(surface, key_ev)
             }
         }
 

@@ -117,23 +117,7 @@ extension Ghostty {
 
         func appTick() {
             guard let app = self.app else { return }
-
-            // Tick our app, which lets us know if we want to quit
-            let exit = ghostty_app_tick(app)
-            if (!exit) { return }
-
-            // On iOS, applications do not terminate programmatically like they do
-            // on macOS. On iOS, applications are only terminated when a user physically
-            // closes the application (i.e. going to the home screen). If we request
-            // exit on iOS we ignore it.
-            #if os(iOS)
-            logger.info("quit request received, ignoring on iOS")
-            #endif
-
-            #if os(macOS)
-            // We want to quit, start that process
-            NSApplication.shared.terminate(nil)
-            #endif
+            ghostty_app_tick(app)
         }
 
         func openConfig() {
@@ -454,6 +438,9 @@ extension Ghostty {
 
             // Action dispatch
             switch (action.tag) {
+            case GHOSTTY_ACTION_QUIT:
+                quit(app)
+
             case GHOSTTY_ACTION_NEW_WINDOW:
                 newWindow(app, target: target)
 
@@ -557,6 +544,21 @@ extension Ghostty {
             default:
                 Ghostty.logger.warning("unknown action action=\(action.tag.rawValue)")
             }
+        }
+
+        private static func quit(_ app: ghostty_app_t) {
+            // On iOS, applications do not terminate programmatically like they do
+            // on macOS. On iOS, applications are only terminated when a user physically
+            // closes the application (i.e. going to the home screen). If we request
+            // exit on iOS we ignore it.
+            #if os(iOS)
+            logger.info("quit request received, ignoring on iOS")
+            #endif
+
+            #if os(macOS)
+            // We want to quit, start that process
+            NSApplication.shared.terminate(nil)
+            #endif
         }
 
         private static func newWindow(_ app: ghostty_app_t, target: ghostty_target_s) {

@@ -18,6 +18,7 @@ const Command = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
+const global_state = &@import("global.zig").state;
 const internal_os = @import("os/main.zig");
 const windows = internal_os.windows;
 const TempDir = internal_os.TempDir;
@@ -174,6 +175,10 @@ fn startPosix(self: *Command, arena: Allocator) !void {
         // crash the entire process if this fails so we ignore it.
         // We don't log because that'll show up in the output.
     };
+
+    // Restore any rlimits that were set by Ghostty. This might fail but
+    // any failures are ignored (its best effort).
+    global_state.rlimits.restore();
 
     // If the user requested a pre exec callback, call it now.
     if (self.pre_exec) |f| f(self);

@@ -35,6 +35,10 @@ pub const App = struct {
     app: *CoreApp,
     config: Config,
 
+    /// Flips to true to quit on the next event loop tick. This
+    /// never goes false and forces the event loop to exit.
+    quit: bool = false,
+
     /// Mac-specific state.
     darwin: if (Darwin.enabled) Darwin else void,
 
@@ -124,8 +128,10 @@ pub const App = struct {
             glfw.waitEvents();
 
             // Tick the terminal app
-            const should_quit = try self.app.tick(self);
-            if (should_quit or self.app.surfaces.items.len == 0) {
+            try self.app.tick(self);
+
+            // If the tick caused us to quit, then we're done.
+            if (self.quit or self.app.surfaces.items.len == 0) {
                 for (self.app.surfaces.items) |surface| {
                     surface.close(false);
                 }
@@ -149,6 +155,8 @@ pub const App = struct {
         value: apprt.Action.Value(action),
     ) !void {
         switch (action) {
+            .quit => self.quit = true,
+
             .new_window => _ = try self.newSurface(switch (target) {
                 .app => null,
                 .surface => |v| v,
@@ -510,6 +518,13 @@ pub const Surface = struct {
         ) orelse return glfw.mustGetErrorCode();
         errdefer win.destroy();
 
+        // Setup our
+        setInitialWindowPosition(
+            win,
+            app.config.@"window-position-x",
+            app.config.@"window-position-y",
+        );
+
         // Get our physical DPI - debug only because we don't have a use for
         // this but the logging of it may be useful
         if (builtin.mode == .Debug) {
@@ -661,6 +676,17 @@ pub const Surface = struct {
             .width = @min(width, workarea.width),
             .height = @min(height, workarea.height),
         });
+    }
+
+    /// Set the initial window position. This is called exactly once at
+    /// surface initialization time. This may be called before "self"
+    /// is fully initialized.
+    fn setInitialWindowPosition(win: glfw.Window, x: ?i16, y: ?i16) void {
+        const start_position_x = x orelse return;
+        const start_position_y = y orelse return;
+
+        log.debug("setting initial window position ({},{})", .{ start_position_x, start_position_y });
+        win.setPos(.{ .x = start_position_x, .y = start_position_y });
     }
 
     /// Set the size limits of the window.

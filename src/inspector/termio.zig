@@ -35,7 +35,7 @@ pub const VTEvent = struct {
     const Kind = enum { print, execute, csi, esc, osc, dcs, apc };
     const Metadata = std.StringHashMap([:0]const u8);
 
-    /// Initiaze the event information for the given parser action.
+    /// Initialize the event information for the given parser action.
     pub fn init(
         alloc: Allocator,
         surface: *Surface,
@@ -206,6 +206,20 @@ pub const VTEvent = struct {
                         field.name,
                         @field(v, field.name),
                     );
+                },
+
+                .Union => |info| {
+                    const Tag = info.tag_type orelse @compileError("Unions must have a tag");
+                    const tag_name = @tagName(@as(Tag, v));
+                    inline for (info.fields) |field| {
+                        if (std.mem.eql(u8, field.name, tag_name)) {
+                            if (field.type == void) {
+                                break try md.put("data", tag_name);
+                            } else {
+                                break try encodeMetadataSingle(alloc, md, tag_name, @field(v, field.name));
+                            }
+                        }
+                    }
                 },
 
                 else => {

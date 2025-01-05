@@ -36,6 +36,11 @@ pub const Flags = packed struct {
     /// and not just while Ghostty is focused. This may not work on all platforms.
     /// See the keybind config documentation for more information.
     global: bool = false,
+
+    /// True if this binding should only be triggered if the action can be
+    /// performed. If the action can't be performed then the binding acts as
+    /// if it doesn't exist.
+    performable: bool = false,
 };
 
 /// Full binding parser. The binding parser is implemented as an iterator
@@ -90,6 +95,9 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, prefix, "unconsumed")) {
                 if (!flags.consumed) return Error.InvalidFormat;
                 flags.consumed = false;
+            } else if (std.mem.eql(u8, prefix, "performable")) {
+                if (flags.performable) return Error.InvalidFormat;
+                flags.performable = true;
             } else {
                 // If we don't recognize the prefix then we're done.
                 // There are trigger-specific prefixes like "physical:" so
@@ -185,10 +193,29 @@ pub fn lessThan(_: void, lhs: Binding, rhs: Binding) bool {
         if (rhs.trigger.mods.alt) count += 1;
         break :blk count;
     };
-    if (lhs_count == rhs_count)
+
+    if (lhs_count != rhs_count)
+        return lhs_count > rhs_count;
+
+    if (lhs.trigger.mods.int() != rhs.trigger.mods.int())
         return lhs.trigger.mods.int() > rhs.trigger.mods.int();
 
-    return lhs_count > rhs_count;
+    const lhs_key: c_int = blk: {
+        switch (lhs.trigger.key) {
+            .translated => break :blk @intFromEnum(lhs.trigger.key.translated),
+            .physical => break :blk @intFromEnum(lhs.trigger.key.physical),
+            .unicode => break :blk @intCast(lhs.trigger.key.unicode),
+        }
+    };
+    const rhs_key: c_int = blk: {
+        switch (rhs.trigger.key) {
+            .translated => break :blk @intFromEnum(rhs.trigger.key.translated),
+            .physical => break :blk @intFromEnum(rhs.trigger.key.physical),
+            .unicode => break :blk @intCast(rhs.trigger.key.unicode),
+        }
+    };
+
+    return lhs_key < rhs_key;
 }
 
 /// The set of actions that a keybinding can take.
@@ -203,7 +230,7 @@ pub const Action = union(enum) {
     unbind: void,
 
     /// Send a CSI sequence. The value should be the CSI sequence without the
-    /// CSI header (`ESC ]` or `\x1b]`).
+    /// CSI header (`ESC [` or `\x1b[`).
     csi: []const u8,
 
     /// Send an `ESC` sequence.
@@ -302,7 +329,7 @@ pub const Action = union(enum) {
     goto_tab: usize,
 
     /// Moves a tab by a relative offset.
-    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
+    /// Adjusts the tab position based on `offset`. For example `move_tab:-1` for left, `move_tab:1` for right.
     /// If the new position is out of bounds, it wraps around cyclically within the tab range.
     move_tab: isize,
 
@@ -311,17 +338,18 @@ pub const Action = union(enum) {
     toggle_tab_overview: void,
 
     /// Create a new split in the given direction. The new split will appear in
-    /// the direction given.
+    /// the direction given. For example `new_split:up`. Valid values are left, right, up, down and auto.
     new_split: SplitDirection,
 
-    /// Focus on a split in a given direction.
+    /// Focus on a split in a given direction. For example `goto_split:up`.
+    /// Valid values are left, right, up, down, previous and next.
     goto_split: SplitFocusDirection,
 
     /// zoom/unzoom the current split.
     toggle_split_zoom: void,
 
     /// Resize the current split by moving the split divider in the given
-    /// direction
+    /// direction. For example `resize_split:left,10`. The valid directions are up, down, left and right.
     resize_split: SplitResizeParameter,
 
     /// Equalize all splits in the current window
@@ -478,10 +506,42 @@ pub const Action = union(enum) {
         previous,
         next,
 
-        top,
+        up,
         left,
-        bottom,
+        down,
         right,
+
+        pub fn parse(input: []const u8) !SplitFocusDirection {
+            return std.meta.stringToEnum(SplitFocusDirection, input) orelse {
+                // For backwards compatibility we map "top" and "bottom" onto the enum
+                // values "up" and "down"
+                if (std.mem.eql(u8, input, "top")) {
+                    return .up;
+                } else if (std.mem.eql(u8, input, "bottom")) {
+                    return .down;
+                } else {
+                    return Error.InvalidFormat;
+                }
+            };
+        }
+
+        test "parse" {
+            const testing = std.testing;
+
+            try testing.expectEqual(.previous, try SplitFocusDirection.parse("previous"));
+            try testing.expectEqual(.next, try SplitFocusDirection.parse("next"));
+
+            try testing.expectEqual(.up, try SplitFocusDirection.parse("up"));
+            try testing.expectEqual(.left, try SplitFocusDirection.parse("left"));
+            try testing.expectEqual(.down, try SplitFocusDirection.parse("down"));
+            try testing.expectEqual(.right, try SplitFocusDirection.parse("right"));
+
+            try testing.expectEqual(.up, try SplitFocusDirection.parse("top"));
+            try testing.expectEqual(.down, try SplitFocusDirection.parse("bottom"));
+
+            try testing.expectError(error.InvalidFormat, SplitFocusDirection.parse(""));
+            try testing.expectError(error.InvalidFormat, SplitFocusDirection.parse("green"));
+        }
     };
 
     pub const SplitResizeDirection = enum {
@@ -524,7 +584,16 @@ pub const Action = union(enum) {
         comptime field: std.builtin.Type.UnionField,
         param: []const u8,
     ) !field.type {
-        return switch (@typeInfo(field.type)) {
+        const field_info = @typeInfo(field.type);
+
+        // Fields can provide a custom "parse" function
+        if (field_info == .Struct or field_info == .Union or field_info == .Enum) {
+            if (@hasDecl(field.type, "parse") and @typeInfo(@TypeOf(field.type.parse)) == .Fn) {
+                return field.type.parse(param);
+            }
+        }
+
+        return switch (field_info) {
             .Enum => try parseEnum(field.type, param),
             .Int => try parseInt(field.type, param),
             .Float => try parseFloat(field.type, param),
@@ -1646,6 +1715,16 @@ test "parse: triggers" {
         .action = .{ .ignore = {} },
         .flags = .{ .consumed = false },
     }, try parseSingle("unconsumed:physical:a+shift=ignore"));
+
+    // performable keys
+    try testing.expectEqual(Binding{
+        .trigger = .{
+            .mods = .{ .shift = true },
+            .key = .{ .translated = .a },
+        },
+        .action = .{ .ignore = {} },
+        .flags = .{ .performable = true },
+    }, try parseSingle("performable:shift+a=ignore"));
 
     // invalid key
     try testing.expectError(Error.InvalidFormat, parseSingle("foo=ignore"));

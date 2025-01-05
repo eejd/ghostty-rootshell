@@ -37,6 +37,7 @@ const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const x11 = @import("x11.zig");
+const wayland = @import("wayland.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -73,6 +74,9 @@ running: bool = true,
 /// Xkb state (X11 only). Will be null on Wayland.
 x11_xkb: ?x11.Xkb = null,
 
+/// Wayland app state. Will be null on X11.
+wayland: ?wayland.AppState = null,
+
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
 /// and initialization was successful.
@@ -80,6 +84,9 @@ transient_cgroup_base: ?[]const u8 = null,
 
 /// CSS Provider for any styles based on ghostty configuration values
 css_provider: *c.GtkCssProvider,
+
+/// Providers for loading custom stylesheets defined by user
+custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider) = .{},
 
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
@@ -108,7 +115,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
         // For the remainder of "why" see the 4.14 comment below.
         _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
-        _ = internal_os.setenv("GDK_DEBUG", "opengl");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-no-fractional");
     } else if (version.atLeast(4, 14, 0)) {
         // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
         // Older versions of GTK do not support these values so it is safe
@@ -123,7 +130,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         //   - "vulkan-disable" - disable Vulkan, Ghostty can't use Vulkan
         //     and initializing a Vulkan context was causing a longer delay
         //     on some systems.
-        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable");
+        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable,gl-no-fractional");
     } else {
         // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
         // is an environment that isn't tested well and we don't have a
@@ -394,6 +401,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         break :x11_xkb try x11.Xkb.init(display);
     };
 
+    // Initialize Wayland state
+    var wl = wayland.AppState.init(display);
+    if (wl) |*w| try w.register();
+
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
     // for launching Ghostty in the "background" without immediately opening
@@ -419,6 +430,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .ctx = ctx,
         .cursor_none = cursor_none,
         .x11_xkb = x11_xkb,
+        .wayland = wl,
         .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
@@ -441,6 +453,11 @@ pub fn terminate(self: *App) void {
     if (self.context_menu) |context_menu| c.g_object_unref(context_menu);
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
+    for (self.custom_css_providers.items) |provider| {
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.deinit(self.core_app.alloc);
+
     self.config.deinit();
 }
 
@@ -452,6 +469,7 @@ pub fn performAction(
     value: apprt.Action.Value(action),
 ) !void {
     switch (action) {
+        .quit => self.quit(),
         .new_window => _ = try self.newWindow(switch (target) {
             .app => null,
             .surface => |v| v,
@@ -786,6 +804,7 @@ fn setInitialSize(
         ),
     }
 }
+
 fn showDesktopNotification(
     self: *App,
     target: apprt.Target,
@@ -828,9 +847,11 @@ fn configChange(
     new_config: *const Config,
 ) void {
     switch (target) {
-        // We don't do anything for surface config change events. There
-        // is nothing to sync with regards to a surface today.
-        .surface => {},
+        .surface => |surface| {
+            if (surface.rt_surface.container.window()) |window| window.syncAppearance(new_config) catch |err| {
+                log.warn("error syncing appearance changes to window err={}", .{err});
+            };
+        },
 
         .app => {
             // We clone (to take ownership) and update our configuration.
@@ -892,13 +913,16 @@ fn syncConfigChanges(self: *App) !void {
     try self.updateConfigErrors();
     try self.syncActionAccelerators();
 
-    // Load our runtime CSS. If this fails then our window is just stuck
+    // Load our runtime and custom CSS. If this fails then our window is just stuck
     // with the old CSS but we don't want to fail the entire sync operation.
     self.loadRuntimeCss() catch |err| switch (err) {
         error.OutOfMemory => log.warn(
             "out of memory loading runtime CSS, no runtime CSS applied",
             .{},
         ),
+    };
+    self.loadCustomCss() catch |err| {
+        log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
     };
 }
 
@@ -983,6 +1007,27 @@ fn loadRuntimeCss(
         unfocused_fill.b,
     });
 
+    if (config.@"split-divider-color") |color| {
+        try writer.print(
+            \\.terminal-window .notebook separator {{
+            \\  color: rgb({[r]d},{[g]d},{[b]d});
+            \\  background: rgb({[r]d},{[g]d},{[b]d});
+            \\}}
+        , .{
+            .r = color.r,
+            .g = color.g,
+            .b = color.b,
+        });
+    }
+
+    if (config.@"window-title-font-family") |font_family| {
+        try writer.print(
+            \\.window headerbar {{
+            \\  font-family: "{[font_family]s}";
+            \\}}
+        , .{ .font_family = font_family });
+    }
+
     if (version.atLeast(4, 16, 0)) {
         switch (window_theme) {
             .ghostty => try writer.print(
@@ -1033,11 +1078,66 @@ fn loadRuntimeCss(
     }
 
     // Clears any previously loaded CSS from this provider
-    c.gtk_css_provider_load_from_data(
-        self.css_provider,
-        buf.items.ptr,
-        @intCast(buf.items.len),
-    );
+    loadCssProviderFromData(self.css_provider, buf.items);
+}
+
+fn loadCustomCss(self: *App) !void {
+    const display = c.gdk_display_get_default();
+
+    // unload the previously loaded style providers
+    for (self.custom_css_providers.items) |provider| {
+        c.gtk_style_context_remove_provider_for_display(
+            display,
+            @ptrCast(provider),
+        );
+        c.g_object_unref(provider);
+    }
+    self.custom_css_providers.clearRetainingCapacity();
+
+    for (self.config.@"gtk-custom-css".value.items) |p| {
+        const path, const optional = switch (p) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
+        };
+        const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+            if (err != error.FileNotFound or !optional) {
+                log.err("error opening gtk-custom-css file {s}: {}", .{ path, err });
+            }
+            continue;
+        };
+        defer file.close();
+
+        log.info("loading gtk-custom-css path={s}", .{path});
+        const contents = try file.reader().readAllAlloc(self.core_app.alloc, 5 * 1024 * 1024 // 5MB
+        );
+        defer self.core_app.alloc.free(contents);
+
+        const provider = c.gtk_css_provider_new();
+        c.gtk_style_context_add_provider_for_display(
+            display,
+            @ptrCast(provider),
+            c.GTK_STYLE_PROVIDER_PRIORITY_USER,
+        );
+
+        loadCssProviderFromData(provider, contents);
+
+        try self.custom_css_providers.append(self.core_app.alloc, provider);
+    }
+}
+
+fn loadCssProviderFromData(provider: *c.GtkCssProvider, data: []const u8) void {
+    if (version.atLeast(4, 12, 0)) {
+        const g_bytes = c.g_bytes_new(data.ptr, data.len);
+        defer c.g_bytes_unref(g_bytes);
+
+        c.gtk_css_provider_load_from_bytes(provider, g_bytes);
+    } else {
+        c.gtk_css_provider_load_from_data(
+            provider,
+            data.ptr,
+            @intCast(data.len),
+        );
+    }
 }
 
 /// Called by CoreApp to wake up the event loop.
@@ -1105,14 +1205,10 @@ pub fn run(self: *App) !void {
         _ = c.g_main_context_iteration(self.ctx, 1);
 
         // Tick the terminal app and see if we should quit.
-        const should_quit = try self.core_app.tick(self);
+        try self.core_app.tick(self);
 
         // Check if we must quit based on the current state.
         const must_quit = q: {
-            // If we've been told by GTK that we should quit, do so regardless
-            // of any other setting.
-            if (should_quit) break :q true;
-
             // If we are configured to always stay running, don't quit.
             if (!self.config.@"quit-after-last-window-closed") break :q false;
 
@@ -1216,6 +1312,9 @@ fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
 }
 
 fn quit(self: *App) void {
+    // If we're already not running, do nothing.
+    if (!self.running) return;
+
     // If we have no toplevel windows, then we're done.
     const list = c.gtk_window_list_toplevels();
     if (list == null) {
@@ -1556,7 +1655,9 @@ fn gtkActionQuit(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self: *App = @ptrCast(@alignCast(ud orelse return));
-    self.core_app.setQuit();
+    self.core_app.performAction(self, .quit) catch |err| {
+        log.err("error quitting err={}", .{err});
+    };
 }
 
 /// Action sent by the window manager asking us to present a specific surface to
@@ -1575,7 +1676,7 @@ fn gtkActionPresentSurface(
 
     // Convert that u64 to pointer to a core surface. A value of zero
     // means that there was no target surface for the notification so
-    // we dont' focus any surface.
+    // we don't focus any surface.
     const ptr_int: u64 = c.g_variant_get_uint64(parameter);
     if (ptr_int == 0) return;
     const surface: *CoreSurface = @ptrFromInt(ptr_int);

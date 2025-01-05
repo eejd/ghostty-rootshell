@@ -146,7 +146,7 @@ image_bg_end: u32 = 0,
 image_text_end: u32 = 0,
 image_virtual: bool = false,
 
-/// Defererred OpenGL operation to update the screen size.
+/// Deferred OpenGL operation to update the screen size.
 const SetScreenSize = struct {
     size: renderer.Size,
 
@@ -272,6 +272,7 @@ pub const DerivedConfig = struct {
     arena: ArenaAllocator,
 
     font_thicken: bool,
+    font_thicken_strength: u8,
     font_features: std.ArrayListUnmanaged([:0]const u8),
     font_styles: font.CodepointResolver.StyleStatus,
     cursor_color: ?terminal.color.RGB,
@@ -321,6 +322,7 @@ pub const DerivedConfig = struct {
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
+            .font_thicken_strength = config.@"font-thicken-strength",
             .font_features = font_features.list,
             .font_styles = font_styles,
 
@@ -764,7 +766,7 @@ pub fn updateFrame(
 
         // We used to share terminal state, but we've since learned through
         // analysis that it is faster to copy the terminal state than to
-        // hold the lock wile rebuilding GPU cells.
+        // hold the lock while rebuilding GPU cells.
         var screen_copy = try state.terminal.screen.clone(
             self.alloc,
             .{ .viewport = .{} },
@@ -2093,6 +2095,7 @@ fn addGlyph(
         .{
             .grid_metrics = self.grid_metrics,
             .thicken = self.config.font_thicken,
+            .thicken_strength = self.config.font_thicken_strength,
         },
     );
 

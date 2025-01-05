@@ -149,6 +149,20 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
+        
+        var windowPositionX: Int16? {
+            guard let config = self.config else { return nil }
+            var v: Int16 = 0
+            let key = "window-position-x"
+            return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
+        }
+        
+        var windowPositionY: Int16? {
+            guard let config = self.config else { return nil }
+            var v: Int16 = 0
+            let key = "window-position-y"
+            return ghostty_config_get(config, &v, key, UInt(key.count)) ? v : nil
+        }
 
         var windowNewTabPosition: String {
             guard let config = self.config else { return "" }
@@ -361,13 +375,24 @@ extension Ghostty {
             )
         }
 
-        // This isn't actually a configurable value currently but it could be done day.
-        // We put it here because it is a color that changes depending on the configuration.
         var splitDividerColor: Color {
             let backgroundColor = OSColor(backgroundColor)
             let isLightBackground = backgroundColor.isLightColor
             let newColor = isLightBackground ? backgroundColor.darken(by: 0.08) : backgroundColor.darken(by: 0.4)
-            return Color(newColor)
+
+            guard let config = self.config else { return Color(newColor) }
+
+            var color: ghostty_config_color_s = .init();
+            let key = "split-divider-color"
+            if (!ghostty_config_get(config, &color, key, UInt(key.count))) {
+                return Color(newColor)
+            }
+
+            return .init(
+                red: Double(color.r) / 255,
+                green: Double(color.g) / 255,
+                blue: Double(color.b) / 255
+            )
         }
 
         #if canImport(AppKit)
@@ -437,15 +462,14 @@ extension Ghostty {
             return v;
         }
 
-        var autoUpdate: AutoUpdate {
-            let defaultValue = AutoUpdate.check
-            guard let config = self.config else { return defaultValue }
+        var autoUpdate: AutoUpdate? {
+            guard let config = self.config else { return nil }
             var v: UnsafePointer<Int8>? = nil
             let key = "auto-update"
-            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
-            guard let ptr = v else { return defaultValue }
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return nil }
+            guard let ptr = v else { return nil }
             let str = String(cString: ptr)
-            return AutoUpdate(rawValue: str) ?? defaultValue
+            return AutoUpdate(rawValue: str)
         }
 
         var autoUpdateChannel: AutoUpdateChannel {

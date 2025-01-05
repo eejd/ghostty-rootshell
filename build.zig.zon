@@ -25,6 +25,10 @@
             .url = "https://deps.files.ghostty.org/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz",
             .hash = "12207831bce7d4abce57b5a98e8f3635811cfefd160bca022eb91fe905d36a02cf25",
         },
+        .zig_wayland = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/a5e2e9b6a6d7fba638ace4d4b24a3b576a02685b.tar.gz",
+            .hash = "1220d41b23ae70e93355bb29dac1c07aa6aeb92427a2dffc4375e94b4de18111248c",
+        },
 
         // C libs
         .cimgui = .{ .path = "./pkg/cimgui" },
@@ -49,8 +53,8 @@
         // Other
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
         .iterm2_themes = .{
-            .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/e030599a6a6e19fcd1ea047c7714021170129d56.tar.gz",
-            .hash = "1220cc25b537556a42b0948437c791214c229efb78b551c80b1e9b18d70bf0498620",
+            .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/4762ad5bd6d3906e28babdc2bda8a967d63a63be.tar.gz",
+            .hash = "1220a263b22113273d01bd33e3c06b8119cb2f63b4e5d414a85d88e3aa95bb68a2de",
         },
         .vaxis = .{
             .url = "git+https://github.com/rockorager/libvaxis/?ref=main#6d729a2dc3b934818dffe06d2ba3ce02841ed74b",
@@ -63,6 +67,10 @@
         .z2d = .{
             .url = "git+https://github.com/vancluever/z2d?ref=v0.4.0#4638bb02a9dc41cc2fb811f092811f6a951c752a",
             .hash = "12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a",
+        },
+        .plasma_wayland_protocols = .{
+            .url = "git+https://invent.kde.org/libraries/plasma-wayland-protocols.git?ref=master#db525e8f9da548cffa2ac77618dd0fbe7f511b86",
+            .hash = "12207e0851c12acdeee0991e893e0132fc87bb763969a585dc16ecca33e88334c566",
         },
     },
 }

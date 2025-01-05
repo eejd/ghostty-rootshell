@@ -358,8 +358,8 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
         syncMenuShortcut(config, action: "goto_split:previous", menuItem: self.menuPreviousSplit)
         syncMenuShortcut(config, action: "goto_split:next", menuItem: self.menuNextSplit)
-        syncMenuShortcut(config, action: "goto_split:top", menuItem: self.menuSelectSplitAbove)
-        syncMenuShortcut(config, action: "goto_split:bottom", menuItem: self.menuSelectSplitBelow)
+        syncMenuShortcut(config, action: "goto_split:up", menuItem: self.menuSelectSplitAbove)
+        syncMenuShortcut(config, action: "goto_split:down", menuItem: self.menuSelectSplitBelow)
         syncMenuShortcut(config, action: "goto_split:left", menuItem: self.menuSelectSplitLeft)
         syncMenuShortcut(config, action: "goto_split:right", menuItem: self.menuSelectSplitRight)
         syncMenuShortcut(config, action: "resize_split:up,10", menuItem: self.menuMoveSplitDividerUp)
@@ -425,6 +425,15 @@ class AppDelegate: NSObject,
         // because we let it capture and propagate.
         guard NSApp.mainWindow == nil else { return event }
 
+        // If this event as-is would result in a key binding then we send it.
+        if let app = ghostty.app,
+           ghostty_app_key_is_binding(
+              app,
+              event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
+            ghostty_app_key(app, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))
+            return nil
+        }
+
         // If this event would be handled by our menu then we do nothing.
         if let mainMenu = NSApp.mainMenu,
            mainMenu.performKeyEquivalent(with: event) {
@@ -438,13 +447,7 @@ class AppDelegate: NSObject,
         guard let ghostty = self.ghostty.app else { return event }
 
         // Build our event input and call ghostty
-        var key_ev = ghostty_input_key_s()
-        key_ev.action = GHOSTTY_ACTION_PRESS
-        key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-        key_ev.keycode = UInt32(event.keyCode)
-        key_ev.text = nil
-        key_ev.composing = false
-        if (ghostty_app_key(ghostty, key_ev)) {
+        if (ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
             // The key was used so we want to stop it from going to our Mac app
             Ghostty.logger.debug("local key event handled event=\(event)")
             return nil
@@ -486,15 +489,16 @@ class AppDelegate: NSObject,
 
         // Sync our auto-update settings. If SUEnableAutomaticChecks (in our Info.plist) is
         // explicitly false (NO), auto-updates are disabled. Otherwise, we use the behavior
-        // defined by our "auto-update" configuration.
-        if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool != false {
-            updaterController.updater.automaticallyChecksForUpdates =
-                config.autoUpdate == .check || config.autoUpdate == .download
-            updaterController.updater.automaticallyDownloadsUpdates =
-                config.autoUpdate == .download
-        } else {
+        // defined by our "auto-update" configuration (if set) or fall back to Sparkle
+        // user-based defaults.
+        if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
             updaterController.updater.automaticallyChecksForUpdates = false
             updaterController.updater.automaticallyDownloadsUpdates = false
+        } else if let autoUpdate = config.autoUpdate {
+            updaterController.updater.automaticallyChecksForUpdates =
+                autoUpdate == .check || autoUpdate == .download
+            updaterController.updater.automaticallyDownloadsUpdates =
+                autoUpdate == .download
         }
 
         // Config could change keybindings, so update everything that depends on that

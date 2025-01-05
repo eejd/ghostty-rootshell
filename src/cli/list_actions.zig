@@ -20,8 +20,9 @@ pub const Options = struct {
     }
 };
 
-/// The `list-actions` command is used to list all the available keybind actions
-/// for Ghostty.
+/// The `list-actions` command is used to list all the available keybind
+/// actions for Ghostty. These are distinct from the CLI Actions which can
+/// be listed via `+help`
 ///
 /// The `--docs` argument will print out the documentation for each action.
 pub fn run(alloc: Allocator) !u8 {
