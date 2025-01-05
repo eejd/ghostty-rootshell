@@ -3080,25 +3080,31 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         // We must only load a unique file once
         if (try loaded.fetchPut(path, {}) != null) {
-            try self._diagnostics.append(arena_alloc, .{
+            const diag: cli.Diagnostic = .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "config-file {s}: cycle detected",
                     .{path},
                 ),
-            });
+            };
+
+            try self._diagnostics.append(arena_alloc, diag);
+            try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
             continue;
         }
 
         var file = std.fs.openFileAbsolute(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
-                try self._diagnostics.append(arena_alloc, .{
+                const diag: cli.Diagnostic = .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "error opening config-file {s}: {}",
                         .{ path, err },
                     ),
-                });
+                };
+
+                try self._diagnostics.append(arena_alloc, diag);
+                try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
             }
             continue;
         };
@@ -3108,13 +3114,16 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         switch (stat.kind) {
             .file => {},
             else => |kind| {
-                try self._diagnostics.append(arena_alloc, .{
+                const diag: cli.Diagnostic = .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "config-file {s}: not reading because file type is {s}",
                         .{ path, @tagName(kind) },
                     ),
-                });
+                };
+
+                try self._diagnostics.append(arena_alloc, diag);
+                try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
                 continue;
             },
         }
@@ -3264,7 +3273,7 @@ fn loadTheme(self: *Config, theme: Theme) !void {
     // Setup our replay to be conditional.
     conditional: for (new_config._replay_steps.items) |*item| {
         switch (item.*) {
-            .expand => {},
+            .expand, .diagnostic => {},
 
             // If we see "-e" then we do NOT make the following arguments
             // conditional since they are supposed to be part of the
@@ -3816,6 +3825,16 @@ const Replay = struct {
             arg: []const u8,
         },
 
+        /// A diagnostic to be added to the new configuration when
+        /// replayed. This should only be used for diagnostics that won't
+        /// be reproduced during playback. For example, `config-file`
+        /// errors are not reloaded so they should be added here.
+        ///
+        /// Diagnostics cannot be conditional. They are always present
+        /// even if the conditionals don't match. This helps users find
+        /// errors in their configuration.
+        diagnostic: cli.Diagnostic,
+
         /// The start of a "-e" argument. This marks the end of
         /// traditional configuration and the beginning of the
         /// "-e" initial command magic. This is separate from "arg"
@@ -3832,6 +3851,7 @@ const Replay = struct {
         ) Allocator.Error!Step {
             return switch (self) {
                 .@"-e" => self,
+                .diagnostic => |v| .{ .diagnostic = try v.clone(alloc) },
                 .arg => |v| .{ .arg = try alloc.dupe(u8, v) },
                 .expand => |v| .{ .expand = try alloc.dupe(u8, v) },
                 .conditional_arg => |v| conditional: {
@@ -3865,6 +3885,20 @@ const Replay = struct {
                         // world state changed and we can't expand anymore.
                         // In that really unfortunate case, we log a warning.
                         log.warn("error expanding paths err={}", .{err});
+                    },
+
+                    .diagnostic => |diag| diag: {
+                        // Best effort to clone and append the diagnostic.
+                        // If it fails we log a warning and continue.
+                        const arena_alloc = self.config._arena.?.allocator();
+                        const cloned = diag.clone(arena_alloc) catch |err| {
+                            log.warn("error cloning diagnostic err={}", .{err});
+                            break :diag;
+                        };
+                        self.config._diagnostics.append(arena_alloc, cloned) catch |err| {
+                            log.warn("error appending diagnostic err={}", .{err});
+                            break :diag;
+                        };
                     },
 
                     .conditional_arg => |v| conditional: {
