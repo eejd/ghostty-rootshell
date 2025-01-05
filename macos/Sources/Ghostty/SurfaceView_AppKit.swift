@@ -805,7 +805,22 @@ extension Ghostty {
             // know if these events cleared it.
             let markedTextBefore = markedText.length > 0
 
+            // We need to know the keyboard layout before below because some keyboard
+            // input events will change our keyboard layout and we don't want those
+            // going to the terminal.
+            let keyboardIdBefore: String? = if (!markedTextBefore) {
+                KeyboardLayout.id
+            } else {
+                nil
+            }
+
             self.interpretKeyEvents([translationEvent])
+
+            // If our keyboard changed from this we just assume an input method
+            // grabbed it and do nothing.
+            if (!markedTextBefore && keyboardIdBefore != KeyboardLayout.id) {
+                return
+            }
 
             // If we have text, then we've composed a character, send that down. We do this
             // first because if we completed a preedit, the text will be available here
