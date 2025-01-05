@@ -67,7 +67,7 @@
                   modules = [
                     {
                       nixpkgs.overlays = [
-                        self.overlays.debug
+                        self.overlays.releasefast
                       ];
                     }
                     ./nix/vm/common.nix

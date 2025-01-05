@@ -2,6 +2,8 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
+  documentation.nixos.enable = false;
+
   networking.hostName = "ghostty";
   networking.domain = "mitchellh.com";
 

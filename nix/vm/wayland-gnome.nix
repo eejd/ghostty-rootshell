@@ -37,16 +37,52 @@
 
   environment.gnome.excludePackages = with pkgs; [
     atomix
+    baobab
     cheese
     epiphany
+    evince
+    file-roller
     geary
+    gnome-backgrounds
+    gnome-calculator
+    gnome-calendar
+    gnome-clocks
+    gnome-connections
+    gnome-contacts
+    gnome-disk-utility
+    gnome-extension-manager
+    gnome-logs
+    gnome-maps
     gnome-music
     gnome-photos
+    gnome-software
+    gnome-system-monitor
+    gnome-text-editor
+    gnome-themes-extra
     gnome-tour
+    gnome-user-docs
+    gnome-weather
     hitori
     iagno
+    loupe
+    nautilus
+    orca
+    seahorse
+    simple-scan
+    snapshot
+    sushi
     tali
+    totem
+    yelp
   ];
+
+  services.gnome = {
+    gnome-browser-connector.enable = false;
+    gnome-initial-setup.enable = false;
+    gnome-online-accounts.enable = false;
+    gnome-remote-desktop.enable = false;
+    rygel.enable = false;
+  };
 
   system.activationScripts = {
     face = {
