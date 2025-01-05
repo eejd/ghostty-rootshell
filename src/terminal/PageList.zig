@@ -3281,7 +3281,7 @@ fn markDirty(self: *PageList, pt: point.Point) void {
 /// point remains valid even through scrolling without any additional work.
 ///
 /// A downside is that  the pin is only valid until the pagelist is modified
-/// in a way that may invalid page pointers or shuffle rows, such as resizing,
+/// in a way that may invalidate page pointers or shuffle rows, such as resizing,
 /// erasing rows, etc.
 ///
 /// A pin can also be "tracked" which means that it will be updated as the
@@ -3389,9 +3389,9 @@ pub const Pin = struct {
                         else => {},
                     }
 
-                    // Never extend cell that has a default background.
-                    // A default background is if there is no background
-                    // on the style OR the explicitly set background
+                    // Never extend a cell that has a default background.
+                    // A default background is applied if there is no background
+                    // on the style or the explicitly set background
                     // matches our default background.
                     const s = self.style(cell);
                     const bg = s.bg(cell, palette) orelse return true;
@@ -3486,7 +3486,7 @@ pub const Pin = struct {
 
             // If our y is after the top y but we're on the same page
             // then we're between the top and bottom if our y is less
-            // than or equal to the bottom y IF its the same page. If the
+            // than or equal to the bottom y if its the same page. If the
             // bottom is another page then it means that the range is
             // at least the full top page and since we're the same page
             // we're in the range.
@@ -3508,7 +3508,7 @@ pub const Pin = struct {
             if (self.y > bottom.y) return false;
             if (self.y < bottom.y) return true;
 
-            // If our y is the same then we're between if we're before
+            // If our y is the same, then we're between if we're before
             // or equal to the bottom x.
             assert(self.y == bottom.y);
             return self.x <= bottom.x;
