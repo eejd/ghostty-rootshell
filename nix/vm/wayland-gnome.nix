@@ -78,8 +78,8 @@
             primary-color = "#000000000000";
             secondary-color = "#000000000000";
           };
-          "org/gnome/desktop/desktop" = {
-            interface = "prefer-dark";
+          "org/gnome/desktop/interface" = {
+            color-scheme = "prefer-dark";
           };
           "org/gnome/desktop/notifications" = {
             show-in-lock-screen = false;
