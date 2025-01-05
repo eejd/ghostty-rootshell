@@ -204,7 +204,7 @@ test "c_get: background-blur" {
         try testing.expectEqual(20, cval);
     }
     {
-        c.@"background-blur-radius" = .{ .value = 42 };
+        c.@"background-blur-radius" = .{ .radius = 42 };
         var cval: u8 = undefined;
         try testing.expect(get(&c, .@"background-blur-radius", @ptrCast(&cval)));
         try testing.expectEqual(42, cval);
