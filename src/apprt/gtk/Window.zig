@@ -403,7 +403,7 @@ pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
         const blurred = switch (config.@"background-blur-radius") {
             .false => false,
             .true => true,
-            .value => |v| v > 0,
+            .radius => |v| v > 0,
         };
         try wl.setBlur(blurred);
     }

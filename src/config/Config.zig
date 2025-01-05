@@ -5666,7 +5666,7 @@ pub const AutoUpdate = enum {
 pub const BackgroundBlur = union(enum) {
     false,
     true,
-    value: u8,
+    radius: u8,
 
     pub fn parseCLI(self: *BackgroundBlur, input: ?[]const u8) !void {
         const input_ = input orelse {
@@ -5675,19 +5675,21 @@ pub const BackgroundBlur = union(enum) {
             return;
         };
 
-        if (cli.args.parseBool(input_)) |b| {
-            self.* = if (b) .true else .false;
-        } else |_| {
-            const value = std.fmt.parseInt(u8, input_, 0) catch return error.InvalidValue;
-            self.* = .{ .value = value };
-        }
+        self.* = if (cli.args.parseBool(input_)) |b|
+            if (b) .true else .false
+        else |_|
+            .{ .radius = std.fmt.parseInt(
+                u8,
+                input_,
+                0,
+            ) catch return error.InvalidValue };
     }
 
     pub fn cval(self: BackgroundBlur) u8 {
         return switch (self) {
             .false => 0,
             .true => 20,
-            .value => |v| v,
+            .radius => |v| v,
         };
     }
 
@@ -5698,7 +5700,7 @@ pub const BackgroundBlur = union(enum) {
         switch (self) {
             .false => try formatter.formatEntry(bool, false),
             .true => try formatter.formatEntry(bool, true),
-            .value => |v| try formatter.formatEntry(u8, v),
+            .radius => |v| try formatter.formatEntry(u8, v),
         }
     }
 
@@ -5716,7 +5718,7 @@ pub const BackgroundBlur = union(enum) {
         try testing.expectEqual(.false, v);
 
         try v.parseCLI("42");
-        try testing.expectEqual(42, v.value);
+        try testing.expectEqual(42, v.radius);
 
         try testing.expectError(error.InvalidValue, v.parseCLI(""));
         try testing.expectError(error.InvalidValue, v.parseCLI("aaaa"));
