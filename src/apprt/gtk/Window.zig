@@ -25,6 +25,7 @@ const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
 const HeaderBar = @import("headerbar.zig").HeaderBar;
 const version = @import("version.zig");
+const wayland = @import("wayland.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -55,6 +56,8 @@ toast_overlay: ?*c.GtkWidget,
 /// See adwTabOverviewOpen for why we have this.
 adw_tab_overview_focus_timer: ?c.guint = null,
 
+wayland: ?wayland.SurfaceState,
+
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
     // allocations but windows and other GUI requirements are so minimal
@@ -79,6 +82,7 @@ pub fn init(self: *Window, app: *App) !void {
         .notebook = undefined,
         .context_menu = undefined,
         .toast_overlay = undefined,
+        .wayland = null,
     };
 
     // Create the window
@@ -113,11 +117,6 @@ pub fn init(self: *Window, app: *App) !void {
     // we use GTK CSS color variables.
     if (!version.atLeast(4, 16, 0) and app.config.@"window-theme" == .ghostty) {
         c.gtk_widget_add_css_class(@ptrCast(gtk_window), "window-theme-ghostty");
-    }
-
-    // Remove the window's background if any of the widgets need to be transparent
-    if (app.config.@"background-opacity" < 1) {
-        c.gtk_widget_remove_css_class(@ptrCast(window), "background");
     }
 
     // Create our box which will hold our widgets in the main content area.
@@ -290,6 +289,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // All of our events
     _ = c.g_signal_connect_data(self.context_menu, "closed", c.G_CALLBACK(&gtkRefocusTerm), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(window, "realize", c.G_CALLBACK(&gtkRealize), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "close-request", c.G_CALLBACK(&gtkCloseRequest), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(window, "destroy", c.G_CALLBACK(&gtkDestroy), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_key_press, "key-pressed", c.G_CALLBACK(&gtkKeyPressed), self, null, c.G_CONNECT_DEFAULT);
@@ -387,6 +387,28 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_show(window);
 }
 
+/// Updates appearance based on config settings. Will be called once upon window
+/// realization, and every time the config is reloaded.
+///
+/// TODO: Many of the initial style settings in `create` could possibly be made
+/// reactive by moving them here.
+pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
+    if (config.@"background-opacity" < 1) {
+        c.gtk_widget_remove_css_class(@ptrCast(self.window), "background");
+    } else {
+        c.gtk_widget_add_css_class(@ptrCast(self.window), "background");
+    }
+
+    if (self.wayland) |*wl| {
+        const blurred = switch (config.@"background-blur-radius") {
+            .false => false,
+            .true => true,
+            .radius => |v| v > 0,
+        };
+        try wl.setBlur(blurred);
+    }
+}
+
 /// Sets up the GTK actions for the window scope. Actions are how GTK handles
 /// menus and such. The menu is defined in App.zig but the action is defined
 /// here. The string name binds them.
@@ -423,6 +445,8 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     c.gtk_widget_unparent(@ptrCast(self.context_menu));
+
+    if (self.wayland) |*wl| wl.deinit();
 
     if (self.adw_tab_overview_focus_timer) |timer| {
         _ = c.g_source_remove(timer);
@@ -549,6 +573,20 @@ pub fn sendToast(self: *Window, title: [:0]const u8) void {
     const toast = c.adw_toast_new(title);
     c.adw_toast_set_timeout(toast, 3);
     c.adw_toast_overlay_add_toast(@ptrCast(toast_overlay), toast);
+}
+
+fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+    const self = userdataSelf(ud.?);
+
+    if (self.app.wayland) |*wl| {
+        self.wayland = wayland.SurfaceState.init(v, wl);
+    }
+
+    self.syncAppearance(&self.app.config) catch |err| {
+        log.err("failed to initialize appearance={}", .{err});
+    };
+
+    return true;
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
