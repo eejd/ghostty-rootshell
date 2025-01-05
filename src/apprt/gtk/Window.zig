@@ -543,7 +543,7 @@ pub fn onConfigReloaded(self: *Window) void {
     self.sendToast("Reloaded the configuration");
 }
 
-fn sendToast(self: *Window, title: [:0]const u8) void {
+pub fn sendToast(self: *Window, title: [:0]const u8) void {
     if (comptime !adwaita.versionAtLeast(0, 0, 0)) return;
     const toast_overlay = self.toast_overlay orelse return;
     const toast = c.adw_toast_new(title);
@@ -895,10 +895,6 @@ fn gtkActionCopy(
         log.warn("error performing binding action error={}", .{err});
         return;
     };
-
-    if (self.app.config.@"adw-toast".@"clipboard-copy") {
-        self.sendToast("Copied to clipboard");
-    }
 }
 
 fn gtkActionPaste(
