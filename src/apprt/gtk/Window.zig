@@ -99,6 +99,7 @@ pub fn init(self: *Window, app: *App) !void {
     self.window = gtk_window;
     c.gtk_window_set_title(gtk_window, "Ghostty");
     c.gtk_window_set_default_size(gtk_window, 1000, 600);
+    c.gtk_widget_add_css_class(@ptrCast(gtk_window), "window");
     c.gtk_widget_add_css_class(@ptrCast(gtk_window), "terminal-window");
 
     // GTK4 grabs F10 input by default to focus the menubar icon. We want
