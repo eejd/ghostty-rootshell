@@ -945,6 +945,9 @@ extension Ghostty {
             default: return
             }
 
+            // If we're in the middle of a preedit, don't do anything with mods.
+            if hasMarkedText() { return }
+
             // The keyAction function will do this AGAIN below which sucks to repeat
             // but this is super cheap and flagsChanged isn't that common.
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
