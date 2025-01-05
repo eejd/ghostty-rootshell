@@ -22,13 +22,11 @@
   pandoc,
   revision ? "dirty",
   optimize ? "Debug",
-
   enableX11 ? true,
   libX11,
   libXcursor,
   libXi,
   libXrandr,
-
   enableWayland ? true,
   wayland,
   wayland-protocols,
