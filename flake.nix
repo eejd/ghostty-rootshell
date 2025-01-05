@@ -31,37 +31,84 @@
     zig,
     ...
   }:
-    builtins.foldl' nixpkgs-stable.lib.recursiveUpdate {} (builtins.map (system: let
-      pkgs-stable = nixpkgs-stable.legacyPackages.${system};
-      pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
-    in {
-      devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
-        zig = zig.packages.${system}."0.13.0";
-        wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
-      };
+    builtins.foldl' nixpkgs-stable.lib.recursiveUpdate {} (
+      builtins.map (
+        system: let
+          pkgs-stable = nixpkgs-stable.legacyPackages.${system};
+          pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
+        in {
+          devShell.${system} = pkgs-stable.callPackage ./nix/devShell.nix {
+            zig = zig.packages.${system}."0.13.0";
+            wraptest = pkgs-stable.callPackage ./nix/wraptest.nix {};
+          };
 
-      packages.${system} = let
-        mkArgs = optimize: {
-          inherit optimize;
+          packages.${system} = let
+            mkArgs = optimize: {
+              inherit optimize;
 
-          revision = self.shortRev or self.dirtyShortRev or "dirty";
-        };
-      in rec {
-        ghostty-debug = pkgs-stable.callPackage ./nix/package.nix (mkArgs "Debug");
-        ghostty-releasesafe = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseSafe");
-        ghostty-releasefast = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseFast");
+              revision = self.shortRev or self.dirtyShortRev or "dirty";
+            };
+          in rec {
+            ghostty-debug = pkgs-stable.callPackage ./nix/package.nix (mkArgs "Debug");
+            ghostty-releasesafe = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseSafe");
+            ghostty-releasefast = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseFast");
 
-        ghostty = ghostty-releasefast;
-        default = ghostty;
-      };
+            ghostty = ghostty-releasefast;
+            default = ghostty;
+          };
 
-      formatter.${system} = pkgs-stable.alejandra;
+          formatter.${system} = pkgs-stable.alejandra;
 
-      # Our supported systems are the same supported systems as the Zig binaries.
-    }) (builtins.attrNames zig.packages))
+          nixosConfigurations = let
+            makeVM = (
+              path:
+                nixpkgs-stable.lib.nixosSystem {
+                  inherit system;
+                  modules = [
+                    {
+                      nixpkgs.overlays = [
+                        self.overlays.debug
+                      ];
+                    }
+                    ./nix/vm/common.nix
+                    path
+                  ];
+                }
+            );
+          in {
+            "wayland-gnome-${system}" = makeVM ./nix/vm/wayland-gnome.nix;
+          };
+
+          apps.${system} = let
+            wrapVM = (
+              name: let
+                program = pkgs-stable.writeShellScript "run-ghostty-vm" ''
+                  SHARED_DIR=$(pwd)
+                  export SHARED_DIR
+
+                  ${self.nixosConfigurations."${name}-${system}".config.system.build.vm}/bin/run-ghostty-vm
+                '';
+              in {
+                type = "app";
+                program = "${program}";
+              }
+            );
+          in {
+            wayland-gnome = wrapVM "wayland-gnome";
+          };
+        }
+        # Our supported systems are the same supported systems as the Zig binaries.
+      ) (builtins.attrNames zig.packages)
+    )
     // {
-      overlays.default = final: prev: {
-        ghostty = self.packages.${prev.system}.default;
+      overlays = {
+        default = self.overlays.releasefast;
+        releasefast = final: prev: {
+          ghostty = self.packages.${prev.system}.ghostty-releasefast;
+        };
+        debug = final: prev: {
+          ghostty = self.packages.${prev.system}.ghostty-debug;
+        };
       };
     };
 
