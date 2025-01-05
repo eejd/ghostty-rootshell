@@ -104,4 +104,6 @@
       }
     ];
   };
+
+  programs.geary.enable = false;
 }
