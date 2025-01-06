@@ -84,7 +84,7 @@ Several Nix virtual machine definitions are provided by the project for testing
 and developing Ghostty against multiple different Linux desktop environments.
 
 Running these requires a working Nix installation, either Nix on your
-favorite Linux distribution, NixOS, or macOS with nix-darwin installed. Futher
+favorite Linux distribution, NixOS, or macOS with nix-darwin installed. Further
 requirements for macOS are detailed below.
 
 VMs should only be run on your local desktop and then powered off when not in
@@ -128,7 +128,7 @@ We welcome the contribution of new VM definitions, as long as they meet the foll
 #### VM Definition Criteria
 
 1. VMs should be as minimal as possible so that they build and launch quickly.
-   Additonal software can be added at runtime with a command like `nix run nixpkgs#<package name>`.
+   Additional software can be added at runtime with a command like `nix run nixpkgs#<package name>`.
 2. VMs should not expose any services to the network, or run any remote access
    software like SSH, VNC or RDP.
 3. VMs should auto-login using the "ghostty" user.
