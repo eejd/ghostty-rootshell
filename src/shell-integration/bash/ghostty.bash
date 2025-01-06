@@ -141,7 +141,7 @@ function __ghostty_precmd() {
         # Command and working directory
         # shellcheck disable=SC2016
         PS0=$PS0'$(__ghostty_get_current_command)'
-        PS1=$PS1'\[\e]2;$PWD\a\]'
+        PS1=$PS1'\[\e]2;\w\a\]'
       fi
     fi
 
