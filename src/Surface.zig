@@ -3936,6 +3936,33 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             return false;
         },
 
+        .copy_url_to_clipboard => {
+            // If the mouse isn't over a link, nothing we can do.
+            if (!self.mouse.over_link) return false;
+
+            const pos = try self.rt_surface.getCursorPos();
+            if (try self.linkAtPos(pos)) |link_info| {
+                // Get the URL text from selection
+                const url_text = (self.io.terminal.screen.selectionString(self.alloc, .{
+                    .sel = link_info[1],
+                    .trim = self.config.clipboard_trim_trailing_spaces,
+                })) catch |err| {
+                    log.err("error reading url string err={}", .{err});
+                    return false;
+                };
+                defer self.alloc.free(url_text);
+
+                self.rt_surface.setClipboardString(url_text, .standard, false) catch |err| {
+                    log.err("error copying url to clipboard err={}", .{err});
+                    return true;
+                };
+
+                return true;
+            }
+
+            return false;
+        },
+
         .paste_from_clipboard => try self.startClipboardRequest(
             .standard,
             .{ .paste = {} },
