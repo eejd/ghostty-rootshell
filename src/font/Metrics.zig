@@ -355,7 +355,7 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig percent" {
-        const configpkg = @import("../../config.zig");
+        const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();
@@ -366,7 +366,7 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig absolute" {
-        const configpkg = @import("../../config.zig");
+        const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();

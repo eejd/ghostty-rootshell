@@ -25,7 +25,7 @@ const DeferredFace = font.DeferredFace;
 const DesiredSize = font.face.DesiredSize;
 const Face = font.Face;
 const Library = font.Library;
-const Metrics = font.face.Metrics;
+const Metrics = font.Metrics;
 const Presentation = font.Presentation;
 const Style = font.Style;
 

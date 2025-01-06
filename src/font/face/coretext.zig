@@ -19,7 +19,7 @@ pub const Face = struct {
     hb_font: if (harfbuzz_shaper) harfbuzz.Font else void,
 
     /// Metrics for this font face. These are useful for renderers.
-    metrics: font.face.Metrics,
+    metrics: font.Metrics,
 
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
@@ -513,7 +513,7 @@ pub const Face = struct {
         InvalidHheaTable,
     };
 
-    fn calcMetrics(ct_font: *macos.text.Font) CalcMetricsError!font.face.Metrics {
+    pub fn calcMetrics(ct_font: *macos.text.Font) CalcMetricsError!font.Metrics {
         // Read the 'head' table out of the font data.
         const head: opentype.Head = head: {
             // macOS bitmap-only fonts use a 'bhed' tag rather than 'head', but
@@ -731,7 +731,7 @@ pub const Face = struct {
             break :cell_width max;
         };
 
-        return font.face.Metrics.calc(.{
+        return font.Metrics.calc(.{
             .cell_width = cell_width,
             .ascent = ascent,
             .descent = descent,
@@ -1032,7 +1032,7 @@ test "coretext: metrics" {
     );
     defer ct_font.deinit();
 
-    try std.testing.expectEqual(font.face.Metrics{
+    try std.testing.expectEqual(font.Metrics{
         .cell_width = 8,
         // The cell height is 17 px because the calculation is
         //
@@ -1060,7 +1060,7 @@ test "coretext: metrics" {
 
     // Resize should change metrics
     try ct_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
-    try std.testing.expectEqual(font.face.Metrics{
+    try std.testing.expectEqual(font.Metrics{
         .cell_width = 16,
         .cell_height = 34,
         .cell_baseline = 6,

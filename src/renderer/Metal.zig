@@ -68,7 +68,7 @@ config: DerivedConfig,
 surface_mailbox: apprt.surface.Mailbox,
 
 /// Current font metrics defining our grid.
-grid_metrics: font.face.Metrics,
+grid_metrics: font.Metrics,
 
 /// The size of everything.
 size: renderer.Size,

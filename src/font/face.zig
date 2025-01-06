@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const options = @import("main.zig").options;
-pub const Metrics = @import("face/Metrics.zig");
+const Metrics = @import("main.zig").Metrics;
 const config = @import("../config.zig");
 const freetype = @import("face/freetype.zig");
 const coretext = @import("face/coretext.zig");

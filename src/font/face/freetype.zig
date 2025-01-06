@@ -39,7 +39,7 @@ pub const Face = struct {
     hb_font: harfbuzz.Font,
 
     /// Metrics for this font face. These are useful for renderers.
-    metrics: font.face.Metrics,
+    metrics: font.Metrics,
 
     /// Freetype load flags for this font face.
     load_flags: font.face.FreetypeLoadFlags,
@@ -604,8 +604,8 @@ pub const Face = struct {
     /// deinitialized anytime and reloaded with the deferred face.
     fn calcMetrics(
         face: freetype.Face,
-        modifiers: ?*const font.face.Metrics.ModifierSet,
-    ) CalcMetricsError!font.face.Metrics {
+        modifiers: ?*const font.Metrics.ModifierSet,
+    ) CalcMetricsError!font.Metrics {
         const size_metrics = face.handle.*.size.*.metrics;
 
         // This code relies on this assumption, and it should always be
@@ -793,7 +793,7 @@ pub const Face = struct {
             };
         };
 
-        var result = font.face.Metrics.calc(.{
+        var result = font.Metrics.calc(.{
             .cell_width = cell_width,
 
             .ascent = ascent,
@@ -921,7 +921,7 @@ test "metrics" {
     );
     defer ft_font.deinit();
 
-    try testing.expectEqual(font.face.Metrics{
+    try testing.expectEqual(font.Metrics{
         .cell_width = 8,
         // The cell height is 17 px because the calculation is
         //
@@ -949,7 +949,7 @@ test "metrics" {
 
     // Resize should change metrics
     try ft_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
-    try testing.expectEqual(font.face.Metrics{
+    try testing.expectEqual(font.Metrics{
         .cell_width = 16,
         .cell_height = 34,
         .cell_baseline = 6,
