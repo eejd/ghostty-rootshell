@@ -1975,6 +1975,15 @@ keybind: Keybinds = .{},
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 
+/// Enable or disable GTK's OpenGL debugging logs. The default depends on the
+/// optimization level that Ghostty was built with:
+///
+/// - `Debug`: `true`
+/// - `ReleaseSafe`: `true`
+/// - `ReleaseSmall`: `true`
+/// - `ReleaseFast`: `false`
+@"gtk-opengl-debug": bool = build_config.slow_runtime_safety,
+
 /// If `true`, the Ghostty GTK application will run in single-instance mode:
 /// each new `ghostty` process launched will result in a new window if there is
 /// already a running process.
