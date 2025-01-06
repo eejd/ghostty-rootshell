@@ -914,7 +914,9 @@ class: ?[:0]const u8 = null,
 ///
 ///   * `unbind` - Remove the binding. This makes it so the previous action
 ///     is removed, and the key will be sent through to the child command
-///     if it is printable.
+///     if it is printable. Unbind will remove any matching trigger,
+///     including `physical:`-prefixed triggers without specifying the
+///     prefix.
 ///
 ///   * `csi:text` - Send a CSI sequence. i.e. `csi:A` sends "cursor up".
 ///
