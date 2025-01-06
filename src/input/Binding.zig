@@ -1528,6 +1528,22 @@ pub const Set = struct {
 
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, alloc: Allocator, t: Trigger) void {
+        // Remove whatever this trigger is
+        self.removeExact(alloc, t);
+
+        // If we have a physical we remove translated and vice versa.
+        const alternate: Trigger.Key = switch (t.key) {
+            .unicode => return,
+            .translated => |k| .{ .physical = k },
+            .physical => |k| .{ .translated = k },
+        };
+
+        var alt_t: Trigger = t;
+        alt_t.key = alternate;
+        self.removeExact(alloc, alt_t);
+    }
+
+    fn removeExact(self: *Set, alloc: Allocator, t: Trigger) void {
         const entry = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
 
@@ -1559,7 +1575,7 @@ pub const Set = struct {
                         },
                     }
                 } else {
-                    // No over trigger points to this action so we remove
+                    // No other trigger points to this action so we remove
                     // the reverse mapping completely.
                     _ = self.reverse.remove(leaf.action);
                 }
@@ -2096,6 +2112,24 @@ test "set: parseAndPut removed binding" {
     // Creates forward mapping
     {
         const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(s.get(trigger) == null);
+    }
+    try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
+}
+
+test "set: parseAndPut removed physical binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "physical:a=new_window");
+    try s.parseAndPut(alloc, "a=unbind");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .physical = .a } };
         try testing.expect(s.get(trigger) == null);
     }
     try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
