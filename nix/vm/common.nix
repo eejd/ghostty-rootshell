@@ -11,6 +11,18 @@
     virtualisation.memorySize = 2048;
   };
 
+  nix = {
+    settings = {
+      trusted-users = [
+        "root"
+        "ghostty"
+      ];
+    };
+    extraOptions = ''
+      experimental-features = nix-command flakes
+    '';
+  };
+
   users.mutableUsers = true;
 
   users.groups.ghostty = {
@@ -26,10 +38,27 @@
     initialPassword = "ghostty";
   };
 
+  environment.etc = {
+    "xdg/autostart/com.mitchellh.ghostty.desktop" = {
+      source = "${pkgs.ghostty}/share/applications/com.mitchellh.ghostty.desktop";
+    };
+  };
+
   environment.systemPackages = [
     pkgs.kitty
     pkgs.ghostty
+    pkgs.zig_0_13
   ];
+
+  services.displayManager = {
+    autoLogin = {
+      user = "ghostty";
+    };
+  };
+
+  services.xserver = {
+    enable = true;
+  };
 
   system.stateVersion = "24.11";
 }

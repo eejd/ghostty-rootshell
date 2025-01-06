@@ -4,6 +4,6 @@
   ];
 
   services.displayManager = {
-    defaultSession = "gnome";
+    defaultSession = "gnome-xorg";
   };
 }

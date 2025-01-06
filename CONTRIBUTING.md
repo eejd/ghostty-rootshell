@@ -77,3 +77,58 @@ pull request will be accepted with a high degree of certainty.
 > **Pull requests are NOT a place to discuss feature design.** Please do
 > not open a WIP pull request to discuss a feature. Instead, use a discussion
 > and link to your branch.
+
+## Nix Virtual Machines
+
+Several Nix virtual machine definitions are provided by the project for testing
+and developing Ghostty against multiple different Linux desktop environments.
+
+Running these requires a working Nix installation, either Nix on your
+favorite Linux distribution, NixOS, or macOS with nix-darwin installed. Futher
+requirements for macOS are detailed below.
+
+VMs should only be run on your local desktop and then powered off when not in
+use, which will discard any changes to the VM.
+
+The VM definitions provide minimal software "out of the box" but additional
+software can be installed by using standard Nix mechanisms like `nix run nixpkgs#<package>`.
+
+### Linux
+
+1. Check out the Ghostty source and change to the directory.
+2. Run `nix run .#<vmtype>`. `<vmtype>` can be any of the VMs defined in the
+   `nix/vm` directory (without the `.nix` suffix) excluding any file prefixed
+   with `common`.
+3. The VM will build and then launch. Depending on the speed of your system, this
+   can take a while, but eventually you should get a new VM window.
+4. The Ghostty source directory should be mounted to `/tmp/shared` in the VM. Depending
+   on what UID and GID of the user that you launched the VM as, `/tmp/shared` _may_ be
+   writable by the VM user, so be careful!
+
+### macOS
+
+1. To run the VMs on macOS you will need to enable the Linux builder in your `nix-darwin`
+   config. This _should_ be as simple as adding `nix.linux-builder.enable=true` to your
+   configuration and then rebuilding. See [this](https://nixcademy.com/posts/macos-linux-builder/)
+   blog post for more information about the Linux builder and how to tune the performance.
+2. Once the Linux builder has been enabled, you should be able to follow the Linux instructions
+   above to launch a VM.
+
+### Contributing new VM definitions
+
+#### Acceptance Criteria
+
+We welcome the contribution of new VM definitions, as long as they meet the following criteria:
+
+1. The should be different enough from existing VM definitions that they represent a distinct
+   user (and developer) experience.
+2. There's a significant Ghostty user population that uses a similar environment.
+3. The VMs can be built using only packages from the current stable NixOS release.
+
+#### VM Definition Criteria
+
+1. VMs should be as minimal as possible so that they build and launch quickly.
+   Additonal software can be added at runtime with a command like `nix run nixpkgs#<package name>`.
+2. VMs should not expose any services to the network, or run any remote access
+   software like SSH, VNC or RDP.
+3. VMs should auto-login using the "ghostty" user.

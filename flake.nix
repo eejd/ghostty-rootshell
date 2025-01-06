@@ -80,6 +80,7 @@
             );
           in {
             "wayland-gnome-${system}" = makeVM ./nix/vm/wayland-gnome.nix;
+            "x11-gnome-${system}" = makeVM ./nix/vm/x11-gnome.nix;
           };
 
           apps.${system} = let
@@ -98,6 +99,7 @@
             );
           in {
             wayland-gnome = wrapVM "wayland-gnome";
+            x11-gnome = wrapVM "x11-gnome";
           };
         }
         # Our supported systems are the same supported systems as the Zig binaries.
