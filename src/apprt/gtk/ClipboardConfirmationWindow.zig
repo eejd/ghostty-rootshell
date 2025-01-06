@@ -176,6 +176,9 @@ const ButtonsView = struct {
         const confirm_button = c.gtk_button_new_with_label(confirm_text);
         errdefer c.g_object_unref(confirm_button);
 
+        c.gtk_widget_add_css_class(confirm_button, "destructive-action");
+        c.gtk_widget_add_css_class(cancel_button, "suggested-action");
+
         // Create our view
         const view = try View.init(&.{
             .{ .name = "cancel", .widget = cancel_button },
