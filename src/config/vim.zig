@@ -26,7 +26,7 @@ pub const ftplugin =
     \\
     \\if !exists('current_compiler')
     \\  compiler ghostty
-    \\  let b:undo_ftplugin .= "| compiler make"
+    \\  let b:undo_ftplugin .= " makeprg< errorformat<"
     \\endif
     \\
 ;
