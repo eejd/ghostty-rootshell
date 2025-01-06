@@ -24,6 +24,21 @@ pub const ftplugin =
     \\
     \\let b:undo_ftplugin = 'setl cms< isk< ofu<'
     \\
+    \\if !exists('current_compiler')
+    \\  compiler ghostty
+    \\  let b:undo_ftplugin .= " makeprg< errorformat<"
+    \\endif
+    \\
+;
+pub const compiler =
+    \\if exists("current_compiler")
+    \\  finish
+    \\endif
+    \\let current_compiler = "ghostty"
+    \\
+    \\CompilerSet makeprg=ghostty\ +validate-config
+    \\CompilerSet errorformat=%f:%l:%m
+    \\
 ;
 
 /// Generates the syntax file at comptime.

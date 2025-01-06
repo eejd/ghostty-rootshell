@@ -630,6 +630,7 @@ pub fn build(b: *std.Build) !void {
         _ = wf.add("syntax/ghostty.vim", config_vim.syntax);
         _ = wf.add("ftdetect/ghostty.vim", config_vim.ftdetect);
         _ = wf.add("ftplugin/ghostty.vim", config_vim.ftplugin);
+        _ = wf.add("compiler/ghostty.vim", config_vim.compiler);
         b.installDirectory(.{
             .source_dir = wf.getDirectory(),
             .install_dir = .prefix,
@@ -646,6 +647,7 @@ pub fn build(b: *std.Build) !void {
         _ = wf.add("syntax/ghostty.vim", config_vim.syntax);
         _ = wf.add("ftdetect/ghostty.vim", config_vim.ftdetect);
         _ = wf.add("ftplugin/ghostty.vim", config_vim.ftplugin);
+        _ = wf.add("compiler/ghostty.vim", config_vim.compiler);
         b.installDirectory(.{
             .source_dir = wf.getDirectory(),
             .install_dir = .prefix,
