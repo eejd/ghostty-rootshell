@@ -430,8 +430,15 @@ class AppDelegate: NSObject,
            ghostty_app_key_is_binding(
             app,
             event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
-            ghostty_app_key(app, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))
-            return nil
+            // If the key was handled by Ghostty we stop the event chain. If
+            // the key wasn't handled then we let it fall through and continue
+            // processing. This is important because some bindings may have no
+            // affect at this scope.
+            if (ghostty_app_key(
+                app,
+                event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
+                return nil
+            }
         }
         
         // If this event would be handled by our menu then we do nothing.
