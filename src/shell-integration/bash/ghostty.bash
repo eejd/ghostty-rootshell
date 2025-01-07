@@ -24,6 +24,7 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
       builtin source "$GHOSTTY_BASH_ENV"
       builtin export ENV="$GHOSTTY_BASH_ENV"
     fi
+    builtin unset GHOSTTY_BASH_ENV
   else
     # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
     # which doesn't happen as part of the 'posix' reset.
@@ -64,7 +65,7 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
     fi
   fi
 
-  builtin unset GHOSTTY_BASH_ENV GHOSTTY_BASH_RCFILE
+  builtin unset GHOSTTY_BASH_RCFILE
   builtin unset ghostty_bash_inject rcfile
 fi
 
