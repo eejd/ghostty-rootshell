@@ -63,32 +63,6 @@
     yelp
   ];
 
-  services.gnome = {
-    gnome-browser-connector.enable = false;
-    gnome-initial-setup.enable = false;
-    gnome-online-accounts.enable = false;
-    gnome-remote-desktop.enable = false;
-    rygel.enable = false;
-  };
-
-  system.activationScripts = {
-    face = {
-      text = ''
-        mkdir -p /var/lib/AccountsService/{icons,users}
-
-        cp ${pkgs.ghostty}/share/icons/hicolor/1024x1024/apps/com.mitchellh.ghostty.png /var/lib/AccountsService/icons/ghostty
-
-        echo -e "[User]\nIcon=/var/lib/AccountsService/icons/ghostty\n" > /var/lib/AccountsService/users/ghostty
-
-        chown root:root /var/lib/AccountsService/users/ghostty
-        chmod 0600 /var/lib/AccountsService/users/ghostty
-
-        chown root:root /var/lib/AccountsService/icons/ghostty
-        chmod 0444 /var/lib/AccountsService/icons/ghostty
-      '';
-    };
-  };
-
   programs.dconf = {
     enable = true;
     profiles.user.databases = [
@@ -129,4 +103,30 @@
   };
 
   programs.geary.enable = false;
+
+  services.gnome = {
+    gnome-browser-connector.enable = false;
+    gnome-initial-setup.enable = false;
+    gnome-online-accounts.enable = false;
+    gnome-remote-desktop.enable = false;
+    rygel.enable = false;
+  };
+
+  system.activationScripts = {
+    face = {
+      text = ''
+        mkdir -p /var/lib/AccountsService/{icons,users}
+
+        cp ${pkgs.ghostty}/share/icons/hicolor/1024x1024/apps/com.mitchellh.ghostty.png /var/lib/AccountsService/icons/ghostty
+
+        echo -e "[User]\nIcon=/var/lib/AccountsService/icons/ghostty\n" > /var/lib/AccountsService/users/ghostty
+
+        chown root:root /var/lib/AccountsService/users/ghostty
+        chmod 0600 /var/lib/AccountsService/users/ghostty
+
+        chown root:root /var/lib/AccountsService/icons/ghostty
+        chmod 0444 /var/lib/AccountsService/icons/ghostty
+      '';
+    };
+  };
 }

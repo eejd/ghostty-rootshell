@@ -116,7 +116,7 @@ software can be installed by using standard Nix mechanisms like `nix run nixpkgs
 
 ### Contributing new VM definitions
 
-#### Acceptance Criteria
+#### VM Acceptance Criteria
 
 We welcome the contribution of new VM definitions, as long as they meet the following criteria:
 
@@ -130,5 +130,5 @@ We welcome the contribution of new VM definitions, as long as they meet the foll
 1. VMs should be as minimal as possible so that they build and launch quickly.
    Additional software can be added at runtime with a command like `nix run nixpkgs#<package name>`.
 2. VMs should not expose any services to the network, or run any remote access
-   software like SSH, VNC or RDP.
+   software like SSH daemons, VNC or RDP.
 3. VMs should auto-login using the "ghostty" user.

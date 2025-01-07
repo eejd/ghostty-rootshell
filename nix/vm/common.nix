@@ -25,13 +25,10 @@
 
   users.mutableUsers = true;
 
-  users.groups.ghostty = {
-    gid = 1000;
-  };
+  users.groups.ghostty = {};
 
   users.users.ghostty = {
     description = "Ghostty";
-    uid = 1000;
     group = "ghostty";
     extraGroups = ["wheel"];
     isNormalUser = true;
@@ -49,6 +46,7 @@
     pkgs.ghostty
     pkgs.helix
     pkgs.neovim
+    pkgs.xterm
     pkgs.zig_0_13
   ];
 
@@ -81,6 +79,4 @@
   services.xserver = {
     enable = true;
   };
-
-  system.stateVersion = "24.11";
 }

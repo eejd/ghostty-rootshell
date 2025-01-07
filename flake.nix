@@ -59,9 +59,9 @@
 
           formatter.${system} = pkgs-stable.alejandra;
 
-          nixosConfigurations = let
+          apps.${system} = let
             makeVM = (
-              path:
+              path: system: uid: gid:
                 nixpkgs-stable.lib.nixosSystem {
                   system = builtins.replaceStrings ["darwin"] ["linux"] system;
                   modules = [
@@ -69,32 +69,33 @@
                       virtualisation.vmVariant = {
                         virtualisation.host.pkgs = pkgs-stable;
                       };
+
                       nixpkgs.overlays = [
-                        self.overlays.releasefast
+                        self.overlays.debug
                       ];
+
+                      users.groups.ghostty = {
+                        gid = gid;
+                      };
+
+                      users.users.ghostty = {
+                        uid = gid;
+                      };
+
+                      system.stateVersion = "24.11";
                     }
                     ./nix/vm/common.nix
                     path
                   ];
                 }
             );
-          in {
-            "wayland-cinnamon-${system}" = makeVM ./nix/vm/wayland-cinnamon.nix;
-            "wayland-gnome-${system}" = makeVM ./nix/vm/wayland-gnome.nix;
-            "wayland-plasma6-${system}" = makeVM ./nix/vm/wayland-plasma6.nix;
-            "x11-cinnamon-${system}" = makeVM ./nix/vm/x11-cinnamon.nix;
-            "x11-gnome-${system}" = makeVM ./nix/vm/x11-gnome.nix;
-            "x11-plasma6-${system}" = makeVM ./nix/vm/x11-plasma6.nix;
-          };
-
-          apps.${system} = let
-            wrapVM = (
-              name: let
+            runVM = (
+              path: let
                 program = pkgs-stable.writeShellScript "run-ghostty-vm" ''
                   SHARED_DIR=$(pwd)
                   export SHARED_DIR
 
-                  ${self.nixosConfigurations."${name}-${system}".config.system.build.vm}/bin/run-ghostty-vm
+                  ${(makeVM path system 1000 1000).config.system.build.vm}/bin/run-ghostty-vm
                 '';
               in {
                 type = "app";
@@ -102,12 +103,12 @@
               }
             );
           in {
-            wayland-cinnamon = wrapVM "wayland-cinnamon";
-            wayland-gnome = wrapVM "wayland-gnome";
-            wayland-plasma6 = wrapVM "wayland-plasma6";
-            x11-cinnamon = wrapVM "x11-cinnamon";
-            x11-gnome = wrapVM "x11-gnome";
-            x11-plasma6 = wrapVM "x11-plasma6";
+            wayland-cinnamon = runVM ./nix/vm/wayland-cinnamon.nix;
+            wayland-gnome = runVM ./nix/vm/wayland-gnome.nix;
+            wayland-plasma6 = runVM ./nix/vm/wayland-plasma6.nix;
+            x11-cinnamon = runVM ./nix/vm/x11-cinnamon.nix;
+            x11-gnome = runVM ./nix/vm/x11-gnome.nix;
+            x11-plasma6 = runVM ./nix/vm/x11-plasma6.nix;
           };
         }
         # Our supported systems are the same supported systems as the Zig binaries.
