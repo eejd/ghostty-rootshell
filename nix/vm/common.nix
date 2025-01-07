@@ -47,13 +47,35 @@
   environment.systemPackages = [
     pkgs.kitty
     pkgs.ghostty
+    pkgs.helix
+    pkgs.neovim
     pkgs.zig_0_13
   ];
+
+  security.polkit = {
+    enable = true;
+  };
+
+  services.dbus = {
+    enable = true;
+  };
 
   services.displayManager = {
     autoLogin = {
       user = "ghostty";
     };
+  };
+
+  services.libinput = {
+    enable = true;
+  };
+
+  services.qemuGuest = {
+    enable = true;
+  };
+
+  services.spice-vdagentd = {
+    enable = true;
   };
 
   services.xserver = {

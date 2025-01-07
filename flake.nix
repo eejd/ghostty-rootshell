@@ -79,8 +79,12 @@
                 }
             );
           in {
+            "wayland-cinnamon-${system}" = makeVM ./nix/vm/wayland-cinnamon.nix;
             "wayland-gnome-${system}" = makeVM ./nix/vm/wayland-gnome.nix;
+            "wayland-plasma6-${system}" = makeVM ./nix/vm/wayland-plasma6.nix;
+            "x11-cinnamon-${system}" = makeVM ./nix/vm/x11-cinnamon.nix;
             "x11-gnome-${system}" = makeVM ./nix/vm/x11-gnome.nix;
+            "x11-plasma6-${system}" = makeVM ./nix/vm/x11-plasma6.nix;
           };
 
           apps.${system} = let
@@ -98,8 +102,12 @@
               }
             );
           in {
+            wayland-cinnamon = wrapVM "wayland-cinnamon";
             wayland-gnome = wrapVM "wayland-gnome";
+            wayland-plasma6 = wrapVM "wayland-plasma6";
+            x11-cinnamon = wrapVM "x11-cinnamon";
             x11-gnome = wrapVM "x11-gnome";
+            x11-plasma6 = wrapVM "x11-plasma6";
           };
         }
         # Our supported systems are the same supported systems as the Zig binaries.
