@@ -569,12 +569,16 @@ pub fn init(
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
+
+    const min_window_width_cells: u32 = 10;
+    const min_window_height_cells: u32 = 4;
+
     try rt_app.performAction(
         .{ .surface = self },
         .size_limit,
         .{
-            .min_width = size.cell.width * 10,
-            .min_height = size.cell.height * 4,
+            .min_width = size.cell.width * min_window_width_cells,
+            .min_height = size.cell.height * min_window_height_cells,
             // No max:
             .max_width = 0,
             .max_height = 0,
@@ -617,8 +621,8 @@ pub fn init(
     // start messing with the window.
     if (config.@"window-height" > 0 and config.@"window-width" > 0) init: {
         const scale = rt_surface.getContentScale() catch break :init;
-        const height = @max(config.@"window-height" * cell_size.height, 480);
-        const width = @max(config.@"window-width" * cell_size.width, 640);
+        const height = @max(config.@"window-height", min_window_height_cells) * cell_size.height;
+        const width = @max(config.@"window-width", min_window_width_cells) * cell_size.width;
         const width_f32: f32 = @floatFromInt(width);
         const height_f32: f32 = @floatFromInt(height);
 
