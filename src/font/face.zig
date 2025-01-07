@@ -38,7 +38,6 @@ pub const freetype_load_flags_default = if (FreetypeLoadFlags != void) .{} else 
 /// Options for initializing a font face.
 pub const Options = struct {
     size: DesiredSize,
-    metric_modifiers: ?*const Metrics.ModifierSet = null,
     freetype_load_flags: FreetypeLoadFlags = freetype_load_flags_default,
 };
 
@@ -89,7 +88,7 @@ pub const RenderOptions = struct {
     /// the metrics of the primary font face. The grid metrics are used
     /// by the font face to better layout the glyph in situations where
     /// the font is not exactly the same size as the grid.
-    grid_metrics: ?Metrics = null,
+    grid_metrics: Metrics,
 
     /// The number of grid cells this glyph will take up. This can be used
     /// optionally by the rasterizer to better layout the glyph.

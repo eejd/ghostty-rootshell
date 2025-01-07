@@ -167,13 +167,13 @@ fn collection(
     const load_options: Collection.LoadOptions = .{
         .library = self.font_lib,
         .size = size,
-        .metric_modifiers = key.metric_modifiers,
         .freetype_load_flags = key.freetype_load_flags,
     };
 
     var c = Collection.init();
     errdefer c.deinit(self.alloc);
     c.load_options = load_options;
+    c.metric_modifiers = key.metric_modifiers;
 
     // Search for fonts
     if (Discover != void) discover: {
