@@ -1127,6 +1127,14 @@ extension Ghostty {
             }
         }
 
+        @IBAction func pasteSelection(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            let action = "paste_from_selection"
+            if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
+                AppDelegate.logger.warning("action failed action=\(action)")
+            }
+        }
+
         @IBAction override func selectAll(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "select_all"
@@ -1446,5 +1454,21 @@ extension Ghostty.SurfaceView: NSServicesMenuRequestor {
         }
 
         return true
+    }
+}
+
+// MARK: NSMenuItemValidation
+
+extension Ghostty.SurfaceView: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(pasteSelection):
+            let pb = NSPasteboard.ghosttySelection
+            guard let str = pb.getOpinionatedStringContents() else { return false }
+            return !str.isEmpty
+
+        default:
+            return true
+        }
     }
 }

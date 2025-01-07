@@ -1389,13 +1389,10 @@ keybind: Keybinds = .{},
 /// and the system clipboard on macOS. Middle-click paste is always enabled
 /// even if this is `false`.
 ///
-/// The default value is true on Linux and false on macOS. macOS copy on
-/// select behavior is not typical for applications so it is disabled by
-/// default. On Linux, this is a standard behavior so it is enabled by
-/// default.
+/// The default value is true on Linux and macOS.
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
     .linux => .true,
-    .macos => .false,
+    .macos => .true,
     else => .false,
 },
 
@@ -2747,6 +2744,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .{ .translated = .f }, .mods = .{ .super = true, .ctrl = true } },
             .{ .toggle_fullscreen = {} },
+        );
+
+        // Selection clipboard paste, matches Terminal.app
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .v }, .mods = .{ .super = true, .shift = true } },
+            .{ .paste_from_selection = {} },
         );
 
         // "Natural text editing" keybinds. This forces these keys to go back
