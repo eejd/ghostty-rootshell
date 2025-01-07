@@ -174,31 +174,36 @@ fn setupBash(
     try args.append("--posix");
 
     // Stores the list of intercepted command line flags that will be passed
-    // to our shell integration script: --posix --norc --noprofile
+    // to our shell integration script: --norc --noprofile
     // We always include at least "1" so the script can differentiate between
     // being manually sourced or automatically injected (from here).
     var inject = try std.BoundedArray(u8, 32).init(0);
     try inject.appendSlice("1");
 
-    var posix = false;
-
+    // Walk through the rest of the given arguments. If we see an option that
+    // would require complex or unsupported integration behavior, we bail out
+    // and skip loading our shell integration. Users can still manually source
+    // the shell integration script.
+    //
+    // Unsupported options:
+    //  -c          -c is always non-interactive
+    //  --posix     POSIX mode (a la /bin/sh)
+    //
     // Some additional cases we don't yet cover:
     //
     //  - If additional file arguments are provided (after a `-` or `--` flag),
     //    and the `i` shell option isn't being explicitly set, we can assume a
     //    non-interactive shell session and skip loading our shell integration.
+    var rcfile: ?[]const u8 = null;
     while (iter.next()) |arg| {
         if (std.mem.eql(u8, arg, "--posix")) {
-            try inject.appendSlice(" --posix");
-            posix = true;
+            return null;
         } else if (std.mem.eql(u8, arg, "--norc")) {
             try inject.appendSlice(" --norc");
         } else if (std.mem.eql(u8, arg, "--noprofile")) {
             try inject.appendSlice(" --noprofile");
         } else if (std.mem.eql(u8, arg, "--rcfile") or std.mem.eql(u8, arg, "--init-file")) {
-            if (iter.next()) |rcfile| {
-                try env.put("GHOSTTY_BASH_RCFILE", rcfile);
-            }
+            rcfile = iter.next();
         } else if (arg.len > 1 and arg[0] == '-' and arg[1] != '-') {
             // '-c command' is always non-interactive
             if (std.mem.indexOfScalar(u8, arg, 'c') != null) {
@@ -210,10 +215,13 @@ fn setupBash(
         }
     }
     try env.put("GHOSTTY_BASH_INJECT", inject.slice());
+    if (rcfile) |v| {
+        try env.put("GHOSTTY_BASH_RCFILE", v);
+    }
 
     // In POSIX mode, HISTFILE defaults to ~/.sh_history, so unless we're
     // staying in POSIX mode (--posix), change it back to ~/.bash_history.
-    if (!posix and env.get("HISTFILE") == null) {
+    if (env.get("HISTFILE") == null) {
         var home_buf: [1024]u8 = undefined;
         if (try homedir.home(&home_buf)) |home| {
             var histfile_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -224,13 +232,6 @@ fn setupBash(
             );
             try env.put("HISTFILE", histfile);
             try env.put("GHOSTTY_BASH_UNEXPORT_HISTFILE", "1");
-        }
-    }
-
-    // Preserve the existing ENV value when staying in POSIX mode (--posix).
-    if (env.get("ENV")) |old| {
-        if (posix) {
-            try env.put("GHOSTTY_BASH_ENV", old);
         }
     }
 
@@ -262,21 +263,32 @@ test "bash" {
     try testing.expectEqualStrings("1", env.get("GHOSTTY_BASH_INJECT").?);
 }
 
-test "bash: inject flags" {
+test "bash: unsupported options" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    // bash --posix
-    {
+    const cmdlines = [_][]const u8{
+        "bash --posix",
+        "bash --rcfile script.sh --posix",
+        "bash --init-file script.sh --posix",
+        "bash -c script.sh",
+        "bash -ic script.sh",
+    };
+
+    for (cmdlines) |cmdline| {
         var env = EnvMap.init(alloc);
         defer env.deinit();
 
-        const command = try setupBash(alloc, "bash --posix", ".", &env);
-        defer if (command) |c| alloc.free(c);
-
-        try testing.expectEqualStrings("bash --posix", command.?);
-        try testing.expectEqualStrings("1 --posix", env.get("GHOSTTY_BASH_INJECT").?);
+        try testing.expect(try setupBash(alloc, cmdline, ".", &env) == null);
+        try testing.expect(env.get("GHOSTTY_BASH_INJECT") == null);
+        try testing.expect(env.get("GHOSTTY_BASH_RCFILE") == null);
+        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
     }
+}
+
+test "bash: inject flags" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
 
     // bash --norc
     {
@@ -329,17 +341,6 @@ test "bash: rcfile" {
     }
 }
 
-test "bash: -c command" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var env = EnvMap.init(alloc);
-    defer env.deinit();
-
-    try testing.expect(try setupBash(alloc, "bash -c script.sh", ".", &env) == null);
-    try testing.expect(try setupBash(alloc, "bash -ic script.sh", ".", &env) == null);
-}
-
 test "bash: HISTFILE" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -368,68 +369,6 @@ test "bash: HISTFILE" {
 
         try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
         try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
-    }
-
-    // HISTFILE unset (POSIX mode)
-    {
-        var env = EnvMap.init(alloc);
-        defer env.deinit();
-
-        const command = try setupBash(alloc, "bash --posix", ".", &env);
-        defer if (command) |c| alloc.free(c);
-
-        try testing.expect(env.get("HISTFILE") == null);
-        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
-    }
-
-    // HISTFILE set (POSIX mode)
-    {
-        var env = EnvMap.init(alloc);
-        defer env.deinit();
-
-        try env.put("HISTFILE", "my_history");
-
-        const command = try setupBash(alloc, "bash --posix", ".", &env);
-        defer if (command) |c| alloc.free(c);
-
-        try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
-        try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
-    }
-}
-
-test "bash: preserve ENV" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var env = EnvMap.init(alloc);
-    defer env.deinit();
-
-    const original_env = "original-env.bash";
-
-    // POSIX mode
-    {
-        try env.put("ENV", original_env);
-        const command = try setupBash(alloc, "bash --posix", ".", &env);
-        defer if (command) |c| alloc.free(c);
-
-        try testing.expect(std.mem.indexOf(u8, command.?, "--posix") != null);
-        try testing.expect(std.mem.indexOf(u8, env.get("GHOSTTY_BASH_INJECT").?, "posix") != null);
-        try testing.expectEqualStrings(original_env, env.get("GHOSTTY_BASH_ENV").?);
-        try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
-    }
-
-    env.remove("GHOSTTY_BASH_ENV");
-
-    // Not POSIX mode
-    {
-        try env.put("ENV", original_env);
-        const command = try setupBash(alloc, "bash", ".", &env);
-        defer if (command) |c| alloc.free(c);
-
-        try testing.expect(std.mem.indexOf(u8, command.?, "--posix") != null);
-        try testing.expect(std.mem.indexOf(u8, env.get("GHOSTTY_BASH_INJECT").?, "posix") == null);
-        try testing.expect(env.get("GHOSTTY_BASH_ENV") == null);
-        try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
     }
 }
 

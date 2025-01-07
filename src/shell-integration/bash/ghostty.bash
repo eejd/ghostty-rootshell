@@ -29,52 +29,41 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
   # At this point, we're in POSIX mode and rely on the injected
   # flags to guide is through the rest of the startup sequence.
 
-  # POSIX mode was requested by the user so there's nothing
-  # more to do that optionally source their original $ENV.
-  # No other startup files are read, per the standard.
-  if [[ "$ghostty_bash_inject" == *"--posix"* ]]; then
-    if [ -n "$GHOSTTY_BASH_ENV" ]; then
-      builtin source "$GHOSTTY_BASH_ENV"
-      builtin export ENV="$GHOSTTY_BASH_ENV"
+  # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
+  # which doesn't happen as part of the 'posix' reset.
+  builtin set +o posix
+  builtin shopt -u inherit_errexit 2>/dev/null
+
+  # Unexport HISTFILE if it was set by the shell integration code.
+  if [[ -n "$GHOSTTY_BASH_UNEXPORT_HISTFILE" ]]; then
+    builtin export -n HISTFILE
+    builtin unset GHOSTTY_BASH_UNEXPORT_HISTFILE
+  fi
+
+  # Manually source the startup files, respecting the injected flags like
+  # --norc and --noprofile that we parsed with the shell integration code.
+  #
+  # See also: run_startup_files() in shell.c in the Bash source code
+  if builtin shopt -q login_shell; then
+    if [[ $ghostty_bash_inject != *"--noprofile"* ]]; then
+      [ -r /etc/profile ] && builtin source "/etc/profile"
+      for rcfile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+        [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
+      done
     fi
-    builtin unset GHOSTTY_BASH_ENV
   else
-    # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
-    # which doesn't happen as part of the 'posix' reset.
-    builtin set +o posix
-    builtin shopt -u inherit_errexit 2>/dev/null
-
-    # Unexport HISTFILE if it was set by the shell integration code.
-    if [[ -n "$GHOSTTY_BASH_UNEXPORT_HISTFILE" ]]; then
-      builtin export -n HISTFILE
-      builtin unset GHOSTTY_BASH_UNEXPORT_HISTFILE
-    fi
-
-    # Manually source the startup files, respecting the injected flags like
-    # --norc and --noprofile that we parsed with the shell integration code.
-    #
-    # See also: run_startup_files() in shell.c in the Bash source code
-    if builtin shopt -q login_shell; then
-      if [[ $ghostty_bash_inject != *"--noprofile"* ]]; then
-        [ -r /etc/profile ] && builtin source "/etc/profile"
-        for rcfile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
-          [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
-        done
-      fi
-    else
-      if [[ $ghostty_bash_inject != *"--norc"* ]]; then
-        # The location of the system bashrc is determined at bash build
-        # time via -DSYS_BASHRC and can therefore vary across distros:
-        #  Arch, Debian, Ubuntu use /etc/bash.bashrc
-        #  Fedora uses /etc/bashrc sourced from ~/.bashrc instead of SYS_BASHRC
-        #  Void Linux uses /etc/bash/bashrc
-        #  Nixos uses /etc/bashrc
-        for rcfile in /etc/bash.bashrc /etc/bash/bashrc /etc/bashrc; do
-          [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
-        done
-        if [[ -z "$GHOSTTY_BASH_RCFILE" ]]; then GHOSTTY_BASH_RCFILE="$HOME/.bashrc"; fi
-        [ -r "$GHOSTTY_BASH_RCFILE" ] && builtin source "$GHOSTTY_BASH_RCFILE"
-      fi
+    if [[ $ghostty_bash_inject != *"--norc"* ]]; then
+      # The location of the system bashrc is determined at bash build
+      # time via -DSYS_BASHRC and can therefore vary across distros:
+      #  Arch, Debian, Ubuntu use /etc/bash.bashrc
+      #  Fedora uses /etc/bashrc sourced from ~/.bashrc instead of SYS_BASHRC
+      #  Void Linux uses /etc/bash/bashrc
+      #  Nixos uses /etc/bashrc
+      for rcfile in /etc/bash.bashrc /etc/bash/bashrc /etc/bashrc; do
+        [ -r "$rcfile" ] && { builtin source "$rcfile"; break; }
+      done
+      if [[ -z "$GHOSTTY_BASH_RCFILE" ]]; then GHOSTTY_BASH_RCFILE="$HOME/.bashrc"; fi
+      [ -r "$GHOSTTY_BASH_RCFILE" ] && builtin source "$GHOSTTY_BASH_RCFILE"
     fi
   fi
 
