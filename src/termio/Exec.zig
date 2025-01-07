@@ -856,7 +856,11 @@ const Subprocess = struct {
             env.remove("GHOSTTY_MAC_APP");
         }
 
-        // Don't leak these environment variables to child processes.
+        // VTE_VERSION is set by gnome-terminal and other VTE-based terminals.
+        // We don't want our child processes to think we're running under VTE.
+        env.remove("VTE_VERSION");
+
+        // Don't leak these GTK environment variables to child processes.
         if (comptime build_config.app_runtime == .gtk) {
             env.remove("GDK_DEBUG");
             env.remove("GDK_DISABLE");
