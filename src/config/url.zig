@@ -24,7 +24,7 @@ const oni = @import("oniguruma");
 /// handling them well requires a non-regex approach.
 pub const regex =
     "(?:" ++ url_schemes ++
-    \\)(?:[\w\-.~:/?#@!$&*+,;=%]+(?:[\(\[]\w*[\)\]])?)+(?<![,.])
+    \\)(?:[\w\-.~:/?#@!$&*+,;=%]+(?:[\(\[]\w*[\)\]])?)+(?<![,.])|(?:\.\.\/|\.\/*|\/)[\w\-.~:\/?#@!$&*+,;=%]+(?:\/[\w\-.~:\/?#@!$&*+,;=%]*)*
 ;
 const url_schemes =
     \\https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:
@@ -165,6 +165,34 @@ test "url regex" {
         .{
             .input = "match news:comp.infosystems.www.servers.unix news links",
             .expect = "news:comp.infosystems.www.servers.unix",
+        },
+        .{
+            .input = "/Users/ghostty.user/code/example.py",
+            .expect = "/Users/ghostty.user/code/example.py",
+        },
+        .{
+            .input = "/Users/ghostty.user/code/../example.py",
+            .expect = "/Users/ghostty.user/code/../example.py",
+        },
+        .{
+            .input = "/Users/ghostty.user/code/../example.py hello world",
+            .expect = "/Users/ghostty.user/code/../example.py",
+        },
+        .{
+            .input = "../example.py",
+            .expect = "../example.py",
+        },
+        .{
+            .input = "../example.py ",
+            .expect = "../example.py",
+        },
+        .{
+            .input = "first time ../example.py contributor ",
+            .expect = "../example.py",
+        },
+        .{
+            .input = "[link](/home/user/ghostty.user/example)",
+            .expect = "/home/user/ghostty.user/example",
         },
     };
 
