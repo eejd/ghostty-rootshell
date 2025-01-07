@@ -209,9 +209,16 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     if (version.runtimeAtLeast(4, 14, 0)) {
-        // We need to export GSK_RENDERER to opengl because GTK uses ngl by
-        // default after 4.14
-        _ = internal_os.setenv("GSK_RENDERER", "opengl");
+        switch (config.@"gtk-gsk-renderer") {
+            .default => {},
+            else => |renderer| {
+                // Force the GSK renderer to a specific value. After GTK 4.14 the
+                // `ngl` renderer is used by default which causes artifacts when
+                // used with Ghostty so it should be avoided.
+                log.warn("setting GSK_RENDERER={s}", .{@tagName(renderer)});
+                _ = internal_os.setenv("GSK_RENDERER", @tagName(renderer));
+            },
+        }
     }
 
     c.gtk_init();
