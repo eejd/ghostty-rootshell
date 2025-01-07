@@ -1041,6 +1041,8 @@ fn loadRuntimeCss(
                 \\  --overview-bg-color: var(--ghostty-bg);
                 \\  --popover-fg-color: var(--ghostty-fg);
                 \\  --popover-bg-color: var(--ghostty-bg);
+                \\  --window-fg-color: var(--ghostty-fg);
+                \\  --window-bg-color: var(--ghostty-bg);
                 \\}}
                 \\windowhandle {{
                 \\  background-color: var(--headerbar-bg-color);
