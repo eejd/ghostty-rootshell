@@ -23,7 +23,7 @@
     '';
   };
 
-  users.mutableUsers = true;
+  users.mutableUsers = false;
 
   users.groups.ghostty = {};
 
@@ -43,11 +43,12 @@
 
   environment.systemPackages = [
     pkgs.kitty
+    pkgs.fish
     pkgs.ghostty
     pkgs.helix
     pkgs.neovim
     pkgs.xterm
-    pkgs.zig_0_13
+    pkgs.zsh
   ];
 
   security.polkit = {
