@@ -858,6 +858,28 @@ pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void
     );
 }
 
+pub fn setSizeLimits(self: *const Surface, min: apprt.SurfaceSize, max_: ?apprt.SurfaceSize) !void {
+
+    // There's no support for setting max size at the moment.
+    _ = max_;
+
+    // If we are within a split, do not set the size.
+    if (self.container.split() != null) return;
+
+    // This operation only makes sense if we're within a window view
+    // hierarchy and we're the first tab in the window.
+    const window = self.container.window() orelse return;
+    if (window.notebook.nPages() > 1) return;
+
+    // Note: this doesn't properly take into account the window decorations.
+    // I'm not currently sure how to do that.
+    c.gtk_widget_set_size_request(
+        @ptrCast(window.window),
+        @intCast(min.width),
+        @intCast(min.height),
+    );
+}
+
 pub fn grabFocus(self: *Surface) void {
     if (self.container.tab()) |tab| {
         // If any other surface was focused and zoomed in, set it to non zoomed in
