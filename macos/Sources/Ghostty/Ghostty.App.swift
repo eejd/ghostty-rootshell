@@ -62,7 +62,7 @@ extension Ghostty {
             // uses to interface with the application runtime environment.
             var runtime_cfg = ghostty_runtime_config_s(
                 userdata: Unmanaged.passUnretained(self).toOpaque(),
-                supports_selection_clipboard: false,
+                supports_selection_clipboard: true,
                 wakeup_cb: { userdata in App.wakeup(userdata) },
                 action_cb: { app, target, action in App.action(app!, target: target, action: action) },
                 read_clipboard_cb: { userdata, loc, state in App.readClipboard(userdata, location: loc, state: state) },
@@ -320,13 +320,13 @@ extension Ghostty {
             let surfaceView = self.surfaceUserdata(from: userdata)
             guard let surface = surfaceView.surface else { return }
 
-            // We only support the standard clipboard
-            if (location != GHOSTTY_CLIPBOARD_STANDARD) {
+            // Get our pasteboard
+            guard let pasteboard = NSPasteboard.ghostty(location) else {
                 return completeClipboardRequest(surface, data: "", state: state)
             }
 
             // Get our string
-            let str = NSPasteboard.general.getOpinionatedStringContents() ?? ""
+            let str = pasteboard.getOpinionatedStringContents() ?? ""
             completeClipboardRequest(surface, data: str, state: state)
         }
 
@@ -364,14 +364,12 @@ extension Ghostty {
         static func writeClipboard(_ userdata: UnsafeMutableRawPointer?, string: UnsafePointer<CChar>?, location: ghostty_clipboard_e, confirm: Bool) {
             let surface = self.surfaceUserdata(from: userdata)
 
-            // We only support the standard clipboard
-            if (location != GHOSTTY_CLIPBOARD_STANDARD) { return }
 
+            guard let pasteboard = NSPasteboard.ghostty(location) else { return }
             guard let valueStr = String(cString: string!, encoding: .utf8) else { return }
             if !confirm {
-                let pb = NSPasteboard.general
-                pb.declareTypes([.string], owner: nil)
-                pb.setString(valueStr, forType: .string)
+                pasteboard.declareTypes([.string], owner: nil)
+                pasteboard.setString(valueStr, forType: .string)
                 return
             }
 
@@ -380,7 +378,7 @@ extension Ghostty {
                 object: surface,
                 userInfo: [
                     Notification.ConfirmClipboardStrKey: valueStr,
-                    Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write,
+                    Notification.ConfirmClipboardRequestKey: Ghostty.ClipboardRequest.osc_52_write(pasteboard),
                 ]
             )
         }
