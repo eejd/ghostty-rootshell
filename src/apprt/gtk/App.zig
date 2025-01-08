@@ -187,8 +187,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             }
         }
         try writer.writeByte(0);
-        log.warn("setting GDK_DEBUG={s}", .{fmt.getWritten()});
-        _ = internal_os.setenv("GDK_DEBUG", buf[0 .. fmt.pos - 1 :0]);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DEBUG={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DEBUG", value[0 .. value.len - 1 :0]);
     }
 
     {
@@ -204,8 +205,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             }
         }
         try writer.writeByte(0);
-        log.warn("setting GDK_DISABLE={s}", .{fmt.getWritten()});
-        _ = internal_os.setenv("GDK_DISABLE", buf[0 .. fmt.pos - 1 :0]);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DISABLE={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
     }
 
     if (version.runtimeAtLeast(4, 14, 0)) {
