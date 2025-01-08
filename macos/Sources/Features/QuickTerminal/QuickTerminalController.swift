@@ -90,9 +90,6 @@ class QuickTerminalController: BaseTerminalController {
             delegate: self
         ))
 
-        // Change the collection behavior of the window depending on the configuration.
-        window.collectionBehavior = derivedConfig.quickTerminalSpaceBehavior.collectionBehavior
-
         // Animate the window in
         animateIn()
     }
@@ -122,23 +119,24 @@ class QuickTerminalController: BaseTerminalController {
         if derivedConfig.quickTerminalAutoHide {
             switch derivedConfig.quickTerminalSpaceBehavior {
             case .remain:
-                if self.window?.isOnActiveSpace == true {
-                    // If we lose focus on the active space, then we can animate out
-                    animateOut()
-                }
+                // If we lose focus on the active space, then we can animate out
+                animateOut()
+
             case .move:
-                // Check if the reason for losing focus is due to an active space change
                 let currentActiveSpace = CGSGetActiveSpace(CGSMainConnectionID())
                 if previousActiveSpace == currentActiveSpace {
-                    // If we lose focus on the active space, then we can animate out
+                    // We haven't moved spaces. We lost focus to another app on the
+                    // current space. Animate out.
                     animateOut()
                 } else {
-                    // If we're from different space, then we bring the window back
+                    // We've moved to a different space. Bring the quick terminal back
+                    // into view.
                     DispatchQueue.main.async {
                         self.window?.makeKeyAndOrderFront(nil)
                     }
+
+                    self.previousActiveSpace = currentActiveSpace
                 }
-                self.previousActiveSpace = currentActiveSpace
             }
         }
     }
@@ -320,6 +318,14 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
+        // If the window isn't on our active space then we don't animate, we just
+        // hide it.
+        if !window.isOnActiveSpace {
+            self.previousApp = nil
+            window.orderOut(self)
+            return
+        }
+
         // We always animate out to whatever screen the window is actually on.
         guard let screen = window.screen ?? NSScreen.main else { return }
 
@@ -354,6 +360,9 @@ class QuickTerminalController: BaseTerminalController {
 
     private func syncAppearance() {
         guard let window else { return }
+
+        // Change the collection behavior of the window depending on the configuration.
+        window.collectionBehavior = derivedConfig.quickTerminalSpaceBehavior.collectionBehavior
 
         // If our window is not visible, then no need to sync the appearance yet.
         // Some APIs such as window blur have no effect unless the window is visible.
@@ -432,9 +441,6 @@ class QuickTerminalController: BaseTerminalController {
 
         // Update our derived config
         self.derivedConfig = DerivedConfig(config)
-
-        // Update window.collectionBehavior
-        self.window?.collectionBehavior = derivedConfig.quickTerminalSpaceBehavior.collectionBehavior
 
         syncAppearance()
     }
