@@ -210,14 +210,11 @@ pub fn init(self: *Window, app: *App) !void {
         self.header = header;
     }
 
+    _ = c.g_signal_connect_data(gtk_window, "notify::decorated", c.G_CALLBACK(&gtkWindowNotifyDecorated), self, null, c.G_CONNECT_DEFAULT);
+
     // If we are disabling decorations then disable them right away.
     if (!app.config.@"window-decoration") {
         c.gtk_window_set_decorated(gtk_window, 0);
-
-        // Fix any artifacting that may occur in window corners.
-        if (app.config.@"gtk-titlebar") {
-            c.gtk_widget_add_css_class(window, "without-window-decoration-and-with-titlebar");
-        }
     }
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
@@ -539,13 +536,6 @@ pub fn toggleWindowDecorations(self: *Window) void {
     const new_decorated = !old_decorated;
     c.gtk_window_set_decorated(self.window, @intFromBool(new_decorated));
 
-    // Fix any artifacting that may occur in window corners.
-    if (new_decorated) {
-        c.gtk_widget_add_css_class(@ptrCast(self.window), "without-window-decoration-and-with-titlebar");
-    } else {
-        c.gtk_widget_remove_css_class(@ptrCast(self.window), "without-window-decoration-and-with-titlebar");
-    }
-
     // If we have a titlebar, then we also show/hide it depending on the
     // decorated state. GTK tends to consider the titlebar part of the frame
     // and hides it with decorations, but libadwaita doesn't. This makes it
@@ -587,6 +577,24 @@ fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     };
 
     return true;
+}
+
+fn gtkWindowNotifyDecorated(
+    object: *c.GObject,
+    _: *c.GParamSpec,
+    _: ?*anyopaque,
+) callconv(.C) void {
+    if (c.gtk_window_get_decorated(@ptrCast(object)) == 1) {
+        c.gtk_widget_remove_css_class(@ptrCast(object), "ssd");
+        c.gtk_widget_remove_css_class(@ptrCast(object), "no-border-radius");
+    } else {
+        // Fix any artifacting that may occur in window corners. The .ssd CSS
+        // class is defined in the GtkWindow documentation:
+        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
+        // for .ssd is provided by GTK and Adwaita.
+        c.gtk_widget_add_css_class(@ptrCast(object), "ssd");
+        c.gtk_widget_add_css_class(@ptrCast(object), "no-border-radius");
+    }
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
