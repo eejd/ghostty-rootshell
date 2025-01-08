@@ -435,7 +435,16 @@ pub fn add(
                 if (self.config.x11) step.linkSystemLibrary2("X11", dynamic_link_opts);
 
                 if (self.config.wayland) {
-                    const scanner = Scanner.create(b, .{});
+                    const scanner = Scanner.create(b, .{
+                        // We shouldn't be using getPath but we need to for now
+                        // https://codeberg.org/ifreund/zig-wayland/issues/66
+                        .wayland_xml_path = b.dependency("wayland", .{})
+                            .path("protocol/wayland.xml")
+                            .getPath(b),
+                        .wayland_protocols_path = b.dependency("wayland_protocols", .{})
+                            .path("")
+                            .getPath(b),
+                    });
 
                     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 

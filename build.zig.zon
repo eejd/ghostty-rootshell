@@ -13,6 +13,14 @@
             .hash = "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a62",
             .lazy = true,
         },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis/?ref=main#6d729a2dc3b934818dffe06d2ba3ce02841ed74b",
+            .hash = "12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f",
+        },
+        .z2d = .{
+            .url = "git+https://github.com/vancluever/z2d?ref=v0.4.0#4638bb02a9dc41cc2fb811f092811f6a951c752a",
+            .hash = "12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a",
+        },
         .zig_objc = .{
             .url = "https://github.com/mitchellh/zig-objc/archive/9b8ba849b0f58fe207ecd6ab7c147af55b17556e.tar.gz",
             .hash = "1220e17e64ef0ef561b3e4b9f3a96a2494285f2ec31c097721bf8c8677ec4415c634",
@@ -28,6 +36,10 @@
         .zig_wayland = .{
             .url = "https://codeberg.org/ifreund/zig-wayland/archive/a5e2e9b6a6d7fba638ace4d4b24a3b576a02685b.tar.gz",
             .hash = "1220d41b23ae70e93355bb29dac1c07aa6aeb92427a2dffc4375e94b4de18111248c",
+        },
+        .zf = .{
+            .url = "git+https://github.com/natecraddock/zf/?ref=main#ed99ca18b02dda052e20ba467e90b623c04690dd",
+            .hash = "1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8",
         },
 
         // C libs
@@ -50,27 +62,25 @@
         .glslang = .{ .path = "./pkg/glslang" },
         .spirv_cross = .{ .path = "./pkg/spirv-cross" },
 
+        // Wayland
+        .wayland = .{
+            .url = "https://deps.files.ghostty.org/wayland-9cb3d7aa9dc995ffafdbdef7ab86a949d0fb0e7d.tar.gz",
+            .hash = "12202cdac858abc52413a6c6711d5026d2d3c8e13f95ca2c327eade0736298bb021f",
+        },
+        .wayland_protocols = .{
+            .url = "https://deps.files.ghostty.org/wayland-protocols-258d8f88f2c8c25a830c6316f87d23ce1a0f12d9.tar.gz",
+            .hash = "12201a57c6ce0001aa034fa80fba3e1cd2253c560a45748f4f4dd21ff23b491cddef",
+        },
+        .plasma_wayland_protocols = .{
+            .url = "git+https://github.com/KDE/plasma-wayland-protocols?ref=main#db525e8f9da548cffa2ac77618dd0fbe7f511b86",
+            .hash = "12207e0851c12acdeee0991e893e0132fc87bb763969a585dc16ecca33e88334c566",
+        },
+
         // Other
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
         .iterm2_themes = .{
             .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/4762ad5bd6d3906e28babdc2bda8a967d63a63be.tar.gz",
             .hash = "1220a263b22113273d01bd33e3c06b8119cb2f63b4e5d414a85d88e3aa95bb68a2de",
-        },
-        .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis/?ref=main#6d729a2dc3b934818dffe06d2ba3ce02841ed74b",
-            .hash = "12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f",
-        },
-        .zf = .{
-            .url = "git+https://github.com/natecraddock/zf/?ref=main#ed99ca18b02dda052e20ba467e90b623c04690dd",
-            .hash = "1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8",
-        },
-        .z2d = .{
-            .url = "git+https://github.com/vancluever/z2d?ref=v0.4.0#4638bb02a9dc41cc2fb811f092811f6a951c752a",
-            .hash = "12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a",
-        },
-        .plasma_wayland_protocols = .{
-            .url = "git+https://invent.kde.org/libraries/plasma-wayland-protocols.git?ref=master#db525e8f9da548cffa2ac77618dd0fbe7f511b86",
-            .hash = "12207e0851c12acdeee0991e893e0132fc87bb763969a585dc16ecca33e88334c566",
         },
     },
 }
