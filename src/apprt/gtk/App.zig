@@ -1777,12 +1777,6 @@ fn initMenu(self: *App) void {
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
 
-    // {
-    //     const section = c.g_menu_new();
-    //     defer c.g_object_unref(section);
-    //     c.g_menu_append_submenu(menu, "File", @ptrCast(@alignCast(section)));
-    // }
-
     self.menu = menu;
 }
 
@@ -1790,7 +1784,13 @@ fn initContextMenu(self: *App) void {
     const menu = c.g_menu_new();
     errdefer c.g_object_unref(menu);
 
-    createContextMenuCopyPasteSection(menu, false);
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Copy", "win.copy");
+        c.g_menu_append(section, "Paste", "win.paste");
+    }
 
     {
         const section = c.g_menu_new();
@@ -1811,18 +1811,9 @@ fn initContextMenu(self: *App) void {
     self.context_menu = menu;
 }
 
-fn createContextMenuCopyPasteSection(menu: ?*c.GMenu, has_selection: bool) void {
-    const section = c.g_menu_new();
-    defer c.g_object_unref(section);
-    c.g_menu_prepend_section(menu, null, @ptrCast(@alignCast(section)));
-    // FIXME: Feels really hackish, but disabling sensitivity on this doesn't seems to work(?)
-    c.g_menu_append(section, "Copy", if (has_selection) "win.copy" else "noop");
-    c.g_menu_append(section, "Paste", "win.paste");
-}
-
-pub fn refreshContextMenu(self: *App, has_selection: bool) void {
-    c.g_menu_remove(self.context_menu, 0);
-    createContextMenuCopyPasteSection(self.context_menu, has_selection);
+pub fn refreshContextMenu(_: *App, window: ?*c.GtkWindow, has_selection: bool) void {
+    const action: ?*c.GSimpleAction = @ptrCast(c.g_action_map_lookup_action(@ptrCast(window), "copy"));
+    c.g_simple_action_set_enabled(action, if (has_selection) 1 else 0);
 }
 
 fn isValidAppId(app_id: [:0]const u8) bool {
