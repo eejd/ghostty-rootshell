@@ -1737,8 +1737,13 @@ pub fn rebuildCells(
 
         const cursor_color = self.cursor_color orelse self.default_cursor_color orelse color: {
             if (self.cursor_invert) {
+                // Use the foreground color from the cell under the cursor, if any.
                 const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                break :color sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color;
+                break :color if (sty.flags.inverse)
+                    // If the cell is reversed, use background color instead.
+                    (sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color)
+                else
+                    (sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color);
             } else {
                 break :color self.foreground_color orelse self.default_foreground_color;
             }
@@ -1748,8 +1753,13 @@ pub fn rebuildCells(
         for (cursor_cells.items) |*cell| {
             if (cell.mode.isFg() and cell.mode != .fg_color) {
                 const cell_color = if (self.cursor_invert) blk: {
+                    // Use the background color from the cell under the cursor, if any.
                     const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                    break :blk sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color;
+                    break :blk if (sty.flags.inverse)
+                        // If the cell is reversed, use foreground color instead.
+                        (sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color)
+                    else
+                        (sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color);
                 } else if (self.config.cursor_text) |txt|
                     txt
                 else
