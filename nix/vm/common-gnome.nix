@@ -4,6 +4,10 @@
   pkgs,
   ...
 }: {
+  imports = [
+    ./common.nix
+  ];
+
   services.xserver = {
     displayManager = {
       gdm = {

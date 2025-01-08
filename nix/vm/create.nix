@@ -3,6 +3,7 @@
   nixpkgs,
   overlay,
   path,
+  common ? ./common.nix,
   uid ? 1000,
   gid ? 1000,
 }: let
@@ -33,9 +34,9 @@ in
           uid = uid;
         };
 
-        system.stateVersion = "24.11";
+        system.stateVersion = nixpkgs.lib.trivial.release;
       }
-      ./common.nix
+      common
       path
     ];
   }

@@ -1,4 +1,8 @@
 {...}: {
+  imports = [
+    ./common.nix
+  ];
+
   services.xserver = {
     displayManager = {
       lightdm = {

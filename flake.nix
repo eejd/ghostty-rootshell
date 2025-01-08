@@ -60,42 +60,18 @@
           formatter.${system} = pkgs-stable.alejandra;
 
           apps.${system} = let
-            makeVM = (
-              path: system: uid: gid:
-                nixpkgs-stable.lib.nixosSystem {
-                  system = builtins.replaceStrings ["darwin"] ["linux"] system;
-                  modules = [
-                    {
-                      virtualisation.vmVariant = {
-                        virtualisation.host.pkgs = pkgs-stable;
-                      };
-
-                      nixpkgs.overlays = [
-                        self.overlays.debug
-                      ];
-
-                      users.groups.ghostty = {
-                        gid = gid;
-                      };
-
-                      users.users.ghostty = {
-                        uid = gid;
-                      };
-
-                      system.stateVersion = "24.11";
-                    }
-                    ./nix/vm/common.nix
-                    path
-                  ];
-                }
-            );
             runVM = (
               path: let
+                vm = import ./nix/vm/create.nix {
+                  inherit system path;
+                  nixpkgs = nixpkgs-stable;
+                  overlay = self.overlays.debug;
+                };
                 program = pkgs-stable.writeShellScript "run-ghostty-vm" ''
                   SHARED_DIR=$(pwd)
                   export SHARED_DIR
 
-                  ${(makeVM path system 1000 1000).config.system.build.vm}/bin/run-ghostty-vm
+                  ${vm.config.system.build.vm}/bin/run-ghostty-vm
                 '';
               in {
                 type = "app";
@@ -124,6 +100,10 @@
           ghostty = self.packages.${prev.system}.ghostty-debug;
         };
       };
+      create-vm = import ./nix/vm/create.nix;
+      create-cinnamon-vm = import ./nix/vm/create-cinnamon.nix;
+      create-gnome-vm = import ./nix/vm/create-gnome.nix;
+      create-plasma6-vm = import ./nix/vm/create-plasma6.nix;
     };
 
   nixConfig = {
