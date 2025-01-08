@@ -111,12 +111,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // Disabling Vulkan can improve startup times by hundreds of
     // milliseconds on some systems. We don't use Vulkan so we can just
     // disable it.
-    if (version.atLeast(4, 16, 0)) {
+    if (version.runtimeAtLeast(4, 16, 0)) {
         // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
         // For the remainder of "why" see the 4.14 comment below.
         _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
         _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-no-fractional");
-    } else if (version.atLeast(4, 14, 0)) {
+    } else if (version.runtimeAtLeast(4, 14, 0)) {
         // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
         // Older versions of GTK do not support these values so it is safe
         // to always set this. Forwards versions are uncertain so we'll have to
@@ -138,7 +138,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         _ = internal_os.setenv("GDK_DEBUG", "vulkan-disable");
     }
 
-    if (version.atLeast(4, 14, 0)) {
+    if (version.runtimeAtLeast(4, 14, 0)) {
         // We need to export GSK_RENDERER to opengl because GTK uses ngl by
         // default after 4.14
         _ = internal_os.setenv("GSK_RENDERER", "opengl");
@@ -1028,7 +1028,7 @@ fn loadRuntimeCss(
         , .{ .font_family = font_family });
     }
 
-    if (version.atLeast(4, 16, 0)) {
+    if (version.runtimeAtLeast(4, 16, 0)) {
         switch (window_theme) {
             .ghostty => try writer.print(
                 \\:root {{
