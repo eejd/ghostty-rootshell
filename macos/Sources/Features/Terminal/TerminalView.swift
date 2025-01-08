@@ -56,7 +56,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // The title for our window
     private var title: String {
-        if let surfaceTitle = surfaceTitle, !surfaceTitle.isEmpty {
+        if let surfaceTitle, !surfaceTitle.isEmpty {
             return surfaceTitle
         }
         return "👻"
