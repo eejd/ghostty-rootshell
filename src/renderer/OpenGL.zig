@@ -49,7 +49,7 @@ alloc: std.mem.Allocator,
 config: DerivedConfig,
 
 /// Current font metrics defining our grid.
-grid_metrics: font.face.Metrics,
+grid_metrics: font.Metrics,
 
 /// The size of everything.
 size: renderer.Size,
@@ -231,7 +231,7 @@ const SetScreenSize = struct {
 };
 
 const SetFontSize = struct {
-    metrics: font.face.Metrics,
+    metrics: font.Metrics,
 
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
         const gl_state = r.gl_state orelse return error.OpenGLUninitialized;

@@ -52,7 +52,12 @@ const Minimums = struct {
     const cursor_height = 1;
 };
 
-const CalcOpts = struct {
+/// Metrics extracted from a font face, based on
+/// the metadata tables and glyph measurements.
+pub const FaceMetrics = struct {
+    /// The minimum cell width that can contain any glyph in the ASCII range.
+    ///
+    /// Determined by measuring all printable glyphs in the ASCII range.
     cell_width: f64,
 
     /// The typographic ascent metric from the font.
@@ -110,45 +115,45 @@ const CalcOpts = struct {
 /// do not round them before using them for this function.
 ///
 /// For any nullable options that are not provided, estimates will be used.
-pub fn calc(opts: CalcOpts) Metrics {
+pub fn calc(face: FaceMetrics) Metrics {
     // We use the ceiling of the provided cell width and height to ensure
     // that the cell is large enough for the provided size, since we cast
     // it to an integer later.
-    const cell_width = @ceil(opts.cell_width);
-    const cell_height = @ceil(opts.ascent - opts.descent + opts.line_gap);
+    const cell_width = @ceil(face.cell_width);
+    const cell_height = @ceil(face.ascent - face.descent + face.line_gap);
 
     // We split our line gap in two parts, and put half of it on the top
     // of the cell and the other half on the bottom, so that our text never
     // bumps up against either edge of the cell vertically.
-    const half_line_gap = opts.line_gap / 2;
+    const half_line_gap = face.line_gap / 2;
 
     // Unlike all our other metrics, `cell_baseline` is relative to the
     // BOTTOM of the cell.
-    const cell_baseline = @round(half_line_gap - opts.descent);
+    const cell_baseline = @round(half_line_gap - face.descent);
 
     // We calculate a top_to_baseline to make following calculations simpler.
     const top_to_baseline = cell_height - cell_baseline;
 
     // If we don't have a provided cap height,
     // we estimate it as 75% of the ascent.
-    const cap_height = opts.cap_height orelse opts.ascent * 0.75;
+    const cap_height = face.cap_height orelse face.ascent * 0.75;
 
     // If we don't have a provided ex height,
     // we estimate it as 75% of the cap height.
-    const ex_height = opts.ex_height orelse cap_height * 0.75;
+    const ex_height = face.ex_height orelse cap_height * 0.75;
 
     // If we don't have a provided underline thickness,
     // we estimate it as 15% of the ex height.
-    const underline_thickness = @max(1, @ceil(opts.underline_thickness orelse 0.15 * ex_height));
+    const underline_thickness = @max(1, @ceil(face.underline_thickness orelse 0.15 * ex_height));
 
     // If we don't have a provided strikethrough thickness
     // then we just use the underline thickness for it.
-    const strikethrough_thickness = @max(1, @ceil(opts.strikethrough_thickness orelse underline_thickness));
+    const strikethrough_thickness = @max(1, @ceil(face.strikethrough_thickness orelse underline_thickness));
 
     // If we don't have a provided underline position then
     // we place it 1 underline-thickness below the baseline.
     const underline_position = @round(top_to_baseline -
-        (opts.underline_position orelse
+        (face.underline_position orelse
         -underline_thickness));
 
     // If we don't have a provided strikethrough position
@@ -156,7 +161,7 @@ pub fn calc(opts: CalcOpts) Metrics {
     // ex height, so that it's perfectly centered on lower
     // case text.
     const strikethrough_position = @round(top_to_baseline -
-        (opts.strikethrough_position orelse
+        (face.strikethrough_position orelse
         ex_height * 0.5 + strikethrough_thickness * 0.5));
 
     var result: Metrics = .{
@@ -355,7 +360,7 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig percent" {
-        const configpkg = @import("../../config.zig");
+        const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();
@@ -366,7 +371,7 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig absolute" {
-        const configpkg = @import("../../config.zig");
+        const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();

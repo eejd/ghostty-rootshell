@@ -32,7 +32,7 @@ const url = @import("url.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
-const MetricModifier = fontpkg.face.Metrics.Modifier;
+const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 
 const log = std.log.scoped(.config);

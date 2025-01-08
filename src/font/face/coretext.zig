@@ -18,9 +18,6 @@ pub const Face = struct {
     /// if we're using Harfbuzz.
     hb_font: if (harfbuzz_shaper) harfbuzz.Font else void,
 
-    /// Metrics for this font face. These are useful for renderers.
-    metrics: font.face.Metrics,
-
     /// Set quirks.disableDefaultFontFeatures
     quirks_disable_default_font_features: bool = false,
 
@@ -87,11 +84,6 @@ pub const Face = struct {
     /// the CTFont. This does NOT copy or retain the CTFont.
     pub fn initFont(ct_font: *macos.text.Font, opts: font.face.Options) !Face {
         const traits = ct_font.getSymbolicTraits();
-        const metrics = metrics: {
-            var metrics = try calcMetrics(ct_font);
-            if (opts.metric_modifiers) |v| metrics.apply(v.*);
-            break :metrics metrics;
-        };
 
         var hb_font = if (comptime harfbuzz_shaper) font: {
             var hb_font = try harfbuzz.coretext.createFont(ct_font);
@@ -109,7 +101,6 @@ pub const Face = struct {
         var result: Face = .{
             .font = ct_font,
             .hb_font = hb_font,
-            .metrics = metrics,
             .color = color,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
@@ -463,7 +454,7 @@ pub const Face = struct {
         };
         atlas.set(region, buf);
 
-        const metrics = opts.grid_metrics orelse self.metrics;
+        const metrics = opts.grid_metrics;
 
         // This should be the distance from the bottom of
         // the cell to the top of the glyph's bounding box.
@@ -506,14 +497,17 @@ pub const Face = struct {
         };
     }
 
-    const CalcMetricsError = error{
+    pub const GetMetricsError = error{
         CopyTableError,
         InvalidHeadTable,
         InvalidPostTable,
         InvalidHheaTable,
     };
 
-    fn calcMetrics(ct_font: *macos.text.Font) CalcMetricsError!font.face.Metrics {
+    /// Get the `FaceMetrics` for this face.
+    pub fn getMetrics(self: *Face) GetMetricsError!font.Metrics.FaceMetrics {
+        const ct_font = self.font;
+
         // Read the 'head' table out of the font data.
         const head: opentype.Head = head: {
             // macOS bitmap-only fonts use a 'bhed' tag rather than 'head', but
@@ -731,7 +725,7 @@ pub const Face = struct {
             break :cell_width max;
         };
 
-        return font.face.Metrics.calc(.{
+        return .{
             .cell_width = cell_width,
             .ascent = ascent,
             .descent = descent,
@@ -742,7 +736,7 @@ pub const Face = struct {
             .strikethrough_thickness = strikethrough_thickness,
             .cap_height = cap_height,
             .ex_height = ex_height,
-        });
+        };
     }
 
     /// Copy the font table data for the given tag.
@@ -866,7 +860,12 @@ test {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas,
+            face.glyphIndex(i).?,
+            .{ .grid_metrics = font.Metrics.calc(try face.getMetrics()) },
+        );
     }
 }
 
@@ -926,7 +925,12 @@ test "in-memory" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas,
+            face.glyphIndex(i).?,
+            .{ .grid_metrics = font.Metrics.calc(try face.getMetrics()) },
+        );
     }
 }
 
@@ -948,7 +952,12 @@ test "variable" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas,
+            face.glyphIndex(i).?,
+            .{ .grid_metrics = font.Metrics.calc(try face.getMetrics()) },
+        );
     }
 }
 
@@ -974,7 +983,12 @@ test "variable set variation" {
     var i: u8 = 32;
     while (i < 127) : (i += 1) {
         try testing.expect(face.glyphIndex(i) != null);
-        _ = try face.renderGlyph(alloc, &atlas, face.glyphIndex(i).?, .{});
+        _ = try face.renderGlyph(
+            alloc,
+            &atlas,
+            face.glyphIndex(i).?,
+            .{ .grid_metrics = font.Metrics.calc(try face.getMetrics()) },
+        );
     }
 }
 
@@ -1016,61 +1030,4 @@ test "glyphIndex colored vs text" {
         try testing.expectEqual(11482, glyph);
         try testing.expect(face.isColorGlyph(glyph));
     }
-}
-
-test "coretext: metrics" {
-    const testFont = font.embedded.inconsolata;
-    const alloc = std.testing.allocator;
-
-    var atlas = try font.Atlas.init(alloc, 512, .grayscale);
-    defer atlas.deinit(alloc);
-
-    var ct_font = try Face.init(
-        undefined,
-        testFont,
-        .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
-    );
-    defer ct_font.deinit();
-
-    try std.testing.expectEqual(font.face.Metrics{
-        .cell_width = 8,
-        // The cell height is 17 px because the calculation is
-        //
-        //  ascender - descender + gap
-        //
-        // which, for inconsolata is
-        //
-        //  859 - -190 + 0
-        //
-        // font units, at 1000 units per em that works out to 1.049 em,
-        // and 1em should be the point size * dpi scale, so 12 * (96/72)
-        // which is 16, and 16 * 1.049 = 16.784, which finally is rounded
-        // to 17.
-        .cell_height = 17,
-        .cell_baseline = 3,
-        .underline_position = 17,
-        .underline_thickness = 1,
-        .strikethrough_position = 10,
-        .strikethrough_thickness = 1,
-        .overline_position = 0,
-        .overline_thickness = 1,
-        .box_thickness = 1,
-        .cursor_height = 17,
-    }, ct_font.metrics);
-
-    // Resize should change metrics
-    try ct_font.setSize(.{ .size = .{ .points = 24, .xdpi = 96, .ydpi = 96 } });
-    try std.testing.expectEqual(font.face.Metrics{
-        .cell_width = 16,
-        .cell_height = 34,
-        .cell_baseline = 6,
-        .underline_position = 34,
-        .underline_thickness = 2,
-        .strikethrough_position = 19,
-        .strikethrough_thickness = 2,
-        .overline_position = 0,
-        .overline_thickness = 2,
-        .box_thickness = 2,
-        .cursor_height = 34,
-    }, ct_font.metrics);
 }
