@@ -200,6 +200,12 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             "share/kio/servicemenus/com.mitchellh.ghostty.desktop",
         ).step);
 
+        // Right click menu action for Nautilus
+        try steps.append(&b.addInstallFile(
+            b.path("dist/linux/ghostty_nautilus.py"),
+            "share/nautilus-python/extensions/com.mitchellh.ghostty.py",
+        ).step);
+
         // Various icons that our application can use, including the icon
         // that will be used for the desktop.
         try steps.append(&b.addInstallFile(
