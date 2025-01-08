@@ -118,15 +118,6 @@ builtin source "$GHOSTTY_RESOURCES_DIR/shell-integration/bash/bash-preexec.sh"
 _ghostty_executing=""
 _ghostty_last_reported_cwd=""
 
-function __ghostty_get_current_command() {
-    builtin local last_cmd
-    # shellcheck disable=SC1007
-    last_cmd=$(HISTTIMEFORMAT= builtin history 1)
-    last_cmd="${last_cmd#*[[:digit:]]*[[:space:]]}"  # remove leading history number
-    last_cmd="${last_cmd#"${last_cmd%%[![:space:]]*}"}"  # remove remaining leading whitespace
-    builtin printf "\e]2;%s\a" "${last_cmd//[[:cntrl:]]}"  # remove any control characters
-}
-
 function __ghostty_precmd() {
     local ret="$?"
     if test "$_ghostty_executing" != "0"; then
@@ -151,10 +142,8 @@ function __ghostty_precmd() {
         PS0=$PS0'\[\e[0 q\]'
       fi
 
+      # Title (working directory)
       if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
-        # Command and working directory
-        # shellcheck disable=SC2016
-        PS0=$PS0'$(__ghostty_get_current_command)'
         PS1=$PS1'\[\e]2;\w\a\]'
       fi
     fi
@@ -178,9 +167,18 @@ function __ghostty_precmd() {
 }
 
 function __ghostty_preexec() {
+    builtin local cmd="$1"
+
     PS0="$_GHOSTTY_SAVE_PS0"
     PS1="$_GHOSTTY_SAVE_PS1"
     PS2="$_GHOSTTY_SAVE_PS2"
+
+    # Title (current command)
+    if [[ -n $cmd && "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
+      builtin printf "\e]2;%s\a" "${cmd//[[:cntrl:]]}"
+    fi
+
+    # End of input, start of output.
     builtin printf "\e]133;C;\a"
     _ghostty_executing=1
 }
