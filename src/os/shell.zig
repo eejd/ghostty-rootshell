@@ -1,6 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
 
+/// Writer that escapes characters that shells treat specially to reduce the
+/// risk of injection attacks or other such weirdness. Specifically excludes
+/// linefeeds so that they can be used to delineate lists of file paths.
+///
+/// T should be a Zig type that follows the `std.io.Writer` interface.
 pub fn ShellEscapeWriter(comptime T: type) type {
     return struct {
         child_writer: T,
