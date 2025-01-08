@@ -375,6 +375,10 @@ pub const Action = union(enum) {
     /// configured.
     close_surface: void,
 
+    /// Close the current tab, regardless of how many splits there may be.
+    /// This will trigger close confirmation as configured.
+    close_tab: void,
+
     /// Close the window, regardless of how many tabs or splits there may be.
     /// This will trigger close confirmation as configured.
     close_window: void,
@@ -382,9 +386,6 @@ pub const Action = union(enum) {
     /// Close all windows. This will trigger close confirmation as configured.
     /// This only works for macOS currently.
     close_all_windows: void,
-
-    /// Closes the tab belonging to the currently focused split.
-    close_tab: void,
 
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,
@@ -729,6 +730,7 @@ pub const Action = union(enum) {
             .write_screen_file,
             .write_selection_file,
             .close_surface,
+            .close_tab,
             .close_window,
             .toggle_fullscreen,
             .toggle_window_decorations,
@@ -753,7 +755,6 @@ pub const Action = union(enum) {
             .resize_split,
             .equalize_splits,
             .inspector,
-            .close_tab,
             => .surface,
         };
     }

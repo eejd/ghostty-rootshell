@@ -448,6 +448,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_NEW_SPLIT:
                 newSplit(app, target: target, direction: action.action.new_split)
 
+            case GHOSTTY_ACTION_CLOSE_TAB:
+                closeTab(app, target: target)
+
             case GHOSTTY_ACTION_TOGGLE_FULLSCREEN:
                 toggleFullscreen(app, target: target, mode: action.action.toggle_fullscreen)
 
@@ -643,6 +646,27 @@ extension Ghostty {
                         "direction": direction,
                         Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: ghostty_surface_inherited_config(surface)),
                     ]
+                )
+
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func closeTab(_ app: ghostty_app_t, target: ghostty_target_s) {
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("close tab does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+
+                NotificationCenter.default.post(
+                    name: .ghosttyCloseTab,
+                    object: surfaceView
                 )
 
 
