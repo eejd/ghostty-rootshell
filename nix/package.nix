@@ -53,7 +53,6 @@
     fileset = lib.fileset.intersection (lib.fileset.fromSource (lib.sources.cleanSource ../.)) (
       lib.fileset.unions [
         ../dist/linux
-        ../conformance
         ../images
         ../include
         ../pkg
