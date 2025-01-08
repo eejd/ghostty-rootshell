@@ -162,14 +162,6 @@ class QuickTerminalController: BaseTerminalController {
     // MARK: Methods
 
     func toggle() {
-        if derivedConfig.quickTerminalSpaceBehavior == .remain && self.window?.isOnActiveSpace == false {
-            // If we're in the remain mode and the window is not on the active space, then we bring the window back to the active space.
-            DispatchQueue.main.async {
-                self.window?.makeKeyAndOrderFront(nil)
-            }
-            return
-        }
-
         if (visible) {
             animateOut()
         } else {
