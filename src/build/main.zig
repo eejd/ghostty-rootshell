@@ -28,3 +28,6 @@ pub const XCFrameworkStep = @import("XCFrameworkStep.zig");
 pub const fish_completions = @import("fish_completions.zig").completions;
 pub const zsh_completions = @import("zsh_completions.zig").completions;
 pub const bash_completions = @import("bash_completions.zig").completions;
+
+// Helpers
+pub const requireZig = @import("zig.zig").requireZig;
