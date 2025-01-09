@@ -706,34 +706,13 @@ class AppDelegate: NSObject,
 
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
-        if let mainWindow = terminalManager.mainWindow {
-            guard let parent = mainWindow.controller.window else {
-                Self.logger.debug("could not get parent window")
-                return
+        if isVisible {
+            NSApp.windows.forEach { window in
+                window.alphaValue = 0.0
             }
-            
-            guard let controller = parent.windowController as? TerminalController,
-                  let primaryWindow = controller.window else {
-                Self.logger.debug("Could not retrieve primary window")
-                return
-            }
-            
-            // Fetch all terminal windows controlled by BaseTerminalController
-            for terminalWindow in NSApp.windows.filter({ $0.windowController is BaseTerminalController }) {
-                if isVisible {
-                    terminalWindow.orderOut(nil)
-                } else {
-                    primaryWindow.makeKeyAndOrderFront(nil)
-                    primaryWindow.addTabbedWindow(terminalWindow, ordered: .above)
-                }
-            }
-            
-            // If our parent tab group already has this window, macOS added it and
-            // we need to remove it so we can set the correct order in the next line.
-            // If we don't do this, macOS gets really confused and the tabbedWindows
-            // state becomes incorrect.
-            if let tg = parent.tabGroup, tg.windows.firstIndex(of: parent) != nil {
-                tg.removeWindow(parent)
+        } else {
+            NSApp.windows.forEach { window in
+                window.alphaValue = 1.0
             }
         }
         
