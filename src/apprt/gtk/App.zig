@@ -1835,9 +1835,8 @@ fn initContextMenu(self: *App) void {
         defer c.g_object_unref(section);
         const submenu = c.g_menu_new();
         defer c.g_object_unref(submenu);
-        initMenuContent(@ptrCast(submenu));
 
-        // Just append the submenu to the menu structure
+        initMenuContent(@ptrCast(submenu));
         c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
     }
