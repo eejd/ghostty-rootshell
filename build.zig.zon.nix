@@ -140,11 +140,11 @@ in
       };
     }
     {
-      name = "12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f";
+      name = "1220f5aec880d4f430cc1597ede88f1530da69e39a4986080e976b0c7b919c2ebfeb";
       path = fetchZigArtifact {
         name = "vaxis";
-        url = "https://deps.files.ghostty.org/vaxis-12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f.tar.gz";
-        hash = "sha256-OCNs6Gl2ruq5dBm4uIxs93hoXw/+n+x1+bIDfQGDx3s=";
+        url = "git+https://github.com/rockorager/libvaxis#2237a7059eae99e9f132dd5acd1555e49d6c7d93";
+        hash = "sha256-ZzLNJOsXzyBhkdUhbET30RoU2T9xKYsBUQz2NAjK/G8=";
       };
     }
     {
