@@ -26,7 +26,7 @@ class TerminalManager {
 
     /// Returns the main window of the managed window stack. If there is no window
     /// then an arbitrary window will be chosen.
-    var mainWindow: Window? {
+    private var mainWindow: Window? {
         for window in windows {
             if (window.controller.window?.isMainWindow ?? false) {
                 return window
