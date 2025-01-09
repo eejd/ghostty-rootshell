@@ -831,12 +831,12 @@ fn setSizeLimit(
     switch (target) {
         .app => {},
         .surface => |v| try v.rt_surface.setSizeLimits(.{
-                    .width = value.min_width,
-                    .height = value.min_height,
-                }, if (value.max_width > 0) .{
-                    .width = value.max_width,
-                    .height = value.max_height,
-                } else null),
+            .width = value.min_width,
+            .height = value.min_height,
+        }, if (value.max_width > 0) .{
+            .width = value.max_width,
+            .height = value.max_height,
+        } else null),
     }
 }
 
@@ -1766,12 +1766,10 @@ fn initActions(self: *App) void {
     }
 }
 
-/// This sets the self.menu property to the application menu that can be
-/// shared by all application windows.
-fn initMenu(self: *App) void {
-    const menu = c.g_menu_new();
-    errdefer c.g_object_unref(menu);
-
+/// Initializes and populates the provided GMenu with sections and actions.
+/// This function is used to set up the application's menu structure, either for
+/// the main menu button or as a context menu when window decorations are disabled.
+fn initMenuContent(menu: *c.GMenu) void {
     {
         const section = c.g_menu_new();
         defer c.g_object_unref(section);
@@ -1793,7 +1791,14 @@ fn initMenu(self: *App) void {
         c.g_menu_append(section, "Reload Configuration", "app.reload-config");
         c.g_menu_append(section, "About Ghostty", "win.about");
     }
+}
 
+/// This sets the self.menu property to the application menu that can be
+/// shared by all application windows.
+fn initMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+    initMenuContent(@ptrCast(menu));
     self.menu = menu;
 }
 
@@ -1823,6 +1828,18 @@ fn initContextMenu(self: *App) void {
         c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
         c.g_menu_append(section, "Reset", "win.reset");
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+    }
+
+    if (!self.config.@"window-decoration") {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        const submenu = c.g_menu_new();
+        defer c.g_object_unref(submenu);
+        initMenuContent(@ptrCast(submenu));
+
+        // Just append the submenu to the menu structure
+        c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
     }
 
     self.context_menu = menu;
