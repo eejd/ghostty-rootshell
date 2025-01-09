@@ -384,15 +384,26 @@ class TerminalController: BaseTerminalController {
         if case let .leaf(leaf) = surfaceTree {
             if let initialSize = leaf.surface.initialSize,
                let screen = window.screen ?? NSScreen.main {
-                // Setup our frame. We need to first subtract the views frame so that we can
-                // just get the chrome frame so that we only affect the surface view size.
+                // Get the current frame of the window
                 var frame = window.frame
-                frame.size.width -= leaf.surface.frame.size.width
-                frame.size.height -= leaf.surface.frame.size.height
-                frame.size.width += min(initialSize.width, screen.frame.width)
-                frame.size.height += min(initialSize.height, screen.frame.height)
 
-                // We have no tabs and we are not a split, so set the initial size of the window.
+                // Calculate the chrome size (window size minus view size)
+                let chromeWidth = frame.size.width - leaf.surface.frame.size.width
+                let chromeHeight = frame.size.height - leaf.surface.frame.size.height
+
+                // Calculate the new width and height, clamping to the screen's size
+                let newWidth = min(initialSize.width + chromeWidth, screen.visibleFrame.width)
+                let newHeight = min(initialSize.height + chromeHeight, screen.visibleFrame.height)
+
+                // Update the frame size while keeping the window's position intact
+                frame.size.width = newWidth
+                frame.size.height = newHeight
+
+                // Ensure the window doesn't go outside the screen boundaries
+                frame.origin.x = max(screen.frame.origin.x, min(frame.origin.x, screen.frame.maxX - newWidth))
+                frame.origin.y = max(screen.frame.origin.y, min(frame.origin.y, screen.frame.maxY - newHeight))
+
+                // Set the updated frame to the window
                 window.setFrame(frame, display: true)
             }
         }
