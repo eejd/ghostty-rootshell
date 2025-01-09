@@ -199,6 +199,11 @@ pub const App = struct {
             // This logic only applies to macOS.
             if (comptime builtin.os.tag != .macos) break :event_text event.text;
 
+            // If we're in a preedit state then we allow it through. This
+            // allows ctrl sequences that affect IME to work. For example,
+            // Ctrl+H deletes a character with Japanese input.
+            if (event.composing) break :event_text event.text;
+
             // If the modifiers are ONLY "control" then we never process
             // the event text because we want to do our own translation so
             // we can handle ctrl+c, ctrl+z, etc.

@@ -828,8 +828,28 @@ extension Ghostty {
             var handled: Bool = false
             if let list = keyTextAccumulator, list.count > 0 {
                 handled = true
-                for text in list {
-                    _ = keyAction(action, event: event, text: text)
+
+                // This is a hack. libghostty on macOS treats ctrl input as not having
+                // text because some keyboard layouts generate bogus characters for
+                // ctrl+key. libghostty can't tell this is from an IM keyboard giving
+                // us direct values. So, we just remove control.
+                var modifierFlags = event.modifierFlags
+                modifierFlags.remove(.control)
+                if let keyTextEvent = NSEvent.keyEvent(
+                    with: .keyDown,
+                    location: event.locationInWindow,
+                    modifierFlags: modifierFlags,
+                    timestamp: event.timestamp,
+                    windowNumber: event.windowNumber,
+                    context: nil,
+                    characters: event.characters ?? "",
+                    charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+                    isARepeat: event.isARepeat,
+                    keyCode: event.keyCode
+                ) {
+                    for text in list {
+                        _ = keyAction(action, event: keyTextEvent, text: text)
+                    }
                 }
             }
 
