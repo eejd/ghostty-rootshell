@@ -493,6 +493,7 @@ pub fn performAction(
         .pwd => try self.setPwd(target, value),
         .present_terminal => self.presentTerminal(target),
         .initial_size => try self.setInitialSize(target, value),
+        .size_limit => try self.setSizeLimit(target, value),
         .mouse_visibility => self.setMouseVisibility(target, value),
         .mouse_shape => try self.setMouseShape(target, value),
         .mouse_over_link => self.setMouseOverLink(target, value),
@@ -505,7 +506,6 @@ pub fn performAction(
         .close_all_windows,
         .toggle_quick_terminal,
         .toggle_visibility,
-        .size_limit,
         .cell_size,
         .secure_input,
         .key_sequence,
@@ -820,6 +820,23 @@ fn setInitialSize(
             value.width,
             value.height,
         ),
+    }
+}
+
+fn setSizeLimit(
+    _: *App,
+    target: apprt.Target,
+    value: apprt.action.SizeLimit,
+) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| try v.rt_surface.setSizeLimits(.{
+                    .width = value.min_width,
+                    .height = value.min_height,
+                }, if (value.max_width > 0) .{
+                    .width = value.max_width,
+                    .height = value.max_height,
+                } else null),
     }
 }
 
