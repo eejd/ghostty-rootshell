@@ -40,7 +40,7 @@ pub const App = union(Protocol) {
             }
         }
 
-        return .none;
+        return .{ .none = .{} };
     }
 
     pub fn deinit(self: *App, alloc: Allocator) void {

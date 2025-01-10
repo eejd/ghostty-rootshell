@@ -13,7 +13,7 @@ pub const App = struct {
         _: [:0]const u8,
         _: *const Config,
     ) !?App {
-        return .{};
+        return null;
     }
 
     pub fn deinit(self: *App, alloc: Allocator) void {

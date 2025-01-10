@@ -373,6 +373,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         &config,
     );
     errdefer winproto_app.deinit(core_app.alloc);
+    log.debug("windowing protocol={s}", .{@tagName(winproto_app)});
 
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
