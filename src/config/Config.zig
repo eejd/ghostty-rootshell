@@ -1975,14 +1975,9 @@ keybind: Keybinds = .{},
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 
-/// Enable or disable GTK's OpenGL debugging logs. The default depends on the
-/// optimization level that Ghostty was built with:
-///
-/// - `Debug`: `true`
-/// - `ReleaseSafe`: `true`
-/// - `ReleaseSmall`: `true`
-/// - `ReleaseFast`: `false`
-@"gtk-opengl-debug": bool = build_config.slow_runtime_safety,
+/// Enable or disable GTK's OpenGL debugging logs. The default is `true` for
+/// debug builds, `false` for all others.
+@"gtk-opengl-debug": bool = builtin.mode == .Debug,
 
 /// After GTK 4.14.0, we need to force the GSK renderer to OpenGL as the default
 /// GSK renderer is broken on some systems. If you would like to override
