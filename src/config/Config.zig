@@ -1387,16 +1387,14 @@ keybind: Keybinds = .{},
 @"image-storage-limit": u32 = 320 * 1000 * 1000,
 
 /// Whether to automatically copy selected text to the clipboard. `true`
-/// will prefer to copy to the selection clipboard if supported by the
-/// OS, otherwise it will copy to the system clipboard.
+/// will prefer to copy to the selection clipboard, otherwise it will copy to
+/// the system clipboard.
 ///
 /// The value `clipboard` will always copy text to the selection clipboard
-/// (for supported systems) as well as the system clipboard. This is sometimes
-/// a preferred behavior on Linux.
+/// as well as the system clipboard.
 ///
-/// Middle-click paste will always use the selection clipboard on Linux
-/// and the system clipboard on macOS. Middle-click paste is always enabled
-/// even if this is `false`.
+/// Middle-click paste will always use the selection clipboard. Middle-click
+/// paste is always enabled even if this is `false`.
 ///
 /// The default value is true on Linux and macOS.
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
