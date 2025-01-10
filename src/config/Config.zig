@@ -1975,6 +1975,18 @@ keybind: Keybinds = .{},
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 
+/// Enable or disable GTK's OpenGL debugging logs. The default is `true` for
+/// debug builds, `false` for all others.
+@"gtk-opengl-debug": bool = builtin.mode == .Debug,
+
+/// After GTK 4.14.0, we need to force the GSK renderer to OpenGL as the default
+/// GSK renderer is broken on some systems. If you would like to override
+/// that bekavior, set `gtk-gsk-renderer=default` and either use your system's
+/// default GSK renderer, or set the GSK_RENDERER environment variable to your
+/// renderer of choice before launching Ghostty. This setting has no effect when
+/// using versions of GTK earlier than 4.14.0.
+@"gtk-gsk-renderer": GtkGskRenderer = .opengl,
+
 /// If `true`, the Ghostty GTK application will run in single-instance mode:
 /// each new `ghostty` process launched will result in a new window if there is
 /// already a running process.
@@ -6156,6 +6168,12 @@ pub const WindowPadding = struct {
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI(""));
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI("a"));
     }
+};
+
+/// See the `gtk-gsk-renderer` config.
+pub const GtkGskRenderer = enum {
+    default,
+    opengl,
 };
 
 test "parse duration" {

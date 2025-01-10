@@ -104,42 +104,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_micro_version(),
     });
 
-    // Disabling Vulkan can improve startup times by hundreds of
-    // milliseconds on some systems. We don't use Vulkan so we can just
-    // disable it.
-    if (version.runtimeAtLeast(4, 16, 0)) {
-        // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
-        // For the remainder of "why" see the 4.14 comment below.
-        _ = internal_os.setenv("GDK_DISABLE", "gles-api,vulkan");
-        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-no-fractional");
-    } else if (version.runtimeAtLeast(4, 14, 0)) {
-        // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
-        // Older versions of GTK do not support these values so it is safe
-        // to always set this. Forwards versions are uncertain so we'll have to
-        // reassess...
-        //
-        // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
-        //
-        // Specific details about values:
-        //   - "opengl" - output OpenGL debug information
-        //   - "gl-disable-gles" - disable GLES, Ghostty can't use GLES
-        //   - "vulkan-disable" - disable Vulkan, Ghostty can't use Vulkan
-        //     and initializing a Vulkan context was causing a longer delay
-        //     on some systems.
-        _ = internal_os.setenv("GDK_DEBUG", "opengl,gl-disable-gles,vulkan-disable,gl-no-fractional");
-    } else {
-        // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
-        // is an environment that isn't tested well and we don't have a
-        // good understanding of what we may need to do.
-        _ = internal_os.setenv("GDK_DEBUG", "vulkan-disable");
-    }
-
-    if (version.runtimeAtLeast(4, 14, 0)) {
-        // We need to export GSK_RENDERER to opengl because GTK uses ngl by
-        // default after 4.14
-        _ = internal_os.setenv("GSK_RENDERER", "opengl");
-    }
-
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
@@ -158,6 +122,104 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         if (config._diagnostics.containsLocation(.cli)) {
             log.warn("CLI errors detected, exiting", .{});
             std.posix.exit(1);
+        }
+    }
+
+    var gdk_debug: struct {
+        /// output OpenGL debug information
+        opengl: bool = false,
+        /// disable GLES, Ghostty can't use GLES
+        @"gl-disable-gles": bool = false,
+        @"gl-no-fractional": bool = false,
+        /// Disabling Vulkan can improve startup times by hundreds of
+        /// milliseconds on some systems. We don't use Vulkan so we can just
+        /// disable it.
+        @"vulkan-disable": bool = false,
+    } = .{
+        .opengl = config.@"gtk-opengl-debug",
+    };
+
+    var gdk_disable: struct {
+        @"gles-api": bool = false,
+        /// Disabling Vulkan can improve startup times by hundreds of
+        /// milliseconds on some systems. We don't use Vulkan so we can just
+        /// disable it.
+        vulkan: bool = false,
+    } = .{};
+
+    environment: {
+        if (version.runtimeAtLeast(4, 16, 0)) {
+            // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
+            // For the remainder of "why" see the 4.14 comment below.
+            gdk_disable.@"gles-api" = true;
+            gdk_disable.vulkan = true;
+            gdk_debug.@"gl-no-fractional" = true;
+            break :environment;
+        }
+        if (version.runtimeAtLeast(4, 14, 0)) {
+            // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
+            // Older versions of GTK do not support these values so it is safe
+            // to always set this. Forwards versions are uncertain so we'll have
+            // to reassess...
+            //
+            // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+            gdk_debug.@"gl-disable-gles" = true;
+            gdk_debug.@"gl-no-fractional" = true;
+            gdk_debug.@"vulkan-disable" = true;
+            break :environment;
+        }
+        // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
+        // is an environment that isn't tested well and we don't have a
+        // good understanding of what we may need to do.
+        gdk_debug.@"vulkan-disable" = true;
+    }
+
+    {
+        var buf: [128]u8 = undefined;
+        var fmt = std.io.fixedBufferStream(&buf);
+        const writer = fmt.writer();
+        var first: bool = true;
+        inline for (@typeInfo(@TypeOf(gdk_debug)).Struct.fields) |field| {
+            if (@field(gdk_debug, field.name)) {
+                if (!first) try writer.writeAll(",");
+                try writer.writeAll(field.name);
+                first = false;
+            }
+        }
+        try writer.writeByte(0);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DEBUG={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DEBUG", value[0 .. value.len - 1 :0]);
+    }
+
+    {
+        var buf: [128]u8 = undefined;
+        var fmt = std.io.fixedBufferStream(&buf);
+        const writer = fmt.writer();
+        var first: bool = true;
+        inline for (@typeInfo(@TypeOf(gdk_disable)).Struct.fields) |field| {
+            if (@field(gdk_disable, field.name)) {
+                if (!first) try writer.writeAll(",");
+                try writer.writeAll(field.name);
+                first = false;
+            }
+        }
+        try writer.writeByte(0);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DISABLE={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
+    }
+
+    if (version.runtimeAtLeast(4, 14, 0)) {
+        switch (config.@"gtk-gsk-renderer") {
+            .default => {},
+            else => |renderer| {
+                // Force the GSK renderer to a specific value. After GTK 4.14 the
+                // `ngl` renderer is used by default which causes artifacts when
+                // used with Ghostty so it should be avoided.
+                log.warn("setting GSK_RENDERER={s}", .{@tagName(renderer)});
+                _ = internal_os.setenv("GSK_RENDERER", @tagName(renderer));
+            },
         }
     }
 
