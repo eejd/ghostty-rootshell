@@ -36,8 +36,7 @@ const c = @import("c.zig").c;
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
-const x11 = @import("x11.zig");
-const wayland = @import("wayland.zig");
+const winproto = @import("winproto.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -49,6 +48,9 @@ config: Config,
 
 app: *c.GtkApplication,
 ctx: *c.GMainContext,
+
+/// State and logic for the underlying windowing protocol.
+winproto: winproto.App,
 
 /// True if the app was launched with single instance mode.
 single_instance: bool,
@@ -70,12 +72,6 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,
-
-/// Xkb state (X11 only). Will be null on Wayland.
-x11_xkb: ?x11.Xkb = null,
-
-/// Wayland app state. Will be null on X11.
-wayland: ?wayland.AppState = null,
 
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
@@ -166,7 +162,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     c.gtk_init();
-    const display = c.gdk_display_get_default();
+    const display: *c.GdkDisplay = c.gdk_display_get_default() orelse {
+        // I'm unsure of any scenario where this happens. Because we don't
+        // want to litter null checks everywhere, we just exit here.
+        log.warn("gdk display is null, exiting", .{});
+        std.posix.exit(1);
+    };
 
     // If we're using libadwaita, log the version
     if (adwaita.enabled(&config)) {
@@ -364,46 +365,15 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
-    // Perform all X11 initialization. This ultimately returns the X11
-    // keyboard state but the block does more than that (i.e. setting up
-    // WM_CLASS).
-    const x11_xkb: ?x11.Xkb = x11_xkb: {
-        if (comptime !build_options.x11) break :x11_xkb null;
-        if (!x11.is_display(display)) break :x11_xkb null;
-
-        // Set the X11 window class property (WM_CLASS) if are are on an X11
-        // display.
-        //
-        // Note that we also set the program name here using g_set_prgname.
-        // This is how the instance name field for WM_CLASS is derived when
-        // calling gdk_x11_display_set_program_class; there does not seem to be
-        // a way to set it directly. It does not look like this is being set by
-        // our other app initialization routines currently, but since we're
-        // currently deriving its value from x11-instance-name effectively, I
-        // feel like gating it behind an X11 check is better intent.
-        //
-        // This makes the property show up like so when using xprop:
-        //
-        //     WM_CLASS(STRING) = "ghostty", "com.mitchellh.ghostty"
-        //
-        // Append "-debug" on both when using the debug build.
-        //
-        const prgname = if (config.@"x11-instance-name") |pn|
-            pn
-        else if (builtin.mode == .Debug)
-            "ghostty-debug"
-        else
-            "ghostty";
-        c.g_set_prgname(prgname);
-        c.gdk_x11_display_set_program_class(display, app_id);
-
-        // Set up Xkb
-        break :x11_xkb try x11.Xkb.init(display);
-    };
-
-    // Initialize Wayland state
-    var wl = wayland.AppState.init(display);
-    if (wl) |*w| try w.register();
+    // Setup our windowing protocol logic
+    var winproto_app = try winproto.App.init(
+        core_app.alloc,
+        display,
+        app_id,
+        &config,
+    );
+    errdefer winproto_app.deinit(core_app.alloc);
+    log.debug("windowing protocol={s}", .{@tagName(winproto_app)});
 
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
@@ -429,8 +399,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
-        .x11_xkb = x11_xkb,
-        .wayland = wl,
+        .winproto = winproto_app,
         .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
@@ -457,6 +426,8 @@ pub fn terminate(self: *App) void {
         c.g_object_unref(provider);
     }
     self.custom_css_providers.deinit(self.core_app.alloc);
+
+    self.winproto.deinit(self.core_app.alloc);
 
     self.config.deinit();
 }
@@ -882,9 +853,10 @@ fn configChange(
     new_config: *const Config,
 ) void {
     switch (target) {
-        .surface => |surface| {
-            if (surface.rt_surface.container.window()) |window| window.syncAppearance(new_config) catch |err| {
-                log.warn("error syncing appearance changes to window err={}", .{err});
+        .surface => |surface| surface: {
+            const window = surface.rt_surface.container.window() orelse break :surface;
+            window.updateConfig(new_config) catch |err| {
+                log.warn("error updating config for window err={}", .{err});
             };
         },
 

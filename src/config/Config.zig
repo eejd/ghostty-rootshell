@@ -604,7 +604,7 @@ palette: Palette = .{},
 ///
 /// Supported on macOS and on some Linux desktop environments, including:
 ///
-///   * KDE Plasma (Wayland only)
+///   * KDE Plasma (Wayland and X11)
 ///
 /// Warning: the exact blur intensity is _ignored_ under KDE Plasma, and setting
 /// this setting to either `true` or any positive blur intensity value would
@@ -5780,6 +5780,14 @@ pub const BackgroundBlur = union(enum) {
                 input_,
                 0,
             ) catch return error.InvalidValue };
+    }
+
+    pub fn enabled(self: BackgroundBlur) bool {
+        return switch (self) {
+            .false => false,
+            .true => true,
+            .radius => |v| v > 0,
+        };
     }
 
     pub fn cval(self: BackgroundBlur) u8 {

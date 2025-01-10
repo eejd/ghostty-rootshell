@@ -25,7 +25,7 @@ const gtk_key = @import("key.zig");
 const Notebook = @import("notebook.zig").Notebook;
 const HeaderBar = @import("headerbar.zig").HeaderBar;
 const version = @import("version.zig");
-const wayland = @import("wayland.zig");
+const winproto = @import("winproto.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -56,7 +56,8 @@ toast_overlay: ?*c.GtkWidget,
 /// See adwTabOverviewOpen for why we have this.
 adw_tab_overview_focus_timer: ?c.guint = null,
 
-wayland: ?wayland.SurfaceState,
+/// State and logic for windowing protocol for a window.
+winproto: ?winproto.Window,
 
 pub fn create(alloc: Allocator, app: *App) !*Window {
     // Allocate a fixed pointer for our window. We try to minimize
@@ -82,7 +83,7 @@ pub fn init(self: *Window, app: *App) !void {
         .notebook = undefined,
         .context_menu = undefined,
         .toast_overlay = undefined,
-        .wayland = null,
+        .winproto = null,
     };
 
     // Create the window
@@ -384,6 +385,16 @@ pub fn init(self: *Window, app: *App) !void {
     c.gtk_widget_show(window);
 }
 
+pub fn updateConfig(
+    self: *Window,
+    config: *const configpkg.Config,
+) !void {
+    if (self.winproto) |*v| try v.updateConfigEvent(config);
+
+    // We always resync our appearance whenever the config changes.
+    try self.syncAppearance(config);
+}
+
 /// Updates appearance based on config settings. Will be called once upon window
 /// realization, and every time the config is reloaded.
 ///
@@ -396,14 +407,10 @@ pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
         c.gtk_widget_add_css_class(@ptrCast(self.window), "background");
     }
 
-    if (self.wayland) |*wl| {
-        const blurred = switch (config.@"background-blur-radius") {
-            .false => false,
-            .true => true,
-            .radius => |v| v > 0,
-        };
-        try wl.setBlur(blurred);
-    }
+    // Window protocol specific appearance updates
+    if (self.winproto) |*v| v.syncAppearance() catch |err| {
+        log.warn("failed to sync window protocol appearance error={}", .{err});
+    };
 }
 
 /// Sets up the GTK actions for the window scope. Actions are how GTK handles
@@ -443,7 +450,7 @@ fn initActions(self: *Window) void {
 pub fn deinit(self: *Window) void {
     c.gtk_widget_unparent(@ptrCast(self.context_menu));
 
-    if (self.wayland) |*wl| wl.deinit();
+    if (self.winproto) |*v| v.deinit(self.app.core_app.alloc);
 
     if (self.adw_tab_overview_focus_timer) |timer| {
         _ = c.g_source_remove(timer);
@@ -584,10 +591,19 @@ pub fn sendToast(self: *Window, title: [:0]const u8) void {
 fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     const self = userdataSelf(ud.?);
 
-    if (self.app.wayland) |*wl| {
-        self.wayland = wayland.SurfaceState.init(v, wl);
+    // Initialize our window protocol logic
+    if (winproto.Window.init(
+        self.app.core_app.alloc,
+        &self.app.winproto,
+        v,
+        &self.app.config,
+    )) |winproto_win| {
+        self.winproto = winproto_win;
+    } else |err| {
+        log.warn("failed to initialize window protocol error={}", .{err});
     }
 
+    // When we are realized we always setup our appearance
     self.syncAppearance(&self.app.config) catch |err| {
         log.err("failed to initialize appearance={}", .{err});
     };
