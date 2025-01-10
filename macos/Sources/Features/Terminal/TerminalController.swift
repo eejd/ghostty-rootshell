@@ -366,19 +366,6 @@ class TerminalController: BaseTerminalController {
         // If window decorations are disabled, remove our title
         if (!config.windowDecorations) { window.styleMask.remove(.titled) }
 
-        // Terminals typically operate in sRGB color space and macOS defaults
-        // to "native" which is typically P3. There is a lot more resources
-        // covered in this GitHub issue: https://github.com/mitchellh/ghostty/pull/376
-        // Ghostty defaults to sRGB but this can be overridden.
-        switch (config.windowColorspace) {
-        case "display-p3":
-            window.colorSpace = .displayP3
-        case "srgb":
-            fallthrough
-        default:
-            window.colorSpace = .sRGB
-        }
-
         // If we have only a single surface (no splits) and that surface requested
         // an initial size then we set it here now.
         if case let .leaf(leaf) = surfaceTree {

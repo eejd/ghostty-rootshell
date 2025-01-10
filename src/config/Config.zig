@@ -248,6 +248,40 @@ const c = @cImport({
 /// This is currently only supported on macOS.
 @"font-thicken-strength": u8 = 255,
 
+/// What color space to use when performing alpha blending.
+///
+/// This affects how text looks for different background/foreground color pairs.
+///
+/// Valid values:
+///
+/// * `native` - Perform alpha blending in the native color space for the OS.
+///   On macOS this corresponds to Display P3, and on Linux it's sRGB.
+///
+/// * `linear` - Perform alpha blending in linear space. This will eliminate
+///   the darkening artifacts around the edges of text that are very visible
+///   when certain color combinations are used (e.g. red / green), but makes
+///   dark text look much thinner than normal and light text much thicker.
+///   This is also sometimes known as "gamma correction".
+///   (Currently only supported on macOS. Has no effect on Linux.)
+///
+///   To prevent the uneven thickness caused by linear blending, you can use
+///   the `experimental-linear-correction` option which applies a correction
+///   curve to the text alpha depending on its brightness, which compensates
+///   for the thinning and makes the weight of most text appear very similar
+///   to when it's blendeded non-linearly.
+///
+/// Note: This setting affects more than just text, images will also be blended
+/// in the selected color space, and custom shaders will receive colors in that
+/// color space as well.
+@"text-blending": TextBlending = .native,
+
+/// Apply a correction curve to text alpha to compensate for uneven apparent
+/// thickness of different colors of text, roughly matching the appearance of
+/// text rendered with non-linear blending.
+///
+/// Has no effect if not using linear `text-blending`.
+@"experimental-linear-correction": bool = false,
+
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
 /// etc.). In each case, the values represent the amount to change the original
@@ -5747,6 +5781,12 @@ pub const QuickTerminalSpaceBehavior = enum {
 pub const GraphemeWidthMethod = enum {
     legacy,
     unicode,
+};
+
+/// See text-blending
+pub const TextBlending = enum {
+    native,
+    linear,
 };
 
 /// See freetype-load-flag
