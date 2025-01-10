@@ -130,7 +130,7 @@ fn needsConfirm(elem: Surface.Container.Elem) bool {
 }
 
 /// Close the tab, asking for confirmation if any surface requests it.
-fn closeWithConfirmation(tab: *Tab) void {
+pub fn closeWithConfirmation(tab: *Tab) void {
     switch (tab.elem) {
         .surface => |s| s.close(s.core_surface.needsConfirmQuit()),
         .split => |s| {
@@ -169,21 +169,15 @@ fn closeWithConfirmation(tab: *Tab) void {
     }
 }
 
-pub fn gtkTabCloseClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
-    const tab: *Tab = @ptrCast(@alignCast(ud));
-    tab.closeWithConfirmation();
-}
-
 fn gtkTabCloseConfirmation(
     alert: *c.GtkMessageDialog,
     response: c.gint,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    const tab: *Tab = @ptrCast(@alignCast(ud));
     c.gtk_window_destroy(@ptrCast(alert));
-    if (response == c.GTK_RESPONSE_YES) {
-        const tab: *Tab = @ptrCast(@alignCast(ud));
-        tab.remove();
-    }
+    if (response != c.GTK_RESPONSE_YES) return;
+    tab.remove();
 }
 
 fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
@@ -193,18 +187,4 @@ fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
     // When our box is destroyed, we want to destroy our tab, too.
     const tab: *Tab = @ptrCast(@alignCast(ud));
     tab.destroy(tab.window.app.core_app.alloc);
-}
-
-pub fn gtkTabClick(
-    gesture: *c.GtkGestureClick,
-    _: c.gint,
-    _: c.gdouble,
-    _: c.gdouble,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *Tab = @ptrCast(@alignCast(ud));
-    const gtk_button = c.gtk_gesture_single_get_current_button(@ptrCast(gesture));
-    if (gtk_button == c.GDK_BUTTON_MIDDLE) {
-        self.closeWithConfirmation();
-    }
 }
