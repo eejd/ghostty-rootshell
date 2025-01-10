@@ -1,38 +1,45 @@
-/// Utility functions for X11 handling.
+//! X11 window protocol implementation for the Ghostty GTK apprt.
 const std = @import("std");
+const builtin = @import("builtin");
 const build_options = @import("build_options");
+const Allocator = std.mem.Allocator;
 const c = @import("../c.zig").c;
 const input = @import("../../../input.zig");
 const Config = @import("../../../config.zig").Config;
-const protocol = @import("../protocol.zig");
 const adwaita = @import("../adwaita.zig");
 
 const log = std.log.scoped(.gtk_x11);
 
 pub const App = struct {
-    common: *protocol.App,
     display: *c.Display,
+    base_event_code: c_int,
     kde_blur_atom: c.Atom,
 
-    base_event_code: c_int = 0,
+    pub fn init(
+        alloc: Allocator,
+        gdk_display: *c.GdkDisplay,
+        app_id: [:0]const u8,
+        config: *const Config,
+    ) !?App {
+        _ = alloc;
 
-    /// Initialize an Xkb struct for the given GDK display. If the display isn't
-    /// backed by X then this will return null.
-    pub fn init(common: *protocol.App) !void {
         // If the display isn't X11, then we don't need to do anything.
         if (c.g_type_check_instance_is_a(
-            @ptrCast(@alignCast(common.gdk_display)),
+            @ptrCast(@alignCast(gdk_display)),
             c.gdk_x11_display_get_type(),
-        ) == 0)
-            return;
+        ) == 0) return null;
 
-        var self: App = .{
-            .common = common,
-            .display = c.gdk_x11_display_get_xdisplay(common.gdk_display) orelse return,
-            .kde_blur_atom = c.gdk_x11_get_xatom_by_name_for_display(common.gdk_display, "_KDE_NET_WM_BLUR_BEHIND_REGION"),
-        };
+        // Get our X11 display
+        const display: *c.Display = c.gdk_x11_display_get_xdisplay(
+            gdk_display,
+        ) orelse return error.NoX11Display;
 
-        log.debug("X11 platform init={}", .{self});
+        const x11_program_name: [:0]const u8 = if (config.@"x11-instance-name") |pn|
+            pn
+        else if (builtin.mode == .Debug)
+            "ghostty-debug"
+        else
+            "ghostty";
 
         // Set the X11 window class property (WM_CLASS) if are are on an X11
         // display.
@@ -50,22 +57,21 @@ pub const App = struct {
         //     WM_CLASS(STRING) = "ghostty", "com.mitchellh.ghostty"
         //
         // Append "-debug" on both when using the debug build.
-
-        c.g_set_prgname(common.derived_config.x11_program_name);
-        c.gdk_x11_display_set_program_class(common.gdk_display, common.derived_config.app_id);
+        c.g_set_prgname(x11_program_name);
+        c.gdk_x11_display_set_program_class(gdk_display, app_id);
 
         // XKB
         log.debug("Xkb.init: initializing Xkb", .{});
-
         log.debug("Xkb.init: running XkbQueryExtension", .{});
         var opcode: c_int = 0;
+        var base_event_code: c_int = 0;
         var base_error_code: c_int = 0;
         var major = c.XkbMajorVersion;
         var minor = c.XkbMinorVersion;
         if (c.XkbQueryExtension(
-            self.display,
+            display,
             &opcode,
-            &self.base_event_code,
+            &base_event_code,
             &base_error_code,
             &major,
             &minor,
@@ -76,7 +82,7 @@ pub const App = struct {
 
         log.debug("Xkb.init: running XkbSelectEventDetails", .{});
         if (c.XkbSelectEventDetails(
-            self.display,
+            display,
             c.XkbUseCoreKbd,
             c.XkbStateNotify,
             c.XkbModifierStateMask,
@@ -86,7 +92,19 @@ pub const App = struct {
             return error.XkbInitializationError;
         }
 
-        common.inner = .{ .x11 = self };
+        return .{
+            .display = display,
+            .base_event_code = base_event_code,
+            .kde_blur_atom = c.gdk_x11_get_xatom_by_name_for_display(
+                gdk_display,
+                "_KDE_NET_WM_BLUR_BEHIND_REGION",
+            ),
+        };
+    }
+
+    pub fn deinit(self: *App, alloc: Allocator) void {
+        _ = self;
+        _ = alloc;
     }
 
     /// Checks for an immediate pending XKB state update event, and returns the
@@ -99,7 +117,14 @@ pub const App = struct {
     /// Returns null if there is no event. In this case, the caller should fall
     /// back to the standard GDK modifier state (this likely means the key
     /// event did not result in a modifier change).
-    pub fn modifierStateFromNotify(self: App) ?input.Mods {
+    pub fn eventMods(
+        self: App,
+        device: ?*c.GdkDevice,
+        gtk_mods: c.GdkModifierType,
+    ) ?input.Mods {
+        _ = device;
+        _ = gtk_mods;
+
         // Shoutout to Mozilla for figuring out a clean way to do this, this is
         // paraphrased from Firefox/Gecko in widget/gtk/nsGtkKeyUtils.cpp.
         if (c.XEventsQueued(self.display, c.QueuedAfterReading) == 0) return null;
@@ -127,57 +152,94 @@ pub const App = struct {
     }
 };
 
-pub const Surface = struct {
-    common: *protocol.Surface,
+pub const Window = struct {
     app: *App,
+    config: DerivedConfig,
     window: c.Window,
-
+    gtk_window: *c.GtkWindow,
     blur_region: Region,
 
-    pub fn init(common: *protocol.Surface) void {
-        const surface = c.gtk_native_get_surface(@ptrCast(common.gtk_window)) orelse return;
+    const DerivedConfig = struct {
+        blur: bool,
+
+        pub fn init(config: *const Config) DerivedConfig {
+            return .{
+                .blur = config.@"background-blur-radius".enabled(),
+            };
+        }
+    };
+
+    pub fn init(
+        _: Allocator,
+        app: *App,
+        gtk_window: *c.GtkWindow,
+        config: *const Config,
+    ) !Window {
+        const surface = c.gtk_native_get_surface(
+            @ptrCast(gtk_window),
+        ) orelse return error.NotX11Surface;
 
         // Check if we're actually on X11
         if (c.g_type_check_instance_is_a(
             @ptrCast(@alignCast(surface)),
             c.gdk_x11_surface_get_type(),
-        ) == 0)
-            return;
+        ) == 0) return error.NotX11Surface;
 
-        var blur_region: Region = .{};
+        const blur_region: Region = blur: {
+            if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
+                !adwaita.enabled(config)) break :blur .{};
 
-        if ((comptime adwaita.versionAtLeast(0, 0, 0)) and common.derived_config.adw_enabled) {
             // NOTE(pluiedev): CSDs are a f--king mistake.
             // Please, GNOME, stop this nonsense of making a window ~30% bigger
             // internally than how they really are just for your shadows and
             // rounded corners and all that fluff. Please. I beg of you.
+            var x: f64 = 0;
+            var y: f64 = 0;
+            c.gtk_native_get_surface_transform(
+                @ptrCast(gtk_window),
+                &x,
+                &y,
+            );
 
-            var x: f64, var y: f64 = .{ 0, 0 };
-            c.gtk_native_get_surface_transform(@ptrCast(common.gtk_window), &x, &y);
-            blur_region.x, blur_region.y = .{ @intFromFloat(x), @intFromFloat(y) };
-        }
+            break :blur .{
+                .x = @intFromFloat(x),
+                .y = @intFromFloat(y),
+            };
+        };
 
-        common.inner = .{ .x11 = .{
-            .common = common,
-            .app = &common.app.inner.x11,
+        return .{
+            .app = app,
+            .config = DerivedConfig.init(config),
             .window = c.gdk_x11_surface_get_xid(surface),
+            .gtk_window = gtk_window,
             .blur_region = blur_region,
-        } };
+        };
     }
 
-    pub fn onConfigUpdate(self: *Surface) !void {
-        // Whether background blur is enabled could've changed. Update.
-        try self.updateBlur();
+    pub fn deinit(self: Window, alloc: Allocator) void {
+        _ = self;
+        _ = alloc;
     }
 
-    pub fn onResize(self: *Surface) !void {
+    pub fn updateConfigEvent(
+        self: *Window,
+        config: *const Config,
+    ) !void {
+        self.config = DerivedConfig.init(config);
+    }
+
+    pub fn resizeEvent(self: *Window) !void {
         // The blur region must update with window resizes
-        self.blur_region.width = c.gtk_widget_get_width(@ptrCast(self.common.gtk_window));
-        self.blur_region.height = c.gtk_widget_get_height(@ptrCast(self.common.gtk_window));
-        try self.updateBlur();
+        self.blur_region.width = c.gtk_widget_get_width(@ptrCast(self.gtk_window));
+        self.blur_region.height = c.gtk_widget_get_height(@ptrCast(self.gtk_window));
+        try self.syncBlur();
     }
 
-    fn updateBlur(self: *Surface) !void {
+    pub fn syncAppearance(self: *Window) !void {
+        try self.syncBlur();
+    }
+
+    fn syncBlur(self: *Window) !void {
         // FIXME: This doesn't currently factor in rounded corners on Adwaita,
         // which means that the blur region will grow slightly outside of the
         // window borders. Unfortunately, actually calculating the rounded
@@ -186,10 +248,14 @@ pub const Surface = struct {
         // and I think it's not really noticable enough to justify the effort.
         // (Wayland also has this visual artifact anyway...)
 
-        const blur = self.common.derived_config.blur;
-        log.debug("set blur={}, window xid={}, region={}", .{ blur, self.window, self.blur_region });
+        const blur = self.config.blur;
+        log.debug("set blur={}, window xid={}, region={}", .{
+            blur,
+            self.window,
+            self.blur_region,
+        });
 
-        if (blur.enabled()) {
+        if (blur) {
             _ = c.XChangeProperty(
                 self.app.display,
                 self.window,
@@ -210,7 +276,11 @@ pub const Surface = struct {
                 4,
             );
         } else {
-            _ = c.XDeleteProperty(self.app.display, self.window, self.app.kde_blur_atom);
+            _ = c.XDeleteProperty(
+                self.app.display,
+                self.window,
+                self.app.kde_blur_atom,
+            );
         }
     }
 };

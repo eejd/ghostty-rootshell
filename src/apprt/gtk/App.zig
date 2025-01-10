@@ -36,7 +36,7 @@ const c = @import("c.zig").c;
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
-const protocol = @import("protocol.zig");
+const winproto = @import("winproto.zig");
 const testing = std.testing;
 
 const log = std.log.scoped(.gtk);
@@ -48,6 +48,9 @@ config: Config,
 
 app: *c.GtkApplication,
 ctx: *c.GMainContext,
+
+/// State and logic for the underlying windowing protocol.
+winproto: winproto.App,
 
 /// True if the app was launched with single instance mode.
 single_instance: bool,
@@ -69,8 +72,6 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,
-
-protocol: protocol.App,
 
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
@@ -161,7 +162,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     c.gtk_init();
-    const display = c.gdk_display_get_default();
+    const display: *c.GdkDisplay = c.gdk_display_get_default() orelse {
+        // I'm unsure of any scenario where this happens. Because we don't
+        // want to litter null checks everywhere, we just exit here.
+        log.warn("gdk display is null, exiting", .{});
+        std.posix.exit(1);
+    };
 
     // If we're using libadwaita, log the version
     if (adwaita.enabled(&config)) {
@@ -359,7 +365,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
-    const app_protocol = try protocol.App.init(display, &config, app_id);
+    // Setup our windowing protocol logic
+    var winproto_app = try winproto.App.init(
+        core_app.alloc,
+        display,
+        app_id,
+        &config,
+    );
+    errdefer winproto_app.deinit(core_app.alloc);
 
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
@@ -385,7 +398,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
-        .protocol = app_protocol,
+        .winproto = winproto_app,
         .single_instance = single_instance,
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
@@ -412,6 +425,8 @@ pub fn terminate(self: *App) void {
         c.g_object_unref(provider);
     }
     self.custom_css_providers.deinit(self.core_app.alloc);
+
+    self.winproto.deinit(self.core_app.alloc);
 
     self.config.deinit();
 }
@@ -837,9 +852,10 @@ fn configChange(
     new_config: *const Config,
 ) void {
     switch (target) {
-        .surface => |surface| {
-            if (surface.rt_surface.container.window()) |window| window.syncAppearance(new_config) catch |err| {
-                log.warn("error syncing appearance changes to window err={}", .{err});
+        .surface => |surface| surface: {
+            const window = surface.rt_surface.container.window() orelse break :surface;
+            window.updateConfig(new_config) catch |err| {
+                log.warn("error updating config for window err={}", .{err});
             };
         },
 

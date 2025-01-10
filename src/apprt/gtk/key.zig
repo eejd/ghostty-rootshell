@@ -2,7 +2,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 const input = @import("../../input.zig");
 const c = @import("c.zig").c;
-const protocol = @import("protocol.zig");
+const winproto = @import("winproto.zig");
 
 /// Returns a GTK accelerator string from a trigger.
 pub fn accelFromTrigger(buf: []u8, trigger: input.Binding.Trigger) !?[:0]const u8 {
@@ -108,11 +108,11 @@ pub fn eventMods(
     event: *c.GdkEvent,
     physical_key: input.Key,
     gtk_mods: c.GdkModifierType,
-    app_protocol: *protocol.App,
+    app_winproto: *winproto.App,
 ) input.Mods {
     const device = c.gdk_event_get_device(event);
 
-    var mods = app_protocol.eventMods(device, gtk_mods);
+    var mods = app_winproto.eventMods(device, gtk_mods);
     mods.num_lock = c.gdk_device_get_num_lock_state(device) == 1;
 
     switch (physical_key) {

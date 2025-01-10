@@ -824,6 +824,9 @@ pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         c.g_object_get_property(@ptrCast(@alignCast(settings)), "gtk-xft-dpi", &value);
         const gtk_xft_dpi = c.g_value_get_int(&value);
 
+        // As noted above gtk-xft-dpi is multiplied by 1024, so we divide by
+        // 1024, then divide by the default value (96) to derive a scale. Note
+        // gtk-xft-dpi can be fractional, so we use floating point math here.
         const xft_dpi: f32 = @as(f32, @floatFromInt(gtk_xft_dpi)) / 1024;
         break :xft_scale xft_dpi / 96;
     };
@@ -1380,9 +1383,13 @@ fn gtkResize(area: *c.GtkGLArea, width: c.gint, height: c.gint, ud: ?*anyopaque)
             return;
         };
 
-        if (self.container.window()) |window| window.protocol.onResize() catch |err| {
-            log.warn("failed to notify X11/Wayland integration of resize={}", .{err});
-        };
+        if (self.container.window()) |window| {
+            if (window.winproto) |*winproto| {
+                winproto.resizeEvent() catch |err| {
+                    log.warn("failed to notify window protocol of resize={}", .{err});
+                };
+            }
+        }
 
         self.resize_overlay.maybeShow();
     }
@@ -1702,7 +1709,7 @@ pub fn keyEvent(
         event,
         physical_key,
         gtk_mods,
-        &self.app.protocol,
+        &self.app.winproto,
     );
 
     // Get our consumed modifiers
