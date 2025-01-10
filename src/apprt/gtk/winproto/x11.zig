@@ -245,7 +245,7 @@ pub const Window = struct {
         // window borders. Unfortunately, actually calculating the rounded
         // region can be quite complex without having access to existing APIs
         // (cf. https://github.com/cutefishos/fishui/blob/41d4ba194063a3c7fff4675619b57e6ac0504f06/src/platforms/linux/blurhelper/windowblur.cpp#L134)
-        // and I think it's not really noticable enough to justify the effort.
+        // and I think it's not really noticeable enough to justify the effort.
         // (Wayland also has this visual artifact anyway...)
 
         const blur = self.config.blur;
