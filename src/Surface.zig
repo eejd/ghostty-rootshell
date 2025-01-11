@@ -646,16 +646,6 @@ pub fn init(
             // an initial size shouldn't stop our terminal from working.
             log.warn("unable to set initial window size: {s}", .{err});
         };
-
-        if (config.@"window-maximize") {
-            rt_app.performAction(
-                .{ .surface = self },
-                .toggle_maximize,
-                {},
-            ) catch |err| {
-                log.warn("unable to maximize window: {s}", .{err});
-            };
-        }
     }
 
     if (config.title) |title| {

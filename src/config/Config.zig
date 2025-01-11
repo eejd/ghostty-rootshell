@@ -764,6 +764,11 @@ link: RepeatableLink = .{},
 /// `link`). If you want to customize URL matching, use `link` and disable this.
 @"link-url": bool = true,
 
+/// Whether to start the window in a maximized state. This setting applies
+/// to new windows and does not apply to tabs, splits, etc. However, this setting
+/// will apply to all new windows, not just the first one.
+maximize: bool = false,
+
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
 /// new windows, not just the first one.
@@ -1213,13 +1218,6 @@ keybind: Keybinds = .{},
 /// of GTK 4.0).
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
-
-/// Whether to start the window in a maximized state. This is only related to
-/// the X11 window manager's concept of maximization. In other words, this
-/// will set the _NET_WM_STATE property to _NET_WM_STATE_MAXIMIZED_VERT and
-/// _NET_WM_STATE_MAXIMIZED_HORZ on launch. This will not affect the window
-/// size or position. This is only supported on Linux.
-@"window-maximize": bool = false,
 
 /// Whether to enable saving and restoring window state. Window state includes
 /// their position, size, tabs, splits, etc. Some window state requires shell
