@@ -125,7 +125,10 @@ pub const NotebookAdw = struct {
         // as true so that the close_page call below doesn't request
         // confirmation.
         self.forcing_close = true;
-        defer self.forcing_close = false;
+        const n = self.nPages();
+        defer {
+            if (n > 1) self.forcing_close = false;
+        }
 
         const page = c.adw_tab_view_get_page(self.tab_view, @ptrCast(tab.box)) orelse return;
         c.adw_tab_view_close_page(self.tab_view, page);
