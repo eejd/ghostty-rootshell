@@ -18,6 +18,7 @@ extension NSPasteboard {
                 return path
             }
         }
+
         return self.string(forType: .string)
     }
 

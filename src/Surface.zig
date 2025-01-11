@@ -1591,6 +1591,15 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
+    // We clear our selection when ANY OF:
+    // 1. We have an existing preedit
+    // 2. We have preedit text
+    if (self.renderer_state.preedit != null or
+        preedit_ != null)
+    {
+        self.setSelection(null) catch {};
+    }
+
     // We always clear our prior preedit
     if (self.renderer_state.preedit) |p| {
         self.alloc.free(p.codepoints);

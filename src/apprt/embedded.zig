@@ -1550,11 +1550,6 @@ pub const CAPI = struct {
         return selection.len;
     }
 
-    /// Clear the current selection in the surface.
-    export fn ghostty_surface_clear_selection(surface: *Surface) void {
-        surface.core_surface.io.terminal.screen.clearSelection();
-    }
-
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();
