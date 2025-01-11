@@ -380,7 +380,6 @@ pub const Parser = struct {
         conemu_progress_state,
         conemu_progress_prevalue,
         conemu_progress_value,
-        conemu_wait,
     };
 
     /// This must be called to clean up any allocated memory.
@@ -816,7 +815,7 @@ pub const Parser = struct {
                     self.state = .conemu_progress_prestate;
                 },
                 '5' => {
-                    self.state = .conemu_wait;
+                    self.state = .swallow;
                     self.command = .{ .wait_input = {} };
                     self.complete = true;
                 },
@@ -950,11 +949,6 @@ pub const Parser = struct {
                     self.state = .swallow;
                     self.complete = true;
                 },
-            },
-
-            .conemu_wait => {
-                self.state = .invalid;
-                self.complete = false;
             },
 
             .query_fg_color => switch (c) {
@@ -2122,16 +2116,16 @@ test "OSC: OSC9 conemu wait input" {
     try testing.expect(cmd == .wait_input);
 }
 
-test "OSC: OSC9 conemu wait invalid input" {
+test "OSC: OSC9 conemu wait ignores trailing characters" {
     const testing = std.testing;
 
     var p: Parser = .{};
 
-    const input = "9;5;";
+    const input = "9;5;foo";
     for (input) |ch| p.next(ch);
 
-    const cmd = p.end('\x1b');
-    try testing.expect(cmd == null);
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .wait_input);
 }
 
 test "OSC: empty param" {
