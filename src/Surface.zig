@@ -1316,8 +1316,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
 
     const x: f64 = x: {
-        // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width);
+        // Simple x * cell width gives the top-left corner, then add padding offset
+        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width + self.size.padding.left);
 
         // We want the midpoint
         x += @as(f64, @floatFromInt(self.size.cell.width)) / 2;
@@ -1329,8 +1329,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     };
 
     const y: f64 = y: {
-        // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height);
+        // Simple y * cell height gives the top-left corner, then add padding offset
+        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height + self.size.padding.top);
 
         // We want the bottom
         y += @floatFromInt(self.size.cell.height);
@@ -1590,6 +1590,15 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
 
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // We clear our selection when ANY OF:
+    // 1. We have an existing preedit
+    // 2. We have preedit text
+    if (self.renderer_state.preedit != null or
+        preedit_ != null)
+    {
+        self.setSelection(null) catch {};
+    }
 
     // We always clear our prior preedit
     if (self.renderer_state.preedit) |p| {
