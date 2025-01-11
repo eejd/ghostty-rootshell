@@ -92,6 +92,9 @@ pub const Action = union(Key) {
     /// Close all open windows.
     close_all_windows,
 
+    /// Toggle maximized window state.
+    toggle_maximize,
+
     /// Toggle fullscreen mode.
     toggle_fullscreen: Fullscreen,
 
@@ -231,6 +234,7 @@ pub const Action = union(Key) {
         close_tab,
         new_split,
         close_all_windows,
+        toggle_maximize,
         toggle_fullscreen,
         toggle_tab_overview,
         toggle_window_decorations,

@@ -522,6 +522,15 @@ pub fn toggleTabOverview(self: *Window) void {
     }
 }
 
+/// Toggle the maximized state for this window.
+pub fn toggleMaximize(self: *Window) void {
+    if (c.gtk_window_is_maximized(self.window) == 0) {
+        c.gtk_window_maximize(self.window);
+    } else {
+        c.gtk_window_unmaximize(self.window);
+    }
+}
+
 /// Toggle fullscreen for this window.
 pub fn toggleFullscreen(self: *Window) void {
     const is_fullscreen = c.gtk_window_is_fullscreen(self.window);
