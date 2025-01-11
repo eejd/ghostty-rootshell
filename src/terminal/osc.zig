@@ -178,6 +178,9 @@ pub const Command = union(enum) {
         progress: ?u8 = null,
     },
 
+    /// Wait input (OSC 9;5)
+    wait_input: void,
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -810,6 +813,11 @@ pub const Parser = struct {
                 },
                 '4' => {
                     self.state = .conemu_progress_prestate;
+                },
+                '5' => {
+                    self.state = .swallow;
+                    self.command = .{ .wait_input = {} };
+                    self.complete = true;
                 },
 
                 // Todo: parse out other ConEmu operating system commands.
@@ -2094,6 +2102,30 @@ test "OSC: OSC9 progress pause with progress" {
     try testing.expect(cmd == .progress);
     try testing.expect(cmd.progress.state == .pause);
     try testing.expect(cmd.progress.progress == 100);
+}
+
+test "OSC: OSC9 conemu wait input" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;5";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .wait_input);
+}
+
+test "OSC: OSC9 conemu wait ignores trailing characters" {
+    const testing = std.testing;
+
+    var p: Parser = .{};
+
+    const input = "9;5;foo";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .wait_input);
 }
 
 test "OSC: empty param" {
