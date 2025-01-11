@@ -127,6 +127,8 @@ pub const NotebookAdw = struct {
         self.forcing_close = true;
         const n = self.nPages();
         defer {
+            // self becomes invalid if we close the last page because we close
+            // the whole window
             if (n > 1) self.forcing_close = false;
         }
 
@@ -146,6 +148,8 @@ pub const NotebookAdw = struct {
                 c.g_object_unref(tab.box);
             }
 
+            // `self` will become invalid after this call because it will have
+            // been freed up as part of the process of closing the window.
             c.gtk_window_destroy(tab.window.window);
         }
     }
