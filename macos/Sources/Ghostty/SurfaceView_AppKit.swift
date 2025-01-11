@@ -1293,6 +1293,11 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        // Clear selection when IME input starts
+        if let surface = self.surface, ghostty_surface_has_selection(surface) {
+            ghostty_surface_clear_selection(surface)
+        }
+
         switch string {
         case let v as NSAttributedString:
             self.markedText = NSMutableAttributedString(attributedString: v)
