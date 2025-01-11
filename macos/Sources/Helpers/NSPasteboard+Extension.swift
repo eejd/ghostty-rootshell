@@ -13,11 +13,11 @@ extension NSPasteboard {
     /// - Tries to get any string from the pasteboard.
     /// If all of the above fail, returns None.
     func getOpinionatedStringContents() -> String? {
-        if let file = self.string(forType: .fileURL) {
-            if let path = NSURL(string: file)?.path {
-                return path
-            }
+        if let urls = readObjects(forClasses: [NSURL.self]) as? [URL],
+           urls.count > 0 {
+            return urls.map { $0.path }.joined(separator: " ")
         }
+
         return self.string(forType: .string)
     }
 
