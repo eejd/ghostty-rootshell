@@ -230,6 +230,8 @@ extension Ghostty {
 
                 ghostty_surface_set_color_scheme(surface, scheme)
             }
+            
+            registerForDraggedTypes([.string, .fileURL, .URL])
         }
 
         required init?(coder: NSCoder) {
@@ -388,6 +390,68 @@ extension Ghostty {
             ) { [weak self] _ in
                 self?.title = title
             }
+        }
+        
+        // MARK: - Drag and Drop
+        
+        override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            if let _ = sender.draggingPasteboard.string(forType: .string) {
+                return .generic
+            }
+            
+            if let _ = sender.draggingPasteboard.string(forType: .URL) {
+                return .generic
+            }
+            
+            if let _ = sender.draggingPasteboard.string(forType: .fileURL) {
+                return .generic
+            }
+            return []
+        }
+        
+        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+            if let droppedText = sender.draggingPasteboard.string(forType: .string) {
+                let content = Shell.escape(droppedText)
+                
+                DispatchQueue.main.async {
+                    self.insertText(
+                    content,
+                    replacementRange: NSMakeRange(0, 0)
+                   )
+                }
+
+                return true
+            }
+            
+            if let droppedURL = sender.draggingPasteboard.string(forType: .URL) {
+                let content = Shell.escape(droppedURL)
+                
+                DispatchQueue.main.async {
+                    self.insertText(
+                    content,
+                    replacementRange: NSMakeRange(0, 0)
+                   )
+                }
+
+                return true
+            }
+            
+            if let droppedFileURL = sender.draggingPasteboard.string(forType: .fileURL) {
+                guard let urlPath = URL(string: droppedFileURL)?.path(percentEncoded: false) else {
+                    return false
+                }
+                
+                DispatchQueue.main.async {
+                    self.insertText(
+                        urlPath,
+                        replacementRange: NSMakeRange(0, 0)
+                    )
+                }
+                
+                return true
+            }
+            
+            return false
         }
 
         // MARK: Local Events
