@@ -115,6 +115,38 @@ fn genActions(alloc: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("};\n");
 }
 
+fn genKeybindField(
+    alloc: std.mem.Allocator,
+    writer: anytype,
+    ast: std.zig.Ast,
+    comptime field: []const u8,
+) !void {
+    const tokens = ast.tokens.items(.tag);
+
+    // Find the field and check if it has doc comments
+    for (tokens, 0..) |token, i| {
+        if (token != .identifier) continue;
+        const name = ast.tokenSlice(@intCast(i));
+        if (!std.mem.eql(u8, name, field)) continue;
+
+        try writer.writeAll("pub const ");
+        try writer.writeAll(name);
+        try writer.writeAll(": [:0]const u8 = \n");
+
+        // If it has doc comments, use them
+        if (i > 0 and tokens[i - 1] == .doc_comment) {
+            const comment = try extractDocComments(alloc, ast, @intCast(i - 1), tokens);
+            try writer.writeAll(comment);
+        } else {
+            // Otherwise use default documentation
+            try writer.writeAll("    \\\\This action is currently undocumented.\n");
+            try writer.writeAll("    \\\\Please refer to the source code or contribute documentation.\n");
+            try writer.writeAll(";\n");
+        }
+        break;
+    }
+}
+
 fn genKeybindActions(alloc: std.mem.Allocator, writer: anytype) !void {
     var ast = try std.zig.Ast.parse(alloc, @embedFile("input/Binding.zig"), .zig);
     defer ast.deinit(alloc);
@@ -128,7 +160,7 @@ fn genKeybindActions(alloc: std.mem.Allocator, writer: anytype) !void {
 
     inline for (@typeInfo(KeybindAction).Union.fields) |field| {
         if (field.name[0] == '_') continue;
-        try genConfigField(alloc, writer, ast, field.name);
+        try genKeybindField(alloc, writer, ast, field.name);
     }
 
     try writer.writeAll("};\n");
