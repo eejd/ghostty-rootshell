@@ -41,6 +41,7 @@ class AppDelegate: NSObject,
 
     @IBOutlet private var menuToggleVisibility: NSMenuItem?
     @IBOutlet private var menuToggleFullScreen: NSMenuItem?
+    @IBOutlet private var menuBringAllToFront: NSMenuItem?
     @IBOutlet private var menuZoomSplit: NSMenuItem?
     @IBOutlet private var menuPreviousSplit: NSMenuItem?
     @IBOutlet private var menuNextSplit: NSMenuItem?
@@ -762,6 +763,14 @@ class AppDelegate: NSObject,
         // ones that we hid.
         hiddenState?.restore()
         hiddenState = nil
+    }
+    
+    @IBAction func bringAllToFront(_ sender: Any) {
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        
+        NSApplication.shared.arrangeInFront(sender)
     }
 
     private struct DerivedConfig {
