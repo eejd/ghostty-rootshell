@@ -230,6 +230,11 @@ class QuickTerminalController: BaseTerminalController {
         // Move our window off screen to the top
         position.setInitial(in: window, on: screen)
 
+        // We need to set our window level to a high value. In testing, only
+        // popUpMenu and above do what we want. This gets it above the menu bar
+        // and lets us render off screen.
+        window.level = .popUpMenu
+
         // Move it to the visible position since animation requires this
         DispatchQueue.main.async {
             window.makeKeyAndOrderFront(nil)
@@ -247,6 +252,11 @@ class QuickTerminalController: BaseTerminalController {
             DispatchQueue.main.async {
                 // If we canceled our animation in we do nothing
                 guard self.visible else { return }
+
+                // After animating in, we reset the window level to a value that
+                // is above other windows but not as high as popUpMenu. This allows
+                // things like IME dropdowns to appear properly.
+                window.level = .floating
 
                 // Now that the window is visible, sync our appearance. This function
                 // requires the window is visible.
@@ -338,6 +348,11 @@ class QuickTerminalController: BaseTerminalController {
                 _ = previousApp.activate(options: [])
             }
         }
+
+        // We need to set our window level to a high value. In testing, only
+        // popUpMenu and above do what we want. This gets it above the menu bar
+        // and lets us render off screen.
+        window.level = .popUpMenu
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = derivedConfig.quickTerminalAnimationDuration
