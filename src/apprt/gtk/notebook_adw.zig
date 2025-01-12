@@ -137,6 +137,8 @@ pub const NotebookAdw = struct {
 
         // If we have no more tabs we close the window
         if (self.nPages() == 0) {
+            const window = tab.window.window;
+
             // libadw versions <= 1.3.x leak the final page view
             // which causes our surface to not properly cleanup. We
             // unref to force the cleanup. This will trigger a critical
@@ -150,7 +152,7 @@ pub const NotebookAdw = struct {
 
             // `self` will become invalid after this call because it will have
             // been freed up as part of the process of closing the window.
-            c.gtk_window_destroy(tab.window.window);
+            c.gtk_window_destroy(window);
         }
     }
 };
