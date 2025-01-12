@@ -50,9 +50,16 @@ pub fn genKeybindActions(writer: anytype) !void {
                 '\n',
             );
             while (iter.next()) |s| {
+                // If it is the last line and empty, then skip it.
+                if (iter.peek() == null and s.len == 0) continue;
                 try buffer.appendSlice(s);
                 try buffer.appendSlice("\n");
             }
         }
+    }
+
+    // Write any remaining buffered documentation
+    if (buffer.items.len > 0) {
+        try writer.writeAll(buffer.items);
     }
 }
