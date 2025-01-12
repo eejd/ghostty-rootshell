@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CoreText
 import UserNotifications
@@ -230,6 +231,9 @@ extension Ghostty {
 
                 ghostty_surface_set_color_scheme(surface, scheme)
             }
+
+            // The UTTypes that can be dragged onto this view.
+            registerForDraggedTypes(Array(Self.dropTypes))
         }
 
         required init?(coder: NSCoder) {
@@ -1507,5 +1511,64 @@ extension Ghostty.SurfaceView: NSMenuItemValidation {
         default:
             return true
         }
+    }
+}
+
+// MARK: NSDraggingDestination
+
+extension Ghostty.SurfaceView {
+    static let dropTypes: Set<NSPasteboard.PasteboardType> = [
+        .string,
+        .fileURL,
+        .URL
+    ]
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard let types = sender.draggingPasteboard.types else { return [] }
+
+        // If the dragging object contains none of our types then we return none.
+        // This shouldn't happen because AppKit should guarantee that we only
+        // receive types we registered for but its good to check.
+        if Set(types).isDisjoint(with: Self.dropTypes) {
+            return []
+        }
+
+        // We use copy to get the proper icon
+        return .copy
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let pb = sender.draggingPasteboard
+
+        let content: String?
+        if let url = pb.string(forType: .URL) {
+            // URLs first, they get escaped as-is.
+            content = Ghostty.Shell.escape(url)
+        } else if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL],
+           urls.count > 0 {
+            // File URLs next. They get escaped individually and then joined by a
+            // space if there are multiple.
+            content = urls
+                .map { Ghostty.Shell.escape($0.path) }
+                .joined(separator: " ")
+        } else if let str = pb.string(forType: .string) {
+            // Strings are not escaped because they may be copy/pasting a
+            // command they want to execute.
+            content = str
+        } else {
+            content = nil
+        }
+
+        if let content {
+            DispatchQueue.main.async {
+                self.insertText(
+                    content,
+                    replacementRange: NSMakeRange(0, 0)
+                )
+            }
+            return true
+        }
+
+        return false
     }
 }
