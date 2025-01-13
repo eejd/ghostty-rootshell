@@ -2,8 +2,7 @@ const std = @import("std");
 const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 const Allocator = std.mem.Allocator;
-const help_strings = @import("help_strings");
-const KeybindAction = @import("../input/Binding.zig").Action;
+const helpgen_actions = @import("../helpgen_actions.zig");
 
 pub const Options = struct {
     /// If `true`, print out documentation about the action associated with the
@@ -37,46 +36,7 @@ pub fn run(alloc: Allocator) !u8 {
     }
 
     const stdout = std.io.getStdOut().writer();
-
-    var buffer = std.ArrayList(u8).init(std.heap.page_allocator);
-    defer buffer.deinit();
-
-    const fields = @typeInfo(KeybindAction).Union.fields;
-    inline for (fields) |field| {
-        if (field.name[0] == '_') continue;
-
-        // Write previously stored doc comment below all related actions
-        if (@hasDecl(help_strings.KeybindAction, field.name)) {
-            try stdout.writeAll(buffer.items);
-            try stdout.writeAll("\n");
-
-            buffer.clearRetainingCapacity();
-        }
-
-        // Write the field name.
-        try stdout.writeAll(field.name);
-        try stdout.writeAll(":\n");
-
-        if (@hasDecl(help_strings.KeybindAction, field.name)) {
-            var iter = std.mem.splitScalar(
-                u8,
-                @field(help_strings.KeybindAction, field.name),
-                '\n',
-            );
-            while (iter.next()) |s| {
-                // If it is the last line and empty, then skip it.
-                if (iter.peek() == null and s.len == 0) continue;
-                try buffer.appendSlice("  ");
-                try buffer.appendSlice(s);
-                try buffer.appendSlice("\n");
-            }
-        }
-    }
-
-    // Write any remaining buffered documentation
-    if (buffer.items.len > 0) {
-        try stdout.writeAll(buffer.items);
-    }
+    try helpgen_actions.generate(stdout, .plaintext, std.heap.page_allocator);
 
     return 0;
 }
