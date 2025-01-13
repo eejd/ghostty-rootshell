@@ -2032,6 +2032,10 @@ keybind: Keybinds = .{},
 /// title bar, or you can switch tabs with keybinds.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
+/// If this is `true`, the titlebar will be hidden when the window is maximized,
+/// and shown when the titlebar is unmaximized. GTK only.
+@"gtk-titlebar-hide-when-maximized": bool = false,
+
 /// Determines the appearance of the top and bottom bars when using the
 /// Adwaita tab bar. This requires `gtk-adwaita` to be enabled (it is
 /// by default).
