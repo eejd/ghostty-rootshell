@@ -498,9 +498,9 @@ pub fn moveTab(self: *Window, surface: *Surface, position: c_int) void {
     self.notebook.moveTab(tab, position);
 }
 
-/// Go to the next tab for a surface.
+/// Go to the last tab for a surface.
 pub fn gotoLastTab(self: *Window) void {
-    const max = self.notebook.nPages() -| 1;
+    const max = self.notebook.nPages();
     self.gotoTab(@intCast(max));
 }
 
