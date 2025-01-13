@@ -204,6 +204,7 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     _ = c.g_signal_connect_data(gtk_window, "notify::decorated", c.G_CALLBACK(&gtkWindowNotifyDecorated), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gtk_window, "notify::fullscreened", c.G_CALLBACK(&gtkWindowNotifyFullscreened), self, null, c.G_CONNECT_DEFAULT);
 
     // If we are disabling decorations then disable them right away.
     if (!app.config.@"window-decoration") {
@@ -604,6 +605,15 @@ fn gtkWindowNotifyDecorated(
         c.gtk_widget_add_css_class(@ptrCast(object), "ssd");
         c.gtk_widget_add_css_class(@ptrCast(object), "no-border-radius");
     }
+}
+
+fn gtkWindowNotifyFullscreened(
+    object: *c.GObject,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
+    self.headerbar.setVisible(c.gtk_window_is_fullscreen(@ptrCast(object)) == 0);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
