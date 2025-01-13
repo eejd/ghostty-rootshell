@@ -391,6 +391,9 @@ pub const Action = union(enum) {
     /// This only works for macOS currently.
     close_all_windows: void,
 
+    /// Toggle maximized window state. This only works on Linux.
+    toggle_maximize: void,
+
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,
 
@@ -737,6 +740,7 @@ pub const Action = union(enum) {
             .close_surface,
             .close_tab,
             .close_window,
+            .toggle_maximize,
             .toggle_fullscreen,
             .toggle_window_decorations,
             .toggle_secure_input,

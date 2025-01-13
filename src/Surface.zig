@@ -4177,6 +4177,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .toggle_maximize => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_maximize,
+            {},
+        ),
+
         .toggle_fullscreen => try self.rt_app.performAction(
             .{ .surface = self },
             .toggle_fullscreen,

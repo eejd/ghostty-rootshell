@@ -764,6 +764,11 @@ link: RepeatableLink = .{},
 /// `link`). If you want to customize URL matching, use `link` and disable this.
 @"link-url": bool = true,
 
+/// Whether to start the window in a maximized state. This setting applies
+/// to new windows and does not apply to tabs, splits, etc. However, this setting
+/// will apply to all new windows, not just the first one.
+maximize: bool = false,
+
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
 /// new windows, not just the first one.
