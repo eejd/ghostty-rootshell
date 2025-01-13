@@ -159,7 +159,7 @@ typedef enum {
   GHOSTTY_KEY_EQUAL,
   GHOSTTY_KEY_LEFT_BRACKET,   // [
   GHOSTTY_KEY_RIGHT_BRACKET,  // ]
-  GHOSTTY_KEY_BACKSLASH,      // /
+  GHOSTTY_KEY_BACKSLASH,      // \
 
   // control
   GHOSTTY_KEY_UP,
