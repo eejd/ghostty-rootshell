@@ -204,6 +204,7 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     _ = c.g_signal_connect_data(gtk_window, "notify::decorated", c.G_CALLBACK(&gtkWindowNotifyDecorated), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(gtk_window, "notify::maximized", c.G_CALLBACK(&gtkWindowNotifyMaximized), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(gtk_window, "notify::fullscreened", c.G_CALLBACK(&gtkWindowNotifyFullscreened), self, null, c.G_CONNECT_DEFAULT);
 
     // If we are disabling decorations then disable them right away.
@@ -599,6 +600,22 @@ fn gtkRealize(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     };
 
     return true;
+}
+
+fn gtkWindowNotifyMaximized(
+    _: *c.GObject,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
+    const maximized = c.gtk_window_is_maximized(self.window) != 0;
+    if (!maximized) {
+        self.headerbar.setVisible(true);
+        return;
+    }
+    if (self.app.config.@"gtk-titlebar-hide-when-maximized") {
+        self.headerbar.setVisible(false);
+    }
 }
 
 fn gtkWindowNotifyDecorated(
