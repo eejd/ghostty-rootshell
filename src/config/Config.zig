@@ -264,23 +264,15 @@ const c = @cImport({
 ///   This is also sometimes known as "gamma correction".
 ///   (Currently only supported on macOS. Has no effect on Linux.)
 ///
-///   To prevent the uneven thickness caused by linear blending, you can use
-///   the `experimental-linear-correction` option which applies a correction
-///   curve to the text alpha depending on its brightness, which compensates
-///   for the thinning and makes the weight of most text appear very similar
-///   to when it's blendeded non-linearly.
+/// * `linear-corrected` - Corrects the thinning/thickening effect of linear
+///   by applying a correction curve to the text alpha depending on its
+///   brightness. This compensates for the thinning and makes the weight of
+///   most text appear very similar to when it's blended non-linearly.
 ///
 /// Note: This setting affects more than just text, images will also be blended
 /// in the selected color space, and custom shaders will receive colors in that
 /// color space as well.
 @"text-blending": TextBlending = .native,
-
-/// Apply a correction curve to text alpha to compensate for uneven apparent
-/// thickness of different colors of text, roughly matching the appearance of
-/// text rendered with non-linear blending.
-///
-/// Has no effect if not using linear `text-blending`.
-@"experimental-linear-correction": bool = false,
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
@@ -5787,6 +5779,14 @@ pub const GraphemeWidthMethod = enum {
 pub const TextBlending = enum {
     native,
     linear,
+    @"linear-corrected",
+
+    pub fn isLinear(self: TextBlending) bool {
+        return switch (self) {
+            .native => false,
+            .linear, .@"linear-corrected" => true,
+        };
+    }
 };
 
 /// See freetype-load-flag

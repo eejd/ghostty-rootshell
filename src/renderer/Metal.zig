@@ -389,7 +389,6 @@ pub const DerivedConfig = struct {
     vsync: bool,
     colorspace: configpkg.Config.WindowColorspace,
     blending: configpkg.Config.TextBlending,
-    experimental_linear_correction: bool,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -462,8 +461,6 @@ pub const DerivedConfig = struct {
             .vsync = config.@"window-vsync",
             .colorspace = config.@"window-colorspace",
             .blending = config.@"text-blending",
-            .experimental_linear_correction = config.@"text-blending" == .linear and config.@"experimental-linear-correction",
-
             .arena = arena,
         };
     }
@@ -559,7 +556,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         // the pixels written to it *after* blending, which means
         // we get linear alpha blending rather than gamma-incorrect
         // blending.
-        if (options.config.blending == .linear)
+        if (options.config.blending.isLinear())
             @intFromEnum(mtl.MTLPixelFormat.bgra8unorm_srgb)
         else
             @intFromEnum(mtl.MTLPixelFormat.bgra8unorm),
@@ -655,8 +652,8 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             },
             .cursor_wide = false,
             .use_display_p3 = options.config.colorspace == .@"display-p3",
-            .use_linear_blending = options.config.blending == .linear,
-            .use_experimental_linear_correction = options.config.experimental_linear_correction,
+            .use_linear_blending = options.config.blending.isLinear(),
+            .use_experimental_linear_correction = options.config.blending == .@"linear-corrected",
         },
 
         // Fonts
@@ -774,7 +771,7 @@ fn initShaders(self: *Metal) !void {
         // the pixels written to it *after* blending, which means
         // we get linear alpha blending rather than gamma-incorrect
         // blending.
-        if (self.config.blending == .linear)
+        if (self.config.blending.isLinear())
             mtl.MTLPixelFormat.bgra8unorm_srgb
         else
             mtl.MTLPixelFormat.bgra8unorm,
@@ -2071,9 +2068,8 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
 
     // Set our new color space and blending
     self.uniforms.use_display_p3 = config.colorspace == .@"display-p3";
-    self.uniforms.use_linear_blending = config.blending == .linear;
-
-    self.uniforms.use_experimental_linear_correction = config.experimental_linear_correction;
+    self.uniforms.use_linear_blending = config.blending.isLinear();
+    self.uniforms.use_experimental_linear_correction = config.blending == .@"linear-corrected";
 
     // Set our new colors
     self.default_background_color = config.background;
@@ -2105,7 +2101,7 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
         // And we update our layer's pixel format appropriately.
         self.layer.setProperty(
             "pixelFormat",
-            if (config.blending == .linear)
+            if (config.blending.isLinear())
                 @intFromEnum(mtl.MTLPixelFormat.bgra8unorm_srgb)
             else
                 @intFromEnum(mtl.MTLPixelFormat.bgra8unorm),
@@ -2231,7 +2227,7 @@ pub fn setScreenSize(
                 // the pixels written to it *after* blending, which means
                 // we get linear alpha blending rather than gamma-incorrect
                 // blending.
-                if (self.config.blending == .linear)
+                if (self.config.blending.isLinear())
                     @intFromEnum(mtl.MTLPixelFormat.bgra8unorm_srgb)
                 else
                     @intFromEnum(mtl.MTLPixelFormat.bgra8unorm),
@@ -2271,7 +2267,7 @@ pub fn setScreenSize(
                 // the pixels written to it *after* blending, which means
                 // we get linear alpha blending rather than gamma-incorrect
                 // blending.
-                if (self.config.blending == .linear)
+                if (self.config.blending.isLinear())
                     @intFromEnum(mtl.MTLPixelFormat.bgra8unorm_srgb)
                 else
                     @intFromEnum(mtl.MTLPixelFormat.bgra8unorm),
