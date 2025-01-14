@@ -875,7 +875,11 @@ const Subprocess = struct {
             };
 
             const force: ?shell_integration.Shell = switch (cfg.shell_integration) {
-                .none => break :shell .{ null, default_shell_command },
+                .none => {
+                    // Even if shell integration is none, we still want to set up the feature env vars
+                    try shell_integration.setupFeatures(&env, cfg.shell_integration_features);
+                    break :shell .{ null, default_shell_command };
+                },
                 .detect => null,
                 .bash => .bash,
                 .elvish => .elvish,

@@ -114,9 +114,7 @@ pub fn setup(
     };
 
     // Setup our feature env vars
-    if (!features.cursor) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
-    if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
-    if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
+    try setupFeatures(env, features);
 
     return result;
 }
@@ -136,6 +134,17 @@ test "force shell" {
         const result = try setup(alloc, ".", "sh", &env, shell, .{});
         try testing.expectEqual(shell, result.?.shell);
     }
+}
+
+/// Setup shell integration feature environment variables without
+/// performing full shell integration setup.
+pub fn setupFeatures(
+    env: *EnvMap,
+    features: config.ShellIntegrationFeatures,
+) !void {
+    if (!features.cursor) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
+    if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
+    if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
 }
 
 /// Setup the bash automatic shell integration. This works by
