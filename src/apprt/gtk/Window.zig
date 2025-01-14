@@ -410,7 +410,7 @@ pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
     // Disable the title buttons (close, maximize, minimize, ...)
     // *inside* the tab overview if CSDs are disabled.
     // We do spare the search button, though.
-    if ((comptime adwaita.versionAtLeast(0, 0, 0)) and
+    if ((comptime adwaita.versionAtLeast(1, 4, 0)) and
         adwaita.enabled(&self.app.config))
     {
         if (self.tab_overview) |tab_overview| {
