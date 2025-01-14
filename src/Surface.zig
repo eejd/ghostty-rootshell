@@ -3563,22 +3563,23 @@ fn dragLeftClickTriple(
     const screen = &self.io.terminal.screen;
     const click_pin = self.mouse.left_click_pin.?.*;
 
-    // Get the word under our current point. If there isn't a word, do nothing.
-    const word = screen.selectLine(.{ .pin = drag_pin }) orelse return;
+    // Get the line selection under our current drag point. If there isn't a line, do nothing.
+    const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
 
-    // Get our selection to grow it. If we don't have a selection, start it now.
-    // We may not have a selection if we started our dbl-click in an area
-    // that had no data, then we dragged our mouse into an area with data.
-    var sel = screen.selectLine(.{ .pin = click_pin }) orelse {
-        try self.setSelection(word);
-        return;
-    };
+    // get the selection under our click point.
+    var sel_ = screen.selectLine(.{ .pin = click_pin });
 
-    // Grow our selection
+    // We may not have a selection if we started our triple-click in an area
+    // that had no data, in this case recall selectLine with allow_empty_lines.
+    if (sel_ == null) {
+        sel_ = screen.selectLine(.{ .pin = click_pin, .allow_empty_lines = true });
+    }
+
+    var sel = sel_ orelse return;
     if (drag_pin.before(click_pin)) {
-        sel.startPtr().* = word.start();
+        sel.startPtr().* = line.start();
     } else {
-        sel.endPtr().* = word.end();
+        sel.endPtr().* = line.end();
     }
     try self.setSelection(sel);
 }
