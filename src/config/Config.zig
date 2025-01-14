@@ -5921,13 +5921,13 @@ pub const WindowDecoration = enum {
     server,
     none,
 
-    pub fn parseCLI(input: ?[]const u8) !WindowDecoration {
-        const input_ = input orelse return .client;
+    pub fn parseCLI(input_: ?[]const u8) !WindowDecoration {
+        const input = input_ orelse return .client;
 
-        return if (cli.args.parseBool(input_)) |b|
+        return if (cli.args.parseBool(input)) |b|
             if (b) .client else .none
-        else |_| if (std.mem.eql(u8, input_, "server"))
-            .server
+        else |_| if (std.meta.stringToEnum(WindowDecoration, input)) |v|
+            v
         else
             error.InvalidValue;
     }
@@ -5963,6 +5963,14 @@ pub const WindowDecoration = enum {
         {
             const v = try WindowDecoration.parseCLI("server");
             try testing.expectEqual(WindowDecoration.server, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("client");
+            try testing.expectEqual(WindowDecoration.client, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("none");
+            try testing.expectEqual(WindowDecoration.none, v);
         }
         {
             try testing.expectError(error.InvalidValue, WindowDecoration.parseCLI(""));
