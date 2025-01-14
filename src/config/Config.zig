@@ -282,7 +282,7 @@ const c = @cImport({
 /// For example, a value of `1` increases the value by 1; it does not set it to
 /// literally 1. A value of `20%` increases the value by 20%. And so on.
 ///
-/// There is little to no validation on these values so the wrong values (i.e.
+/// There is little to no validation on these values so the wrong values (e.g.
 /// `-100%`) can cause the terminal to be unusable. Use with caution and reason.
 ///
 /// Some values are clamped to minimum or maximum values. This can make it
@@ -467,7 +467,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
 /// The minimum contrast ratio between the foreground and background colors.
 /// The contrast ratio is a value between 1 and 21. A value of 1 allows for no
-/// contrast (i.e. black on black). This value is the contrast ratio as defined
+/// contrast (e.g. black on black). This value is the contrast ratio as defined
 /// by the [WCAG 2.0 specification](https://www.w3.org/TR/WCAG20/).
 ///
 /// If you want to avoid invisible text (same color as background), a value of
@@ -722,7 +722,7 @@ command: ?[]const u8 = null,
 ///     injecting any configured shell integration into the command's
 ///     environment. With `-e` its highly unlikely that you're executing a
 ///     shell and forced shell integration is likely to cause problems
-///     (i.e. by wrapping your command in a shell, setting env vars, etc.).
+///     (e.g. by wrapping your command in a shell, setting env vars, etc.).
 ///     This is a safety measure to prevent unexpected behavior. If you want
 ///     shell integration with a `-e`-executed command, you must either
 ///     name your binary appropriately or source the shell integration script
@@ -770,7 +770,7 @@ command: ?[]const u8 = null,
 
 /// Match a regular expression against the terminal text and associate clicking
 /// it with an action. This can be used to match URLs, file paths, etc. Actions
-/// can be opening using the system opener (i.e. `open` or `xdg-open`) or
+/// can be opening using the system opener (e.g. `open` or `xdg-open`) or
 /// executing any arbitrary binding action.
 ///
 /// Links that are configured earlier take precedence over links that are
@@ -876,7 +876,7 @@ class: ?[:0]const u8 = null,
 /// Valid keys are currently only listed in the
 /// [Ghostty source code](https://github.com/ghostty-org/ghostty/blob/d6e76858164d52cff460fedc61ddf2e560912d71/src/input/key.zig#L255).
 /// This is a documentation limitation and we will improve this in the future.
-/// A common gotcha is that numeric keys are written as words: i.e. `one`,
+/// A common gotcha is that numeric keys are written as words: e.g. `one`,
 /// `two`, `three`, etc. and not `1`, `2`, `3`. This will also be improved in
 /// the future.
 ///
@@ -919,7 +919,7 @@ class: ?[:0]const u8 = null,
 ///   * Ghostty will wait an indefinite amount of time for the next key in
 ///     the sequence. There is no way to specify a timeout. The only way to
 ///     force the output of a prefix key is to assign another keybind to
-///     specifically output that key (i.e. `ctrl+a>ctrl+a=text:foo`) or
+///     specifically output that key (e.g. `ctrl+a>ctrl+a=text:foo`) or
 ///     press an unbound key which will send both keys to the program.
 ///
 ///   * If a prefix in a sequence is previously bound, the sequence will
@@ -949,13 +949,13 @@ class: ?[:0]const u8 = null,
 ///     including `physical:`-prefixed triggers without specifying the
 ///     prefix.
 ///
-///   * `csi:text` - Send a CSI sequence. i.e. `csi:A` sends "cursor up".
+///   * `csi:text` - Send a CSI sequence. e.g. `csi:A` sends "cursor up".
 ///
-///   * `esc:text` - Send an escape sequence. i.e. `esc:d` deletes to the
+///   * `esc:text` - Send an escape sequence. e.g. `esc:d` deletes to the
 ///     end of the word to the right.
 ///
 ///   * `text:text` - Send a string. Uses Zig string literal syntax.
-///     i.e. `text:\x15` sends Ctrl-U.
+///     e.g. `text:\x15` sends Ctrl-U.
 ///
 ///   * All other actions can be found in the documentation or by using the
 ///     `ghostty +list-actions` command.
@@ -981,12 +981,12 @@ class: ?[:0]const u8 = null,
 ///     keybinds only apply to the focused terminal surface. If this is true,
 ///     then the keybind will be sent to all terminal surfaces. This only
 ///     applies to actions that are surface-specific. For actions that
-///     are already global (i.e. `quit`), this prefix has no effect.
+///     are already global (e.g. `quit`), this prefix has no effect.
 ///
 ///   * `global:` - Make the keybind global. By default, keybinds only work
 ///     within Ghostty and under the right conditions (application focused,
 ///     sometimes terminal focused, etc.). If you want a keybind to work
-///     globally across your system (i.e. even when Ghostty is not focused),
+///     globally across your system (e.g. even when Ghostty is not focused),
 ///     specify this prefix. This prefix implies `all:`. Note: this does not
 ///     work in all environments; see the additional notes below for more
 ///     information.
@@ -1087,7 +1087,7 @@ keybind: Keybinds = .{},
 ///   any of the heuristics that disable extending noted below.
 ///
 /// The "extend" value will be disabled in certain scenarios. On primary
-/// screen applications (i.e. not something like Neovim), the color will not
+/// screen applications (e.g. not something like Neovim), the color will not
 /// be extended vertically if any of the following are true:
 ///
 /// * The nearest row has any cells that have the default background color.
@@ -1127,21 +1127,46 @@ keybind: Keybinds = .{},
 /// configuration `font-size` will be used.
 @"window-inherit-font-size": bool = true,
 
+/// Configure a preference for window decorations. This setting specifies
+/// a _preference_; the actual OS, desktop environment, window manager, etc.
+/// may override this preference. Ghostty will do its best to respect this
+/// preference but it may not always be possible.
+///
 /// Valid values:
 ///
-///   * `true`
-///   * `false` - windows won't have native decorations, i.e. titlebar and
-///      borders. On macOS this also disables tabs and tab overview.
+///   * `none` - All window decorations will be disabled. Titlebar,
+///     borders, etc. will not be shown. On macOS, this will also disable
+///     tabs (enforced by the system).
+///
+///   * `client` - Prefer client-side decorations. This is the default.
+///
+///   * `server` - Prefer server-side decorations. This is only relevant
+///     on Linux with GTK. This currently only works on Linux with Wayland
+///     and the `org_kde_kwin_server_decoration` protocol available (e.g.
+///     KDE Plasma, but almost any non-Gnome desktop supports this protocol).
+///
+///     If `server` is set but the environment doesn't support server-side
+///     decorations, client-side decorations will be used instead.
+///
+/// The default value is `client`.
+///
+/// This setting also accepts boolean true and false values. If set to `true`,
+/// this is equivalent to `client`. If set to `false`, this is equivalent to
+/// `none`. This is a convenience for users who live primarily on systems
+/// that don't differentiate between client and server-side decorations
+/// (e.g. macOS and Windows).
 ///
 /// The "toggle_window_decorations" keybind action can be used to create
-/// a keybinding to toggle this setting at runtime.
+/// a keybinding to toggle this setting at runtime. This will always toggle
+/// back to "server" if the current value is "none" (this is an issue
+/// that will be fixed in the future).
 ///
 /// Changing this configuration in your configuration and reloading will
 /// only affect new windows. Existing windows will not be affected.
 ///
 /// macOS: To hide the titlebar without removing the native window borders
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
-@"window-decoration": bool = true,
+@"window-decoration": WindowDecoration = .client,
 
 /// The font that will be used for the application's window and tab titles.
 ///
@@ -1364,7 +1389,7 @@ keybind: Keybinds = .{},
 @"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
 
 /// If true, when there are multiple split panes, the mouse selects the pane
-/// that is focused. This only applies to the currently focused window; i.e.
+/// that is focused. This only applies to the currently focused window; e.g.
 /// mousing over a split in an unfocused window will not focus that split
 /// and bring the window to front.
 ///
@@ -1408,7 +1433,7 @@ keybind: Keybinds = .{},
 /// and a minor amount of user interaction).
 @"title-report": bool = false,
 
-/// The total amount of bytes that can be used for image data (i.e. the Kitty
+/// The total amount of bytes that can be used for image data (e.g. the Kitty
 /// image protocol) per terminal screen. The maximum value is 4,294,967,295
 /// (4GiB). The default is 320MB. If this is set to zero, then all image
 /// protocols will be disabled.
@@ -1668,7 +1693,7 @@ keybind: Keybinds = .{},
 ///
 ///   * `none` - OSC 4/10/11 queries receive no reply
 ///
-///   * `8-bit` - Color components are return unscaled, i.e. `rr/gg/bb`
+///   * `8-bit` - Color components are return unscaled, e.g. `rr/gg/bb`
 ///
 ///   * `16-bit` - Color components are returned scaled, e.g. `rrrr/gggg/bbbb`
 ///
@@ -1767,7 +1792,7 @@ keybind: Keybinds = .{},
 /// typical for a macOS application and may not work well with all themes.
 ///
 /// The "transparent" style will also update in real-time to dynamic
-/// changes to the window background color, i.e. via OSC 11. To make this
+/// changes to the window background color, e.g. via OSC 11. To make this
 /// more aesthetically pleasing, this only happens if the terminal is
 /// a window, tab, or split that borders the top of the window. This
 /// avoids a disjointed appearance where the titlebar color changes
@@ -1834,7 +1859,7 @@ keybind: Keybinds = .{},
 ///   - U.S. International
 ///
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
-/// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
+/// will be treated as *Alt* regardless of this setting. (e.g. `alt+ctrl+a`).
 ///
 /// Explicit values that can be set:
 ///
@@ -5887,6 +5912,62 @@ pub const BackgroundBlur = union(enum) {
         try testing.expectError(error.InvalidValue, v.parseCLI(""));
         try testing.expectError(error.InvalidValue, v.parseCLI("aaaa"));
         try testing.expectError(error.InvalidValue, v.parseCLI("420"));
+    }
+};
+
+/// See window-decoration
+pub const WindowDecoration = enum {
+    client,
+    server,
+    none,
+
+    pub fn parseCLI(input: ?[]const u8) !WindowDecoration {
+        const input_ = input orelse return .client;
+
+        return if (cli.args.parseBool(input_)) |b|
+            if (b) .client else .none
+        else |_| if (std.mem.eql(u8, input_, "server"))
+            .server
+        else
+            error.InvalidValue;
+    }
+
+    /// Returns true if the window decoration setting results in
+    /// CSD (client-side decorations). Note that this only returns the
+    /// user requested behavior. Depending on available APIs (e.g.
+    /// Wayland protocols), the actual behavior may differ and the apprt
+    /// should rely on actual windowing APIs to determine the actual
+    /// status.
+    pub fn isCSD(self: WindowDecoration) bool {
+        return switch (self) {
+            .client => true,
+            .server, .none => false,
+        };
+    }
+
+    test "parse WindowDecoration" {
+        const testing = std.testing;
+
+        {
+            const v = try WindowDecoration.parseCLI(null);
+            try testing.expectEqual(WindowDecoration.client, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("true");
+            try testing.expectEqual(WindowDecoration.client, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("false");
+            try testing.expectEqual(WindowDecoration.none, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("server");
+            try testing.expectEqual(WindowDecoration.server, v);
+        }
+        {
+            try testing.expectError(error.InvalidValue, WindowDecoration.parseCLI(""));
+            try testing.expectError(error.InvalidValue, WindowDecoration.parseCLI("aaaa"));
+        }
     }
 };
 
