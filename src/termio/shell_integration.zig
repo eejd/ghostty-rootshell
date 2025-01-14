@@ -147,6 +147,47 @@ pub fn setupFeatures(
     if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
 }
 
+test "setup features" {
+    const testing = std.testing;
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Test: all features enabled (no environment variables should be set)
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        try setupFeatures(&env, .{ .cursor = true, .sudo = true, .title = true });
+        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR") == null);
+        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO") == null);
+        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE") == null);
+    }
+
+    // Test: all features disabled
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        try setupFeatures(&env, .{ .cursor = false, .sudo = false, .title = false });
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR").?);
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO").?);
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE").?);
+    }
+
+    // Test: mixed features
+    {
+        var env = EnvMap.init(alloc);
+        defer env.deinit();
+
+        try setupFeatures(&env, .{ .cursor = false, .sudo = true, .title = false });
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR").?);
+        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO") == null);
+        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE").?);
+    }
+}
+
 /// Setup the bash automatic shell integration. This works by
 /// starting bash in POSIX mode and using the ENV environment
 /// variable to load our bash integration script. This prevents
