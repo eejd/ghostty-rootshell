@@ -98,7 +98,7 @@ software can be installed by using standard Nix mechanisms like `nix run nixpkgs
 1. Check out the Ghostty source and change to the directory.
 2. Run `nix run .#<vmtype>`. `<vmtype>` can be any of the VMs defined in the
    `nix/vm` directory (without the `.nix` suffix) excluding any file prefixed
-   with `common`.
+   with `common` or `create`.
 3. The VM will build and then launch. Depending on the speed of your system, this
    can take a while, but eventually you should get a new VM window.
 4. The Ghostty source directory should be mounted to `/tmp/shared` in the VM. Depending
@@ -113,6 +113,48 @@ software can be installed by using standard Nix mechanisms like `nix run nixpkgs
    blog post for more information about the Linux builder and how to tune the performance.
 2. Once the Linux builder has been enabled, you should be able to follow the Linux instructions
    above to launch a VM.
+
+### Custom VMs
+
+To easily create a custom VM without modifying the Ghostty source, create a new
+directory, then create a file called `flake.nix` with the following text in the
+new directory.
+
+```
+{
+  inputs = {
+    nixpkgs.url = "nixpkgs/nixpkgs-unstable";
+    ghostty.url = "github:ghostty-org/ghostty";
+  };
+  outputs = {
+    nixpkgs,
+    ghostty,
+    ...
+  }: {
+   nixosConfigurations.custom-vm = ghostty.create-gnome-vm {
+     nixpkgs = nixpkgs;
+     system = "x86_64-linux";
+     overlay = ghostty.overlays.releasefast;
+     # module = ./configuration.nix # also works
+     module = {pkgs, ...}: {
+       environment.systemPackages = [
+         pkgs.btop
+       ];
+     };
+    };
+  };
+}
+```
+
+The custom VM can then be run with a command like this:
+
+```
+nix run .#nixosConfigurations.custom-vm.config.system.build.vm
+```
+
+A file named `ghostty.qcow2` will be created that is used to persist any changes
+made in the VM. To "reset" the VM to default delete the file and it will be
+recreated the next time you run the VM.
 
 ### Contributing new VM definitions
 

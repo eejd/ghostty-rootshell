@@ -2,7 +2,7 @@
   system,
   nixpkgs,
   overlay,
-  path,
+  module,
   common ? ./common.nix,
   uid ? 1000,
   gid ? 1000,
@@ -37,6 +37,6 @@ in
         system.stateVersion = nixpkgs.lib.trivial.release;
       }
       common
-      path
+      module
     ];
   }

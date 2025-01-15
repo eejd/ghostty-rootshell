@@ -61,9 +61,9 @@
 
           apps.${system} = let
             runVM = (
-              path: let
+              module: let
                 vm = import ./nix/vm/create.nix {
-                  inherit system path;
+                  inherit system module;
                   nixpkgs = nixpkgs-stable;
                   overlay = self.overlays.debug;
                 };
@@ -71,7 +71,7 @@
                   SHARED_DIR=$(pwd)
                   export SHARED_DIR
 
-                  ${vm.config.system.build.vm}/bin/run-ghostty-vm
+                  ${pkgs-stable.lib.getExe vm.config.system.build.vm} "$@"
                 '';
               in {
                 type = "app";
