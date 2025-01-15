@@ -646,7 +646,7 @@ fn gtkWindowNotifyMaximized(
     if (!self.winproto.clientSideDecorationEnabled()) return;
 
     if (!maximized) {
-        self.headerbar.setVisible(true);
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar");
         return;
     }
     if (self.app.config.@"gtk-titlebar-hide-when-maximized") {
