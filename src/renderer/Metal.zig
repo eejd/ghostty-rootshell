@@ -148,6 +148,9 @@ layer: objc.Object, // CAMetalLayer
 /// a display link.
 display_link: ?DisplayLink = null,
 
+/// The `CGColorSpace` that represents our current terminal color space
+terminal_colorspace: *graphics.ColorSpace,
+
 /// Custom shader state. This is only set if we have custom shaders.
 custom_shader_state: ?CustomShaderState = null,
 
@@ -569,8 +572,19 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
     // color space using converted colors, which reduces,
     // but does not fully eliminate blending artifacts.
     const colorspace = try graphics.ColorSpace.createNamed(.displayP3);
-    errdefer colorspace.release();
+    defer colorspace.release();
     layer.setProperty("colorspace", colorspace);
+
+    // Create a colorspace the represents our terminal colors
+    // this will allow us to create e.g. `CGColor`s for things
+    // like the current background color.
+    const terminal_colorspace = try graphics.ColorSpace.createNamed(
+        switch (options.config.colorspace) {
+            .@"display-p3" => .displayP3,
+            .srgb => .sRGB,
+        },
+    );
+    errdefer terminal_colorspace.release();
 
     // Make our view layer-backed with our Metal layer. On iOS views are
     // always layer backed so we don't need to do this. But on iOS the
@@ -667,6 +681,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
         // Metal stuff
         .layer = layer,
         .display_link = display_link,
+        .terminal_colorspace = terminal_colorspace,
         .custom_shader_state = null,
         .gpu_state = gpu_state,
     };
@@ -689,6 +704,8 @@ pub fn deinit(self: *Metal) void {
             display_link.release();
         }
     }
+
+    self.terminal_colorspace.release();
 
     self.cells.deinit(self.alloc);
 
@@ -1169,6 +1186,32 @@ pub fn updateFrame(
         critical.bg.b,
         @intFromFloat(@round(self.config.background_opacity * 255.0)),
     };
+
+    // Update the background color on our layer
+    //
+    // TODO: Is this expensive? Should we be checking if our
+    //       bg color has changed first before doing this work?
+    {
+        const color = graphics.c.CGColorCreate(
+            @ptrCast(self.terminal_colorspace),
+            &[4]f64{
+                @as(f64, @floatFromInt(critical.bg.r)) / 255.0,
+                @as(f64, @floatFromInt(critical.bg.g)) / 255.0,
+                @as(f64, @floatFromInt(critical.bg.b)) / 255.0,
+                self.config.background_opacity,
+            },
+        );
+        defer graphics.c.CGColorRelease(color);
+
+        // We use a CATransaction so that Core Animation knows that we
+        // updated the background color property. Otherwise it behaves
+        // weird, not updating the color until we resize.
+        const CATransaction = objc.getClass("CATransaction").?;
+        CATransaction.msgSend(void, "begin", .{});
+        defer CATransaction.msgSend(void, "commit", .{});
+
+        self.layer.setProperty("backgroundColor", color);
+    }
 
     // Go through our images and see if we need to setup any textures.
     {
@@ -2076,6 +2119,32 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
     self.default_foreground_color = config.foreground;
     self.default_cursor_color = if (!config.cursor_invert) config.cursor_color else null;
     self.cursor_invert = config.cursor_invert;
+
+    // Update our layer's opaqueness and display sync in case they changed.
+    {
+        // We use a CATransaction so that Core Animation knows that we
+        // updated the opaque property. Otherwise it behaves weird, not
+        // properly going from opaque to transparent unless we resize.
+        const CATransaction = objc.getClass("CATransaction").?;
+        CATransaction.msgSend(void, "begin", .{});
+        defer CATransaction.msgSend(void, "commit", .{});
+
+        self.layer.setProperty("opaque", config.background_opacity >= 1);
+        self.layer.setProperty("displaySyncEnabled", config.vsync);
+    }
+
+    // Update our terminal colorspace if it changed
+    if (self.config.colorspace != config.colorspace) {
+        const terminal_colorspace = try graphics.ColorSpace.createNamed(
+            switch (config.colorspace) {
+                .@"display-p3" => .displayP3,
+                .srgb => .sRGB,
+            },
+        );
+        errdefer terminal_colorspace.release();
+        self.terminal_colorspace.release();
+        self.terminal_colorspace = terminal_colorspace;
+    }
 
     const old_blending = self.config.blending;
     const old_custom_shaders = self.config.custom_shaders;
