@@ -3563,17 +3563,15 @@ fn dragLeftClickTriple(
     const screen = &self.io.terminal.screen;
     const click_pin = self.mouse.left_click_pin.?.*;
 
-    // Get the line selection under our current drag point. If there isn't a line, do nothing.
+    // Get the line selection under our current drag point. If there isn't a
+    // line, do nothing.
     const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
 
-    // get the selection under our click point.
-    var sel_ = screen.selectLine(.{ .pin = click_pin });
-
-    // We may not have a selection if we started our triple-click in an area
-    // that had no data, in this case recall selectLine with allow_empty_lines.
-    if (sel_ == null) {
-        sel_ = screen.selectLine(.{ .pin = click_pin, .allow_empty_lines = true });
-    }
+    // Get the selection under our click point. We first try to trim
+    // whitespace if we've selected a word. But if no word exists then
+    // we select the blank line.
+    const sel_ = screen.selectLine(.{ .pin = click_pin }) orelse
+        screen.selectLine(.{ .pin = click_pin, .whitespace = null });
 
     var sel = sel_ orelse return;
     if (drag_pin.before(click_pin)) {

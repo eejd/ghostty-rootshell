@@ -2215,7 +2215,6 @@ pub const SelectLine = struct {
     /// state changing a boundary. State changing is ANY state
     /// change.
     semantic_prompt_boundary: bool = true,
-    allow_empty_lines: bool = false,
 };
 
 /// Select the line under the given point. This will select across soft-wrapped
@@ -2292,11 +2291,6 @@ pub fn selectLine(self: *const Screen, opts: SelectLine) ?Selection {
 
         return null;
     };
-
-    // If we allow empty lines, we don't need to do any further checks.
-    if (opts.allow_empty_lines) {
-        return Selection.init(start_pin, end_pin, false);
-    }
 
     // Go forward from the start to find the first non-whitespace character.
     const start: Pin = start: {
