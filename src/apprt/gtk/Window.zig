@@ -675,7 +675,13 @@ fn gtkWindowNotifyFullscreened(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
-    self.headerbar.setVisible(c.gtk_window_is_fullscreen(@ptrCast(object)) == 0);
+    const fullscreened = c.gtk_window_is_fullscreen(@ptrCast(object)) != 0;
+    if (!fullscreened) {
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar");
+        return;
+    }
+
+    self.headerbar.setVisible(false);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
