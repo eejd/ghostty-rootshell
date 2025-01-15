@@ -58,65 +58,73 @@ pub fn setup(
         break :exe std.fs.path.basename(command[0..idx]);
     };
 
-    const result: ShellIntegration = shell: {
-        if (std.mem.eql(u8, "bash", exe)) {
-            // Apple distributes their own patched version of Bash 3.2
-            // on macOS that disables the ENV-based POSIX startup path.
-            // This means we're unable to perform our automatic shell
-            // integration sequence in this specific environment.
-            //
-            // If we're running "/bin/bash" on Darwin, we can assume
-            // we're using Apple's Bash because /bin is non-writable
-            // on modern macOS due to System Integrity Protection.
-            if (comptime builtin.target.isDarwin()) {
-                if (std.mem.eql(u8, "/bin/bash", command)) {
-                    return null;
-                }
-            }
-
-            const new_command = try setupBash(
-                alloc_arena,
-                command,
-                resource_dir,
-                env,
-            ) orelse return null;
-            break :shell .{
-                .shell = .bash,
-                .command = new_command,
-            };
-        }
-
-        if (std.mem.eql(u8, "elvish", exe)) {
-            try setupXdgDataDirs(alloc_arena, resource_dir, env);
-            break :shell .{
-                .shell = .elvish,
-                .command = try alloc_arena.dupe(u8, command),
-            };
-        }
-
-        if (std.mem.eql(u8, "fish", exe)) {
-            try setupXdgDataDirs(alloc_arena, resource_dir, env);
-            break :shell .{
-                .shell = .fish,
-                .command = try alloc_arena.dupe(u8, command),
-            };
-        }
-
-        if (std.mem.eql(u8, "zsh", exe)) {
-            try setupZsh(resource_dir, env);
-            break :shell .{
-                .shell = .zsh,
-                .command = try alloc_arena.dupe(u8, command),
-            };
-        }
-
-        return null;
-    };
+    const result = try setupShell(alloc_arena, resource_dir, command, env, exe);
 
     // Setup our feature env vars
     try setupFeatures(env, features);
 
     return result;
+}
+
+fn setupShell(
+    alloc_arena: Allocator,
+    resource_dir: []const u8,
+    command: []const u8,
+    env: *EnvMap,
+    exe: []const u8,
+) !?ShellIntegration {
+    if (std.mem.eql(u8, "bash", exe)) {
+        // Apple distributes their own patched version of Bash 3.2
+        // on macOS that disables the ENV-based POSIX startup path.
+        // This means we're unable to perform our automatic shell
+        // integration sequence in this specific environment.
+        //
+        // If we're running "/bin/bash" on Darwin, we can assume
+        // we're using Apple's Bash because /bin is non-writable
+        // on modern macOS due to System Integrity Protection.
+        if (comptime builtin.target.isDarwin()) {
+            if (std.mem.eql(u8, "/bin/bash", command)) {
+                return null;
+            }
+        }
+
+        const new_command = try setupBash(
+            alloc_arena,
+            command,
+            resource_dir,
+            env,
+        ) orelse return null;
+        return .{
+            .shell = .bash,
+            .command = new_command,
+        };
+    }
+
+    if (std.mem.eql(u8, "elvish", exe)) {
+        try setupXdgDataDirs(alloc_arena, resource_dir, env);
+        return .{
+            .shell = .elvish,
+            .command = try alloc_arena.dupe(u8, command),
+        };
+    }
+
+    if (std.mem.eql(u8, "fish", exe)) {
+        try setupXdgDataDirs(alloc_arena, resource_dir, env);
+        return .{
+            .shell = .fish,
+            .command = try alloc_arena.dupe(u8, command),
+        };
+    }
+
+    if (std.mem.eql(u8, "zsh", exe)) {
+        try setupZsh(resource_dir, env);
+        return .{
+            .shell = .zsh,
+            .command = try alloc_arena.dupe(u8, command),
+        };
+    }
+
+    return null;
 }
 
 test "force shell" {
