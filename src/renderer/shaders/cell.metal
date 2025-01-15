@@ -248,7 +248,15 @@ fragment float4 cell_bg_fragment(
 ) {
   int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
 
-  float4 bg = in.bg_color;
+  float4 bg = float4(0.0);
+  // If we have any background transparency then we render bg-colored cells as
+  // fully transparent, since the background is handled by the layer bg color
+  // and we don't want to double up our bg color, but if our bg color is fully
+  // opaque then our layer is opaque and can't handle transparency, so we need
+  // to return the bg color directly instead.
+  if (uniforms.bg_color.a == 255) {
+    bg = in.bg_color;
+  }
 
   // Clamp x position, extends edge bg colors in to padding on sides.
   if (grid_pos.x < 0) {
@@ -285,16 +293,7 @@ fragment float4 cell_bg_fragment(
 
   // We have special case handling for when the cell color matches the bg color.
   if (all(cell_color == uniforms.bg_color)) {
-    // If we have any background transparency then we render bg-colored cells as
-    // fully transparent, since the background is handled by the layer bg color
-    // and we don't want to double up our bg color, but if our bg color is fully
-    // opaque then our layer is opaque and can't handle transparency, so we need
-    // to return the bg color directly instead.
-    if (uniforms.bg_color.a == 255) {
-      return bg;
-    } else {
-      return float4(0.0);
-    }
+    return bg;
   }
 
   // Convert the color and return it.
