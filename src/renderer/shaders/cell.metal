@@ -280,7 +280,24 @@ fragment float4 cell_bg_fragment(
     }
   }
 
-  // We load the color for the cell, converting it appropriately, and return it.
+  // Load the color for the cell.
+  uchar4 cell_color = cells[grid_pos.y * uniforms.grid_size.x + grid_pos.x];
+
+  // We have special case handling for when the cell color matches the bg color.
+  if (all(cell_color == uniforms.bg_color)) {
+    // If we have any background transparency then we render bg-colored cells as
+    // fully transparent, since the background is handled by the layer bg color
+    // and we don't want to double up our bg color, but if our bg color is fully
+    // opaque then our layer is opaque and can't handle transparency, so we need
+    // to return the bg color directly instead.
+    if (uniforms.bg_color.a == 255) {
+      return bg;
+    } else {
+      return float4(0.0);
+    }
+  }
+
+  // Convert the color and return it.
   //
   // TODO: We may want to blend the color with the background
   //       color, rather than purely replacing it, this needs
@@ -292,7 +309,7 @@ fragment float4 cell_bg_fragment(
   //       fragment of each cell. It's not the most epxensive
   //       operation, but it is still wasted work.
   return load_color(
-    cells[grid_pos.y * uniforms.grid_size.x + grid_pos.x],
+    cell_color,
     uniforms.use_display_p3,
     uniforms.use_linear_blending
   );
