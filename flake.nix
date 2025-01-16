@@ -85,6 +85,7 @@
             x11-cinnamon = runVM ./nix/vm/x11-cinnamon.nix;
             x11-gnome = runVM ./nix/vm/x11-gnome.nix;
             x11-plasma6 = runVM ./nix/vm/x11-plasma6.nix;
+            x11-xfce = runVM ./nix/vm/x11-xfce.nix;
           };
         }
         # Our supported systems are the same supported systems as the Zig binaries.
@@ -104,6 +105,7 @@
       create-cinnamon-vm = import ./nix/vm/create-cinnamon.nix;
       create-gnome-vm = import ./nix/vm/create-gnome.nix;
       create-plasma6-vm = import ./nix/vm/create-plasma6.nix;
+      create-xfce-vm = import ./nix/vm/create-xfce.nix;
     };
 
   nixConfig = {
