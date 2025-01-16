@@ -584,8 +584,8 @@ pub fn toggleFullscreen(self: *Window) void {
 /// Toggle the window decorations for this window.
 pub fn toggleWindowDecorations(self: *Window) void {
     self.app.config.@"window-decoration" = switch (self.app.config.@"window-decoration") {
-        .client, .server => .none,
-        .none => .server,
+        .auto, .client, .server => .none,
+        .none => .client,
     };
     self.updateConfig(&self.app.config) catch {};
 }
