@@ -139,7 +139,7 @@ float4 load_color(
   // already have the correct color here and
   // can premultiply and return it.
   if (display_p3 && !linear) {
-    color *= color.a;
+    color.rgb *= color.a;
     return color;
   }
 
@@ -167,7 +167,7 @@ float4 load_color(
   }
 
   // Premultiply our color by its alpha.
-  color *= color.a;
+  color.rgb *= color.a;
 
   return color;
 }
@@ -503,12 +503,12 @@ fragment float4 cell_text_fragment(
       // If we're not doing linear blending, then we need to
       // re-apply the gamma encoding to our color manually.
       //
-      // We do it BEFORE premultiplying the alpha because
-      // we want to produce the effect of not linearizing
-      // it in the first place in order to match the look
-      // of software that never does this.
+      // Since the alpha is premultiplied, we need to divide
+      // it out before unlinearizing and re-multiply it after.
       if (!uniforms.use_linear_blending) {
+        color.rgb /= color.a;
         color = unlinearize(color);
+        color.rgb *= color.a;
       }
 
       // Fetch our alpha mask for this pixel.
