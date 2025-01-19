@@ -2337,9 +2337,11 @@ pub fn setScreenSize(
             desc.setProperty("height", @as(c_ulong, @intCast(size.screen.height)));
             desc.setProperty(
                 "usage",
-                @intFromEnum(mtl.MTLTextureUsage.render_target) |
-                    @intFromEnum(mtl.MTLTextureUsage.shader_read) |
-                    @intFromEnum(mtl.MTLTextureUsage.shader_write),
+                mtl.MTLTextureUsage{
+                    .render_target = true,
+                    .shader_read = true,
+                    .shader_write = true,
+                },
             );
 
             // If we fail to create the texture, then we just don't have a screen
@@ -2377,9 +2379,11 @@ pub fn setScreenSize(
             desc.setProperty("height", @as(c_ulong, @intCast(size.screen.height)));
             desc.setProperty(
                 "usage",
-                @intFromEnum(mtl.MTLTextureUsage.render_target) |
-                    @intFromEnum(mtl.MTLTextureUsage.shader_read) |
-                    @intFromEnum(mtl.MTLTextureUsage.shader_write),
+                mtl.MTLTextureUsage{
+                    .render_target = true,
+                    .shader_read = true,
+                    .shader_write = true,
+                },
             );
 
             // If we fail to create the texture, then we just don't have a screen
