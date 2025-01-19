@@ -106,7 +106,7 @@ pub const Image = extern struct {
 
 /// The uniforms that are passed to the terminal cell shader.
 pub const Uniforms = extern struct {
-    // Note: all of the explicit aligmnments are copied from the
+    // Note: all of the explicit alignments are copied from the
     // MSL developer reference just so that we can be sure that we got
     // it all exactly right.
 
@@ -171,7 +171,7 @@ pub const Uniforms = extern struct {
 
 /// The uniforms used for custom postprocess shaders.
 pub const PostUniforms = extern struct {
-    // Note: all of the explicit aligmnments are copied from the
+    // Note: all of the explicit alignments are copied from the
     // MSL developer reference just so that we can be sure that we got
     // it all exactly right.
     resolution: [3]f32 align(16),
@@ -282,65 +282,16 @@ fn initPostPipeline(
     };
     defer post_library.msgSend(void, objc.sel("release"), .{});
 
-    // Get our vertex and fragment functions
-    const func_vert = func_vert: {
-        const str = try macos.foundation.String.createWithBytes(
-            "full_screen_vertex",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_vert objc.Object.fromId(ptr.?);
-    };
-    const func_frag = func_frag: {
-        const str = try macos.foundation.String.createWithBytes(
-            "main0",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = post_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_frag objc.Object.fromId(ptr.?);
-    };
-    defer func_vert.msgSend(void, objc.sel("release"), .{});
-    defer func_frag.msgSend(void, objc.sel("release"), .{});
-
-    // Create our descriptor
-    const desc = init: {
-        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
-        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-        break :init id_init;
-    };
-    defer desc.msgSend(void, objc.sel("release"), .{});
-    desc.setProperty("vertexFunction", func_vert);
-    desc.setProperty("fragmentFunction", func_frag);
-
-    // Set our color attachment
-    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-    {
-        const attachment = attachments.msgSend(
-            objc.Object,
-            objc.sel("objectAtIndexedSubscript:"),
-            .{@as(c_ulong, 0)},
-        );
-
-        attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
-    }
-
-    // Make our state
-    var err: ?*anyopaque = null;
-    const pipeline_state = device.msgSend(
-        objc.Object,
-        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-        .{ desc, &err },
+    return (Pipeline{
+        .vertex_fn = "full_screen_vertex",
+        .fragment_fn = "main0",
+        .blending_enabled = false,
+    }).init(
+        device,
+        library,
+        post_library,
+        pixel_format,
     );
-    try checkError(err);
-
-    return pipeline_state;
 }
 
 /// This is a single parameter for the terminal cell shader.
@@ -374,113 +325,18 @@ fn initCellTextPipeline(
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
 ) !objc.Object {
-    // Get our vertex and fragment functions
-    const func_vert = func_vert: {
-        const str = try macos.foundation.String.createWithBytes(
-            "cell_text_vertex",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_vert objc.Object.fromId(ptr.?);
-    };
-    const func_frag = func_frag: {
-        const str = try macos.foundation.String.createWithBytes(
-            "cell_text_fragment",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_frag objc.Object.fromId(ptr.?);
-    };
-    defer func_vert.msgSend(void, objc.sel("release"), .{});
-    defer func_frag.msgSend(void, objc.sel("release"), .{});
-
-    // Create the vertex descriptor. The vertex descriptor describes the
-    // data layout of the vertex inputs. We use indexed (or "instanced")
-    // rendering, so this makes it so that each instance gets a single
-    // Cell as input.
-    const vertex_desc = vertex_desc: {
-        const desc = init: {
-            const Class = objc.getClass("MTLVertexDescriptor").?;
-            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-            break :init id_init;
-        };
-
-        // Our attributes are the fields of the input
-        const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
-        autoAttribute(CellText, attrs);
-
-        // The layout describes how and when we fetch the next vertex input.
-        const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
-        {
-            const layout = layouts.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            // Access each Cell per instance, not per vertex.
-            layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
-            layout.setProperty("stride", @as(c_ulong, @sizeOf(CellText)));
-        }
-
-        break :vertex_desc desc;
-    };
-    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
-
-    // Create our descriptor
-    const desc = init: {
-        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
-        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-        break :init id_init;
-    };
-    defer desc.msgSend(void, objc.sel("release"), .{});
-
-    // Set our properties
-    desc.setProperty("vertexFunction", func_vert);
-    desc.setProperty("fragmentFunction", func_frag);
-    desc.setProperty("vertexDescriptor", vertex_desc);
-
-    // Set our color attachment
-    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-    {
-        const attachment = attachments.msgSend(
-            objc.Object,
-            objc.sel("objectAtIndexedSubscript:"),
-            .{@as(c_ulong, 0)},
-        );
-
-        attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
-
-        // Blending. This is required so that our text we render on top
-        // of our drawable properly blends into the bg.
-        attachment.setProperty("blendingEnabled", true);
-        attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-    }
-
-    // Make our state
-    var err: ?*anyopaque = null;
-    const pipeline_state = device.msgSend(
-        objc.Object,
-        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-        .{ desc, &err },
+    return (Pipeline{
+        .vertex_fn = "cell_text_vertex",
+        .fragment_fn = "cell_text_fragment",
+        .Vertex = CellText,
+        .step_fn = .per_instance,
+        .blending_enabled = true,
+    }).init(
+        device,
+        library,
+        library,
+        pixel_format,
     );
-    try checkError(err);
-    errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
-
-    return pipeline_state;
 }
 
 /// This is a single parameter for the cell bg shader.
@@ -492,78 +348,16 @@ fn initCellBgPipeline(
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
 ) !objc.Object {
-    // Get our vertex and fragment functions
-    const func_vert = func_vert: {
-        const str = try macos.foundation.String.createWithBytes(
-            "cell_bg_vertex",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_vert objc.Object.fromId(ptr.?);
-    };
-    defer func_vert.msgSend(void, objc.sel("release"), .{});
-    const func_frag = func_frag: {
-        const str = try macos.foundation.String.createWithBytes(
-            "cell_bg_fragment",
-            .utf8,
-            false,
-        );
-        defer str.release();
-
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_frag objc.Object.fromId(ptr.?);
-    };
-    defer func_frag.msgSend(void, objc.sel("release"), .{});
-
-    // Create our descriptor
-    const desc = init: {
-        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
-        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-        break :init id_init;
-    };
-    defer desc.msgSend(void, objc.sel("release"), .{});
-
-    // Set our properties
-    desc.setProperty("vertexFunction", func_vert);
-    desc.setProperty("fragmentFunction", func_frag);
-
-    // Set our color attachment
-    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-    {
-        const attachment = attachments.msgSend(
-            objc.Object,
-            objc.sel("objectAtIndexedSubscript:"),
-            .{@as(c_ulong, 0)},
-        );
-
-        attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
-
-        // Blending. This is required so that our text we render on top
-        // of our drawable properly blends into the bg.
-        attachment.setProperty("blendingEnabled", true);
-        attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-    }
-
-    // Make our state
-    var err: ?*anyopaque = null;
-    const pipeline_state = device.msgSend(
-        objc.Object,
-        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-        .{ desc, &err },
+    return (Pipeline{
+        .vertex_fn = "cell_bg_vertex",
+        .fragment_fn = "cell_bg_fragment",
+        .blending_enabled = false,
+    }).init(
+        device,
+        library,
+        library,
+        pixel_format,
     );
-    try checkError(err);
-    errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
-
-    return pipeline_state;
 }
 
 /// Initialize the image render pipeline for our shader library.
@@ -572,113 +366,147 @@ fn initImagePipeline(
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
 ) !objc.Object {
-    // Get our vertex and fragment functions
-    const func_vert = func_vert: {
-        const str = try macos.foundation.String.createWithBytes(
-            "image_vertex",
-            .utf8,
-            false,
-        );
-        defer str.release();
+    return (Pipeline{
+        .vertex_fn = "image_vertex",
+        .fragment_fn = "image_fragment",
+        .Vertex = Image,
+        .step_fn = .per_instance,
+        .blending_enabled = true,
+    }).init(
+        device,
+        library,
+        library,
+        pixel_format,
+    );
+}
 
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_vert objc.Object.fromId(ptr.?);
-    };
-    const func_frag = func_frag: {
-        const str = try macos.foundation.String.createWithBytes(
-            "image_fragment",
-            .utf8,
-            false,
-        );
-        defer str.release();
+/// A struct with all the necessary info to initialize a pipeline.
+const Pipeline = struct {
+    /// Name of the vertex function
+    vertex_fn: []const u8,
+    /// Name of the fragment function
+    fragment_fn: []const u8,
 
-        const ptr = library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-        break :func_frag objc.Object.fromId(ptr.?);
-    };
-    defer func_vert.msgSend(void, objc.sel("release"), .{});
-    defer func_frag.msgSend(void, objc.sel("release"), .{});
+    /// Vertex attribute struct
+    Vertex: ?type = null,
+    /// Vertex step function
+    step_fn: mtl.MTLVertexStepFunction = .per_vertex,
 
-    // Create the vertex descriptor. The vertex descriptor describes the
-    // data layout of the vertex inputs. We use indexed (or "instanced")
-    // rendering, so this makes it so that each instance gets a single
-    // Image as input.
-    const vertex_desc = vertex_desc: {
+    /// Whether blending is enabled for the color attachment
+    blending_enabled: bool = true,
+
+    fn init(
+        self: *const Pipeline,
+        device: objc.Object,
+        vertex_library: objc.Object,
+        fragment_library: objc.Object,
+        pixel_format: mtl.MTLPixelFormat,
+    ) !objc.Object {
+        // Create our descriptor
         const desc = init: {
-            const Class = objc.getClass("MTLVertexDescriptor").?;
+            const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
             const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
             const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
             break :init id_init;
         };
+        defer desc.msgSend(void, objc.sel("release"), .{});
 
-        // Our attributes are the fields of the input
-        const attrs = objc.Object.fromId(desc.getProperty(?*anyopaque, "attributes"));
-        autoAttribute(Image, attrs);
-
-        // The layout describes how and when we fetch the next vertex input.
-        const layouts = objc.Object.fromId(desc.getProperty(?*anyopaque, "layouts"));
+        // Get our vertex and fragment functions and add them to the descriptor.
         {
-            const layout = layouts.msgSend(
+            const str = try macos.foundation.String.createWithBytes(
+                self.vertex_fn,
+                .utf8,
+                false,
+            );
+            defer str.release();
+
+            const ptr = vertex_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+            const func_vert = objc.Object.fromId(ptr.?);
+            defer func_vert.msgSend(void, objc.sel("release"), .{});
+
+            desc.setProperty("vertexFunction", func_vert);
+        }
+        {
+            const str = try macos.foundation.String.createWithBytes(
+                self.fragment_fn,
+                .utf8,
+                false,
+            );
+            defer str.release();
+
+            const ptr = fragment_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
+            const func_frag = objc.Object.fromId(ptr.?);
+            defer func_frag.msgSend(void, objc.sel("release"), .{});
+
+            desc.setProperty("fragmentFunction", func_frag);
+        }
+
+        // If we have vertex attributes, create and add a vertex descriptor.
+        if (self.Vertex) |V| {
+            const vertex_desc = init: {
+                const Class = objc.getClass("MTLVertexDescriptor").?;
+                const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
+                const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
+                break :init id_init;
+            };
+            defer vertex_desc.msgSend(void, objc.sel("release"), .{});
+
+            // Our attributes are the fields of the input
+            const attrs = objc.Object.fromId(vertex_desc.getProperty(?*anyopaque, "attributes"));
+            autoAttribute(V, attrs);
+
+            // The layout describes how and when we fetch the next vertex input.
+            const layouts = objc.Object.fromId(vertex_desc.getProperty(?*anyopaque, "layouts"));
+            {
+                const layout = layouts.msgSend(
+                    objc.Object,
+                    objc.sel("objectAtIndexedSubscript:"),
+                    .{@as(c_ulong, 0)},
+                );
+
+                layout.setProperty("stepFunction", @intFromEnum(self.step_fn));
+                layout.setProperty("stride", @as(c_ulong, @sizeOf(V)));
+            }
+
+            desc.setProperty("vertexDescriptor", vertex_desc);
+        }
+
+        // Set our color attachment
+        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
+        {
+            const attachment = attachments.msgSend(
                 objc.Object,
                 objc.sel("objectAtIndexedSubscript:"),
                 .{@as(c_ulong, 0)},
             );
 
-            // Access each Image per instance, not per vertex.
-            layout.setProperty("stepFunction", @intFromEnum(mtl.MTLVertexStepFunction.per_instance));
-            layout.setProperty("stride", @as(c_ulong, @sizeOf(Image)));
+            attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
+
+            attachment.setProperty("blendingEnabled", self.blending_enabled);
+            // We always use premultiplied alpha blending for now.
+            if (self.blending_enabled) {
+                attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+                attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
+                attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+                attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
+                attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+                attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+            }
         }
 
-        break :vertex_desc desc;
-    };
-    defer vertex_desc.msgSend(void, objc.sel("release"), .{});
-
-    // Create our descriptor
-    const desc = init: {
-        const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
-        const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-        const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-        break :init id_init;
-    };
-    defer desc.msgSend(void, objc.sel("release"), .{});
-
-    // Set our properties
-    desc.setProperty("vertexFunction", func_vert);
-    desc.setProperty("fragmentFunction", func_frag);
-    desc.setProperty("vertexDescriptor", vertex_desc);
-
-    // Set our color attachment
-    const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-    {
-        const attachment = attachments.msgSend(
+        // Make our state
+        var err: ?*anyopaque = null;
+        const pipeline_state = device.msgSend(
             objc.Object,
-            objc.sel("objectAtIndexedSubscript:"),
-            .{@as(c_ulong, 0)},
+            objc.sel("newRenderPipelineStateWithDescriptor:error:"),
+            .{ desc, &err },
         );
+        try checkError(err);
+        errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
 
-        attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
-
-        // Blending. This is required so that our text we render on top
-        // of our drawable properly blends into the bg.
-        attachment.setProperty("blendingEnabled", true);
-        attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-        attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-        attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-        attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
+        return pipeline_state;
     }
-
-    // Make our state
-    var err: ?*anyopaque = null;
-    const pipeline_state = device.msgSend(
-        objc.Object,
-        objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-        .{ desc, &err },
-    );
-    try checkError(err);
-
-    return pipeline_state;
-}
+};
 
 fn autoAttribute(T: type, attrs: objc.Object) void {
     inline for (@typeInfo(T).@"struct".fields, 0..) |field, i| {
