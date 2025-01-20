@@ -640,6 +640,11 @@ fn gtkWindowNotifyMaximized(
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
     const maximized = c.gtk_window_is_maximized(self.window) != 0;
+
+    // Only toggle visibility of the header bar when we're using CSDs,
+    // and actually intend on displaying the header bar
+    if (!self.winproto.clientSideDecorationEnabled()) return;
+
     if (!maximized) {
         self.headerbar.setVisible(true);
         return;
