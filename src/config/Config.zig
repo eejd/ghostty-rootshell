@@ -1670,7 +1670,9 @@ keybind: Keybinds = .{},
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
 
-/// Shell integration features to enable if shell integration itself is enabled.
+/// Shell integration features to enable. These require our shell integration
+/// to be loaded, either automatically via shell-integration or manually.
+///
 /// The format of this is a list of features to enable separated by commas. If
 /// you prefix a feature with `no-` then it is disabled. If you omit a feature,
 /// its default value is used, so you must explicitly disable features you don't
