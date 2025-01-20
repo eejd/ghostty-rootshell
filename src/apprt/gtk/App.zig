@@ -579,7 +579,7 @@ fn closeTab(_: *App, target: apprt.Target) !void {
                 return;
             };
 
-            tab.window.closeTab(tab);
+            tab.closeWithConfirmation();
         },
     }
 }
