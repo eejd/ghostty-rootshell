@@ -638,7 +638,7 @@ pub const Surface = struct {
                 .y = @floatCast(opts.scale_factor),
             },
             .size = .{ .width = 800, .height = 600 },
-            .cursor_pos = .{ .x = 0, .y = 0 },
+            .cursor_pos = .{ .x = -1, .y = -1 },
             .keymap_state = .{},
         };
 
