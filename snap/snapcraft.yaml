@@ -84,6 +84,7 @@ parts:
     build-attributes: [enable-patchelf]
     stage-packages:
       - libadwaita-1-0
+      - libglib2.0-0t64
       - libgtk-4-1
       - libgtk-4-media-gstreamer
       - ibus-gtk4
