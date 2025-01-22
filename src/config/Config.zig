@@ -2370,13 +2370,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
-        .{ .write_scrollback_file = .paste },
+        .{ .write_screen_file = .paste },
     );
 
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true, .alt = true }) },
-        .{ .write_scrollback_file = .open },
+        .{ .write_screen_file = .open },
     );
 
     // Expand Selection
