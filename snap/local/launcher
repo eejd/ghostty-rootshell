@@ -1,8 +1,15 @@
 #!/bin/sh
 set -e
 
-export XDG_CONFIG_HOME="$SNAP_REAL_HOME/.config"
-export XDG_DATA_HOME="$SNAP_REAL_HOME/.local/share"
+# Set these to reasonable defaults if not already set
+if [ -z "$XDG_CONFIG_HOME" ]; then
+  export XDG_CONFIG_HOME="$SNAP_REAL_HOME/.config"
+fi
+
+if [ -z "$XDG_DATA_HOME" ]; then
+  export XDG_DATA_HOME="$SNAP_REAL_HOME/.local/share"
+fi
+
 export HOME="$SNAP_REAL_HOME"
 
 if [ "$SNAP_ARCH" = "amd64" ]; then
