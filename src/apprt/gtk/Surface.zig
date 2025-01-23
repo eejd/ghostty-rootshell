@@ -1700,15 +1700,32 @@ pub fn keyEvent(
         //     self.im_composing,
         // });
 
-        if (self.im_composing) {
-            // If we're composing and the input method handled this event then
-            // we don't continue processing it. Any preedit changes or any of that
-            // would've been handled by the preedit events.
-            if (im_handled) return true;
-        } else if (was_composing) {
+        // If the input method handled the event, you would think we would
+        // never proceed with key encoding for Ghostty but that is not the
+        // case. Input methods will handle basic character encoding like
+        // typing "a" and we want to associate that with the key event.
+        // So we have to check additional state to determine if we exit.
+        if (im_handled) {
+            // If we are composing then we're in a preedit state and do
+            // not want to encode any keys. For example: type a deadkey
+            // such as single quote on a US international keyboard layout.
+            if (self.im_composing) return true;
+
             // If we were composing and now we're not it means that we committed
             // the text. We also don't want to encode a key event for this.
-            return true;
+            // Example: enable Japanese input method, press "konn" and then
+            // press enter. The final enter should not be encoded and "konn"
+            // (in hiragana) should be written as "こん".
+            if (was_composing) return true;
+
+            // Not composing and our input method buffer is empty. This could
+            // mean that the input method reacted to this event by activating
+            // an onscreen keyboard or something equivalent. We don't know.
+            // But the input method handled it and didn't give us text so
+            // we will just assume we should not encode this. This handles a
+            // real scenario when ibus starts the emoji input method
+            // (super+.).
+            if (self.im_len == 0) return true;
         }
 
         // At this point, for the sake of explanation of internal state:
