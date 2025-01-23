@@ -639,16 +639,20 @@ fn gtkWindowNotifyMaximized(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
-    const maximized = c.gtk_window_is_maximized(self.window) != 0;
 
     // Only toggle visibility of the header bar when we're using CSDs,
     // and actually intend on displaying the header bar
     if (!self.winproto.clientSideDecorationEnabled()) return;
 
+    // If we aren't maximized, we should show the headerbar again
+    // if it was originally visible.
+    const maximized = c.gtk_window_is_maximized(self.window) != 0;
     if (!maximized) {
-        self.headerbar.setVisible(true);
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar");
         return;
     }
+
+    // If we are maximized, we should hide the headerbar if requested.
     if (self.app.config.@"gtk-titlebar-hide-when-maximized") {
         self.headerbar.setVisible(false);
     }
@@ -675,7 +679,14 @@ fn gtkWindowNotifyFullscreened(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
-    self.headerbar.setVisible(c.gtk_window_is_fullscreen(@ptrCast(object)) == 0);
+    const fullscreened = c.gtk_window_is_fullscreen(@ptrCast(object)) != 0;
+    if (!fullscreened) {
+        const csd_enabled = self.winproto.clientSideDecorationEnabled();
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar" and csd_enabled);
+        return;
+    }
+
+    self.headerbar.setVisible(false);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
