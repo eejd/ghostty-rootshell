@@ -1961,6 +1961,12 @@ fn gtkInputCommit(
     // Committing ends composing state
     self.im_composing = false;
 
+    // End our preedit state. Well-behaved input methods do this for us
+    // by triggering a preedit-end event but some do not (ibus 1.5.29).
+    self.core_surface.preeditCallback(null) catch |err| {
+        log.err("error in preedit callback err={}", .{err});
+    };
+
     // Send the text to the core surface, associated with no key (an
     // invalid key, which should produce no PTY encoding).
     _ = self.core_surface.keyCallback(.{
