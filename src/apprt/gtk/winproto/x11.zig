@@ -165,7 +165,7 @@ pub const Window = struct {
 
         pub fn init(config: *const Config) DerivedConfig {
             return .{
-                .blur = config.@"background-blur-radius".enabled(),
+                .blur = config.@"background-blur".enabled(),
                 .has_decoration = switch (config.@"window-decoration") {
                     .none => false,
                     .auto, .client, .server => true,

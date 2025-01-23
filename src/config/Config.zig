@@ -42,6 +42,15 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
+/// Renamed fields, used by cli.parse
+pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+    // Ghostty 1.1 introduced background-blur support for Linux which
+    // doesn't support a specific radius value. The renaming is to let
+    // one field be used for both platforms (macOS retained the ability
+    // to set a radius).
+    .{ "background-blur-radius", "background-blur" },
+});
+
 /// The font families to use.
 ///
 /// You can generate the list of valid values using the CLI:
@@ -649,7 +658,7 @@ palette: Palette = .{},
 /// need to set environment-specific settings and/or install third-party plugins
 /// in order to support background blur, as there isn't a unified interface for
 /// doing so.
-@"background-blur-radius": BackgroundBlur = .false,
+@"background-blur": BackgroundBlur = .false,
 
 /// The opacity level (opposite of transparency) of an unfocused split.
 /// Unfocused splits by default are slightly faded out to make it easier to see
@@ -5854,7 +5863,7 @@ pub const AutoUpdate = enum {
     download,
 };
 
-/// See background-blur-radius
+/// See background-blur
 pub const BackgroundBlur = union(enum) {
     false,
     true,
