@@ -1958,7 +1958,7 @@ pub const CAPI = struct {
         _ = CGSSetWindowBackgroundBlurRadius(
             CGSDefaultConnectionForThread(),
             nswindow.msgSend(usize, objc.sel("windowNumber"), .{}),
-            @intCast(config.@"background-blur-radius".cval()),
+            @intCast(config.@"background-blur".cval()),
         );
     }
 
