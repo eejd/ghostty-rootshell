@@ -201,6 +201,7 @@ const PosixPty = struct {
         try posix.sigaction(posix.SIG.HUP, &sa, null);
         try posix.sigaction(posix.SIG.ILL, &sa, null);
         try posix.sigaction(posix.SIG.INT, &sa, null);
+        try posix.sigaction(posix.SIG.PIPE, &sa, null);
         try posix.sigaction(posix.SIG.SEGV, &sa, null);
         try posix.sigaction(posix.SIG.TRAP, &sa, null);
         try posix.sigaction(posix.SIG.TERM, &sa, null);
