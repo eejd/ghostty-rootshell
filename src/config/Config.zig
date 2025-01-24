@@ -32,7 +32,7 @@ const url = @import("url.zig");
 const Key = @import("key.zig").Key;
 const KeyValue = @import("key.zig").Value;
 const ErrorList = @import("ErrorList.zig");
-const MetricModifier = fontpkg.face.Metrics.Modifier;
+const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 
 const log = std.log.scoped(.config);
@@ -40,6 +40,15 @@ const log = std.log.scoped(.config);
 /// Used on Unixes for some defaults.
 const c = @cImport({
     @cInclude("unistd.h");
+});
+
+/// Renamed fields, used by cli.parse
+pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+    // Ghostty 1.1 introduced background-blur support for Linux which
+    // doesn't support a specific radius value. The renaming is to let
+    // one field be used for both platforms (macOS retained the ability
+    // to set a radius).
+    .{ "background-blur-radius", "background-blur" },
 });
 
 /// The font families to use.
@@ -234,9 +243,45 @@ const c = @cImport({
 /// i.e. new windows, tabs, etc.
 @"font-codepoint-map": RepeatableCodepointMap = .{},
 
-/// Draw fonts with a thicker stroke, if supported. This is only supported
-/// currently on macOS.
+/// Draw fonts with a thicker stroke, if supported.
+/// This is currently only supported on macOS.
 @"font-thicken": bool = false,
+
+/// Strength of thickening when `font-thicken` is enabled.
+///
+/// Valid values are integers between `0` and `255`. `0` does not correspond to
+/// *no* thickening, rather it corresponds to the lightest available thickening.
+///
+/// Has no effect when `font-thicken` is set to `false`.
+///
+/// This is currently only supported on macOS.
+@"font-thicken-strength": u8 = 255,
+
+/// What color space to use when performing alpha blending.
+///
+/// This affects how text looks for different background/foreground color pairs.
+///
+/// Valid values:
+///
+/// * `native` - Perform alpha blending in the native color space for the OS.
+///   On macOS this corresponds to Display P3, and on Linux it's sRGB.
+///
+/// * `linear` - Perform alpha blending in linear space. This will eliminate
+///   the darkening artifacts around the edges of text that are very visible
+///   when certain color combinations are used (e.g. red / green), but makes
+///   dark text look much thinner than normal and light text much thicker.
+///   This is also sometimes known as "gamma correction".
+///   (Currently only supported on macOS. Has no effect on Linux.)
+///
+/// * `linear-corrected` - Corrects the thinning/thickening effect of linear
+///   by applying a correction curve to the text alpha depending on its
+///   brightness. This compensates for the thinning and makes the weight of
+///   most text appear very similar to when it's blended non-linearly.
+///
+/// Note: This setting affects more than just text, images will also be blended
+/// in the selected color space, and custom shaders will receive colors in that
+/// color space as well.
+@"text-blending": TextBlending = .native,
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
@@ -246,7 +291,7 @@ const c = @cImport({
 /// For example, a value of `1` increases the value by 1; it does not set it to
 /// literally 1. A value of `20%` increases the value by 20%. And so on.
 ///
-/// There is little to no validation on these values so the wrong values (i.e.
+/// There is little to no validation on these values so the wrong values (e.g.
 /// `-100%`) can cause the terminal to be unusable. Use with caution and reason.
 ///
 /// Some values are clamped to minimum or maximum values. This can make it
@@ -431,7 +476,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
 /// The minimum contrast ratio between the foreground and background colors.
 /// The contrast ratio is a value between 1 and 21. A value of 1 allows for no
-/// contrast (i.e. black on black). This value is the contrast ratio as defined
+/// contrast (e.g. black on black). This value is the contrast ratio as defined
 /// by the [WCAG 2.0 specification](https://www.w3.org/TR/WCAG20/).
 ///
 /// If you want to avoid invisible text (same color as background), a value of
@@ -582,13 +627,38 @@ palette: Palette = .{},
 /// On macOS, changing this configuration requires restarting Ghostty completely.
 @"background-opacity": f64 = 1.0,
 
-/// A positive value enables blurring of the background when background-opacity
-/// is less than 1. The value is the blur radius to apply. A value of 20
-/// is reasonable for a good looking blur. Higher values will cause strange
-/// rendering issues as well as performance issues.
+/// Whether to blur the background when `background-opacity` is less than 1.
 ///
-/// This is only supported on macOS.
-@"background-blur-radius": u8 = 0,
+/// Valid values are:
+///
+///   * a nonnegative integer specifying the *blur intensity*
+///   * `false`, equivalent to a blur intensity of 0
+///   * `true`, equivalent to the default blur intensity of 20, which is
+///     reasonable for a good looking blur. Higher blur intensities may
+///     cause strange rendering and performance issues.
+///
+/// Supported on macOS and on some Linux desktop environments, including:
+///
+///   * KDE Plasma (Wayland and X11)
+///
+/// Warning: the exact blur intensity is _ignored_ under KDE Plasma, and setting
+/// this setting to either `true` or any positive blur intensity value would
+/// achieve the same effect. The reason is that KWin, the window compositor
+/// powering Plasma, only has one global blur setting and does not allow
+/// applications to specify individual blur settings.
+///
+/// To configure KWin's global blur setting, open System Settings and go to
+/// "Apps & Windows" > "Window Management" > "Desktop Effects" and select the
+/// "Blur" plugin. If disabled, enable it by ticking the checkbox to the left.
+/// Then click on the "Configure" button and there will be two sliders that
+/// allow you to set background blur and noise intensities for all apps,
+/// including Ghostty.
+///
+/// All other Linux desktop environments are as of now unsupported. Users may
+/// need to set environment-specific settings and/or install third-party plugins
+/// in order to support background blur, as there isn't a unified interface for
+/// doing so.
+@"background-blur": BackgroundBlur = .false,
 
 /// The opacity level (opposite of transparency) of an unfocused split.
 /// Unfocused splits by default are slightly faded out to make it easier to see
@@ -609,6 +679,10 @@ palette: Palette = .{},
 ///
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"unfocused-split-fill": ?Color = null,
+
+/// The color of the split divider. If this is not set, a default will be chosen.
+/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
+@"split-divider-color": ?Color = null,
 
 /// The command to run, usually a shell. If this is not an absolute path, it'll
 /// be looked up in the `PATH`. If this is not set, a default will be looked up
@@ -657,7 +731,7 @@ command: ?[]const u8 = null,
 ///     injecting any configured shell integration into the command's
 ///     environment. With `-e` its highly unlikely that you're executing a
 ///     shell and forced shell integration is likely to cause problems
-///     (i.e. by wrapping your command in a shell, setting env vars, etc.).
+///     (e.g. by wrapping your command in a shell, setting env vars, etc.).
 ///     This is a safety measure to prevent unexpected behavior. If you want
 ///     shell integration with a `-e`-executed command, you must either
 ///     name your binary appropriately or source the shell integration script
@@ -705,7 +779,7 @@ command: ?[]const u8 = null,
 
 /// Match a regular expression against the terminal text and associate clicking
 /// it with an action. This can be used to match URLs, file paths, etc. Actions
-/// can be opening using the system opener (i.e. `open` or `xdg-open`) or
+/// can be opening using the system opener (e.g. `open` or `xdg-open`) or
 /// executing any arbitrary binding action.
 ///
 /// Links that are configured earlier take precedence over links that are
@@ -724,6 +798,11 @@ link: RepeatableLink = .{},
 /// The URL matcher is always lowest priority of any configured links (see
 /// `link`). If you want to customize URL matching, use `link` and disable this.
 @"link-url": bool = true,
+
+/// Whether to start the window in a maximized state. This setting applies
+/// to new windows and does not apply to tabs, splits, etc. However, this setting
+/// will apply to all new windows, not just the first one.
+maximize: bool = false,
 
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
@@ -806,7 +885,7 @@ class: ?[:0]const u8 = null,
 /// Valid keys are currently only listed in the
 /// [Ghostty source code](https://github.com/ghostty-org/ghostty/blob/d6e76858164d52cff460fedc61ddf2e560912d71/src/input/key.zig#L255).
 /// This is a documentation limitation and we will improve this in the future.
-/// A common gotcha is that numeric keys are written as words: i.e. `one`,
+/// A common gotcha is that numeric keys are written as words: e.g. `one`,
 /// `two`, `three`, etc. and not `1`, `2`, `3`. This will also be improved in
 /// the future.
 ///
@@ -849,7 +928,7 @@ class: ?[:0]const u8 = null,
 ///   * Ghostty will wait an indefinite amount of time for the next key in
 ///     the sequence. There is no way to specify a timeout. The only way to
 ///     force the output of a prefix key is to assign another keybind to
-///     specifically output that key (i.e. `ctrl+a>ctrl+a=text:foo`) or
+///     specifically output that key (e.g. `ctrl+a>ctrl+a=text:foo`) or
 ///     press an unbound key which will send both keys to the program.
 ///
 ///   * If a prefix in a sequence is previously bound, the sequence will
@@ -875,15 +954,17 @@ class: ?[:0]const u8 = null,
 ///
 ///   * `unbind` - Remove the binding. This makes it so the previous action
 ///     is removed, and the key will be sent through to the child command
-///     if it is printable.
+///     if it is printable. Unbind will remove any matching trigger,
+///     including `physical:`-prefixed triggers without specifying the
+///     prefix.
 ///
-///   * `csi:text` - Send a CSI sequence. i.e. `csi:A` sends "cursor up".
+///   * `csi:text` - Send a CSI sequence. e.g. `csi:A` sends "cursor up".
 ///
-///   * `esc:text` - Send an escape sequence. i.e. `esc:d` deletes to the
+///   * `esc:text` - Send an escape sequence. e.g. `esc:d` deletes to the
 ///     end of the word to the right.
 ///
 ///   * `text:text` - Send a string. Uses Zig string literal syntax.
-///     i.e. `text:\x15` sends Ctrl-U.
+///     e.g. `text:\x15` sends Ctrl-U.
 ///
 ///   * All other actions can be found in the documentation or by using the
 ///     `ghostty +list-actions` command.
@@ -909,12 +990,12 @@ class: ?[:0]const u8 = null,
 ///     keybinds only apply to the focused terminal surface. If this is true,
 ///     then the keybind will be sent to all terminal surfaces. This only
 ///     applies to actions that are surface-specific. For actions that
-///     are already global (i.e. `quit`), this prefix has no effect.
+///     are already global (e.g. `quit`), this prefix has no effect.
 ///
 ///   * `global:` - Make the keybind global. By default, keybinds only work
 ///     within Ghostty and under the right conditions (application focused,
 ///     sometimes terminal focused, etc.). If you want a keybind to work
-///     globally across your system (i.e. even when Ghostty is not focused),
+///     globally across your system (e.g. even when Ghostty is not focused),
 ///     specify this prefix. This prefix implies `all:`. Note: this does not
 ///     work in all environments; see the additional notes below for more
 ///     information.
@@ -1015,7 +1096,7 @@ keybind: Keybinds = .{},
 ///   any of the heuristics that disable extending noted below.
 ///
 /// The "extend" value will be disabled in certain scenarios. On primary
-/// screen applications (i.e. not something like Neovim), the color will not
+/// screen applications (e.g. not something like Neovim), the color will not
 /// be extended vertically if any of the following are true:
 ///
 /// * The nearest row has any cells that have the default background color.
@@ -1055,26 +1136,69 @@ keybind: Keybinds = .{},
 /// configuration `font-size` will be used.
 @"window-inherit-font-size": bool = true,
 
+/// Configure a preference for window decorations. This setting specifies
+/// a _preference_; the actual OS, desktop environment, window manager, etc.
+/// may override this preference. Ghostty will do its best to respect this
+/// preference but it may not always be possible.
+///
 /// Valid values:
 ///
-///   * `true`
-///   * `false` - windows won't have native decorations, i.e. titlebar and
-///      borders. On macOS this also disables tabs and tab overview.
+///   * `none` - All window decorations will be disabled. Titlebar,
+///     borders, etc. will not be shown. On macOS, this will also disable
+///     tabs (enforced by the system).
+///
+///   * `auto` - Automatically decide to use either client-side or server-side
+///     decorations based on the detected preferences of the current OS and
+///     desktop environment. This option usually makes Ghostty look the most
+///     "native" for your desktop.
+///
+///   * `client` - Prefer client-side decorations.
+///
+///   * `server` - Prefer server-side decorations. This is only relevant
+///     on Linux with GTK. This currently only works on Linux with Wayland
+///     and the `org_kde_kwin_server_decoration` protocol available (e.g.
+///     KDE Plasma, but almost any non-GNOME desktop supports this protocol).
+///
+///     If `server` is set but the environment doesn't support server-side
+///     decorations, client-side decorations will be used instead.
+///
+/// The default value is `auto`.
+///
+/// For the sake of backwards compatibility and convenience, this setting also
+/// accepts boolean true and false values. If set to `true`, this is equivalent
+/// to `auto`. If set to `false`, this is equivalent to `none`.
+/// This is convenient for users who live primarily on systems that don't
+/// differentiate between client and server-side decorations (e.g. macOS and
+/// Windows).
 ///
 /// The "toggle_window_decorations" keybind action can be used to create
-/// a keybinding to toggle this setting at runtime.
+/// a keybinding to toggle this setting at runtime. This will always toggle
+/// back to "auto" if the current value is "none" (this is an issue
+/// that will be fixed in the future).
 ///
 /// Changing this configuration in your configuration and reloading will
 /// only affect new windows. Existing windows will not be affected.
 ///
 /// macOS: To hide the titlebar without removing the native window borders
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
-@"window-decoration": bool = true,
+@"window-decoration": WindowDecoration = .auto,
 
 /// The font that will be used for the application's window and tab titles.
 ///
-/// This is currently only supported on macOS.
+/// If this setting is left unset, the system default font will be used.
+///
+/// Note: any font available on the system may be used, this font is not
+/// required to be a fixed-width font.
 @"window-title-font-family": ?[:0]const u8 = null,
+
+/// The text that will be displayed in the subtitle of the window. Valid values:
+///
+///   * `false` - Disable the subtitle.
+///   * `working-directory` - Set the subtitle to the working directory of the
+///      surface.
+///
+/// This feature is only supported on GTK with Adwaita enabled.
+@"window-subtitle": WindowSubtitle = .false,
 
 /// The theme to use for the windows. Valid values:
 ///
@@ -1280,7 +1404,7 @@ keybind: Keybinds = .{},
 @"resize-overlay-duration": Duration = .{ .duration = 750 * std.time.ns_per_ms },
 
 /// If true, when there are multiple split panes, the mouse selects the pane
-/// that is focused. This only applies to the currently focused window; i.e.
+/// that is focused. This only applies to the currently focused window; e.g.
 /// mousing over a split in an unfocused window will not focus that split
 /// and bring the window to front.
 ///
@@ -1324,7 +1448,7 @@ keybind: Keybinds = .{},
 /// and a minor amount of user interaction).
 @"title-report": bool = false,
 
-/// The total amount of bytes that can be used for image data (i.e. the Kitty
+/// The total amount of bytes that can be used for image data (e.g. the Kitty
 /// image protocol) per terminal screen. The maximum value is 4,294,967,295
 /// (4GiB). The default is 320MB. If this is set to zero, then all image
 /// protocols will be disabled.
@@ -1334,24 +1458,19 @@ keybind: Keybinds = .{},
 @"image-storage-limit": u32 = 320 * 1000 * 1000,
 
 /// Whether to automatically copy selected text to the clipboard. `true`
-/// will prefer to copy to the selection clipboard if supported by the
-/// OS, otherwise it will copy to the system clipboard.
+/// will prefer to copy to the selection clipboard, otherwise it will copy to
+/// the system clipboard.
 ///
 /// The value `clipboard` will always copy text to the selection clipboard
-/// (for supported systems) as well as the system clipboard. This is sometimes
-/// a preferred behavior on Linux.
+/// as well as the system clipboard.
 ///
-/// Middle-click paste will always use the selection clipboard on Linux
-/// and the system clipboard on macOS. Middle-click paste is always enabled
-/// even if this is `false`.
+/// Middle-click paste will always use the selection clipboard. Middle-click
+/// paste is always enabled even if this is `false`.
 ///
-/// The default value is true on Linux and false on macOS. macOS copy on
-/// select behavior is not typical for applications so it is disabled by
-/// default. On Linux, this is a standard behavior so it is enabled by
-/// default.
+/// The default value is true on Linux and macOS.
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
     .linux => .true,
-    .macos => .false,
+    .macos => .true,
     else => .false,
 },
 
@@ -1517,6 +1636,23 @@ keybind: Keybinds = .{},
 /// Set it to false for the quick terminal to remain open even when it loses focus.
 @"quick-terminal-autohide": bool = true,
 
+/// This configuration option determines the behavior of the quick terminal
+/// when switching between macOS spaces. macOS spaces are virtual desktops
+/// that can be manually created or are automatically created when an
+/// application is in full-screen mode.
+///
+/// Valid values are:
+///
+///  * `move` - When switching to another space, the quick terminal will
+///    also moved to the current space.
+///
+///  * `remain` - The quick terminal will stay only in the space where it
+///    was originally opened and will not follow when switching to another
+///    space.
+///
+/// The default value is `move`.
+@"quick-terminal-space-behavior": QuickTerminalSpaceBehavior = .move,
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
@@ -1543,7 +1679,9 @@ keybind: Keybinds = .{},
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
 
-/// Shell integration features to enable if shell integration itself is enabled.
+/// Shell integration features to enable. These require our shell integration
+/// to be loaded, either automatically via shell-integration or manually.
+///
 /// The format of this is a list of features to enable separated by commas. If
 /// you prefix a feature with `no-` then it is disabled. If you omit a feature,
 /// its default value is used, so you must explicitly disable features you don't
@@ -1572,7 +1710,7 @@ keybind: Keybinds = .{},
 ///
 ///   * `none` - OSC 4/10/11 queries receive no reply
 ///
-///   * `8-bit` - Color components are return unscaled, i.e. `rr/gg/bb`
+///   * `8-bit` - Color components are return unscaled, e.g. `rr/gg/bb`
 ///
 ///   * `16-bit` - Color components are returned scaled, e.g. `rrrr/gggg/bbbb`
 ///
@@ -1633,6 +1771,31 @@ keybind: Keybinds = .{},
 /// open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
+/// Control the in-app notifications that Ghostty shows.
+///
+/// On Linux (GTK) with Adwaita, in-app notifications show up as toasts. Toasts
+/// appear overlaid on top of the terminal window. They are used to show
+/// information that is not critical but may be important.
+///
+/// Possible notifications are:
+///
+///   - `clipboard-copy` (default: true) - Show a notification when text is copied
+///     to the clipboard.
+///
+/// To specify a notification to enable, specify the name of the notification.
+/// To specify a notification to disable, prefix the name with `no-`. For
+/// example, to disable `clipboard-copy`, set this configuration to
+/// `no-clipboard-copy`. To enable it, set this configuration to `clipboard-copy`.
+///
+/// Multiple notifications can be enabled or disabled by separating them
+/// with a comma.
+///
+/// A value of "false" will disable all notifications. A value of "true" will
+/// enable all notifications.
+///
+/// This configuration only applies to GTK with Adwaita enabled.
+@"app-notifications": AppNotifications = .{},
+
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
 /// using a new space. It's faster than the native fullscreen mode since it
@@ -1671,7 +1834,7 @@ keybind: Keybinds = .{},
 /// typical for a macOS application and may not work well with all themes.
 ///
 /// The "transparent" style will also update in real-time to dynamic
-/// changes to the window background color, i.e. via OSC 11. To make this
+/// changes to the window background color, e.g. via OSC 11. To make this
 /// more aesthetically pleasing, this only happens if the terminal is
 /// a window, tab, or split that borders the top of the window. This
 /// avoids a disjointed appearance where the titlebar color changes
@@ -1687,9 +1850,12 @@ keybind: Keybinds = .{},
 /// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
 /// however, it does not remove the frame from the window or cause it to have
 /// squared corners. Changing to or from this option at run-time may affect
-/// existing windows in buggy ways. The top titlebar area of the window will
-/// continue to drag the window around and you will not be able to use
-/// the mouse for terminal events in this space.
+/// existing windows in buggy ways.
+///
+/// When "hidden", the top titlebar area can no longer be used for dragging
+/// the window. To drag the window, you can use option+click on the resizable
+/// areas of the frame to drag the window. This is a standard macOS behavior
+/// and not something Ghostty enables.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
@@ -1738,7 +1904,7 @@ keybind: Keybinds = .{},
 ///   - U.S. International
 ///
 /// Note that if an *Option*-sequence doesn't produce a printable character, it
-/// will be treated as *Alt* regardless of this setting. (i.e. `alt+ctrl+a`).
+/// will be treated as *Alt* regardless of this setting. (e.g. `alt+ctrl+a`).
 ///
 /// Explicit values that can be set:
 ///
@@ -1910,6 +2076,18 @@ keybind: Keybinds = .{},
 /// must always be able to move themselves into an isolated cgroup.
 @"linux-cgroup-hard-fail": bool = false,
 
+/// Enable or disable GTK's OpenGL debugging logs. The default is `true` for
+/// debug builds, `false` for all others.
+@"gtk-opengl-debug": bool = builtin.mode == .Debug,
+
+/// After GTK 4.14.0, we need to force the GSK renderer to OpenGL as the default
+/// GSK renderer is broken on some systems. If you would like to override
+/// that bekavior, set `gtk-gsk-renderer=default` and either use your system's
+/// default GSK renderer, or set the GSK_RENDERER environment variable to your
+/// renderer of choice before launching Ghostty. This setting has no effect when
+/// using versions of GTK earlier than 4.14.0.
+@"gtk-gsk-renderer": GtkGskRenderer = .opengl,
+
 /// If `true`, the Ghostty GTK application will run in single-instance mode:
 /// each new `ghostty` process launched will result in a new window if there is
 /// already a running process.
@@ -1950,6 +2128,10 @@ keybind: Keybinds = .{},
 /// title bar, or you can switch tabs with keybinds.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
+/// If this is `true`, the titlebar will be hidden when the window is maximized,
+/// and shown when the titlebar is unmaximized. GTK only.
+@"gtk-titlebar-hide-when-maximized": bool = false,
+
 /// Determines the appearance of the top and bottom bars when using the
 /// Adwaita tab bar. This requires `gtk-adwaita` to be enabled (it is
 /// by default).
@@ -1963,29 +2145,6 @@ keybind: Keybinds = .{},
 ///
 /// Changing this value at runtime will only affect new windows.
 @"adw-toolbar-style": AdwToolbarStyle = .raised,
-
-/// Control the toasts that Ghostty shows. Toasts are small notifications
-/// that appear overlaid on top of the terminal window. They are used to
-/// show information that is not critical but may be important.
-///
-/// Possible toasts are:
-///
-///   - `clipboard-copy` (default: true) - Show a toast when text is copied
-///     to the clipboard.
-///
-/// To specify a toast to enable, specify the name of the toast. To specify
-/// a toast to disable, prefix the name with `no-`. For example, to disable
-/// the clipboard-copy toast, set this configuration to `no-clipboard-copy`.
-/// To enable the clipboard-copy toast, set this configuration to
-/// `clipboard-copy`.
-///
-/// Multiple toasts can be enabled or disabled by separating them with a comma.
-///
-/// A value of "false" will disable all toasts. A value of "true" will
-/// enable all toasts.
-///
-/// This configuration only applies to GTK with Adwaita enabled.
-@"adw-toast": AdwToast = .{},
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
@@ -2158,6 +2317,25 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     );
 
     {
+        // On non-MacOS desktop envs (Windows, KDE, Gnome, Xfce), ctrl+insert is an
+        // alt keybinding for Copy and shift+ins is an alt keybinding for Paste
+        //
+        // The order of these blocks is important. The *last* added keybind for a given action is
+        // what will display in the menu. We want the more typical keybinds after this block to be
+        // the standard
+        if (!builtin.target.isDarwin()) {
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .{ .translated = .insert }, .mods = .{ .ctrl = true } },
+                .{ .copy_to_clipboard = {} },
+            );
+            try result.keybind.set.put(
+                alloc,
+                .{ .key = .{ .translated = .insert }, .mods = .{ .shift = true } },
+                .{ .paste_from_clipboard = {} },
+            );
+        }
+
         // On macOS we default to super but Linux ctrl+shift since
         // ctrl+c is to kill the process.
         const mods: inputpkg.Mods = if (builtin.target.isDarwin())
@@ -2175,20 +2353,6 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .key = .{ .translated = .v }, .mods = mods },
             .{ .paste_from_clipboard = {} },
         );
-        // On non-MacOS desktop envs (Windows, KDE, Gnome, Xfce), ctrl+insert is an
-        // alt keybinding for Copy and shift+ins is an alt keybinding for Paste
-        if (!builtin.target.isDarwin()) {
-            try result.keybind.set.put(
-                alloc,
-                .{ .key = .{ .translated = .insert }, .mods = .{ .ctrl = true } },
-                .{ .copy_to_clipboard = {} },
-            );
-            try result.keybind.set.put(
-                alloc,
-                .{ .key = .{ .translated = .insert }, .mods = .{ .shift = true } },
-                .{ .paste_from_clipboard = {} },
-            );
-        }
     }
 
     // Increase font size mapping for keyboards with dedicated plus keys (like german)
@@ -2220,13 +2384,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
-        .{ .write_scrollback_file = .paste },
+        .{ .write_screen_file = .paste },
     );
 
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true, .alt = true }) },
-        .{ .write_scrollback_file = .open },
+        .{ .write_screen_file = .open },
     );
 
     // Expand Selection
@@ -2317,6 +2481,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             alloc,
             .{ .key = .{ .translated = .t }, .mods = .{ .ctrl = true, .shift = true } },
             .{ .new_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .w }, .mods = .{ .ctrl = true, .shift = true } },
+            .{ .close_tab = {} },
         );
         try result.keybind.set.put(
             alloc,
@@ -2585,6 +2754,11 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
+            .{ .key = .{ .translated = .w }, .mods = .{ .super = true, .alt = true } },
+            .{ .close_tab = {} },
+        );
+        try result.keybind.set.put(
+            alloc,
             .{ .key = .{ .translated = .w }, .mods = .{ .super = true, .shift = true } },
             .{ .close_window = {} },
         );
@@ -2700,6 +2874,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
             .{ .toggle_fullscreen = {} },
         );
 
+        // Selection clipboard paste, matches Terminal.app
+        try result.keybind.set.put(
+            alloc,
+            .{ .key = .{ .translated = .v }, .mods = .{ .super = true, .shift = true } },
+            .{ .paste_from_selection = {} },
+        );
+
         // "Natural text editing" keybinds. This forces these keys to go back
         // to legacy encoding (not fixterms). It seems macOS users more than
         // others are used to these keys so we set them as defaults. If
@@ -2718,7 +2899,7 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         try result.keybind.set.put(
             alloc,
             .{ .key = .{ .translated = .backspace }, .mods = .{ .super = true } },
-            .{ .esc = "\x15" },
+            .{ .text = "\\x15" },
         );
         try result.keybind.set.put(
             alloc,
@@ -3033,25 +3214,31 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
 
         // We must only load a unique file once
         if (try loaded.fetchPut(path, {}) != null) {
-            try self._diagnostics.append(arena_alloc, .{
+            const diag: cli.Diagnostic = .{
                 .message = try std.fmt.allocPrintZ(
                     arena_alloc,
                     "config-file {s}: cycle detected",
                     .{path},
                 ),
-            });
+            };
+
+            try self._diagnostics.append(arena_alloc, diag);
+            try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
             continue;
         }
 
         var file = std.fs.openFileAbsolute(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
-                try self._diagnostics.append(arena_alloc, .{
+                const diag: cli.Diagnostic = .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "error opening config-file {s}: {}",
                         .{ path, err },
                     ),
-                });
+                };
+
+                try self._diagnostics.append(arena_alloc, diag);
+                try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
             }
             continue;
         };
@@ -3061,13 +3248,16 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
         switch (stat.kind) {
             .file => {},
             else => |kind| {
-                try self._diagnostics.append(arena_alloc, .{
+                const diag: cli.Diagnostic = .{
                     .message = try std.fmt.allocPrintZ(
                         arena_alloc,
                         "config-file {s}: not reading because file type is {s}",
                         .{ path, @tagName(kind) },
                     ),
-                });
+                };
+
+                try self._diagnostics.append(arena_alloc, diag);
+                try self._replay_steps.append(arena_alloc, .{ .diagnostic = diag });
                 continue;
             },
         }
@@ -3217,7 +3407,7 @@ fn loadTheme(self: *Config, theme: Theme) !void {
     // Setup our replay to be conditional.
     conditional: for (new_config._replay_steps.items) |*item| {
         switch (item.*) {
-            .expand => {},
+            .expand, .diagnostic => {},
 
             // If we see "-e" then we do NOT make the following arguments
             // conditional since they are supposed to be part of the
@@ -3769,6 +3959,16 @@ const Replay = struct {
             arg: []const u8,
         },
 
+        /// A diagnostic to be added to the new configuration when
+        /// replayed. This should only be used for diagnostics that won't
+        /// be reproduced during playback. For example, `config-file`
+        /// errors are not reloaded so they should be added here.
+        ///
+        /// Diagnostics cannot be conditional. They are always present
+        /// even if the conditionals don't match. This helps users find
+        /// errors in their configuration.
+        diagnostic: cli.Diagnostic,
+
         /// The start of a "-e" argument. This marks the end of
         /// traditional configuration and the beginning of the
         /// "-e" initial command magic. This is separate from "arg"
@@ -3785,6 +3985,7 @@ const Replay = struct {
         ) Allocator.Error!Step {
             return switch (self) {
                 .@"-e" => self,
+                .diagnostic => |v| .{ .diagnostic = try v.clone(alloc) },
                 .arg => |v| .{ .arg = try alloc.dupe(u8, v) },
                 .expand => |v| .{ .expand = try alloc.dupe(u8, v) },
                 .conditional_arg => |v| conditional: {
@@ -3818,6 +4019,20 @@ const Replay = struct {
                         // world state changed and we can't expand anymore.
                         // In that really unfortunate case, we log a warning.
                         log.warn("error expanding paths err={}", .{err});
+                    },
+
+                    .diagnostic => |diag| diag: {
+                        // Best effort to clone and append the diagnostic.
+                        // If it fails we log a warning and continue.
+                        const arena_alloc = self.config._arena.?.allocator();
+                        const cloned = diag.clone(arena_alloc) catch |err| {
+                            log.warn("error cloning diagnostic err={}", .{err});
+                            break :diag;
+                        };
+                        self.config._diagnostics.append(arena_alloc, cloned) catch |err| {
+                            log.warn("error appending diagnostic err={}", .{err});
+                            break :diag;
+                        };
                     },
 
                     .conditional_arg => |v| conditional: {
@@ -3885,6 +4100,11 @@ pub const WindowPaddingColor = enum {
     background,
     extend,
     @"extend-always",
+};
+
+pub const WindowSubtitle = enum {
+    false,
+    @"working-directory",
 };
 
 /// Color represents a color using RGB.
@@ -5527,8 +5747,8 @@ pub const AdwToolbarStyle = enum {
     @"raised-border",
 };
 
-/// See adw-toast
-pub const AdwToast = packed struct {
+/// See app-notifications
+pub const AppNotifications = packed struct {
     @"clipboard-copy": bool = true,
 };
 
@@ -5594,10 +5814,30 @@ pub const QuickTerminalScreen = enum {
     @"macos-menu-bar",
 };
 
+// See quick-terminal-space-behavior
+pub const QuickTerminalSpaceBehavior = enum {
+    remain,
+    move,
+};
+
 /// See grapheme-width-method
 pub const GraphemeWidthMethod = enum {
     legacy,
     unicode,
+};
+
+/// See text-blending
+pub const TextBlending = enum {
+    native,
+    linear,
+    @"linear-corrected",
+
+    pub fn isLinear(self: TextBlending) bool {
+        return switch (self) {
+            .native => false,
+            .linear, .@"linear-corrected" => true,
+        };
+    }
 };
 
 /// See freetype-load-flag
@@ -5623,6 +5863,134 @@ pub const AutoUpdate = enum {
     off,
     check,
     download,
+};
+
+/// See background-blur
+pub const BackgroundBlur = union(enum) {
+    false,
+    true,
+    radius: u8,
+
+    pub fn parseCLI(self: *BackgroundBlur, input: ?[]const u8) !void {
+        const input_ = input orelse {
+            // Emulate behavior for bools
+            self.* = .true;
+            return;
+        };
+
+        self.* = if (cli.args.parseBool(input_)) |b|
+            if (b) .true else .false
+        else |_|
+            .{ .radius = std.fmt.parseInt(
+                u8,
+                input_,
+                0,
+            ) catch return error.InvalidValue };
+    }
+
+    pub fn enabled(self: BackgroundBlur) bool {
+        return switch (self) {
+            .false => false,
+            .true => true,
+            .radius => |v| v > 0,
+        };
+    }
+
+    pub fn cval(self: BackgroundBlur) u8 {
+        return switch (self) {
+            .false => 0,
+            .true => 20,
+            .radius => |v| v,
+        };
+    }
+
+    pub fn formatEntry(
+        self: BackgroundBlur,
+        formatter: anytype,
+    ) !void {
+        switch (self) {
+            .false => try formatter.formatEntry(bool, false),
+            .true => try formatter.formatEntry(bool, true),
+            .radius => |v| try formatter.formatEntry(u8, v),
+        }
+    }
+
+    test "parse BackgroundBlur" {
+        const testing = std.testing;
+        var v: BackgroundBlur = undefined;
+
+        try v.parseCLI(null);
+        try testing.expectEqual(.true, v);
+
+        try v.parseCLI("true");
+        try testing.expectEqual(.true, v);
+
+        try v.parseCLI("false");
+        try testing.expectEqual(.false, v);
+
+        try v.parseCLI("42");
+        try testing.expectEqual(42, v.radius);
+
+        try testing.expectError(error.InvalidValue, v.parseCLI(""));
+        try testing.expectError(error.InvalidValue, v.parseCLI("aaaa"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("420"));
+    }
+};
+
+/// See window-decoration
+pub const WindowDecoration = enum {
+    auto,
+    client,
+    server,
+    none,
+
+    pub fn parseCLI(input_: ?[]const u8) !WindowDecoration {
+        const input = input_ orelse return .auto;
+
+        return if (cli.args.parseBool(input)) |b|
+            if (b) .auto else .none
+        else |_| if (std.meta.stringToEnum(WindowDecoration, input)) |v|
+            v
+        else
+            error.InvalidValue;
+    }
+
+    test "parse WindowDecoration" {
+        const testing = std.testing;
+
+        {
+            const v = try WindowDecoration.parseCLI(null);
+            try testing.expectEqual(WindowDecoration.auto, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("true");
+            try testing.expectEqual(WindowDecoration.auto, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("false");
+            try testing.expectEqual(WindowDecoration.none, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("server");
+            try testing.expectEqual(WindowDecoration.server, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("client");
+            try testing.expectEqual(WindowDecoration.client, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("auto");
+            try testing.expectEqual(WindowDecoration.auto, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("none");
+            try testing.expectEqual(WindowDecoration.none, v);
+        }
+        {
+            try testing.expectError(error.InvalidValue, WindowDecoration.parseCLI(""));
+            try testing.expectError(error.InvalidValue, WindowDecoration.parseCLI("aaaa"));
+        }
+    }
 };
 
 /// See theme
@@ -5952,6 +6320,12 @@ pub const WindowPadding = struct {
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI(""));
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI("a"));
     }
+};
+
+/// See the `gtk-gsk-renderer` config.
+pub const GtkGskRenderer = enum {
+    default,
+    opengl,
 };
 
 test "parse duration" {

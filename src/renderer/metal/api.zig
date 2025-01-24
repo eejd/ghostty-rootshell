@@ -74,6 +74,7 @@ pub const MTLPixelFormat = enum(c_ulong) {
     rgba8unorm = 70,
     rgba8uint = 73,
     bgra8unorm = 80,
+    bgra8unorm_srgb = 81,
 };
 
 /// https://developer.apple.com/documentation/metal/mtlpurgeablestate?language=objc
@@ -175,4 +176,8 @@ pub const MTLSize = extern struct {
     depth: c_ulong,
 };
 
+/// https://developer.apple.com/documentation/metal/1433367-mtlcopyalldevices
 pub extern "c" fn MTLCopyAllDevices() ?*anyopaque;
+
+/// https://developer.apple.com/documentation/metal/1433401-mtlcreatesystemdefaultdevice
+pub extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;

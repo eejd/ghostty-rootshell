@@ -5,7 +5,7 @@ const Action = @import("../cli/action.zig").Action;
 
 /// A zsh completions configuration that contains all the available commands
 /// and options.
-pub const zsh_completions = comptimeGenerateZshCompletions();
+pub const completions = comptimeGenerateZshCompletions();
 
 const equals_required = "=-:::";
 

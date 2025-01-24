@@ -179,8 +179,17 @@ pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
     // Quit our read thread after exiting the subprocess so that
     // we don't get stuck waiting for data to stop flowing if it is
     // a particularly noisy process.
-    _ = posix.write(exec.read_thread_pipe, "x") catch |err|
-        log.warn("error writing to read thread quit pipe err={}", .{err});
+    _ = posix.write(exec.read_thread_pipe, "x") catch |err| switch (err) {
+        // BrokenPipe means that our read thread is closed already,
+        // which is completely fine since that is what we were trying
+        // to achieve.
+        error.BrokenPipe => {},
+
+        else => log.warn(
+            "error writing to read thread quit pipe err={}",
+            .{err},
+        ),
+    };
 
     if (comptime builtin.os.tag == .windows) {
         // Interrupt the blocking read so the thread can see the quit message
@@ -856,7 +865,11 @@ const Subprocess = struct {
             env.remove("GHOSTTY_MAC_APP");
         }
 
-        // Don't leak these environment variables to child processes.
+        // VTE_VERSION is set by gnome-terminal and other VTE-based terminals.
+        // We don't want our child processes to think we're running under VTE.
+        env.remove("VTE_VERSION");
+
+        // Don't leak these GTK environment variables to child processes.
         if (comptime build_config.app_runtime == .gtk) {
             env.remove("GDK_DEBUG");
             env.remove("GDK_DISABLE");
@@ -871,7 +884,11 @@ const Subprocess = struct {
             };
 
             const force: ?shell_integration.Shell = switch (cfg.shell_integration) {
-                .none => break :shell .{ null, default_shell_command },
+                .none => {
+                    // Even if shell integration is none, we still want to set up the feature env vars
+                    try shell_integration.setupFeatures(&env, cfg.shell_integration_features);
+                    break :shell .{ null, default_shell_command };
+                },
                 .detect => null,
                 .bash => .bash,
                 .elvish => .elvish,
@@ -967,12 +984,12 @@ const Subprocess = struct {
                 // which we may not want. If we specify "-l" then we can avoid
                 // this behavior but now the shell isn't a login shell.
                 //
-                // There is another issue: `login(1)` only checks for ".hushlogin"
-                // in the working directory. This means that if we specify "-l"
-                // then we won't get hushlogin honored if its in the home
-                // directory (which is standard). To get around this, we
-                // check for hushlogin ourselves and if present specify the
-                // "-q" flag to login(1).
+                // There is another issue: `login(1)` on macOS 14.3 and earlier
+                // checked for ".hushlogin" in the working directory. This means
+                // that if we specify "-l" then we won't get hushlogin honored
+                // if its in the home directory (which is standard). To get
+                // around this, we check for hushlogin ourselves and if present
+                // specify the "-q" flag to login(1).
                 //
                 // So to get all the behaviors we want, we specify "-l" but
                 // execute "bash" (which is built-in to macOS). We then use
@@ -1090,6 +1107,10 @@ const Subprocess = struct {
         });
         self.pty = pty;
         errdefer {
+            if (comptime builtin.os.tag != .windows) {
+                _ = posix.close(pty.slave);
+            }
+
             pty.deinit();
             self.pty = null;
         }
@@ -1172,6 +1193,13 @@ const Subprocess = struct {
         log.info("started subcommand path={s} pid={?}", .{ self.args[0], cmd.pid });
         if (comptime builtin.os.tag == .linux) {
             log.info("subcommand cgroup={s}", .{self.linux_cgroup orelse "-"});
+        }
+
+        if (comptime builtin.os.tag != .windows) {
+            // Once our subcommand is started we can close the slave
+            // side. This prevents the slave fd from being leaked to
+            // future children.
+            _ = posix.close(pty.slave);
         }
 
         self.command = cmd;
@@ -1446,6 +1474,13 @@ pub const ReadThread = struct {
             // If our quit fd is set, we're done.
             if (pollfds[1].revents & posix.POLL.IN != 0) {
                 log.info("read thread got quit signal", .{});
+                return;
+            }
+
+            // If our pty fd is closed, then we're also done with our
+            // read thread.
+            if (pollfds[0].revents & posix.POLL.HUP != 0) {
+                log.info("pty fd closed, read thread exiting", .{});
                 return;
             }
         }

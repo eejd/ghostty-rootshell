@@ -115,6 +115,21 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    // We override this so that with the hidden titlebar style the titlebar
+    // area is not draggable.
+    override var contentLayoutRect: CGRect {
+        var rect = super.contentLayoutRect
+
+        // If we are using a hidden titlebar style, the content layout is the
+        // full frame making it so that it is not draggable.
+        if let controller = windowController as? TerminalController,
+              controller.derivedConfig.macosTitlebarStyle == "hidden" {
+            rect.origin.y = 0
+            rect.size.height = self.frame.height
+        }
+        return rect
+    }
+
     // The window theme configuration from Ghostty. This is used to control some
     // behaviors that don't look quite right in certain situations.
     var windowTheme: TerminalWindowTheme?
@@ -667,12 +682,16 @@ fileprivate class WindowDragView: NSView {
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
 fileprivate class WindowButtonsBackdropView: NSView {
-	private let terminalWindow: TerminalWindow
+    // This must be weak because the window has this view. Otherwise
+    // a retain cycle occurs.
+	private weak var terminalWindow: TerminalWindow?
 	private let isLightTheme: Bool
     private let overlayLayer = VibrantLayer()
 
     var isHighlighted: Bool = true {
         didSet {
+            guard let terminalWindow else { return }
+
             if isLightTheme {
                 overlayLayer.isHidden = isHighlighted
                 layer?.backgroundColor = .clear

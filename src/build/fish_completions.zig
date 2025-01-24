@@ -5,7 +5,7 @@ const Action = @import("../cli/action.zig").Action;
 
 /// A fish completions configuration that contains all the available commands
 /// and options.
-pub const fish_completions = comptimeGenerateFishCompletions();
+pub const completions = comptimeGenerateFishCompletions();
 
 fn comptimeGenerateFishCompletions() []const u8 {
     comptime {

@@ -230,7 +230,7 @@ pub const Action = union(enum) {
     unbind: void,
 
     /// Send a CSI sequence. The value should be the CSI sequence without the
-    /// CSI header (`ESC ]` or `\x1b]`).
+    /// CSI header (`ESC [` or `\x1b[`).
     csi: []const u8,
 
     /// Send an `ESC` sequence.
@@ -258,6 +258,10 @@ pub const Action = union(enum) {
     copy_to_clipboard: void,
     paste_from_clipboard: void,
     paste_from_selection: void,
+
+    /// Copy the URL under the cursor to the clipboard. If there is no
+    /// URL under the cursor, this does nothing.
+    copy_url_to_clipboard: void,
 
     /// Increase/decrease the font size by a certain amount.
     increase_font_size: f32,
@@ -336,7 +340,7 @@ pub const Action = union(enum) {
     goto_tab: usize,
 
     /// Moves a tab by a relative offset.
-    /// Adjusts the tab position based on `offset` (e.g., -1 for left, +1 for right).
+    /// Adjusts the tab position based on `offset`. For example `move_tab:-1` for left, `move_tab:1` for right.
     /// If the new position is out of bounds, it wraps around cyclically within the tab range.
     move_tab: isize,
 
@@ -353,13 +357,8 @@ pub const Action = union(enum) {
     ///   keybind = cmd+shift+d=new_split:right
     new_split: SplitDirection,
 
-    /// Focus a split in a given direction.
-    ///
-    /// Arguments:
-    ///   - previous, next, up, left, down, right
-    ///
-    /// Example: Focus split on the right
-    ///   keybind = cmd+right=goto_split:right
+    /// Focus on a split in a given direction. For example `goto_split:up`.
+    /// Valid values are left, right, up, down, previous and next.
     goto_split: SplitFocusDirection,
 
     /// zoom/unzoom the current split.
@@ -403,6 +402,10 @@ pub const Action = union(enum) {
     /// configured.
     close_surface: void,
 
+    /// Close the current tab, regardless of how many splits there may be.
+    /// This will trigger close confirmation as configured.
+    close_tab: void,
+
     /// Close the window, regardless of how many tabs or splits there may be.
     /// This will trigger close confirmation as configured.
     close_window: void,
@@ -410,6 +413,9 @@ pub const Action = union(enum) {
     /// Close all windows. This will trigger close confirmation as configured.
     /// This only works for macOS currently.
     close_all_windows: void,
+
+    /// Toggle maximized window state. This only works on Linux.
+    toggle_maximize: void,
 
     /// Toggle fullscreen mode of window.
     toggle_fullscreen: void,
@@ -436,7 +442,7 @@ pub const Action = union(enum) {
     /// is preserved between appearances, so you can always press the keybinding
     /// to bring it back up.
     ///
-    /// To enable the quick terminally globally so that Ghostty doesn't
+    /// To enable the quick terminal globally so that Ghostty doesn't
     /// have to be focused, prefix your keybind with `global`. Example:
     ///
     /// ```ini
@@ -461,10 +467,10 @@ pub const Action = union(enum) {
     toggle_quick_terminal: void,
 
     /// Show/hide all windows. If all windows become shown, we also ensure
-    /// Ghostty is focused.
+    /// Ghostty becomes focused. When hiding all windows, focus is yielded
+    /// to the next application as determined by the OS.
     ///
-    /// This currently only works on macOS. When hiding all windows, we do
-    /// not yield focus to the previous application.
+    /// This currently only works on macOS.
     toggle_visibility: void,
 
     /// Quit ghostty.
@@ -734,6 +740,7 @@ pub const Action = union(enum) {
             .cursor_key,
             .reset,
             .copy_to_clipboard,
+            .copy_url_to_clipboard,
             .paste_from_clipboard,
             .paste_from_selection,
             .increase_font_size,
@@ -753,7 +760,9 @@ pub const Action = union(enum) {
             .write_screen_file,
             .write_selection_file,
             .close_surface,
+            .close_tab,
             .close_window,
+            .toggle_maximize,
             .toggle_fullscreen,
             .toggle_window_decorations,
             .toggle_secure_input,
@@ -1555,6 +1564,22 @@ pub const Set = struct {
 
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, alloc: Allocator, t: Trigger) void {
+        // Remove whatever this trigger is
+        self.removeExact(alloc, t);
+
+        // If we have a physical we remove translated and vice versa.
+        const alternate: Trigger.Key = switch (t.key) {
+            .unicode => return,
+            .translated => |k| .{ .physical = k },
+            .physical => |k| .{ .translated = k },
+        };
+
+        var alt_t: Trigger = t;
+        alt_t.key = alternate;
+        self.removeExact(alloc, alt_t);
+    }
+
+    fn removeExact(self: *Set, alloc: Allocator, t: Trigger) void {
         const entry = self.bindings.get(t) orelse return;
         _ = self.bindings.remove(t);
 
@@ -1586,7 +1611,7 @@ pub const Set = struct {
                         },
                     }
                 } else {
-                    // No over trigger points to this action so we remove
+                    // No other trigger points to this action so we remove
                     // the reverse mapping completely.
                     _ = self.reverse.remove(leaf.action);
                 }
@@ -2123,6 +2148,24 @@ test "set: parseAndPut removed binding" {
     // Creates forward mapping
     {
         const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        try testing.expect(s.get(trigger) == null);
+    }
+    try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
+}
+
+test "set: parseAndPut removed physical binding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "physical:a=new_window");
+    try s.parseAndPut(alloc, "a=unbind");
+
+    // Creates forward mapping
+    {
+        const trigger: Trigger = .{ .key = .{ .physical = .a } };
         try testing.expect(s.get(trigger) == null);
     }
     try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);

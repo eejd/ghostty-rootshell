@@ -10,7 +10,8 @@ const gtk = if (build_config.app_runtime == .gtk) @import("../apprt/gtk/c.zig").
 
 pub const Options = struct {};
 
-/// The `version` command is used to display information about Ghostty.
+/// The `version` command is used to display information about Ghostty. Recognized as
+/// either `+version` or `--version`.
 pub fn run(alloc: Allocator) !u8 {
     _ = alloc;
 
@@ -67,6 +68,14 @@ pub fn run(alloc: Allocator) !u8 {
             try stdout.print("  - libX11     : enabled\n", .{});
         } else {
             try stdout.print("  - libX11     : disabled\n", .{});
+        }
+
+        // We say `libwayland` since it is possible to build Ghostty without
+        // Wayland integration but with Wayland-enabled GTK
+        if (comptime build_options.wayland) {
+            try stdout.print("  - libwayland : enabled\n", .{});
+        } else {
+            try stdout.print("  - libwayland : disabled\n", .{});
         }
     }
     return 0;

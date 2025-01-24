@@ -52,7 +52,7 @@ pub fn renderGlyph(
         }
     }
 
-    const metrics = opts.grid_metrics orelse self.metrics;
+    const metrics = self.metrics;
 
     // We adjust our sprite width based on the cell width.
     const width = switch (opts.cell_width orelse 1) {

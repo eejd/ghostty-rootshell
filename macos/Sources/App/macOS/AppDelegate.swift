@@ -30,11 +30,13 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuSplitRight: NSMenuItem?
     @IBOutlet private var menuSplitDown: NSMenuItem?
     @IBOutlet private var menuClose: NSMenuItem?
+    @IBOutlet private var menuCloseTab: NSMenuItem?
     @IBOutlet private var menuCloseWindow: NSMenuItem?
     @IBOutlet private var menuCloseAllWindows: NSMenuItem?
 
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
+    @IBOutlet private var menuPasteSelection: NSMenuItem?
     @IBOutlet private var menuSelectAll: NSMenuItem?
 
     @IBOutlet private var menuToggleVisibility: NSMenuItem?
@@ -90,10 +92,8 @@ class AppDelegate: NSObject,
         return ProcessInfo.processInfo.systemUptime - applicationLaunchTime
     }
 
-    /// Tracks whether the application is currently visible. This can be gamed, i.e. if a user manually
-    /// brings each window one by one to the front. But at worst its off by one set of toggles and this
-    /// makes our logic very easy.
-    private var isVisible: Bool = true
+    /// Tracks the windows that we hid for toggleVisibility.
+    private var hiddenWindows: [Weak<NSWindow>] = []
 
     /// The observer for the app appearance.
     private var appearanceObserver: NSKeyValueObservation? = nil
@@ -217,15 +217,20 @@ class AppDelegate: NSObject,
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard !applicationHasBecomeActive else { return }
-        applicationHasBecomeActive = true
+        // If we're back then clear the hidden windows
+        self.hiddenWindows = []
 
-        // Let's launch our first window. We only do this if we have no other windows. It
-        // is possible to have other windows in a few scenarios:
-        //   - if we're opening a URL since `application(_:openFile:)` is called before this.
-        //   - if we're restoring from persisted state
-        if terminalManager.windows.count == 0 && derivedConfig.initialWindow {
-            terminalManager.newWindow()
+        // First launch stuff
+        if (!applicationHasBecomeActive) {
+            applicationHasBecomeActive = true
+
+            // Let's launch our first window. We only do this if we have no other windows. It
+            // is possible to have other windows in a few scenarios:
+            //   - if we're opening a URL since `application(_:openFile:)` is called before this.
+            //   - if we're restoring from persisted state
+            if terminalManager.windows.count == 0 && derivedConfig.initialWindow {
+                terminalManager.newWindow()
+            }
         }
     }
 
@@ -346,6 +351,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "new_window", menuItem: self.menuNewWindow)
         syncMenuShortcut(config, action: "new_tab", menuItem: self.menuNewTab)
         syncMenuShortcut(config, action: "close_surface", menuItem: self.menuClose)
+        syncMenuShortcut(config, action: "close_tab", menuItem: self.menuCloseTab)
         syncMenuShortcut(config, action: "close_window", menuItem: self.menuCloseWindow)
         syncMenuShortcut(config, action: "close_all_windows", menuItem: self.menuCloseAllWindows)
         syncMenuShortcut(config, action: "new_split:right", menuItem: self.menuSplitRight)
@@ -353,6 +359,7 @@ class AppDelegate: NSObject,
 
         syncMenuShortcut(config, action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(config, action: "paste_from_clipboard", menuItem: self.menuPaste)
+        syncMenuShortcut(config, action: "paste_from_selection", menuItem: self.menuPasteSelection)
         syncMenuShortcut(config, action: "select_all", menuItem: self.menuSelectAll)
 
         syncMenuShortcut(config, action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
@@ -424,32 +431,42 @@ class AppDelegate: NSObject,
         // If we have a main window then we don't process any of the keys
         // because we let it capture and propagate.
         guard NSApp.mainWindow == nil else { return event }
-
+        
+        // If this event as-is would result in a key binding then we send it.
+        if let app = ghostty.app,
+           ghostty_app_key_is_binding(
+            app,
+            event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
+            // If the key was handled by Ghostty we stop the event chain. If
+            // the key wasn't handled then we let it fall through and continue
+            // processing. This is important because some bindings may have no
+            // affect at this scope.
+            if (ghostty_app_key(
+                app,
+                event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
+                return nil
+            }
+        }
+        
         // If this event would be handled by our menu then we do nothing.
         if let mainMenu = NSApp.mainMenu,
            mainMenu.performKeyEquivalent(with: event) {
             return nil
         }
-
+        
         // If we reach this point then we try to process the key event
         // through the Ghostty key mechanism.
-
+        
         // Ghostty must be loaded
         guard let ghostty = self.ghostty.app else { return event }
-
+        
         // Build our event input and call ghostty
-        var key_ev = ghostty_input_key_s()
-        key_ev.action = GHOSTTY_ACTION_PRESS
-        key_ev.mods = Ghostty.ghosttyMods(event.modifierFlags)
-        key_ev.keycode = UInt32(event.keyCode)
-        key_ev.text = nil
-        key_ev.composing = false
-        if (ghostty_app_key(ghostty, key_ev)) {
+        if (ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
             // The key was used so we want to stop it from going to our Mac app
             Ghostty.logger.debug("local key event handled event=\(event)")
             return nil
         }
-
+        
         return event
     }
 
@@ -692,21 +709,23 @@ class AppDelegate: NSObject,
 
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
-        // We only care about terminal windows.
-        for window in NSApp.windows.filter({ $0.windowController is BaseTerminalController }) {
-            if isVisible {
-                window.orderOut(nil)
-            } else {
-                window.makeKeyAndOrderFront(nil)
-            }
+        // If we have focus, then we hide all windows.
+        if NSApp.isActive {
+            // We need to keep track of the windows that were visible because we only
+            // want to bring back these windows if we remove the toggle.
+            self.hiddenWindows = NSApp.windows.filter { $0.isVisible }.map { Weak($0) }
+            NSApp.hide(nil)
+            return
         }
 
-        // After bringing them all to front we make sure our app is active too.
-        if !isVisible {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // If we're not active, we want to become active
+        NSApp.activate(ignoringOtherApps: true)
 
-        isVisible.toggle()
+        // Bring all windows to the front. Note: we don't use NSApp.unhide because
+        // that will unhide ALL hidden windows. We want to only bring forward the
+        // ones that we hid.
+        self.hiddenWindows.forEach { $0.value?.orderFrontRegardless() }
+        self.hiddenWindows = []
     }
 
     private struct DerivedConfig {

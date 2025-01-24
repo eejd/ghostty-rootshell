@@ -49,7 +49,7 @@ alloc: std.mem.Allocator,
 config: DerivedConfig,
 
 /// Current font metrics defining our grid.
-grid_metrics: font.face.Metrics,
+grid_metrics: font.Metrics,
 
 /// The size of everything.
 size: renderer.Size,
@@ -231,7 +231,7 @@ const SetScreenSize = struct {
 };
 
 const SetFontSize = struct {
-    metrics: font.face.Metrics,
+    metrics: font.Metrics,
 
     fn apply(self: SetFontSize, r: *const OpenGL) !void {
         const gl_state = r.gl_state orelse return error.OpenGLUninitialized;
@@ -272,6 +272,7 @@ pub const DerivedConfig = struct {
     arena: ArenaAllocator,
 
     font_thicken: bool,
+    font_thicken_strength: u8,
     font_features: std.ArrayListUnmanaged([:0]const u8),
     font_styles: font.CodepointResolver.StyleStatus,
     cursor_color: ?terminal.color.RGB,
@@ -321,6 +322,7 @@ pub const DerivedConfig = struct {
         return .{
             .background_opacity = @max(0, @min(1, config.@"background-opacity")),
             .font_thicken = config.@"font-thicken",
+            .font_thicken_strength = config.@"font-thicken-strength",
             .font_features = font_features.list,
             .font_styles = font_styles,
 
@@ -704,8 +706,6 @@ pub fn updateFrame(
 
     // Update all our data as tightly as possible within the mutex.
     var critical: Critical = critical: {
-        const grid_size = self.size.grid();
-
         state.mutex.lock();
         defer state.mutex.unlock();
 
@@ -744,19 +744,6 @@ pub fn updateFrame(
             } else {
                 self.default_foreground_color = bg;
             }
-        }
-
-        // If our terminal screen size doesn't match our expected renderer
-        // size then we skip a frame. This can happen if the terminal state
-        // is resized between when the renderer mailbox is drained and when
-        // the state mutex is acquired inside this function.
-        //
-        // For some reason this doesn't seem to cause any significant issues
-        // with flickering while resizing. '\_('-')_/'
-        if (grid_size.rows != state.terminal.rows or
-            grid_size.columns != state.terminal.cols)
-        {
-            return;
         }
 
         // Get the viewport pin so that we can compare it to the current.
@@ -1274,10 +1261,23 @@ pub fn rebuildCells(
         }
     }
 
-    // Build each cell
+    const grid_size = self.size.grid();
+
+    // We rebuild the cells row-by-row because we do font shaping by row.
     var row_it = screen.pages.rowIterator(.left_up, .{ .viewport = .{} }, null);
-    var y: terminal.size.CellCountInt = screen.pages.rows;
+    // If our cell contents buffer is shorter than the screen viewport,
+    // we render the rows that fit, starting from the bottom. If instead
+    // the viewport is shorter than the cell contents buffer, we align
+    // the top of the viewport with the top of the contents buffer.
+    var y: terminal.size.CellCountInt = @min(
+        screen.pages.rows,
+        grid_size.rows,
+    );
     while (row_it.next()) |row| {
+        // The viewport may have more rows than our cell contents,
+        // so we need to break from the loop early if we hit y = 0.
+        if (y == 0) break;
+
         y -= 1;
 
         // True if we want to do font shaping around the cursor. We want to
@@ -1354,7 +1354,11 @@ pub fn rebuildCells(
         var shaper_cells: ?[]const font.shape.Cell = null;
         var shaper_cells_i: usize = 0;
 
-        const row_cells = row.cells(.all);
+        const row_cells_all = row.cells(.all);
+
+        // If our viewport is wider than our cell contents buffer,
+        // we still only process cells up to the width of the buffer.
+        const row_cells = row_cells_all[0..@min(row_cells_all.len, grid_size.columns)];
 
         for (row_cells, 0..) |*cell, x| {
             // If this cell falls within our preedit range then we
@@ -1735,8 +1739,13 @@ pub fn rebuildCells(
 
         const cursor_color = self.cursor_color orelse self.default_cursor_color orelse color: {
             if (self.cursor_invert) {
+                // Use the foreground color from the cell under the cursor, if any.
                 const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                break :color sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color;
+                break :color if (sty.flags.inverse)
+                    // If the cell is reversed, use background color instead.
+                    (sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color)
+                else
+                    (sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color);
             } else {
                 break :color self.foreground_color orelse self.default_foreground_color;
             }
@@ -1746,8 +1755,13 @@ pub fn rebuildCells(
         for (cursor_cells.items) |*cell| {
             if (cell.mode.isFg() and cell.mode != .fg_color) {
                 const cell_color = if (self.cursor_invert) blk: {
+                    // Use the background color from the cell under the cursor, if any.
                     const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                    break :blk sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color;
+                    break :blk if (sty.flags.inverse)
+                        // If the cell is reversed, use foreground color instead.
+                        (sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color)
+                    else
+                        (sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color);
                 } else if (self.config.cursor_text) |txt|
                     txt
                 else
@@ -2093,6 +2107,7 @@ fn addGlyph(
         .{
             .grid_metrics = self.grid_metrics,
             .thicken = self.config.font_thicken,
+            .thicken_strength = self.config.font_thicken_strength,
         },
     );
 
@@ -2337,11 +2352,9 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
 }
 
 /// Draw the custom shaders.
-fn drawCustomPrograms(
-    self: *OpenGL,
-    custom_state: *custom.State,
-) !void {
+fn drawCustomPrograms(self: *OpenGL, custom_state: *custom.State) !void {
     _ = self;
+    assert(custom_state.programs.len > 0);
 
     // Bind our state that is global to all custom shaders
     const custom_bind = try custom_state.bind();
@@ -2352,10 +2365,10 @@ fn drawCustomPrograms(
 
     // Go through each custom shader and draw it.
     for (custom_state.programs) |program| {
-        // Bind our cell program state, buffers
         const bind = try program.bind();
         defer bind.unbind();
         try bind.draw();
+        try custom_state.copyFramebuffer();
     }
 }
 

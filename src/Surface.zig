@@ -569,12 +569,16 @@ pub fn init(
 
     // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
     // but is otherwise somewhat arbitrary.
+
+    const min_window_width_cells: u32 = 10;
+    const min_window_height_cells: u32 = 4;
+
     try rt_app.performAction(
         .{ .surface = self },
         .size_limit,
         .{
-            .min_width = size.cell.width * 10,
-            .min_height = size.cell.height * 4,
+            .min_width = size.cell.width * min_window_width_cells,
+            .min_height = size.cell.height * min_window_height_cells,
             // No max:
             .max_width = 0,
             .max_height = 0,
@@ -617,8 +621,8 @@ pub fn init(
     // start messing with the window.
     if (config.@"window-height" > 0 and config.@"window-width" > 0) init: {
         const scale = rt_surface.getContentScale() catch break :init;
-        const height = @max(config.@"window-height" * cell_size.height, 480);
-        const width = @max(config.@"window-width" * cell_size.width, 640);
+        const height = @max(config.@"window-height", min_window_height_cells) * cell_size.height;
+        const width = @max(config.@"window-width", min_window_width_cells) * cell_size.width;
         const width_f32: f32 = @floatFromInt(width);
         const height_f32: f32 = @floatFromInt(height);
 
@@ -1037,6 +1041,9 @@ fn mouseRefreshLinks(
     pos_vp: terminal.point.Coordinate,
     over_link: bool,
 ) !void {
+    // If the position is outside our viewport, do nothing
+    if (pos.x < 0 or pos.y < 0) return;
+
     self.mouse.link_point = pos_vp;
 
     if (try self.linkAtPos(pos)) |link| {
@@ -1312,8 +1319,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
 
     const x: f64 = x: {
-        // Simple x * cell width gives the top-left corner
-        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width);
+        // Simple x * cell width gives the top-left corner, then add padding offset
+        var x: f64 = @floatFromInt(cursor.x * self.size.cell.width + self.size.padding.left);
 
         // We want the midpoint
         x += @as(f64, @floatFromInt(self.size.cell.width)) / 2;
@@ -1325,8 +1332,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     };
 
     const y: f64 = y: {
-        // Simple x * cell width gives the top-left corner
-        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height);
+        // Simple y * cell height gives the top-left corner, then add padding offset
+        var y: f64 = @floatFromInt(cursor.y * self.size.cell.height + self.size.padding.top);
 
         // We want the bottom
         y += @floatFromInt(self.size.cell.height);
@@ -1587,6 +1594,15 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
+    // We clear our selection when ANY OF:
+    // 1. We have an existing preedit
+    // 2. We have preedit text
+    if (self.renderer_state.preedit != null or
+        preedit_ != null)
+    {
+        self.setSelection(null) catch {};
+    }
+
     // We always clear our prior preedit
     if (self.renderer_state.preedit) |p| {
         self.alloc.free(p.codepoints);
@@ -1635,6 +1651,31 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
         .codepoints = try codepoints.toOwnedSlice(self.alloc),
     };
     try self.queueRender();
+}
+
+/// Returns true if the given key event would trigger a keybinding
+/// if it were to be processed. This is useful for determining if
+/// a key event should be sent to the terminal or not.
+///
+/// Note that this function does not check if the binding itself
+/// is performable, only if the key event would trigger a binding.
+/// If a performable binding is found and the event is not performable,
+/// then Ghosty will act as though the binding does not exist.
+pub fn keyEventIsBinding(
+    self: *Surface,
+    event: input.KeyEvent,
+) bool {
+    switch (event.action) {
+        .release => return false,
+        .press, .repeat => {},
+    }
+
+    // Our keybinding set is either our current nested set (for
+    // sequences) or the root set.
+    const set = self.keyboard.bindings orelse &self.config.keybind.set;
+
+    // If we have a keybinding for this event then we return true.
+    return set.getEvent(event) != null;
 }
 
 /// Called for any key events. This handles keybindings, encoding and
@@ -3525,22 +3566,21 @@ fn dragLeftClickTriple(
     const screen = &self.io.terminal.screen;
     const click_pin = self.mouse.left_click_pin.?.*;
 
-    // Get the word under our current point. If there isn't a word, do nothing.
-    const word = screen.selectLine(.{ .pin = drag_pin }) orelse return;
+    // Get the line selection under our current drag point. If there isn't a
+    // line, do nothing.
+    const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
 
-    // Get our selection to grow it. If we don't have a selection, start it now.
-    // We may not have a selection if we started our dbl-click in an area
-    // that had no data, then we dragged our mouse into an area with data.
-    var sel = screen.selectLine(.{ .pin = click_pin }) orelse {
-        try self.setSelection(word);
-        return;
-    };
+    // Get the selection under our click point. We first try to trim
+    // whitespace if we've selected a word. But if no word exists then
+    // we select the blank line.
+    const sel_ = screen.selectLine(.{ .pin = click_pin }) orelse
+        screen.selectLine(.{ .pin = click_pin, .whitespace = null });
 
-    // Grow our selection
+    var sel = sel_ orelse return;
     if (drag_pin.before(click_pin)) {
-        sel.startPtr().* = word.start();
+        sel.startPtr().* = line.start();
     } else {
-        sel.endPtr().* = word.end();
+        sel.endPtr().* = line.end();
     }
     try self.setSelection(sel);
 }
@@ -3907,6 +3947,33 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             return false;
         },
 
+        .copy_url_to_clipboard => {
+            // If the mouse isn't over a link, nothing we can do.
+            if (!self.mouse.over_link) return false;
+
+            const pos = try self.rt_surface.getCursorPos();
+            if (try self.linkAtPos(pos)) |link_info| {
+                // Get the URL text from selection
+                const url_text = (self.io.terminal.screen.selectionString(self.alloc, .{
+                    .sel = link_info[1],
+                    .trim = self.config.clipboard_trim_trailing_spaces,
+                })) catch |err| {
+                    log.err("error reading url string err={}", .{err});
+                    return false;
+                };
+                defer self.alloc.free(url_text);
+
+                self.rt_surface.setClipboardString(url_text, .standard, false) catch |err| {
+                    log.err("error copying url to clipboard err={}", .{err});
+                    return true;
+                };
+
+                return true;
+            }
+
+            return false;
+        },
+
         .paste_from_clipboard => try self.startClipboardRequest(
             .standard,
             .{ .paste = {} },
@@ -4032,6 +4099,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .close_tab => try self.rt_app.performAction(
+            .{ .surface = self },
+            .close_tab,
+            {},
+        ),
+
         inline .previous_tab,
         .next_tab,
         .last_tab,
@@ -4103,6 +4176,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         .toggle_split_zoom => try self.rt_app.performAction(
             .{ .surface = self },
             .toggle_split_zoom,
+            {},
+        ),
+
+        .toggle_maximize => try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_maximize,
             {},
         ),
 
@@ -4231,6 +4310,7 @@ fn closingAction(action: input.Binding.Action) bool {
     return switch (action) {
         .close_surface,
         .close_window,
+        .close_tab,
         => true,
 
         else => false,

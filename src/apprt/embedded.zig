@@ -147,12 +147,12 @@ pub const App = struct {
         self.core_app.focusEvent(focused);
     }
 
-    /// See CoreApp.keyEvent.
-    pub fn keyEvent(
+    /// Convert a C key event into a Zig key event.
+    fn coreKeyEvent(
         self: *App,
         target: KeyTarget,
         event: KeyEvent,
-    ) !bool {
+    ) !?input.KeyEvent {
         const action = event.action;
         const keycode = event.keycode;
         const mods = event.mods;
@@ -199,6 +199,11 @@ pub const App = struct {
             // This logic only applies to macOS.
             if (comptime builtin.os.tag != .macos) break :event_text event.text;
 
+            // If we're in a preedit state then we allow it through. This
+            // allows ctrl sequences that affect IME to work. For example,
+            // Ctrl+H deletes a character with Japanese input.
+            if (event.composing) break :event_text event.text;
+
             // If the modifiers are ONLY "control" then we never process
             // the event text because we want to do our own translation so
             // we can handle ctrl+c, ctrl+z, etc.
@@ -243,7 +248,7 @@ pub const App = struct {
                         result.text,
                     ) catch |err| {
                         log.err("error in preedit callback err={}", .{err});
-                        return false;
+                        return null;
                     },
                 }
             } else {
@@ -251,7 +256,7 @@ pub const App = struct {
                     .app => {},
                     .surface => |surface| surface.core_surface.preeditCallback(null) catch |err| {
                         log.err("error in preedit callback err={}", .{err});
-                        return false;
+                        return null;
                     },
                 }
 
@@ -335,7 +340,7 @@ pub const App = struct {
         } else .invalid;
 
         // Build our final key event
-        const input_event: input.KeyEvent = .{
+        return .{
             .action = action,
             .key = key,
             .physical_key = physical_key,
@@ -345,24 +350,39 @@ pub const App = struct {
             .utf8 = result.text,
             .unshifted_codepoint = unshifted_codepoint,
         };
+    }
+
+    /// See CoreApp.keyEvent.
+    pub fn keyEvent(
+        self: *App,
+        target: KeyTarget,
+        event: KeyEvent,
+    ) !bool {
+        // Convert our C key event into a Zig one.
+        const input_event: input.KeyEvent = (try self.coreKeyEvent(
+            target,
+            event,
+        )) orelse return false;
 
         // Invoke the core Ghostty logic to handle this input.
         const effect: CoreSurface.InputEffect = switch (target) {
             .app => if (self.core_app.keyEvent(
                 self,
                 input_event,
-            ))
-                .consumed
-            else
-                .ignored,
+            )) .consumed else .ignored,
 
-            .surface => |surface| try surface.core_surface.keyCallback(input_event),
+            .surface => |surface| try surface.core_surface.keyCallback(
+                input_event,
+            ),
         };
 
         return switch (effect) {
             .closed => true,
             .ignored => false,
             .consumed => consumed: {
+                const is_down = input_event.action == .press or
+                    input_event.action == .repeat;
+
                 if (is_down) {
                     // If we consume the key then we want to reset the dead
                     // key state.
@@ -618,7 +638,7 @@ pub const Surface = struct {
                 .y = @floatCast(opts.scale_factor),
             },
             .size = .{ .width = 800, .height = 600 },
-            .cursor_pos = .{ .x = 0, .y = 0 },
+            .cursor_pos = .{ .x = -1, .y = -1 },
             .keymap_state = .{},
         };
 
@@ -1332,10 +1352,9 @@ pub const CAPI = struct {
 
     /// Tick the event loop. This should be called whenever the "wakeup"
     /// callback is invoked for the runtime.
-    export fn ghostty_app_tick(v: *App) bool {
-        return v.core_app.tick(v) catch |err| err: {
+    export fn ghostty_app_tick(v: *App) void {
+        v.core_app.tick(v) catch |err| {
             log.err("error app tick err={}", .{err});
-            break :err false;
         };
     }
 
@@ -1370,6 +1389,28 @@ pub const CAPI = struct {
             log.warn("error processing key event err={}", .{err});
             return false;
         };
+    }
+
+    /// Returns true if the given key event would trigger a binding
+    /// if it were sent to the surface right now. The "right now"
+    /// is important because things like trigger sequences are only
+    /// valid until the next key event.
+    export fn ghostty_app_key_is_binding(
+        app: *App,
+        event: KeyEvent,
+    ) bool {
+        const core_event = app.coreKeyEvent(
+            .app,
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        } orelse {
+            log.warn("error processing key event", .{});
+            return false;
+        };
+
+        return app.core_app.keyEventIsBinding(app, core_event);
     }
 
     /// Notify the app that the keyboard was changed. This causes the
@@ -1592,14 +1633,36 @@ pub const CAPI = struct {
     export fn ghostty_surface_key(
         surface: *Surface,
         event: KeyEvent,
-    ) void {
-        _ = surface.app.keyEvent(
+    ) bool {
+        return surface.app.keyEvent(
             .{ .surface = surface },
             event.keyEvent(),
         ) catch |err| {
             log.warn("error processing key event err={}", .{err});
-            return;
+            return false;
         };
+    }
+
+    /// Returns true if the given key event would trigger a binding
+    /// if it were sent to the surface right now. The "right now"
+    /// is important because things like trigger sequences are only
+    /// valid until the next key event.
+    export fn ghostty_surface_key_is_binding(
+        surface: *Surface,
+        event: KeyEvent,
+    ) bool {
+        const core_event = surface.app.coreKeyEvent(
+            .{ .surface = surface },
+            event.keyEvent(),
+        ) catch |err| {
+            log.warn("error processing key event err={}", .{err});
+            return false;
+        } orelse {
+            log.warn("error processing key event", .{});
+            return false;
+        };
+
+        return surface.core_surface.keyEventIsBinding(core_event);
     }
 
     /// Send raw text to the terminal. This is treated like a paste
@@ -1895,7 +1958,7 @@ pub const CAPI = struct {
         _ = CGSSetWindowBackgroundBlurRadius(
             CGSDefaultConnectionForThread(),
             nswindow.msgSend(usize, objc.sel("windowNumber"), .{}),
-            @intCast(config.@"background-blur-radius"),
+            @intCast(config.@"background-blur".cval()),
         );
     }
 
