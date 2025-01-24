@@ -23,12 +23,9 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
 
         // Write it
         var wf = b.addWriteFiles();
-        const source = wf.add("ghostty.terminfo", str.items);
-
-        if (cfg.emit_terminfo) {
-            const source_install = b.addInstallFile(source, "share/terminfo/ghostty.terminfo");
-            try steps.append(&source_install.step);
-        }
+        const src_source = wf.add("share/terminfo/ghostty.terminfo", str.items);
+        const src_install = b.addInstallFile(src_source, "share/terminfo/ghostty.terminfo");
+        try steps.append(&src_install.step);
 
         // Windows doesn't have the binaries below.
         if (cfg.target.result.os.tag == .windows) break :terminfo;
@@ -36,10 +33,10 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
         // Convert to termcap source format if thats helpful to people and
         // install it. The resulting value here is the termcap source in case
         // that is used for other commands.
-        if (cfg.emit_termcap) {
+        {
             const run_step = RunStep.create(b, "infotocap");
-            run_step.addArgs(&.{ "infotocap", "-" });
-            run_step.setStdIn(.{ .lazy_path = source });
+            run_step.addArg("infotocap");
+            run_step.addFileArg(src_source);
             const out_source = run_step.captureStdOut();
             _ = run_step.captureStdErr(); // so we don't see stderr
 
@@ -51,21 +48,24 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
         {
             const run_step = RunStep.create(b, "tic");
             run_step.addArgs(&.{ "tic", "-x", "-o" });
-            const path = run_step.addOutputDirectoryArg("share/terminfo");
-            run_step.addArg("-");
-            run_step.setStdIn(.{ .lazy_path = source });
+            const path = run_step.addOutputFileArg("terminfo");
+            run_step.addFileArg(src_source);
             _ = run_step.captureStdErr(); // so we don't see stderr
 
-            try steps.append(&run_step.step);
+            // Depend on the terminfo source install step so that Zig build
+            // creates the "share" directory for us.
+            run_step.step.dependOn(&src_install.step);
 
-            // Use cp -R instead of Step.InstallDir because we need to preserve
-            // symlinks in the terminfo database. Zig's InstallDir step doesn't
-            // handle symlinks correctly yet.
-            const copy_step = RunStep.create(b, "copy terminfo db");
-            copy_step.addArgs(&.{ "cp", "-R" });
-            copy_step.addFileArg(path);
-            copy_step.addArg(b.fmt("{s}/share", .{b.install_path}));
-            try steps.append(&copy_step.step);
+            {
+                // Use cp -R instead of Step.InstallDir because we need to preserve
+                // symlinks in the terminfo database. Zig's InstallDir step doesn't
+                // handle symlinks correctly yet.
+                const copy_step = RunStep.create(b, "copy terminfo db");
+                copy_step.addArgs(&.{ "cp", "-R" });
+                copy_step.addFileArg(path);
+                copy_step.addArg(b.fmt("{s}/share", .{b.install_path}));
+                try steps.append(&copy_step.step);
+            }
         }
     }
 
