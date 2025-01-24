@@ -55,6 +55,8 @@ emit_helpgen: bool = false,
 emit_docs: bool = false,
 emit_webdata: bool = false,
 emit_xcframework: bool = false,
+emit_terminfo: bool = false,
+emit_termcap: bool = false,
 
 /// Environmental properties
 env: std.process.EnvMap,
@@ -304,6 +306,27 @@ pub fn init(b: *std.Build) !Config {
             break :emit_docs false;
         defer if (path) |p| b.allocator.free(p);
         break :emit_docs path != null;
+    };
+
+    config.emit_terminfo = b.option(
+        bool,
+        "emit-terminfo",
+        "Install Ghostty terminfo source file",
+    ) orelse switch (target.result.os.tag) {
+        .windows => true,
+        else => switch (optimize) {
+            .Debug => true,
+            .ReleaseSafe, .ReleaseFast, .ReleaseSmall => false,
+        },
+    };
+
+    config.emit_termcap = b.option(
+        bool,
+        "emit-termcap",
+        "Install Ghostty termcap file",
+    ) orelse switch (optimize) {
+        .Debug => true,
+        .ReleaseSafe, .ReleaseFast, .ReleaseSmall => false,
     };
 
     config.emit_webdata = b.option(
