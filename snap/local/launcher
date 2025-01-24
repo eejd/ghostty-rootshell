@@ -30,7 +30,6 @@ export VK_LAYER_PATH=${VK_LAYER_PATH:+$VK_LAYER_PATH:}${SNAP}/usr/share/vulkan/i
 export XDG_DATA_DIRS=${XDG_DATA_DIRS:+$XDG_DATA_DIRS:}${SNAP}/usr/share
 export XLOCALEDIR="${SNAP}/usr/share/X11/locale"
 
-export LIBGL_DRIVERS_PATH
 if [ "${__NV_PRIME_RENDER_OFFLOAD:-}" != 1 ]; then
   # Prevent picking VA-API (Intel/AMD) over NVIDIA VDPAU
   # https://download.nvidia.com/XFree86/Linux-x86_64/510.54/README/primerenderoffload.html#configureapplications
@@ -39,7 +38,7 @@ fi
 
 # Unset all SNAP specific environment variables to keep them from leaking
 # into other snaps that might get executed from within the shell
-for var in $(printenv | grep SNAP | cut -d= -f1); do
+for var in $(printenv | grep SNAP_ | cut -d= -f1); do
   unset $var
 done
 
