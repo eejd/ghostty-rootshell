@@ -2672,9 +2672,8 @@ fn rebuildCells(
                     // Cells that are reversed should be fully opaque.
                     if (style.flags.inverse) break :bg_alpha default;
 
-                    // Cells that have an explicit bg color, which does not
-                    // match the current surface bg, should be fully opaque.
-                    if (bg != null and !rgb.eql(self.background_color orelse self.default_background_color)) {
+                    // Cells that have an explicit bg color should be fully opaque.
+                    if (bg_style != null) {
                         break :bg_alpha default;
                     }
 
