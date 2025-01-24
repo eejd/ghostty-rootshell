@@ -733,6 +733,19 @@ const Subprocess = struct {
             try env.put("GHOSTTY_RESOURCES_DIR", dir);
         }
 
+        // Unset environment varies set by the snap
+        if (env.get("SNAP") != null) {
+            env.remove("SNAP");
+            env.remove("DRIRC_CONFIGDIR");
+            env.remove("__EGL_EXTERNAL_PLATFORM_CONFIG_DIRS");
+            env.remove("__EGL_VENDOR_LIBRARY_DIRS");
+            env.remove("LD_LIBRARY_PATH");
+            env.remove("LIBGL_DRIVERS_PATH");
+            env.remove("LIBVA_DRIVERS_PATH");
+            env.remove("VK_LAYER_PATH");
+            env.remove("XLOCALEDIR");
+        }
+
         // Set our TERM var. This is a bit complicated because we want to use
         // the ghostty TERM value but we want to only do that if we have
         // ghostty in the TERMINFO database.
