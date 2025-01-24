@@ -36,7 +36,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
         // Convert to termcap source format if thats helpful to people and
         // install it. The resulting value here is the termcap source in case
         // that is used for other commands.
-        {
+        if (cfg.emit_termcap) {
             const run_step = RunStep.create(b, "infotocap");
             run_step.addArg("infotocap");
             run_step.addFileArg(source);
