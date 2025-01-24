@@ -284,8 +284,15 @@ pub const Action = union(enum) {
     scroll_page_fractional: f32,
     scroll_page_lines: i16,
 
-    /// Adjust an existing selection in a given direction. This action
-    /// does nothing if there is no active selection.
+    /// Adjust the current selection in a given direction. Does nothing if no 
+    /// selection exists.
+    ///
+    /// Arguments:
+    ///   - left, right, up, down, page_up, page_down, home, end, 
+    ///     beginning_of_line, end_of_line
+    ///
+    /// Example: Extend selection to the right
+    ///   keybind = shift+right=adjust_selection:right
     adjust_selection: AdjustSelection,
 
     /// Jump the viewport forward or back by prompt. Positive number is the
@@ -341,8 +348,13 @@ pub const Action = union(enum) {
     /// This only works with libadwaita enabled currently.
     toggle_tab_overview: void,
 
-    /// Create a new split in the given direction. The new split will appear in
-    /// the direction given. For example `new_split:up`. Valid values are left, right, up, down and auto.
+    /// Create a new split in the given direction.
+    ///
+    /// Arguments:
+    ///   - right, down, left, up, auto (splits along the larger direction)
+    ///
+    /// Example: Create split on the right
+    ///   keybind = cmd+shift+d=new_split:right
     new_split: SplitDirection,
 
     /// Focus on a split in a given direction. For example `goto_split:up`.
@@ -352,15 +364,26 @@ pub const Action = union(enum) {
     /// zoom/unzoom the current split.
     toggle_split_zoom: void,
 
-    /// Resize the current split by moving the split divider in the given
-    /// direction. For example `resize_split:left,10`. The valid directions are up, down, left and right.
+    /// Resize the current split in a given direction.
+    ///
+    /// Arguments:
+    ///   - up, down, left, right
+    ///   - the number of pixels to resize the split by
+    ///
+    /// Example: Move divider up 10 pixels
+    ///   keybind = cmd+shift+up=resize_split:up,10
     resize_split: SplitResizeParameter,
 
     /// Equalize all splits in the current window
     equalize_splits: void,
 
-    /// Show, hide, or toggle the terminal inspector for the currently focused
-    /// terminal.
+    /// Control the terminal inspector visibility.
+    ///
+    /// Arguments:
+    ///   - toggle, show, hide
+    ///
+    /// Example: Toggle inspector visibility
+    ///   keybind = cmd+i=inspector:toggle
     inspector: InspectorMode,
 
     /// Open the configuration file in the default OS editor. If your default OS
@@ -516,7 +539,6 @@ pub const Action = union(enum) {
     pub const SplitFocusDirection = enum {
         previous,
         next,
-
         up,
         left,
         down,
