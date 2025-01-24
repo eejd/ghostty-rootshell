@@ -559,7 +559,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .font_size = font_size,
         .init_config = init_config,
         .size = .{ .width = 800, .height = 600 },
-        .cursor_pos = .{ .x = 0, .y = 0 },
+        .cursor_pos = .{ .x = -1, .y = -1 },
         .im_context = im_context,
         .cgroup_path = cgroup_path,
     };
