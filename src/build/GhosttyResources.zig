@@ -16,15 +16,6 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
 
     // Terminfo
     terminfo: {
-        const mkdir_step = RunStep.create(b, "make share/terminfo directory");
-        switch (cfg.target.result.os.tag) {
-            // windows mkdir shouldn't need "-p"
-            .windows => mkdir_step.addArgs(&.{"mkdir"}),
-            else => mkdir_step.addArgs(&.{ "mkdir", "-p" }),
-        }
-        mkdir_step.addArg(b.fmt("{s}/share/terminfo", .{b.install_path}));
-        try steps.append(&mkdir_step.step);
-
         // Encode our terminfo
         var str = std.ArrayList(u8).init(b.allocator);
         defer str.deinit();
@@ -36,7 +27,6 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
 
         if (cfg.emit_terminfo) {
             const source_install = b.addInstallFile(source, "share/terminfo/ghostty.terminfo");
-            source_install.step.dependOn(&mkdir_step.step);
             try steps.append(&source_install.step);
         }
 
@@ -54,7 +44,6 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             _ = run_step.captureStdErr(); // so we don't see stderr
 
             const cap_install = b.addInstallFile(out_source, "share/terminfo/ghostty.termcap");
-            cap_install.step.dependOn(&mkdir_step.step);
             try steps.append(&cap_install.step);
         }
 
@@ -65,6 +54,17 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             const path = run_step.addOutputFileArg("terminfo");
             run_step.addFileArg(source);
             _ = run_step.captureStdErr(); // so we don't see stderr
+
+            // Ensure that `share/terminfo` is a directory, otherwise the `cp
+            // -R` will create a file named `share/terminfo`
+            const mkdir_step = RunStep.create(b, "make share/terminfo directory");
+            switch (cfg.target.result.os.tag) {
+                // windows mkdir shouldn't need "-p"
+                .windows => mkdir_step.addArgs(&.{"mkdir"}),
+                else => mkdir_step.addArgs(&.{ "mkdir", "-p" }),
+            }
+            mkdir_step.addArg(b.fmt("{s}/share/terminfo", .{b.install_path}));
+            try steps.append(&mkdir_step.step);
 
             // Use cp -R instead of Step.InstallDir because we need to preserve
             // symlinks in the terminfo database. Zig's InstallDir step doesn't
