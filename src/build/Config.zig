@@ -486,6 +486,7 @@ pub const ExeEntrypoint = enum {
     mdgen_ghostty_5,
     webgen_config,
     webgen_actions,
+    webgen_commands,
     bench_parser,
     bench_stream,
     bench_codepoint_width,
