@@ -1098,6 +1098,10 @@ const Subprocess = struct {
         });
         self.pty = pty;
         errdefer {
+            if (comptime builtin.os.tag != .windows) {
+                _ = posix.close(pty.slave);
+            }
+
             pty.deinit();
             self.pty = null;
         }
@@ -1180,6 +1184,13 @@ const Subprocess = struct {
         log.info("started subcommand path={s} pid={?}", .{ self.args[0], cmd.pid });
         if (comptime builtin.os.tag == .linux) {
             log.info("subcommand cgroup={s}", .{self.linux_cgroup orelse "-"});
+        }
+
+        if (comptime builtin.os.tag != .windows) {
+            // Once our subcommand is started we can close the slave
+            // side. This prevents the slave fd from being leaked to
+            // future children.
+            _ = posix.close(pty.slave);
         }
 
         self.command = cmd;
