@@ -10,6 +10,10 @@ func CoreDockGetOrientationAndPinning(
 @_silgen_name("CoreDockGetAutoHideEnabled")
 func CoreDockGetAutoHideEnabled() -> Bool
 
+// Toggles the Dock's auto-hide state
+@_silgen_name("CoreDockSetAutoHideEnabled")
+func CoreDockSetAutoHideEnabled(_ flag: Bool)
+
 enum DockOrientation: Int {
     case top = 1
     case bottom = 2
@@ -26,8 +30,9 @@ class Dock {
         return .init(rawValue: Int(orientation)) ?? nil
     }
 
-    /// Returns true if the dock has auto-hide enabled.
+    /// Set the dock autohide.
     static var autoHideEnabled: Bool {
-        return CoreDockGetAutoHideEnabled()
+        get { return CoreDockGetAutoHideEnabled() }
+        set { CoreDockSetAutoHideEnabled(newValue) }
     }
 }
