@@ -733,7 +733,7 @@ const Subprocess = struct {
         }
 
         // Unset environment varies set by the snap
-        if (env.get("SNAP") != null) {
+        if (env.get("SNAP")) |_| {
             env.remove("SNAP");
             env.remove("DRIRC_CONFIGDIR");
             env.remove("__EGL_EXTERNAL_PLATFORM_CONFIG_DIRS");
