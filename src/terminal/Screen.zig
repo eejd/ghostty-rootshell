@@ -2596,6 +2596,15 @@ pub fn selectOutput(self: *Screen, pin: Pin) ?Selection {
         while (it.next()) |p| {
             it_prev = p;
             const row = p.rowAndCell().row;
+            switch (row.semantic_prompt) {
+                .command => break,
+
+                .unknown,
+                .prompt,
+                .prompt_continuation,
+                .input,
+                => {},
+            }
             if (row.semantic_prompt == .command) {
                 break;
             }
@@ -2606,8 +2615,14 @@ pub fn selectOutput(self: *Screen, pin: Pin) ?Selection {
         // yield the previous row.
         while (it.next()) |p| {
             const row = p.rowAndCell().row;
-            if (row.semantic_prompt != .command) {
-                break :boundary it_prev;
+            switch (row.semantic_prompt) {
+                .command => {},
+
+                .unknown,
+                .prompt,
+                .prompt_continuation,
+                .input,
+                => break :boundary it_prev,
             }
             it_prev = p;
         }
