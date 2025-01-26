@@ -270,6 +270,32 @@ pub const compatibility = std.StaticStringMap(
 /// This is currently only supported on macOS.
 @"font-thicken-strength": u8 = 255,
 
+/// Locations to break font shaping into multiple runs.
+///
+/// A "run" is a contiguous segment of text that is shaped together. "Shaping"
+/// is the process of converting text (codepoints) into glyphs (renderable
+/// characters). This is how ligatures are formed, among other things.
+/// For example, if a coding font turns "!=" into a single glyph, then it
+/// must see "!" and "=" next to each other in a single run. When a run
+/// is broken, the text is shaped separately. To continue our example, if
+/// "!" is at the end of one run and "=" is at the start of the next run,
+/// then the ligature will not be formed.
+///
+/// Ghostty breaks runs at certain points to improve readability or usability.
+/// For example, Ghostty by default will break runs under the cursor so that
+/// text editing can see the individual characters rather than a ligature.
+/// This configuration lets you configure this behavior.
+///
+/// Combine values with a comma to set multiple options. Prefix an
+/// option with "no-" to disable it. Enabling and disabling options
+/// can be done at the same time.
+///
+/// Available options:
+///
+///   * `cursor` - Break runs under the cursor.
+///
+@"font-shaping-break": FontShapingBreak = .{},
+
 /// What color space to use when performing alpha blending.
 ///
 /// This affects the appearance of text and of any images with transparency.
@@ -6212,6 +6238,11 @@ pub const FontSyntheticStyle = packed struct {
     bold: bool = true,
     italic: bool = true,
     @"bold-italic": bool = true,
+};
+
+/// See "font-shaping-break" for documentation
+pub const FontShapingBreak = packed struct {
+    cursor: bool = true,
 };
 
 /// See "link" for documentation.
