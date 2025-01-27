@@ -473,7 +473,11 @@ vertex CellTextVertexOut cell_text_vertex(
     ) &&
     in.grid_pos.y == uniforms.cursor_pos.y
   ) {
-    out.color = float4(uniforms.cursor_color) / 255.0f;
+    out.color = load_color(
+      uniforms.cursor_color,
+      uniforms.use_display_p3,
+      false
+    );
   }
 
   return out;
