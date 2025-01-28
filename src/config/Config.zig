@@ -273,10 +273,9 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 ///   This is also sometimes known as "gamma correction".
 ///   (Currently only supported on macOS. Has no effect on Linux.)
 ///
-/// * `linear-corrected` - Corrects the thinning/thickening effect of linear
-///   by applying a correction curve to the text alpha depending on its
-///   brightness. This compensates for the thinning and makes the weight of
-///   most text appear very similar to when it's blended non-linearly.
+/// * `linear-corrected` - Same as `linear`, but with a correction step applied
+///   for text that makes it look nearly or completely identical to `native`,
+///   but without any of the darkening artifacts.
 ///
 /// Note: This setting affects more than just text, images will also be blended
 /// in the selected color space, and custom shaders will receive colors in that
