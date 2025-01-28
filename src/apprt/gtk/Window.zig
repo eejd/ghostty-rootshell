@@ -335,10 +335,7 @@ pub fn init(self: *Window, app: *App) !void {
                     .top,
                     .left,
                     .right,
-                    => c.gtk_box_prepend(
-                        @ptrCast(box),
-                        @ptrCast(@alignCast(tab_bar)),
-                    ),
+                    => c.gtk_box_insert_child_after(@ptrCast(box), @ptrCast(@alignCast(tab_bar)), @ptrCast(@alignCast(self.headerbar.asWidget()))),
 
                     .bottom => c.gtk_box_append(
                         @ptrCast(box),
