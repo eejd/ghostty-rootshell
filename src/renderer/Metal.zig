@@ -391,7 +391,7 @@ pub const DerivedConfig = struct {
     links: link.Set,
     vsync: bool,
     colorspace: configpkg.Config.WindowColorspace,
-    blending: configpkg.Config.TextBlending,
+    blending: configpkg.Config.AlphaBlending,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -463,7 +463,7 @@ pub const DerivedConfig = struct {
             .links = links,
             .vsync = config.@"window-vsync",
             .colorspace = config.@"window-colorspace",
-            .blending = config.@"text-blending",
+            .blending = config.@"alpha-blending",
             .arena = arena,
         };
     }

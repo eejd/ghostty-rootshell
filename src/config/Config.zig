@@ -259,7 +259,8 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 
 /// What color space to use when performing alpha blending.
 ///
-/// This affects how text looks for different background/foreground color pairs.
+/// This affects the appearance of text and of any images with transparency.
+/// Additionally, custom shaders will receive colors in the configured space.
 ///
 /// Valid values:
 ///
@@ -276,11 +277,7 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// * `linear-corrected` - Same as `linear`, but with a correction step applied
 ///   for text that makes it look nearly or completely identical to `native`,
 ///   but without any of the darkening artifacts.
-///
-/// Note: This setting affects more than just text, images will also be blended
-/// in the selected color space, and custom shaders will receive colors in that
-/// color space as well.
-@"text-blending": TextBlending = .native,
+@"alpha-blending": AlphaBlending = .native,
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
@@ -1220,12 +1217,16 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS and Linux.
 @"window-theme": WindowTheme = .auto,
 
-/// The colorspace to use for the terminal window. The default is `srgb` but
-/// this can also be set to `display-p3` to use the Display P3 colorspace.
+/// The color space to use when interpreting terminal colors. "Terminal colors"
+/// refers to colors specified in your configuration and colors produced by
+/// direct-color SGR sequences.
 ///
-/// Changing this value at runtime will only affect new windows.
+/// Valid values:
 ///
-/// This setting is only supported on macOS.
+///   * `srgb` - Interpret colors in the sRGB color space. This is the default.
+///   * `display-p3` - Interpret colors in the Display P3 color space.
+///
+/// This setting is currently only supported on macOS.
 @"window-colorspace": WindowColorspace = .srgb,
 
 /// The initial window size. This size is in terminal grid cells by default.
@@ -5825,13 +5826,13 @@ pub const GraphemeWidthMethod = enum {
     unicode,
 };
 
-/// See text-blending
-pub const TextBlending = enum {
+/// See alpha-blending
+pub const AlphaBlending = enum {
     native,
     linear,
     @"linear-corrected",
 
-    pub fn isLinear(self: TextBlending) bool {
+    pub fn isLinear(self: AlphaBlending) bool {
         return switch (self) {
             .native => false,
             .linear, .@"linear-corrected" => true,
