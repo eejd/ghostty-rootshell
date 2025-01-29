@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 now = datetime.now(timezone.utc)
 version = os.environ["GHOSTTY_VERSION"]
+version_dash = version.replace('.', '-')
 build = os.environ["GHOSTTY_BUILD"]
 commit = os.environ["GHOSTTY_COMMIT"]
 commit_long = os.environ["GHOSTTY_COMMIT_LONG"]
@@ -82,18 +83,20 @@ elem = ET.SubElement(item, "sparkle:shortVersionString")
 elem.text = f"{version}"
 elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "13.0.0"
+elem = ET.SubElement(item, "sparkle:fullReleaseNotesLink")
+elem.text = f"https://ghostty.org/docs/install/release-notes/{version_dash}"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<h1>Ghostty v{version}</h1>
+<![CDATA[<h1>Ghostty v{version}</h1>
 <p>
 This release was built from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
 on {now.strftime('%Y-%m-%d')}.
 </p>
 <p>
 We don't currently generate release notes for auto-updates.
-You can view the complete changelog and release notes on
-the <a href="https://ghostty.org">Ghostty website</a>.
-</p>
+You can view the complete changelog and release notes
+at <a href="https://ghostty.org/docs/install/release-notes/{version_dash}">ghostty.org/docs/install/release-notes/{version_dash}</a>.
+</p>]]>
 """
 elem = ET.SubElement(item, "enclosure")
 elem.set("url", f"https://release.files.ghostty.org/{version}/Ghostty.dmg")
