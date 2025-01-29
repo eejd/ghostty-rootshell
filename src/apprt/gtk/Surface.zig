@@ -1757,6 +1757,7 @@ pub fn keyEvent(
         event,
         physical_key,
         gtk_mods,
+        action,
         &self.app.winproto,
     );
 
