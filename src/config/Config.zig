@@ -1015,6 +1015,12 @@ class: ?[:0]const u8 = null,
 ///     performable (acting identically to not having a keybind set at
 ///     all).
 ///
+///     Performable keybinds will not appear as menu shortcuts in the
+///     application menu. This is because the menu shortcuts force the
+///     action to be performed regardless of the state of the terminal.
+///     Performable keybinds will still work, they just won't appear as
+///     a shortcut label in the menu.
+///
 /// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
 /// set later will overwrite the keybind set earlier. In this case, the
