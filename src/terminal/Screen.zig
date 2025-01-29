@@ -2605,9 +2605,6 @@ pub fn selectOutput(self: *Screen, pin: Pin) ?Selection {
                 .input,
                 => {},
             }
-            if (row.semantic_prompt == .command) {
-                break;
-            }
         }
 
         // Because the first line of command output may span multiple visual rows we must now
