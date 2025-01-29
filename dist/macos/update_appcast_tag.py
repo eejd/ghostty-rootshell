@@ -87,7 +87,7 @@ elem = ET.SubElement(item, "sparkle:fullReleaseNotesLink")
 elem.text = f"https://ghostty.org/docs/install/release-notes/{version_dash}"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<![CDATA[<h1>Ghostty v{version}</h1>
+<h1>Ghostty v{version}</h1>
 <p>
 This release was built from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
 on {now.strftime('%Y-%m-%d')}.
@@ -96,7 +96,7 @@ on {now.strftime('%Y-%m-%d')}.
 We don't currently generate release notes for auto-updates.
 You can view the complete changelog and release notes
 at <a href="https://ghostty.org/docs/install/release-notes/{version_dash}">ghostty.org/docs/install/release-notes/{version_dash}</a>.
-</p>]]>
+</p>
 """
 elem = ET.SubElement(item, "enclosure")
 elem.set("url", f"https://release.files.ghostty.org/{version}/Ghostty.dmg")

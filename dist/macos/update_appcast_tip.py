@@ -83,7 +83,7 @@ elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
 elem.text = "13.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
-<![CDATA[<p>
+<p>
 Automated build from commit <code><a href="{repo}/commits/{commit_long}">{commit}</a></code>
 on {now.strftime('%Y-%m-%d')}.
 </p>
@@ -91,7 +91,7 @@ on {now.strftime('%Y-%m-%d')}.
 These are automatic per-commit builds generated from the main Git branch.
 We do not generate any release notes for these builds. You can view the full
 commit history <a href="{repo}">on GitHub</a> for all changes.
-</p>]]>
+</p>
 """
 elem = ET.SubElement(item, "enclosure")
 elem.set("url", f"https://tip.files.ghostty.org/{commit_long}/Ghostty.dmg")
