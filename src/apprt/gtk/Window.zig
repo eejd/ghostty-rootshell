@@ -658,8 +658,9 @@ fn gtkWindowNotifyMaximized(
 fn gtkWindowNotifyDecorated(
     object: *c.GObject,
     _: *c.GParamSpec,
-    _: ?*anyopaque,
+    ud: ?*anyopaque,
 ) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
     const is_decorated = c.gtk_window_get_decorated(@ptrCast(object)) == 1;
 
     // Fix any artifacting that may occur in window corners. The .ssd CSS
@@ -668,6 +669,11 @@ fn gtkWindowNotifyDecorated(
     // for .ssd is provided by GTK and Adwaita.
     toggleCssClass(@ptrCast(object), "ssd", !is_decorated);
     toggleCssClass(@ptrCast(object), "no-border-radius", !is_decorated);
+
+    // FIXME: This is to update the blur region offset on X11.
+    // Remove this when we move everything related to window appearance
+    // to `syncAppearance` for Ghostty 1.2.
+    self.winproto.syncAppearance() catch {};
 }
 
 fn gtkWindowNotifyFullscreened(
