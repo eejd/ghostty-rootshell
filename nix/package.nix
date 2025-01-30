@@ -114,7 +114,7 @@
 in
   stdenv.mkDerivation (finalAttrs: {
     pname = "ghostty";
-    version = "1.0.2";
+    version = "1.1.0";
     inherit src;
 
     nativeBuildInputs =
