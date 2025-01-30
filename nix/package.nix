@@ -40,7 +40,7 @@
   # ultimately acted on and has made its way to a nixpkgs implementation, this
   # can probably be removed in favor of that.
   zig_hook = zig_0_13.hook.overrideAttrs {
-    zig_default_flags = "-Dcpu=baseline -Doptimize=${optimize}";
+    zig_default_flags = "-Dcpu=baseline -Doptimize=${optimize} --color off";
   };
 
   # We limit source like this to try and reduce the amount of rebuilds as possible
@@ -162,13 +162,13 @@ in
 
     dontConfigure = true;
 
-    zigBuildFlags = "-Dversion-string=${finalAttrs.version}-${revision}-nix -Dgtk-x11=${lib.boolToString enableX11} -Dgtk-wayland=${lib.boolToString enableWayland}";
-
-    preBuild = ''
-      rm -rf $ZIG_GLOBAL_CACHE_DIR
-      cp -r --reflink=auto ${zigCache} $ZIG_GLOBAL_CACHE_DIR
-      chmod u+rwX -R $ZIG_GLOBAL_CACHE_DIR
-    '';
+    zigBuildFlags = [
+      "--system"
+      "${zigCache}/p"
+      "-Dversion-string=${finalAttrs.version}-${revision}-nix"
+      "-Dgtk-x11=${lib.boolToString enableX11}"
+      "-Dgtk-wayland=${lib.boolToString enableWayland}"
+    ];
 
     outputs = [
       "out"
