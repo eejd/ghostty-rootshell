@@ -202,7 +202,7 @@ in
     '';
 
     meta = {
-      homepage = "https://github.com/ghostty-org/ghostty";
+      homepage = "https://ghostty.org";
       license = lib.licenses.mit;
       platforms = [
         "x86_64-linux"
