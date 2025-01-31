@@ -450,11 +450,8 @@ pub fn add(
                 }
 
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-
-                if (self.config.adwaita) {
-                    step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
-                    step.root_module.addImport("adw", gobject.module("adw1"));
-                }
+                step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+                step.root_module.addImport("adw", gobject.module("adw1"));
 
                 if (self.config.x11) {
                     step.linkSystemLibrary2("X11", dynamic_link_opts);
@@ -525,7 +522,7 @@ pub fn add(
                         });
                         gtk_builder_check.root_module.addOptions("build_options", self.options);
                         gtk_builder_check.root_module.addImport("gtk", gobject.module("gtk4"));
-                        if (self.config.adwaita) gtk_builder_check.root_module.addImport("adw", gobject.module("adw1"));
+                        gtk_builder_check.root_module.addImport("adw", gobject.module("adw1"));
 
                         for (gresource.dependencies) |pathname| {
                             const extension = std.fs.path.extension(pathname);

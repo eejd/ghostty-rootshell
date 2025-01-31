@@ -25,7 +25,6 @@ const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
 
-const adwaita = @import("adwaita.zig");
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
@@ -107,6 +106,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_major_version(),
         c.gtk_get_minor_version(),
         c.gtk_get_micro_version(),
+    });
+
+    // log the adwaita version
+    log.info("libadwaita version build={s} runtime={}.{}.{}", .{
+        c.ADW_VERSION_S,
+        c.adw_get_major_version(),
+        c.adw_get_minor_version(),
+        c.adw_get_micro_version(),
     });
 
     // Load our configuration
@@ -236,23 +243,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
-    c.gtk_init();
+    c.adw_init();
+
     const display: *c.GdkDisplay = c.gdk_display_get_default() orelse {
         // I'm unsure of any scenario where this happens. Because we don't
         // want to litter null checks everywhere, we just exit here.
         log.warn("gdk display is null, exiting", .{});
         std.posix.exit(1);
     };
-
-    // If we're using libadwaita, log the version
-    if (adwaita.enabled(&config)) {
-        log.info("libadwaita version build={s} runtime={}.{}.{}", .{
-            c.ADW_VERSION_S,
-            c.adw_get_major_version(),
-            c.adw_get_minor_version(),
-            c.adw_get_micro_version(),
-        });
-    }
 
     // The "none" cursor is used for hiding the cursor
     const cursor_none = c.gdk_cursor_new_from_name("none", null);
@@ -288,103 +286,38 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // Create our GTK Application which encapsulates our process.
-    const app: *c.GtkApplication = app: {
-        log.debug("creating GTK application id={s} single-instance={} adwaita={}", .{
-            app_id,
-            single_instance,
-            adwaita,
-        });
+    log.debug("creating GTK application id={s} single-instance={}", .{
+        app_id,
+        single_instance,
+    });
 
-        // If not libadwaita, create a standard GTK application.
-        if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
-            !adwaita.enabled(&config))
-        {
-            {
-                const provider = c.gtk_css_provider_new();
-                defer c.g_object_unref(provider);
-                switch (config.@"window-theme") {
-                    .system, .light => {},
-                    .dark => {
-                        const settings = c.gtk_settings_get_default();
-                        c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
+    // Using an AdwApplication lets us use Adwaita widgets and access things
+    // such as the color scheme.
+    const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
+        app_id.ptr,
+        app_flags,
+    ))) orelse return error.GtkInitFailed;
+    errdefer c.g_object_unref(adw_app);
 
-                        c.gtk_css_provider_load_from_resource(
-                            provider,
-                            "/com/mitchellh/ghostty/style-dark.css",
-                        );
-                        c.gtk_style_context_add_provider_for_display(
-                            display,
-                            @ptrCast(provider),
-                            c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
-                        );
-                    },
-                    .auto, .ghostty => {
-                        const lum = config.background.toTerminalRGB().perceivedLuminance();
-                        if (lum <= 0.5) {
-                            const settings = c.gtk_settings_get_default();
-                            c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
-
-                            c.gtk_css_provider_load_from_resource(
-                                provider,
-                                "/com/mitchellh/ghostty/style-dark.css",
-                            );
-                            c.gtk_style_context_add_provider_for_display(
-                                display,
-                                @ptrCast(provider),
-                                c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
-                            );
-                        }
-                    },
-                }
-            }
-
-            {
-                const provider = c.gtk_css_provider_new();
-                defer c.g_object_unref(provider);
-
-                c.gtk_css_provider_load_from_resource(provider, "/com/mitchellh/ghostty/style.css");
-                c.gtk_style_context_add_provider_for_display(
-                    display,
-                    @ptrCast(provider),
-                    c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
-                );
-            }
-
-            break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-                app_id.ptr,
-                app_flags,
-            ))) orelse return error.GtkInitFailed;
-        }
-
-        // Use libadwaita if requested. Using an AdwApplication lets us use
-        // Adwaita widgets and access things such as the color scheme.
-        const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
-            app_id.ptr,
-            app_flags,
-        ))) orelse return error.GtkInitFailed;
-
-        const style_manager = c.adw_application_get_style_manager(adw_app);
-        c.adw_style_manager_set_color_scheme(
-            style_manager,
-            switch (config.@"window-theme") {
-                .auto, .ghostty => auto: {
-                    const lum = config.background.toTerminalRGB().perceivedLuminance();
-                    break :auto if (lum > 0.5)
-                        c.ADW_COLOR_SCHEME_PREFER_LIGHT
-                    else
-                        c.ADW_COLOR_SCHEME_PREFER_DARK;
-                },
-
-                .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
-                .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
-                .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+    const style_manager = c.adw_application_get_style_manager(adw_app);
+    c.adw_style_manager_set_color_scheme(
+        style_manager,
+        switch (config.@"window-theme") {
+            .auto, .ghostty => auto: {
+                const lum = config.background.toTerminalRGB().perceivedLuminance();
+                break :auto if (lum > 0.5)
+                    c.ADW_COLOR_SCHEME_PREFER_LIGHT
+                else
+                    c.ADW_COLOR_SCHEME_PREFER_DARK;
             },
-        );
+            .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
+            .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
+            .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+        },
+    );
 
-        break :app @ptrCast(adw_app);
-    };
-    errdefer c.g_object_unref(app);
-    const gapp = @as(*c.GApplication, @ptrCast(app));
+    const app: *c.GtkApplication = @ptrCast(adw_app);
+    const gapp: *c.GApplication = @ptrCast(app);
 
     // force the resource path to a known value so that it doesn't depend on
     // the app id and load in compiled resources
@@ -980,11 +913,9 @@ fn configChange(
 
             // App changes needs to show a toast that our configuration
             // has reloaded.
-            if (adwaita.enabled(&self.config)) {
-                if (self.core_app.focusedSurface()) |core_surface| {
-                    const surface = core_surface.rt_surface;
-                    if (surface.container.window()) |window| window.onConfigReloaded();
-                }
+            if (self.core_app.focusedSurface()) |core_surface| {
+                const surface = core_surface.rt_surface;
+                if (surface.container.window()) |window| window.onConfigReloaded();
             }
         },
     }
