@@ -12,6 +12,7 @@
   libGL,
   glib,
   gtk4,
+  gobject-introspection,
   libadwaita,
   wrapGAppsHook4,
   gsettings-desktop-schemas,
@@ -124,6 +125,7 @@ in
         pandoc
         pkg-config
         zig_hook
+        gobject-introspection
         wrapGAppsHook4
       ]
       ++ lib.optionals enableWayland [

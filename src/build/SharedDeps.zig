@@ -430,9 +430,32 @@ pub fn add(
             },
 
             .gtk => {
+                const gobject = b.dependency("gobject", .{
+                    .target = target,
+                    .optimize = optimize,
+                });
+                const gobject_imports = .{
+                    .{ "gobject", "gobject2" },
+                    .{ "glib", "glib2" },
+                    .{ "gtk", "gtk4" },
+                    .{ "gdk", "gdk4" },
+                };
+                inline for (gobject_imports) |import| {
+                    const name, const module = import;
+                    step.root_module.addImport(name, gobject.module(module));
+                }
+
                 step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                if (self.config.adwaita) step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
-                if (self.config.x11) step.linkSystemLibrary2("X11", dynamic_link_opts);
+
+                if (self.config.adwaita) {
+                    step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+                    step.root_module.addImport("adw", gobject.module("adw1"));
+                }
+
+                if (self.config.x11) {
+                    step.linkSystemLibrary2("X11", dynamic_link_opts);
+                    step.root_module.addImport("gdk_x11", gobject.module("gdkx114"));
+                }
 
                 if (self.config.wayland) {
                     const scanner = Scanner.create(b.dependency("zig_wayland", .{}), .{
@@ -460,6 +483,7 @@ pub fn add(
                     scanner.generate("org_kde_kwin_server_decoration_manager", 1);
 
                     step.root_module.addImport("wayland", wayland);
+                    step.root_module.addImport("gdk_wayland", gobject.module("gdkwayland4"));
                     step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
                 }
 
