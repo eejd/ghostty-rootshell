@@ -110,7 +110,7 @@ quit_timer: union(enum) {
     expired: void,
 } = .{ .off = {} },
 
-pub fn init(core_app: *CoreApp, opts: Options) !App {
+pub fn init(self: *App, core_app: *CoreApp, opts: Options) !void {
     _ = opts;
 
     // Log our GTK version
@@ -424,7 +424,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
 
-    return .{
+    self.* = .{
         .core_app = core_app,
         .app = adw_app,
         .config = config,
