@@ -283,9 +283,12 @@ class TerminalController: BaseTerminalController {
     private func setInitialWindowPosition(x: Int16?, y: Int16?, windowDecorations: Bool) {
         guard let window else { return }
 
-        // If we don't have both an X and Y we center.
+        // If we don't have an X/Y then we try to use the previously saved window pos.
         guard let x, let y else {
-            window.center()
+            if (!LastWindowPosition.shared.restore(window)) {
+                window.center()
+            }
+
             return
         }
 
@@ -490,6 +493,20 @@ class TerminalController: BaseTerminalController {
     override func windowDidMove(_ notification: Notification) {
         super.windowDidMove(notification)
         self.fixTabBar()
+
+        // Whenever we move save our last position for the next start.
+        if let window {
+            LastWindowPosition.shared.save(window)
+        }
+    }
+
+    func windowDidBecomeMain(_ notification: Notification) {
+        // Whenever we get focused, use that as our last window position for
+        // restart. This differs from Terminal.app but matches iTerm2 behavior
+        // and I think its sensible.
+        if let window {
+            LastWindowPosition.shared.save(window)
+        }
     }
 
     // Called when the window will be encoded. We handle the data encoding here in the
