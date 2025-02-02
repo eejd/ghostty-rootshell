@@ -80,7 +80,8 @@ pub fn getenv(alloc: Allocator, key: []const u8) Errors!?GetEnvResult {
             .value = v,
         } else |err| switch (err) {
             error.EnvironmentVariableNotFound => null,
-            else => err,
+            error.InvalidWtf8 => null,
+            else => |e| e,
         },
     };
 }
