@@ -130,7 +130,8 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
     };
 
     const rc = linux.syscall2(linux.SYS.clone3, @intFromPtr(&args), @sizeOf(@TypeOf(args)));
-    return switch (posix.errno(rc)) {
+    // do not use posix.errno, when linking libc it will use the libc errno which will not be set when making the syscall directly
+    return switch (std.os.linux.E.init(rc)) {
         .SUCCESS => @as(posix.pid_t, @intCast(rc)),
         else => |errno| err: {
             log.err("unable to clone: {}", .{errno});
