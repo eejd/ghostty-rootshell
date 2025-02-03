@@ -317,14 +317,14 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// See the notes about adjustments in `adjust-cell-width`.
 @"adjust-underline-thickness": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the top of the cell to the top of the strikethrough.
-/// Increase to move strikethrough DOWN, decrease to move underline UP.
+/// Increase to move strikethrough DOWN, decrease to move strikethrough UP.
 /// See the notes about adjustments in `adjust-cell-width`.
 @"adjust-strikethrough-position": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of the strikethrough.
 /// See the notes about adjustments in `adjust-cell-width`.
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the top of the cell to the top of the overline.
-/// Increase to move overline DOWN, decrease to move underline UP.
+/// Increase to move overline DOWN, decrease to move overline UP.
 /// See the notes about adjustments in `adjust-cell-width`.
 @"adjust-overline-position": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of the overline.
