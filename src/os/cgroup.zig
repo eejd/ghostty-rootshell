@@ -102,6 +102,7 @@ pub fn cloneInto(cgroup: []const u8) !posix.pid_t {
         }
     };
     assert(fd >= 0);
+    defer _ = linux.close(fd);
 
     const args: extern struct {
         flags: u64,
