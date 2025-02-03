@@ -1157,9 +1157,9 @@ keybind: Keybinds = .{},
 ///   * `client` - Prefer client-side decorations.
 ///
 ///   * `server` - Prefer server-side decorations. This is only relevant
-///     on Linux with GTK. This currently only works on Linux with Wayland
-///     and the `org_kde_kwin_server_decoration` protocol available (e.g.
-///     KDE Plasma, but almost any non-GNOME desktop supports this protocol).
+///     on Linux with GTK, either on X11, or Wayland on a compositor that
+///     supports the `org_kde_kwin_server_decoration` protocol (e.g. KDE Plasma,
+///     but almost any non-GNOME desktop supports this protocol).
 ///
 ///     If `server` is set but the environment doesn't support server-side
 ///     decorations, client-side decorations will be used instead.
