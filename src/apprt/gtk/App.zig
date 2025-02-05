@@ -146,6 +146,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
 
     var gdk_disable: struct {
         @"gles-api": bool = false,
+        /// current gtk implementation for color management is not good enough. 
+        /// see: https://bugs.kde.org/show_bug.cgi?id=495647
+        @"color-mgmt": bool = true,
         /// Disabling Vulkan can improve startup times by hundreds of
         /// milliseconds on some systems. We don't use Vulkan so we can just
         /// disable it.
