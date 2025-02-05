@@ -1350,6 +1350,10 @@ keybind: Keybinds = .{},
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"window-titlebar-foreground": ?Color = null,
 
+/// current gtk implementation for color management is not good enough.
+/// see: https://bugs.kde.org/show_bug.cgi?id=495647
+@"disable-gtk-color-mgmt": bool = false,
+
 /// This controls when resize overlays are shown. Resize overlays are a
 /// transient popup that shows the size of the terminal while the surfaces are
 /// being resized. The possible options are:
