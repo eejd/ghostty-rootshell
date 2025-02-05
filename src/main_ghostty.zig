@@ -99,8 +99,8 @@ pub fn main() !MainReturn {
 
     // Create our app state
     var app: App = undefined;
-    defer app.deinit();
     try app.init(alloc);
+    defer app.deinit();
 
     // Create our runtime app
     var app_runtime: apprt.App = undefined;
