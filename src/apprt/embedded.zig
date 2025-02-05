@@ -1318,6 +1318,7 @@ pub const CAPI = struct {
         config: *const Config,
     ) !*App {
         var core_app = try global.alloc.create(CoreApp);
+        try core_app.init(global.alloc);
         errdefer {
             core_app.deinit();
             global.alloc.destroy(core_app);
