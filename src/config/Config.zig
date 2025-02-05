@@ -1350,9 +1350,18 @@ keybind: Keybinds = .{},
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 @"window-titlebar-foreground": ?Color = null,
 
-/// current gtk implementation for color management is not good enough.
-/// see: https://bugs.kde.org/show_bug.cgi?id=495647
-@"disable-gtk-color-mgmt": bool = false,
+/// Controls whether to disable GDK color management in GTK applications.
+///
+/// By default this is set to `false`, meaning color management is enabled.
+/// You may want to enable this setting (set to `true`) if you experience:
+/// - Incorrect or washed out colors in your terminal
+/// - Color inconsistencies between GTK applications
+/// - Performance issues related to color management
+///
+/// This is a workaround for known issues with GTK's color management implementation,
+/// particularly affecting applications running under Wayland.
+/// See: https://bugs.kde.org/show_bug.cgi?id=495647
+@"gtk-gdk-disable-color-mgmt": bool = false,
 
 /// This controls when resize overlays are shown. Resize overlays are a
 /// transient popup that shows the size of the terminal while the surfaces are
