@@ -148,16 +148,18 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         @"gles-api": bool = false,
         /// current gtk implementation for color management is not good enough.
         /// see: https://bugs.kde.org/show_bug.cgi?id=495647
-        @"color-mgmt": bool,
+        @"color-mgmt": bool = true,
         /// Disabling Vulkan can improve startup times by hundreds of
         /// milliseconds on some systems. We don't use Vulkan so we can just
         /// disable it.
         vulkan: bool = false,
-    } = .{
-        .@"color-mgmt" = config.@"gtk-gdk-disable-color-mgmt",
-    };
+    } = .{};
 
     environment: {
+        if (version.runtimeAtLeast(4, 17, 0)) {
+            gdk_disable.@"color-mgmt" = false;
+        }
+
         if (version.runtimeAtLeast(4, 16, 0)) {
             // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
             // For the remainder of "why" see the 4.14 comment below.
