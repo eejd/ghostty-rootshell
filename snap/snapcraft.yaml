@@ -67,7 +67,7 @@ parts:
     source: .
     after: [zig]
     plugin: nil
-    build-attributes: [enable-patchelf]
+    build-attributes: [no-patchelf]
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev
@@ -95,6 +95,7 @@ parts:
       - libsensors5
       - libllvm17
       - libunistring5
+      - librsvg2-2
       - on amd64: [i965-va-driver,libdrm-intel1,libdrm-nouveau2,libdrm-amdgpu1,libdrm-radeon1]
     stage:
       # The libraries in dri need no-patchelf, so they come from the mesa-unpatched part
@@ -109,8 +110,12 @@ parts:
       - libegl-mesa0
       - libegl1
       - libglx-mesa0
+      - mesa-libgallium
     stage:
       # The libraries in dri need no-patchelf, so they come from the mesa-unpatched part
+      - usr/lib/*/*.so*
+      - usr/lib/*/dri/libdril_dri.so
+      - -usr/lib/*/libgallium*so
       - -usr/lib/*/dri
 
   mesa-gl1-dri:
@@ -121,4 +126,6 @@ parts:
     stage:
       # Only the libraries in dri need to not be patched, the rest come from the mesa part
       # Otherwise snapcraft may strip the build ID and cause the driver to crash
+      - usr/lib/*/libgallium*so
+      - -usr/lib/*/dri/libdril_dri.so
       - usr/lib/*/dri
