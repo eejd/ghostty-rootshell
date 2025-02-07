@@ -157,7 +157,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     } = .{};
 
     environment: {
-        if (version.runtimeAtLeast(4, 17, 0)) {
+        if (version.runtimeAtLeast(4, 18, 0)) {
             gdk_disable.@"color-mgmt" = false;
         }
 
