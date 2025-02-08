@@ -147,13 +147,14 @@ pub const App = struct {
         glfw.postEmptyEvent();
     }
 
-    /// Perform a given action.
+    /// Perform a given action. Returns `true` if the action was able to be
+    /// performed, `false` otherwise.
     pub fn performAction(
         self: *App,
         target: apprt.Target,
         comptime action: apprt.Action.Key,
         value: apprt.Action.Value(action),
-    ) !void {
+    ) !bool {
         switch (action) {
             .quit => self.quit = true,
 
@@ -240,6 +241,8 @@ pub const App = struct {
             .toggle_maximize,
             => log.info("unimplemented action={}", .{action}),
         }
+
+        return true;
     }
 
     /// Reload the configuration. This should return the new configuration.

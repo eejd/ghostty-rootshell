@@ -507,13 +507,14 @@ pub fn terminate(self: *App) void {
     self.config.deinit();
 }
 
-/// Perform a given action.
+/// Perform a given action. Returns `true` if the action was able to be
+/// performed, `false` otherwise.
 pub fn performAction(
     self: *App,
     target: apprt.Target,
     comptime action: apprt.Action.Key,
     value: apprt.Action.Value(action),
-) !void {
+) !bool {
     switch (action) {
         .quit => self.quit(),
         .new_window => _ = try self.newWindow(switch (target) {
@@ -561,6 +562,8 @@ pub fn performAction(
         .color_change,
         => log.warn("unimplemented action={}", .{action}),
     }
+
+    return true;
 }
 
 fn newTab(_: *App, target: apprt.Target) !void {
