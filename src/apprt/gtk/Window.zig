@@ -506,23 +506,25 @@ pub fn closeTab(self: *Window, tab: *Tab) void {
 }
 
 /// Go to the previous tab for a surface.
-pub fn gotoPreviousTab(self: *Window, surface: *Surface) void {
+pub fn gotoPreviousTab(self: *Window, surface: *Surface) bool {
     const tab = surface.container.tab() orelse {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
-        return;
+        return false;
     };
-    self.notebook.gotoPreviousTab(tab);
+    if (!self.notebook.gotoPreviousTab(tab)) return false;
     self.focusCurrentTab();
+    return true;
 }
 
 /// Go to the next tab for a surface.
-pub fn gotoNextTab(self: *Window, surface: *Surface) void {
+pub fn gotoNextTab(self: *Window, surface: *Surface) bool {
     const tab = surface.container.tab() orelse {
         log.info("surface is not attached to a tab bar, cannot navigate", .{});
-        return;
+        return false;
     };
-    self.notebook.gotoNextTab(tab);
+    if (!self.notebook.gotoNextTab(tab)) return false;
     self.focusCurrentTab();
+    return true;
 }
 
 /// Move the current tab for a surface.
@@ -535,19 +537,20 @@ pub fn moveTab(self: *Window, surface: *Surface, position: c_int) void {
 }
 
 /// Go to the last tab for a surface.
-pub fn gotoLastTab(self: *Window) void {
+pub fn gotoLastTab(self: *Window) bool {
     const max = self.notebook.nPages();
-    self.gotoTab(@intCast(max));
+    return self.gotoTab(@intCast(max));
 }
 
 /// Go to the specific tab index.
-pub fn gotoTab(self: *Window, n: usize) void {
-    if (n == 0) return;
+pub fn gotoTab(self: *Window, n: usize) bool {
+    if (n == 0) return false;
     const max = self.notebook.nPages();
-    if (max == 0) return;
-    const page_idx = std.math.cast(c_int, n - 1) orelse return;
-    self.notebook.gotoNthTab(@min(page_idx, max - 1));
+    if (max == 0) return false;
+    const page_idx = std.math.cast(c_int, n - 1) orelse return false;
+    if (!self.notebook.gotoNthTab(@min(page_idx, max - 1))) return false;
     self.focusCurrentTab();
+    return true;
 }
 
 /// Toggle tab overview (if present)

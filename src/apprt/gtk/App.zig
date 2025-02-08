@@ -526,7 +526,7 @@ pub fn performAction(
 
         .new_tab => try self.newTab(target),
         .close_tab => try self.closeTab(target),
-        .goto_tab => self.gotoTab(target, value),
+        .goto_tab => return self.gotoTab(target, value),
         .move_tab => self.moveTab(target, value),
         .new_split => try self.newSplit(target, value),
         .resize_split => self.resizeSplit(target, value),
@@ -600,24 +600,26 @@ fn closeTab(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
+fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) bool {
     switch (target) {
-        .app => {},
+        .app => {
+            return false;
+        },
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
                     "gotoTab invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
-                return;
+                return false;
             };
 
-            switch (tab) {
+            return switch (tab) {
                 .previous => window.gotoPreviousTab(v.rt_surface),
                 .next => window.gotoNextTab(v.rt_surface),
                 .last => window.gotoLastTab(),
                 else => window.gotoTab(@intCast(@intFromEnum(tab))),
-            }
+            };
         },
     }
 }

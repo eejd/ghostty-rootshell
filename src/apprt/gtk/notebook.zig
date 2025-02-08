@@ -59,11 +59,14 @@ pub const Notebook = union(enum) {
         };
     }
 
-    pub fn gotoNthTab(self: *Notebook, position: c_int) void {
+    pub fn gotoNthTab(self: *Notebook, position: c_int) bool {
+        const current_page_ = self.currentPage();
+        if (current_page_) |current_page| if (current_page == position) return false;
         switch (self.*) {
             .adw => |*adw| adw.gotoNthTab(position),
             .gtk => |*gtk| gtk.gotoNthTab(position),
         }
+        return true;
     }
 
     pub fn getTabPosition(self: *Notebook, tab: *Tab) ?c_int {
@@ -73,8 +76,8 @@ pub const Notebook = union(enum) {
         };
     }
 
-    pub fn gotoPreviousTab(self: *Notebook, tab: *Tab) void {
-        const page_idx = self.getTabPosition(tab) orelse return;
+    pub fn gotoPreviousTab(self: *Notebook, tab: *Tab) bool {
+        const page_idx = self.getTabPosition(tab) orelse return false;
 
         // The next index is the previous or we wrap around.
         const next_idx = if (page_idx > 0) page_idx - 1 else next_idx: {
@@ -83,19 +86,21 @@ pub const Notebook = union(enum) {
         };
 
         // Do nothing if we have one tab
-        if (next_idx == page_idx) return;
+        if (next_idx == page_idx) return false;
 
-        self.gotoNthTab(next_idx);
+        return self.gotoNthTab(next_idx);
     }
 
-    pub fn gotoNextTab(self: *Notebook, tab: *Tab) void {
-        const page_idx = self.getTabPosition(tab) orelse return;
+    pub fn gotoNextTab(self: *Notebook, tab: *Tab) bool {
+        const page_idx = self.getTabPosition(tab) orelse return false;
 
         const max = self.nPages() -| 1;
         const next_idx = if (page_idx < max) page_idx + 1 else 0;
-        if (next_idx == page_idx) return;
 
-        self.gotoNthTab(next_idx);
+        // Do nothing if we have one tab
+        if (next_idx == page_idx) return false;
+
+        return self.gotoNthTab(next_idx);
     }
 
     pub fn moveTab(self: *Notebook, tab: *Tab, position: c_int) void {
