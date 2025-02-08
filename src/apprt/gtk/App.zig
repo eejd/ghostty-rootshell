@@ -531,7 +531,7 @@ pub fn performAction(
         .new_split => try self.newSplit(target, value),
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
-        .goto_split => self.gotoSplit(target, value),
+        .goto_split => return self.gotoSplit(target, value),
         .open_config => try configpkg.edit.open(self.core_app.alloc),
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
@@ -671,18 +671,24 @@ fn gotoSplit(
     _: *const App,
     target: apprt.Target,
     direction: apprt.action.GotoSplit,
-) void {
+) bool {
     switch (target) {
-        .app => {},
+        .app => {
+            return false;
+        },
         .surface => |v| {
-            const s = v.rt_surface.container.split() orelse return;
+            const s = v.rt_surface.container.split() orelse return false;
             const map = s.directionMap(switch (v.rt_surface.container) {
                 .split_tl => .top_left,
                 .split_br => .bottom_right,
                 .none, .tab_ => unreachable,
             });
-            const surface_ = map.get(direction) orelse return;
-            if (surface_) |surface| surface.grabFocus();
+            const surface_ = map.get(direction) orelse return false;
+            if (surface_) |surface| {
+                surface.grabFocus();
+                return true;
+            }
+            return false;
         },
     }
 }
