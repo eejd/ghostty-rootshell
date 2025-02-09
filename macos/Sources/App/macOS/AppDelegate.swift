@@ -245,7 +245,13 @@ class AppDelegate: NSObject,
         // This probably isn't fully safe. The isEmpty check above is aspirational, it doesn't
         // quite work with SwiftUI because windows are retained on close. So instead we check
         // if there are any that are visible. I'm guessing this breaks under certain scenarios.
-        if (windows.allSatisfy { !$0.isVisible }) { return .terminateNow }
+        //
+        // NOTE(mitchellh): I don't think we need this check at all anymore. I'm keeping it
+        // here because I don't want to remove it in a patch release cycle but we should
+        // target removing it soon.
+        if (self.quickController == nil && windows.allSatisfy { !$0.isVisible }) {
+            return .terminateNow
+        }
 
         // If the user is shutting down, restarting, or logging out, we don't confirm quit.
         why: if let event = NSAppleEventManager.shared().currentAppleEvent {
@@ -431,7 +437,7 @@ class AppDelegate: NSObject,
         // If we have a main window then we don't process any of the keys
         // because we let it capture and propagate.
         guard NSApp.mainWindow == nil else { return event }
-        
+
         // If this event as-is would result in a key binding then we send it.
         if let app = ghostty.app,
            ghostty_app_key_is_binding(
@@ -447,26 +453,26 @@ class AppDelegate: NSObject,
                 return nil
             }
         }
-        
+
         // If this event would be handled by our menu then we do nothing.
         if let mainMenu = NSApp.mainMenu,
            mainMenu.performKeyEquivalent(with: event) {
             return nil
         }
-        
+
         // If we reach this point then we try to process the key event
         // through the Ghostty key mechanism.
-        
+
         // Ghostty must be loaded
         guard let ghostty = self.ghostty.app else { return event }
-        
+
         // Build our event input and call ghostty
         if (ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
             // The key was used so we want to stop it from going to our Mac app
             Ghostty.logger.debug("local key event handled event=\(event)")
             return nil
         }
-        
+
         return event
     }
 
