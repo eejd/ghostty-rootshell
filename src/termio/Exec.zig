@@ -682,6 +682,7 @@ pub const ThreadData = struct {
 
 pub const Config = struct {
     command: ?[]const u8 = null,
+    env: ?EnvMap = null,
     shell_integration: configpkg.Config.ShellIntegration = .detect,
     shell_integration_features: configpkg.Config.ShellIntegrationFeatures = .{},
     working_directory: ?[]const u8 = null,
@@ -721,18 +722,9 @@ const Subprocess = struct {
         errdefer arena.deinit();
         const alloc = arena.allocator();
 
-        // Set our env vars. For Flatpak builds running in Flatpak we don't
-        // inherit our environment because the login shell on the host side
-        // will get it.
-        var env = env: {
-            if (comptime build_config.flatpak) {
-                if (internal_os.isFlatpak()) {
-                    break :env std.process.EnvMap.init(alloc);
-                }
-            }
-
-            break :env try std.process.getEnvMap(alloc);
-        };
+        // Get our env. If a default env isn't provided by the caller
+        // then we get it ourselves.
+        var env = cfg.env orelse try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
 
         // If we have a resources dir then set our env var
@@ -847,34 +839,10 @@ const Subprocess = struct {
         try env.put("TERM_PROGRAM", "ghostty");
         try env.put("TERM_PROGRAM_VERSION", build_config.version_string);
 
-        // When embedding in macOS and running via XCode, XCode injects
-        // a bunch of things that break our shell process. We remove those.
-        if (comptime builtin.target.isDarwin() and build_config.artifact == .lib) {
-            if (env.get("__XCODE_BUILT_PRODUCTS_DIR_PATHS") != null) {
-                env.remove("__XCODE_BUILT_PRODUCTS_DIR_PATHS");
-                env.remove("__XPC_DYLD_LIBRARY_PATH");
-                env.remove("DYLD_FRAMEWORK_PATH");
-                env.remove("DYLD_INSERT_LIBRARIES");
-                env.remove("DYLD_LIBRARY_PATH");
-                env.remove("LD_LIBRARY_PATH");
-                env.remove("SECURITYSESSIONID");
-                env.remove("XPC_SERVICE_NAME");
-            }
-
-            // Remove this so that running `ghostty` within Ghostty works.
-            env.remove("GHOSTTY_MAC_APP");
-        }
-
         // VTE_VERSION is set by gnome-terminal and other VTE-based terminals.
         // We don't want our child processes to think we're running under VTE.
+        // This is not apprt-specific, so we do it here.
         env.remove("VTE_VERSION");
-
-        // Don't leak these GTK environment variables to child processes.
-        if (comptime build_config.app_runtime == .gtk) {
-            env.remove("GDK_DEBUG");
-            env.remove("GDK_DISABLE");
-            env.remove("GSK_RENDERER");
-        }
 
         // Setup our shell integration, if we can.
         const integrated_shell: ?shell_integration.Shell, const shell_command: []const u8 = shell: {
