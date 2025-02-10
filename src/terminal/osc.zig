@@ -1660,10 +1660,11 @@ test "OSC: longer than buffer" {
 
     var p: Parser = .{};
 
-    const input = "a" ** (Parser.MAX_BUF + 2);
+    const input = "0;" ++ "a" ** (Parser.MAX_BUF + 2);
     for (input) |ch| p.next(ch);
 
     try testing.expect(p.end(null) == null);
+    try testing.expect(p.complete == false);
 }
 
 test "OSC: report default foreground color" {
