@@ -474,26 +474,40 @@ pub fn adjustCapacity(
     const new_node = try self.pages.adjustCapacity(node, adjustment);
     const new_page: *Page = &new_node.data;
 
-    // All additions below have unreachable catches because when
-    // we adjust cap we should have enough memory to fit the
-    // existing data.
-
-    // Re-add the style
+    // Re-add the style, if the page somehow doesn't have enough
+    // memory to add it, we emit a warning and gracefully degrade
+    // to the default style for the cursor.
     if (self.cursor.style_id != 0) {
         self.cursor.style_id = new_page.styles.add(
             new_page.memory,
             self.cursor.style,
-        ) catch unreachable;
+        ) catch |err| id: {
+            // TODO: Should we increase the capacity further in this case?
+            log.err(
+                "(Screen.adjustCapacity) Failed to add cursor style back to page, err={}",
+                .{err},
+            );
+
+            break :id style.default_id;
+        };
     }
 
-    // Re-add the hyperlink
+    // Re-add the hyperlink, if the page somehow doesn't have enough
+    // memory to add it, we emit a warning and gracefully degrade to
+    // no hyperlink.
     if (self.cursor.hyperlink) |link| {
         // So we don't attempt to free any memory in the replaced page.
         self.cursor.hyperlink_id = 0;
         self.cursor.hyperlink = null;
 
         // Re-add
-        self.startHyperlinkOnce(link.*) catch unreachable;
+        self.startHyperlinkOnce(link.*) catch |err| {
+            // TODO: Should we increase the capacity further in this case?
+            log.err(
+                "(Screen.adjustCapacity) Failed to add cursor hyperlink back to page, err={}",
+                .{err},
+            );
+        };
 
         // Remove our old link
         link.deinit(self.alloc);
@@ -1003,8 +1017,9 @@ pub fn cursorCopy(self: *Screen, other: Cursor, opts: struct {
 /// Always use this to write to cursor.page_pin.*.
 ///
 /// This specifically handles the case when the new pin is on a different
-/// page than the old AND we have a style set. In that case, we must release
-/// our old style and upsert our new style since styles are stored per-page.
+/// page than the old AND we have a style or hyperlink set. In that case,
+/// we must release our old one and insert the new one, since styles are
+/// stored per-page.
 fn cursorChangePin(self: *Screen, new: Pin) void {
     // Moving the cursor affects text run splitting (ligatures) so
     // we must mark the old and new page dirty. We do this as long
@@ -1986,9 +2001,40 @@ pub fn cursorSetHyperlink(self: *Screen) !void {
     } else |err| switch (err) {
         // hyperlink_map is out of space, realloc the page to be larger
         error.HyperlinkMapOutOfMemory => {
+            const uri_size = if (self.cursor.hyperlink) |link| link.uri.len else 0;
+
+            var string_bytes = page.capacity.string_bytes;
+
+            // Attempt to allocate the space that would be required to
+            // insert a new copy of the cursor hyperlink uri in to the
+            // string alloc, since right now adjustCapacity always just
+            // adds an extra copy even if one already exists in the page.
+            // If this alloc fails then we know we also need to grow our
+            // string bytes.
+            //
+            // FIXME: This SUCKS
+            if (page.string_alloc.alloc(
+                u8,
+                page.memory,
+                uri_size,
+            )) |slice| {
+                // We don't bother freeing because we're
+                // about to free the entire page anyway.
+                _ = &slice;
+            } else |_| {
+                // We didn't have enough room, let's just double our
+                // string bytes until there's definitely enough room
+                // for our uri.
+                const before = string_bytes;
+                while (string_bytes - before < uri_size) string_bytes *= 2;
+            }
+
             _ = try self.adjustCapacity(
                 self.cursor.page_pin.node,
-                .{ .hyperlink_bytes = page.capacity.hyperlink_bytes * 2 },
+                .{
+                    .hyperlink_bytes = page.capacity.hyperlink_bytes * 2,
+                    .string_bytes = string_bytes,
+                },
             );
 
             // Retry
