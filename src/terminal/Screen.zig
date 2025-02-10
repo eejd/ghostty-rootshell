@@ -483,11 +483,13 @@ pub fn adjustCapacity(
             self.cursor.style,
         ) catch |err| id: {
             // TODO: Should we increase the capacity further in this case?
-            log.err(
+            log.warn(
                 "(Screen.adjustCapacity) Failed to add cursor style back to page, err={}",
                 .{err},
             );
 
+            // Reset the cursor style.
+            self.cursor.style = .{};
             break :id style.default_id;
         };
     }
@@ -503,7 +505,7 @@ pub fn adjustCapacity(
         // Re-add
         self.startHyperlinkOnce(link.*) catch |err| {
             // TODO: Should we increase the capacity further in this case?
-            log.err(
+            log.warn(
                 "(Screen.adjustCapacity) Failed to add cursor hyperlink back to page, err={}",
                 .{err},
             );
@@ -2928,6 +2930,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .protected = self.cursor.protected,
                 };
 
+                // If we have a hyperlink, add it to the cell.
+                if (self.cursor.hyperlink_id > 0) try self.cursorSetHyperlink();
+
                 // If we have a ref-counted style, increase.
                 if (self.cursor.style_id != style.default_id) {
                     const page = self.cursor.page_pin.node.data;
@@ -2946,6 +2951,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                         .protected = self.cursor.protected,
                     };
 
+                    // If we have a hyperlink, add it to the cell.
+                    if (self.cursor.hyperlink_id > 0) try self.cursorSetHyperlink();
+
                     self.cursor.page_row.wrap = true;
                     try self.cursorDownOrScroll();
                     self.cursorHorizontalAbsolute(0);
@@ -2961,6 +2969,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .protected = self.cursor.protected,
                 };
 
+                // If we have a hyperlink, add it to the cell.
+                if (self.cursor.hyperlink_id > 0) try self.cursorSetHyperlink();
+
                 // Write our tail
                 self.cursorRight(1);
                 self.cursor.page_cell.* = .{
@@ -2969,6 +2980,9 @@ pub fn testWriteString(self: *Screen, text: []const u8) !void {
                     .wide = .spacer_tail,
                     .protected = self.cursor.protected,
                 };
+
+                // If we have a hyperlink, add it to the cell.
+                if (self.cursor.hyperlink_id > 0) try self.cursorSetHyperlink();
 
                 // If we have a ref-counted style, increase twice.
                 if (self.cursor.style_id != style.default_id) {
@@ -8803,6 +8817,102 @@ test "Screen: adjustCapacity cursor style ref count" {
             page.styles.refCount(page.memory, s.cursor.style_id),
         );
     }
+}
+
+test "Screen: adjustCapacity cursor hyperlink exceeds string alloc size" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, 0);
+    defer s.deinit();
+
+    // Start a hyperlink with a URI that just barely fits in the string alloc.
+    // This will ensure that the redundant copy added in `adjustCapacity` won't
+    // fit in the available string alloc space.
+    const uri = "a" ** (pagepkg.std_capacity.string_bytes - 8);
+    try s.startHyperlink(uri, null);
+
+    // Write some characters with this so that the URI
+    // is copied to the new page when adjusting capacity.
+    try s.testWriteString("Hello");
+
+    // Adjust the capacity, right now this will cause a redundant copy of
+    // the URI to be added to the string alloc, but since there isn't room
+    // for this this will clear the cursor hyperlink.
+    _ = try s.adjustCapacity(s.cursor.page_pin.node, .{});
+
+    // The cursor hyperlink should have been cleared by the `adjustCapacity`
+    // call, because there isn't enough room to add the redundant URI string.
+    //
+    // This behavior will change, causing this test to fail, if any of these
+    // changes are made:
+    //
+    // - The string alloc is changed to intern strings.
+    //
+    // - The adjustCapacity function is changed to ensure the new
+    //   capacity will fit the redundant copy of the hyperlink uri.
+    //
+    // - The cursor managed memory handling is reworked so that it
+    //   doesn't reside in the pages anymore and doesn't need this
+    //   accounting.
+    //
+    // In such a case, adjust this test accordingly.
+    try testing.expectEqual(null, s.cursor.hyperlink);
+    try testing.expectEqual(0, s.cursor.hyperlink_id);
+}
+
+test "Screen: adjustCapacity cursor style exceeds style set capacity" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    const page = &s.cursor.page_pin.node.data;
+
+    // We add unique styles to the page until no more will fit.
+    fill: for (0..255) |bg| {
+        for (0..255) |fg| {
+            const st: style.Style = .{
+                .bg_color = .{ .palette = @intCast(bg) },
+                .fg_color = .{ .palette = @intCast(fg) },
+            };
+
+            s.cursor.style = st;
+
+            // Try to insert the new style, if it doesn't fit then
+            // we succeeded in filling the style set, so we break.
+            s.cursor.style_id = page.styles.add(
+                page.memory,
+                s.cursor.style,
+            ) catch break :fill;
+
+            try s.testWriteString("a");
+        }
+    }
+
+    // Adjust the capacity, this should cause the style set to reach the
+    // same state it was in to begin with, since it will clone the page
+    // in the same order as the styles were added to begin with, meaning
+    // the cursor style will not be able to be added to the set, which
+    // should, right now, result in the cursor style being cleared.
+    _ = try s.adjustCapacity(s.cursor.page_pin.node, .{});
+
+    // The cursor style should have been cleared by the `adjustCapacity`.
+    //
+    // This behavior will change, causing this test to fail, if either
+    // of these changes are made:
+    //
+    // - The adjustCapacity function is changed to ensure the
+    //   new capacity will definitely fit the cursor style.
+    //
+    // - The cursor managed memory handling is reworked so that it
+    //   doesn't reside in the pages anymore and doesn't need this
+    //   accounting.
+    //
+    // In such a case, adjust this test accordingly.
+    try testing.expect(s.cursor.style.default());
+    try testing.expectEqual(style.default_id, s.cursor.style_id);
 }
 
 test "Screen UTF8 cell map with newlines" {
