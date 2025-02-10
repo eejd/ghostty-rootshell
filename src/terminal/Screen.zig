@@ -8785,6 +8785,40 @@ test "Screen: hyperlink cursor state on resize" {
     }
 }
 
+test "Screen: cursorSetHyperlink OOM + URI too large for string alloc" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 80, 24, 0);
+    defer s.deinit();
+
+    // Start a hyperlink with a URI that just barely fits in the string alloc.
+    // This will ensure that additional string alloc space is needed for the
+    // redundant copy of the URI when the page is re-alloced.
+    const uri = "a" ** (pagepkg.std_capacity.string_bytes - 8);
+    try s.startHyperlink(uri, null);
+
+    // Figure out how many cells should can have hyperlinks in this page,
+    // and write twice that number, to guarantee the capacity needs to be
+    // increased at some point.
+    const base_capacity = s.cursor.page_pin.node.data.hyperlinkCapacity();
+    const base_string_bytes = s.cursor.page_pin.node.data.capacity.string_bytes;
+    for (0..base_capacity * 2) |_| {
+        try s.cursorSetHyperlink();
+        if (s.cursor.x >= s.pages.cols - 1) {
+            try s.cursorDownOrScroll();
+            s.cursorHorizontalAbsolute(0);
+        } else {
+            s.cursorRight(1);
+        }
+    }
+
+    // Make sure the capacity really did increase.
+    try testing.expect(base_capacity < s.cursor.page_pin.node.data.hyperlinkCapacity());
+    // And that our string_bytes increased as well.
+    try testing.expect(base_string_bytes < s.cursor.page_pin.node.data.capacity.string_bytes);
+}
+
 test "Screen: adjustCapacity cursor style ref count" {
     const testing = std.testing;
     const alloc = testing.allocator;
