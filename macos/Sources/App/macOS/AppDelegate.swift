@@ -563,6 +563,30 @@ class AppDelegate: NSObject,
             self.appIcon = nil
             break
 
+        case .blueprint:
+            self.appIcon = NSImage(named: "BlueprintImage")!
+
+        case .chalkboard:
+            self.appIcon = NSImage(named: "ChalkboardImage")!
+
+        case .glass:
+            self.appIcon = NSImage(named: "GlassImage")!
+
+        case .holographic:
+            self.appIcon = NSImage(named: "HolographicImage")!
+
+        case .microchip:
+            self.appIcon = NSImage(named: "MicrochipImage")!
+
+        case .paper:
+            self.appIcon = NSImage(named: "PaperImage")!
+
+        case .retro:
+            self.appIcon = NSImage(named: "RetroImage")!
+
+        case .xray:
+            self.appIcon = NSImage(named: "XrayImage")!
+
         case .customStyle:
             guard let ghostColor = config.macosIconGhostColor else { break }
             guard let screenColors = config.macosIconScreenColor else { break }
