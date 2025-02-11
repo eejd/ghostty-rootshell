@@ -709,13 +709,13 @@ class AppDelegate: NSObject,
 
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
-        // Toggle visibility doesn't do anything if the focused window is native
-        // fullscreen.
-        guard let keyWindow = NSApp.keyWindow,
-              !keyWindow.styleMask.contains(.fullScreen) else { return }
-
         // If we have focus, then we hide all windows.
         if NSApp.isActive {
+            // Toggle visibility doesn't do anything if the focused window is native
+            // fullscreen. This is only relevant if Ghostty is active.
+            guard let keyWindow = NSApp.keyWindow,
+                  !keyWindow.styleMask.contains(.fullScreen) else { return }
+
             // We need to keep track of the windows that were visible because we only
             // want to bring back these windows if we remove the toggle.
             //
