@@ -278,12 +278,9 @@ pub fn reset(self: *Screen) void {
         .page_cell = cursor_rac.cell,
     };
 
-    // Clear kitty graphics
-    self.kitty_images.delete(
-        self.alloc,
-        undefined, // All image deletion doesn't need the terminal
-        .{ .all = true },
-    );
+    // Reset kitty graphics storage
+    self.kitty_images.deinit(self.alloc, self);
+    self.kitty_images = .{ .dirty = true };
 
     // Reset our basic state
     self.saved_cursor = null;
