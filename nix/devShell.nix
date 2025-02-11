@@ -30,6 +30,7 @@
   glib,
   glslang,
   gtk4,
+  gobject-introspection,
   libadwaita,
   adwaita-icon-theme,
   hicolor-icon-theme,
@@ -83,6 +84,7 @@
       libadwaita
       gtk4
       glib
+      gobject-introspection
       wayland
     ];
 in
@@ -157,6 +159,7 @@ in
         libadwaita
         gtk4
         glib
+        gobject-introspection
         wayland
         wayland-scanner
         wayland-protocols
