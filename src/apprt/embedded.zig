@@ -12,6 +12,7 @@ const objc = @import("objc");
 const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const input = @import("../input.zig");
+const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
@@ -1024,6 +1025,30 @@ pub const Surface = struct {
         return .{
             .font_size = font_size,
         };
+    }
+
+    pub fn defaultTermioEnv(self: *const Surface) !?std.process.EnvMap {
+        const alloc = self.app.core_app.alloc;
+        var env = try internal_os.getEnvMap(alloc);
+        errdefer env.deinit();
+
+        if (comptime builtin.target.isDarwin()) {
+            if (env.get("__XCODE_BUILT_PRODUCTS_DIR_PATHS") != null) {
+                env.remove("__XCODE_BUILT_PRODUCTS_DIR_PATHS");
+                env.remove("__XPC_DYLD_LIBRARY_PATH");
+                env.remove("DYLD_FRAMEWORK_PATH");
+                env.remove("DYLD_INSERT_LIBRARIES");
+                env.remove("DYLD_LIBRARY_PATH");
+                env.remove("LD_LIBRARY_PATH");
+                env.remove("SECURITYSESSIONID");
+                env.remove("XPC_SERVICE_NAME");
+            }
+
+            // Remove this so that running `ghostty` within Ghostty works.
+            env.remove("GHOSTTY_MAC_APP");
+        }
+
+        return env;
     }
 
     /// The cursor position from the host directly is in screen coordinates but

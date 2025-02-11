@@ -874,6 +874,11 @@ pub const Surface = struct {
         };
     }
 
+    pub fn defaultTermioEnv(self: *Surface) !?std.process.EnvMap {
+        _ = self;
+        return null;
+    }
+
     fn sizeCallback(window: glfw.Window, width: i32, height: i32) void {
         _ = width;
         _ = height;

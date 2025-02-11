@@ -2252,6 +2252,25 @@ fn doPaste(self: *Surface, data: [:0]const u8) void {
     };
 }
 
+pub fn defaultTermioEnv(self: *Surface) !?std.process.EnvMap {
+    const alloc = self.app.core_app.alloc;
+    var env = try internal_os.getEnvMap(alloc);
+    errdefer env.deinit();
+
+    // Don't leak these GTK environment variables to child processes.
+    env.remove("GDK_DEBUG");
+    env.remove("GDK_DISABLE");
+    env.remove("GSK_RENDERER");
+
+    if (self.container.window()) |window| {
+        // On some window protocols we might want to add specific
+        // environment variables to subprocesses, such as WINDOWID on X11.
+        try window.winproto.addSubprocessEnv(&env);
+    }
+
+    return env;
+}
+
 /// Check a GValue to see what's type its wrapping. This is equivalent to GTK's
 /// `G_VALUE_HOLDS` macro but Zig's C translator does not like it.
 fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
