@@ -1590,6 +1590,18 @@ fn resizeInternal(
         self.cursor.hyperlink = null;
     }
 
+    // We need to insert a tracked pin for our saved cursor so we can
+    // modify its X/Y for reflow.
+    const saved_cursor_pin: ?*Pin = saved_cursor: {
+        const sc = self.saved_cursor orelse break :saved_cursor null;
+        const pin = self.pages.pin(.{ .active = .{
+            .x = sc.x,
+            .y = sc.y,
+        } }) orelse break :saved_cursor null;
+        break :saved_cursor try self.pages.trackPin(pin);
+    };
+    defer if (saved_cursor_pin) |p| self.pages.untrackPin(p);
+
     // Perform the resize operation.
     try self.pages.resize(.{
         .rows = rows,
@@ -1608,6 +1620,36 @@ fn resizeInternal(
     // If our cursor was updated, we do a full reload so all our cursor
     // state is correct.
     self.cursorReload();
+
+    // If we reflowed a saved cursor, update it.
+    if (saved_cursor_pin) |p| {
+        // This should never fail because a non-null saved_cursor_pin
+        // implies a non-null saved_cursor.
+        const sc = &self.saved_cursor.?;
+        if (self.pages.pointFromPin(.active, p.*)) |pt| {
+            sc.x = @intCast(pt.active.x);
+            sc.y = @intCast(pt.active.y);
+
+            // If we had pending wrap set and we're no longer at the end of
+            // the line, we unset the pending wrap and move the cursor to
+            // reflect the correct next position.
+            if (sc.pending_wrap and sc.x != cols - 1) {
+                sc.pending_wrap = false;
+                sc.x += 1;
+            }
+        } else {
+            // I think this can happen if the screen is resized to be
+            // less rows or less cols and our saved cursor moves outside
+            // the active area. In this case, there isn't anything really
+            // reasonable we can do so we just move the cursor to the
+            // top-left. It may be reasonable to also move the cursor to
+            // match the primary cursor. Any behavior is fine since this is
+            // totally unspecified.
+            sc.x = 0;
+            sc.y = 0;
+            sc.pending_wrap = false;
+        }
+    }
 
     // Fix up our hyperlink if we had one.
     if (hyperlink_) |link| {
