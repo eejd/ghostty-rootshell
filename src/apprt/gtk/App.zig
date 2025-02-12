@@ -560,9 +560,14 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        => log.warn("unimplemented action={}", .{action}),
+        => {
+            log.warn("unimplemented action={}", .{action});
+            return false;
+        },
     }
 
+    // We can assume it was handled because all unknown/unimplemented actions
+    // are caught above.
     return true;
 }
 
@@ -602,9 +607,7 @@ fn closeTab(_: *App, target: apprt.Target) !void {
 
 fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) bool {
     switch (target) {
-        .app => {
-            return false;
-        },
+        .app => return false,
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
@@ -675,9 +678,7 @@ fn gotoSplit(
     direction: apprt.action.GotoSplit,
 ) bool {
     switch (target) {
-        .app => {
-            return false;
-        },
+        .app => return false,
         .surface => |v| {
             const s = v.rt_surface.container.split() orelse return false;
             const map = s.directionMap(switch (v.rt_surface.container) {
