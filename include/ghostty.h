@@ -644,7 +644,7 @@ typedef void (*ghostty_runtime_write_clipboard_cb)(void*,
                                                    ghostty_clipboard_e,
                                                    bool);
 typedef void (*ghostty_runtime_close_surface_cb)(void*, bool);
-typedef void (*ghostty_runtime_action_cb)(ghostty_app_t,
+typedef bool (*ghostty_runtime_action_cb)(ghostty_app_t,
                                           ghostty_target_s,
                                           ghostty_action_s);
 

@@ -423,7 +423,7 @@ extension Ghostty {
 
         // MARK: Actions (macOS)
 
-        static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) {
+        static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
             // Make sure it a target we understand so all our action handlers can assert
             switch (target.tag) {
             case GHOSTTY_TARGET_APP, GHOSTTY_TARGET_SURFACE:
@@ -431,7 +431,7 @@ extension Ghostty {
 
             default:
                 Ghostty.logger.warning("unknown action target=\(target.tag.rawValue)")
-                return
+                return false
             }
 
             // Action dispatch
@@ -541,10 +541,15 @@ extension Ghostty {
                 fallthrough
             case GHOSTTY_ACTION_QUIT_TIMER:
                 Ghostty.logger.info("known but unimplemented action action=\(action.tag.rawValue)")
-
+                return false
             default:
                 Ghostty.logger.warning("unknown action action=\(action.tag.rawValue)")
+                return false
             }
+
+            // If we reached here then we assume performed since all unknown actions
+            // are captured in the switch and return false.
+            return true
         }
 
         private static func quit(_ app: ghostty_app_t) {

@@ -507,13 +507,14 @@ pub fn terminate(self: *App) void {
     self.config.deinit();
 }
 
-/// Perform a given action.
+/// Perform a given action. Returns `true` if the action was able to be
+/// performed, `false` otherwise.
 pub fn performAction(
     self: *App,
     target: apprt.Target,
     comptime action: apprt.Action.Key,
     value: apprt.Action.Value(action),
-) !void {
+) !bool {
     switch (action) {
         .quit => self.quit(),
         .new_window => _ = try self.newWindow(switch (target) {
@@ -525,12 +526,12 @@ pub fn performAction(
 
         .new_tab => try self.newTab(target),
         .close_tab => try self.closeTab(target),
-        .goto_tab => self.gotoTab(target, value),
+        .goto_tab => return self.gotoTab(target, value),
         .move_tab => self.moveTab(target, value),
         .new_split => try self.newSplit(target, value),
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
-        .goto_split => self.gotoSplit(target, value),
+        .goto_split => return self.gotoSplit(target, value),
         .open_config => try configpkg.edit.open(self.core_app.alloc),
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
@@ -559,8 +560,15 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        => log.warn("unimplemented action={}", .{action}),
+        => {
+            log.warn("unimplemented action={}", .{action});
+            return false;
+        },
     }
+
+    // We can assume it was handled because all unknown/unimplemented actions
+    // are caught above.
+    return true;
 }
 
 fn newTab(_: *App, target: apprt.Target) !void {
@@ -597,24 +605,24 @@ fn closeTab(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
+fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) bool {
     switch (target) {
-        .app => {},
+        .app => return false,
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
                     "gotoTab invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
-                return;
+                return false;
             };
 
-            switch (tab) {
+            return switch (tab) {
                 .previous => window.gotoPreviousTab(v.rt_surface),
                 .next => window.gotoNextTab(v.rt_surface),
                 .last => window.gotoLastTab(),
                 else => window.gotoTab(@intCast(@intFromEnum(tab))),
-            }
+            };
         },
     }
 }
@@ -668,18 +676,22 @@ fn gotoSplit(
     _: *const App,
     target: apprt.Target,
     direction: apprt.action.GotoSplit,
-) void {
+) bool {
     switch (target) {
-        .app => {},
+        .app => return false,
         .surface => |v| {
-            const s = v.rt_surface.container.split() orelse return;
+            const s = v.rt_surface.container.split() orelse return false;
             const map = s.directionMap(switch (v.rt_surface.container) {
                 .split_tl => .top_left,
                 .split_br => .bottom_right,
                 .none, .tab_ => unreachable,
             });
-            const surface_ = map.get(direction) orelse return;
-            if (surface_) |surface| surface.grabFocus();
+            const surface_ = map.get(direction) orelse return false;
+            if (surface_) |surface| {
+                surface.grabFocus();
+                return true;
+            }
+            return false;
         },
     }
 }

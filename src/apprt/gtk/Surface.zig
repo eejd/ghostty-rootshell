@@ -2124,7 +2124,7 @@ pub fn present(self: *Surface) void {
     if (self.container.window()) |window| {
         if (self.container.tab()) |tab| {
             if (window.notebook.getTabPosition(tab)) |position|
-                window.notebook.gotoNthTab(position);
+                _ = window.notebook.gotoNthTab(position);
         }
         c.gtk_window_present(window.window);
     }
