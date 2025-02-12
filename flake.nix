@@ -61,6 +61,7 @@
               revision = self.shortRev or self.dirtyShortRev or "dirty";
             };
           in rec {
+            deps = pkgs-stable.callPackage ./build.zig.zon.nix {};
             ghostty-debug = pkgs-stable.callPackage ./nix/package.nix (mkArgs "Debug");
             ghostty-releasesafe = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseSafe");
             ghostty-releasefast = pkgs-stable.callPackage ./nix/package.nix (mkArgs "ReleaseFast");
