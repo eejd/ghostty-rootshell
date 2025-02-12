@@ -4,7 +4,7 @@ const build_options = @import("build_options");
 pub const c = @cImport({
     @cInclude("gtk/gtk.h");
     if (build_options.adwaita) {
-        @cInclude("libadwaita-1/adwaita.h");
+        @cInclude("adwaita.h");
     }
 
     if (build_options.x11) {
