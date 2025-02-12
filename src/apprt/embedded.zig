@@ -46,7 +46,7 @@ pub const App = struct {
         wakeup: *const fn (AppUD) callconv(.C) void,
 
         /// Callback called to handle an action.
-        action: *const fn (*App, apprt.Target.C, apprt.Action.C) callconv(.C) void,
+        action: *const fn (*App, apprt.Target.C, apprt.Action.C) callconv(.C) bool,
 
         /// Read the clipboard value. The return value must be preserved
         /// by the host until the next call. If there is no valid clipboard
@@ -495,13 +495,11 @@ pub const App = struct {
             action,
             value,
         });
-        self.opts.action(
+        return self.opts.action(
             self,
             target.cval(),
             @unionInit(apprt.Action, @tagName(action), value).cval(),
         );
-
-        return true;
     }
 
     fn performPreAction(
