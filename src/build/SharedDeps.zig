@@ -490,8 +490,48 @@ pub fn add(
                 {
                     const gresource = @import("../apprt/gtk/gresource.zig");
 
-                    const wf = b.addWriteFiles();
-                    const gresource_xml = wf.add("gresource.xml", gresource.gresource_xml);
+                    const gresource_xml = gresource_xml: {
+                        const generate_gresource_xml = b.addExecutable(.{
+                            .name = "generate_gresource_xml",
+                            .root_source_file = b.path("src/apprt/gtk/gresource.zig"),
+                            .target = b.host,
+                        });
+
+                        const generate = b.addRunArtifact(generate_gresource_xml);
+
+                        for (gresource.blueprint_files) |blueprint_file| {
+                            const blueprint_compiler = b.addSystemCommand(&.{
+                                "blueprint-compiler",
+                                "compile",
+                                "--output",
+                            });
+                            const ui_file = blueprint_compiler.addOutputFileArg(b.fmt("{s}.ui", .{blueprint_file}));
+                            blueprint_compiler.addFileArg(b.path(b.fmt("src/apprt/gtk/ui/{s}.blp", .{blueprint_file})));
+                            generate.addFileArg(ui_file);
+                        }
+
+                        break :gresource_xml generate.captureStdOut();
+                    };
+
+                    {
+                        const gtk_builder_check = b.addExecutable(.{
+                            .name = "gtk_builder_check",
+                            .root_source_file = b.path("src/apprt/gtk/builder_check.zig"),
+                            .target = b.host,
+                        });
+                        gtk_builder_check.root_module.addOptions("build_options", self.options);
+                        gtk_builder_check.linkSystemLibrary2("gtk4", dynamic_link_opts);
+                        if (self.config.adwaita) gtk_builder_check.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+                        gtk_builder_check.linkLibC();
+
+                        for (gresource.dependencies) |pathname| {
+                            const extension = std.fs.path.extension(pathname);
+                            if (!std.mem.eql(u8, extension, ".ui")) continue;
+                            const check = b.addRunArtifact(gtk_builder_check);
+                            check.addFileArg(b.path(pathname));
+                            step.step.dependOn(&check.step);
+                        }
+                    }
 
                     const generate_resources_c = b.addSystemCommand(&.{
                         "glib-compile-resources",

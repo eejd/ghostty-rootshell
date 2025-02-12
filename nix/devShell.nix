@@ -32,6 +32,7 @@
   gtk4,
   gobject-introspection,
   libadwaita,
+  blueprint-compiler,
   adwaita-icon-theme,
   hicolor-icon-theme,
   harfbuzz,
@@ -159,6 +160,7 @@ in
         libXrandr
 
         # Only needed for GTK builds
+        blueprint-compiler
         libadwaita
         gtk4
         glib
