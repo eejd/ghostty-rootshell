@@ -1270,10 +1270,12 @@ fn showContextMenu(self: *Surface, x: f32, y: f32) void {
         return;
     };
 
+    // Convert surface coordinate into coordinate space of the
+    // context menu's parent
     var point: c.graphene_point_t = .{ .x = x, .y = y };
     if (c.gtk_widget_compute_point(
         self.primaryWidget(),
-        @ptrCast(window.window),
+        c.gtk_widget_get_parent(@ptrCast(window.context_menu)),
         &c.GRAPHENE_POINT_INIT(point.x, point.y),
         @ptrCast(&point),
     ) == 0) {
