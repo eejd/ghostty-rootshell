@@ -1284,8 +1284,8 @@ fn showContextMenu(self: *Surface, x: f32, y: f32) void {
     const rect: c.GdkRectangle = .{
         .x = @intFromFloat(point.x),
         .y = @intFromFloat(point.y),
-        .width = 0,
-        .height = 0,
+        .width = 1,
+        .height = 1,
     };
 
     c.gtk_popover_set_pointing_to(@ptrCast(@alignCast(window.context_menu)), &rect);
