@@ -704,7 +704,7 @@ const Subprocess = struct {
 
     arena: std.heap.ArenaAllocator,
     cwd: ?[]const u8,
-    env: EnvMap,
+    env: ?EnvMap,
     args: [][]const u8,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
@@ -725,7 +725,7 @@ const Subprocess = struct {
         // Get our env. If a default env isn't provided by the caller
         // then we get it ourselves.
         var env = cfg.env orelse try internal_os.getEnvMap(alloc);
-        errdefer env.deinit();
+        errdefer if (cfg.env == null) env.deinit();
 
         // If we have a resources dir then set our env var
         if (cfg.resources_dir) |dir| {
@@ -1054,6 +1054,7 @@ const Subprocess = struct {
     pub fn deinit(self: *Subprocess) void {
         self.stop();
         if (self.pty) |*pty| pty.deinit();
+        if (self.env) |*env| env.deinit();
         self.arena.deinit();
         self.* = undefined;
     }
@@ -1136,7 +1137,7 @@ const Subprocess = struct {
         var cmd: Command = .{
             .path = self.args[0],
             .args = self.args,
-            .env = &self.env,
+            .env = if (self.env) |*env| env else null,
             .cwd = cwd,
             .stdin = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
             .stdout = if (builtin.os.tag == .windows) null else .{ .handle = pty.slave },
@@ -1168,6 +1169,12 @@ const Subprocess = struct {
             // side. This prevents the slave fd from being leaked to
             // future children.
             _ = posix.close(pty.slave);
+        }
+
+        // Successful start we can clear out some memory.
+        if (self.env) |*env| {
+            env.deinit();
+            self.env = null;
         }
 
         self.command = cmd;
