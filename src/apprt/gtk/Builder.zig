@@ -7,6 +7,7 @@ const gtk = @import("gtk");
 const gobject = @import("gobject");
 
 resource_name: [:0]const u8,
+builder: ?*gtk.Builder,
 
 pub fn init(comptime name: []const u8, comptime kind: enum { blp, ui }) Builder {
     comptime {
@@ -47,6 +48,7 @@ pub fn init(comptime name: []const u8, comptime kind: enum { blp, ui }) Builder 
 
     return .{
         .resource_name = "/com/mitchellh/ghostty/ui/" ++ name ++ ".ui",
+        .builder = null,
     };
 }
 
@@ -54,8 +56,17 @@ pub fn setWidgetClassTemplate(self: *const Builder, class: *gtk.WidgetClass) voi
     class.setTemplateFromResource(self.resource_name);
 }
 
-pub fn getObject(self: *const Builder, name: [:0]const u8) ?gobject.Object {
-    const builder = gtk.Builder.newFromResource(self.resource_name);
-    defer builder.unref();
+pub fn getObject(self: *Builder, name: [:0]const u8) ?*gobject.Object {
+    const builder = builder: {
+        if (self.builder) |builder| break :builder builder;
+        const builder = gtk.Builder.newFromResource(self.resource_name);
+        self.builder = builder;
+        break :builder builder;
+    };
+
     return builder.getObject(name);
+}
+
+pub fn deinit(self: *const Builder) void {
+    if (self.builder) |builder| builder.unref();
 }
