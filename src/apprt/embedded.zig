@@ -182,14 +182,9 @@ pub const App = struct {
                 if (strip) translate_mods.alt = false;
             }
 
-            // On macOS we strip ctrl because UCKeyTranslate
-            // converts to the masked values (i.e. ctrl+c becomes 3)
-            // and we don't want that behavior.
-            //
-            // We also strip super because its not used for translation
-            // on macos and it results in a bad translation.
+            // We strip super on macOS because its not used for translation
+            // it results in a bad translation.
             if (comptime builtin.target.isDarwin()) {
-                translate_mods.ctrl = false;
                 translate_mods.super = false;
             }
 
@@ -236,7 +231,14 @@ pub const App = struct {
                     .surface => |surface| &surface.keymap_state,
                 },
                 @intCast(keycode),
-                translate_mods,
+                if (comptime builtin.target.isDarwin()) mods: {
+                    // On macOS we strip ctrl because UCKeyTranslate
+                    // converts to the masked values (i.e. ctrl+c becomes 3)
+                    // and we don't want that behavior.
+                    var v = translate_mods;
+                    v.ctrl = false;
+                    break :mods v;
+                } else translate_mods,
             );
 
             // TODO(mitchellh): I think we can get rid of the above keymap
