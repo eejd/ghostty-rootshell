@@ -199,7 +199,7 @@ in
       name = "12209ca054cb1919fa276e328967f10b253f7537c4136eb48f3332b0f7cf661cad38";
       path = fetchZigArtifact {
         name = "zig_wayland";
-        url = "https://codeberg.org/ifreund/zig-wayland/archive/fbfe3b4ac0b472a27b1f1a67405436c58cbee12d.tar.gz";
+        url = "https://deps.files.ghostty.org/zig-wayland-fbfe3b4ac0b472a27b1f1a67405436c58cbee12d.tar.gz";
         hash = "sha256-RtAystqK/GRYIquTK1KfD7rRSCrfuzAvCD1Z9DE1ldc=";
       };
     }
