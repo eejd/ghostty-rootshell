@@ -241,6 +241,9 @@ pub const Action = union(Key) {
     /// for changes.
     config_change: ConfigChange,
 
+    /// Closes the currently focused window.
+    close_window,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -283,6 +286,7 @@ pub const Action = union(Key) {
         color_change,
         reload_config,
         config_change,
+        close_window,
     };
 
     /// Sync with: ghostty_action_u

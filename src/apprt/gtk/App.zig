@@ -481,10 +481,11 @@ pub fn performAction(
             .app => null,
             .surface => |v| v,
         }),
+        .close_window => return try self.closeWindow(target),
         .toggle_maximize => self.toggleMaximize(target),
         .toggle_fullscreen => self.toggleFullscreen(target, value),
         .new_tab => try self.newTab(target),
-        .close_tab => try self.closeTab(target),
+        .close_tab => return try self.closeTab(target),
         .goto_tab => return self.gotoTab(target, value),
         .move_tab => self.moveTab(target, value),
         .new_split => try self.newSplit(target, value),
@@ -549,19 +550,20 @@ fn newTab(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn closeTab(_: *App, target: apprt.Target) !void {
+fn closeTab(_: *App, target: apprt.Target) !bool {
     switch (target) {
-        .app => {},
+        .app => return false,
         .surface => |v| {
             const tab = v.rt_surface.container.tab() orelse {
                 log.info(
                     "close_tab invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
-                return;
+                return false;
             };
 
             tab.closeWithConfirmation();
+            return true;
         },
     }
 }
@@ -1422,6 +1424,17 @@ fn setSecureInput(_: *App, target: apprt.Target, value: apprt.action.SecureInput
         .app => {},
         .surface => |surface| {
             surface.rt_surface.setSecureInput(value);
+        },
+    }
+}
+
+fn closeWindow(_: *App, target: apprt.action.Target) !bool {
+    switch (target) {
+        .app => return false,
+        .surface => |v| {
+            const window = v.rt_surface.container.window() orelse return false;
+            window.closeWithConfirmation();
+            return true;
         },
     }
 }
