@@ -455,13 +455,13 @@ extension Ghostty {
                 toggleFullscreen(app, target: target, mode: action.action.toggle_fullscreen)
 
             case GHOSTTY_ACTION_MOVE_TAB:
-                moveTab(app, target: target, move: action.action.move_tab)
+                return moveTab(app, target: target, move: action.action.move_tab)
 
             case GHOSTTY_ACTION_GOTO_TAB:
-                gotoTab(app, target: target, tab: action.action.goto_tab)
+                return gotoTab(app, target: target, tab: action.action.goto_tab)
 
             case GHOSTTY_ACTION_GOTO_SPLIT:
-                gotoSplit(app, target: target, direction: action.action.goto_split)
+                return gotoSplit(app, target: target, direction: action.action.goto_split)
 
             case GHOSTTY_ACTION_RESIZE_SPLIT:
                 resizeSplit(app, target: target, resize: action.action.resize_split)
@@ -721,15 +721,19 @@ extension Ghostty {
         private static func moveTab(
             _ app: ghostty_app_t,
             target: ghostty_target_s,
-            move: ghostty_action_move_tab_s) {
+            move: ghostty_action_move_tab_s) -> Bool {
                 switch (target.tag) {
                 case GHOSTTY_TARGET_APP:
                     Ghostty.logger.warning("move tab does nothing with an app target")
-                    return
+                    return false
 
                 case GHOSTTY_TARGET_SURFACE:
-                    guard let surface = target.target.surface else { return }
-                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    guard let surface = target.target.surface else { return false }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return false }
+
+                    // See gotoTab for notes on this check.
+                    guard (surfaceView.window?.tabGroup?.windows.count ?? 0) > 1 else { return false }
+
                     NotificationCenter.default.post(
                         name: .ghosttyMoveTab,
                         object: surfaceView,
@@ -741,20 +745,27 @@ extension Ghostty {
                 default:
                     assertionFailure()
                 }
+
+                return true
         }
 
         private static func gotoTab(
             _ app: ghostty_app_t,
             target: ghostty_target_s,
-            tab: ghostty_action_goto_tab_e) {
+            tab: ghostty_action_goto_tab_e) -> Bool {
                 switch (target.tag) {
                 case GHOSTTY_TARGET_APP:
                     Ghostty.logger.warning("goto tab does nothing with an app target")
-                    return
+                    return false
 
                 case GHOSTTY_TARGET_SURFACE:
-                    guard let surface = target.target.surface else { return }
-                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    guard let surface = target.target.surface else { return false }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return false }
+
+                    // Similar to goto_split (see comment there) about our performability,
+                    // we should make this more accurate later.
+                    guard (surfaceView.window?.tabGroup?.windows.count ?? 0) > 1 else { return false }
+
                     NotificationCenter.default.post(
                         name: Notification.ghosttyGotoTab,
                         object: surfaceView,
@@ -766,20 +777,31 @@ extension Ghostty {
                 default:
                     assertionFailure()
                 }
+
+                return true
         }
 
         private static func gotoSplit(
             _ app: ghostty_app_t,
             target: ghostty_target_s,
-            direction: ghostty_action_goto_split_e) {
+            direction: ghostty_action_goto_split_e) -> Bool {
                 switch (target.tag) {
                 case GHOSTTY_TARGET_APP:
                     Ghostty.logger.warning("goto split does nothing with an app target")
-                    return
+                    return false
 
                 case GHOSTTY_TARGET_SURFACE:
-                    guard let surface = target.target.surface else { return }
-                    guard let surfaceView = self.surfaceView(from: surface) else { return }
+                    guard let surface = target.target.surface else { return false }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return false }
+                    guard let controller = surfaceView.window?.windowController as? BaseTerminalController else { return false }
+
+                    // For now, we return false if the window has no splits and we return
+                    // true if the window has ANY splits. This isn't strictly correct because
+                    // we should only be returning true if we actually performed the action,
+                    // but this handles the most common case of caring about goto_split performability
+                    // which is the no-split case.
+                    guard controller.surfaceTree?.isSplit ?? false else { return false }
+
                     NotificationCenter.default.post(
                         name: Notification.ghosttyFocusSplit,
                         object: surfaceView,
@@ -791,6 +813,8 @@ extension Ghostty {
                 default:
                     assertionFailure()
                 }
+
+                return true
         }
 
         private static func resizeSplit(
