@@ -682,7 +682,7 @@ pub const ThreadData = struct {
 
 pub const Config = struct {
     command: ?[]const u8 = null,
-    env: ?EnvMap = null,
+    env: EnvMap,
     shell_integration: configpkg.Config.ShellIntegration = .detect,
     shell_integration_features: configpkg.Config.ShellIntegrationFeatures = .{},
     working_directory: ?[]const u8 = null,
@@ -724,8 +724,7 @@ const Subprocess = struct {
 
         // Get our env. If a default env isn't provided by the caller
         // then we get it ourselves.
-        var env = cfg.env orelse try internal_os.getEnvMap(alloc);
-        errdefer if (cfg.env == null) env.deinit();
+        var env = cfg.env;
 
         // If we have a resources dir then set our env var
         if (cfg.resources_dir) |dir| {

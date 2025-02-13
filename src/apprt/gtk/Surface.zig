@@ -2254,7 +2254,7 @@ fn doPaste(self: *Surface, data: [:0]const u8) void {
     };
 }
 
-pub fn defaultTermioEnv(self: *Surface) !?std.process.EnvMap {
+pub fn defaultTermioEnv(self: *Surface) !std.process.EnvMap {
     const alloc = self.app.core_app.alloc;
     var env = try internal_os.getEnvMap(alloc);
     errdefer env.deinit();
