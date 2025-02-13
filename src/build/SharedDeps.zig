@@ -436,6 +436,7 @@ pub fn add(
                 });
                 const gobject_imports = .{
                     .{ "gobject", "gobject2" },
+                    .{ "gio", "gio2" },
                     .{ "glib", "glib2" },
                     .{ "gtk", "gtk4" },
                     .{ "gdk", "gdk4" },
@@ -520,9 +521,8 @@ pub fn add(
                             .target = b.host,
                         });
                         gtk_builder_check.root_module.addOptions("build_options", self.options);
-                        gtk_builder_check.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                        if (self.config.adwaita) gtk_builder_check.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
-                        gtk_builder_check.linkLibC();
+                        gtk_builder_check.root_module.addImport("gtk", gobject.module("gtk4"));
+                        if (self.config.adwaita) gtk_builder_check.root_module.addImport("adw", gobject.module("adw1"));
 
                         for (gresource.dependencies) |pathname| {
                             const extension = std.fs.path.extension(pathname);

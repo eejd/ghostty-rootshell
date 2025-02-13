@@ -17,7 +17,7 @@ pub fn main() !void {
     };
     defer alloc.free(filename);
 
-    const data = try std.fs.cwd().readFileAlloc(alloc, filename, std.math.maxInt(u16));
+    const data = try std.fs.cwd().readFileAllocOptions(alloc, filename, std.math.maxInt(u16), null, 1, 0);
     defer alloc.free(data);
 
     if ((comptime !build_options.adwaita) and std.mem.indexOf(u8, data, "lib=\"Adw\"") != null) {
