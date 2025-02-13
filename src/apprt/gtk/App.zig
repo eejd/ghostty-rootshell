@@ -37,6 +37,7 @@ const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
+const CloseDialog = @import("CloseDialog.zig");
 const Split = @import("Split.zig");
 const c = @import("c.zig").c;
 const i18n = @import("i18n.zig");
@@ -45,6 +46,7 @@ const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const winproto = @import("winproto.zig");
 const testing = std.testing;
+const adwaita = @import("adwaita.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -1428,61 +1430,19 @@ fn quit(self: *App) void {
     // If we're already not running, do nothing.
     if (!self.running) return;
 
-    // If we have no toplevel windows, then we're done.
-    const list = c.gtk_window_list_toplevels();
-    if (list == null) {
-        self.running = false;
-        return;
-    }
-    c.g_list_free(list);
-
     // If the app says we don't need to confirm, then we can quit now.
     if (!self.core_app.needsConfirmQuit()) {
         self.quitNow();
         return;
     }
 
-    // If we have windows, then we want to confirm that we want to exit.
-    const alert = c.gtk_message_dialog_new(
-        null,
-        c.GTK_DIALOG_MODAL,
-        c.GTK_MESSAGE_QUESTION,
-        c.GTK_BUTTONS_YES_NO,
-        "Quit Ghostty?",
-    );
-    c.gtk_message_dialog_format_secondary_text(
-        @ptrCast(alert),
-        "All active terminal sessions will be terminated.",
-    );
-
-    // We want the "yes" to appear destructive.
-    const yes_widget = c.gtk_dialog_get_widget_for_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_YES,
-    );
-    c.gtk_widget_add_css_class(yes_widget, "destructive-action");
-
-    // We want the "no" to be the default action
-    c.gtk_dialog_set_default_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_NO,
-    );
-
-    _ = c.g_signal_connect_data(
-        alert,
-        "response",
-        c.G_CALLBACK(&gtkQuitConfirmation),
-        self,
-        null,
-        c.G_CONNECT_DEFAULT,
-    );
-
-    c.gtk_widget_show(alert);
+    CloseDialog.show(.{ .app = self }) catch |err| {
+        log.err("failed to open close dialog={}", .{err});
+    };
 }
 
 /// This immediately destroys all windows, forcing the application to quit.
-fn quitNow(self: *App) void {
-    _ = self;
+pub fn quitNow(self: *App) void {
     const list = c.gtk_window_list_toplevels();
     defer c.g_list_free(list);
     c.g_list_foreach(list, struct {
@@ -1493,23 +1453,8 @@ fn quitNow(self: *App) void {
             c.gtk_window_destroy(window);
         }
     }.callback, null);
-}
 
-fn gtkQuitConfirmation(
-    alert: *c.GtkMessageDialog,
-    response: c.gint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud orelse return));
-
-    // Close the alert window
-    c.gtk_window_destroy(@ptrCast(alert));
-
-    // If we didn't confirm then we're done
-    if (response != c.GTK_RESPONSE_YES) return;
-
-    // Force close all open windows
-    self.quitNow();
+    self.running = false;
 }
 
 /// This is called by the `activate` signal. This is sent on program startup and

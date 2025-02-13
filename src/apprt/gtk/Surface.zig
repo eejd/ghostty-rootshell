@@ -30,6 +30,7 @@ const Menu = @import("menu.zig").Menu;
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const ResizeOverlay = @import("ResizeOverlay.zig");
 const URLWidget = @import("URLWidget.zig");
+const CloseDialog = @import("CloseDialog.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
@@ -663,54 +664,22 @@ pub fn redraw(self: *Surface) void {
 }
 
 /// Close this surface.
-pub fn close(self: *Surface, processActive: bool) void {
+pub fn close(self: *Surface, process_active: bool) void {
+    self.closeWithConfirmation(process_active, .{ .surface = self });
+}
+
+/// Close this surface.
+pub fn closeWithConfirmation(self: *Surface, process_active: bool, target: CloseDialog.Target) void {
     self.setSplitZoom(false);
 
-    // If we're not part of a window hierarchy, we never confirm
-    // so we can just directly remove ourselves and exit.
-    const window = self.container.window() orelse {
-        self.container.remove();
-        return;
-    };
-
-    // If we have no process active we can just exit immediately.
-    if (!processActive) {
+    if (!process_active) {
         self.container.remove();
         return;
     }
 
-    // Setup our basic message
-    const alert = c.gtk_message_dialog_new(
-        window.window,
-        c.GTK_DIALOG_MODAL,
-        c.GTK_MESSAGE_QUESTION,
-        c.GTK_BUTTONS_YES_NO,
-        "Close this terminal?",
-    );
-    c.gtk_message_dialog_format_secondary_text(
-        @ptrCast(alert),
-        "There is still a running process in the terminal. " ++
-            "Closing the terminal will kill this process. " ++
-            "Are you sure you want to close the terminal?\n\n" ++
-            "Click 'No' to cancel and return to your terminal.",
-    );
-
-    // We want the "yes" to appear destructive.
-    const yes_widget = c.gtk_dialog_get_widget_for_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_YES,
-    );
-    c.gtk_widget_add_css_class(yes_widget, "destructive-action");
-
-    // We want the "no" to be the default action
-    c.gtk_dialog_set_default_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_NO,
-    );
-
-    _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, c.G_CONNECT_DEFAULT);
-
-    c.gtk_widget_show(alert);
+    CloseDialog.show(target) catch |err| {
+        log.err("failed to open close dialog={}", .{err});
+    };
 }
 
 pub fn controlInspector(
@@ -2079,18 +2048,6 @@ pub fn dimSurface(self: *Surface) void {
     self.unfocused_widget = c.gtk_drawing_area_new();
     c.gtk_widget_add_css_class(self.unfocused_widget.?, "unfocused-split");
     c.gtk_overlay_add_overlay(self.overlay, self.unfocused_widget.?);
-}
-
-fn gtkCloseConfirmation(
-    alert: *c.GtkMessageDialog,
-    response: c.gint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    c.gtk_window_destroy(@ptrCast(alert));
-    if (response == c.GTK_RESPONSE_YES) {
-        const self = userdataSelf(ud.?);
-        self.container.remove();
-    }
 }
 
 fn userdataSelf(ud: *anyopaque) *Surface {
