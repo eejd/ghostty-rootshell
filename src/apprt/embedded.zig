@@ -182,14 +182,9 @@ pub const App = struct {
                 if (strip) translate_mods.alt = false;
             }
 
-            // On macOS we strip ctrl because UCKeyTranslate
-            // converts to the masked values (i.e. ctrl+c becomes 3)
-            // and we don't want that behavior.
-            //
-            // We also strip super because its not used for translation
-            // on macos and it results in a bad translation.
+            // We strip super on macOS because its not used for translation
+            // it results in a bad translation.
             if (comptime builtin.target.isDarwin()) {
-                translate_mods.ctrl = false;
                 translate_mods.super = false;
             }
 
@@ -229,6 +224,7 @@ pub const App = struct {
             const result: input.Keymap.Translation = if (event_text) |text| .{
                 .text = text,
                 .composing = event.composing,
+                .mods = translate_mods,
             } else try self.keymap.translate(
                 &buf,
                 switch (target) {
@@ -273,16 +269,12 @@ pub const App = struct {
                 // then we clear the text. We handle non-printables in the
                 // key encoder manual (such as tab, ctrl+c, etc.)
                 if (result.text.len == 1 and result.text[0] < 0x20) {
-                    break :translate .{ .composing = false, .text = "" };
+                    break :translate .{};
                 }
             }
 
             break :translate result;
-        } else .{ .composing = false, .text = "" };
-
-        // UCKeyTranslate always consumes all mods, so if we have any output
-        // then we've consumed our translate mods.
-        const consumed_mods: input.Mods = if (result.text.len > 0) translate_mods else .{};
+        } else .{};
 
         // We need to always do a translation with no modifiers at all in
         // order to get the "unshifted_codepoint" for the key event.
@@ -354,7 +346,7 @@ pub const App = struct {
             .key = key,
             .physical_key = physical_key,
             .mods = mods,
-            .consumed_mods = consumed_mods,
+            .consumed_mods = result.mods,
             .composing = result.composing,
             .utf8 = result.text,
             .unshifted_codepoint = unshifted_codepoint,
