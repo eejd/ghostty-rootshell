@@ -15,6 +15,7 @@
   gtk4,
   gobject-introspection,
   libadwaita,
+  blueprint-compiler,
   wrapGAppsHook4,
   gsettings-desktop-schemas,
   git,
@@ -82,6 +83,7 @@ in
         zig_hook
         gobject-introspection
         wrapGAppsHook4
+        blueprint-compiler
       ]
       ++ lib.optionals enableWayland [
         wayland-scanner
