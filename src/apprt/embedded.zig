@@ -1030,7 +1030,7 @@ pub const Surface = struct {
         };
     }
 
-    pub fn defaultTermioEnv(self: *const Surface) !?std.process.EnvMap {
+    pub fn defaultTermioEnv(self: *const Surface) !std.process.EnvMap {
         const alloc = self.app.core_app.alloc;
         var env = try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
