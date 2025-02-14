@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const args = @import("args.zig");
 const Action = @import("action.zig").Action;
 const Allocator = std.mem.Allocator;
@@ -173,6 +174,12 @@ const Boo = struct {
 
 /// The `boo` command is used to display the animation from the Ghostty website in the terminal
 pub fn run(gpa: Allocator) !u8 {
+    // Disable on non-desktop systems.
+    switch (builtin.os.tag) {
+        .windows, .macos, .linux => {},
+        else => return 1,
+    }
+
     var opts: Options = .{};
     defer opts.deinit();
 
