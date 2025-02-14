@@ -744,6 +744,9 @@ const Subprocess = struct {
             env.remove("LIBVA_DRIVERS_PATH");
             env.remove("VK_LAYER_PATH");
             env.remove("XLOCALEDIR");
+            env.remove("GDK_PIXBUF_MODULEDIR");
+            env.remove("GDK_PIXBUF_MODULE_FILE");
+            env.remove("GTK_PATH");
         }
 
         // Set our TERM var. This is a bit complicated because we want to use
