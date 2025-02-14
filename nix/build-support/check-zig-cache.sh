@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# This script checks if the build.zig.zon.nix file is up-to-date.
+# If the `--update` flag is passed, it will update all necessary
+# files to be up to date.
+#
+# The files owned by this are:
+#
+#   - build.zig.zon.nix
+#   - build.zig.zon.txt
+#   - build.zig.zon2json-lock
+#
+# All of these are auto-generated and should not be edited manually.
 
 # Nothing in this script should fail.
 set -e
@@ -27,9 +39,11 @@ help() {
   echo ""
 }
 
-BUILD_ZIG_ZON="$(realpath "$(dirname "$0")/../../build.zig.zon")"
-BUILD_ZIG_ZON_LOCK="$(realpath "$(dirname "$0")/../../build.zig.zon2json-lock")"
-BUILD_ZIG_ZON_NIX="$(realpath "$(dirname "$0")/../../build.zig.zon.nix")"
+ROOT="$(realpath "$(dirname "$0")/../../")"
+BUILD_ZIG_ZON="$ROOT/build.zig.zon"
+BUILD_ZIG_ZON_LOCK="$ROOT/build.zig.zon2json-lock"
+BUILD_ZIG_ZON_NIX="$ROOT/build.zig.zon.nix"
+BUILD_ZIG_ZON_TXT="$ROOT/build.zig.zon.txt"
 
 if [ -f "${BUILD_ZIG_ZON_NIX}" ]; then
   OLD_HASH=$(sha512sum "${BUILD_ZIG_ZON_NIX}" | awk '{print $1}')
@@ -42,7 +56,6 @@ fi
 rm -f "$BUILD_ZIG_ZON_LOCK"
 zon2nix "$BUILD_ZIG_ZON" > "$WORK_DIR/build.zig.zon.nix"
 alejandra --quiet "$WORK_DIR/build.zig.zon.nix"
-rm -f "$BUILD_ZIG_ZON_LOCK"
 
 NEW_HASH=$(sha512sum "$WORK_DIR/build.zig.zon.nix" | awk '{print $1}')
 
@@ -57,6 +70,7 @@ elif [ "$1" != "--update" ]; then
   help
   exit 1
 else
+  jq -r '.[] .url' "$BUILD_ZIG_ZON_LOCK" | sort > "$BUILD_ZIG_ZON_TXT"
   mv "$WORK_DIR/build.zig.zon.nix" "$BUILD_ZIG_ZON_NIX"
   echo -e "\nOK: build.zig.zon.nix updated."
   exit 0

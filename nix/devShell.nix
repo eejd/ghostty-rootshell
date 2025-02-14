@@ -49,6 +49,7 @@
   simdutf,
   zlib,
   alejandra,
+  jq,
   minisign,
   pandoc,
   hyperfine,
@@ -97,6 +98,7 @@ in
     packages =
       [
         # For builds
+        jq
         llvmPackages_latest.llvm
         minisign
         ncurses
