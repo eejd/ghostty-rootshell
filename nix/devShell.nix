@@ -139,6 +139,7 @@ in
         qemu
 
         gdb
+        snapcraft
         valgrind
         wraptest
 
