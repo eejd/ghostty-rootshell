@@ -14,6 +14,7 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
+                <outlet property="menuBringAllToFront" destination="LE2-aR-0XJ" id="AP9-oK-60V"/>
                 <outlet property="menuChangeTitle" destination="24I-xg-qIq" id="kg6-kT-jNL"/>
                 <outlet property="menuCheckForUpdates" destination="GEA-5y-yzH" id="0nV-Tf-nJQ"/>
                 <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
@@ -278,12 +279,6 @@
                                     <action selector="toggleGhosttyFullScreen:" target="-1" id="QB9-7R-xyc"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Bring All to Front" id="LE2-aR-0XJ">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="arrangeInFront:" target="-1" id="DRN-fu-gQh"/>
-                                </connections>
-                            </menuItem>
                             <menuItem title="Show/Hide All Terminals" id="DOX-wA-ilh">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
@@ -377,6 +372,13 @@
                                         </menuItem>
                                     </items>
                                 </menu>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="dgt-Tx-d4e"/>
+                            <menuItem title="Bring All to Front" id="LE2-aR-0XJ">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="arrangeInFront:" target="-1" id="DRN-fu-gQh"/>
+                                </connections>
                             </menuItem>
                         </items>
                     </menu>
