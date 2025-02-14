@@ -34,10 +34,10 @@
     "url": "https://github.com/mitchellh/x11-headers/archive/2ffbd62d82ff73ec929dd8de802bc95effa0ef88.tar.gz",
     "hash": "sha256-EhV2bmTY/OMYN1wEul35gD0hQgS/Al262jO3pVr0O+c="
   },
-  "12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f": {
+  "1220f5aec880d4f430cc1597ede88f1530da69e39a4986080e976b0c7b919c2ebfeb": {
     "name": "vaxis",
-    "url": "https://deps.files.ghostty.org/vaxis-12200df4ebeaed45de26cb2c9f3b6f3746d8013b604e035dae658f86f586c8c91d2f.tar.gz",
-    "hash": "sha256-OCNs6Gl2ruq5dBm4uIxs93hoXw/+n+x1+bIDfQGDx3s="
+    "url": "git+https://github.com/rockorager/libvaxis#2237a7059eae99e9f132dd5acd1555e49d6c7d93",
+    "hash": "sha256-ZzLNJOsXzyBhkdUhbET30RoU2T9xKYsBUQz2NAjK/G8="
   },
   "1220dd654ef941fc76fd96f9ec6adadf83f69b9887a0d3f4ee5ac0a1a3e11be35cf5": {
     "name": "zigimg",
