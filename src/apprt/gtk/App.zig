@@ -560,6 +560,7 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
+        .prompt_title,
         => {
             log.warn("unimplemented action={}", .{action});
             return false;

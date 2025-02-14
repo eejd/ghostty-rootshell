@@ -4024,6 +4024,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             try self.setFontSize(size);
         },
 
+        .prompt_surface_title => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .prompt_title,
+            {},
+        ),
+
         .clear_screen => {
             // This is a duplicate of some of the logic in termio.clearScreen
             // but we need to do this here so we can know the answer before

@@ -124,6 +124,11 @@ extension Ghostty {
         // A timer to fallback to ghost emoji if no title is set within the grace period
         private var titleFallbackTimer: Timer?
 
+        // This is the title from the terminal. This is nil if we're currently using
+        // the terminal title as the main title property. If the title is set manually
+        // by the user, this is set to the prior value (which may be empty, but non-nil).
+        private var titleFromTerminal: String?
+
         /// Event monitor (see individual events for why)
         private var eventMonitor: Any? = nil
 
@@ -380,6 +385,45 @@ extension Ghostty {
             NSCursor.setHiddenUntilMouseMoves(!visible)
         }
 
+        /// Set the title by prompting the user.
+        func promptTitle() {
+            // Create an alert dialog
+            let alert = NSAlert()
+            alert.messageText = "Change Terminal Title"
+            alert.informativeText = "Leave blank to restore the default."
+            alert.alertStyle = .informational
+
+            // Add a text field to the alert
+            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+            textField.stringValue = title
+            alert.accessoryView = textField
+
+            // Add buttons
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+
+            let response = alert.runModal()
+
+            // Check if the user clicked "OK"
+            if response == .alertFirstButtonReturn {
+                // Get the input text
+                let newTitle = textField.stringValue
+
+                if newTitle.isEmpty {
+                    // Empty means that user wants the title to be set automatically
+                    // We also need to reload the config for the "title" property to be
+                    // used again by this tab.
+                    let prevTitle = titleFromTerminal ?? "👻"
+                    titleFromTerminal = nil
+                    setTitle(prevTitle)
+                } else {
+                    // Set the title and prevent it from being changed automatically
+                    titleFromTerminal = title
+                    title = newTitle
+                }
+            }
+        }
+
         func setTitle(_ title: String) {
             // This fixes an issue where very quick changes to the title could
             // cause an unpleasant flickering. We set a timer so that we can
@@ -390,6 +434,11 @@ extension Ghostty {
                 withTimeInterval: 0.075,
                 repeats: false
             ) { [weak self] _ in
+                // Set the title if it wasn't manually set.
+                guard self?.titleFromTerminal == nil else {
+                    self?.titleFromTerminal = title
+                    return
+                }
                 self?.title = title
             }
         }
@@ -1117,6 +1166,8 @@ extension Ghostty {
             menu.addItem(.separator())
             menu.addItem(withTitle: "Reset Terminal", action: #selector(resetTerminal(_:)), keyEquivalent: "")
             menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(toggleTerminalInspector(_:)), keyEquivalent: "")
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Change Title...", action: #selector(changeTitle(_:)), keyEquivalent: "")
 
             return menu
         }
@@ -1188,6 +1239,10 @@ extension Ghostty {
             if (!ghostty_surface_binding_action(surface, action, UInt(action.count))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
+        }
+        
+        @IBAction func changeTitle(_ sender: Any) {
+            promptTitle()
         }
 
         /// Show a user notification and associate it with this surface
