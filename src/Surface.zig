@@ -4201,6 +4201,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 .false => .native,
                 .true => .macos_non_native,
                 .@"visible-menu" => .macos_non_native_visible_menu,
+                .@"padded-notch" => .macos_non_native_padded_notch,
             },
         ),
 

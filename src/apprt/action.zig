@@ -385,6 +385,7 @@ pub const Fullscreen = enum(c_int) {
     /// window. This is much faster to enter and exit than the native mode.
     macos_non_native,
     macos_non_native_visible_menu,
+    macos_non_native_padded_notch,
 };
 
 pub const SecureInput = enum(c_int) {
