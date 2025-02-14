@@ -216,6 +216,8 @@ extension Ghostty {
                     .nonNative
             case "visible-menu":
                     .nonNativeVisibleMenu
+            case "padded-notch":
+                    .nonNativePaddedNotch
             default:
                 defaultValue
             }
