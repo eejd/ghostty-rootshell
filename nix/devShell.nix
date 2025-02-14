@@ -106,7 +106,6 @@ in
         pandoc
         pkg-config
         scdoc
-        snapcraft
         zig
         zip
         zig2nix.packages.${system}.zon2nix
@@ -139,6 +138,7 @@ in
         qemu
 
         gdb
+        snapcraft
         valgrind
         wraptest
 
