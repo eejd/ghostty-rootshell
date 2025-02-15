@@ -106,7 +106,6 @@ in
         pandoc
         pkg-config
         scdoc
-        snapcraft
         zig
         zip
         zig2nix.packages.${system}.zon2nix
