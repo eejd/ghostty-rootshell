@@ -2264,6 +2264,23 @@ pub fn defaultTermioEnv(self: *Surface) !std.process.EnvMap {
     env.remove("GDK_DISABLE");
     env.remove("GSK_RENDERER");
 
+    // Unset environment varies set by snaps if we're running in a snap.
+    // This allows Ghostty to further launch additional snaps.
+    if (env.get("SNAP")) |_| {
+        env.remove("SNAP");
+        env.remove("DRIRC_CONFIGDIR");
+        env.remove("__EGL_EXTERNAL_PLATFORM_CONFIG_DIRS");
+        env.remove("__EGL_VENDOR_LIBRARY_DIRS");
+        env.remove("LD_LIBRARY_PATH");
+        env.remove("LIBGL_DRIVERS_PATH");
+        env.remove("LIBVA_DRIVERS_PATH");
+        env.remove("VK_LAYER_PATH");
+        env.remove("XLOCALEDIR");
+        env.remove("GDK_PIXBUF_MODULEDIR");
+        env.remove("GDK_PIXBUF_MODULE_FILE");
+        env.remove("GTK_PATH");
+    }
+
     if (self.container.window()) |window| {
         // On some window protocols we might want to add specific
         // environment variables to subprocesses, such as WINDOWID on X11.

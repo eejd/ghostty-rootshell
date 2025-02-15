@@ -14,6 +14,7 @@
   python3,
   qemu,
   scdoc,
+  snapcraft,
   valgrind,
   #, vulkan-loader # unused
   vttest,
@@ -137,6 +138,7 @@ in
         qemu
 
         gdb
+        snapcraft
         valgrind
         wraptest
 
