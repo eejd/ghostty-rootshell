@@ -533,6 +533,15 @@ class AppDelegate: NSObject,
         // AppKit mutex on the appearance.
         DispatchQueue.main.async { self.syncAppearance(config: config) }
 
+        // Decide whether to hide/unhide app from dock and app switcher
+        switch (config.macosHidden) {
+        case .never:
+            NSApp.setActivationPolicy(.regular)
+
+        case .always:
+            NSApp.setActivationPolicy(.accessory)
+        }
+
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors

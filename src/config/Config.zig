@@ -1974,6 +1974,26 @@ keybind: Keybinds = .{},
 /// find false more visually appealing.
 @"macos-window-shadow": bool = true,
 
+/// If true, the macOS icon in the dock and app switcher will be hidden. This is
+/// mainly intended for those primarily using the quick-terminal mode.
+///
+/// Note that setting this to true means that keyboard layout changes
+/// will no longer be automatic.
+///
+/// Control whether macOS app is excluded from the dock and app switcher,
+/// a "hidden" state. This is mainly intended for those primarily using
+/// quick-terminal mode, but is a general configuration for any use
+/// case.
+///
+/// Available values:
+///
+///   * `never` - The macOS app is never hidden.
+///   * `always` - The macOS app is always hidden.
+///
+/// Note: When the macOS application is hidden, keyboard layout changes
+/// will no longer be automatic. This is a limitation of macOS.
+@"macos-hidden": MacHidden = .never,
+
 /// If true, Ghostty on macOS will automatically enable the "Secure Input"
 /// feature when it detects that a password prompt is being displayed.
 ///
@@ -5736,6 +5756,12 @@ pub const MacTitlebarStyle = enum {
 pub const MacTitlebarProxyIcon = enum {
     visible,
     hidden,
+};
+
+/// See macos-hidden
+pub const MacHidden = enum {
+    never,
+    always,
 };
 
 /// See macos-icon
