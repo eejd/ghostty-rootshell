@@ -531,6 +531,7 @@ pub fn init(
         var io_exec = try termio.Exec.init(alloc, .{
             .command = command,
             .env = env,
+            .env_override = config.env,
             .shell_integration = config.@"shell-integration",
             .shell_integration_features = config.@"shell-integration-features",
             .working_directory = config.@"working-directory",
