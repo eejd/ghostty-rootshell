@@ -1161,7 +1161,9 @@ extension Ghostty {
 
             menu.addItem(.separator())
             menu.addItem(withTitle: "Split Right", action: #selector(splitRight(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Left", action: #selector(splitLeft(_:)), keyEquivalent: "")
             menu.addItem(withTitle: "Split Down", action: #selector(splitDown(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Split Up", action: #selector(splitUp(_:)), keyEquivalent: "")
 
             menu.addItem(.separator())
             menu.addItem(withTitle: "Reset Terminal", action: #selector(resetTerminal(_:)), keyEquivalent: "")
@@ -1220,9 +1222,19 @@ extension Ghostty {
             ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_RIGHT)
         }
 
+        @IBAction func splitLeft(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_LEFT)
+        }
+
         @IBAction func splitDown(_ sender: Any) {
             guard let surface = self.surface else { return }
             ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_DOWN)
+        }
+
+        @IBAction func splitUp(_ sender: Any) {
+            guard let surface = self.surface else { return }
+            ghostty_surface_split(surface, GHOSTTY_SPLIT_DIRECTION_UP)
         }
 
         @objc func resetTerminal(_ sender: Any) {

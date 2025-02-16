@@ -47,8 +47,10 @@
                 <outlet property="menuSelectSplitLeft" destination="cTK-oy-KuV" id="Jpr-5q-dqz"/>
                 <outlet property="menuSelectSplitRight" destination="upj-mc-L7X" id="nLY-o1-lky"/>
                 <outlet property="menuServices" destination="aQe-vS-j8Q" id="uWQ-Wo-T1L"/>
-                <outlet property="menuSplitDown" destination="UDZ-4y-6xL" id="fgZ-Wb-8OR"/>
+                <outlet property="menuSplitDown" destination="UDZ-4y-6xL" id="ptr-mj-Azh"/>
+                <outlet property="menuSplitLeft" destination="Ppv-GP-lQU" id="Xd5-Cd-Jut"/>
                 <outlet property="menuSplitRight" destination="VUR-Ld-nLx" id="RxO-Zw-ovb"/>
+                <outlet property="menuSplitUp" destination="Ggp-7N-GbX" id="YJF-uq-S4Y"/>
                 <outlet property="menuTerminalInspector" destination="QwP-M5-fvh" id="wJi-Dh-S9f"/>
                 <outlet property="menuToggleFullScreen" destination="8kY-Pi-KaY" id="yQg-6V-OO6"/>
                 <outlet property="menuToggleVisibility" destination="DOX-wA-ilh" id="iBj-Bc-2bq"/>
@@ -145,10 +147,22 @@
                                     <action selector="splitRight:" target="-1" id="cv2-Xg-FR4"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Split Left" id="Ppv-GP-lQU">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="splitLeft:" target="-1" id="Cey-Mf-bD2"/>
+                                </connections>
+                            </menuItem>
                             <menuItem title="Split Down" id="UDZ-4y-6xL">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="splitDown:" target="-1" id="c6x-CF-u52"/>
+                                    <action selector="splitDown:" target="-1" id="Zej-CF-6nO"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Split Up" id="Ggp-7N-GbX">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="splitUp:" target="-1" id="bbi-dK-pOS"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="sjq-M1-UGS"/>
