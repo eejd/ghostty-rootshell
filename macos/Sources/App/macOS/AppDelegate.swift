@@ -28,7 +28,9 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
     @IBOutlet private var menuSplitRight: NSMenuItem?
+    @IBOutlet private var menuSplitLeft: NSMenuItem?
     @IBOutlet private var menuSplitDown: NSMenuItem?
+    @IBOutlet private var menuSplitUp: NSMenuItem?
     @IBOutlet private var menuClose: NSMenuItem?
     @IBOutlet private var menuCloseTab: NSMenuItem?
     @IBOutlet private var menuCloseWindow: NSMenuItem?
@@ -363,7 +365,9 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "close_window", menuItem: self.menuCloseWindow)
         syncMenuShortcut(config, action: "close_all_windows", menuItem: self.menuCloseAllWindows)
         syncMenuShortcut(config, action: "new_split:right", menuItem: self.menuSplitRight)
+        syncMenuShortcut(config, action: "new_split:left", menuItem: self.menuSplitLeft)
         syncMenuShortcut(config, action: "new_split:down", menuItem: self.menuSplitDown)
+        syncMenuShortcut(config, action: "new_split:up", menuItem: self.menuSplitUp)
 
         syncMenuShortcut(config, action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(config, action: "paste_from_clipboard", menuItem: self.menuPaste)
