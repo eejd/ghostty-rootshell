@@ -38,7 +38,20 @@ pub fn init(self: *TabView, window: *Window) void {
     if (adwaita.versionAtLeast(1, 2, 0)) {
         // Adwaita enables all of the shortcuts by default.
         // We want to manage keybindings ourselves.
-        self.tab_view.removeShortcuts(.{});
+        self.tab_view.removeShortcuts(.{
+            .alt_digits = true,
+            .alt_zero = true,
+            .control_end = true,
+            .control_home = true,
+            .control_page_down = true,
+            .control_page_up = true,
+            .control_shift_end = true,
+            .control_shift_home = true,
+            .control_shift_page_down = true,
+            .control_shift_page_up = true,
+            .control_shift_tab = true,
+            .control_tab = true,
+        });
     }
 
     _ = adw.TabView.signals.page_attached.connect(
