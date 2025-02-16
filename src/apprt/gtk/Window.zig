@@ -152,7 +152,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we're using an AdwWindow then we can support the tab overview.
     if (self.tab_overview) |tab_overview| {
-        assert(adwaita.versionAtLeast(1, 4, 0));
+        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
         const btn = switch (app.config.@"gtk-tabs-location") {
             .top, .bottom => btn: {
                 const btn = c.gtk_toggle_button_new();
@@ -228,6 +228,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we have a tab overview then we can set it on our notebook.
     if (self.tab_overview) |tab_overview| {
+        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
         c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.tab_view);
     }
 
@@ -364,7 +365,7 @@ pub fn syncAppearance(self: *Window, config: *const configpkg.Config) !void {
     // *inside* the tab overview if CSDs are disabled.
     // We do spare the search button, though.
     if (self.tab_overview) |tab_overview| {
-        assert(adwaita.versionAtLeast(1, 4, 0));
+        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
         c.adw_tab_overview_set_show_start_title_buttons(
             @ptrCast(tab_overview),
             @intFromBool(csd_enabled),
@@ -509,7 +510,7 @@ pub fn gotoTab(self: *Window, n: usize) bool {
 /// Toggle tab overview (if present)
 pub fn toggleTabOverview(self: *Window) void {
     if (self.tab_overview) |tab_overview_widget| {
-        assert(adwaita.versionAtLeast(1, 4, 0));
+        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
         const tab_overview: *c.AdwTabOverview = @ptrCast(@alignCast(tab_overview_widget));
         c.adw_tab_overview_set_open(tab_overview, 1 - c.adw_tab_overview_get_open(tab_overview));
     }
