@@ -22,7 +22,7 @@ const Tab = @import("Tab.zig");
 const c = @import("c.zig").c;
 const adwaita = @import("adwaita.zig");
 const gtk_key = @import("key.zig");
-const Notebook = @import("notebook.zig");
+const TabView = @import("TabView.zig");
 const HeaderBar = @import("headerbar.zig");
 const version = @import("version.zig");
 const winproto = @import("winproto.zig");
@@ -42,7 +42,7 @@ headerbar: HeaderBar,
 tab_overview: ?*c.GtkWidget,
 
 /// The notebook (tab grouping) for this window.
-notebook: Notebook,
+notebook: TabView,
 
 context_menu: *c.GtkWidget,
 
@@ -110,12 +110,12 @@ pub fn init(self: *Window, app: *App) !void {
     const box = c.gtk_box_new(c.GTK_ORIENTATION_VERTICAL, 0);
 
     // Setup our notebook
-    self.notebook.init();
+    self.notebook.init(self);
 
     // If we are using Adwaita, then we can support the tab overview.
     self.tab_overview = if (adwaita.versionAtLeast(1, 4, 0)) overview: {
         const tab_overview = c.adw_tab_overview_new();
-        c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.tab_view);
+        c.adw_tab_overview_set_view(@ptrCast(tab_overview), @ptrCast(@alignCast(self.notebook.tab_view)));
         c.adw_tab_overview_set_enable_new_tab(@ptrCast(tab_overview), 1);
         _ = c.g_signal_connect_data(
             tab_overview,
@@ -171,7 +171,7 @@ pub fn init(self: *Window, app: *App) !void {
 
             .hidden => btn: {
                 const btn = c.adw_tab_button_new();
-                c.adw_tab_button_set_view(@ptrCast(btn), self.notebook.tab_view);
+                c.adw_tab_button_set_view(@ptrCast(btn), @ptrCast(@alignCast(self.notebook.tab_view)));
                 c.gtk_actionable_set_action_name(@ptrCast(btn), "overview.open");
                 break :btn btn;
             },
@@ -229,7 +229,7 @@ pub fn init(self: *Window, app: *App) !void {
     // If we have a tab overview then we can set it on our notebook.
     if (self.tab_overview) |tab_overview| {
         if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
-        c.adw_tab_overview_set_view(@ptrCast(tab_overview), self.notebook.tab_view);
+        c.adw_tab_overview_set_view(@ptrCast(tab_overview), @ptrCast(@alignCast(self.notebook.tab_view)));
     }
 
     self.context_menu = c.gtk_popover_menu_new_from_model(@ptrCast(@alignCast(self.app.context_menu)));
@@ -267,7 +267,7 @@ pub fn init(self: *Window, app: *App) !void {
 
         if (self.app.config.@"gtk-tabs-location" != .hidden) {
             const tab_bar = c.adw_tab_bar_new();
-            c.adw_tab_bar_set_view(tab_bar, self.notebook.tab_view);
+            c.adw_tab_bar_set_view(tab_bar, @ptrCast(@alignCast(self.notebook.tab_view)));
 
             if (!app.config.@"gtk-wide-tabs") c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
 
@@ -315,7 +315,7 @@ pub fn init(self: *Window, app: *App) !void {
             ),
             .hidden => unreachable,
         }
-        c.adw_tab_bar_set_view(tab_bar, self.notebook.tab_view);
+        c.adw_tab_bar_set_view(tab_bar, @ptrCast(@alignCast(self.notebook.tab_view)));
 
         if (!app.config.@"gtk-wide-tabs") c.adw_tab_bar_set_expand_tabs(tab_bar, 0);
     }
@@ -662,13 +662,13 @@ fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
 /// Create a new tab from the AdwTabOverview. We can't copy gtkTabNewClick
 /// because we need to return an AdwTabPage from this function.
 fn gtkNewTabFromOverview(_: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) ?*c.AdwTabPage {
+    if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
     const self: *Window = userdataSelf(ud.?);
-    assert(adwaita.versionAtLeast(1, 4, 0));
 
     const alloc = self.app.core_app.alloc;
     const surface = self.actionSurface();
     const tab = Tab.create(alloc, self, surface) catch return null;
-    return c.adw_tab_view_get_page(self.notebook.tab_view, @ptrCast(@alignCast(tab.box)));
+    return c.adw_tab_view_get_page(@ptrCast(@alignCast(self.notebook.tab_view)), @ptrCast(@alignCast(tab.box)));
 }
 
 fn adwTabOverviewOpen(
