@@ -1083,6 +1083,8 @@ fn gtkTitlebarMenuActivate(
     _: *c.GParamSpec,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    // debian 12 is stuck on GTK 4.8
+    if (!version.atLeast(4, 10, 0)) return;
     const active = c.gtk_menu_button_get_active(btn) != 0;
     const self = userdataSelf(ud orelse return);
     if (active) {
