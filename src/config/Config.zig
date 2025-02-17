@@ -2622,7 +2622,7 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         );
         try result.keybind.set.put(
             alloc,
-            .{ .key = .{ .translated = .equal }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+            .{ .key = .{ .translated = .plus }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
             .{ .equalize_splits = {} },
         );
 
