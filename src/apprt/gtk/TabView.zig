@@ -193,6 +193,10 @@ pub fn addTab(self: *TabView, tab: *Tab, title: [:0]const u8) void {
 }
 
 pub fn closeTab(self: *TabView, tab: *Tab) void {
+    // Save a pointer to the GTK window in case we need it later. It may be
+    // impossible to access later due to how resources are cleaned up.
+    const window: *gtk.Window = @ptrCast(@alignCast(self.window.window));
+
     // closeTab always expects to close unconditionally so we mark this
     // as true so that the close_page call below doesn't request
     // confirmation.
@@ -220,6 +224,8 @@ pub fn closeTab(self: *TabView, tab: *Tab) void {
             const box: *gtk.Box = @ptrCast(@alignCast(tab.box));
             box.as(gobject.Object).unref();
         }
+
+        window.destroy();
     }
 }
 
