@@ -1212,12 +1212,7 @@ keybind: Keybinds = .{},
 /// Windows).
 ///
 /// The "toggle_window_decorations" keybind action can be used to create
-/// a keybinding to toggle this setting at runtime. This will always toggle
-/// back to "auto" if the current value is "none" (this is an issue
-/// that will be fixed in the future).
-///
-/// Changing this configuration in your configuration and reloading will
-/// only affect new windows. Existing windows will not be affected.
+/// a keybinding to toggle this setting at runtime.
 ///
 /// macOS: To hide the titlebar without removing the native window borders
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
@@ -1323,8 +1318,8 @@ keybind: Keybinds = .{},
 /// window will be placed below the menu bar.
 ///
 /// Note: this is only supported on macOS and Linux GLFW builds. The GTK
-/// runtime does not support setting the window position (this is a limitation
-/// of GTK 4.0).
+/// runtime does not support setting the window position, as windows are
+/// only allowed position themselves in X11 and not Wayland.
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
@@ -2180,9 +2175,6 @@ keybind: Keybinds = .{},
 ///
 /// This option does nothing when `window-decoration` is false or when running
 /// under macOS.
-///
-/// Changing this value at runtime and reloading the configuration will only
-/// affect new windows.
 @"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
@@ -2207,8 +2199,6 @@ keybind: Keybinds = .{},
 ///  * `raised` - Top and bottom bars cast a shadow on the terminal area.
 ///  * `raised-border` - Similar to `raised` but the shadow is replaced with a
 ///    more subtle border.
-///
-/// Changing this value at runtime will only affect new windows.
 @"gtk-toolbar-style": GtkToolbarStyle = .raised,
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
