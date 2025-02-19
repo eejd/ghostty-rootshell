@@ -361,7 +361,7 @@ pub fn updateConfig(
     config: *const configpkg.Config,
 ) !void {
     // avoid multiple reconfigs when we have many surfaces contained in this
-    // surface using the integer value of config as a simple marker to know if
+    // window using the integer value of config as a simple marker to know if
     // we've "seen" this particular config before
     const this_config = @intFromPtr(config);
     if (self.last_config == this_config) return;
