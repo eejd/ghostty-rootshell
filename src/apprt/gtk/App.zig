@@ -495,6 +495,7 @@ pub fn performAction(
         .toggle_split_zoom => self.toggleSplitZoom(target),
         .toggle_window_decorations => self.toggleWindowDecorations(target),
         .quit_timer => self.quitTimer(value),
+        .prompt_title => try self.promptTitle(target),
 
         // Unimplemented
         .close_all_windows,
@@ -506,7 +507,6 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        .prompt_title,
         => {
             log.warn("unimplemented action={}", .{action});
             return false;
@@ -770,6 +770,15 @@ fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
     }
 }
 
+fn promptTitle(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            try v.rt_surface.promptTitle();
+        },
+    }
+}
+
 fn setTitle(
     _: *App,
     target: apprt.Target,
@@ -1016,6 +1025,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
     try self.syncActionAccelerator("win.reset", .{ .reset = {} });
     try self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
+    try self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
 }
 
 fn syncActionAccelerator(
@@ -1766,6 +1776,97 @@ fn initActions(self: *App) void {
     }
 }
 
+<<<<<<< HEAD
+=======
+/// Initializes and populates the provided GMenu with sections and actions.
+/// This function is used to set up the application's menu structure, either for
+/// the main menu button or as a context menu when window decorations are disabled.
+fn initMenuContent(menu: *c.GMenu) void {
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "New Window", "win.new_window");
+        c.g_menu_append(section, "New Tab", "win.new_tab");
+        c.g_menu_append(section, "Close Tab", "win.close_tab");
+        c.g_menu_append(section, "Split Right", "win.split_right");
+        c.g_menu_append(section, "Split Down", "win.split_down");
+        c.g_menu_append(section, "Close Window", "win.close");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+        c.g_menu_append(section, "Open Configuration", "app.open-config");
+        c.g_menu_append(section, "Reload Configuration", "app.reload-config");
+        c.g_menu_append(section, "About Ghostty", "win.about");
+    }
+}
+
+/// This sets the self.menu property to the application menu that can be
+/// shared by all application windows.
+fn initMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+    initMenuContent(@ptrCast(menu));
+    self.menu = menu;
+}
+
+fn initContextMenu(self: *App) void {
+    const menu = c.g_menu_new();
+    errdefer c.g_object_unref(menu);
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Copy", "win.copy");
+        c.g_menu_append(section, "Paste", "win.paste");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Split Right", "win.split_right");
+        c.g_menu_append(section, "Split Down", "win.split_down");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Change Title...", "win.prompt-title");
+    }
+
+    {
+        const section = c.g_menu_new();
+        defer c.g_object_unref(section);
+        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+        c.g_menu_append(section, "Reset", "win.reset");
+        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
+    }
+
+    const section = c.g_menu_new();
+    defer c.g_object_unref(section);
+    const submenu = c.g_menu_new();
+    defer c.g_object_unref(submenu);
+
+    initMenuContent(@ptrCast(submenu));
+    c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
+    c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
+
+    self.context_menu = menu;
+}
+
+pub fn refreshContextMenu(_: *App, window: ?*c.GtkWindow, has_selection: bool) void {
+    const action: ?*c.GSimpleAction = @ptrCast(c.g_action_map_lookup_action(@ptrCast(window), "copy"));
+    c.g_simple_action_set_enabled(action, if (has_selection) 1 else 0);
+}
+
+>>>>>>> a9ae01e38 (Implement a prompt that allows the user to set the title)
 fn isValidAppId(app_id: [:0]const u8) bool {
     if (app_id.len > 255 or app_id.len == 0) return false;
     if (app_id[0] == '.') return false;

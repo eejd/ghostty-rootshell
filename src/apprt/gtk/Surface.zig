@@ -987,6 +987,31 @@ pub fn getTitle(self: *Surface) ?[:0]const u8 {
     return null;
 }
 
+const PromptTitleDialogContext = struct {
+    entry: *c.GtkWidget,
+    self: *Surface,
+};
+
+pub fn promptTitle(self: *Surface) !void {
+    const window = self.container.window() orelse return;
+
+    const context = try self.app.core_app.alloc.create(PromptTitleDialogContext);
+    context.self = self;
+
+    const dialog = c.gtk_message_dialog_new(window.window, c.GTK_DIALOG_MODAL, c.GTK_MESSAGE_QUESTION, c.GTK_BUTTONS_OK_CANCEL, "Set Tab Title");
+
+    const content_area = c.gtk_message_dialog_get_message_area(@ptrCast(dialog));
+
+    const entry = c.gtk_entry_new();
+    context.entry = entry;
+    c.gtk_box_append(@ptrCast(content_area), entry);
+    c.gtk_widget_show(entry);
+
+    _ = c.g_signal_connect_data(dialog, "response", c.G_CALLBACK(&gtkPromptTitleResponse), context, null, c.G_CONNECT_DEFAULT);
+
+    c.gtk_widget_show(dialog);
+}
+
 /// Set the current working directory of the surface.
 ///
 /// In addition, update the tab's tooltip text, and if we are the focused child,
@@ -2272,4 +2297,14 @@ fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
         return c.g_type_check_value_holds(value, g_type) != 0;
     }
     return false;
+}
+
+fn gtkPromptTitleResponse(dialog: *c.GtkDialog, response: c.gint, ud: ?*anyopaque) callconv(.C) void {
+    const context: *PromptTitleDialogContext = @ptrCast(@alignCast(ud));
+    if (response == c.GTK_RESPONSE_OK) {
+        const buffer = c.gtk_entry_get_buffer(@ptrCast(context.entry));
+        const title = c.gtk_entry_buffer_get_text(buffer);
+        context.self.setTitle(std.mem.span(title)) catch {};
+    }
+    c.gtk_window_destroy(@ptrCast(dialog));
 }
