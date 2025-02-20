@@ -960,8 +960,8 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !vo
     };
     errdefer alloc.free(copy);
 
-    // If The user has overriden the title we only want to update the terminal provided title
-    // so that it can be restored to the most recent state
+    // The user has overriden the title
+    // We only want to update the terminal provided title so that it can be restored to the most recent state.
     if (self.title_from_terminal != null and source == .TERMINAL) {
         alloc.free(self.title_from_terminal.?);
         self.title_from_terminal = copy;
@@ -2342,11 +2342,10 @@ fn gtkPromptTitleResponse(dialog: *c.GtkDialog, response: c.gint, ud: ?*anyopaqu
                 context.self.app.core_app.alloc.free(context.self.title_from_terminal.?);
                 context.self.title_from_terminal = null;
             }
-        } else {
+        } else if (title.len > 0) {
             // if this is the first time the user is setting the title, save the current terminal provided title
             if (context.self.title_from_terminal == null and context.self.title_text != null) {
-                const current_title = context.self.getTitle().?;
-                context.self.title_from_terminal = context.self.app.core_app.alloc.dupeZ(u8, current_title) catch |err| switch (err) {
+                context.self.title_from_terminal = context.self.app.core_app.alloc.dupeZ(u8, context.self.title_text.?) catch |err| switch (err) {
                     error.OutOfMemory => {
                         log.err("Failed to allocate memory for title: {}", .{err});
                         context.self.app.core_app.alloc.destroy(context);
