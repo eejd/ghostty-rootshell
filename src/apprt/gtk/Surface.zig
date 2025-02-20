@@ -1025,8 +1025,10 @@ pub fn promptTitle(self: *Surface) !void {
     const context = try self.app.core_app.alloc.create(PromptTitleDialogContext);
     context.self = self;
 
-    const dialog = c.gtk_message_dialog_new(window.window, c.GTK_DIALOG_MODAL, c.GTK_MESSAGE_QUESTION, c.GTK_BUTTONS_OK_CANCEL, "Change Terminal Title");
+    const dialog = c.gtk_message_dialog_new(window.window, c.GTK_DIALOG_MODAL, c.GTK_MESSAGE_OTHER, c.GTK_BUTTONS_OK_CANCEL, "Change Terminal Title");
     c.gtk_message_dialog_format_secondary_text(@ptrCast(dialog), "Leave blank to restore the default title.");
+    const ok_widget = c.gtk_dialog_get_widget_for_response(@ptrCast(dialog), c.GTK_RESPONSE_OK);
+    c.gtk_window_set_default_widget(@ptrCast(dialog), ok_widget);
 
     const content_area = c.gtk_message_dialog_get_message_area(@ptrCast(dialog));
 
@@ -1035,6 +1037,7 @@ pub fn promptTitle(self: *Surface) !void {
     const buffer = c.gtk_entry_get_buffer(@ptrCast(entry));
     c.gtk_entry_buffer_set_text(buffer, self.getTitle() orelse "", -1);
     c.gtk_box_append(@ptrCast(content_area), entry);
+    c.gtk_entry_set_activates_default(@ptrCast(entry), 1);
     c.gtk_widget_show(entry);
 
     _ = c.g_signal_connect_data(dialog, "response", c.G_CALLBACK(&gtkPromptTitleResponse), context, null, c.G_CONNECT_DEFAULT);
