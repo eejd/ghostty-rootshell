@@ -668,6 +668,7 @@ fn realize(self: *Surface) !void {
 pub fn deinit(self: *Surface) void {
     self.init_config.deinit(self.app.core_app.alloc);
     if (self.title_text) |title| self.app.core_app.alloc.free(title);
+    if (self.title_from_terminal) |title| self.app.core_app.alloc.free(title);
     if (self.pwd) |pwd| self.app.core_app.alloc.free(pwd);
 
     // We don't allocate anything if we aren't realized.
