@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 const internal_os = @import("../os/main.zig");
-const xev = @import("xev");
+const xev = @import("../global.zig").xev;
 const renderer = @import("../renderer.zig");
 const gtk = if (build_config.app_runtime == .gtk) @import("../apprt/gtk/c.zig").c else void;
 
@@ -37,7 +37,7 @@ pub fn run(alloc: Allocator) !u8 {
     try stdout.print("  - app runtime: {}\n", .{build_config.app_runtime});
     try stdout.print("  - font engine: {}\n", .{build_config.font_backend});
     try stdout.print("  - renderer   : {}\n", .{renderer.Renderer});
-    try stdout.print("  - libxev     : {}\n", .{xev.backend});
+    try stdout.print("  - libxev     : {s}\n", .{@tagName(xev.backend)});
     if (comptime build_config.app_runtime == .gtk) {
         try stdout.print("  - desktop env: {s}\n", .{@tagName(internal_os.desktopEnvironment())});
         try stdout.print("  - GTK version:\n", .{});
