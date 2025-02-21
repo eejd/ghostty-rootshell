@@ -4,6 +4,10 @@
 const Surface = @This();
 
 const std = @import("std");
+const adw = @import("adw");
+const gtk = @import("gtk");
+const gio = @import("gio");
+const glib = @import("glib");
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
 const build_options = @import("build_options");
@@ -26,6 +30,7 @@ const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
+const Builder = @import("Builder.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -946,7 +951,7 @@ fn updateTitleLabels(self: *Surface) void {
 }
 
 const zoom_title_prefix = "🔍 ";
-pub const SetTitleSource = enum { USER, TERMINAL };
+pub const SetTitleSource = enum { user, terminal };
 
 pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !void {
     const alloc = self.app.core_app.alloc;
@@ -963,7 +968,7 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !vo
 
     // The user has overriden the title
     // We only want to update the terminal provided title so that it can be restored to the most recent state.
-    if (self.title_from_terminal != null and source == .TERMINAL) {
+    if (self.title_from_terminal != null and source == .terminal) {
         alloc.free(self.title_from_terminal.?);
         self.title_from_terminal = copy;
         return;
@@ -1022,27 +1027,14 @@ const PromptTitleDialogContext = struct {
 pub fn promptTitle(self: *Surface) !void {
     const window = self.container.window() orelse return;
 
-    const context = try self.app.core_app.alloc.create(PromptTitleDialogContext);
-    context.self = self;
+    var builder = Builder.init("prompt-title-dialog", .blp);
+    defer builder.deinit();
 
-    const dialog = c.gtk_message_dialog_new(window.window, c.GTK_DIALOG_MODAL, c.GTK_MESSAGE_OTHER, c.GTK_BUTTONS_OK_CANCEL, "Change Terminal Title");
-    c.gtk_message_dialog_format_secondary_text(@ptrCast(dialog), "Leave blank to restore the default title.");
-    const ok_widget = c.gtk_dialog_get_widget_for_response(@ptrCast(dialog), c.GTK_RESPONSE_OK);
-    c.gtk_window_set_default_widget(@ptrCast(dialog), ok_widget);
+    const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
+    dialog.addResponse("cancel", "Cancel");
+    dialog.addResponse("ok", "OK");
 
-    const content_area = c.gtk_message_dialog_get_message_area(@ptrCast(dialog));
-
-    const entry = c.gtk_entry_new();
-    context.entry = entry;
-    const buffer = c.gtk_entry_get_buffer(@ptrCast(entry));
-    c.gtk_entry_buffer_set_text(buffer, self.getTitle() orelse "", -1);
-    c.gtk_box_append(@ptrCast(content_area), entry);
-    c.gtk_entry_set_activates_default(@ptrCast(entry), 1);
-    c.gtk_widget_show(entry);
-
-    _ = c.g_signal_connect_data(dialog, "response", c.G_CALLBACK(&gtkPromptTitleResponse), context, null, c.G_CONNECT_DEFAULT);
-
-    c.gtk_widget_show(dialog);
+    dialog.choose(@ptrCast(window.window), null, @ptrCast(&gtkPromptTitleResponse), self);
 }
 
 /// Set the current working directory of the surface.
@@ -2332,37 +2324,36 @@ fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
     return false;
 }
 
-fn gtkPromptTitleResponse(dialog: *c.GtkDialog, response: c.gint, ud: ?*anyopaque) callconv(.C) void {
-    const context: *PromptTitleDialogContext = @ptrCast(@alignCast(ud));
+fn gtkPromptTitleResponse(dialog: *adw.AlertDialog, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
+    const self = userdataSelf(ud.?);
 
-    if (response == c.GTK_RESPONSE_OK) {
-        const buffer = c.gtk_entry_get_buffer(@ptrCast(context.entry));
-        const title = std.mem.span(c.gtk_entry_buffer_get_text(buffer));
+    const response = dialog.chooseFinish(result);
+    if (glib.strEqual("ok", response) != 0) {
+        const title_entry: *gtk.Entry = @ptrCast(dialog.getExtraChild());
+        const title = std.mem.span(title_entry.getBuffer().getText());
 
         // if the new title is empty and the user has set the title previously, restore the terminal provided title
-        if (title.len == 0 and context.self.title_from_terminal != null) {
-            if (context.self.getTerminalTitle()) |terminal_title| {
-                context.self.setTitle(terminal_title, .USER) catch {};
-                context.self.app.core_app.alloc.free(context.self.title_from_terminal.?);
-                context.self.title_from_terminal = null;
+        if (title.len == 0 and self.title_from_terminal != null) {
+            if (self.getTerminalTitle()) |terminal_title| {
+                self.setTitle(terminal_title, .user) catch {};
+                self.app.core_app.alloc.free(self.title_from_terminal.?);
+                self.title_from_terminal = null;
             }
         } else if (title.len > 0) {
             // if this is the first time the user is setting the title, save the current terminal provided title
-            if (context.self.title_from_terminal == null and context.self.title_text != null) {
-                context.self.title_from_terminal = context.self.app.core_app.alloc.dupeZ(u8, context.self.title_text.?) catch |err| switch (err) {
+            if (self.title_from_terminal == null and self.title_text != null) {
+                self.title_from_terminal = self.app.core_app.alloc.dupeZ(u8, self.title_text.?) catch |err| switch (err) {
                     error.OutOfMemory => {
                         log.err("Failed to allocate memory for title: {}", .{err});
-                        context.self.app.core_app.alloc.destroy(context);
                         c.gtk_window_destroy(@ptrCast(dialog));
                         return;
                     },
                 };
             }
 
-            context.self.setTitle(title, .USER) catch {};
+            self.setTitle(title, .user) catch {};
         }
     }
 
-    context.self.app.core_app.alloc.destroy(context);
     c.gtk_window_destroy(@ptrCast(dialog));
 }

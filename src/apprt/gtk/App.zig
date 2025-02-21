@@ -786,7 +786,7 @@ fn setTitle(
 ) !void {
     switch (target) {
         .app => {},
-        .surface => |v| try v.rt_surface.setTitle(title.title, .TERMINAL),
+        .surface => |v| try v.rt_surface.setTitle(title.title, .terminal),
     }
 }
 

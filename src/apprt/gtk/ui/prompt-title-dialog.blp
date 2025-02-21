@@ -1,0 +1,9 @@
+using Gtk 4.0;
+using Adw 1;
+
+Adw.AlertDialog prompt_title_dialog {
+    heading: "Change Terminal Title";
+    body: "Leave blank to restore the default title.";
+
+    extra-child: Entry title_entry {};
+}
