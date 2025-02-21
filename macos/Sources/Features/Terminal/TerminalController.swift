@@ -212,6 +212,9 @@ class TerminalController: BaseTerminalController {
         // Set our explicit appearance if we need to based on the configuration.
         window.appearance = surfaceConfig.windowAppearance
 
+        // Update our window light/darkness based on our updated background color
+        window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
+
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.
