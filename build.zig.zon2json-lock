@@ -1,8 +1,8 @@
 {
-  "1220ebf88622c4d502dc59e71347e4d28c47e033f11b59aff774ae5787565c40999c": {
+  "1220a67b584c9499154de8c96851ed8e92315452cb2027c06e2d7d07a39c6f900d1a": {
     "name": "libxev",
-    "url": "https://deps.files.ghostty.org/libxev-1220ebf88622c4d502dc59e71347e4d28c47e033f11b59aff774ae5787565c40999c.tar.gz",
-    "hash": "sha256-VHP90NTytIZ8UZsYRKOOxN490/I6yv6ec40sP8y5MJ8="
+    "url": "https://github.com/mitchellh/libxev/archive/8943932a668f338cb2c500f6e1a7396bacd8b55d.tar.gz",
+    "hash": "sha256-TGooUoby2J8PyzbdKHwdEXnu7f2g4T2/TUHj/ktBsN4="
   },
   "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a62": {
     "name": "mach_glfw",

@@ -2235,6 +2235,34 @@ term: []const u8 = "xterm-ghostty",
 /// running. Defaults to an empty string if not set.
 @"enquiry-response": []const u8 = "",
 
+/// Configures the low-level API to use for async IO, eventing, etc.
+///
+/// Most users should leave this set to `auto`. This will automatically detect
+/// scenarios where APIs may not be available (for example `io_uring` on
+/// certain hardened kernels) and fall back to a different API. However, if
+/// you want to force a specific backend for any reason, you can set this
+/// here.
+///
+/// Based on various benchmarks, we haven't found a statistically significant
+/// difference between the backends with regards to memory, CPU, or latency.
+/// The choice of backend is more about compatibility and features.
+///
+/// Available options:
+///
+///   * `auto` - Automatically choose the best backend for the platform
+///     based on available options.
+///   * `epoll` - Use the `epoll` API
+///   * `io_uring` - Use the `io_uring` API
+///
+/// If the selected backend is not available on the platform, Ghostty will
+/// fall back to an automatically chosen backend that is available.
+///
+/// Changing this value requires a full application restart to take effect.
+///
+/// This is only supported on Linux, since this is the only platform
+/// where we have multiple options. On macOS, we always use `kqueue`.
+@"async-backend": AsyncBackend = .auto,
+
 /// Control the auto-update functionality of Ghostty. This is only supported
 /// on macOS currently, since Linux builds are distributed via package
 /// managers that are not centrally controlled by Ghostty.
@@ -5910,6 +5938,13 @@ pub const LinuxCgroup = enum {
     never,
     always,
     @"single-instance",
+};
+
+/// See async-backend
+pub const AsyncBackend = enum {
+    auto,
+    epoll,
+    io_uring,
 };
 
 /// See auto-updates

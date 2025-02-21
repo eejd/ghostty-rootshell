@@ -9,7 +9,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const posix = std.posix;
-const xev = @import("xev");
+const xev = @import("../global.zig").xev;
 const build_config = @import("../build_config.zig");
 const configpkg = @import("../config.zig");
 const crash = @import("../crash/main.zig");
@@ -589,7 +589,7 @@ fn ttyWrite(
     _: *xev.Completion,
     _: xev.Stream,
     _: xev.WriteBuffer,
-    r: xev.Stream.WriteError!usize,
+    r: xev.WriteError!usize,
 ) xev.CallbackAction {
     const td = td_.?;
     td.write_req_pool.put();
@@ -634,13 +634,13 @@ pub const ThreadData = struct {
 
     /// This is the pool of available (unused) write requests. If you grab
     /// one from the pool, you must put it back when you're done!
-    write_req_pool: SegmentedPool(xev.Stream.WriteRequest, WRITE_REQ_PREALLOC) = .{},
+    write_req_pool: SegmentedPool(xev.WriteRequest, WRITE_REQ_PREALLOC) = .{},
 
     /// The pool of available buffers for writing to the pty.
     write_buf_pool: SegmentedPool([64]u8, WRITE_REQ_PREALLOC) = .{},
 
     /// The write queue for the data stream.
-    write_queue: xev.Stream.WriteQueue = .{},
+    write_queue: xev.WriteQueue = .{},
 
     /// This is used for both waiting for the process to exit and then
     /// subsequently to wait for the data_stream to close.

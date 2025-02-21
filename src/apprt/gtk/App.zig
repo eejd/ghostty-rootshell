@@ -15,6 +15,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../../build_config.zig");
+const xev = @import("../../global.zig").xev;
 const build_options = @import("build_options");
 const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
@@ -134,6 +135,27 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         if (config._diagnostics.containsLocation(.cli)) {
             log.warn("CLI errors detected, exiting", .{});
             std.posix.exit(1);
+        }
+    }
+
+    // Setup our event loop backend
+    if (config.@"async-backend" != .auto) {
+        const result: bool = switch (config.@"async-backend") {
+            .auto => unreachable,
+            .epoll => xev.prefer(.epoll),
+            .io_uring => xev.prefer(.io_uring),
+        };
+
+        if (result) {
+            log.info(
+                "libxev manual backend={s}",
+                .{@tagName(xev.backend)},
+            );
+        } else {
+            log.warn(
+                "libxev manual backend failed, using default={s}",
+                .{@tagName(xev.backend)},
+            );
         }
     }
 
