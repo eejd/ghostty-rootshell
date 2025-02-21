@@ -1019,11 +1019,6 @@ fn resolveTitle(self: *Surface, title: [:0]const u8) [:0]const u8 {
         title[zoom_title_prefix.len..];
 }
 
-const PromptTitleDialogContext = struct {
-    entry: *c.GtkWidget,
-    self: *Surface,
-};
-
 pub fn promptTitle(self: *Surface) !void {
     const window = self.container.window() orelse return;
 
@@ -1033,6 +1028,8 @@ pub fn promptTitle(self: *Surface) !void {
     const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
     dialog.addResponse("cancel", "Cancel");
     dialog.addResponse("ok", "OK");
+    const entry: *gtk.Entry = @ptrCast(builder.getObject("title_entry"));
+    entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
     dialog.choose(@ptrCast(window.window), null, @ptrCast(&gtkPromptTitleResponse), self);
 }
