@@ -73,6 +73,7 @@ parts:
       - blueprint-compiler
       - libgtk-4-dev
       - libadwaita-1-dev
+      - libxml2-utils
       - git
       - patchelf
     override-build: |
