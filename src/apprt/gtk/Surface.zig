@@ -2336,7 +2336,7 @@ fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncRes
         if (title.len == 0) {
             if (self.getTerminalTitle()) |terminal_title| {
                 self.setTitle(terminal_title, .user) catch |err| {
-                    log.err("Failed to set title: {}", .{err});
+                    log.err("failed to set title={}", .{err});
                 };
                 self.app.core_app.alloc.free(self.title_from_terminal.?);
                 self.title_from_terminal = null;
@@ -2346,14 +2346,14 @@ fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncRes
             if (self.title_from_terminal == null and self.title_text != null) {
                 self.title_from_terminal = self.app.core_app.alloc.dupeZ(u8, self.title_text.?) catch |err| switch (err) {
                     error.OutOfMemory => {
-                        log.err("Failed to allocate memory for title: {}", .{err});
+                        log.err("failed to allocate memory for title={}", .{err});
                         return;
                     },
                 };
             }
 
             self.setTitle(title, .user) catch |err| {
-                log.err("Failed to set title: {}", .{err});
+                log.err("failed to set title={}", .{err});
             };
         }
     }
