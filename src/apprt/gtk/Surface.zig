@@ -353,9 +353,10 @@ cursor: ?*c.GdkCursor = null,
 /// pass it to GTK.
 title_text: ?[:0]const u8 = null,
 
-/// The title of the surface as reported by the terminal.
-/// If it is null, the title reported by the terminal is currently being used.
-/// If the title was manually overriden by the user, this will be set to a non-null value representing the default terminal title.
+/// The title of the surface as reported by the terminal. If it is null, the
+/// title reported by the terminal is currently being used. If the title was
+/// manually overridden by the user, this will be set to a non-null value
+/// representing the default terminal title.
 title_from_terminal: ?[:0]const u8 = null,
 
 /// Our current working directory. We use this value for setting tooltips in
@@ -967,7 +968,7 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !vo
     };
     errdefer alloc.free(copy);
 
-    // The user has overriden the title
+    // The user has overridden the title
     // We only want to update the terminal provided title so that it can be restored to the most recent state.
     if (self.title_from_terminal != null and source == .terminal) {
         alloc.free(self.title_from_terminal.?);
