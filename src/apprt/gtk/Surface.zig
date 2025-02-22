@@ -7,6 +7,7 @@ const std = @import("std");
 const adw = @import("adw");
 const gtk = @import("gtk");
 const gio = @import("gio");
+const gobject = @import("gobject");
 const glib = @import("glib");
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
@@ -1028,10 +1029,12 @@ pub fn promptTitle(self: *Surface) !void {
     const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
     dialog.addResponse("cancel", "Cancel");
     dialog.addResponse("ok", "OK");
+    dialog.setResponseAppearance("ok", adw.ResponseAppearance.suggested);
+
     const entry: *gtk.Entry = @ptrCast(builder.getObject("title_entry"));
     entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
-    dialog.choose(@ptrCast(window.window), null, @ptrCast(&gtkPromptTitleResponse), self);
+    dialog.choose(@ptrCast(window.window), null, &gtkPromptTitleResponse, self);
 }
 
 /// Set the current working directory of the surface.
@@ -2321,7 +2324,8 @@ fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
     return false;
 }
 
-fn gtkPromptTitleResponse(dialog: *adw.AlertDialog, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
+fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
+    const dialog: *adw.AlertDialog = @ptrCast(source_object.?);
     const self = userdataSelf(ud.?);
 
     const response = dialog.chooseFinish(result);
