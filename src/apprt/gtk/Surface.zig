@@ -1028,10 +1028,10 @@ pub fn promptTitle(self: *Surface) !void {
     var builder = Builder.init("prompt-title-dialog", .blp);
     defer builder.deinit();
 
-    const entry = gobject.ext.cast(gtk.Entry, builder.getObject("title_entry").?).?;
+    const entry = builder.getObject(gtk.Entry, "title_entry").?;
     entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
-    const dialog = gobject.ext.cast(adw.AlertDialog, builder.getObject("prompt_title_dialog").?).?;
+    const dialog = builder.getObject(adw.AlertDialog, "prompt_title_dialog").?;
     dialog.choose(@ptrCast(window.window), null, gtkPromptTitleResponse, self);
 }
 
