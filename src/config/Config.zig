@@ -4206,14 +4206,16 @@ pub const Color = struct {
 
     pub fn parseCLI(input_: ?[]const u8) !Color {
         const input = input_ orelse return error.ValueRequired;
+        // Trim any whitespace before processing
+        const trimmed = std.mem.trim(u8, input, " \t");
 
-        if (terminal.x11_color.map.get(input)) |rgb| return .{
+        if (terminal.x11_color.map.get(trimmed)) |rgb| return .{
             .r = rgb.r,
             .g = rgb.g,
             .b = rgb.b,
         };
 
-        return fromHex(input);
+        return fromHex(trimmed);
     }
 
     /// Deep copy of the struct. Required by Config.
@@ -4300,6 +4302,18 @@ pub const Color = struct {
         var color: Color = .{ .r = 10, .g = 11, .b = 12 };
         try color.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = #0a0b0c\n", buf.items);
+    }
+
+    test "parseCLI with whitespace" {
+        const testing = std.testing;
+        try testing.expectEqual(
+            Color{ .r = 0xAA, .g = 0xBB, .b = 0xCC },
+            try Color.parseCLI(" #AABBCC   "),
+        );
+        try testing.expectEqual(
+            Color{ .r = 0, .g = 0, .b = 0 },
+            try Color.parseCLI("  black "),
+        );
     }
 };
 
@@ -4446,7 +4460,14 @@ pub const Palette = struct {
         const eqlIdx = std.mem.indexOf(u8, value, "=") orelse
             return error.InvalidValue;
 
-        const key = try std.fmt.parseInt(u8, value[0..eqlIdx], 0);
+        // Parse the key part (trim whitespace)
+        const key = try std.fmt.parseInt(
+            u8,
+            std.mem.trim(u8, value[0..eqlIdx], " \t"),
+            0,
+        );
+
+        // Parse the color part (Color.parseCLI will handle whitespace)
         const rgb = try Color.parseCLI(value[eqlIdx + 1 ..]);
         self.value[key] = .{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
     }
@@ -4523,6 +4544,27 @@ pub const Palette = struct {
         var list: Self = .{};
         try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = 0=#1d1f21\n", buf.items[0..14]);
+    }
+
+    test "parseCLI with whitespace" {
+        const testing = std.testing;
+
+        var p: Self = .{};
+        try p.parseCLI("0 =  #AABBCC");
+        try p.parseCLI(" 1= #DDEEFF    ");
+        try p.parseCLI("  2  =  #123456 ");
+
+        try testing.expect(p.value[0].r == 0xAA);
+        try testing.expect(p.value[0].g == 0xBB);
+        try testing.expect(p.value[0].b == 0xCC);
+
+        try testing.expect(p.value[1].r == 0xDD);
+        try testing.expect(p.value[1].g == 0xEE);
+        try testing.expect(p.value[1].b == 0xFF);
+
+        try testing.expect(p.value[2].r == 0x12);
+        try testing.expect(p.value[2].g == 0x34);
+        try testing.expect(p.value[2].b == 0x56);
     }
 };
 
