@@ -4,6 +4,10 @@
 const Surface = @This();
 
 const std = @import("std");
+const adw = @import("adw");
+const gtk = @import("gtk");
+const gio = @import("gio");
+const gobject = @import("gobject");
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
 const build_options = @import("build_options");
@@ -26,6 +30,8 @@ const ResizeOverlay = @import("ResizeOverlay.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
+const Builder = @import("Builder.zig");
+const adwaita = @import("adwaita.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -347,6 +353,12 @@ cursor: ?*c.GdkCursor = null,
 /// pass it to GTK.
 title_text: ?[:0]const u8 = null,
 
+/// The title of the surface as reported by the terminal. If it is null, the
+/// title reported by the terminal is currently being used. If the title was
+/// manually overridden by the user, this will be set to a non-null value
+/// representing the default terminal title.
+title_from_terminal: ?[:0]const u8 = null,
+
 /// Our current working directory. We use this value for setting tooltips in
 /// the headerbar subtitle if we have focus. When set, the text in this buf
 /// will be null-terminated because we need to pass it to GTK.
@@ -663,6 +675,7 @@ fn realize(self: *Surface) !void {
 pub fn deinit(self: *Surface) void {
     self.init_config.deinit(self.app.core_app.alloc);
     if (self.title_text) |title| self.app.core_app.alloc.free(title);
+    if (self.title_from_terminal) |title| self.app.core_app.alloc.free(title);
     if (self.pwd) |pwd| self.app.core_app.alloc.free(pwd);
 
     // We don't allocate anything if we aren't realized.
@@ -940,8 +953,9 @@ fn updateTitleLabels(self: *Surface) void {
 }
 
 const zoom_title_prefix = "🔍 ";
+pub const SetTitleSource = enum { user, terminal };
 
-pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
+pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !void {
     const alloc = self.app.core_app.alloc;
 
     // Always allocate with the "🔍 " at the beginning and slice accordingly
@@ -953,6 +967,14 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8) !void {
         break :copy new_title;
     };
     errdefer alloc.free(copy);
+
+    // The user has overridden the title
+    // We only want to update the terminal provided title so that it can be restored to the most recent state.
+    if (self.title_from_terminal != null and source == .terminal) {
+        alloc.free(self.title_from_terminal.?);
+        self.title_from_terminal = copy;
+        return;
+    }
 
     if (self.title_text) |old| alloc.free(old);
     self.title_text = copy;
@@ -978,13 +1000,39 @@ fn updateTitleTimerExpired(ctx: ?*anyopaque) callconv(.C) c.gboolean {
 
 pub fn getTitle(self: *Surface) ?[:0]const u8 {
     if (self.title_text) |title_text| {
-        return if (self.zoomed_in)
-            title_text
-        else
-            title_text[zoom_title_prefix.len..];
+        return self.resolveTitle(title_text);
     }
 
     return null;
+}
+
+pub fn getTerminalTitle(self: *Surface) ?[:0]const u8 {
+    if (self.title_from_terminal) |title_text| {
+        return self.resolveTitle(title_text);
+    }
+
+    return null;
+}
+
+fn resolveTitle(self: *Surface, title: [:0]const u8) [:0]const u8 {
+    return if (self.zoomed_in)
+        title
+    else
+        title[zoom_title_prefix.len..];
+}
+
+pub fn promptTitle(self: *Surface) !void {
+    if (!adwaita.versionAtLeast(1, 5, 0)) return;
+    const window = self.container.window() orelse return;
+
+    var builder = Builder.init("prompt-title-dialog", .blp);
+    defer builder.deinit();
+
+    const entry = builder.getObject(gtk.Entry, "title_entry").?;
+    entry.getBuffer().setText(self.getTitle() orelse "", -1);
+
+    const dialog = builder.getObject(adw.AlertDialog, "prompt_title_dialog").?;
+    dialog.choose(@ptrCast(window.window), null, gtkPromptTitleResponse, self);
 }
 
 /// Set the current working directory of the surface.
@@ -2272,4 +2320,41 @@ fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
         return c.g_type_check_value_holds(value, g_type) != 0;
     }
     return false;
+}
+
+fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
+    if (!adwaita.versionAtLeast(1, 5, 0)) return;
+    const dialog = gobject.ext.cast(adw.AlertDialog, source_object.?).?;
+    const self = userdataSelf(ud orelse return);
+
+    const response = dialog.chooseFinish(result);
+    if (std.mem.orderZ(u8, "ok", response) == .eq) {
+        const title_entry = gobject.ext.cast(gtk.Entry, dialog.getExtraChild().?).?;
+        const title = std.mem.span(title_entry.getBuffer().getText());
+
+        // if the new title is empty and the user has set the title previously, restore the terminal provided title
+        if (title.len == 0) {
+            if (self.getTerminalTitle()) |terminal_title| {
+                self.setTitle(terminal_title, .user) catch |err| {
+                    log.err("failed to set title={}", .{err});
+                };
+                self.app.core_app.alloc.free(self.title_from_terminal.?);
+                self.title_from_terminal = null;
+            }
+        } else if (title.len > 0) {
+            // if this is the first time the user is setting the title, save the current terminal provided title
+            if (self.title_from_terminal == null and self.title_text != null) {
+                self.title_from_terminal = self.app.core_app.alloc.dupeZ(u8, self.title_text.?) catch |err| switch (err) {
+                    error.OutOfMemory => {
+                        log.err("failed to allocate memory for title={}", .{err});
+                        return;
+                    },
+                };
+            }
+
+            self.setTitle(title, .user) catch |err| {
+                log.err("failed to set title={}", .{err});
+            };
+        }
+    }
 }

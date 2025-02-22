@@ -25,7 +25,7 @@ pub fn init(comptime name: []const u8, comptime kind: enum { blp, ui }) Builder 
                 // GResource.
                 const gresource = @import("gresource.zig");
                 for (gresource.blueprint_files) |blueprint_file| {
-                    if (std.mem.eql(u8, blueprint_file, name)) break;
+                    if (std.mem.eql(u8, blueprint_file.name, name)) break;
                 } else @compileError("missing blueprint file '" ++ name ++ "' in gresource.zig");
             },
             .ui => {

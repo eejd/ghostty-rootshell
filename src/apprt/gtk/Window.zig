@@ -478,6 +478,7 @@ fn initActions(self: *Window) void {
         .{ "paste", &gtkActionPaste },
         .{ "reset", &gtkActionReset },
         .{ "clear", &gtkActionClear },
+        .{ "prompt_title", &gtkActionPromptTitle },
     };
 
     inline for (actions) |entry| {
@@ -1066,6 +1067,19 @@ fn gtkActionClear(
     const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .clear_screen = {} }) catch |err| {
+        log.warn("error performing binding action error={}", .{err});
+        return;
+    };
+}
+
+fn gtkActionPromptTitle(
+    _: *c.GSimpleAction,
+    _: *c.GVariant,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *Window = @ptrCast(@alignCast(ud orelse return));
+    const surface = self.actionSurface() orelse return;
+    _ = surface.performBindingAction(.{ .prompt_surface_title = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };

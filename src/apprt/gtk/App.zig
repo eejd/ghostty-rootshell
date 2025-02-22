@@ -495,6 +495,7 @@ pub fn performAction(
         .toggle_split_zoom => self.toggleSplitZoom(target),
         .toggle_window_decorations => self.toggleWindowDecorations(target),
         .quit_timer => self.quitTimer(value),
+        .prompt_title => try self.promptTitle(target),
 
         // Unimplemented
         .close_all_windows,
@@ -506,7 +507,6 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        .prompt_title,
         => {
             log.warn("unimplemented action={}", .{action});
             return false;
@@ -770,6 +770,15 @@ fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
     }
 }
 
+fn promptTitle(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            try v.rt_surface.promptTitle();
+        },
+    }
+}
+
 fn setTitle(
     _: *App,
     target: apprt.Target,
@@ -777,7 +786,7 @@ fn setTitle(
 ) !void {
     switch (target) {
         .app => {},
-        .surface => |v| try v.rt_surface.setTitle(title.title),
+        .surface => |v| try v.rt_surface.setTitle(title.title, .terminal),
     }
 }
 
@@ -1016,6 +1025,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
     try self.syncActionAccelerator("win.reset", .{ .reset = {} });
     try self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
+    try self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
 }
 
 fn syncActionAccelerator(
