@@ -4338,7 +4338,9 @@ pub const ColorList = struct {
             count += 1;
             if (count > 64) return error.InvalidValue;
 
-            const color = try Color.parseCLI(raw);
+            // Trim whitespace from each color value
+            const trimmed = std.mem.trim(u8, raw, " \t");
+            const color = try Color.parseCLI(trimmed);
             try self.colors.append(alloc, color);
             try self.colors_c.append(alloc, color.cval());
         }
