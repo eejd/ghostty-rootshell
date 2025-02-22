@@ -2075,9 +2075,11 @@ keybind: Keybinds = .{},
 
 /// The color of the screen in the macOS app icon.
 ///
-/// The screen is a gradient so you can specify multiple colors that
-/// make up the gradient. Comma-separated colors may be specified as
-/// as either hex (`#RRGGBB` or `RRGGBB`) or as named X11 colors.
+/// The screen is a linear gradient so you can specify multiple colors
+/// that make up the gradient. Up to 64 comma-separated colors may be
+/// specified as either hex (`#RRGGBB` or `RRGGBB`) or as named X11
+/// colors. The first color is the bottom of the gradient and the last
+/// color is the top of the gradient.
 ///
 /// Note: This configuration is required when `macos-icon` is set to
 /// `custom-style`.
