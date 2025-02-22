@@ -6,7 +6,8 @@ _\$XDG_CONFIG_HOME/ghostty/config_
 
 _\$HOME/Library/Application Support/com.mitchellh.ghostty/config_
 
-: **On macOS**, location of the default configuration file.
+: **On macOS**, location of the default configuration file. This location takes
+precedence over the XDG environment locations.
 
 _\$LOCALAPPDATA/ghostty/config_
 
