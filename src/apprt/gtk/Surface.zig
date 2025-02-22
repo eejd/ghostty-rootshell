@@ -8,7 +8,6 @@ const adw = @import("adw");
 const gtk = @import("gtk");
 const gio = @import("gio");
 const gobject = @import("gobject");
-const glib = @import("glib");
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
 const build_options = @import("build_options");
@@ -1026,14 +1025,10 @@ pub fn promptTitle(self: *Surface) !void {
     var builder = Builder.init("prompt-title-dialog", .blp);
     defer builder.deinit();
 
-    const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
-    dialog.addResponse("cancel", "Cancel");
-    dialog.addResponse("ok", "OK");
-    dialog.setResponseAppearance("ok", adw.ResponseAppearance.suggested);
-
     const entry: *gtk.Entry = @ptrCast(builder.getObject("title_entry"));
     entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
+    const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
     dialog.choose(@ptrCast(window.window), null, &gtkPromptTitleResponse, self);
 }
 
@@ -2329,14 +2324,16 @@ fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncRes
     const self = userdataSelf(ud.?);
 
     const response = dialog.chooseFinish(result);
-    if (glib.strEqual("ok", response) != 0) {
-        const title_entry: *gtk.Entry = @ptrCast(dialog.getExtraChild());
+    if (std.mem.orderZ(u8, "ok", response) == .eq) {
+        const title_entry: *gtk.Entry = gobject.ext.cast(gtk.Entry, dialog.getExtraChild().?).?;
         const title = std.mem.span(title_entry.getBuffer().getText());
 
         // if the new title is empty and the user has set the title previously, restore the terminal provided title
-        if (title.len == 0 and self.title_from_terminal != null) {
+        if (title.len == 0) {
             if (self.getTerminalTitle()) |terminal_title| {
-                self.setTitle(terminal_title, .user) catch {};
+                self.setTitle(terminal_title, .user) catch |err| {
+                    log.err("Failed to set title: {}", .{err});
+                };
                 self.app.core_app.alloc.free(self.title_from_terminal.?);
                 self.title_from_terminal = null;
             }
@@ -2346,15 +2343,14 @@ fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncRes
                 self.title_from_terminal = self.app.core_app.alloc.dupeZ(u8, self.title_text.?) catch |err| switch (err) {
                     error.OutOfMemory => {
                         log.err("Failed to allocate memory for title: {}", .{err});
-                        c.gtk_window_destroy(@ptrCast(dialog));
                         return;
                     },
                 };
             }
 
-            self.setTitle(title, .user) catch {};
+            self.setTitle(title, .user) catch |err| {
+                log.err("Failed to set title: {}", .{err});
+            };
         }
     }
-
-    c.gtk_window_destroy(@ptrCast(dialog));
 }

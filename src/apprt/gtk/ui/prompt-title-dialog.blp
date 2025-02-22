@@ -2,8 +2,12 @@ using Gtk 4.0;
 using Adw 1;
 
 Adw.AlertDialog prompt_title_dialog {
-  heading: "Change Terminal Title";
-  body: "Leave blank to restore the default title.";
+  heading: _("Change Terminal Title");
+  body: _("Leave blank to restore the default title.");
+  responses [
+    cancel: _("Cancel"),
+    ok: _("OK") suggested
+  ]
   focus-widget: title_entry;
 
   extra-child: Entry title_entry {};
