@@ -6,8 +6,8 @@ Adw.AlertDialog prompt_title_dialog {
   body: _("Leave blank to restore the default title.");
 
   responses [
-    cancel: _("Cancel"),
-    ok: _("OK") suggested
+    cancel: _("Cancel") suggested,
+    ok: _("OK") destructive
   ]
 
   focus-widget: title_entry;

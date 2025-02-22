@@ -31,6 +31,7 @@ const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
 const Builder = @import("Builder.zig");
+const adwaita = @import("adwaita.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -1020,16 +1021,17 @@ fn resolveTitle(self: *Surface, title: [:0]const u8) [:0]const u8 {
 }
 
 pub fn promptTitle(self: *Surface) !void {
+    if (!adwaita.versionAtLeast(1, 5, 0)) return;
     const window = self.container.window() orelse return;
 
     var builder = Builder.init("prompt-title-dialog", .blp);
     defer builder.deinit();
 
-    const entry: *gtk.Entry = @ptrCast(builder.getObject("title_entry"));
+    const entry = gobject.ext.cast(gtk.Entry, builder.getObject("title_entry").?).?;
     entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
-    const dialog: *adw.AlertDialog = @ptrCast(builder.getObject("prompt_title_dialog"));
-    dialog.choose(@ptrCast(window.window), null, &gtkPromptTitleResponse, self);
+    const dialog = gobject.ext.cast(adw.AlertDialog, builder.getObject("prompt_title_dialog").?).?;
+    dialog.choose(@ptrCast(window.window), null, gtkPromptTitleResponse, self);
 }
 
 /// Set the current working directory of the surface.
@@ -2320,12 +2322,13 @@ fn g_value_holds(value_: ?*c.GValue, g_type: c.GType) bool {
 }
 
 fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
-    const dialog: *adw.AlertDialog = @ptrCast(source_object.?);
-    const self = userdataSelf(ud.?);
+    if (!adwaita.versionAtLeast(1, 5, 0)) return;
+    const dialog = gobject.ext.cast(adw.AlertDialog, source_object.?).?;
+    const self = userdataSelf(ud orelse return);
 
     const response = dialog.chooseFinish(result);
     if (std.mem.orderZ(u8, "ok", response) == .eq) {
-        const title_entry: *gtk.Entry = gobject.ext.cast(gtk.Entry, dialog.getExtraChild().?).?;
+        const title_entry = gobject.ext.cast(gtk.Entry, dialog.getExtraChild().?).?;
         const title = std.mem.span(title_entry.getBuffer().getText());
 
         // if the new title is empty and the user has set the title previously, restore the terminal provided title
