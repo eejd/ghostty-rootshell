@@ -4409,6 +4409,14 @@ pub const ColorList = struct {
         try p.parseCLI(alloc, "black,white");
         try testing.expectEqual(2, p.colors.items.len);
 
+        // Test whitespace handling
+        try p.parseCLI(alloc, "black, white"); // space after comma
+        try testing.expectEqual(2, p.colors.items.len);
+        try p.parseCLI(alloc, "black , white"); // spaces around comma
+        try testing.expectEqual(2, p.colors.items.len);
+        try p.parseCLI(alloc, " black , white "); // extra spaces at ends
+        try testing.expectEqual(2, p.colors.items.len);
+
         // Error cases
         try testing.expectError(error.ValueRequired, p.parseCLI(alloc, null));
         try testing.expectError(error.InvalidValue, p.parseCLI(alloc, " "));
