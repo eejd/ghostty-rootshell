@@ -16,6 +16,7 @@
   gobject-introspection,
   libadwaita,
   blueprint-compiler,
+  libxml2,
   wrapGAppsHook4,
   gsettings-desktop-schemas,
   git,
@@ -84,6 +85,7 @@ in
         gobject-introspection
         wrapGAppsHook4
         blueprint-compiler
+        libxml2 # for xmllint
       ]
       ++ lib.optionals enableWayland [
         wayland-scanner
