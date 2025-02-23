@@ -847,28 +847,44 @@ pub fn shouldClose(self: *const Surface) bool {
 }
 
 pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
-    // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
-    // can support fractional scaling.
-    const gtk_scale: f32 = @floatFromInt(c.gtk_widget_get_scale_factor(@ptrCast(self.gl_area)));
+    const gtk_scale: f32 = scale: {
+        const widget: *gtk.Widget = @ptrCast(@alignCast(self.gl_area));
+        // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
+        // can support fractional scaling.
+        const scale = widget.getScaleFactor();
+        if (scale <= 0) {
+            log.warn("gtk_widget_get_scale_factor returned a non-positive number: {}", .{scale});
+            break :scale 1.0;
+        }
+        break :scale @floatFromInt(scale);
+    };
 
     // Also scale using font-specific DPI, which is often exposed to the user
     // via DE accessibility settings (see https://docs.gtk.org/gtk4/class.Settings.html).
     const xft_dpi_scale = xft_scale: {
         // gtk-xft-dpi is font DPI multiplied by 1024. See
         // https://docs.gtk.org/gtk4/property.Settings.gtk-xft-dpi.html
-        const settings = c.gtk_settings_get_default();
+        const settings = gtk.Settings.getDefault() orelse break :xft_scale 1.0;
+        var value = std.mem.zeroes(gobject.Value);
+        defer value.unset();
+        _ = value.init(gobject.ext.typeFor(c_int));
+        settings.as(gobject.Object).getProperty("gtk-xft-dpi", &value);
+        const gtk_xft_dpi = value.getInt();
 
-        var value: c.GValue = std.mem.zeroes(c.GValue);
-        defer c.g_value_unset(&value);
-        _ = c.g_value_init(&value, c.G_TYPE_INT);
-        c.g_object_get_property(@ptrCast(@alignCast(settings)), "gtk-xft-dpi", &value);
-        const gtk_xft_dpi = c.g_value_get_int(&value);
+        // Use a value of 1.0 for the XFT DPI scale if the setting is <= 0
+        // See:
+        // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/a7738a4d269bfdf4d8d5429ca73ccdd9b2450421
+        // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/9759d3fd81129608dd78116001928f2aed974ead
+        if (gtk_xft_dpi <= 0) {
+            log.warn("gtk-xft-dpi was not set, using default value", .{});
+            break :xft_scale 1.0;
+        }
 
         // As noted above gtk-xft-dpi is multiplied by 1024, so we divide by
         // 1024, then divide by the default value (96) to derive a scale. Note
         // gtk-xft-dpi can be fractional, so we use floating point math here.
-        const xft_dpi: f32 = @as(f32, @floatFromInt(gtk_xft_dpi)) / 1024;
-        break :xft_scale xft_dpi / 96;
+        const xft_dpi: f32 = @as(f32, @floatFromInt(gtk_xft_dpi)) / 1024.0;
+        break :xft_scale xft_dpi / 96.0;
     };
 
     const scale = gtk_scale * xft_dpi_scale;
