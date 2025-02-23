@@ -852,8 +852,8 @@ pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
         // can support fractional scaling.
         const scale = widget.getScaleFactor();
-        if (scale < 0) {
-            log.warn("gtk_widget_get_scale_factor returned a negative number: {d:.3}", .{scale});
+        if (scale <= 0) {
+            log.warn("gtk_widget_get_scale_factor returned a non-positive number: {}", .{scale});
             break :scale 1.0;
         }
         break :scale @floatFromInt(scale);
