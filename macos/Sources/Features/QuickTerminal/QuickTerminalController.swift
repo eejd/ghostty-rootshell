@@ -437,6 +437,16 @@ class QuickTerminalController: BaseTerminalController {
         }
     }
 
+    func showNoNewTabAlert() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Cannot Create New Tab"
+        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
+        alert.addButton(withTitle: "OK")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window)
+    }
+
     // MARK: First Responder
 
     @IBAction override func closeWindow(_ sender: Any) {
@@ -445,13 +455,7 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     @IBAction func newTab(_ sender: Any?) {
-        guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Cannot Create New Tab"
-        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
-        alert.addButton(withTitle: "OK")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window)
+        showNoNewTabAlert()
     }
 
     @IBAction func toggleGhosttyFullScreen(_ sender: Any) {

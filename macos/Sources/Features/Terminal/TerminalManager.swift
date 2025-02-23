@@ -125,6 +125,12 @@ class TerminalManager {
     }
 
     private func newTab(to parent: NSWindow, withBaseConfig base: Ghostty.SurfaceConfiguration?) {
+        // If the parent window is a QuickTerminalWindow, we early return with an alert.
+        if let controller = parent.windowController as? QuickTerminalController {
+            controller.showNoNewTabAlert()
+            return
+        }
+
         // If our parent is in non-native fullscreen, then new tabs do not work.
         // See: https://github.com/mitchellh/ghostty/issues/392
         if let controller = parent.windowController as? TerminalController,
