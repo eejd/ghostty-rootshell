@@ -490,7 +490,7 @@ fn initActions(self: *Window) void {
         .{ "paste", &gtkActionPaste },
         .{ "reset", &gtkActionReset },
         .{ "clear", &gtkActionClear },
-        .{ "prompt_title", &gtkActionPromptTitle },
+        .{ "prompt-title", &gtkActionPromptTitle },
     };
 
     inline for (actions) |entry| {
