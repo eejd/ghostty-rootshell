@@ -871,9 +871,12 @@ pub fn getContentScale(self: *const Surface) !apprt.ContentScale {
         settings.as(gobject.Object).getProperty("gtk-xft-dpi", &value);
         const gtk_xft_dpi = value.getInt();
 
-        // ensure that the scale is never negative
-        if (gtk_xft_dpi < 0) {
-            log.warn("gtk-xft-dpi setting was negative: {d:.3}", .{gtk_xft_dpi});
+        // Use a value of 1.0 for the XFT DPI scale if the setting is <= 0
+        // See:
+        // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/a7738a4d269bfdf4d8d5429ca73ccdd9b2450421
+        // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/9759d3fd81129608dd78116001928f2aed974ead
+        if (gtk_xft_dpi <= 0) {
+            log.warn("gtk-xft-dpi was not set, using default value", .{});
             break :xft_scale 1.0;
         }
 
