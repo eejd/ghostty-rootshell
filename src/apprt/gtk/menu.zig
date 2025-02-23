@@ -47,6 +47,7 @@ pub fn Menu(
             const menu_model = builder.getObject(gio.MenuModel, "menu").?;
 
             const menu_widget = gtk.PopoverMenu.newFromModelFull(menu_model, .{ .nested = true });
+            menu_widget.as(gtk.Widget).setHalign(.start);
             menu_widget.as(gtk.Popover).setHasArrow(@intFromBool(arrow));
             _ = gtk.Popover.signals.closed.connect(
                 menu_widget,
