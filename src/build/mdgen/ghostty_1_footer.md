@@ -30,7 +30,8 @@ for configuration files.
 
 **$HOME/Library/Application Support/com.mitchellh.ghostty**
 
-: **MACOS ONLY** default location for configuration files.
+: **MACOS ONLY** default location for configuration files. This location takes
+precedence over the XDG environment locations.
 
 **LOCALAPPDATA**
 
