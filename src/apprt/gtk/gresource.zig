@@ -53,10 +53,7 @@ const icons = [_]struct {
     },
 };
 
-pub const ui_files = [_][]const u8{
-    "menu-window-titlebar_menu",
-    "menu-surface-context_menu",
-};
+pub const ui_files = [_][]const u8{};
 
 pub const VersionedBlueprint = struct {
     major: u16,
@@ -67,6 +64,8 @@ pub const VersionedBlueprint = struct {
 
 pub const blueprint_files = [_]VersionedBlueprint{
     .{ .major = 1, .minor = 5, .micro = 0, .name = "prompt-title-dialog" },
+    .{ .major = 1, .minor = 0, .micro = 0, .name = "menu-surface-context_menu" },
+    .{ .major = 1, .minor = 0, .micro = 0, .name = "menu-window-titlebar_menu" },
 };
 
 pub fn main() !void {

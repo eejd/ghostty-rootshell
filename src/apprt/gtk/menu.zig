@@ -41,7 +41,7 @@ pub fn Menu(
                 else => unreachable,
             };
 
-            var builder = Builder.init("menu-" ++ object_type ++ "-" ++ menu_name, .ui);
+            var builder = Builder.init("menu-" ++ object_type ++ "-" ++ menu_name, .blp);
             defer builder.deinit();
 
             const menu_model = builder.getObject(gio.MenuModel, "menu").?;
