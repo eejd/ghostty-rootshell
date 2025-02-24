@@ -53,7 +53,11 @@ const icons = [_]struct {
     },
 };
 
-pub const ui_files = [_][]const u8{};
+pub const ui_files = [_][]const u8{
+    "ccw-osc-52-read-12",
+    "ccw-osc-52-write-12",
+    "ccw-paste-12",
+};
 
 pub const VersionedBlueprint = struct {
     major: u16,
@@ -66,6 +70,9 @@ pub const blueprint_files = [_]VersionedBlueprint{
     .{ .major = 1, .minor = 5, .micro = 0, .name = "prompt-title-dialog" },
     .{ .major = 1, .minor = 0, .micro = 0, .name = "menu-surface-context_menu" },
     .{ .major = 1, .minor = 0, .micro = 0, .name = "menu-window-titlebar_menu" },
+    .{ .major = 1, .minor = 5, .micro = 0, .name = "ccw-osc-52-read-15" },
+    .{ .major = 1, .minor = 5, .micro = 0, .name = "ccw-osc-52-write-15" },
+    .{ .major = 1, .minor = 5, .micro = 0, .name = "ccw-paste-15" },
 };
 
 pub fn main() !void {

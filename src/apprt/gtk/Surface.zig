@@ -8,6 +8,7 @@ const adw = @import("adw");
 const gtk = @import("gtk");
 const gio = @import("gio");
 const gobject = @import("gobject");
+
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
 const build_options = @import("build_options");
