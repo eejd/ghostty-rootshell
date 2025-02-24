@@ -411,7 +411,6 @@ pub const ImageStorage = struct {
                 while (it.next()) |entry| {
                     if (entry.key_ptr.image_id >= v.first or entry.key_ptr.image_id <= v.last) {
                         const image_id = entry.key_ptr.image_id;
-                        log.warn("delete range: {}", .{image_id});
                         entry.value_ptr.deinit(&t.screen);
                         self.placements.removeByPtr(entry.key_ptr);
                         if (v.delete) self.deleteIfUnused(alloc, image_id);
