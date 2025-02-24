@@ -442,7 +442,7 @@ class QuickTerminalController: BaseTerminalController {
         }
     }
 
-    func showNoNewTabAlert() {
+    private func showNoNewTabAlert() {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = "Cannot Create New Tab"
