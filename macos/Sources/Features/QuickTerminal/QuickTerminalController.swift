@@ -59,6 +59,11 @@ class QuickTerminalController: BaseTerminalController {
             selector: #selector(ghosttyConfigDidChange(_:)),
             name: .ghosttyConfigDidChange,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -494,6 +499,14 @@ class QuickTerminalController: BaseTerminalController {
         self.derivedConfig = DerivedConfig(config)
 
         syncAppearance()
+    }
+
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        guard window.windowController is QuickTerminalController else { return }
+        // Tabs aren't supported with Quick Terminals or derivatives
+        showNoNewTabAlert()
     }
 
     private struct DerivedConfig {
