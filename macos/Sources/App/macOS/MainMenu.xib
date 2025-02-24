@@ -388,6 +388,13 @@
                                 </menu>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="dgt-Tx-d4e"/>
+                            <menuItem title="Return To Default Size" id="Gbx-Vi-OGC" userLabel="Return To Default Size">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="returnToDefaultSize:" target="-1" id="Bpt-GO-UU1"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="CpM-rI-Sc1"/>
                             <menuItem title="Bring All to Front" id="LE2-aR-0XJ">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
