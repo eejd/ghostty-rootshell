@@ -8,6 +8,7 @@ const adw = @import("adw");
 const gtk = @import("gtk");
 const gio = @import("gio");
 const gobject = @import("gobject");
+
 const Allocator = std.mem.Allocator;
 const build_config = @import("../../build_config.zig");
 const build_options = @import("build_options");
@@ -1049,7 +1050,7 @@ pub fn promptTitle(self: *Surface) !void {
     if (!adwaita.versionAtLeast(1, 5, 0)) return;
     const window = self.container.window() orelse return;
 
-    var builder = Builder.init("prompt-title-dialog", .blp);
+    var builder = Builder.init("prompt-title-dialog", 1, 5, .blp);
     defer builder.deinit();
 
     const entry = builder.getObject(gtk.Entry, "title_entry").?;

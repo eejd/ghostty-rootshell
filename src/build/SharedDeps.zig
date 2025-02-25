@@ -514,10 +514,23 @@ pub fn add(
                             blueprint_compiler.addArgs(&.{
                                 b.fmt("{d}", .{blueprint_file.major}),
                                 b.fmt("{d}", .{blueprint_file.minor}),
-                                b.fmt("{d}", .{blueprint_file.micro}),
                             });
-                            const ui_file = blueprint_compiler.addOutputFileArg(b.fmt("{s}.ui", .{blueprint_file.name}));
-                            blueprint_compiler.addFileArg(b.path(b.fmt("src/apprt/gtk/ui/{s}.blp", .{blueprint_file.name})));
+                            const ui_file = blueprint_compiler.addOutputFileArg(b.fmt(
+                                "{d}.{d}/{s}.ui",
+                                .{
+                                    blueprint_file.major,
+                                    blueprint_file.minor,
+                                    blueprint_file.name,
+                                },
+                            ));
+                            blueprint_compiler.addFileArg(b.path(b.fmt(
+                                "src/apprt/gtk/ui/{d}.{d}/{s}.blp",
+                                .{
+                                    blueprint_file.major,
+                                    blueprint_file.minor,
+                                    blueprint_file.name,
+                                },
+                            )));
                             generate.addFileArg(ui_file);
                         }
 
