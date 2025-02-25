@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) !void {
 
     // Ghostty resources like terminfo, shell integration, themes, etc.
     const resources = try buildpkg.GhosttyResources.init(b, &config);
+    const i18n = try buildpkg.GhosttyI18n.init(b, &config);
 
     // Ghostty dependencies used by many artifacts.
     const deps = try buildpkg.SharedDeps.init(b, &config);
@@ -39,6 +40,7 @@ pub fn build(b: *std.Build) !void {
     if (config.app_runtime != .none) {
         exe.install();
         resources.install();
+        i18n.install();
     }
 
     // Libghostty

@@ -34,6 +34,7 @@
   gobject-introspection,
   libadwaita,
   blueprint-compiler,
+  gettext,
   adwaita-icon-theme,
   hicolor-icon-theme,
   harfbuzz,
@@ -127,6 +128,9 @@ in
         # wasm
         wabt
         wasmtime
+
+        # Localization
+        gettext
       ]
       ++ lib.optionals stdenv.hostPlatform.isLinux [
         # My nix shell environment installs the non-interactive version
