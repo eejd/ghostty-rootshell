@@ -36,7 +36,7 @@ const CoreSurface = @import("../../Surface.zig");
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
-const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
+const ConfigErrorsDialog = @import("ConfigErrorsDialog.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const CloseDialog = @import("CloseDialog.zig");
 const Split = @import("Split.zig");
@@ -70,9 +70,6 @@ single_instance: bool,
 
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*gdk.Cursor,
-
-/// The configuration errors window, if it is currently open.
-config_errors_window: ?*ConfigErrorsWindow = null,
 
 /// The clipboard confirmation window, if it is currently open.
 clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
@@ -956,16 +953,22 @@ fn configChange(
                 log.warn("error cloning configuration err={}", .{err});
             }
 
-            self.syncConfigChanges() catch |err| {
-                log.warn("error handling configuration changes err={}", .{err});
-            };
-
             // App changes needs to show a toast that our configuration
             // has reloaded.
-            if (self.core_app.focusedSurface()) |core_surface| {
-                const surface = core_surface.rt_surface;
-                if (surface.container.window()) |window| window.onConfigReloaded();
-            }
+            const window = window: {
+                if (self.core_app.focusedSurface()) |core_surface| {
+                    const surface = core_surface.rt_surface;
+                    if (surface.container.window()) |window| {
+                        window.onConfigReloaded();
+                        break :window window;
+                    }
+                }
+                break :window null;
+            };
+
+            self.syncConfigChanges(window) catch |err| {
+                log.warn("error handling configuration changes err={}", .{err});
+            };
         },
     }
 }
@@ -1001,8 +1004,8 @@ pub fn reloadConfig(
 }
 
 /// Call this anytime the configuration changes.
-fn syncConfigChanges(self: *App) !void {
-    try self.updateConfigErrors();
+fn syncConfigChanges(self: *App, window: ?*Window) !void {
+    ConfigErrorsDialog.maybePresent(self, window);
     try self.syncActionAccelerators();
 
     // Load our runtime and custom CSS. If this fails then our window is just stuck
@@ -1016,23 +1019,6 @@ fn syncConfigChanges(self: *App) !void {
     self.loadCustomCss() catch |err| {
         log.warn("Failed to load custom CSS, no custom CSS applied, err={}", .{err});
     };
-}
-
-/// This should be called whenever the configuration changes to update
-/// the state of our config errors window. This will show the window if
-/// there are new configuration errors and hide the window if the errors
-/// are resolved.
-fn updateConfigErrors(self: *App) !void {
-    if (!self.config._diagnostics.empty()) {
-        if (self.config_errors_window == null) {
-            try ConfigErrorsWindow.create(self);
-            assert(self.config_errors_window != null);
-        }
-    }
-
-    if (self.config_errors_window) |window| {
-        window.update();
-    }
 }
 
 fn syncActionAccelerators(self: *App) !void {
@@ -1308,13 +1294,6 @@ pub fn run(self: *App) !void {
 
     // Setup our actions
     self.initActions();
-
-    // On startup, we want to check for configuration errors right away
-    // so we can show our error window. We also need to setup other initial
-    // state.
-    self.syncConfigChanges() catch |err| {
-        log.warn("error handling configuration changes err={}", .{err});
-    };
 
     while (self.running) {
         _ = glib.MainContext.iteration(self.ctx, 1);
