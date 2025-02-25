@@ -262,8 +262,8 @@ pub fn parseIntoField(
             if (value) |v| default: {
                 if (v.len != 0) break :default;
                 // Set default value if possible.
-                if (canHaveDecls and @hasDecl(Field, "setToDefault")) {
-                    try @field(dst, field.name).setToDefault(alloc);
+                if (canHaveDecls and @hasDecl(Field, "init")) {
+                    try @field(dst, field.name).init(alloc);
                     return;
                 }
                 const raw = field.default_value orelse break :default;
@@ -767,7 +767,7 @@ test "parseIntoField: ignore underscore-prefixed fields" {
     try testing.expectEqualStrings("12", data._a);
 }
 
-test "parseIntoField: struct with default func" {
+test "parseIntoField: struct with init func" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -779,7 +779,7 @@ test "parseIntoField: struct with default func" {
 
             v: []const u8,
 
-            pub fn setToDefault(self: *Self, _alloc: Allocator) !void {
+            pub fn init(self: *Self, _alloc: Allocator) !void {
                 _ = _alloc;
                 self.v = "HELLO!";
             }

@@ -2373,7 +2373,7 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     const alloc = result._arena.?.allocator();
 
     // Add our default keybindings
-    try result.keybind.setToDefault(alloc);
+    try result.keybind.init(alloc);
 
     // Add our default link for URL detection
     try result.link.links.append(alloc, .{
@@ -4492,7 +4492,7 @@ pub const RepeatableFontVariation = struct {
 pub const Keybinds = struct {
     set: inputpkg.Binding.Set = .{},
 
-    pub fn setToDefault(self: *Keybinds, alloc: Allocator) !void {
+    pub fn init(self: *Keybinds, alloc: Allocator) !void {
         // We don't clear the memory because it's in the arena and unlikely
         // to be free-able anyways (since arenas can only clear the last
         // allocated value). This isn't a memory leak because the arena
@@ -5131,7 +5131,7 @@ pub const Keybinds = struct {
         // Check for special values
         if (value.len == 0) {
             log.info("config has 'keybind =', using default keybinds", .{});
-            try self.setToDefault(alloc);
+            try self.init(alloc);
             return;
         }
 
