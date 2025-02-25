@@ -781,7 +781,7 @@ test "parseIntoField: struct with init func" {
 
             pub fn init(self: *Self, _alloc: Allocator) !void {
                 _ = _alloc;
-                self.v = "HELLO!";
+                self.* = .{ .v = "HELLO!" };
             }
         },
     } = undefined;
