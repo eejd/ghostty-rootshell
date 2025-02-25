@@ -5129,6 +5129,12 @@ pub const Keybinds = struct {
         errdefer if (copy) |v| alloc.free(v);
 
         // Check for special values
+        if (value.len == 0) {
+            log.info("config has 'keybind =', using default keybinds", .{});
+            try self.setToDefault(alloc);
+            return;
+        }
+
         if (std.mem.eql(u8, value, "clear")) {
             // We don't clear the memory because its in the arena and unlikely
             // to be free-able anyways (since arenas can only clear the last

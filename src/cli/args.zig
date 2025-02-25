@@ -247,16 +247,6 @@ pub fn parseIntoField(
 
     inline for (info.Struct.fields) |field| {
         if (field.name[0] != '_' and mem.eql(u8, field.name, key)) {
-            // If the value is empty string (set but empty string),
-            // then we reset the value to the default.
-            if (value) |v| default: {
-                if (v.len != 0) break :default;
-                const raw = field.default_value orelse break :default;
-                const ptr: *const field.type = @alignCast(@ptrCast(raw));
-                @field(dst, field.name) = ptr.*;
-                return;
-            }
-
             // For optional fields, we just treat it as the child type.
             // This lets optional fields default to null but get set by
             // the CLI.
@@ -264,11 +254,27 @@ pub fn parseIntoField(
                 .Optional => |opt| opt.child,
                 else => field.type,
             };
+            const fieldInfo = @typeInfo(Field);
+            const canHaveDecls = fieldInfo == .Struct or fieldInfo == .Union or fieldInfo == .Enum;
+
+            // If the value is empty string (set but empty string),
+            // then we reset the value to the default.
+            if (value) |v| default: {
+                if (v.len != 0) break :default;
+                // Set default value if possible.
+                if (canHaveDecls and @hasDecl(Field, "setToDefault")) {
+                    try @field(dst, field.name).setToDefault(alloc);
+                    return;
+                }
+                const raw = field.default_value orelse break :default;
+                const ptr: *const field.type = @alignCast(@ptrCast(raw));
+                @field(dst, field.name) = ptr.*;
+                return;
+            }
 
             // If we are a type that can have decls and have a parseCLI decl,
             // we call that and use that to set the value.
-            const fieldInfo = @typeInfo(Field);
-            if (fieldInfo == .Struct or fieldInfo == .Union or fieldInfo == .Enum) {
+            if (canHaveDecls) {
                 if (@hasDecl(Field, "parseCLI")) {
                     const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
                     switch (fnInfo.params.len) {
