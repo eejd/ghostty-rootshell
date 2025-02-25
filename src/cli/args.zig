@@ -767,6 +767,29 @@ test "parseIntoField: ignore underscore-prefixed fields" {
     try testing.expectEqualStrings("12", data._a);
 }
 
+test "parseIntoField: struct with default func" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: struct {
+            const Self = @This();
+
+            v: []const u8,
+
+            pub fn setToDefault(self: *Self, _alloc: Allocator) !void {
+                _ = _alloc;
+                self.v = "HELLO!";
+            }
+        },
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "");
+    try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
+}
+
 test "parseIntoField: string" {
     const testing = std.testing;
     var arena = ArenaAllocator.init(testing.allocator);
