@@ -753,16 +753,6 @@ class AppDelegate: NSObject,
         quickController.toggle()
     }
 
-    @IBAction func returnToDefaultSize(_ sender: Any) {
-        guard let window = NSApp.keyWindow else { return }
-        let currentOrigin = window.frame.origin
-        let newFrame = NSRect(
-            origin: currentOrigin,
-            size: WindowConfig.defaultSize
-        )
-        window.setFrame(newFrame, display: true)
-    }
-
     /// Toggles visibility of all Ghosty Terminal windows. When hidden, activates Ghostty as the frontmost application
     @IBAction func toggleVisibility(_ sender: Any) {
         // If we have focus, then we hide all windows.
@@ -814,10 +804,6 @@ class AppDelegate: NSObject,
         }
     }
 
-    private enum WindowConfig {
-        static let defaultSize = CGSize(width: 800, height: 600)
-    }
-
     private struct ToggleVisibilityState {
         let hiddenWindows: [Weak<NSWindow>]
         let keyWindow: Weak<NSWindow>?
@@ -844,26 +830,6 @@ class AppDelegate: NSObject,
         func restore() {
             hiddenWindows.forEach { $0.value?.orderFrontRegardless() }
             keyWindow?.value?.makeKey()
-        }
-    }
-}
-
-extension AppDelegate: NSMenuItemValidation {
-    func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        switch item.action {
-        case #selector(returnToDefaultSize):
-            guard let focusedWindow = NSApp.keyWindow else {
-                return false
-            }
-            if focusedWindow.styleMask.contains(.fullScreen) {
-                return false
-            }
-            if focusedWindow.frame.size == WindowConfig.defaultSize {
-                return false
-            }
-            return true
-        default:
-            return true
         }
     }
 }

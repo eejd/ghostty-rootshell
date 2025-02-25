@@ -578,6 +578,23 @@ class TerminalController: BaseTerminalController {
         window.close()
     }
 
+    @IBAction func returnToDefaultSize(_ sender: Any) {
+        guard
+            let window = NSApp.keyWindow,
+            let initialWidth = ghostty.config.windowWidth,
+            let initialHeight = ghostty.config.windowHeight
+        else { return }
+        let currentOrigin = window.frame.origin
+        let newFrame = NSRect(
+            origin: currentOrigin,
+            size: .init(
+                width: CGFloat(initialWidth),
+                height: CGFloat(initialHeight)
+            )
+        )
+        window.setFrame(newFrame, display: true)
+    }
+
     @IBAction override func closeWindow(_ sender: Any?) {
         guard let window = window else { return }
         guard let tabGroup = window.tabGroup else {
@@ -823,3 +840,32 @@ class TerminalController: BaseTerminalController {
         }
     }
 }
+
+
+extension TerminalController: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(returnToDefaultSize):
+            guard let focusedWindow = NSApp.keyWindow else {
+                return false
+            }
+            if focusedWindow.styleMask.contains(.fullScreen) {
+                return false
+            }
+            guard
+                let windowWidth = ghostty.config.windowWidth,
+                let windowHeight = ghostty.config.windowHeight,
+                focusedWindow.frame.size != .init(
+                    width: CGFloat(windowWidth),
+                    height: CGFloat(windowHeight)
+                )
+            else {
+                return false
+            }
+            return true
+        default:
+            return true
+        }
+    }
+}
+
