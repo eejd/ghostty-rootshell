@@ -65,14 +65,14 @@ fn init(
 ) !void {
     var builder = switch (DialogType) {
         adw.AlertDialog => switch (request) {
-            .osc_52_read => Builder.init("ccw-osc-52-write-15", .blp),
-            .osc_52_write => Builder.init("ccw-osc-52-write-15", .blp),
-            .paste => Builder.init("ccw-paste-15", .blp),
+            .osc_52_read => Builder.init("ccw-osc-52-read", 1, 5, .blp),
+            .osc_52_write => Builder.init("ccw-osc-52-write", 1, 5, .blp),
+            .paste => Builder.init("ccw-paste", 1, 5, .blp),
         },
         adw.MessageDialog => switch (request) {
-            .osc_52_read => Builder.init("ccw-osc-52-write-12", .ui),
-            .osc_52_write => Builder.init("ccw-osc-52-write-12", .ui),
-            .paste => Builder.init("ccw-paste-12", .ui),
+            .osc_52_read => Builder.init("ccw-osc-52-read", 1, 2, .ui),
+            .osc_52_write => Builder.init("ccw-osc-52-write", 1, 2, .ui),
+            .paste => Builder.init("ccw-paste", 1, 2, .ui),
         },
         else => unreachable,
     };
