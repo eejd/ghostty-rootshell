@@ -76,7 +76,7 @@ fn init(
         },
         else => unreachable,
     };
-    builder.deinit();
+    defer builder.deinit();
 
     const dialog = builder.getObject(DialogType, "clipboard_confirmation_window").?;
 
