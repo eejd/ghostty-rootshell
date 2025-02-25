@@ -7,9 +7,15 @@ const Window = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const build_config = @import("../../build_config.zig");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+
+const gio = @import("gio");
+const glib = @import("glib");
+const gobject = @import("gobject");
+const gtk = @import("gtk");
+
+const build_config = @import("../../build_config.zig");
 const configpkg = @import("../../config.zig");
 const font = @import("../../font/main.zig");
 const input = @import("../../input.zig");
@@ -475,36 +481,38 @@ fn toggleCssClass(
 /// menus and such. The menu is defined in App.zig but the action is defined
 /// here. The string name binds them.
 fn initActions(self: *Window) void {
+    // FIXME: when rest of file is converted to gobject
+    const window: *gtk.ApplicationWindow = @ptrCast(@alignCast(self.window));
+    const action_map = window.as(gio.ActionMap);
     const actions = .{
-        .{ "about", &gtkActionAbout },
-        .{ "close", &gtkActionClose },
-        .{ "new-window", &gtkActionNewWindow },
-        .{ "new-tab", &gtkActionNewTab },
-        .{ "close-tab", &gtkActionCloseTab },
-        .{ "split-right", &gtkActionSplitRight },
-        .{ "split-down", &gtkActionSplitDown },
-        .{ "split-left", &gtkActionSplitLeft },
-        .{ "split-up", &gtkActionSplitUp },
-        .{ "toggle-inspector", &gtkActionToggleInspector },
-        .{ "copy", &gtkActionCopy },
-        .{ "paste", &gtkActionPaste },
-        .{ "reset", &gtkActionReset },
-        .{ "clear", &gtkActionClear },
-        .{ "prompt-title", &gtkActionPromptTitle },
+        .{ "about", gtkActionAbout },
+        .{ "close", gtkActionClose },
+        .{ "new-window", gtkActionNewWindow },
+        .{ "new-tab", gtkActionNewTab },
+        .{ "close-tab", gtkActionCloseTab },
+        .{ "split-right", gtkActionSplitRight },
+        .{ "split-down", gtkActionSplitDown },
+        .{ "split-left", gtkActionSplitLeft },
+        .{ "split-up", gtkActionSplitUp },
+        .{ "toggle-inspector", gtkActionToggleInspector },
+        .{ "copy", gtkActionCopy },
+        .{ "paste", gtkActionPaste },
+        .{ "reset", gtkActionReset },
+        .{ "clear", gtkActionClear },
+        .{ "prompt-title", gtkActionPromptTitle },
     };
 
     inline for (actions) |entry| {
-        const action = c.g_simple_action_new(entry[0], null);
-        defer c.g_object_unref(action);
-        _ = c.g_signal_connect_data(
+        const action = gio.SimpleAction.new(entry[0], null);
+        defer action.unref();
+        _ = gio.SimpleAction.signals.activate.connect(
             action,
-            "activate",
-            c.G_CALLBACK(entry[1]),
+            *Window,
+            entry[1],
             self,
-            null,
-            c.G_CONNECT_DEFAULT,
+            .{},
         );
-        c.g_action_map_add_action(@ptrCast(self.window), @ptrCast(action));
+        action_map.addAction(action.as(gio.Action));
     }
 }
 
@@ -878,12 +886,10 @@ fn gtkKeyPressed(
 }
 
 fn gtkActionAbout(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
-
     const name = "Ghostty";
     const icon = "com.mitchellh.ghostty";
     const website = "https://ghostty.org";
@@ -924,20 +930,18 @@ fn gtkActionAbout(
 }
 
 fn gtkActionClose(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     c.gtk_window_destroy(self.window);
 }
 
 fn gtkActionNewWindow(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_window = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -946,20 +950,19 @@ fn gtkActionNewWindow(
 }
 
 fn gtkActionNewTab(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
     // We can use undefined because the button is not used.
-    gtkTabNewClick(undefined, ud);
+    gtkTabNewClick(undefined, self);
 }
 
 fn gtkActionCloseTab(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .close_tab = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -968,11 +971,10 @@ fn gtkActionCloseTab(
 }
 
 fn gtkActionSplitRight(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_split = .right }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -981,11 +983,10 @@ fn gtkActionSplitRight(
 }
 
 fn gtkActionSplitDown(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_split = .down }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -994,11 +995,10 @@ fn gtkActionSplitDown(
 }
 
 fn gtkActionSplitLeft(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_split = .left }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1007,11 +1007,10 @@ fn gtkActionSplitLeft(
 }
 
 fn gtkActionSplitUp(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .new_split = .up }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1020,11 +1019,10 @@ fn gtkActionSplitUp(
 }
 
 fn gtkActionToggleInspector(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1033,11 +1031,10 @@ fn gtkActionToggleInspector(
 }
 
 fn gtkActionCopy(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .copy_to_clipboard = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1046,11 +1043,10 @@ fn gtkActionCopy(
 }
 
 fn gtkActionPaste(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .paste_from_clipboard = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1059,11 +1055,10 @@ fn gtkActionPaste(
 }
 
 fn gtkActionReset(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .reset = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1072,11 +1067,10 @@ fn gtkActionReset(
 }
 
 fn gtkActionClear(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .clear_screen = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
@@ -1085,11 +1079,10 @@ fn gtkActionClear(
 }
 
 fn gtkActionPromptTitle(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const self: *Window = @ptrCast(@alignCast(ud orelse return));
     const surface = self.actionSurface() orelse return;
     _ = surface.performBindingAction(.{ .prompt_surface_title = {} }) catch |err| {
         log.warn("error performing binding action error={}", .{err});
