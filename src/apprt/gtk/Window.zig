@@ -482,8 +482,8 @@ fn toggleCssClass(
 /// here. The string name binds them.
 fn initActions(self: *Window) void {
     // FIXME: when rest of file is converted to gobject
-    const window: *gtk.Window = @ptrCast(@alignCast(self.window));
-    const action_map = gobject.ext.cast(gio.ActionMap, window).?;
+    const window: *gtk.ApplicationWindow = @ptrCast(@alignCast(self.window));
+    const action_map = window.as(gio.ActionMap);
     const actions = .{
         .{ "about", gtkActionAbout },
         .{ "close", gtkActionClose },
