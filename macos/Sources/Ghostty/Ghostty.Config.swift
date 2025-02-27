@@ -514,6 +514,14 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.count))
             return v
         }
+
+        var maximize: Bool {
+            guard let config = self.config else { return true }
+            var v = false;
+            let key = "maximize"
+            _ = ghostty_config_get(config, &v, key, UInt(key.count))
+            return v
+        }
     }
 }
 

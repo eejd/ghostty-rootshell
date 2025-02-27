@@ -375,7 +375,11 @@ class TerminalController: BaseTerminalController {
         // If we have only a single surface (no splits) and that surface requested
         // an initial size then we set it here now.
         if case let .leaf(leaf) = surfaceTree {
-            if let initialSize = leaf.surface.initialSize,
+            if config.maximize {
+                if let screen = window.screen ?? NSScreen.main {
+                    window.setFrame(screen.visibleFrame, display: true)
+                }
+            } else if let initialSize = leaf.surface.initialSize,
                let screen = window.screen ?? NSScreen.main {
                 // Get the current frame of the window
                 var frame = window.frame
