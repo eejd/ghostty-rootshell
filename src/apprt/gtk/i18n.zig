@@ -9,7 +9,7 @@ const std = @import("std");
 const global = &@import("../../global.zig").state;
 const build_config = @import("../../build_config.zig");
 
-const log = std.log.scoped(.i18n);
+const log = std.log.scoped(.gtk_i18n);
 
 pub fn init(alloc: std.mem.Allocator) !void {
     const resources_dir = global.resources_dir orelse {

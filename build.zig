@@ -105,4 +105,11 @@ pub fn build(b: *std.Build) !void {
             test_step.dependOn(&test_run.step);
         }
     }
+
+    // update-translations does what it sounds like and updates the "pot"
+    // files. These should be committed to the repo.
+    {
+        const step = b.step("update-translations", "Update translation files");
+        step.dependOn(i18n.update_step);
+    }
 }
