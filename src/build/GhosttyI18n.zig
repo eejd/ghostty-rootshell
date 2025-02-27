@@ -6,7 +6,9 @@ const gresource = @import("../apprt/gtk/gresource.zig");
 
 const domain = "com.mitchellh.ghostty";
 
-const locales = [_][]const u8{};
+const locales = [_][]const u8{
+    "zh_CN.UTF-8",
+};
 
 owner: *std.Build,
 steps: []*std.Build.Step,
