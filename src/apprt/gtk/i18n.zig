@@ -33,3 +33,5 @@ pub fn init(alloc: std.mem.Allocator) !void {
 // as libintl.h isn't always easily available (e.g. in musl)
 extern fn bindtextdomain(domainname: [*:0]const u8, dirname: [*:0]const u8) ?[*:0]const u8;
 extern fn textdomain(domainname: [*:0]const u8) ?[*:0]const u8;
+pub extern fn gettext(msgid: [*:0]const u8) [*:0]const u8;
+pub const _ = gettext;

@@ -15,7 +15,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
     var steps = std.ArrayList(*std.Build.Step).init(b.allocator);
     errdefer steps.deinit();
 
-    addUpdateStep(b);
+    try addUpdateStep(b);
 
     if (cfg.app_runtime == .gtk) {
         // Output the .mo files used by the GTK apprt
@@ -41,10 +41,10 @@ pub fn install(self: *const GhosttyI18n) void {
     for (self.steps) |step| self.owner.getInstallStep().dependOn(step);
 }
 
-fn addUpdateStep(b: *std.Build) void {
+fn addUpdateStep(b: *std.Build) !void {
     const pot_step = b.step("update-translations", "Update translation files");
 
-    const gettext = b.addSystemCommand(&.{
+    const xgettext = b.addSystemCommand(&.{
         "xgettext",
         "--language=C", // Silence the "unknown extension" errors
         "--from-code=UTF-8",
@@ -63,13 +63,27 @@ fn addUpdateStep(b: *std.Build) void {
         // would be added to the file as its location, which differs for
         // everyone's checkout of the repository.
         // This comes at a cost of losing per-file caching, of course.
-        gettext.addArg(std.fmt.comptimePrint("src/apprt/gtk/ui/{[major]}.{[minor]}/{[name]s}.blp", blp));
+        xgettext.addArg(std.fmt.comptimePrint("src/apprt/gtk/ui/{[major]}.{[minor]}/{[name]s}.blp", blp));
+    }
+
+    var gtk_files = try b.build_root.handle.openDir("src/apprt/gtk", .{ .iterate = true });
+    defer gtk_files.close();
+
+    var walk = try gtk_files.walk(b.allocator);
+    defer walk.deinit();
+
+    while (try walk.next()) |src| {
+        switch (src.kind) {
+            .file => if (!std.mem.endsWith(u8, src.basename, ".zig")) continue,
+            else => continue,
+        }
+        xgettext.addArg((b.pathJoin(&.{ "src/apprt/gtk", src.path })));
     }
 
     // Don't make Zig cache it
-    gettext.has_side_effects = true;
+    xgettext.has_side_effects = true;
 
-    const new_pot = gettext.captureStdOut();
+    const new_pot = xgettext.captureStdOut();
 
     const wf = b.addWriteFiles();
     wf.addCopyFileToSource(new_pot, "po/" ++ domain ++ ".pot");
@@ -77,7 +91,7 @@ fn addUpdateStep(b: *std.Build) void {
     inline for (locales) |locale| {
         const msgmerge = b.addSystemCommand(&.{ "msgmerge", "-q" });
         msgmerge.addFileArg(b.path("po/" ++ locale ++ ".po"));
-        msgmerge.addFileArg(gettext.captureStdOut());
+        msgmerge.addFileArg(xgettext.captureStdOut());
 
         wf.addCopyFileToSource(msgmerge.captureStdOut(), "po/" ++ locale ++ ".po");
     }
