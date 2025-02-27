@@ -1019,6 +1019,10 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
         // out a better way to handle this.
         log.err("error resizing cells buffer err={}", .{err});
     };
+
+    // Reset our viewport to force a rebuild, since `setScreenSize` only
+    // does this when the number of cells changes, which isn't guaranteed.
+    self.cells_viewport = null;
 }
 
 /// Update the frame data.
