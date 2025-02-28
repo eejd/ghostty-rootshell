@@ -44,6 +44,13 @@ const log = std.log.scoped(.surface);
 // The renderer implementation to use.
 const Renderer = renderer.Renderer;
 
+/// Minimum window size in cells. This is used to prevent the window from
+/// being resized to a size that is too small to be useful. These defaults
+/// are chosen to match the default size of Mac's Terminal.app, but is
+/// otherwise somewhat arbitrary.
+const min_window_width_cells: u32 = 10;
+const min_window_height_cells: u32 = 4;
+
 /// Allocator
 alloc: Allocator,
 
@@ -252,6 +259,8 @@ const DerivedConfig = struct {
     window_padding_left: u32,
     window_padding_right: u32,
     window_padding_balance: bool,
+    window_height: u32,
+    window_width: u32,
     title: ?[:0]const u8,
     title_report: bool,
     links: []Link,
@@ -313,6 +322,8 @@ const DerivedConfig = struct {
             .window_padding_left = config.@"window-padding-x".top_left,
             .window_padding_right = config.@"window-padding-x".bottom_right,
             .window_padding_balance = config.@"window-padding-balance",
+            .window_height = config.@"window-height",
+            .window_width = config.@"window-width",
             .title = config.title,
             .title_report = config.@"title-report",
             .links = links,
@@ -418,9 +429,6 @@ pub fn init(
         &derived_config.font,
         font_size,
     );
-
-    // Pre-calculate our initial cell size ourselves.
-    const cell_size = font_grid.cellSize();
 
     // Build our size struct which has all the sizes we need.
     const size: renderer.Size = size: {
@@ -577,12 +585,6 @@ pub fn init(
         .{ .width = size.cell.width, .height = size.cell.height },
     );
 
-    // Set a minimum size that is cols=10 h=4. This matches Mac's Terminal.app
-    // but is otherwise somewhat arbitrary.
-
-    const min_window_width_cells: u32 = 10;
-    const min_window_height_cells: u32 = 4;
-
     _ = try rt_app.performAction(
         .{ .surface = self },
         .size_limit,
@@ -629,34 +631,11 @@ pub fn init(
     // Note: it is important to do this after the renderer is setup above.
     // This allows the apprt to fully initialize the surface before we
     // start messing with the window.
-    if (config.@"window-height" > 0 and config.@"window-width" > 0) init: {
-        const scale = rt_surface.getContentScale() catch break :init;
-        const height = @max(config.@"window-height", min_window_height_cells) * cell_size.height;
-        const width = @max(config.@"window-width", min_window_width_cells) * cell_size.width;
-        const width_f32: f32 = @floatFromInt(width);
-        const height_f32: f32 = @floatFromInt(height);
-
-        // The final values are affected by content scale and we need to
-        // account for the padding so we get the exact correct grid size.
-        const final_width: u32 =
-            @as(u32, @intFromFloat(@ceil(width_f32 / scale.x))) +
-            size.padding.left +
-            size.padding.right;
-        const final_height: u32 =
-            @as(u32, @intFromFloat(@ceil(height_f32 / scale.y))) +
-            size.padding.top +
-            size.padding.bottom;
-
-        _ = rt_app.performAction(
-            .{ .surface = self },
-            .initial_size,
-            .{ .width = final_width, .height = final_height },
-        ) catch |err| {
-            // We don't treat this as a fatal error because not setting
-            // an initial size shouldn't stop our terminal from working.
-            log.warn("unable to set initial window size: {s}", .{err});
-        };
-    }
+    self.recomputeInitialSize() catch |err| {
+        // We don't treat this as a fatal error because not setting
+        // an initial size shouldn't stop our terminal from working.
+        log.warn("unable to set initial window size: {}", .{err});
+    };
 
     if (config.title) |title| {
         _ = try rt_app.performAction(
@@ -1220,6 +1199,53 @@ pub fn updateConfig(
     );
 }
 
+const InitialSizeError = error{
+    ContentScaleUnavailable,
+    AppActionFailed,
+};
+
+/// Recalculate the initial size of the window based on the
+/// configuration and invoke the apprt `initial_size` action if
+/// necessary.
+fn recomputeInitialSize(
+    self: *Surface,
+) InitialSizeError!void {
+    // Both width and height must be set for this to work, as
+    // documented on the config options.
+    if (self.config.window_height <= 0 or
+        self.config.window_width <= 0) return;
+
+    const scale = self.rt_surface.getContentScale() catch
+        return error.ContentScaleUnavailable;
+    const height = @max(
+        self.config.window_height,
+        min_window_height_cells,
+    ) * self.size.cell.height;
+    const width = @max(
+        self.config.window_width,
+        min_window_width_cells,
+    ) * self.size.cell.width;
+    const width_f32: f32 = @floatFromInt(width);
+    const height_f32: f32 = @floatFromInt(height);
+
+    // The final values are affected by content scale and we need to
+    // account for the padding so we get the exact correct grid size.
+    const final_width: u32 =
+        @as(u32, @intFromFloat(@ceil(width_f32 / scale.x))) +
+        self.size.padding.left +
+        self.size.padding.right;
+    const final_height: u32 =
+        @as(u32, @intFromFloat(@ceil(height_f32 / scale.y))) +
+        self.size.padding.top +
+        self.size.padding.bottom;
+
+    _ = self.rt_app.performAction(
+        .{ .surface = self },
+        .initial_size,
+        .{ .width = final_width, .height = final_height },
+    ) catch return error.AppActionFailed;
+}
+
 /// Returns true if the terminal has a selection.
 pub fn hasSelection(self: *const Surface) bool {
     self.renderer_state.mutex.lock();
@@ -1478,6 +1504,13 @@ fn setCellSize(self: *Surface, size: renderer.CellSize) !void {
 
     // Notify the terminal
     self.io.queueMessage(.{ .resize = self.size }, .unlocked);
+
+    // Update our terminal default size if necessary.
+    self.recomputeInitialSize() catch |err| {
+        // We don't treat this as a fatal error because not setting
+        // an initial size shouldn't stop our terminal from working.
+        log.warn("unable to recompute initial window size: {}", .{err});
+    };
 
     // Notify the window
     _ = try self.rt_app.performAction(
