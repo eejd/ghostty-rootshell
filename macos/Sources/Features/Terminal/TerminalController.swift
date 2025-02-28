@@ -70,6 +70,12 @@ class TerminalController: BaseTerminalController {
             object: nil)
         center.addObserver(
             self,
+            selector: #selector(onResetWindowSize),
+            name: .ghosttyResetWindowSize,
+            object: nil
+        )
+        center.addObserver(
+            self,
             selector: #selector(ghosttyConfigDidChange(_:)),
             name: .ghosttyConfigDidChange,
             object: nil
@@ -612,7 +618,7 @@ class TerminalController: BaseTerminalController {
         window.close()
     }
 
-    @IBAction func returnToDefaultSize(_ sender: Any) {
+    @IBAction func returnToDefaultSize(_ sender: Any?) {
         guard let defaultSize else { return }
         window?.setFrame(defaultSize, display: true)
     }
@@ -828,6 +834,12 @@ class TerminalController: BaseTerminalController {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard surfaceTree?.contains(view: target) ?? false else { return }
         closeTab(self)
+    }
+
+    @objc private func onResetWindowSize(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: target) ?? false else { return }
+        returnToDefaultSize(nil)
     }
 
     @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {

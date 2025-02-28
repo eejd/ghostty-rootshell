@@ -380,6 +380,11 @@ pub const Action = union(enum) {
     /// Equalize all splits in the current window
     equalize_splits: void,
 
+    /// Reset the window to the default size. The "default size" is the
+    /// size that a new window would be created with. This has no effect
+    /// if the window is fullscreen.
+    reset_window_size: void,
+
     /// Control the terminal inspector visibility.
     ///
     /// Arguments:
@@ -772,6 +777,7 @@ pub const Action = union(enum) {
             .toggle_fullscreen,
             .toggle_window_decorations,
             .toggle_secure_input,
+            .reset_window_size,
             .crash,
             => .surface,
 
