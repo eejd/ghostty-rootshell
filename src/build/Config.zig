@@ -34,6 +34,7 @@ font_backend: font.Backend = .freetype,
 /// Feature flags
 x11: bool = false,
 wayland: bool = false,
+layer_shell: bool = false,
 sentry: bool = true,
 wasm_shared: bool = true,
 
@@ -109,7 +110,6 @@ pub fn init(b: *std.Build) !Config {
 
     //---------------------------------------------------------------
     // Comptime Interfaces
-
     config.font_backend = b.option(
         font.Backend,
         "font-backend",
@@ -162,6 +162,12 @@ pub fn init(b: *std.Build) !Config {
         "gtk-x11",
         "Enables linking against X11 libraries when using the GTK rendering backend.",
     ) orelse gtk_targets.x11;
+
+    config.layer_shell = b.option(
+        bool,
+        "gtk-layer-shell",
+        "Enables linking against the gtk4-layer-shell library for quick terminal support. Requires Wayland.",
+    ) orelse gtk_targets.layer_shell;
 
     //---------------------------------------------------------------
     // Ghostty Exe Properties
@@ -392,6 +398,7 @@ pub fn addOptions(self: *const Config, step: *std.Build.Step.Options) !void {
     step.addOption(bool, "flatpak", self.flatpak);
     step.addOption(bool, "x11", self.x11);
     step.addOption(bool, "wayland", self.wayland);
+    step.addOption(bool, "layer_shell", self.layer_shell);
     step.addOption(bool, "sentry", self.sentry);
     step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
     step.addOption(font.Backend, "font_backend", self.font_backend);

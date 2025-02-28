@@ -70,6 +70,10 @@ config_errors_window: ?*ConfigErrorsWindow = null,
 /// The clipboard confirmation window, if it is currently open.
 clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
+/// The window containing the quick terminal.
+/// Null when never initialized.
+quick_terminal: ?*Window = null,
+
 /// This is set to false when the main loop should exit.
 running: bool = true,
 
@@ -497,10 +501,10 @@ pub fn performAction(
         .toggle_window_decorations => self.toggleWindowDecorations(target),
         .quit_timer => self.quitTimer(value),
         .prompt_title => try self.promptTitle(target),
+        .toggle_quick_terminal => return try self.toggleQuickTerminal(),
 
         // Unimplemented
         .close_all_windows,
-        .toggle_quick_terminal,
         .toggle_visibility,
         .cell_size,
         .secure_input,
@@ -762,6 +766,33 @@ fn toggleWindowDecorations(
             window.toggleWindowDecorations();
         },
     }
+}
+
+fn toggleQuickTerminal(self: *App) !bool {
+    if (self.quick_terminal) |qt| {
+        qt.toggleVisibility();
+        return true;
+    }
+
+    if (!self.winproto.supportsQuickTerminal()) {
+        log.err("quick terminal not supported on current platform", .{});
+        return false;
+    }
+
+    const qt = Window.create(self.core_app.alloc, self) catch |err| {
+        log.err("failed to initialize quick terminal={}", .{err});
+        return true;
+    };
+    self.quick_terminal = qt;
+
+    // The setup has to happen *before* the window-specific winproto is
+    // initialized, so we need to initialize it through the app winproto
+    try self.winproto.initQuickTerminal(qt);
+
+    // Finalize creating the quick terminal
+    try qt.newTab(null);
+    qt.present();
+    return true;
 }
 
 fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
@@ -1372,6 +1403,9 @@ fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
 
     // Add our initial tab
     try window.newTab(parent_);
+
+    // Show the new window
+    window.present();
 }
 
 fn quit(self: *App) void {

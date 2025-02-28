@@ -31,6 +31,7 @@
   glib,
   glslang,
   gtk4,
+  gtk4-layer-shell,
   gobject-introspection,
   libadwaita,
   blueprint-compiler,
@@ -88,6 +89,7 @@
 
       libadwaita
       gtk4
+      gtk4-layer-shell
       glib
       gobject-introspection
       wayland
@@ -167,6 +169,7 @@ in
         blueprint-compiler
         libadwaita
         gtk4
+        gtk4-layer-shell
         glib
         gobject-introspection
         wayland

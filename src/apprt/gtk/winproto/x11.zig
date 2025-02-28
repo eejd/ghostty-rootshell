@@ -148,6 +148,12 @@ pub const App = struct {
 
         return mods;
     }
+
+    pub fn supportsQuickTerminal(_: App) bool {
+        return false;
+    }
+
+    pub fn initQuickTerminal(_: *App, _: *ApprtWindow) !void {}
 };
 
 pub const Window = struct {
@@ -221,6 +227,8 @@ pub const Window = struct {
             log.err("failed to synchronize decorations={}", .{err});
         };
     }
+
+    pub fn syncQuickTerminal(_: *Window) !void {}
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
         return switch (self.config.window_decoration) {

@@ -460,12 +460,8 @@ pub fn add(
 
                 if (self.config.wayland) {
                     const scanner = Scanner.create(b.dependency("zig_wayland", .{}), .{
-                        // We shouldn't be using getPath but we need to for now
-                        // https://codeberg.org/ifreund/zig-wayland/issues/66
-                        .wayland_xml = b.dependency("wayland", .{})
-                            .path("protocol/wayland.xml"),
-                        .wayland_protocols = b.dependency("wayland_protocols", .{})
-                            .path(""),
+                        .wayland_xml = b.dependency("wayland", .{}).path("protocol/wayland.xml"),
+                        .wayland_protocols = b.dependency("wayland_protocols", .{}).path(""),
                     });
 
                     const wayland = b.createModule(.{ .root_source_file = scanner.result });
@@ -485,6 +481,8 @@ pub fn add(
 
                     step.root_module.addImport("wayland", wayland);
                     step.root_module.addImport("gdk_wayland", gobject.module("gdkwayland4"));
+
+                    if (self.config.layer_shell) step.linkSystemLibrary2("gtk4-layer-shell", dynamic_link_opts);
                     step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
                 }
 
